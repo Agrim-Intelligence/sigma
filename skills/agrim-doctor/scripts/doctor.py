@@ -2954,7 +2954,7 @@ def _slack_commands_listener_state(base, cfg, now=None):
         return "ON but MISCONFIGURED — no channel_id set (see SLACK_COMMANDS.md)"
     app_env = sc.get("app_token_env") or _SLACK_COMMANDS_DEFAULT_APP_TOKEN_ENV
     bot_env = sc.get("bot_token_env") or _SLACK_COMMANDS_DEFAULT_BOT_TOKEN_ENV
-    missing = [name for name in (app_env, bot_env) if not os.environ.get(name)]
+    missing = [name for name in (app_env, bot_env) if not _legacy().getenv(name)]
     if missing:
         return ("ON but MISCONFIGURED — missing env var(s): %s (see SLACK_COMMANDS.md)"
                  % ", ".join(missing))
@@ -3812,30 +3812,25 @@ def _model_max_tier(cfg):
     return tier if tier in ("haiku", "sonnet", "opus", "fable") else "opus"
 
 
-#: The brand this core shipped under before `sigma` (#2729, D24/D25), spelled from fragments so
-#: this shipped file never carries it whole; its env vars were `<BRAND>_*`. A config written under
-#: it may still name one of those under a `*_env` key -- read, never migrated, here.
-_RETIRED_BRAND = "loop" + "smith"
-_RETIRED_ENV_PREFIX = _RETIRED_BRAND.upper() + "_"
+_LEGACY_MODULE = []
+
+
+def _legacy():
+    """`skills/agrim-loop/scripts/legacy.py`, the ONE reader of the plugin's previous name (#239),
+    loaded once. The name is spelled from fragments there (a guarded private name, #2729)."""
+    if not _LEGACY_MODULE:
+        _LEGACY_MODULE.append(_load_loop_script("legacy"))
+    return _LEGACY_MODULE[0]
+
+
+#: The previous env prefix, from the helper (never re-spelled here).
+_RETIRED_ENV_PREFIX = _legacy().RETIRED_ENV_PREFIX
 
 
 def _legacy_env_names_in_config(cfg, prefix=""):
-    """[(dotted.key.path, value)] for every key ending `_env` anywhere in `cfg` (dict/list, any
-    nesting) whose string value -- or, for a list value, any string element -- still starts with
-    the retired brand's env-var prefix. Read-only; never mutates `cfg`."""
-    found = []
-    if isinstance(cfg, dict):
-        for key, value in cfg.items():
-            path = "%s.%s" % (prefix, key) if prefix else str(key)
-            if str(key).endswith("_env"):
-                for item in (value if isinstance(value, list) else [value]):
-                    if isinstance(item, str) and item.startswith(_RETIRED_ENV_PREFIX):
-                        found.append((path, item))
-            found.extend(_legacy_env_names_in_config(value, path))
-    elif isinstance(cfg, list):
-        for item in cfg:
-            found.extend(_legacy_env_names_in_config(item, prefix))
-    return found
+    """[(dotted.key.path, value)] for every `*_env` value still naming the previous env prefix.
+    Delegates to `legacy.legacy_env_values` so this row and `migrate.py` share one walker."""
+    return _legacy().legacy_env_values(cfg, prefix)
 
 
 def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
@@ -3935,7 +3930,7 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          _handoff_row_state(cfg),
          'config: "handoff": {"enabled": false}  (or set "after_goals")'),
         ("prompt-gate scope",
-         "GLOBAL (env override)" if os.environ.get("SIGMA_GATE_GLOBAL") == "1"
+         "GLOBAL (env override)" if _legacy().getenv("SIGMA_GATE_GLOBAL") == "1"
          else "repo-scoped (speaks only where .sdlc/ exists)",
          "env SIGMA_GATE_GLOBAL=1 restores always-on"),
         ("SessionStart policy brief",
@@ -4057,16 +4052,15 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          'if a standalone built-in shadows a Sigma skill: settings.json "skillOverrides": '
          '{"<name>": "off"}; if it is a plugin: /plugin disable <plugin>'),
     ]
-    # #2729 (D24): the public core ships no legacy-brand compatibility layer, so a `*_env` value
-    # still naming a retired env var would otherwise fail silently (the variable is simply unset).
-    # Informational, like every row here. The remedy is the manual edit the user can perform today
-    # -- no migration script is shipped, so none is named.
+    # #2729 (D24) shipped no compatibility layer; #239 superseded that: `legacy.getenv` now reads a
+    # `*_env` value naming the previous prefix (and prefers its SIGMA_* spelling when set), so this
+    # row is informational, and its remedy is the one-shot migration that now ships.
     _legacy_env = _legacy_env_names_in_config(cfg)
     rows.append((
         "legacy env-var names in config",
         "; ".join("legacy env-var name in config: %s=%s; rename to its SIGMA_* spelling" % (k, v)
                   for k, v in _legacy_env) if _legacy_env else "none",
-        "edit .sdlc/config.json: rename each listed value to its SIGMA_* spelling, "
+        "run: python3 skills/agrim-doctor/scripts/migrate.py .sdlc (dry run), then --apply; "
         "and rename the environment variable it names to match",
     ))
     return rows

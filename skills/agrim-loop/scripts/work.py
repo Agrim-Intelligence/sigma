@@ -72,6 +72,7 @@ def _load(name):
 
 state = _load("state")
 ledger = _load("ledger")
+legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
 scrub = _load("scrub").scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
                                       # auth failure — see that module's own docstring for the two
@@ -707,7 +708,7 @@ def _find_evidence_marker(run, cwd, pr, evidence_id):
         if not isinstance(data, list):
             raise ValueError("comment lookup returned a non-list")
         matches.extend(row for row in data
-                       if isinstance(row, dict) and marker in str(row.get("body") or ""))
+                       if isinstance(row, dict) and legacy.has_marker(str(row.get("body") or ""), marker))
         if len(data) < REVIEW_COMMENT_PAGE_SIZE:
             break
     else:
@@ -940,7 +941,8 @@ REVIEW_OFF, REVIEW_CHANGES, REVIEW_APPROVAL = "off", "changes", "approval"
 # of it), and a marker sitting mid-sentence in an aside never register as the real thing. `>`-quoted
 # and fenced (```) lines are excluded outright by _line_directive below, since a marker being shown or
 # quoted back is documentation, not a command.
-_DIRECTIVE_RE = re.compile(r"^\s*sigma:(approve|block|unblock)\b", re.IGNORECASE)
+_DIRECTIVE_RE = re.compile(r"^\s*" + legacy.MARKER_PREFIX_RE + r":(approve|block|unblock)\b",
+                           re.IGNORECASE)   # #239: a legacy `block` on an in-flight PR still blocks
 
 
 def settings(config):

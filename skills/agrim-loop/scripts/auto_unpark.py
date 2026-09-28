@@ -84,6 +84,7 @@ def _load(name):
 
 
 sources = _load("sources")
+legacy = _load("legacy")        # #239: a keep-parked opt-out written under the previous name
 mirror = _load("mirror")
 backlog_check = _load("backlog_check")
 triage = _load("triage")          # apply_actions / _execute_action -- reused live, not reimplemented
@@ -275,7 +276,7 @@ def _is_exempt(raw_comments):
     textual-shape match, so no phrase-detection quirk in the park text can ever defeat an opt-out a
     human already recorded (#1152's own acceptance criterion: exclusion before matching, never a
     post-hoc filter on an already-computed finding)."""
-    return KEEP_PARKED_MARKER in "\n".join(raw_comments or [])
+    return legacy.has_marker("\n".join(raw_comments or []), KEEP_PARKED_MARKER)
 
 
 def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cache=None):

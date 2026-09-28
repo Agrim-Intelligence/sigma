@@ -31,6 +31,7 @@ def _load(name):
 
 state = _load("state")
 sources = _load("sources")          # backlog source: local files or GitHub issues (config-selected)
+legacy = _load("legacy")            # #239: markers written under the plugin's previous name
 ledger = _load("ledger")            # team record (config-gated, default OFF; every call is fail-open)
 work = _load("work")                # per-goal worktree/branch/PR (config-gated, default OFF)
 tamper_scan = _load("tamper_scan")  # #1937: diff parser; #1933 reuses changed_test_files()
@@ -4094,8 +4095,9 @@ def decompose_check(sdlc_dir, goal, config, source):
         # this check already recognized. Deliberately NOT exempting a design-of goal's own PARENT
         # or any DECOMPOSED_FROM_MARKER child -- those are real, size-classifiable goals.
         dg_marker = _load("design_goal").DESIGN_OF_MARKER
-        if (gs.DECOMPOSED_FROM_MARKER in first_line or gs.DECOMPOSE_OF_MARKER in first_line
-                or dg_marker in first_line):
+        if (legacy.has_marker(first_line, gs.DECOMPOSED_FROM_MARKER)
+                or legacy.has_marker(first_line, gs.DECOMPOSE_OF_MARKER)
+                or legacy.has_marker(first_line, dg_marker)):
             return "PROCEED"                        # a child (depth-limited to 1) or a meta-goal itself
         flagged, reason = gs.classify(body)
         if not flagged:
@@ -4173,7 +4175,7 @@ def decompose_check(sdlc_dir, goal, config, source):
                              "check comments")
             dg = _load("decompose_goal")
             comments = strict.get("comments") or []
-            if any(dg.DECOMPOSE_FILED_MARKER in (c.get("body") or "")
+            if any(legacy.has_marker(c.get("body") or "", dg.DECOMPOSE_FILED_MARKER)
                    for c in comments if isinstance(c, dict)):
                 return _park("decomposition already filed — see comments")
 
@@ -4310,7 +4312,8 @@ def design_check(sdlc_dir, goal, config, source):
         dg = _load("design_goal")
         first_line = body.splitlines()[:1]
         first_line = first_line[0] if first_line else ""
-        if gs.DECOMPOSE_OF_MARKER in first_line or dg.DESIGN_OF_MARKER in first_line:
+        if (legacy.has_marker(first_line, gs.DECOMPOSE_OF_MARKER)
+                or legacy.has_marker(first_line, dg.DESIGN_OF_MARKER)):
             return "PROCEED"                       # a pure bookkeeping meta-goal, never design-worthy
 
         if not (hasattr(source, "fetch_comments_strict") and hasattr(source, "create_dependency")):
@@ -4351,7 +4354,7 @@ def design_check(sdlc_dir, goal, config, source):
             return "PROCEED"
 
         comments = strict["comments"]
-        if any(dg.DESIGN_FILED_MARKER in (c.get("body") or "")
+        if any(legacy.has_marker(c.get("body") or "", dg.DESIGN_FILED_MARKER)
                for c in comments if isinstance(c, dict)):
             return _park("design already filed — see comments")
 

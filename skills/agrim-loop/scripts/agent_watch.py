@@ -31,6 +31,7 @@ def _load(name):
 
 
 ledger = _load("ledger")
+legacy = _load("legacy")   # #239: `pass_env` may name the previous prefix
 loop = _load("loop")
 
 CURSOR = "agent-watch-cursor.json"
@@ -95,7 +96,7 @@ def _real_send_email(email_cfg, subject, body):
             server.starttls()                                   # connection (smtplib's own contract)
         user = email_cfg.get("user")
         if user:
-            password = os.environ.get(email_cfg.get("pass_env") or "SIGMA_SMTP_PASS", "")
+            password = legacy.getenv(email_cfg.get("pass_env") or "SIGMA_SMTP_PASS", "")
             if not password:
                 raise RuntimeError(
                     "user is set but env var "

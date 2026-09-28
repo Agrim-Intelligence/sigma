@@ -829,10 +829,11 @@ def test_features_flags_a_legacy_env_var_name_under_any_env_key(tmp_path):
     assert "legacy env-var name in config: slack_commands.bot_token_env=%s; rename to its SIGMA_* spelling" % legacy in state, state
     assert "watch.pass_env=%sCLAUDE_CMD" % d._RETIRED_ENV_PREFIX in state, state
     assert "SIGMA_SMTP_PASS" not in state and "SIGMA_RUN_ID" not in state, state
-    # Post-PR review of #2750: the remedy must be one the user can perform today -- edit the config
-    # and rename the env var -- never a migration script that is not shipped.
-    assert fix == ("edit .sdlc/config.json: rename each listed value to its SIGMA_* spelling, "
+    # Post-PR review of #2750: the remedy must be one the user can perform today. Since #239 that is
+    # the migration script that now ships -- and the named script must exist on disk.
+    assert fix == ("run: python3 skills/agrim-doctor/scripts/migrate.py .sdlc (dry run), then --apply; "
                    "and rename the environment variable it names to match"), fix
+    assert (_pl.Path(d.__file__).resolve().parent / "migrate.py").is_file()
     assert "rebrand_migrate" not in state and "rebrand_migrate" not in fix, (state, fix)
     assert "rebrand_migrate" not in _pl.Path(d.__file__).read_text()
     assert rows_clean["legacy env-var names in config"][0] == "none"

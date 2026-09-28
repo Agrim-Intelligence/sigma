@@ -2,6 +2,23 @@
 
 All notable changes to Sigma are recorded here, newest first.
 
+## Unreleased
+
+- Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
+  name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
+  (features, landing, withheld and propagation records), the old feature-doc and Codex
+  `AGENTS.md` markers, the old environment-variable prefix (`SIGMA_*` wins when both are set), the
+  renamed `drift_watch.channels` key, and the old PR and issue markers, so an old `block` comment
+  on an open PR still blocks it. One helper, `skills/agrim-loop/scripts/legacy.py`, does all of
+  this reading.
+- New: `skills/agrim-doctor/scripts/migrate.py`, a one-shot, idempotent rewrite of that state to
+  Sigma's names. It is a dry run by default and writes only with `--apply`. It swaps text in place
+  and checks each result by reading it back. It refuses (exit 2) anything it cannot rewrite with
+  certainty, leaves history alone, lists environment variables by name only, and refuses to run
+  while a watcher is live. See `docs/upgrading.md`.
+- Cross-repository propagation no longer overwrites a sibling repository's registry file that
+  still carries the old schema id.
+
 ## 1.0.0 — the first public release
 
 The first release of the public core: a gated software development lifecycle for coding agents,

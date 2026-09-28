@@ -128,6 +128,7 @@ def _load(name):
 registry = _load("feature_registry")     # the store: schema, read, normalise_entry, dumps
 sync = _load("feature_sync")             # repo_slug, the runner shape, the scope-expansion rule
 ledger = _load("ledger")                 # team record (config-gated, default OFF; fail-open)
+legacy = _load("legacy")                 # #239: records written under the previous name
 
 #: WHY `cross_repo` IS NOT LOADED HERE. It loads `work` at ITS module level and `work` loads this
 #: module, so an eager `_load("cross_repo")` would recurse -- `_load` has no `sys.modules` cache to
@@ -401,7 +402,7 @@ def recorded(sdlc_dir, goal):
         got = json.loads(record_path(sdlc_dir, goal).read_text(encoding="utf-8"))
     except Exception:                     # noqa: BLE001 - absent and corrupt both mean "no record"
         return None
-    return got if isinstance(got, dict) and got.get("schema") == SCHEMA else None
+    return got if isinstance(got, dict) and legacy.schema_is(got.get("schema"), SCHEMA) else None
 
 
 def _store(sdlc_dir, report):
@@ -550,6 +551,15 @@ def _their_entry(current, unit):
         payload = json.loads(current)
     except Exception as exc:              # noqa: BLE001 - every parse failure is one refusal
         raise _Unreadable("the destination's record is not JSON (%s)" % exc)
+    # #239 (plan-review BLOCKER 1): `registry.parse` now READS the previous name's schema id, which
+    # must not become a licence to REWRITE a sibling repository the old plugin may still own -- that
+    # plugin cannot read the Sigma id this write would leave behind. Refused like any file this
+    # version will not replace; `migrate.py` run in THAT repository is the explicit cutover.
+    if isinstance(payload, dict) and legacy.is_legacy_schema(payload.get("schema")):
+        raise _Unreadable("the destination's record still carries the plugin's previous name in its "
+                          "schema id (%r); run skills/agrim-doctor/scripts/migrate.py --apply in that "
+                          "repository first, so it is not overwritten behind its owner's back"
+                          % (payload.get("schema"),))
     known = registry.parse(payload)
     for name in known:
         if name.lower() == unit.lower():
@@ -817,7 +827,7 @@ def _flag(source, goal, text):
               "was not posted this pass; the next pick retries it\n" % (goal, exc))
         return False
     for comment in seen.get("comments") or []:
-        if SCOPE_MARKER in ((comment or {}).get("body") or ""):
+        if legacy.has_marker((comment or {}).get("body") or "", SCOPE_MARKER):
             return False
     try:
         source.note(goal, text)

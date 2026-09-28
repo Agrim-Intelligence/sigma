@@ -102,6 +102,7 @@ def _load(name):
 features = _load("features")                    # what unit does this issue declare? (#1465)
 feature_registry = _load("feature_registry")    # what does the repo remember about it? (#1469)
 ledger = _load("ledger")                        # the `to`-addressed transport that already exists
+legacy = _load("legacy")                        # #239: the previous name's record schema reads too
 state = _load("state")                          # `unsafe_goal_reason`, the shared path-component guard
 work = _load("work")                            # `stem`: the one goal -> filename rule in this plugin
 gh_session = _load("gh_session")                # #78: a Remote session's proxy block is not a denial
@@ -614,7 +615,7 @@ def recorded(sdlc_dir, goal):
         got = json.loads(decision_path(sdlc_dir, goal).read_text(encoding="utf-8"))
     except Exception:                     # noqa: BLE001 - absent and corrupt both mean "no decision"
         return None
-    return got if isinstance(got, dict) and got.get("schema") == RECORD_SCHEMA else None
+    return got if isinstance(got, dict) and legacy.schema_is(got.get("schema"), RECORD_SCHEMA) else None
 
 
 def _record(sdlc_dir, decision):

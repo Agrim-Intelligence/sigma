@@ -184,6 +184,7 @@ def _load(name):
 ledger = _load("ledger")            # the `to`-addressed transport that already exists
 state = _load("state")              # `unsafe_goal_reason`, the shared path-component guard
 work = _load("work")                # `stem`: the one goal -> filename rule in this plugin
+legacy = _load("legacy")            # #239: an index written under the previous name reads too
 
 _CROSS_REPO = None
 
@@ -523,8 +524,9 @@ def _history(sdlc_dir, goal):
         got = json.loads(path.read_text(encoding="utf-8"))
     except Exception:                     # noqa: BLE001 - a corrupt record is not an empty one
         return empty, False
-    if not isinstance(got, dict) or got.get("schema") != INDEX_SCHEMA:
+    if not isinstance(got, dict) or not legacy.schema_is(got.get("schema"), INDEX_SCHEMA):
         return empty, False
+    got["schema"] = INDEX_SCHEMA          # #239: `_remember` writes this dict back -- in Sigma's id
     got.setdefault("findings", {})
     got.setdefault("upstream", [])
     if not isinstance(got["findings"], dict) or not isinstance(got["upstream"], list):

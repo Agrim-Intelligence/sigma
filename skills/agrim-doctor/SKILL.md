@@ -46,6 +46,14 @@ It's idempotent (safe to re-run), and each teammate runs it once in their own cl
 that, claiming/recording is automatic inside `/agrim-loop`; point them at **`/agrim-ledger`** to read
 the ledger or hand work off.
 
+## Upgrading from the plugin's previous name
+
+A repo adopted under the plugin's previous name keeps working, because Sigma reads the old spellings.
+The explicit cutover is a dry run by default, `--apply` writes, and it is safe to re-run:
+`python3 "${CLAUDE_SKILL_DIR}/scripts/migrate.py" .sdlc [--apply]`. It prints every file it changes,
+refuses anything it cannot rewrite with certainty (exit 2), and never runs on the user's behalf
+without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
+
 ## Secret-file coverage
 
 One row deserves naming because it is the only check whose MISSING state is a live exposure rather

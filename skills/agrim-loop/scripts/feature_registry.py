@@ -130,6 +130,9 @@ def _load(name):
 #: second opinion, because the name it validates is the same string that becomes a branch segment.
 is_unit_name = _load("features")._is_unit_name
 
+#: #239: the previous name's schema id (`<previous>/features@1`) reads as `SCHEMA`; see legacy.py.
+legacy = _load("legacy")
+
 #: The version key. `index.json` is duplicated in full into every participating repo (§7.1), so this
 #: string is a cross-repo contract: a document that does not carry it is not one this code can read.
 SCHEMA = "sigma/features@1"
@@ -448,7 +451,7 @@ def parse(doc):
     the sheet name paths the name rule exists to forbid."""
     if not isinstance(doc, dict):
         return {}
-    if doc.get("schema") != SCHEMA:
+    if not legacy.schema_is(doc.get("schema"), SCHEMA):
         if doc.get("features") is not None:
             _note("sigma: features: a registry document declares schema %r, not %r, so none of "
                   "it was read. Upgrade the plugin, or correct the schema key.\n"

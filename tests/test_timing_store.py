@@ -301,6 +301,11 @@ def test_the_store_prunes_itself_without_the_reader_ever_running(tmp_path, monke
     unbounded growth the action log's own directory already suffers (`doctor.py` records that a log
     file is never pruned once its goal is done). So the writer sweeps, once per process."""
     d = _sdlc(tmp_path)
+    # Seeding the ancient interval must not itself be this process's once-only sweep: when this test
+    # is the first timing write in its process (alone, or first on an xdist worker) that sweep wrote
+    # `.last-prune` NOW and the sweep under test below then skipped -- an order-dependent red, seen
+    # on origin/main too during #239's verify. The flag is shut for the seed, then opened.
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)
     timing_store.append(d, "ancient", "phase", "implement", 1000, started=1)
     for f in timing_store.goal_files(d, "ancient"):
         _age(f, timing_store.RETENTION_DAYS + 5)
