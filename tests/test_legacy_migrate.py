@@ -231,6 +231,62 @@ def test_a_file_locked_by_another_process_is_refused(mig, tmp_path, monkeypatch)
     assert not list((sdlc / "state" / "landing").glob("*.tmp*"))
 
 
+def test_a_symlinked_agents_md_is_refused_and_its_target_untouched(mig, tmp_path):
+    """The reviewer's reproduction: `AGENTS.md -> CLAUDE.md`, the old Codex block in CLAUDE.md.
+    `os.replace` over the link would swap the LINK for a file and leave CLAUDE.md on the old block
+    while reporting success. Refused instead -- the link and its target both unchanged, exit 2."""
+    root, sdlc = legacy_repo(tmp_path)
+    agents = root / "AGENTS.md"
+    (root / "CLAUDE.md").write_bytes(agents.read_bytes())
+    agents.unlink()
+    agents.symlink_to("CLAUDE.md")
+    before = (root / "CLAUDE.md").read_bytes()
+    code, out = run(mig, sdlc, "--apply")
+    assert code == 2, out
+    assert "refused AGENTS.md: it is a symlink" in out
+    assert agents.is_symlink() and os.readlink(agents) == "CLAUDE.md"
+    assert (root / "CLAUDE.md").read_bytes() == before
+
+
+def test_a_symlinked_state_file_is_refused_at_plan_and_at_write(mig, tmp_path, monkeypatch):
+    root, sdlc = legacy_repo(tmp_path)
+    unit = sdlc / "features" / "units" / "voice.json"
+    real = tmp_path / "elsewhere.json"
+    real.write_bytes(unit.read_bytes())
+    unit.unlink()
+    unit.symlink_to(real)
+    before = real.read_bytes()
+    code, out = run(mig, sdlc)
+    assert code == 2 and "refused .sdlc/features/units/voice.json: it is a symlink" in out
+    assert "would change .sdlc/features/units/voice.json" not in out
+    # ...and in `_write`, for a path that became a link after it was planned.
+    root2, sdlc2 = legacy_repo(tmp_path / "two")
+    target = sdlc2 / "state" / "landing" / "7.json"
+    real_plan = mig.plan
+
+    def racing_plan(*args, **kwargs):
+        got = real_plan(*args, **kwargs)
+        moved = tmp_path / "moved.json"
+        moved.write_bytes(target.read_bytes())
+        target.unlink()
+        target.symlink_to(moved)
+        return got
+    monkeypatch.setattr(mig, "plan", racing_plan)
+    code, out = run(mig, sdlc2, "--apply")
+    assert code == 2 and "refused .sdlc/state/landing/7.json: it is a symlink" in out
+    assert target.is_symlink() and real.read_bytes() == before
+
+
+def test_a_watcher_probe_that_errors_says_so(mig, tmp_path, monkeypatch, capsys):
+    root, sdlc = legacy_repo(tmp_path)
+
+    def broken(directory, name):
+        raise RuntimeError("probe broke")
+    monkeypatch.setattr(mig, "_load", broken)
+    assert mig._running_watcher(sdlc) is None
+    assert "could not check for a running watcher (RuntimeError: probe broke)" in capsys.readouterr().err
+
+
 def test_apply_refuses_while_a_watcher_is_running(mig, tmp_path, monkeypatch):
     root, sdlc = legacy_repo(tmp_path)
     before = tree(root)

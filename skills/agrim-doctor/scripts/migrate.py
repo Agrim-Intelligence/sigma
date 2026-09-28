@@ -28,7 +28,8 @@ and turning the journal on is an explicit opt-in.
 
 SAFE TO RE-RUN. A second `--apply` finds nothing and says so. Each write is atomic (temp file in the
 same directory, then `os.replace`), taken under the unit's `feature_sync` lock for feature files, and
-refused if the file changed after it was read. `--apply` refuses outright while this SDLC dir's
+refused if the file changed after it was read. A symlinked target (an `AGENTS.md` linked to
+`CLAUDE.md`, a linked feature file) is REFUSED, never followed: replacing it would destroy the link. `--apply` refuses outright while this SDLC dir's
 watcher is running (it may be the old plugin's, still writing old spellings).
 
 WHAT IT CANNOT DO FOR YOU. The plugin under its previous name cannot read Sigma's spellings. Every
@@ -87,6 +88,14 @@ class Plan:
         self.sdlc_dir = pathlib.Path(sdlc_dir)
         self.root = self.sdlc_dir.resolve().parent
         self.changes, self.refused, self.left, self.notes = [], [], [], []
+
+    def rel_link(self, path):
+        """`rel` without resolving the last component, so a symlink is named as itself."""
+        path = pathlib.Path(path)
+        try:
+            return (path.parent.resolve() / path.name).relative_to(self.root).as_posix()
+        except ValueError:
+            return str(path)
 
     def rel(self, path):
         try:
@@ -148,7 +157,22 @@ def _plan_schemas(plan, legacy):
                                  "(its text also appears elsewhere, or is spelled with escapes)"))
             continue
         unit = path.stem if path.parent.name == "units" else None
-        plan.changes.append(Change(path, data, new, "schema id %s -> %s" % (old_id, new_id), unit))
+        _add_change(plan, Change(path, data, new, "schema id %s -> %s" % (old_id, new_id), unit))
+
+
+_SYMLINK_REASON = ("it is a symlink: replacing it would destroy the link and leave its target "
+                   "unchanged -- migrate the link's target, or replace the link with a file")
+
+
+def _add_change(plan, change):
+    """Plan `change` -- unless its path is a symlink, which is refused instead. `os.replace` over a
+    link swaps the LINK for a regular file, so the file it pointed at keeps the old spelling while
+    the run reports success; `sdlc_init --codex` refuses a symlinked AGENTS.md for the same reason.
+    Checked only for a file that would change, so an unrelated link is never a refusal."""
+    if change.path.is_symlink():
+        plan.refused.append((plan.rel_link(change.path), _SYMLINK_REASON))
+    else:
+        plan.changes.append(change)
 
 
 def _json_equal(data, expected):
@@ -192,7 +216,7 @@ def _plan_feature_docs(plan, legacy):
                 or old_begin in new or old_end in new):
             plan.refused.append((plan.rel(path), "the respelled block did not read back identically"))
             continue
-        plan.changes.append(Change(path, data, new, "managed-block markers respelled "
+        _add_change(plan, Change(path, data, new, "managed-block markers respelled "
                                    "(body and digest unchanged)", path.stem))
 
 
@@ -225,7 +249,7 @@ def _plan_codex(plan, legacy):
             or updated.count(start) != 1 or legacy.RETIRED + ":codex" in updated):
         plan.refused.append((plan.rel(path), "the Codex block could not be replaced cleanly"))
         return
-    plan.changes.append(Change(path, data, updated.encode("utf-8", "surrogateescape"),
+    _add_change(plan, Change(path, data, updated.encode("utf-8", "surrogateescape"),
                                "Codex block regenerated with Sigma's text (was the previous "
                                "plugin's, naming its old skills)"))
 
@@ -282,7 +306,7 @@ def _plan_config(plan, legacy):
                              "(a listed name also appears elsewhere in the file): %s"
                              % "; ".join(what)))
         return
-    plan.changes.append(Change(path, data, new, "; ".join(what)))
+    _add_change(plan, Change(path, data, new, "; ".join(what)))
 
 
 def _replace_env_value(node, old, new):
@@ -366,7 +390,10 @@ def _running_watcher(sdlc_dir):
         p = wd.paths(str(sdlc_dir))
         if wd.already_running(p, wd.stale_after_seconds(interval), time.time()):
             return wd.pid_from_file(p.pid)
-    except Exception:                         # noqa: BLE001 - a probe that cannot run is "none seen"
+    except Exception as exc:                  # noqa: BLE001 - a probe that cannot run is "none seen",
+        print("migrate: warning: could not check for a running watcher (%s: %s); proceeding as if "
+              "none is running -- stop it yourself if one is" % (type(exc).__name__, exc),
+              file=sys.stderr)                # ...but said aloud, never silently
         return None
     return None
 
@@ -374,6 +401,8 @@ def _running_watcher(sdlc_dir):
 def _write(change):
     """Atomic replace, refused if the file moved on since planning. -> None, or the refusal reason."""
     path = change.path
+    if path.is_symlink():                     # became one after planning: the same refusal
+        return _SYMLINK_REASON
     try:
         if path.read_bytes() != change.old:
             return "it changed after it was read; rerun"
@@ -460,7 +489,7 @@ def main(argv, environ=None, home=None, stdout=None):
             return 2
         for change, why in apply(result):
             if why:
-                refused.append((result.rel(change.path), why))
+                refused.append((result.rel_link(change.path), why))
             else:
                 changed.append(change)
                 say("  changed %s: %s" % (result.rel(change.path), change.what))

@@ -31,8 +31,10 @@ module's own globals. `sources.py` and `triage.py` document "read it live so a p
 a contract; after #1487 that holds for the check-time scanners only. The source-level pin
 (`test_the_block_vocabulary_is_declared_only_in_blocker_scan`) is what guards the fetch-time side.
 
-Pure and dependency-free: `import re` and nothing else, deliberately. It sits under
-`mirror.normalize_issue`, which runs once per issue on a board-sized fetch.
+Pure, with ONE sibling dependency: `legacy.py` (#239), loaded once at import so an unpark block
+written under the plugin's previous name strips too. `legacy.py` is itself stdlib-only and does no
+I/O at import, so nothing here does I/O either. It sits under `mirror.normalize_issue`, which runs
+once per issue on a board-sized fetch; the per-call cost is still a bounded number of `find`s.
 """
 import importlib.util
 import pathlib

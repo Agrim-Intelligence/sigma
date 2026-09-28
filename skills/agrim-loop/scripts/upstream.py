@@ -526,6 +526,9 @@ def _history(sdlc_dir, goal):
         return empty, False
     if not isinstance(got, dict) or not legacy.schema_is(got.get("schema"), INDEX_SCHEMA):
         return empty, False
+    if got.get("schema") != INDEX_SCHEMA:  # #239: said aloud, and only when it is the old id
+        sys.stderr.write("upstream: migrated legacy schema id %r in %s to %s on use\n"
+                         % (got.get("schema"), path, INDEX_SCHEMA))
     got["schema"] = INDEX_SCHEMA          # #239: `_remember` writes this dict back -- in Sigma's id
     got.setdefault("findings", {})
     got.setdefault("upstream", [])

@@ -920,6 +920,10 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
         return _report(path, UNCHANGED, entry=registry.normalise_entry(entry))
 
     _atomic_write_bytes(path, spliced)
+    if _marker_pair(data)[0] != BEGIN_OPEN.encode("ascii"):
+        # #239: said once, on the write that respells it -- silent when there was nothing old.
+        sys.stderr.write("feature_doc: migrated legacy managed-block markers in %s to Sigma's on use\n"
+                         % (path,))
 
     if vouched:
         return _report(path, UPDATED, entry=registry.normalise_entry(entry))
