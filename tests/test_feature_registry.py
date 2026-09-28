@@ -50,7 +50,6 @@ that the suite went red.
 """
 import importlib.util
 import inspect
-import io
 import json
 import os
 import pathlib
@@ -59,6 +58,8 @@ import threading
 import types
 
 import pytest
+
+import path_recorder
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 P = ROOT / "skills" / "agrim-loop" / "scripts" / "feature_registry.py"
@@ -636,81 +637,9 @@ def test_reading_never_raises_on_a_hostile_registry(tmp_path):
 
 # --------------------------------------------------------------------------- 2. write isolation
 
-class _Recorder:
-    """Every filesystem path this process touches while the recorder is installed.
-
-    Patches `io.open` AND `builtins.open` -- `pathlib.Path.open` calls `io.open`, and a patch of one
-    is not a patch of the other -- plus the mutating `os` entry points.
-
-    THE TWO SETS OF SPIES ANSWER DIFFERENT QUESTIONS, AND SAYING SO MATTERS, because an earlier
-    version of this docstring claimed a single control established both. The `os` spies observe what
-    a write DOES: `_atomic_write_text` reaches the disk through `os.fdopen(fd)` and `os.replace`,
-    never through `open`, so a write's own paths are recorded by those alone -- and the whole suite
-    passes with the two `open` patches deleted. The `open` spies observe what a write MUST NOT do:
-    reading a sibling before writing goes through `io.open` or `builtins.open`, and nothing else in
-    this harness would see it.
-
-    So the `open` patching cannot be exercised by a correct write -- that is the point of it -- and
-    is controlled two other ways instead: `test_the_path_recorder_records_an_open_not_only_a_replace`
-    drives a READ through it, and `test_the_isolation_check_catches_a_write_that_reads_a_sibling`
-    rebuilds the module doing the exact forbidden thing and asserts the recorder sees it. Every test
-    using this class still asserts a positive control first."""
-
-    def __init__(self):
-        self.opened, self.replaced, self.made = [], [], []
-
-    def __enter__(self):
-        import builtins
-        self._saved = {"io": io.open, "builtins": builtins.open, "replace": os.replace,
-                       "rename": os.rename, "remove": os.remove, "unlink": os.unlink,
-                       "mkdir": os.mkdir, "makedirs": os.makedirs, "rmdir": os.rmdir}
-
-        def wrap(real, log):
-            def spy(path, *a, **kw):
-                log.append(str(path))
-                return real(path, *a, **kw)
-            return spy
-
-        def wrap2(real, log):
-            def spy(src, dst, *a, **kw):
-                log.append(str(src)); log.append(str(dst))
-                return real(src, dst, *a, **kw)
-            return spy
-
-        io.open = wrap(self._saved["io"], self.opened)
-        builtins.open = wrap(self._saved["builtins"], self.opened)
-        os.replace = wrap2(self._saved["replace"], self.replaced)
-        os.rename = wrap2(self._saved["rename"], self.replaced)
-        for name in ("remove", "unlink", "mkdir", "makedirs", "rmdir"):
-            setattr(os, name, wrap(self._saved[name], self.made))
-        return self
-
-    def __exit__(self, *exc):
-        import builtins
-        io.open = self._saved["io"]
-        builtins.open = self._saved["builtins"]
-        os.replace = self._saved["replace"]
-        os.rename = self._saved["rename"]
-        for name in ("remove", "unlink", "mkdir", "makedirs", "rmdir"):
-            setattr(os, name, self._saved[name])
-        return False
-
-    def paths(self, under):
-        """Every recorded path inside `under`, as a set."""
-        under = str(pathlib.Path(under).resolve())
-        out = set()
-        for group in (self.opened, self.replaced, self.made):
-            for p in group:
-                full = str(pathlib.Path(p).resolve())
-                if full == under or full.startswith(under + os.sep):
-                    out.add(full)
-        return out
-
-    def files(self, under):
-        """Paths that are, or would be, FILES -- the directory carve-out named explicitly. A shared
-        parent directory is unavoidable for any per-unit layout, and `mkdir(exist_ok=True)` is
-        race-safe in the kernel; the requirement is about the files two writers would both rewrite."""
-        return {p for p in self.paths(under) if not pathlib.Path(p).is_dir()}
+# The recorder is shared, in `tests/path_recorder.py`; its docstring says why it listens to the
+# interpreter's audit events rather than patching `open` (issue #241: blind on Python 3.10).
+_Recorder = path_recorder.Recorder
 
 
 def test_the_path_recorder_actually_records(tmp_path):
