@@ -1,0 +1,13 @@
+{"id":"agent:1","ts":"2026-08-01T10:00:00Z","actor":"agent","kind":"phase","goal":"0298","phase":"plan","state":"start","ms":120}
+{"id":"agent:2","ts":"2026-08-01T10:05:00Z","actor":"agent","kind":"gate","goal":"0298","gate":"plan_review","verdict":"pass","cycle":1}
+{"id":"agent:3","ts":"2026-08-01T10:10:00Z","actor":"agent","kind":"verify","goal":"0298","ok":true,"exit":0,"ms":4500}
+{"id":"agent:4","ts":"2026-08-01T10:15:00Z","actor":"agent","kind":"slice","goal":"0298","slice":"s1","wave":1,"mode":"solo"}
+{"id":"agent:5","ts":"2026-08-01T10:20:00Z","actor":"agent","kind":"spend","goal":"0298","phase":"implement","tokens_in":1200,"tokens_out":800}
+{"id":"agent:6","ts":"2026-08-01T10:25:00Z","actor":"agent","kind":"retro","goal":"0298","grade":"achieved","debt_count":2}
+{"id":"agent:7","ts":"2026-08-01T10:30:00Z","actor":"agent","kind":"park","goal":"0298","reason_class":"budget"}
+{"id":"agent:8","ts":"2026-08-01T10:35:00Z","actor":"agent","kind":"scan","goal":"0298","category":"secret","count":0}
+{"id":"agent:9","ts":"2026-08-01T10:40:00Z","actor":"agent","kind":"run_stop","goal":"","reason_class":"budget","why":"2 iterations >= max_iterations 2"}
+{"id":"agent:10","ts":"2026-08-01T10:45:00Z","actor":"agent","kind":"model_choice","goal":"0298","model":"opus","signal":"migrat"}
+{"id":"agent:11","ts":"2026-08-01T10:50:00Z","actor":"agent","kind":"merge_observed","goal":"0298","observation_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","subject_kind":"goal","subject":"0298","pr":11,"merge_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+{"id":"agent:12","ts":"2026-08-01T10:55:00Z","actor":"agent","kind":"review_posted","goal":"0298","observation_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","brief_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","evidence_id":"evidence_identifier","comment_id":12,"pr":12,"head_sha":"cccccccccccccccccccccccccccccccccccccccc","verdict":"approve"}
+{"id":"agent:13","ts":"2026-08-01T11:00:00Z","actor":"agent","kind":"ci_observed","goal":"0298","observation_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pr":13,"head_sha":"dddddddddddddddddddddddddddddddddddddddd","gate_verdict":"pass","checks_total":1,"checks_truncated":false,"checks":[{"name":"unit","conclusion":"pass"}]}

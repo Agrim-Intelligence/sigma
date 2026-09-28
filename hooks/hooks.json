@@ -1,0 +1,104 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agrim_gate.sh\"",
+            "statusMessage": "Applying goal-based SDLC policy"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/time_track.py\" prompt",
+            "statusMessage": "Recording process time"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/research_capture.py\"",
+            "statusMessage": "Capturing research to the knowledge graph"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/issue_field_gate.py\"",
+            "statusMessage": "Checking new issues carry a priority"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/plan_gate.sh\"",
+            "statusMessage": "Checking the hard plan-gate (opt-in)"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/decision_gate.py\"",
+            "statusMessage": "Checking the decision registry"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/time_track.py\" skill",
+            "statusMessage": "Recording process time"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/completion_gate.sh\"",
+            "statusMessage": "Checking the Stop gate (opt-in)"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/time_track.py\" stop",
+            "statusMessage": "Recording process time"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.sh\"",
+            "statusMessage": "Injecting the SDLC policy brief (opt-in)"
+          }
+        ]
+      }
+    ]
+  }
+}

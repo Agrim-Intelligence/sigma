@@ -1,0 +1,10 @@
+{
+  "name": "sigma-autowatch-channel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sigma autowatch (#1322) -- a custom Claude Code channel that forwards ledger detections into a persistent CLI session. See SKILL.md for setup.",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

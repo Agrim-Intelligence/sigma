@@ -1,0 +1,80 @@
+{
+  "command": "python3 -m pytest -q tests/ && python3 -m pytest -q frontend/tests/ && python3 frontend/verify.py",
+  "exit": 0,
+  "verify_state": "pass",
+  "at": 1789922768.821884,
+  "run": null,
+  "pid": 12345,
+  "root": "/path/to/project/.sdlc/work/2569",
+  "head": "0123456789abcdef0123456789abcdef01234567",
+  "content": {
+    "fingerprint": "0c89555b658a12d2cf9d0d9e8d3f157b1affd5ea18d1d8aa720fa978f5976c10",
+    "base_ref": "origin/main",
+    "files": {
+      "tests/test_no_network_in_core.py": "f3a0af91162a2b4a641afc0747d53657757fe9fd725e8e2d96b0d013986670f47",
+      "tests/test_no_private_names.py": "fd65038e9295735719b1aaa4e1d86f0a807659d53dc52a1c7b8a9b07eb6cc8636",
+      "skills/agrim-doctor/scripts/doctor.py": "f4ddb99c200d3c52b16353314a63b666cac8a6bf70e59b6ea9ff553493ac62948",
+      "tests/boundary_baselines/cross_boundary_paths.json": "fb8364cd74445140b76c318815457100ad0dbd3d3689948f8cbc4d0b03692460a",
+      "tests/boundary_baselines/network_modules.json": "f33ef5ac3072c18c09f06bc30b59a664d22cda4b03e0c7353739fb9b080dec2d7",
+      "skills/agrim-loop/scripts/ledger.py": "f9b2a6e4c08334e1922da4152c0f5bb5baf758999fd9a35b106f0435107c0c555",
+      "tests/boundary_baselines/private_names.json": "f525304789240eb4dd90d40a3c263a758b2f9cc0dbfecc7f070cfe23c06c288f4",
+      "tests/test_no_cross_boundary_paths.py": "f762d4fea46f1aa3da97cb46ff0d4d99b892eaeb2b787334c9f627b0601af52b9"
+    },
+    "detail": null
+  },
+  "flake": {
+    "verdict": "verified",
+    "runs": [
+      {
+        "exit": 0,
+        "failed": []
+      },
+      {
+        "exit": 0,
+        "failed": []
+      },
+      {
+        "exit": 0,
+        "failed": []
+      }
+    ],
+    "disagreement": null,
+    "ms": 14685
+  },
+  "witness": {
+    "verdict": "verified",
+    "unverified": [],
+    "detail": {
+      "tests/test_no_cross_boundary_paths.py::test_no_cross_boundary_paths": {
+        "kind": "mutation",
+        "why": "strong witness, hash matches"
+      },
+      "tests/test_no_network_in_core.py::test_no_network_in_core": {
+        "kind": "mutation",
+        "why": "strong witness, hash matches"
+      },
+      "tests/test_no_private_names.py::test_no_private_names": {
+        "kind": "mutation",
+        "why": "strong witness, hash matches"
+      }
+    }
+  },
+  "diff_revert": {
+    "verdict": "verified",
+    "kills": [
+      "tests/test_no_cross_boundary_paths.py::test_no_cross_boundary_paths",
+      "tests/test_no_network_in_core.py::test_no_network_in_core",
+      "tests/test_no_private_names.py::test_no_private_names"
+    ],
+    "survivors": [],
+    "reason": "3 of 3 touched test(s) went RED (failed, or could not even be collected) with production code reverted",
+    "ms": 4455
+  },
+  "tail": [
+    "  <unknown>:1920: DeprecationWarning: invalid escape sequence \\(",
+    "",
+    "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+    "4651 passed, 20 skipped, 20 warnings in 531.42s (0:08:51)",
+    "SKIP: nothing under frontend/ changed in this working tree \u2014 the npm checks are scoped to the web tier (issue #397). Anything git cannot answer runs them anyway; CI always runs the full gate."
+  ]
+}

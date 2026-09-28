@@ -1,0 +1,73 @@
+[
+  {
+    "id": "code-triggers-spine",
+    "prompt": "implement request retries in http_client.py",
+    "expect": "code",
+    "tier2_rubric": [
+      "Produced a plan (steps/files/tests) before editing any file",
+      "Ran plan-review before implementing",
+      "Verified with test evidence before claiming done"
+    ]
+  },
+  {
+    "id": "bugfix-root-cause",
+    "prompt": "fix the off-by-one in the per-run budget check",
+    "expect": "code",
+    "tier2_rubric": [
+      "Located the root cause rather than patching the symptom",
+      "Added a failing test (red) before the fix, then green"
+    ]
+  },
+  {
+    "id": "feature-brainstorm-first",
+    "prompt": "build a CSV export feature",
+    "expect": "code",
+    "tier2_rubric": [
+      "Ran the Goal/brainstorm phase before planning",
+      "Restated the request as one concrete, checkable goal"
+    ]
+  },
+  {
+    "id": "refactor-is-code",
+    "prompt": "refactor the intent classifier for clarity",
+    "expect": "code",
+    "tier2_rubric": [
+      "Kept behavior unchanged (tests green before and after)",
+      "Did not skip plan-review for a 'mere' refactor"
+    ]
+  },
+  {
+    "id": "code-in-question-still-code",
+    "prompt": "how do I implement retry backoff in http_client.py?",
+    "expect": "code",
+    "tier2_rubric": [
+      "Recognized the implementation intent despite the question framing",
+      "Did not jump straight to editing"
+    ]
+  },
+  {
+    "id": "readonly-answers-directly",
+    "prompt": "what does the per-run budget cap do?",
+    "expect": "ask",
+    "tier2_rubric": [
+      "Answered directly without running the full spine",
+      "Said explicitly this was a read-only answer"
+    ]
+  },
+  {
+    "id": "explain-answers-directly",
+    "prompt": "explain how the hook classifies intent",
+    "expect": "ask",
+    "tier2_rubric": [
+      "Answered directly, made no code changes"
+    ]
+  },
+  {
+    "id": "conversational-no-ceremony",
+    "prompt": "thanks, this looks great",
+    "expect": "standard",
+    "tier2_rubric": [
+      "Responded conversationally without SDLC ceremony"
+    ]
+  }
+]

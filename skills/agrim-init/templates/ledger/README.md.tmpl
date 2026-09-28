@@ -1,0 +1,60 @@
+# Ledger — {{PROJECT_NAME}}
+
+The team's shared record of what the loop did.
+
+```
+ledger/                                   a git WORKTREE on the ops branch (created by /agrim-ledger)
+├── entries/<actor>-<host>.<pid>.jsonl    one file per writing process — you only write your own
+└── TEAM.md                               generated view; regenerate, never hand-edit
+```
+
+**Set it up once per clone:** turn `"ledger": {"enabled": true}` on in `.sdlc/config.json`, then run
+**`/agrim-ledger`** (or `python3 <loop-scripts>/sync.py bootstrap .sdlc`) — one command creates the ops
+branch, seeds your entries file + `TEAM.md`, and **pushes** so the team can see it. Then add
+`.sdlc/ledger/` to `.gitignore` on your code branch. `/agrim-doctor` runs this for you if it sees the
+ledger enabled but not set up. The ledger lives on its own branch (default `sdlc-ledger`), so pulling
+it never touches your code checkout — and that branch is never merged into your integration branch, so
+it needs no review. `sync.py pull` / `publish` move it; `python3 <loop-scripts>/watch_daemon.py .sdlc` does both
+on an interval and writes `.sdlc/state/inbox.md`, which `loop.py next` surfaces between goals.
+
+**Why one file per writing process — and why there will be a great many of them.** Concurrent
+appends to a shared file conflict, in the filesystem and again in git. Owning a file nobody else
+writes removes the conflict by construction; the team view is the union of the files, computed on
+read. The owner is the *process*, not the person: the name carries your handle, a hash of this
+machine, and the pid, so two parallel loops under one login — or two machines sharing one bot
+account — never land in the same file.
+
+The consequence to expect: **every run adds a file and nothing compacts them.** An actor who has
+run the loop for a few weeks owns hundreds; one adopter machine was measured at 175 files for a
+single actor after two and a half weeks. That is the healthy state. Nothing is read back by
+filename — each line is attributed by the `actor` field inside it — so the count costs nothing.
+The state worth asking about is the opposite one: exactly ONE file for a given actor means that
+actor's writes stopped.
+
+**Read it:**
+
+```bash
+python3 <loop-scripts>/ledger.py summary .sdlc          # counts + outstanding hand-offs
+python3 <loop-scripts>/ledger.py mine    .sdlc          # what is addressed to me
+python3 <loop-scripts>/ledger.py render  .sdlc --write  # regenerate TEAM.md
+```
+
+**Write it** — the loop records `claimed` and the outcome by itself once
+`"ledger": {"enabled": true}` is set. Anything else is an explicit append:
+
+```bash
+python3 <loop-scripts>/ledger.py append .sdlc note 0007-cache.md --why "spike looks viable"
+```
+
+One line per entry: `id · ts · actor · kind · goal`, plus any of
+`area · to · issue · priority · why · state · ref`. Kinds are
+`claimed · done · parked · failed · handoff · ack · release · note`.
+An entry with a `to` is addressed to that person and shows up in the team view.
+
+**The claim lease.** A `claimed` with no later `done`/`parked`/`failed` is an
+open lease: the loop won't start a goal another actor holds one on, so two people
+on one board don't do the same work twice (a goal *you* hold is still yours to
+resume). It's advisory — it sees claims already pulled to the ops branch, not a
+distributed lock — so keep per-person assignee routing on too. A crashed
+claimer's hold expires after `ledger.lease.ttl_hours` (default 12) so it can't
+block the team forever.
