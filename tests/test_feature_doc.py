@@ -42,16 +42,16 @@ such test asserts the MUTANT'S OWN BEHAVIOUR against HEAD's rather than merely a
 went red. An assertion about a mutant is worth nothing until the mutant has been shown to behave
 differently from HEAD on some input.
 """
-import builtins
 import hashlib
 import importlib.util
-import io
 import json
 import os
 import pathlib
 import types
 
 import pytest
+
+import path_recorder
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
@@ -1267,60 +1267,9 @@ def test_a_cleanup_failure_never_masks_the_write_that_failed(tmp_path, monkeypat
 # --------------------------------------------------------------------------- 10. isolation
 
 
-class _Recorder:
-    """Every filesystem path this process opens, replaces or creates, recorded rather than inferred.
-
-    A faithful copy of `tests/test_feature_registry.py::_Recorder` and for its stated reason: a sync
-    that opened another unit's file, read it, and happened to write it back unchanged passes every
-    result-shaped assertion there is, and is exactly the write that loses that unit under two
-    interleaved picks."""
-
-    def __init__(self):
-        self.opened, self.replaced, self.made = [], [], []
-
-    def __enter__(self):
-        self._saved = {"io": io.open, "builtins": builtins.open, "replace": os.replace,
-                       "rename": os.rename, "remove": os.remove, "unlink": os.unlink,
-                       "mkdir": os.mkdir, "makedirs": os.makedirs, "rmdir": os.rmdir}
-
-        def wrap(real, log):
-            def spy(path, *a, **kw):
-                log.append(str(path))
-                return real(path, *a, **kw)
-            return spy
-
-        def wrap2(real, log):
-            def spy(src, dst, *a, **kw):
-                log.append(str(src)); log.append(str(dst))
-                return real(src, dst, *a, **kw)
-            return spy
-
-        io.open = wrap(self._saved["io"], self.opened)
-        builtins.open = wrap(self._saved["builtins"], self.opened)
-        os.replace = wrap2(self._saved["replace"], self.replaced)
-        os.rename = wrap2(self._saved["rename"], self.replaced)
-        for name in ("remove", "unlink", "mkdir", "makedirs", "rmdir"):
-            setattr(os, name, wrap(self._saved[name], self.made))
-        return self
-
-    def __exit__(self, *exc):
-        io.open = self._saved["io"]
-        builtins.open = self._saved["builtins"]
-        os.replace = self._saved["replace"]
-        os.rename = self._saved["rename"]
-        for name in ("remove", "unlink", "mkdir", "makedirs", "rmdir"):
-            setattr(os, name, self._saved[name])
-        return False
-
-    def paths(self, under):
-        under = str(pathlib.Path(under).resolve())
-        out = set()
-        for group in (self.opened, self.replaced, self.made):
-            for p in group:
-                full = str(pathlib.Path(p).resolve())
-                if full == under or full.startswith(under + os.sep):
-                    out.add(full)
-        return out
+# The recorder is shared, in `tests/path_recorder.py`; its docstring says why it listens to the
+# interpreter's audit events rather than patching `open` (issue #241: blind on Python 3.10).
+_Recorder = path_recorder.Recorder
 
 
 def test_the_path_recorder_actually_records(tmp_path):
