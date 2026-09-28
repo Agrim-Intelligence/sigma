@@ -15,7 +15,16 @@ All notable changes to Sigma are recorded here, newest first.
   exits 1 on it, and `rebase_brief.py rebase` runs the same check before its own force-push. The
   trade-offs: a plain upstream deletion, a move that rewrites past rename similarity, or a base
   reverting its own older change to a file the branch carries is refused the same way; a partial
-  revert merged with other changes is not seen. See `docs/branching-model.md` §3b and §15.
+  revert merged with other changes is not seen, and neither is a full base revert of a file the
+  branch kept editing afterwards (the replay yields a version that never existed). The history read
+  counts versions created by merge commits and the root commit, ignores chmod-only changes, pins its
+  own git config so a user's `log.showRoot`/`log.diffMerges`/colour settings cannot switch it off,
+  decodes paths as UTF-8, and fails closed after `SIGMA_REBASE_GUARD_TIMEOUT` seconds (default 120).
+  The `agrim-rebase` skill's single push chokepoint, `rebase_brief.push_branch`, runs the same check
+  against the commit the lease would overwrite, so `rebase_brief.py rebase`, Slack `--rebase`, the
+  conflict walker's final push and its manual-recovery push all refuse a push that would lose
+  content, naming the paths; paths a human resolved in the walk are that human's decision. See
+  `docs/branching-model.md` §3b and §15.
 - Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
   name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
   (features, landing, withheld and propagation records), the old feature-doc and Codex

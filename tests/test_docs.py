@@ -756,6 +756,11 @@ def _calls_for_one_started_goal(tmp_path, adopted):
             return "0" * 40
         return ""
 
+    # #144: the tree guard reads git through its own config-pinned, time-bounded, UTF-8 reader
+    # (`feature_rebase._git_read`), NOT the injected runner -- so it is recorded here explicitly,
+    # answered "no change" like the rest, and the push path is what gets counted.
+    rebase = work._feature_rebase()
+    rebase._git_read = lambda _cwd, args: calls.append("git " + " ".join(map(str, args))) or ""
     sdlc = tmp_path / ("adopted" if adopted else "bare") / ".sdlc"
     (sdlc / "goals").mkdir(parents=True)
     (sdlc / "config.json").write_text(json.dumps(_COST_CONFIG), encoding="utf-8")

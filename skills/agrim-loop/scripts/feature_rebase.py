@@ -628,10 +628,69 @@ def goal_liveness(sdlc_dir, config, goal):
 #: not build one 10,000-path command line); the cost is one history read per chunk.
 _HISTORY_CHUNK = 200
 
+#: Seconds ONE guard read (the tree diff, or one history chunk) may take before it is killed and the
+#: push refused. Mirrors `SIGMA_WATCH_CALL_TIMEOUT`'s convention (default 120, env-overridable). A
+#: history read walks every commit reachable from the branch tip, so on a very long history it is
+#: the one read here whose cost grows with the repository; a timeout is a refusal, never "nothing
+#: dropped".
+_GUARD_TIMEOUT_ENV = "SIGMA_REBASE_GUARD_TIMEOUT"
+_GUARD_TIMEOUT_DEFAULT = 120.0
+
+#: Configuration pinned on every guard read, so a person's own git config cannot switch the check
+#: off or change the shape it parses (review block #2): `log.showRoot=false` hid the root commit's
+#: version, `log.diffMerges=combined` would turn `-m`'s per-parent `:` lines into `::` lines,
+#: `log.showSignature` prints gpg output into stdout, `diff.relative` rewrites paths, `log.follow`
+#: turns a one-path read into a rename chase. Unknown keys are ignored by older git, so pinning
+#: them costs nothing where they do not exist.
+_GUARD_CONFIG = ("log.showRoot=true", "log.diffMerges=separate", "log.follow=false",
+                 "log.showSignature=false", "diff.relative=false", "diff.renames=false",
+                 "diff.external=", "color.ui=never", "color.diff=never", "core.quotePath=false")
+
+
+_LEGACY = None
+
+
+def _guard_timeout():
+    global _LEGACY
+    if _LEGACY is None:
+        _LEGACY = _load("legacy")         # #239: operator env names are read through its helper
+    try:
+        value = float(_LEGACY.getenv(_GUARD_TIMEOUT_ENV) or _GUARD_TIMEOUT_DEFAULT)
+    except ValueError:
+        value = _GUARD_TIMEOUT_DEFAULT
+    return value if value > 0 else _GUARD_TIMEOUT_DEFAULT
+
+
+def _git_read(cwd, args):
+    """One config-pinned, time-bounded git read for the guard -> stdout as str. NOT the injected
+    `run`: every runner in this kit decodes with the LOCALE (`text=True`), which on a non-UTF-8
+    Windows code page garbles a non-ASCII path, strips trailing whitespace a `-z` path may end in,
+    and has no timeout. Bytes in, UTF-8 with `surrogateescape` out, so any byte a path holds
+    round-trips. RAISES on a non-zero exit or on the timeout -- the caller refuses the push."""
+    import subprocess                     # local: only the guard reads git this way
+    argv = ["git"]
+    for pin in _GUARD_CONFIG:
+        argv += ["-c", pin]
+    argv += list(args)
+    timeout = _guard_timeout()
+    try:
+        proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("the guard's git read timed out after %gs (%s=%s to raise it), so the "
+                           "check is unanswered and nothing is pushed: git %s"
+                           % (timeout, _GUARD_TIMEOUT_ENV, "N", " ".join(str(a) for a in args[:3])))
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(err or "git exited %s" % proc.returncode)
+    return (proc.stdout or b"").decode("utf-8", "surrogateescape")
+
 
 def _raw_entries(out):
-    """`git diff|log --raw -z --no-abbrev` output -> [(status, new_blob, src, dst)]. `dst` is `src`
-    for every status but a rename/copy, which carries two paths."""
+    """`git diff|log --raw -z --no-abbrev` output -> [(status, old_blob, new_blob, src, dst)].
+    `dst` is `src` for every status but a rename/copy, which carries two paths. A combined-format
+    entry (`::`, one colon per parent -- what a merge prints under `-c`/`--cc`) is read too: its
+    LAST blob is the result, its first the first parent's; it carries one path. Pinned config asks
+    for the separate format, so this is defence, not the normal path."""
     tokens = str(out or "").split("\0")
     found, i = [], 0
     while i < len(tokens):
@@ -639,44 +698,51 @@ def _raw_entries(out):
         i += 1
         if not meta.startswith(":"):
             continue                      # the empty `--format=` line between commits, or the tail
-        fields = meta[1:].split()
-        if len(fields) < 5 or i >= len(tokens):
+        parents = len(meta) - len(meta.lstrip(":"))
+        fields = meta[parents:].split()
+        if len(fields) < 2 * (parents + 1) + 1 or i >= len(tokens):
             continue
-        status, new_blob = fields[4], fields[3]
+        blobs = fields[parents + 1:2 * (parents + 1)]
+        status = fields[2 * (parents + 1)]
         src = tokens[i]
         i += 1
         dst = src
-        if status[:1] in ("R", "C") and i < len(tokens):
+        if parents == 1 and status[:1] in ("R", "C") and i < len(tokens):
             dst = tokens[i]
             i += 1
-        found.append((status, new_blob, src, dst))
+        found.append((status, blobs[0], blobs[-1], src, dst))
     return found
 
 
-def _history_blobs(run, cwd, tip, paths):
+def _history_blobs(cwd, tip, paths):
     """{path: every blob that path has held anywhere in `tip`'s history}, one `git log` per
-    `_HISTORY_CHUNK` paths. `--literal-pathspecs` because a path is a name, never a glob; RAISES
-    like `dropped_paths` does, for the same reason."""
+    `_HISTORY_CHUNK` paths. `-m` so a MERGE's own result counts (a version born in a conflict
+    resolution, or in a clean two-sided merge, exists in no single-parent commit and `git log --raw`
+    prints nothing for merges by default); `log.showRoot=true` (pinned) so the ROOT commit's
+    versions count. `--literal-pathspecs` because a path is a name, never a glob. RAISES like
+    `dropped_paths` does, for the same reason."""
     seen = {}
     for start in range(0, len(paths), _HISTORY_CHUNK):
         chunk = paths[start:start + _HISTORY_CHUNK]
-        out = run(str(cwd), ["git", "--literal-pathspecs", "log", "--no-renames", "--raw", "-z",
-                             "--no-abbrev", "--format=", tip, "--"] + chunk)
-        for _status, new_blob, src, _dst in _raw_entries(out):
+        out = _git_read(cwd, ["--literal-pathspecs", "log", "-m", "--no-renames", "--raw", "-z",
+                              "--no-abbrev", "--no-color", "--no-ext-diff", "--format=", tip,
+                              "--"] + chunk)
+        for _status, _old, new_blob, src, _dst in _raw_entries(out):
             seen.setdefault(src, set()).add(new_blob)
     return seen
 
 
-def dropped_paths(run, cwd, before, after):
+def dropped_paths(cwd, before, after):
     """Paths whose content the branch tip `before` has and the replayed head `after` LOSES ->
     sorted list. Two shapes count, both measured on trees plus the branch's own history:
 
     1. a path `before` has that `after` does not, net of a rename by the base (see below);
     2. a path the replay RESTORES to an older version -- `after`'s blob for it (at the same path,
        or at the destination of a rename) is one the path already held somewhere in `before`'s
-       history. That is the signature of a revert of the branch's own work: an edit rolled back
-       (review block #1, case 2: a 500-line edit silently back to one line) or a rename undone
-       (case 1: engine.py -> legacy.py, which `-M` alone excused as "a rename").
+       history, merges and the root commit included. That is the signature of a revert of the
+       branch's own work: an edit rolled back (review block #1, case 2: a 500-line edit silently
+       back to one line) or a rename undone (case 1: engine.py -> legacy.py, which `-M` alone
+       excused as "a rename").
 
     #144's measurement, and deliberately NOT a merge-base question: the reported failure was
     invisible to every history-shaped check (`0 replayed`, a head whose subject was unchanged, a
@@ -687,37 +753,62 @@ def dropped_paths(run, cwd, before, after):
 
     NOT A FINDING: a path the branch deleted itself (absent from `before`); a pure base rename to a
     path the branch never held (git's rename detection pairs it); a base edit producing a version
-    the branch never had (the ordinary upstream edit). REFUSED SAFELY, pinned by tests: a base that
-    deletes a file the branch carries; a base move that rewrites past git's rename similarity; a
-    base that reverts its OWN older change to a file the branch carries unchanged (as trees, all
-    three are identical to a revert of the branch). NOT SEEN, the documented limit: a PARTIAL
-    revert -- one merged with other changes into a version that never existed before -- because
-    no version-identity test can see it; `docs/branching-model.md` §15 carries it.
+    the branch never had (the ordinary upstream edit); a MODE-only change (chmod: an M/T entry whose
+    blob is unchanged -- no content is lost, and the blob is trivially "one the branch held"). REFUSED
+    SAFELY, pinned by tests: a base that deletes a file the branch carries; a base move that rewrites
+    past git's rename similarity; a base that reverts its OWN older change to a file the branch
+    carries unchanged (as trees, all three are identical to a revert of the branch). NOT SEEN, the
+    documented limits (`docs/branching-model.md` §15): a PARTIAL revert, merged with other changes
+    into a version that never existed; and a FULL base revert of a file the branch has KEPT
+    EDITING since -- the replay applies the branch's later edit on top of the reverted text, and
+    that result is also a version that never existed. No version-identity test can see either.
 
-    COST: one `git diff`; plus, only when the replay modified or renamed paths, one `git log` over
-    `before`'s history per `_HISTORY_CHUNK` such paths. A base move touching nothing the branch has
-    changed paths as additions only and pays no history read.
+    COST: one `git diff`; plus, only when the replay modified or renamed paths, one `git log -m`
+    over `before`'s whole history per `_HISTORY_CHUNK` such paths, each bounded by
+    `SIGMA_REBASE_GUARD_TIMEOUT`. A base move touching nothing the branch has changed paths as
+    additions only and pays no history read.
 
     `-z` because a path may hold any byte but NUL, and this list names files in an issue. RAISES when
-    either read cannot be run: the caller must treat an unanswered question as "do not push", never
-    as "nothing was dropped"."""
-    out = run(str(cwd), ["git", "diff", "--no-ext-diff", "--raw", "-z", "--no-abbrev", "-M",
-                         before, after])
+    any read cannot be run or times out: the caller must treat an unanswered question as "do not
+    push", never as "nothing was dropped"."""
+    out = _git_read(cwd, ["diff", "--no-ext-diff", "--no-color", "--raw", "-z", "--no-abbrev", "-M",
+                          before, after])
     dropped, restored = set(), {}
-    for status, new_blob, src, dst in _raw_entries(out):
+    for status, old_blob, new_blob, src, dst in _raw_entries(out):
         kind = status[:1]
         if kind == "D":
             dropped.add(src)
         elif kind == "R":
             restored[dst] = (new_blob, src)         # `src` is what is lost if `dst` is a restoration
         elif kind in ("M", "T"):
+            if old_blob == new_blob:
+                continue                            # mode-only (chmod / type bit): no content lost
             restored[src] = (new_blob, src)
     if restored:
-        seen = _history_blobs(run, cwd, before, sorted(restored))
+        seen = _history_blobs(cwd, before, sorted(restored))
         for path, (blob, lost) in restored.items():
             if blob in seen.get(path, ()):
                 dropped.add(lost)
     return sorted(dropped)
+
+
+def refuse_losing_push(cwd, before, after, accepted=()):
+    """None when `after` keeps everything `before` has, else `(dropped, one-paragraph refusal naming
+    the paths)`. The shared wording for every push site that sits behind `dropped_paths`.
+    `accepted`: paths a HUMAN explicitly decided in this session (a conflict walker's resolved
+    files) -- losing one of those is the decision, not a side effect, so it is not a finding. RAISES
+    when the comparison cannot be made (the caller refuses the push on that too)."""
+    accepted = set(accepted or ())
+    dropped = [one for one in dropped_paths(cwd, before, after) if one not in accepted]
+    if not dropped:
+        return None
+    shown = ", ".join(dropped[:DROPPED_LISTED])
+    if len(dropped) > DROPPED_LISTED:
+        shown += " and %d more" % (len(dropped) - DROPPED_LISTED)
+    return dropped, ("refused to push: it would remove or roll back %d tracked path(s) the branch "
+                     "has (%s) -- the base most likely holds a revert of the branch's own commits; "
+                     "nothing was pushed and the remote branch is unchanged (see "
+                     "docs/branching-model.md §3b)" % (len(dropped), shown))
 
 
 # --------------------------------------------------------------------------- the ephemeral worktree
@@ -794,7 +885,7 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
         # #144: THE OUTER GUARD, between computing the replayed head and pushing it. Nothing below
         # this line may run for a replay that would delete what the branch currently has.
         try:
-            dropped = dropped_paths(run, path, sha, after)
+            dropped = dropped_paths(path, sha, after)
         except Exception as exc:          # noqa: BLE001 - unmeasured is never "nothing dropped"
             report["why"] = ("the pre/post tree comparison could not be made, so nothing was "
                              "pushed: %s" % _flat(exc))

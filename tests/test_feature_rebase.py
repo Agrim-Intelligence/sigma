@@ -1802,15 +1802,16 @@ def test_144_a_comparison_that_cannot_be_made_pushes_nothing(tmp_path):
     m = _mod()
     world = World(tmp_path).build()
     world.move_integration()
-    real = m._run
+    real = m._git_read
 
-    def no_diff(cwd, argv):
-        if argv[:2] == ["git", "diff"]:
+    def no_diff(cwd, args):
+        if args[:1] == ["diff"]:
             raise RuntimeError("diff unavailable")
-        return real(cwd, argv)
+        return real(cwd, args)
 
+    m._git_read = no_diff
     before = world.tip(FEATURE)
-    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT, run=no_diff)
+    report = _upkeep(m, world)
     assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
     assert world.tip(FEATURE) == before
 
@@ -2019,15 +2020,16 @@ def test_144_the_history_read_failing_pushes_nothing(tmp_path):
     """The new half of the comparison fails closed exactly like the first half."""
     m = _mod()
     world = _edit_revert_world(tmp_path)
-    real = m._run
+    real = m._git_read
 
-    def no_log(cwd, argv):
-        if "--literal-pathspecs" in argv:          # the history read, and only it
+    def no_log(cwd, args):
+        if "--literal-pathspecs" in args:          # the history read, and only it
             raise RuntimeError("log unavailable")
-        return real(cwd, argv)
+        return real(cwd, args)
 
+    m._git_read = no_log
     before = world.tip(FEATURE)
-    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT, run=no_log)
+    report = _upkeep(m, world)
     assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
     assert world.tip(FEATURE) == before
 
@@ -2060,3 +2062,239 @@ def test_144_the_doctor_ignores_a_block_that_can_no_longer_resolve_itself(tmp_pa
     checks = [c for c in d.check(str(world.sdlc), run=lambda *a, **k: "", cheap_only=True)
               if FEATURE in c["name"]]
     assert checks == [], checks
+
+
+# --------------------------------------------------------------------------- #144 review block #2
+# Ported from the independent reviewer's repros (test_r2.py, cfg.py). Each was seen RED against the
+# block-#1 guard before the fix: a merge-born version was invisible to `git log --raw` (B, B2), a
+# user's `log.showRoot=false` hid the root commit's version (root), and a chmod-only base change
+# read as a rollback (A).
+
+
+def _land_on_main(w, files, msg):
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    for name, body in files.items():
+        _write(w.local / name, body)
+    _git(w.local, "add", "-A")
+    _git(w.local, "commit", "-q", "-m", msg)
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+
+
+def _cut_feature(w):
+    _git(w.local, "checkout", "-q", "-b", FEATURE)
+    _write(w.local / "later.txt", "later\n")
+    _git(w.local, "add", "later.txt")
+    _git(w.local, "commit", "-q", "-m", "feat: later (#11)")
+    _git(w.local, "push", "-q", "origin", FEATURE)
+    _git(w.local, "checkout", "-q", INTEGRATION)
+
+
+def _revert_main_head(w):
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "revert", "--no-edit", "HEAD")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+
+
+def test_144_r2_a_chmod_only_base_change_is_not_a_rollback(tmp_path):
+    """Review block #2, finding 2: an M entry whose blob is unchanged is a mode change, and the
+    unchanged blob is trivially "one the branch held" -- it used to refuse a healthy rebase."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build()
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "update-index", "--chmod=+x", "seed.txt")
+    _git(w.local, "commit", "-q", "-m", "make seed executable")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.REBASED, report
+
+
+def test_144_r2_a_chmod_plus_a_real_revert_is_still_caught(tmp_path):
+    """The chmod exemption is on EQUAL blobs only: a base that flips the mode AND reverts the
+    branch's content still changes the blob, and is still refused."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    _land_on_main(w, {"x.txt": "v0\n"}, "x")
+    _land_on_main(w, {"x.txt": "v0\n" + "WORK\n" * 100}, "feat: big work (#10)")
+    _cut_feature(w)
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "revert", "--no-edit", "--no-commit", "HEAD")
+    _git(w.local, "update-index", "--chmod=+x", "x.txt")
+    _git(w.local, "commit", "-q", "-m", "Revert big work, and chmod")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    before = w.tip(FEATURE)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["x.txt"], report
+    assert w.tip(FEATURE) == before
+
+
+def _merge_born_world(tmp_path, conflict):
+    """x.txt's older version v0 exists ONLY as a merge commit's result -- a conflict resolution
+    (`conflict=True`) or a clean two-sided merge -- then 300 lines land on top, the feature is cut,
+    and the base reverts the 300 lines back to v0."""
+    w = World(tmp_path).build(feature_commits=None)
+    base = "".join("l%d\n" % i for i in range(30))
+    _land_on_main(w, {"x.txt": base}, "x")
+    _git(w.local, "checkout", "-q", "-b", "side")
+    _write(w.local / "x.txt", base.replace("l5\n" if conflict else "l25\n", "SIDE\n"))
+    _git(w.local, "commit", "-qam", "side")
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _write(w.local / "x.txt", base.replace("l5\n" if conflict else "l2\n", "MAIN\n"))
+    _git(w.local, "commit", "-qam", "main")
+    if conflict:
+        with pytest.raises(AssertionError):
+            _git(w.local, "merge", "-q", "--no-ff", "side", "-m", "merge side")
+        _write(w.local / "x.txt", base.replace("l5\n", "RESOLVED\n"))
+        _git(w.local, "add", "x.txt")
+        _git(w.local, "commit", "-q", "--no-edit")
+    else:
+        _git(w.local, "merge", "-q", "--no-ff", "side", "-m", "Merge pull request #9")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    v0 = _git(w.local, "show", "HEAD:x.txt") + "\n"
+    _land_on_main(w, {"x.txt": v0 + "".join("WORK %d\n" % i for i in range(300))},
+                  "feat: big work (#10)")
+    _cut_feature(w)
+    _revert_main_head(w)
+    return w
+
+
+@pytest.mark.parametrize("conflict", [True, False], ids=["conflict-merge", "clean-merge"])
+def test_144_r2_a_revert_to_a_version_born_in_a_merge_is_refused(tmp_path, conflict):
+    """Review block #2, finding 1 (BLOCKING): `git log --raw` prints nothing for a merge, so a
+    version created BY a merge was invisible and the full revert (330 -> 30 lines) was pushed."""
+    m = _mod()
+    _filer(m)
+    w = _merge_born_world(tmp_path, conflict)
+    before = w.tip(FEATURE)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["x.txt"], report
+    assert w.tip(FEATURE) == before
+    assert len(_show(w, before, "x.txt").splitlines()) == 330
+
+
+def _revert_world_for_config(root, root_file):
+    """cfg.py's shape: x.txt's older version lives in the ROOT commit (`root_file=True`) or in an
+    ordinary one; 100 lines land; HEAD reverts them. -> (repo, before, after)."""
+    root = pathlib.Path(root)
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    (root / "x.txt").write_text("v0\n")
+    if not root_file:
+        (root / "r.txt").write_text("r\n")
+        _git(root, "add", "r.txt")
+        _git(root, "commit", "-qm", "root")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "x")
+    (root / "x.txt").write_text("v0\n" + "WORK\n" * 100)
+    _git(root, "commit", "-qam", "work")
+    before = _git(root, "rev-parse", "HEAD")
+    _git(root, "revert", "--no-edit", "HEAD")
+    return root, before, _git(root, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("config, root_file", [
+    ("", True),
+    ("[log]\n\tshowRoot = false\n", True),
+    ("[log]\n\tdiffMerges = combined\n\tshowSignature = true\n", True),
+    ("[log]\n\tfollow = true\n", False),
+    ("[color]\n\tui = always\n[diff]\n\trenames = copies\n\trelative = true\n", False),
+    ("[core]\n\tquotePath = true\n", False),
+], ids=["baseline", "showRoot-false", "diffMerges-combined", "follow", "color-renames-relative",
+        "quotePath"])
+def test_144_r2_the_users_git_config_cannot_switch_the_check_off(tmp_path, monkeypatch, config,
+                                                                  root_file):
+    """Review block #2: `log.showRoot=false` in a person's own config hid the root commit's version,
+    so a revert to it read as clean. Every guard read pins its config (`_GUARD_CONFIG`)."""
+    m = _mod()
+    repo, before, after = _revert_world_for_config(tmp_path / "r", root_file)
+    cfg = tmp_path / "gitconfig"
+    cfg.write_text(config, encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
+    assert m.dropped_paths(str(repo), before, after) == ["x.txt"]
+
+
+@pytest.mark.xfail(strict=True, reason="DOCUMENTED LIMIT (docs/branching-model.md §15): a full base "
+                   "revert of a file the branch has KEPT EDITING replays into a version that never "
+                   "existed, which no version-identity test can see. Strict, so a fix flips it red "
+                   "and the doc gets updated.")
+def test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit(tmp_path):
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    base = "".join("l%d\n" % i for i in range(60))
+    _land_on_main(w, {"x.txt": base}, "x")
+    v1 = "".join("WORK %d\n" % i for i in range(300)) + base
+    _land_on_main(w, {"x.txt": v1}, "feat: big work (#10)")
+    _git(w.local, "checkout", "-q", "-b", FEATURE)
+    _write(w.local / "x.txt", v1.replace("l55\n", "BRANCH TWEAK\n"))
+    _git(w.local, "commit", "-qam", "feat: tweak (#11)")
+    _git(w.local, "push", "-q", "origin", FEATURE)
+    _revert_main_head(w)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP, report
+
+
+def test_144_r2_batching_and_pathspec_magic_names(tmp_path):
+    """455 paths (three `_HISTORY_CHUNK` reads) including names git would otherwise read as
+    pathspec magic, a glob, a leading dash, and non-ASCII: every one is counted."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    names = (["d/f%03d.txt" % i for i in range(450)] +
+             [":(top)x.txt", "*.txt", "a[1].txt", "-dash.txt", "é/ü ñ.txt"])
+    _land_on_main(w, {n: "v0 %s\n" % n for n in names}, "seed many")
+    _land_on_main(w, {n: "v1 %s\n" % n for n in names}, "feat: edit many (#10)")
+    _cut_feature(w)
+    _revert_main_head(w)
+    reads = []
+    real = m._git_read
+
+    def counting(cwd, args):
+        reads.append(list(args))
+        return real(cwd, args)
+
+    m._git_read = counting
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped_count"] == len(names), report
+    history = [a for a in reads if "--literal-pathspecs" in a]
+    assert len(history) == 3, len(history)                      # 455 paths / 200 per read
+    assert all(len(a) - a.index("--") - 1 <= m._HISTORY_CHUNK for a in history)
+
+
+def test_144_r2_a_history_read_that_times_out_pushes_nothing(tmp_path, monkeypatch):
+    """Non-blocking finding: the history read walks the whole history, so it is bounded; a timeout
+    is a refusal whose message says it timed out, never "nothing dropped"."""
+    m = _mod()
+    _filer(m)
+    world = _edit_revert_world(tmp_path)
+    import subprocess as sp
+    real = sp.run
+
+    def slow(argv, *a, **k):
+        if "--literal-pathspecs" in argv:
+            raise sp.TimeoutExpired(argv, k.get("timeout"))
+        return real(argv, *a, **k)
+
+    monkeypatch.setattr(sp, "run", slow)
+    monkeypatch.setenv(m._GUARD_TIMEOUT_ENV, "7")
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.FAILED, report
+    assert "timed out after 7s" in report["why"] and "nothing is pushed" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_r2_guard_output_is_decoded_as_utf8_not_the_locale(monkeypatch):
+    """Non-blocking finding: the injected runners decode with the locale (`text=True`), which on a
+    non-UTF-8 Windows code page garbles a non-ASCII path. The guard reads bytes and decodes UTF-8
+    with `surrogateescape`, so every byte round-trips -- and keeps a `-z` path's trailing space."""
+    m = _mod()
+    import subprocess as sp
+    payload = (b":100644 100644 " + b"a" * 40 + b" " + b"b" * 40 + b" M\0" +
+               "\u00e9 ".encode("utf-8") + b"\xff.txt \0")
+    monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(a, 0, payload, b""))
+    [(status, old, new, src, dst)] = m._raw_entries(m._git_read(".", ["diff"]))
+    assert src == "\u00e9 \udcff.txt ", repr(src)
+    assert src.encode("utf-8", "surrogateescape") == "\u00e9 ".encode("utf-8") + b"\xff.txt "

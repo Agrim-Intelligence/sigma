@@ -519,7 +519,7 @@ def conflicted_files(run, cwd):
     return sorted({line.strip() for line in str(out or "").splitlines() if line.strip()})
 
 
-def push_branch(run, cwd, remote, branch):
+def push_branch(run, cwd, remote, branch, accepted=()):
     """`git push --force-with-lease <remote> HEAD:<branch>` -- the ONE force-with-lease push this
     skill performs, so there is exactly one call site to reason about rather than several that
     could quietly drift apart (#2319: `conflict_walk.walk_conflicts` reuses this directly for its
@@ -530,12 +530,55 @@ def push_branch(run, cwd, remote, branch):
     is the mechanism working, not a failure to hide from the human; report it plainly so they can
     re-run (fetch again, brief/walk again) rather than silently losing the local work.
 
-    Returns `{"ok": True, "why": ""}` or `{"ok": False, "why": <flat exception text>}`."""
+    #144, review block #2: THE TREE GUARD LIVES HERE, at the single chokepoint, so every caller is
+    behind it -- `attempt_rebase`, `conflict_walk.walk_conflicts`'s DONE push, its
+    `_manual_recovery_push`, and Slack's `--rebase` (which calls `attempt_rebase`). Before pushing,
+    HEAD is compared against `<remote>/<branch>` -- exactly the commit the lease will overwrite --
+    with `feature_rebase.dropped_paths`; a HEAD that would remove or roll back content that commit
+    has is REFUSED and nothing is pushed. No remote-tracking ref means nothing is overwritten (the
+    lease then only creates the branch), so there is nothing to lose. A comparison that cannot be
+    made (or times out) is a refusal too, never a pass. The LOCAL branch is left as it is: the
+    refusal says how to put it back. `accepted` names paths a human explicitly resolved in this
+    session (the walker's own `resolved` list): their loss is the human's decision -- ABANDON on a
+    deleted-by-us file IS a deletion -- so only OTHER paths can refuse the push. The manual-recovery
+    push has no such record and passes none, so everything it would lose refuses it.
+
+    Returns `{"ok": True, "why": ""}` or `{"ok": False, "why": <flat text>, "dropped": [...]}`."""
+    try:
+        overwritten = _remote_tip(run, cwd, remote, branch)
+        refusal = (feature_rebase.refuse_losing_push(cwd, overwritten, "HEAD", accepted)
+                   if overwritten else None)
+    except Exception as exc:                    # noqa: BLE001 - unmeasured is never "nothing lost"
+        return {"ok": False, "dropped": [],
+                "why": "refused to push %s: the pre/post tree comparison against %s/%s could not "
+                       "be made, so nothing was pushed: %s" % (branch, remote, branch, _flat(exc))}
+    if refusal is not None:
+        dropped, why = refusal
+        return {"ok": False, "dropped": dropped,
+                "why": "%s/%s: %s. The local branch still holds the rewritten history -- `git "
+                       "reset --keep %s` puts it back; if losing those paths IS intended, push it "
+                       "yourself with `git push --force-with-lease %s HEAD:%s`"
+                       % (remote, branch, why, overwritten, remote, branch)}
     try:
         run(cwd, ["git", "push", "--force-with-lease", remote, "HEAD:%s" % branch])
     except Exception as exc:                    # noqa: BLE001 - a refused lease is an outcome, not a crash
         return {"ok": False, "why": _flat(exc)}
     return {"ok": True, "why": ""}
+
+
+def _remote_tip(run, cwd, remote, branch):
+    """The sha `refs/remotes/<remote>/<branch>` holds -- what `--force-with-lease` with no explicit
+    expectation compares against, so what a push would overwrite -- or "" when there is no such
+    ref. `for-each-ref`, not `rev-parse --verify`, because a missing ref must read as "" while a
+    failed read RAISES (the caller refuses the push); the refname is matched exactly because a
+    for-each-ref pattern also matches from the start up to a slash."""
+    ref = "refs/remotes/%s/%s" % (remote, branch)
+    out = str(run(cwd, ["git", "for-each-ref", "--format=%(objectname) %(refname)", ref]) or "")
+    for line in out.splitlines():
+        sha, _, name = line.strip().partition(" ")
+        if name == ref:
+            return sha
+    return ""
 
 
 def attempt_rebase(run, cwd, remote, branch, base):
@@ -573,6 +616,8 @@ def attempt_rebase(run, cwd, remote, branch, base):
         return refused
     push = push_branch(run, cwd, remote, branch)
     if not push["ok"]:
+        if push.get("dropped"):
+            return {"outcome": WOULD_DROP, "files": push["dropped"], "why": push["why"]}
         return {"outcome": FAILED, "files": [], "why": push["why"]}
     return {"outcome": REBASED, "why": ""}
 
@@ -586,7 +631,7 @@ def _would_lose(run, cwd, pre_head, base_ref):
     Fails closed: a comparison that cannot be made is a `FAILED` with nothing pushed."""
     try:
         head = str(run(cwd, ["git", "rev-parse", "HEAD"]) or "").strip()
-        dropped = feature_rebase.dropped_paths(run, cwd, pre_head, head)
+        dropped = feature_rebase.dropped_paths(cwd, pre_head, head)
         why = ("bringing it forward onto %s would remove or roll back %d tracked path(s) it has "
                "(%s) -- the base most likely holds a revert of the branch's own commits; see "
                "docs/branching-model.md §3b" % (base_ref, len(dropped), ", ".join(dropped[:3]) +

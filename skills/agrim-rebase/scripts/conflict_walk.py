@@ -446,7 +446,11 @@ def _manual_recovery_push(run, cwd, remote, branch):
                "why": "already matches %s/%s -- nothing to push" % (remote, branch)}
     push = rebase_brief.push_branch(run, cwd, remote, branch)
     if not push["ok"]:
-        return {"pushed": False, "why": push["why"]}
+        # #144: `refused` when `push_branch`'s own tree guard said no (it would lose content the
+        # remote branch has, or could not tell) -- distinct from an ordinary stale lease, and
+        # something `main` must SAY rather than fold into "nothing to walk".
+        return {"pushed": False, "why": push["why"], "refused": "dropped" in push,
+                "dropped": push.get("dropped") or []}
     return {"pushed": True, "why": ""}
 
 
@@ -496,8 +500,11 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
         recovery = _manual_recovery_push(run, cwd, remote, brief["branch"])
         if recovery is None:
             return {"outcome": NOTHING_TO_DO, "resolved": []}
-        return {"outcome": NOTHING_TO_DO, "resolved": [], "pushed": recovery["pushed"],
-                "why": recovery["why"]}
+        found = {"outcome": NOTHING_TO_DO, "resolved": [], "pushed": recovery["pushed"],
+                 "why": recovery["why"]}
+        if recovery.get("refused"):
+            found["dropped"] = recovery["dropped"]
+        return found
     resolved = []
     while True:
         pending = rebase_brief.conflicted_files(run, cwd)
@@ -532,9 +539,14 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
                     continue                # a later commit conflicted again -- next loop picks it up
                 return {"outcome": FAILED, "resolved": resolved, "why": rebase_brief._flat(exc)}
             if not feature_rebase.rebase_stopped(run, cwd):
-                push = rebase_brief.push_branch(run, cwd, remote, brief["branch"])
+                push = rebase_brief.push_branch(
+                    run, cwd, remote, brief["branch"],
+                    accepted=[one.get("path") for one in resolved if isinstance(one, dict)])
                 if not push["ok"]:
-                    return {"outcome": FAILED, "resolved": resolved, "why": push["why"]}
+                    # #144: `push_branch` itself refuses a HEAD that would lose content the remote
+                    # branch has (`dropped`), and leaves the branch unpushed; FAILED either way.
+                    return {"outcome": FAILED, "resolved": resolved, "why": push["why"],
+                            "dropped": push.get("dropped") or []}
                 rebase_brief.clear_context_snapshots(sdlc_dir, brief["branch"])
                 return {"outcome": DONE, "resolved": resolved}
             continue
@@ -704,6 +716,10 @@ def main(argv):
         if recovery and recovery["pushed"]:
             print("`%s` was not mid-rebase -- but a rebase had concluded outside this tool and "
                  "left it ahead of `%s/%s`; pushed (#2324)." % (branch, remote, branch))
+        elif recovery and recovery.get("refused"):
+            print("`%s` was not mid-rebase -- a rebase had concluded outside this tool, but it was "
+                  "NOT pushed: %s" % (branch, recovery["why"]))
+            return 1
         else:
             print("no rebase is currently stopped in %r -- nothing to walk." % cwd)
         return 0
