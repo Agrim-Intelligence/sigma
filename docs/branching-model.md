@@ -170,15 +170,26 @@ them. The pass used to report `brought forward onto main (0 replayed, 0 conflict
 the "nothing to do" line, over a force-push that removed 72 files, and `git log -1` looked healthy
 because the new tip kept the old subject.
 
-So before it pushes anything, upkeep compares **trees**: every tracked path in the feature tip it
-started from that is missing from the replayed head (`feature_rebase.dropped_paths`, a
-`git diff -M --diff-filter=D`). If any is missing, the outcome is `would-drop`
+So before it pushes anything, upkeep compares the feature tip it started from with the replayed
+head (`feature_rebase.dropped_paths`, one `git diff -M --raw` between the two trees). A path the
+branch has **loses its content** in either of two ways, and both count:
+
+- it is **missing** from the replayed head, net of a rename by the base;
+- the replay **restores an older version** of it: the replayed blob, at the same path or at the
+  destination of a rename, is one that path already held somewhere in the branch tip's own history
+  (one `git log --raw` over those paths). That is what a revert of the branch's work looks like when
+  no path disappears: a 500-line edit rolled back to one line, or the branch's rename of
+  `legacy.py` to `engine.py` undone — which rename detection alone reads as a harmless rename.
+
+A merge-base comparison cannot do this job: the reverted commits are in the base's history, so they
+sit *below* the merge-base, and "what the branch added since the fork" is empty for exactly the
+content being lost. If any path loses content, the outcome is `would-drop`
 (`feature_rebase.WOULD_DROP`) and the pass stops:
 
 - **nothing is pushed** — the remote ref and the branch tip stay byte-identical, and the throwaway
   worktree is removed as on every other path;
 - the pick line says so: `upkeep: feature/<name> was NOT rebased: bringing it forward onto <base>
-  would remove N tracked path(s) it has (a, b, c and N-3 more) …` — a blocked pass, never shaped
+  would remove or roll back N tracked path(s) it has (a, b, c and N-3 more) …` — a blocked pass, never shaped
   like `rebased`;
 - the finding is filed as a tracked issue (up to 20 paths listed, the count always exact);
 - `/agrim-doctor` shows it too: `.sdlc/state/features/<name>.rebase-blocked.json` records the
@@ -188,20 +199,31 @@ started from that is missing from the replayed head (`feature_rebase.dropped_pat
 
 The check runs where the replayed head is computed, before the push and before anything else that
 acts on the replay, so it is the outer guard on that result. It fails closed: a comparison that
-cannot be made reports `failed` and pushes nothing.
+cannot be made (either read) reports `failed` and pushes nothing. The human-attended
+`rebase_brief.py rebase` (the `agrim-rebase` skill) runs the same check before its own
+force-push; on a refusal it pushes nothing and puts the local branch back with
+`git reset --keep`.
 
-What it does **not** flag: paths the branch deleted itself (they are not in the tip), and paths the
-base **renamed** (git's rename detection finds them under the new name). What it flags that is not
-a revert: a base that simply deleted a file the branch still carries. As a tree, that is identical
-to the revert case, so it is refused the same way — it costs an upkeep pass and a human decision,
-never data. Nor does it see a revert that edits a surviving file back without removing any path;
-§15 lists that gap.
+What it does **not** flag: paths the branch deleted itself (they are not in the tip), paths the
+base **renamed** to a name the branch never used (rename detection pairs them), and a base edit that
+produces a version the branch never had (the ordinary upstream edit). What it flags that is not a
+revert of the branch — each identical to one as trees, so each is refused the same way, costing an
+upkeep pass and a human decision, never data: a base that simply deleted a file the branch still
+carries; a base move that rewrites the file past git's rename similarity (it reads as a deletion);
+and a base that reverts its *own* older change to a file the branch carries unchanged. What it
+does not see is a *partial* revert, merged with other changes into a version that never existed
+before; §15 lists that gap.
 
-**Resolving it** is a human decision about which content the branch keeps. To keep the branch's
-work, bring it forward by hand (for example `git merge origin/<base>`) and land a goal on the branch
-that re-applies the reverted commits (`git revert <the revert's sha>`); once the branch contains
-its base, upkeep reports `current` again. To accept the deletion, land a goal that removes those
-paths on the branch itself. Meanwhile `work.rebase_upkeep: "off"` stops the retries. If an older
+**Resolving it** is a human decision about which content the branch keeps, and either way it
+reaches the feature branch through a goal branch (§3's no-direct-commits rule),
+never as a commit made on the feature branch itself. To keep the branch's work, cut one goal branch
+(`sdlc/<n>`) from the feature branch, merge `origin/<base>` into it and re-apply the reverted
+commits in the same branch (`git revert <the revert's sha>`), then land that goal through its pull
+request **as a merge commit, not a squash**: the feature branch then contains its base, and upkeep
+reports `current`. A squash landing flattens the merge away, the branch is still behind, and the
+next replay re-applies the revert and is refused again. To accept the
+loss, land a goal that removes (or rolls back) those paths on the branch itself. Meanwhile
+`work.rebase_upkeep: "off"` stops the retries (and `/agrim-doctor` stops reporting the block). If an older
 Sigma already pushed such a replay, restore the old tip with
 `git push --force-with-lease=refs/heads/feature/<name>:<bad-sha> origin <good-sha>:refs/heads/feature/<name>`
 and check a few of the removed paths with `git cat-file -e <sha>:<path>`.
@@ -470,7 +492,7 @@ Some are paid per goal the loop **considers**, one per goal it **claims**, most 
 | the cross-repo access check — one issue read, then one access probe per repo the unit names | `gh` | goal **claimed** — after the claim is durable, before anything has been built | **yes** |
 | `gh api repos/<slug>/issues/<n>` | REST | goal **started**, in github mode with a numeric stem | no — gated on §6a instead |
 | `git ls-remote --heads <remote> 'feature/*'` — **twice, not once** | git | goal **started**: once for the registry reconcile (§8f), once for rebase upkeep (§3) | **yes** |
-| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and nine local git calls around them | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
+| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and nine local git calls around them (plus one local `git log` per 200 paths the replay modified or renamed, §3b) | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
 | the sibling registry copy (§15) | `gh`, Contents API | goal **started** × sibling repo, and only on a `granted` verdict | **yes** |
 
 **How this was measured, and how to redo it — because it went stale once and will again.** Every
@@ -1637,10 +1659,14 @@ Two things about it that are easy to get wrong:
 
 ## 15. Honest limitations, and the gaps that are deliberate
 
-- **Upkeep's delete guard sees removed PATHS, not reverted EDITS** (§3b, #144). A base revert that
-  restores a surviving file's older content is replayed like any other upstream edit; only a path
-  that would disappear stops the pass. And a plain upstream deletion of a file the branch still
-  carries is refused just like a revert, because the two are identical as trees.
+- **Upkeep's loss guard sees whole reverts, not partial ones** (§3b, #144). It stops a replay that
+  removes a path the branch has or restores a version of it the branch's history already moved past
+  — including an undone rename. It does not see a revert merged with other changes into a version
+  that never existed before (a partial loss); no version-identity test can. It errs the other way
+  on purpose: a plain upstream deletion, a move-and-rewrite past rename similarity, and a base
+  reverting its own older change to a file the branch carries are all refused like a revert,
+  because as trees they are the same. Its cost grows with history: one `git log` over the branch
+  tip's history per 200 modified-or-renamed paths, paid only when the replay changes such paths.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that

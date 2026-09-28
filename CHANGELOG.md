@@ -6,12 +6,16 @@ All notable changes to Sigma are recorded here, newest first.
 
 - Feature-branch rebase upkeep no longer deletes branch content when the base holds a revert of the
   branch's own commits (#144). Before it pushes, upkeep now compares the branch tip's tree with the
-  replayed tree. If any tracked path would disappear (renames are allowed; the branch's own
-  deletions never count), it refuses with the new `would-drop` outcome and pushes nothing. The
-  pick line says `was NOT rebased` and names the paths, a tracked issue is filed, and
-  `/agrim-doctor` shows the unit as blocked until a clean pass clears it. `feature_rebase.py
-  upkeep` exits 1 on it. The trade-off: a plain upstream deletion of a file the branch still
-  carries is refused the same way. See `docs/branching-model.md` §3b.
+  replayed tree. If any tracked path would disappear, or would be rolled back to a version the
+  branch's own history already moved past (a reverted edit, or an undone rename), it refuses with
+  the new `would-drop` outcome and pushes nothing. Base renames and ordinary base edits are allowed,
+  and the branch's own deletions never count. The pick line says `was NOT rebased` and names the
+  paths, a tracked issue is filed, and `/agrim-doctor` shows the unit as blocked until a clean pass
+  clears it (not while `rebase_upkeep` is off or the unit is closed). `feature_rebase.py upkeep`
+  exits 1 on it, and `rebase_brief.py rebase` runs the same check before its own force-push. The
+  trade-offs: a plain upstream deletion, a move that rewrites past rename similarity, or a base
+  reverting its own older change to a file the branch carries is refused the same way; a partial
+  revert merged with other changes is not seen. See `docs/branching-model.md` §3b and §15.
 - Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
   name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
   (features, landing, withheld and propagation records), the old feature-doc and Codex

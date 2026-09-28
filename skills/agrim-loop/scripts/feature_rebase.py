@@ -624,29 +624,100 @@ def goal_liveness(sdlc_dir, config, goal):
 # --------------------------------------------------------------------------- #144: the tree guard
 
 
+#: How many paths one `git log` history read names. Bounds the argv (a revert of 10,000 files must
+#: not build one 10,000-path command line); the cost is one history read per chunk.
+_HISTORY_CHUNK = 200
+
+
+def _raw_entries(out):
+    """`git diff|log --raw -z --no-abbrev` output -> [(status, new_blob, src, dst)]. `dst` is `src`
+    for every status but a rename/copy, which carries two paths."""
+    tokens = str(out or "").split("\0")
+    found, i = [], 0
+    while i < len(tokens):
+        meta = tokens[i].lstrip("\n")
+        i += 1
+        if not meta.startswith(":"):
+            continue                      # the empty `--format=` line between commits, or the tail
+        fields = meta[1:].split()
+        if len(fields) < 5 or i >= len(tokens):
+            continue
+        status, new_blob = fields[4], fields[3]
+        src = tokens[i]
+        i += 1
+        dst = src
+        if status[:1] in ("R", "C") and i < len(tokens):
+            dst = tokens[i]
+            i += 1
+        found.append((status, new_blob, src, dst))
+    return found
+
+
+def _history_blobs(run, cwd, tip, paths):
+    """{path: every blob that path has held anywhere in `tip`'s history}, one `git log` per
+    `_HISTORY_CHUNK` paths. `--literal-pathspecs` because a path is a name, never a glob; RAISES
+    like `dropped_paths` does, for the same reason."""
+    seen = {}
+    for start in range(0, len(paths), _HISTORY_CHUNK):
+        chunk = paths[start:start + _HISTORY_CHUNK]
+        out = run(str(cwd), ["git", "--literal-pathspecs", "log", "--no-renames", "--raw", "-z",
+                             "--no-abbrev", "--format=", tip, "--"] + chunk)
+        for _status, new_blob, src, _dst in _raw_entries(out):
+            seen.setdefault(src, set()).add(new_blob)
+    return seen
+
+
 def dropped_paths(run, cwd, before, after):
-    """Tracked paths the tree at `before` has and the tree at `after` does not -> sorted list.
+    """Paths whose content the branch tip `before` has and the replayed head `after` LOSES ->
+    sorted list. Two shapes count, both measured on trees plus the branch's own history:
 
-    #144's measurement, and deliberately a TREE comparison rather than a history question: the
-    reported failure was invisible to every history-shaped check (`0 replayed`, a head whose subject
-    was unchanged, a clean `--first-parent` walk), because git itself considers the revert
-    legitimate -- the branch's original commits are in the base's history, merely reverted, so
-    nothing restores them. The only place the loss is visible is the tree the push would publish.
+    1. a path `before` has that `after` does not, net of a rename by the base (see below);
+    2. a path the replay RESTORES to an older version -- `after`'s blob for it (at the same path,
+       or at the destination of a rename) is one the path already held somewhere in `before`'s
+       history. That is the signature of a revert of the branch's own work: an edit rolled back
+       (review block #1, case 2: a 500-line edit silently back to one line) or a rename undone
+       (case 1: engine.py -> legacy.py, which `-M` alone excused as "a rename").
 
-    `before` is the feature tip the replay started from (what the branch HAS right now) and `after`
-    is the replayed head (what the push would make it). A path the branch deleted itself is absent
-    from `before` and so can never be reported: the branch's own deletions are never a finding.
+    #144's measurement, and deliberately NOT a merge-base question: the reported failure was
+    invisible to every history-shaped check (`0 replayed`, a head whose subject was unchanged, a
+    clean `--first-parent` walk), because the branch's commits are in the base's history, merely
+    reverted -- so they sit BELOW the merge-base, and "what did the branch add since the fork" is
+    empty for exactly the content being lost. The trees are where the loss is visible, and the
+    branch's history is what tells a revert from the base's own new work.
 
-    RENAMES ARE EXCUSED (`-M`, then `--diff-filter=D`): a path the base moved still exists in the
-    result under its new name, which is the base's own refactor arriving, not content lost. A rename
-    too large for git's rename budget degrades to a deletion and is REFUSED -- towards safety.
+    NOT A FINDING: a path the branch deleted itself (absent from `before`); a pure base rename to a
+    path the branch never held (git's rename detection pairs it); a base edit producing a version
+    the branch never had (the ordinary upstream edit). REFUSED SAFELY, pinned by tests: a base that
+    deletes a file the branch carries; a base move that rewrites past git's rename similarity; a
+    base that reverts its OWN older change to a file the branch carries unchanged (as trees, all
+    three are identical to a revert of the branch). NOT SEEN, the documented limit: a PARTIAL
+    revert -- one merged with other changes into a version that never existed before -- because
+    no version-identity test can see it; `docs/branching-model.md` §15 carries it.
+
+    COST: one `git diff`; plus, only when the replay modified or renamed paths, one `git log` over
+    `before`'s history per `_HISTORY_CHUNK` such paths. A base move touching nothing the branch has
+    changed paths as additions only and pays no history read.
 
     `-z` because a path may hold any byte but NUL, and this list names files in an issue. RAISES when
-    the diff cannot be run: the caller must treat an unanswered question as "do not push", never as
-    "nothing was dropped"."""
-    out = run(str(cwd), ["git", "diff", "--no-ext-diff", "--name-only", "-z", "-M",
-                         "--diff-filter=D", before, after])
-    return sorted({one for one in str(out or "").split("\0") if one.strip()})
+    either read cannot be run: the caller must treat an unanswered question as "do not push", never
+    as "nothing was dropped"."""
+    out = run(str(cwd), ["git", "diff", "--no-ext-diff", "--raw", "-z", "--no-abbrev", "-M",
+                         before, after])
+    dropped, restored = set(), {}
+    for status, new_blob, src, dst in _raw_entries(out):
+        kind = status[:1]
+        if kind == "D":
+            dropped.add(src)
+        elif kind == "R":
+            restored[dst] = (new_blob, src)         # `src` is what is lost if `dst` is a restoration
+        elif kind in ("M", "T"):
+            restored[src] = (new_blob, src)
+    if restored:
+        seen = _history_blobs(run, cwd, before, sorted(restored))
+        for path, (blob, lost) in restored.items():
+            if blob in seen.get(path, ()):
+                dropped.add(lost)
+    return sorted(dropped)
 
 
 # --------------------------------------------------------------------------- the ephemeral worktree
@@ -732,8 +803,8 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
             report["dropped"] = dropped[:DROPPED_LISTED]
             report["dropped_count"] = len(dropped)
             report["would_be"] = after
-            report["why"] = ("bringing it forward onto %s would remove %d tracked path(s) it has"
-                             % (base_ref, len(dropped)))
+            report["why"] = ("bringing it forward onto %s would remove or roll back %d tracked "
+                             "path(s) it has" % (base_ref, len(dropped)))
             return WOULD_DROP
         outcome = _pushed(run, cwd, path, branch, sha, remote, report)
         if outcome == REBASED:
@@ -1134,24 +1205,28 @@ def _would_drop_body(unit, branch, base, before, report):
     if more > 0:
         listed += "\n- ... and %d more" % more
     return (
-        "`%s` was **not rebased** onto `%s`: the replay succeeded, but its tree lacks %d tracked "
-        "path(s) the branch has now, so pushing it would have deleted them. Nothing was pushed; "
+        "`%s` was **not rebased** onto `%s`: the replay succeeded, but it would remove %d tracked "
+        "path(s) the branch has now, or roll them back to a version the branch's own history "
+        "already moved past, so pushing it would have lost that content. Nothing was pushed; "
         "the branch still points at `%s`.\n\n%s\n\n"
         "The usual cause is that `%s` holds a **revert of this branch's own commits** (the work was "
         "moved off `%s` onto the branch). Git treats those commits as already present -- they are "
         "in `%s`'s history, merely reverted -- so a replay re-applies the revert and nothing "
-        "restores them. A base that simply deleted a file this branch still carries reads the same "
-        "way, and is refused for the same reason: this pass cannot tell intent from a tree.\n\n"
+        "restores them. A base that simply deleted a file this branch still carries, or reverted its "
+        "own older change to one, reads the same way, and is refused for the same reason: this "
+        "pass cannot tell intent from a tree.\n\n"
         "**To resolve**, a human decides which content the branch should keep:\n\n"
-        "- keep the branch's work: bring it forward by hand (for example `git merge origin/%s`) and "
-        "land a goal on `%s` that re-applies the reverted commits (`git revert <the revert's sha>`); "
-        "once the branch contains the base, upkeep reports `current` again;\n"
+        "- keep the branch's work: in ONE goal branch (`sdlc/<n>`) cut from `%s`, merge `origin/%s` "
+        "and re-apply the reverted commits (`git revert <the revert's sha>`), then land that goal on "
+        "`%s` through its pull request **as a merge commit, not a squash** (a squash flattens the "
+        "merge away and the next replay is refused again) -- never a direct commit on the feature "
+        "branch; once the branch contains the base, upkeep reports `current`;\n"
         "- or accept the deletion: land a goal on `%s` that removes those paths itself;\n"
         "- meanwhile, `work.rebase_upkeep: \"off\"` stops this pass from retrying.\n\n"
         "Every pick reports this until one of those happens; the refusal is also visible in "
         "`/agrim-doctor`. Filed by Sigma's rebase upkeep for unit `%s`.\n"
         % (branch, base, report["dropped_count"], before, listed, base, base, base,
-           base, branch, branch, unit))
+           branch, base, branch, branch, unit))
 
 
 BLOCKED_SUFFIX = ".rebase-blocked.json"
@@ -1226,8 +1301,8 @@ _WORDING = {
              "conflicted, %(skipped)d skipped)",
     #: #144. Loud on purpose, and never shaped like `REBASED`: the old line for this exact failure
     #: WAS the `REBASED` line, and it read as "nothing to do".
-    WOULD_DROP: ("%(branch)s was NOT rebased: bringing it forward onto %(base)s would remove "
-                 "%(dropped)d tracked path(s) it has (%(named)s) -- the base most likely holds a "
+    WOULD_DROP: ("%(branch)s was NOT rebased: bringing it forward onto %(base)s would remove or "
+                 "roll back %(dropped)d tracked path(s) it has (%(named)s) -- the base most likely holds a "
                  "revert of the branch's own commits; the push was refused and the remote left "
                  "unchanged"),
 }
@@ -1458,10 +1533,10 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
         _file_issue(sdlc_dir, config, goal, report,
                     slot="would-drop:%s" % branch,
                     key="%s#%d" % (before, report["dropped_count"]),
-                    title="Rebase upkeep refused: %s onto %s would delete %d path(s)"
+                    title="Rebase upkeep refused: %s onto %s would lose %d path(s)"
                           % (branch, base, report["dropped_count"]),
-                    why="%s was not rebased onto %s: the replay would remove %d tracked path(s) "
-                        "the branch has" % (branch, base, report["dropped_count"]),
+                    why="%s was not rebased onto %s: the replay would remove or roll back %d "
+                        "tracked path(s) the branch has" % (branch, base, report["dropped_count"]),
                     body=_would_drop_body(unit, branch, base, before, report))
         return report
     if outcome != REBASED:

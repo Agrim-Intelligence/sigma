@@ -1684,7 +1684,7 @@ def test_144_the_start_line_carries_the_refusal(tmp_path):
     work._FEATURE_REBASE = m
     before = world.tip(FEATURE)
     line = work._rebase_upkeep(str(world.sdlc), _cfg(), "7", UNIT, m._run, world.local, "origin")
-    assert "upkeep:" in line and "NOT" in line and "would remove 3" in line, line
+    assert "upkeep:" in line and "NOT" in line and "would remove or roll back 3" in line, line
     assert world.tip(FEATURE) == before
 
 
@@ -1848,3 +1848,215 @@ def test_144_doctor_blocked_suffix_matches_feature_rebase():
     """The doctor duplicates the marker suffix rather than importing across skills; this is the
     sync mechanism."""
     assert _doctor()._REBASE_BLOCKED_SUFFIX == _mod().BLOCKED_SUFFIX
+
+
+# ===========================================================================================
+# #144 review block #1 -- two silent data-loss shapes the path-only guard let through, found by an
+# independent reviewer and ported here from their repro. Neither removes a PATH net of renames:
+#  (1) rename-then-revert: the branch's work renamed legacy.py -> engine.py and edited it; the base
+#      reverts it. `-M` paired engine.py -> legacy.py as a "rename", excused it, and upkeep pushed.
+#  (2) edit-only revert: the branch's work is a 500-line edit to an existing file; the base reverts
+#      it. No path disappears, so upkeep pushed and the file went back to one line.
+# Both are a replay RESTORING an older version the branch's own history moved away from, which is
+# what `dropped_paths` now also measures. Seen RED against the path-only guard before the fix.
+# ===========================================================================================
+
+
+def _landed_then_reverted(world, change):
+    """`main` lands `change()` as the branch's own work (#10), the branch is cut from there and
+    grows one later goal (#11), then `main` REVERTS #10 -- `_revert_world`'s shape for any change."""
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    change()
+    _git(world.local, "commit", "-q", "-m", "feat: the branch's own work (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _write(world.local / "later.txt", "later\n")
+    _git(world.local, "add", "later.txt")
+    _git(world.local, "commit", "-q", "-m", "feat: later (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    return world
+
+
+_LEGACY = "".join("line %d\n" % i for i in range(40))
+_BIG = "seed\n" + "".join("work %d\n" % i for i in range(500))
+
+
+def _rename_revert_world(tmp_path):
+    world = World(tmp_path).build(feature_commits=None)
+    _write(world.local / "legacy.py", _LEGACY)
+    _git(world.local, "add", "legacy.py")
+    _git(world.local, "commit", "-q", "-m", "seed legacy")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+
+    def change():
+        _git(world.local, "mv", "legacy.py", "engine.py")
+        _write(world.local / "engine.py", _LEGACY + "IMPORTANT NEW WORK\n")
+        _git(world.local, "add", "engine.py")
+    return _landed_then_reverted(world, change)
+
+
+def _edit_revert_world(tmp_path):
+    world = World(tmp_path).build(feature_commits=None)
+
+    def change():
+        _write(world.local / "seed.txt", _BIG)
+        _git(world.local, "add", "seed.txt")
+    return _landed_then_reverted(world, change)
+
+
+def _show(world, sha, path):
+    return _git(world.local, "show", "%s:%s" % (sha, path))
+
+
+def test_144_a_base_reverting_the_branchs_rename_is_refused_before_any_push(tmp_path):
+    m = _mod()
+    world = _rename_revert_world(tmp_path)
+    _filer(m)
+    before = world.tip(FEATURE)
+    assert "engine.py" in _tree_paths(world, before)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["engine.py"] and report["dropped_count"] == 1, report
+    assert world.tip(FEATURE) == before, "upkeep force-pushed away the branch's renamed work"
+
+
+def test_144_a_base_reverting_the_branchs_edit_is_refused_before_any_push(tmp_path):
+    m = _mod()
+    world = _edit_revert_world(tmp_path)
+    _filer(m)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before, "upkeep force-pushed away a 500-line edit"
+    assert _show(world, world.tip(FEATURE), "seed.txt") == _BIG.rstrip("\n")
+
+
+@pytest.mark.parametrize("fixture,path", [(_rename_revert_world, "engine.py"),
+                                          (_edit_revert_world, "seed.txt")])
+def test_144_the_new_fixtures_are_destructive_without_the_guard(tmp_path, fixture, path):
+    """Sensitivity, kept in the suite: with the comparison disabled each fixture really loses the
+    branch's content -- so the two refusals above are able to fail."""
+    m = _mod()
+    world = fixture(tmp_path)
+    _filer(m)
+    m.dropped_paths = lambda *a, **k: []
+    before = world.tip(FEATURE)
+    lost = _show(world, before, path)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED and world.tip(FEATURE) != before
+    after = world.tip(FEATURE)
+    assert path not in _tree_paths(world, after) or _show(world, after, path) != lost
+
+
+def test_144_unicode_and_space_paths_are_named_exactly(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=None)
+    names = ["pay/café ü.txt", "pay/sp ace.txt", "pay/日本.txt"]
+    for n in names:
+        _write(world.local / n, n + "\n")
+    _git(world.local, "add", *names)
+    _git(world.local, "commit", "-q", "-m", "feat (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _filer(m)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == sorted(names), report
+
+
+def test_144_a_base_that_edits_a_file_the_branch_carries_is_brought_forward(tmp_path):
+    """No false positive on the ordinary case the new edit rule sits next to: the base's own NEW
+    version of a file the branch carries unchanged is not a restoration of anything."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _write(world.local / "seed.txt", "seed, edited on main\n")
+    _git(world.local, "commit", "-q", "-am", "edit seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert _show(world, world.tip(FEATURE), "seed.txt") == "seed, edited on main"
+
+
+def test_144_a_case_only_rename_on_the_base_is_brought_forward(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "mv", "seed.txt", "tmp.txt")
+    _git(world.local, "mv", "tmp.txt", "Seed.txt")
+    _git(world.local, "commit", "-q", "-m", "case rename")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+
+
+def test_144_a_base_move_that_also_rewrites_the_file_is_refused_safely(tmp_path):
+    """THE DOCUMENTED TRADE-OFF for renames: a move that rewrites the file past git's rename
+    similarity is, as a tree, a deletion -- so it is refused like one. A blocked pass, never data."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    (world.local / "src").mkdir(exist_ok=True)
+    _git(world.local, "mv", "seed.txt", "src/seed.txt")
+    _write(world.local / "src" / "seed.txt", "totally rewritten\n")
+    _git(world.local, "commit", "-q", "-am", "refactor")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_history_read_failing_pushes_nothing(tmp_path):
+    """The new half of the comparison fails closed exactly like the first half."""
+    m = _mod()
+    world = _edit_revert_world(tmp_path)
+    real = m._run
+
+    def no_log(cwd, argv):
+        if "--literal-pathspecs" in argv:          # the history read, and only it
+            raise RuntimeError("log unavailable")
+        return real(cwd, argv)
+
+    before = world.tip(FEATURE)
+    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT, run=no_log)
+    assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def _blocked_marker(world, m):
+    world_marker = m.blocked_path(str(world.sdlc), UNIT)
+    world_marker.parent.mkdir(parents=True, exist_ok=True)
+    world_marker.write_text(json.dumps({"unit": UNIT, "branch": FEATURE, "dropped": ["a"],
+                                        "dropped_count": 1, "at": "then"}), encoding="utf-8")
+
+
+@pytest.mark.parametrize("why", ["upkeep-off", "unit-closed", "unit-gone"])
+def test_144_the_doctor_ignores_a_block_that_can_no_longer_resolve_itself(tmp_path, why):
+    """A marker is cleared only by a clean pass; with upkeep off, or the unit closed or gone, no
+    pass will ever run, so the doctor must stop reporting it rather than fail forever."""
+    m = _mod()
+    d = _doctor()
+    world = World(tmp_path).build()
+    cfg = _cfg(rebase_upkeep="off") if why == "upkeep-off" else _cfg()
+    (world.sdlc / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    _blocked_marker(world, m)
+    row = "feature-branch rebase upkeep (#144 refuses a replay that would delete content)"
+    assert "BLOCKED" in {n: s for n, s, _ in d.features(str(world.sdlc))}[row] or why == "upkeep-off"
+    if why == "unit-closed":
+        world.write_registry(open_=False)
+    elif why == "unit-gone":
+        for shard in _load("feature_registry").registry_dir(world.sdlc).rglob("*.json"):
+            shard.unlink()
+    assert "BLOCKED" not in {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    checks = [c for c in d.check(str(world.sdlc), run=lambda *a, **k: "", cheap_only=True)
+              if FEATURE in c["name"]]
+    assert checks == [], checks

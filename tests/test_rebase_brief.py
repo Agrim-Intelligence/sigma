@@ -498,6 +498,35 @@ def test_attempt_rebase_brings_the_branch_forward_and_pushes(tmp_path):
     assert _run(cwd, ["git", "status", "--porcelain"]) == ""
 
 
+def test_attempt_rebase_refuses_a_replay_that_would_lose_the_branchs_content(tmp_path):
+    """#144's tree guard, reused before THIS force-push too: nothing is pushed, and the human's
+    local branch is put back where it was."""
+    m = _mod()
+    world = World(tmp_path).build()
+    world.delete_on_base("seed.txt", "chore: base drops seed")
+    cwd = str(world.local)
+    before_branch = world.tip(BRANCH)
+    local_before = _run(cwd, ["git", "rev-parse", "HEAD"])
+    report = m.attempt_rebase(_run, cwd, "origin", BRANCH, BASE)
+    assert report["outcome"] == m.WOULD_DROP and report["files"] == ["seed.txt"], report
+    assert "put back" in report["why"], report
+    assert world.tip(BRANCH) == before_branch
+    assert _run(cwd, ["git", "rev-parse", "HEAD"]) == local_before
+    assert (world.local / "seed.txt").exists()
+
+
+def test_attempt_rebase_guard_control_the_fixture_loses_content_without_it(tmp_path, monkeypatch):
+    """Sensitivity: with the comparison disabled the same fixture pushes and loses seed.txt."""
+    m = _mod()
+    world = World(tmp_path).build()
+    world.delete_on_base("seed.txt", "chore: base drops seed")
+    monkeypatch.setattr(m.feature_rebase, "dropped_paths", lambda *a, **k: [])
+    report = m.attempt_rebase(_run, str(world.local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.REBASED
+    assert "seed.txt" not in _run(str(world.local), ["git", "ls-tree", "-r", "--name-only",
+                                                     world.tip(BRANCH)])
+
+
 def test_attempt_rebase_on_a_conflict_stops_and_leaves_both_repos_as_they_were(tmp_path):
     m = _mod()
     world = World(tmp_path).build()

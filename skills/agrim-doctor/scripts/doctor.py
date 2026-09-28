@@ -1827,10 +1827,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
 
     # #144: a feature branch whose rebase upkeep is REFUSING a replay that would delete its content.
     # Emitted only when such a refusal is on record, so a healthy project's check list is unchanged.
-    for branch, count, names, at in _rebase_blocks(base):
+    for branch, count, names, at in _rebase_blocks(base, _block(cfg, "work")):
         out.append(_chk(
             f"rebase upkeep of {branch} not blocked", False,
-            f"since {at}, bringing {branch} forward would remove {count} tracked path(s) it has "
+            f"since {at}, bringing {branch} forward would remove or roll back {count} tracked path(s) "
             f"({names}); nothing was pushed. Usually the base holds a revert of the branch's own "
             "commits -- see docs/branching-model.md §3b for the resolution, or set "
             '`work.rebase_upkeep: "off"` while it stands.'))
@@ -3752,11 +3752,40 @@ def _automerge_state(wk):
 _REBASE_BLOCKED_SUFFIX = ".rebase-blocked.json"
 
 
-def _rebase_blocks(base):
+def _upkeep_off(wk):
+    """Mirrors `feature_rebase.switch()`: only `off` or boolean false is off; anything else is on."""
+    value = (wk or {}).get("rebase_upkeep")
+    return value is False or (isinstance(value, str) and value.strip().lower() == "off")
+
+
+def _unit_can_be_upkept(base, unit):
+    """Is `unit` still a registered, OPEN unit -- i.e. will a pass ever run for it again and clear
+    its marker? `False` only on a positive answer that it will not (closed, or no longer registered);
+    a registry that cannot be read keeps the row, failing towards visibility."""
+    try:
+        fr = _load_loop_script("feature_registry")
+        features_dir = fr.registry_dir(str(base))
+        if not features_dir.is_dir():
+            return False
+        entry = fr.read_unit(features_dir, unit)
+    except Exception:                     # noqa: BLE001 - unanswered keeps the row
+        return True
+    return isinstance(entry, dict) and entry.get("open") is not False
+
+
+def _rebase_blocks(base, wk=None):
     """[(branch, dropped_count, first names, at)] for every unit whose rebase upkeep is REFUSING
     (#144) -- the markers `feature_rebase` writes on `would-drop` and removes on the next clean
-    pass. Read-only and total: an unreadable marker is still reported, as unreadable."""
+    pass. Read-only and total: an unreadable marker is still reported, as unreadable.
+
+    A marker is cleared ONLY by a clean pass, so one that no pass will ever revisit would otherwise
+    fail `/agrim-doctor` forever: none is reported while `work.rebase_upkeep` is off (the switch a
+    person sets precisely to stop the retries), nor for a unit that is closed or no longer in the
+    registry. The marker file is left as it is -- the doctor is read-only; turning upkeep back on
+    or reopening the unit shows it again until a pass clears it."""
     found = []
+    if _upkeep_off(wk):
+        return found
     try:
         paths = sorted((pathlib.Path(base) / "state" / "features").glob("*" + _REBASE_BLOCKED_SUFFIX))
     except OSError:
@@ -3764,6 +3793,9 @@ def _rebase_blocks(base):
     for path in paths:
         try:
             got = json.loads(path.read_text(encoding="utf-8"))
+            unit = str(got.get("unit") or path.name[:-len(_REBASE_BLOCKED_SUFFIX)])
+            if not _unit_can_be_upkept(base, unit):
+                continue
             found.append((str(got.get("branch") or path.name), int(got.get("dropped_count") or 0),
                           ", ".join((got.get("dropped") or [])[:3]), str(got.get("at") or "?")))
         except Exception:                 # noqa: BLE001 - a doctor row never crashes the doctor
@@ -3775,10 +3807,9 @@ def _rebase_upkeep_state(base, wk):
     """`work.rebase_upkeep`, and -- the part a person needs -- whether any unit's upkeep is
     currently REFUSING a net-destructive replay (#144). Mirrors `feature_rebase.switch()`: only
     `off` or boolean false is off; anything else is on."""
-    value = wk.get("rebase_upkeep")
-    if value is False or (isinstance(value, str) and value.strip().lower() == "off"):
+    if _upkeep_off(wk):
         return "off"
-    blocks = _rebase_blocks(base)
+    blocks = _rebase_blocks(base, wk)
     if not blocks:
         return "ON — feature branches are brought forward on each pick; none is blocked"
     return "ON — BLOCKED: " + "; ".join(

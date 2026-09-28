@@ -96,6 +96,9 @@ CURRENT = "current"
 CONFLICT = "conflict"
 REBASED = "rebased"
 FAILED = "failed"
+#: #144: the replay succeeded but would lose content the branch has (`feature_rebase.dropped_paths`)
+#: -- nothing is pushed. The same name as `feature_rebase.WOULD_DROP`.
+WOULD_DROP = feature_rebase.WOULD_DROP
 
 
 def _changelog_coverage():
@@ -563,10 +566,45 @@ def attempt_rebase(run, cwd, remote, branch, base):
         return {"outcome": FAILED, "files": [],
                 "why": "the worktree's own uncommitted changes conflict with what's now on %s "
                        "(autostash pop conflict)" % base_ref}
+    # #144: THE SAME TREE GUARD upkeep's own force-push sits behind, before this one. A replay onto
+    # a base holding a revert of the branch's own work succeeds cleanly and would publish the loss.
+    refused = _would_lose(run, cwd, pre_head, base_ref)
+    if refused is not None:
+        return refused
     push = push_branch(run, cwd, remote, branch)
     if not push["ok"]:
         return {"outcome": FAILED, "files": [], "why": push["why"]}
     return {"outcome": REBASED, "why": ""}
+
+
+def _would_lose(run, cwd, pre_head, base_ref):
+    """None when the rebased HEAD keeps everything `pre_head` had, else the refusal report.
+
+    On a refusal the LOCAL branch is put back with `git reset --keep <pre_head>` -- `--keep`, not
+    `--hard`, because an autostash may just have re-applied the human's uncommitted edits, and
+    `--keep` refuses rather than discard them. If it refuses, the report says how to undo by hand.
+    Fails closed: a comparison that cannot be made is a `FAILED` with nothing pushed."""
+    try:
+        head = str(run(cwd, ["git", "rev-parse", "HEAD"]) or "").strip()
+        dropped = feature_rebase.dropped_paths(run, cwd, pre_head, head)
+        why = ("bringing it forward onto %s would remove or roll back %d tracked path(s) it has "
+               "(%s) -- the base most likely holds a revert of the branch's own commits; see "
+               "docs/branching-model.md §3b" % (base_ref, len(dropped), ", ".join(dropped[:3]) +
+                                               (" and %d more" % (len(dropped) - 3)
+                                                if len(dropped) > 3 else "")))
+        outcome = WOULD_DROP
+    except Exception as exc:                    # noqa: BLE001 - unmeasured is never "nothing lost"
+        dropped, outcome = [], FAILED
+        why = "the pre/post tree comparison could not be made: %s" % _flat(exc)
+    if outcome == WOULD_DROP and not dropped:
+        return None
+    try:
+        run(cwd, ["git", "reset", "--keep", pre_head])
+        why += "; nothing was pushed and the local branch was put back at %s" % pre_head[:12]
+    except Exception:                           # noqa: BLE001
+        why += ("; nothing was pushed, but the local branch is still rebased -- undo it with "
+                "`git reset --keep %s`" % pre_head)
+    return {"outcome": outcome, "files": dropped, "why": why}
 
 
 def format_conflict(brief, report, run, cwd, sdlc_dir=None):
