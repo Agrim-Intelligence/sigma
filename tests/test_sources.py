@@ -2205,9 +2205,12 @@ def test_github_release_comment_has_no_trailing_colon_when_no_reason_is_given():
     assert body == "Released by Sigma — claimed but not started"
 
 
-def test_github_release_survives_a_raising_label_removal():
+def test_github_release_survives_a_raising_label_removal(capsys):
     """A transient gh error removing the (best-effort) in-progress label must not stop the
-    release — the audit comment still goes out."""
+    release — the audit comment still goes out. Reproduced live 2026-09-28 (releasing a stale
+    claim during a migration): this used to be a bare `try/except: pass`, so the failure was
+    truly invisible even though `release()` still reported success. It must now write a
+    greppable stderr line and be visible through `release_warnings()`."""
     src = _mod("sources")
 
     def run(a):
@@ -2217,12 +2220,23 @@ def test_github_release_survives_a_raising_label_removal():
         return ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
-    gh.release("42", "skipped this run")   # must not raise
+    result = gh.release("42", "skipped this run")   # must not raise
+    assert result is True
+
+    err = capsys.readouterr().err
+    assert "release label removal failed" in err
+    assert "#42" in err
+    assert "gh: HTTP 502 Bad Gateway" in err
+
+    warnings = gh.release_warnings()
+    assert len(warnings) == 1
+    assert "label removal failed" in warnings[0]
 
 
-def test_github_release_survives_a_raising_comment():
+def test_github_release_survives_a_raising_comment(capsys):
     """A transient gh error posting the audit comment must not raise into the caller — matches
-    mark_in_progress/_offboard's own best-effort posture on every individual `gh` call."""
+    mark_in_progress/_offboard's own best-effort posture on every individual `gh` call. Same live
+    incident as the label-removal case above: a swallowed comment failure must still surface."""
     src = _mod("sources")
 
     def run(a):
@@ -2232,7 +2246,50 @@ def test_github_release_survives_a_raising_comment():
         return ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
-    gh.release("42", "skipped this run")   # must not raise
+    result = gh.release("42", "skipped this run")   # must not raise
+    assert result is True
+
+    err = capsys.readouterr().err
+    assert "release audit comment failed" in err
+    assert "#42" in err
+    assert "gh: HTTP 502 Bad Gateway" in err
+
+    warnings = gh.release_warnings()
+    assert len(warnings) == 1
+    assert "audit comment failed" in warnings[0]
+
+
+def test_github_release_warnings_empty_and_silent_on_a_clean_release(capsys):
+    """The escalation is reserved for a genuine failure -- a plain, successful release writes
+    nothing to stderr and reports no warnings, mirroring
+    test_mark_in_progress_does_not_escalate_on_a_clean_success."""
+    src = _mod("sources")
+    run = _recording_runner()
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
+    assert gh.release("42", "claimed but never dispatched") is True
+    assert capsys.readouterr().err == ""
+    assert gh.release_warnings() == []
+
+
+def test_github_release_warnings_reset_on_each_call():
+    """release_warnings() reflects only the MOST RECENT call, not a sticky latch -- a later,
+    genuinely clean release must clear a warning left by an earlier failed one."""
+    src = _mod("sources")
+    calls = {"n": 0}
+
+    def run(a):
+        verb = _issues_verb(a)
+        if verb == "edit" and "--remove-label" in a and calls["n"] == 0:
+            calls["n"] += 1
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return ""
+
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
+    gh.release("42", "first attempt")
+    assert gh.release_warnings() != []
+
+    gh.release("43", "second attempt, clean")
+    assert gh.release_warnings() == []
 
 
 # --- PR #1107 review, Finding 3: release must refuse on an already-terminal issue ---
