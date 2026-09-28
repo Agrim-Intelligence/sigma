@@ -157,6 +157,29 @@ def test_a_fold_of_a_legacy_registry_loses_nothing(tmp_path):
     assert set(doc["features"]) == {"voice", "bill"}
 
 
+def test_a_registry_write_that_replaces_a_legacy_schema_id_says_so_once(tmp_path, capsys):
+    """#239: the fold's `write_index` and a pick's `write_unit` respell an old schema id, so they
+    say so on stderr -- the same line `feature_doc.sync` and `upstream._history` print -- and stay
+    silent when the file already carried Sigma's id or did not exist."""
+    fsync = _load(LOOP, "feature_sync")
+    reg = _load(LOOP, "feature_registry")
+    sdlc = _legacy_registry(tmp_path)
+    fdir = reg.registry_dir(str(sdlc))
+    fsync.fold(str(sdlc))
+    err = capsys.readouterr().err
+    assert "migrated legacy schema id '%s/features@1'" % RETIRED in err
+    assert "index.json to sigma/features@1 on use" in err
+    fsync.fold(str(sdlc))                              # already Sigma's id: silent
+    assert "migrated legacy" not in capsys.readouterr().err
+    (fdir / "units" / "bill.json").write_text(json.dumps(
+        {"schema": RETIRED + "/features@1", "features": {"bill": {"title": "Billing"}}}))
+    reg.write_unit(fdir, "bill", {"title": "Billing"})
+    err = capsys.readouterr().err
+    assert err.count("migrated legacy schema id") == 1 and "bill.json" in err
+    reg.write_unit(fdir, "fresh", {"title": "New"})    # no file before: silent
+    assert "migrated legacy" not in capsys.readouterr().err
+
+
 def test_the_landing_record_reads_the_legacy_schema(tmp_path):
     cross = _load(LOOP, "cross_repo")
     path = cross.decision_path(str(tmp_path), "101")

@@ -31,6 +31,15 @@ def _load(path, name):
     return module
 
 
+def _link(link, target):
+    """`link.symlink_to(target)`, or a skip where the host cannot make one (Windows without
+    symlink rights) -- the same guard as `tests/test_timing_store.py::_link_file`."""
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("file symlink creation is not available on this host")
+
+
 @pytest.fixture()
 def mig():
     return _load(MIGRATE, "migrate")
@@ -239,7 +248,7 @@ def test_a_symlinked_agents_md_is_refused_and_its_target_untouched(mig, tmp_path
     agents = root / "AGENTS.md"
     (root / "CLAUDE.md").write_bytes(agents.read_bytes())
     agents.unlink()
-    agents.symlink_to("CLAUDE.md")
+    _link(agents, "CLAUDE.md")
     before = (root / "CLAUDE.md").read_bytes()
     code, out = run(mig, sdlc, "--apply")
     assert code == 2, out
@@ -254,7 +263,7 @@ def test_a_symlinked_state_file_is_refused_at_plan_and_at_write(mig, tmp_path, m
     real = tmp_path / "elsewhere.json"
     real.write_bytes(unit.read_bytes())
     unit.unlink()
-    unit.symlink_to(real)
+    _link(unit, real)
     before = real.read_bytes()
     code, out = run(mig, sdlc)
     assert code == 2 and "refused .sdlc/features/units/voice.json: it is a symlink" in out
@@ -263,18 +272,23 @@ def test_a_symlinked_state_file_is_refused_at_plan_and_at_write(mig, tmp_path, m
     root2, sdlc2 = legacy_repo(tmp_path / "two")
     target = sdlc2 / "state" / "landing" / "7.json"
     real_plan = mig.plan
+    moved_before = []
 
     def racing_plan(*args, **kwargs):
         got = real_plan(*args, **kwargs)
         moved = tmp_path / "moved.json"
         moved.write_bytes(target.read_bytes())
+        moved_before.append(moved.read_bytes())
         target.unlink()
-        target.symlink_to(moved)
+        _link(target, moved)
         return got
     monkeypatch.setattr(mig, "plan", racing_plan)
     code, out = run(mig, sdlc2, "--apply")
     assert code == 2 and "refused .sdlc/state/landing/7.json: it is a symlink" in out
-    assert target.is_symlink() and real.read_bytes() == before
+    moved = tmp_path / "moved.json"
+    assert target.is_symlink() and os.readlink(target) == str(moved)
+    assert real.read_bytes() == before
+    assert moved.read_bytes() == moved_before[0], "the relinked target was written through"
 
 
 def test_a_watcher_probe_that_errors_says_so(mig, tmp_path, monkeypatch, capsys):

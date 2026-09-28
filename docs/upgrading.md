@@ -59,8 +59,11 @@ Environment variables are listed by **name only, never value**. Rename them wher
 
 The old plugin cannot read Sigma's spellings. Every file the migration changes is one the old plugin
 also reads. Committed files (`config.json` and `.sdlc/features/`) reach every teammate through git.
-Migrate once everyone runs Sigma. Until then, don't migrate: Sigma reads the old spellings, and both
-plugins keep their own block in a feature doc rather than fight over one.
+Not migrating does not keep a mixed team safe. Sigma reads the old spellings, but on normal use it
+rewrites registry files (`.sdlc/features/index.json` and the unit records under `units/`) with its
+own schema id, printing a one-line `migrated legacy ... on use` notice when it does. The old plugin
+reads those files as empty. So either switch every machine to Sigma and migrate together, or keep
+the old plugin off the branches Sigma writes to until you do.
 
 Cross-repository propagation follows the same rule. Sigma will not overwrite a sibling repository's
 registry file while that file still carries the old schema id. Run the migration in that repository
