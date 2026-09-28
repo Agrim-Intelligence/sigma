@@ -157,6 +157,7 @@ import pathlib
 import re
 import shutil
 import sys
+import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -267,8 +268,18 @@ CONFLICT = "conflict"                 # the feature branch would not replay
 LEASE_REFUSED = "lease-refused"       # the remote moved under us; the other writer keeps the branch
 REBASED = "rebased"                   # the feature moved (its goal branches are in `replayed`)
 FAILED = "failed"                     # something went wrong; nothing here is claimed
+#: #144: the replay SUCCEEDED, and its tree lacks tracked paths the branch tip has -- so pushing it
+#: would delete the branch's own content. Refused BEFORE the push; the remote is untouched. The
+#: reported shape: the base's tip was a deliberate REVERT of the branch's own commits, the replay
+#: faithfully re-applied the revert's deletions, and the pass used to report `rebased (0 replayed,
+#: 0 conflicted, 0 skipped)` -- the "nothing to do" line -- over a force-push that removed 72 files.
+#: A STABLE NAME: this is the OUTER guard on the replay result, evaluated where the replayed head is
+#: computed and before `_pushed` or any later accept/keep logic, so everything layered on top of the
+#: replay (a different replay strategy, an acknowledgement lever) sits inside it, never around it.
+WOULD_DROP = "would-drop"
 OUTCOMES = (DISABLED, NO_UNIT, NOT_ADOPTED, NO_BASE, NO_BRANCH, OCCUPIED, REMOTE_UNREADABLE,
-            CURRENT, BUSY, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED)
+            CURRENT, BUSY, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED,
+            WOULD_DROP)
 
 #: The outcomes worth a clause on `work.start()`'s own one-line result -- the ONLY channel any of
 #: this reaches a person through on a normal run.
@@ -282,7 +293,16 @@ OUTCOMES = (DISABLED, NO_UNIT, NOT_ADOPTED, NO_BASE, NO_BRANCH, OCCUPIED, REMOTE
 #: `REMOTE_UNREADABLE` is deliberately still out: `feature_sync` files its own `remote-unreadable`
 #: divergence from the SAME `live_branches` call on the SAME pick and puts it in ITS clause, so
 #: repeating it here would report one unreachable remote twice on one line.
-IN_CLAUSE = (BUSY, OCCUPIED, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED)
+IN_CLAUSE = (BUSY, OCCUPIED, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED,
+             WOULD_DROP)
+
+#: #144: how many removed paths `report["dropped"]` (and the filed issue, and the doctor marker)
+#: name. The COUNT is always exact (`dropped_count`); only the listing is capped, so a revert of a
+#: 10,000-file unit costs a bounded report, issue body and state file rather than one per path.
+DROPPED_LISTED = 20
+#: ...and how many the ONE-LINE clause names. A line is read at a glance; three names are enough to
+#: recognise the work, and the count says how much more there is.
+DROPPED_IN_CLAUSE = 3
 
 #: The area label every issue this module files carries. Not a CODEOWNERS lookup -- these are filed
 #: `same_area=True`, so `area` is a label and nothing else.
@@ -601,6 +621,34 @@ def goal_liveness(sdlc_dir, config, goal):
     return IDLE if evidence else UNKNOWN
 
 
+# --------------------------------------------------------------------------- #144: the tree guard
+
+
+def dropped_paths(run, cwd, before, after):
+    """Tracked paths the tree at `before` has and the tree at `after` does not -> sorted list.
+
+    #144's measurement, and deliberately a TREE comparison rather than a history question: the
+    reported failure was invisible to every history-shaped check (`0 replayed`, a head whose subject
+    was unchanged, a clean `--first-parent` walk), because git itself considers the revert
+    legitimate -- the branch's original commits are in the base's history, merely reverted, so
+    nothing restores them. The only place the loss is visible is the tree the push would publish.
+
+    `before` is the feature tip the replay started from (what the branch HAS right now) and `after`
+    is the replayed head (what the push would make it). A path the branch deleted itself is absent
+    from `before` and so can never be reported: the branch's own deletions are never a finding.
+
+    RENAMES ARE EXCUSED (`-M`, then `--diff-filter=D`): a path the base moved still exists in the
+    result under its new name, which is the base's own refactor arriving, not content lost. A rename
+    too large for git's rename budget degrades to a deletion and is REFUSED -- towards safety.
+
+    `-z` because a path may hold any byte but NUL, and this list names files in an issue. RAISES when
+    the diff cannot be run: the caller must treat an unanswered question as "do not push", never as
+    "nothing was dropped"."""
+    out = run(str(cwd), ["git", "diff", "--no-ext-diff", "--name-only", "-z", "-M",
+                         "--diff-filter=D", before, after])
+    return sorted({one for one in str(out or "").split("\0") if one.strip()})
+
+
 # --------------------------------------------------------------------------- the ephemeral worktree
 
 
@@ -672,6 +720,21 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
         except Exception as exc:          # noqa: BLE001
             report["why"] = _flat(exc)
             return FAILED
+        # #144: THE OUTER GUARD, between computing the replayed head and pushing it. Nothing below
+        # this line may run for a replay that would delete what the branch currently has.
+        try:
+            dropped = dropped_paths(run, path, sha, after)
+        except Exception as exc:          # noqa: BLE001 - unmeasured is never "nothing dropped"
+            report["why"] = ("the pre/post tree comparison could not be made, so nothing was "
+                             "pushed: %s" % _flat(exc))
+            return FAILED
+        if dropped:
+            report["dropped"] = dropped[:DROPPED_LISTED]
+            report["dropped_count"] = len(dropped)
+            report["would_be"] = after
+            report["why"] = ("bringing it forward onto %s would remove %d tracked path(s) it has"
+                             % (base_ref, len(dropped)))
+            return WOULD_DROP
         outcome = _pushed(run, cwd, path, branch, sha, remote, report)
         if outcome == REBASED:
             report["after"] = after
@@ -1065,6 +1128,70 @@ def _direct_body(unit, branch, base, found):
         % (branch, len(found), listed, branch, base, unit))
 
 
+def _would_drop_body(unit, branch, base, before, report):
+    listed = "\n".join("- `%s`" % one for one in report["dropped"])
+    more = report["dropped_count"] - len(report["dropped"])
+    if more > 0:
+        listed += "\n- ... and %d more" % more
+    return (
+        "`%s` was **not rebased** onto `%s`: the replay succeeded, but its tree lacks %d tracked "
+        "path(s) the branch has now, so pushing it would have deleted them. Nothing was pushed; "
+        "the branch still points at `%s`.\n\n%s\n\n"
+        "The usual cause is that `%s` holds a **revert of this branch's own commits** (the work was "
+        "moved off `%s` onto the branch). Git treats those commits as already present -- they are "
+        "in `%s`'s history, merely reverted -- so a replay re-applies the revert and nothing "
+        "restores them. A base that simply deleted a file this branch still carries reads the same "
+        "way, and is refused for the same reason: this pass cannot tell intent from a tree.\n\n"
+        "**To resolve**, a human decides which content the branch should keep:\n\n"
+        "- keep the branch's work: bring it forward by hand (for example `git merge origin/%s`) and "
+        "land a goal on `%s` that re-applies the reverted commits (`git revert <the revert's sha>`); "
+        "once the branch contains the base, upkeep reports `current` again;\n"
+        "- or accept the deletion: land a goal on `%s` that removes those paths itself;\n"
+        "- meanwhile, `work.rebase_upkeep: \"off\"` stops this pass from retrying.\n\n"
+        "Every pick reports this until one of those happens; the refusal is also visible in "
+        "`/agrim-doctor`. Filed by Sigma's rebase upkeep for unit `%s`.\n"
+        % (branch, base, report["dropped_count"], before, listed, base, base, base,
+           base, branch, branch, unit))
+
+
+BLOCKED_SUFFIX = ".rebase-blocked.json"
+
+
+def blocked_path(sdlc_dir, name):
+    """`.sdlc/state/features/<unit>.rebase-blocked.json` -- #144's durable, doctor-readable record
+    that this unit's upkeep is REFUSING, and why. Beside `filed_path` for the same reasons (runtime
+    bookkeeping under `setup.RUNTIME_IGNORES`); `.rebase-blocked.json` ends no other store's or
+    lock's name, so no unit name can collide. Folded, by #1566's rule, AFTER the guard."""
+    if not (isinstance(name, str) and registry.is_unit_name(name)):
+        raise registry.InvalidUnitName("%r is not a unit name" % (name,))
+    return pathlib.Path(sdlc_dir) / "state" / sync.LOCK_DIRNAME / (name.lower() + BLOCKED_SUFFIX)
+
+
+def _mark_blocked(sdlc_dir, unit, report):
+    """Persist the refusal so `/agrim-doctor` shows it between picks. One small file per unit,
+    overwritten in place (bounded), removed by the next clean pass (`_clear_blocked`). Never
+    raises: the clause already carries the refusal, and bookkeeping must not cost it."""
+    try:
+        path = blocked_path(sdlc_dir, unit)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "unit": unit, "branch": report["branch"], "base": report["base"],
+            "outcome": WOULD_DROP, "before": report["before"],
+            "dropped": report["dropped"], "dropped_count": report["dropped_count"],
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            indent=2, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError):         # noqa: S110
+        pass
+
+
+def _clear_blocked(sdlc_dir, unit):
+    """A pass that found the branch current or moved it cleanly ends the block. Never raises."""
+    try:
+        blocked_path(sdlc_dir, unit).unlink()
+    except (OSError, ValueError):         # noqa: S110 - absent is the ordinary case
+        pass
+
+
 #: One sentence per reportable outcome, for the clause `work.start()` appends to its own result. The
 #: table is TOTAL over `IN_CLAUSE` so widening that tuple raises `KeyError` rather than silently
 #: saying nothing -- a mutant that removes a kind from the clause must break something visible.
@@ -1097,7 +1224,22 @@ _WORDING = {
                     "refused rather than forced -- the other writer's commits are intact"),
     REBASED: "%(branch)s brought forward onto %(base)s (%(replayed)d replayed, %(conflicts)d "
              "conflicted, %(skipped)d skipped)",
+    #: #144. Loud on purpose, and never shaped like `REBASED`: the old line for this exact failure
+    #: WAS the `REBASED` line, and it read as "nothing to do".
+    WOULD_DROP: ("%(branch)s was NOT rebased: bringing it forward onto %(base)s would remove "
+                 "%(dropped)d tracked path(s) it has (%(named)s) -- the base most likely holds a "
+                 "revert of the branch's own commits; the push was refused and the remote left "
+                 "unchanged"),
 }
+
+
+def _named(report):
+    listed = list(report.get("dropped") or [])
+    if not listed:
+        return "none listed"
+    shown = ", ".join(listed[:DROPPED_IN_CLAUSE])
+    more = (report.get("dropped_count") or len(listed)) - min(len(listed), DROPPED_IN_CLAUSE)
+    return shown + (" and %d more" % more if more > 0 else "")
 
 
 def clause(report):
@@ -1113,6 +1255,8 @@ def clause(report):
         "merge_method": report["merge_method"], "direct": len(report["direct"]),
         "replayed": len(report["replayed"]), "conflicts": len(report["conflicts"]),
         "skipped": len(report["skipped"]),
+        "dropped": report.get("dropped_count") or len(report.get("dropped") or []),
+        "named": _named(report),
         "why": " ".join(str(report["why"]).split())[:_CLAUSE_WHY_CHARS] or "no reason recorded",
         "path": " ".join(str(report["why"]).split()) or "this unit's rebase path"}
     # WHAT HAPPENED TO THE FILING, from the measurement rather than from the wording. `issues` had
@@ -1137,6 +1281,7 @@ def _report(goal, unit, config):
     return {"outcome": FAILED, "goal": str(goal), "unit": unit, "branch": None, "base": None,
             "before": None, "after": None, "tip": None, "replayed": [], "conflicts": [],
             "skipped": [], "direct": [], "issues": [], "leftovers": [], "filing": NO_FILING,
+            "dropped": [], "dropped_count": 0, "would_be": None,
             "serialised": True, "merge_method": merge_method(config), "why": "", "note": ""}
 
 
@@ -1272,6 +1417,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     # one fetch and two reads -- deliberately cheaper than everything below it.
     if behind == "0":
         report["outcome"] = CURRENT
+        _clear_blocked(sdlc_dir, unit)
         return report
 
     if not _verifiable(config):
@@ -1292,7 +1438,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     path = worktree_path(sdlc_dir, unit)
     outcome = _rebase_feature(run, cwd, path, branch, base_ref, before, remote, report)
     report["outcome"] = outcome
-    if outcome in (CONFLICT, FAILED):
+    if outcome in (CONFLICT, FAILED, WOULD_DROP):
         # MEASURED, not asserted. The body used to state "no half-applied rebase, no stranded
         # worktree" unconditionally, and a cleanup that refused produced an issue asserting the
         # opposite of what was on disk -- for a human to act on.
@@ -1307,8 +1453,20 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
                     body=_feature_conflict_body(unit, branch, base, before, report["why"],
                                                 report["leftovers"], report["tip"]))
         return report
+    if outcome == WOULD_DROP:
+        _mark_blocked(sdlc_dir, unit, report)
+        _file_issue(sdlc_dir, config, goal, report,
+                    slot="would-drop:%s" % branch,
+                    key="%s#%d" % (before, report["dropped_count"]),
+                    title="Rebase upkeep refused: %s onto %s would delete %d path(s)"
+                          % (branch, base, report["dropped_count"]),
+                    why="%s was not rebased onto %s: the replay would remove %d tracked path(s) "
+                        "the branch has" % (branch, base, report["dropped_count"]),
+                    body=_would_drop_body(unit, branch, base, before, report))
+        return report
     if outcome != REBASED:
         return report
+    _clear_blocked(sdlc_dir, unit)
 
     entry = registry.read(registry.registry_dir(sdlc_dir)).get(unit) or {}
     repo = sync.repo_slug(config, run, cwd, remote)
@@ -1357,7 +1515,8 @@ def main(argv):
         report = upkeep(argv[2], state.load_config(argv[2]), argv[4] if len(argv) >= 5 else "-",
                         argv[3])
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 0 if report["outcome"] != FAILED else 1
+        # #144: a refused replay is a BLOCKED pass, not a clean one, and a script must see that.
+        return 1 if report["outcome"] in (FAILED, WOULD_DROP) else 0
     if len(argv) >= 4 and argv[1] == "show":
         config = state.load_config(argv[2])
         remote, branch = _remote(config), features.BRANCH_PREFIX + argv[3]

@@ -160,6 +160,52 @@ the same human-owned act §13 describes, just carried out through this skill on 
 never routed through `work.py merge()` or `unit_completion.py`'s own (deliberately merge-less)
 completion signal.
 
+### 3b. Upkeep refuses a replay that would delete what the branch has (#144)
+
+A replay can succeed and still be destructive. The reported case: the integration branch's tip was
+a deliberate **revert of the feature branch's own commits** (the work had been moved off `main` onto
+the branch). Git treats those commits as already present — they are in the base's history, merely
+reverted — so bringing the branch forward re-applies the revert's deletions and nothing restores
+them. The pass used to report `brought forward onto main (0 replayed, 0 conflicted, 0 skipped)`,
+the "nothing to do" line, over a force-push that removed 72 files, and `git log -1` looked healthy
+because the new tip kept the old subject.
+
+So before it pushes anything, upkeep compares **trees**: every tracked path in the feature tip it
+started from that is missing from the replayed head (`feature_rebase.dropped_paths`, a
+`git diff -M --diff-filter=D`). If any is missing, the outcome is `would-drop`
+(`feature_rebase.WOULD_DROP`) and the pass stops:
+
+- **nothing is pushed** — the remote ref and the branch tip stay byte-identical, and the throwaway
+  worktree is removed as on every other path;
+- the pick line says so: `upkeep: feature/<name> was NOT rebased: bringing it forward onto <base>
+  would remove N tracked path(s) it has (a, b, c and N-3 more) …` — a blocked pass, never shaped
+  like `rebased`;
+- the finding is filed as a tracked issue (up to 20 paths listed, the count always exact);
+- `/agrim-doctor` shows it too: `.sdlc/state/features/<name>.rebase-blocked.json` records the
+  refusal, `doctor.py features` reports the unit as BLOCKED and `doctor.py check` adds a failing
+  row. The next clean pass (`current` or `rebased`) removes the record;
+- `feature_rebase.py upkeep <sdlc_dir> <unit> [goal]` exits 1 on it, as on `failed`.
+
+The check runs where the replayed head is computed, before the push and before anything else that
+acts on the replay, so it is the outer guard on that result. It fails closed: a comparison that
+cannot be made reports `failed` and pushes nothing.
+
+What it does **not** flag: paths the branch deleted itself (they are not in the tip), and paths the
+base **renamed** (git's rename detection finds them under the new name). What it flags that is not
+a revert: a base that simply deleted a file the branch still carries. As a tree, that is identical
+to the revert case, so it is refused the same way — it costs an upkeep pass and a human decision,
+never data. Nor does it see a revert that edits a surviving file back without removing any path;
+§15 lists that gap.
+
+**Resolving it** is a human decision about which content the branch keeps. To keep the branch's
+work, bring it forward by hand (for example `git merge origin/<base>`) and land a goal on the branch
+that re-applies the reverted commits (`git revert <the revert's sha>`); once the branch contains
+its base, upkeep reports `current` again. To accept the deletion, land a goal that removes those
+paths on the branch itself. Meanwhile `work.rebase_upkeep: "off"` stops the retries. If an older
+Sigma already pushed such a replay, restore the old tip with
+`git push --force-with-lease=refs/heads/feature/<name>:<bad-sha> origin <good-sha>:refs/heads/feature/<name>`
+and check a few of the removed paths with `git cat-file -e <sha>:<path>`.
+
 ---
 
 ## 4. Declaring a unit — the two halves
@@ -424,16 +470,16 @@ Some are paid per goal the loop **considers**, one per goal it **claims**, most 
 | the cross-repo access check — one issue read, then one access probe per repo the unit names | `gh` | goal **claimed** — after the claim is durable, before anything has been built | **yes** |
 | `gh api repos/<slug>/issues/<n>` | REST | goal **started**, in github mode with a numeric stem | no — gated on §6a instead |
 | `git ls-remote --heads <remote> 'feature/*'` — **twice, not once** | git | goal **started**: once for the registry reconcile (§8f), once for rebase upkeep (§3) | **yes** |
-| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and eight local git calls around them | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
+| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and nine local git calls around them | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
 | the sibling registry copy (§15) | `gh`, Contents API | goal **started** × sibling repo, and only on a `granted` verdict | **yes** |
 
 **How this was measured, and how to redo it — because it went stale once and will again.** Every
 git and `gh` call on the start path goes through one injected runner, so the *started* rows are
 counted by driving `work.start()` against a throwaway project with a recording runner and diffing
 an adopted project against one with no `.sdlc/features/`: for one goal declaring a unit whose branch
-is behind its base, **4 calls become 16** — one `ls-remote` for the registry reconcile, and eleven
-for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and eight local git
-calls). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
+is behind its base, **4 calls become 17** — one `ls-remote` for the registry reconcile, and twelve
+for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and nine local git
+calls — the ninth is #144's pre/post tree comparison, §3b). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
 `work.start()`'s dirty-root-checkout guard (#2014) runs a `git status --porcelain` unconditionally,
 on every start whether or not `.sdlc/features/` exists — so it fires before either project in this
 diff has a chance to differ, and correctly never appears as a row above (it did not exist before
@@ -1590,6 +1636,11 @@ Two things about it that are easy to get wrong:
 ---
 
 ## 15. Honest limitations, and the gaps that are deliberate
+
+- **Upkeep's delete guard sees removed PATHS, not reverted EDITS** (§3b, #144). A base revert that
+  restores a surviving file's older content is replayed like any other upstream edit; only a path
+  that would disappear stops the pass. And a plain upstream deletion of a file the branch still
+  carries is refused just like a revert, because the two are identical as trees.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that

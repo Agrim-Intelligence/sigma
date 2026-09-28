@@ -1605,3 +1605,246 @@ def test_the_occupied_clause_says_how_to_clear_it(tmp_path):
     assert report["outcome"] == m.OCCUPIED
     assert "git worktree remove --force" in report["note"], report["note"]
     assert str(occupied) in report["note"]
+
+
+# ===========================================================================================
+# #144 -- upkeep must REFUSE, before any push, when bringing the feature branch forward would
+# remove paths the branch currently has. The reported shape: the integration branch's tip is a
+# deliberate REVERT of the branch's own commits (the work was moved off `main` onto the branch).
+# Replaying onto that base replays the revert's deletions, and the pass used to report `rebased
+# (0 replayed, 0 conflicted, 0 skipped)` -- the "nothing to do" line -- over a force-push that
+# deleted the branch's content. Every assertion below is on MEASURED shas and trees.
+# ===========================================================================================
+
+
+def _revert_world(tmp_path):
+    """`main` carries the branch's own work (X1), the branch is cut from there and grows one landed
+    goal (F1), then `main` REVERTS X1. Returns `(world, x1_paths)`.
+
+    Explicit branch names throughout, a bare origin, and nothing but `git` -- no shell -- so the
+    fixture runs the same on Linux, macOS and Windows."""
+    world = World(tmp_path).build(feature_commits=None)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    x1 = ["pay/ledger.txt", "pay/refunds.txt", "pay/deep/nested.txt"]
+    for name in x1:
+        _write(world.local / name, "work for %s\n" % name)
+    _git(world.local, "add", *x1)
+    _git(world.local, "commit", "-q", "-m", "feat: payments module (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _write(world.local / "pay" / "later.txt", "a later goal\n")
+    _git(world.local, "add", "pay/later.txt")
+    _git(world.local, "commit", "-q", "-m", "feat: a later payments goal (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")          # main's tip reverts X1
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    return world, x1
+
+
+def _tree_paths(world, sha):
+    return set(_git(world.local, "ls-tree", "-r", "--name-only", sha).splitlines())
+
+
+def test_144_control_a_base_holding_a_revert_of_the_branch_is_refused_before_any_push(tmp_path):
+    """THE CONTROL, on the documented standalone gesture: `feature_rebase.py upkeep <sdlc_dir>
+    <unit> [goal]` (the same `upkeep()` `work.start()` calls on every pick). Seen RED against the
+    unpatched module first: it force-pushed and dropped all three X1 paths."""
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    filed = _filer(m)
+    remote_before = world.tip(FEATURE)
+    local_before = _git(world.local, "rev-parse", "refs/heads/" + FEATURE)
+    assert set(x1) <= _tree_paths(world, remote_before)          # the branch HAS the work
+    code = m.main(["feature_rebase.py", "upkeep", str(world.sdlc), UNIT, "7"])
+    # the remote ref and the branch tip are byte-identical: nothing was pushed
+    assert world.tip(FEATURE) == remote_before, "upkeep force-pushed a net-destructive replay"
+    assert _git(world.local, "rev-parse", "refs/heads/" + FEATURE) == local_before
+    assert set(x1) <= _tree_paths(world, world.tip(FEATURE))
+    # and it said so, loudly, as a blocked pass rather than a clean one
+    assert code != 0
+    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["outcome"] != m.REBASED and m.WOULD_DROP in m.IN_CLAUSE
+    assert sorted(report["dropped"]) == sorted(x1), report["dropped"]
+    assert report["dropped_count"] == 3
+    assert "NOT" in report["note"] and "pay/ledger.txt" in report["note"], report["note"]
+    assert world.dirt()["worktrees"] == [str(world.local)]         # the throwaway tree is gone
+    assert world.tip(FEATURE) == remote_before
+    assert filed and FEATURE in filed[0]["title"], filed
+
+
+def test_144_the_start_line_carries_the_refusal(tmp_path):
+    """`work.start()`'s upkeep clause -- the one line a person reads on a pick -- names the block."""
+    m = _mod()
+    world, _x1 = _revert_world(tmp_path)
+    _filer(m)
+    work = _load("work")
+    work._FEATURE_REBASE = m
+    before = world.tip(FEATURE)
+    line = work._rebase_upkeep(str(world.sdlc), _cfg(), "7", UNIT, m._run, world.local, "origin")
+    assert "upkeep:" in line and "NOT" in line and "would remove 3" in line, line
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_fixture_is_destructive_without_the_guard(tmp_path):
+    """Sensitivity of the control, kept in the suite: with the comparison disabled, the SAME
+    scenario force-pushes and the branch loses all three paths. If this ever stops holding, the
+    control above has stopped being able to fail and proves nothing."""
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    _filer(m)
+    m.dropped_paths = lambda *a, **k: []
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED
+    assert world.tip(FEATURE) != before
+    assert not (set(x1) & _tree_paths(world, world.tip(FEATURE))), "the fixture lost no content"
+
+
+def test_144_a_branch_that_deleted_a_file_itself_is_brought_forward(tmp_path):
+    """No false positive on the branch's OWN deletions: a path absent from the tip is never a
+    finding, whatever the base does."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=None)
+    _write(world.local / "old.txt", "old\n")
+    _git(world.local, "add", "old.txt")
+    _git(world.local, "commit", "-q", "-m", "seed old")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _git(world.local, "rm", "-q", "old.txt")
+    _git(world.local, "commit", "-q", "-m", "chore: drop old (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    world.move_integration()
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert report["dropped"] == [] and report["dropped_count"] == 0
+    assert "old.txt" not in _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_a_base_that_renamed_a_file_the_branch_carries_is_brought_forward(tmp_path):
+    """Renames are the base's refactor arriving, not content lost -- excused by `-M`."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "mv", "seed.txt", "renamed-seed.txt")
+    _git(world.local, "commit", "-q", "-m", "refactor: rename seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert "renamed-seed.txt" in _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_a_base_that_deleted_a_file_the_branch_still_carries_is_refused_too(tmp_path):
+    """THE DOCUMENTED TRADE-OFF, pinned so it is a decision rather than an accident: a plain
+    upstream deletion of a file the branch carries unchanged is, as a tree, identical to the revert
+    case, so it is refused the same way. It costs an upkeep pass and a human decision, never data."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "rm", "-q", "seed.txt")
+    _git(world.local, "commit", "-q", "-m", "chore: drop seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_refusal_persists_for_the_doctor_and_a_clean_pass_clears_it(tmp_path):
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    _filer(m)
+    marker = m.blocked_path(str(world.sdlc), UNIT)
+    assert _upkeep(m, world)["outcome"] == m.WOULD_DROP
+    got = json.loads(marker.read_text(encoding="utf-8"))
+    assert got["branch"] == FEATURE and got["dropped_count"] == 3 and got["outcome"] == m.WOULD_DROP
+    # a human resolves it: the branch takes the base and re-applies the reverted work
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "merge", "-q", "--no-edit", "origin/" + INTEGRATION)
+    revert = _git(world.local, "rev-parse", "origin/" + INTEGRATION)
+    _git(world.local, "revert", "--no-edit", revert)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.CURRENT, report
+    assert not marker.exists()
+    assert set(x1) <= _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_the_listing_is_capped_and_the_count_is_exact(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", FEATURE)
+    names = ["bulk/f%02d.txt" % i for i in range(m.DROPPED_LISTED + 7)]
+    for name in names:
+        _write(world.local / name, name + "\n")
+    _git(world.local, "add", *names)
+    _git(world.local, "commit", "-q", "-m", "feat: bulk (#12)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    # the base picks the bulk commit up and reverts it -- the reported shape at a larger size
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "cherry-pick", "origin/" + FEATURE)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped_count"] == len(names)
+    assert len(report["dropped"]) == m.DROPPED_LISTED
+    assert "and %d more" % (len(names) - m.DROPPED_IN_CLAUSE) in report["note"], report["note"]
+
+
+def test_144_a_comparison_that_cannot_be_made_pushes_nothing(tmp_path):
+    """Unmeasured is never "nothing dropped": the guard fails CLOSED."""
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    real = m._run
+
+    def no_diff(cwd, argv):
+        if argv[:2] == ["git", "diff"]:
+            raise RuntimeError("diff unavailable")
+        return real(cwd, argv)
+
+    before = world.tip(FEATURE)
+    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT, run=no_diff)
+    assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def _doctor():
+    spec = importlib.util.spec_from_file_location(
+        "doctor", ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+    d = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(d)
+    return d
+
+
+def test_144_the_doctor_shows_a_blocked_upkeep_and_stops_showing_it_once_cleared(tmp_path):
+    """LIVENESS: a refusal repeated on every pick must also be visible between picks, where a person
+    runs `/agrim-doctor` -- both on the capability dashboard and as a failing setup check."""
+    m = _mod()
+    d = _doctor()
+    world, _x1 = _revert_world(tmp_path)
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    _filer(m)
+    row = "feature-branch rebase upkeep (#144 refuses a replay that would delete content)"
+    healthy = {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    assert "BLOCKED" not in healthy and healthy.startswith("ON")
+    assert _upkeep(m, world)["outcome"] == m.WOULD_DROP
+    blocked = {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    assert "BLOCKED" in blocked and FEATURE in blocked and "3 tracked path" in blocked, blocked
+    checks = [c for c in d.check(str(world.sdlc), run=lambda *a, **k: "", cheap_only=True)
+              if FEATURE in c["name"]]
+    assert len(checks) == 1 and checks[0]["ok"] is False, checks
+    m.blocked_path(str(world.sdlc), UNIT).unlink()
+    assert "BLOCKED" not in {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+
+
+def test_144_doctor_blocked_suffix_matches_feature_rebase():
+    """The doctor duplicates the marker suffix rather than importing across skills; this is the
+    sync mechanism."""
+    assert _doctor()._REBASE_BLOCKED_SUFFIX == _mod().BLOCKED_SUFFIX

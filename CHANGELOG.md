@@ -4,6 +4,14 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- Feature-branch rebase upkeep no longer deletes branch content when the base holds a revert of the
+  branch's own commits (#144). Before it pushes, upkeep now compares the branch tip's tree with the
+  replayed tree. If any tracked path would disappear (renames are allowed; the branch's own
+  deletions never count), it refuses with the new `would-drop` outcome and pushes nothing. The
+  pick line says `was NOT rebased` and names the paths, a tracked issue is filed, and
+  `/agrim-doctor` shows the unit as blocked until a clean pass clears it. `feature_rebase.py
+  upkeep` exits 1 on it. The trade-off: a plain upstream deletion of a file the branch still
+  carries is refused the same way. See `docs/branching-model.md` §3b.
 - Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
   name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
   (features, landing, withheld and propagation records), the old feature-doc and Codex

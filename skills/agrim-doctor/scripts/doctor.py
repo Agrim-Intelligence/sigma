@@ -1825,6 +1825,16 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # Informational: absence is normal (not adopted), presence is reported as state.
     out.append(_chk(f"managed settings: {_managed_settings_state(base, cfg)}", True, ""))
 
+    # #144: a feature branch whose rebase upkeep is REFUSING a replay that would delete its content.
+    # Emitted only when such a refusal is on record, so a healthy project's check list is unchanged.
+    for branch, count, names, at in _rebase_blocks(base):
+        out.append(_chk(
+            f"rebase upkeep of {branch} not blocked", False,
+            f"since {at}, bringing {branch} forward would remove {count} tracked path(s) it has "
+            f"({names}); nothing was pushed. Usually the base holds a revert of the branch's own "
+            "commits -- see docs/branching-model.md §3b for the resolution, or set "
+            '`work.rebase_upkeep: "off"` while it stands.'))
+
     # A shared site-packages holds one slot per import name. A local `pip install [-e] <path>` bakes
     # that path in permanently, so on a machine running several worktrees of the same repo (this
     # project's own normal working style), whichever worktree last ran that command silently wins
@@ -3736,6 +3746,45 @@ def _automerge_state(wk):
     }.get(chosen, "off (a clean, safe PR is left for a human)")
 
 
+#: #144: `feature_rebase.BLOCKED_SUFFIX`, duplicated rather than imported (skills do not import each
+#: other's Python, north-star architecture rule 3). `test_doctor_blocked_suffix_matches_feature_rebase`
+#: reads the real constant from its file path and fails if this literal drifts from it.
+_REBASE_BLOCKED_SUFFIX = ".rebase-blocked.json"
+
+
+def _rebase_blocks(base):
+    """[(branch, dropped_count, first names, at)] for every unit whose rebase upkeep is REFUSING
+    (#144) -- the markers `feature_rebase` writes on `would-drop` and removes on the next clean
+    pass. Read-only and total: an unreadable marker is still reported, as unreadable."""
+    found = []
+    try:
+        paths = sorted((pathlib.Path(base) / "state" / "features").glob("*" + _REBASE_BLOCKED_SUFFIX))
+    except OSError:
+        return found
+    for path in paths:
+        try:
+            got = json.loads(path.read_text(encoding="utf-8"))
+            found.append((str(got.get("branch") or path.name), int(got.get("dropped_count") or 0),
+                          ", ".join((got.get("dropped") or [])[:3]), str(got.get("at") or "?")))
+        except Exception:                 # noqa: BLE001 - a doctor row never crashes the doctor
+            found.append((path.name, 0, "marker unreadable", "?"))
+    return found
+
+
+def _rebase_upkeep_state(base, wk):
+    """`work.rebase_upkeep`, and -- the part a person needs -- whether any unit's upkeep is
+    currently REFUSING a net-destructive replay (#144). Mirrors `feature_rebase.switch()`: only
+    `off` or boolean false is off; anything else is on."""
+    value = wk.get("rebase_upkeep")
+    if value is False or (isinstance(value, str) and value.strip().lower() == "off"):
+        return "off"
+    blocks = _rebase_blocks(base)
+    if not blocks:
+        return "ON — feature branches are brought forward on each pick; none is blocked"
+    return "ON — BLOCKED: " + "; ".join(
+        "%s would lose %d tracked path(s) (%s) since %s, nothing was pushed" % b for b in blocks)
+
+
 def _review_gate_state(wk):
     """Mirrors work.review_mode() without importing it. A REAL PR-review gate independent of branch
     protection — worth showing because it's the difference between 'auto-merge respects a human's
@@ -4040,6 +4089,10 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("auto-merge a clean AND safe PR",
          _automerge_state(wk),
          'config: "work": {"auto_merge": "protected"}  (off | protected | always)'),
+        ("feature-branch rebase upkeep (#144 refuses a replay that would delete content)",
+         _rebase_upkeep_state(base, wk),
+         'config: "work": {"rebase_upkeep": "off"} to stop it; a BLOCKED unit clears on the next '
+         'clean pass -- see docs/branching-model.md §3b'),
         ("PR review gate (independent of branch protection)",
          _review_gate_state(wk),
          'config: "work": {"require_review": "approval"}  (off | changes | approval)'),

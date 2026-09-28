@@ -781,15 +781,16 @@ def test_section_6e_still_counts_the_remote_reads_a_started_goal_actually_makes(
 
 
 def test_section_6e_still_counts_the_whole_pick_and_not_just_the_part_that_was_cheap(tmp_path):
-    """The total, which is what a reader budgets against: 4 calls unadopted, 16 adopted, for one
+    """The total, which is what a reader budgets against: 4 calls unadopted, 17 adopted (16 before
+    #144 added the pre/post tree comparison), for one
     goal whose branch is behind its base. Pinned as the two numbers rather than as a delta so a
     change to either side is named, and pinned at all because the table's credibility rests on the
     word *measured* — which nothing was enforcing when three goals' worth of per-pick work went
     missing from it."""
     assert len(_calls_for_one_started_goal(tmp_path, adopted=False)) == 4
-    assert len(_calls_for_one_started_goal(tmp_path, adopted=True)) == 16
+    assert len(_calls_for_one_started_goal(tmp_path, adopted=True)) == 17
     section = BRANCHING[BRANCHING.index("### 6e."):BRANCHING.index("## 7. At pick")]
-    assert "**4 calls become 16**" in section
+    assert "**4 calls become 17**" in section
     assert "How this was measured" in section          # the method, so the next reader can redo it
 
 
