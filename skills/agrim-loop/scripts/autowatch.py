@@ -110,6 +110,7 @@ def _load(name):
 
 
 ledger = _load("ledger")
+legacy = _load("legacy")   # #239: operator env vars under the previous prefix
 loop = _load("loop")
 
 #: See the module docstring's "SCOPE → LEDGER KIND" section. Deliberately maps `assignments` and
@@ -196,7 +197,7 @@ def resolve_surface(config):
     shape of "shared default, personal override" need. An unrecognized value (typo, stale config)
     falls back to the default rather than silently misrouting to whichever branch happens to not
     match — fail toward the more common, safer-to-nudge-twice surface."""
-    env = os.environ.get("SIGMA_AUTOWATCH_SURFACE")
+    env = legacy.getenv("SIGMA_AUTOWATCH_SURFACE")
     if env in VALID_SURFACES:
         return env
     settings = _autowatch_settings(config)
@@ -567,7 +568,7 @@ def _estimate_tokens_from_cost(cost_usd):
 
 
 def _drive_cmd(settings):
-    return os.environ.get("SIGMA_AUTOWATCH_CMD") or settings.get("drive_cmd") or DEFAULT_DRIVE_CMD
+    return legacy.getenv("SIGMA_AUTOWATCH_CMD") or settings.get("drive_cmd") or DEFAULT_DRIVE_CMD
 
 
 def _drive_prompt(issue, config=None):

@@ -31,10 +31,26 @@ module's own globals. `sources.py` and `triage.py` document "read it live so a p
 a contract; after #1487 that holds for the check-time scanners only. The source-level pin
 (`test_the_block_vocabulary_is_declared_only_in_blocker_scan`) is what guards the fetch-time side.
 
-Pure and dependency-free: `import re` and nothing else, deliberately. It sits under
-`mirror.normalize_issue`, which runs once per issue on a board-sized fetch.
+Pure, with ONE sibling dependency: `legacy.py` (#239), loaded once at import so an unpark block
+written under the plugin's previous name strips too. `legacy.py` is itself stdlib-only and does no
+I/O at import, so nothing here does I/O either. It sits under `mirror.normalize_issue`, which runs
+once per issue on a board-sized fetch; the per-call cost is still a bounded number of `find`s.
 """
+import importlib.util
+import pathlib
 import re
+
+
+def _load_legacy():
+    spec = importlib.util.spec_from_file_location(
+        "legacy", pathlib.Path(__file__).resolve().parent / "legacy.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: #239: an unpark Q&A block written under the plugin's previous name is stripped the same way.
+legacy = _load_legacy()
 
 
 # blocking phrasing immediately followed by a #N reference — an EXPLICIT, high-precision blocker edge
@@ -149,19 +165,20 @@ def strip_unpark_qa(text):
     START still truncates everything from there to the end of the text, discarding any further
     START/END pairs that happen to follow it -- exactly what the old sub-then-partition sequence did."""
     text = text or ""
-    start_len, end_len = len(UNPARK_QA_START), len(UNPARK_QA_END)
     out, pos = [], 0
     while True:
-        start = text.find(UNPARK_QA_START, pos)
+        # #239: either spelling of each marker, nearest first -- `legacy.find_marker` is the same
+        # single left-to-right `find`, so the #1498 linear bound above still holds (two finds per step).
+        start, start_marker = legacy.find_marker(text, UNPARK_QA_START, pos)
         if start == -1:
             out.append(text[pos:])
             break
-        end = text.find(UNPARK_QA_END, start + start_len)
+        end, end_marker = legacy.find_marker(text, UNPARK_QA_END, start + len(start_marker))
         if end == -1:
             out.append(text[pos:start])
             break
         out.append(text[pos:start])
-        pos = end + end_len
+        pos = end + len(end_marker)
     return "".join(out)
 
 

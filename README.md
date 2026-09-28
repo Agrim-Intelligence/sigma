@@ -190,6 +190,20 @@ either way**.
 
 See the **[worked walkthrough](examples/hello-sdlc/)** for a runnable end-to-end example.
 
+### Upgrading a repo adopted under the plugin's previous name?
+
+Install Sigma and carry on. Sigma reads the schema ids, markers, environment variables and config
+key that the previous name's 1.4.x releases wrote. When you want the files themselves renamed, run
+the one-shot migration. It is a dry run by default, `--apply` writes, and it is safe to re-run:
+
+```
+python3 skills/agrim-doctor/scripts/migrate.py .sdlc            # lists every change
+python3 skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes and prints what it changed
+```
+
+The old plugin cannot read Sigma's spellings, so migrate once the whole team runs Sigma. See
+[docs/upgrading.md](docs/upgrading.md) for what it reads, what it rewrites and what it leaves alone.
+
 ---
 
 ## What you get

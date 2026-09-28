@@ -53,6 +53,7 @@ sources = _load("sources")
 triage = _load("triage")
 auto_unpark = _load("auto_unpark")
 backlog_check = _load("backlog_check")
+legacy = _load("legacy")          # #239: a Q&A block written under the previous name
 decision_tier = _load("decision_tier")
 loop = _load("loop")
 
@@ -305,12 +306,12 @@ def _recorded_answers(body):
     rendered block rather than stored in a parallel file: the issue is the only place both a human
     and a future session are guaranteed to look, and a sidecar could drift from it."""
     text = body or ""
-    start = backlog_check.UNPARK_QA_START
-    if start not in text:
+    at, _spelled = legacy.find_marker(text, backlog_check.UNPARK_QA_START)
+    if at == -1:
         return {}
-    span = text[text.index(start):]
-    end = backlog_check.UNPARK_QA_END
-    span = span[:span.index(end)] if end in span else span
+    span = text[at:]
+    stop, _end = legacy.find_marker(span, backlog_check.UNPARK_QA_END)
+    span = span[:stop] if stop != -1 else span
     out = {}
     for line in span.splitlines():
         line = line.strip()
@@ -341,16 +342,17 @@ def _replace_block(body, block):
     copy under it. Without this, three rounds of questions produce three blocks and the reader has
     to work out which one is current."""
     text = body or ""
-    start, end = backlog_check.UNPARK_QA_START, backlog_check.UNPARK_QA_END
-    if start in text:
+    at, _spelled = legacy.find_marker(text, backlog_check.UNPARK_QA_START)   # #239: either spelling
+    if at != -1:
         # Review bug_002: `text.index(end)` searched from position 0, so a stray end marker in prose
         # ABOVE the real block made `tail` start inside the old block -- and the new body then
         # carried BOTH, breaking the one invariant this function exists for. The guard checked the
         # right region; the slice did not. Scoped now, byte-identical to the shape
         # `_recorded_answers` above already uses.
-        head = text[:text.index(start)]
-        span = text[text.index(start):]
-        tail = span[span.index(end) + len(end):] if end in span else ""
+        head = text[:at]
+        span = text[at:]
+        stop, end = legacy.find_marker(span, backlog_check.UNPARK_QA_END)
+        tail = span[stop + len(end):] if stop != -1 else ""
         return (head.rstrip() + "\n\n" + block + ("\n" + tail.lstrip() if tail.strip() else "")
                 ).rstrip() + "\n"
     return (text.rstrip() + "\n\n" + block).lstrip() + "\n"

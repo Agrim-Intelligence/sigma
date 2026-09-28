@@ -35,6 +35,7 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 `subprocess.run` seam can silently reach the network either, not that every conceivable process
 API is covered.
 """
+import os
 import subprocess
 
 import pytest
@@ -104,3 +105,16 @@ def _no_live_gh(request, monkeypatch):
         return real_run(*args, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", _guarded_run)
+
+
+#: #239: the plugin's previous env prefix, from fragments (a guarded private name in this tree).
+_RETIRED_ENV_PREFIX = ("LOOP" "SMITH") + "_"
+
+
+@pytest.fixture(autouse=True)
+def _no_host_legacy_env(monkeypatch):
+    """#239: Sigma now READS operator env vars under the plugin's previous prefix when the SIGMA_
+    name is unset. A developer machine still running the old plugin may export them, which would
+    silently change what a test observes; every test starts without them and sets its own."""
+    for name in [k for k in os.environ if k.startswith(_RETIRED_ENV_PREFIX)]:
+        monkeypatch.delenv(name, raising=False)

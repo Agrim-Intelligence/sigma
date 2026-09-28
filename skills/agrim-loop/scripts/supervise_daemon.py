@@ -81,6 +81,19 @@ import sys
 import time
 
 
+def _load_legacy():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "legacy", pathlib.Path(__file__).resolve().parent / "legacy.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: #239: operator env vars may still carry the plugin's previous prefix (`SIGMA_RUN_ID` never does).
+legacy = _load_legacy()
+
+
 def _split_claude_cmd(cmd):
     """Word-split `SIGMA_CLAUDE_CMD` for `subprocess.run`. POSIX: `shlex.split(cmd)`,
     unchanged. win32 (#2494): `shlex.split(cmd, posix=False)` so backslashes in a Windows path
@@ -288,7 +301,7 @@ def main(argv):
         return 0
     sdlc_dir = argv[1] if len(argv) > 1 else ".sdlc"
 
-    cmd = os.environ.get("SIGMA_CLAUDE_CMD", "claude -p /agrim-loop")
+    cmd = legacy.getenv("SIGMA_CLAUDE_CMD", "claude -p /agrim-loop")
 
     # H5 (plan-review, non-blocking #5): bash's `$(( secs * SCALE ))` silently
     # coerces a non-numeric SCALE/MAX_RUNS to 0 — which, for MAX_RUNS, means an
@@ -298,7 +311,7 @@ def main(argv):
     # code must REFUSE LOUDLY rather than proceed weakly on a guarantee it can't
     # make. So: catch the ValueError, name the bad variable and value on stderr,
     # and return a NEW exit code (2) that no existing caller/test relied on.
-    raw_max_runs = os.environ.get("SIGMA_SUPERVISE_MAX_RUNS", "48")
+    raw_max_runs = legacy.getenv("SIGMA_SUPERVISE_MAX_RUNS", "48")
     try:
         max_runs = int(raw_max_runs)
     except ValueError:
@@ -306,7 +319,7 @@ def main(argv):
               file=sys.stderr)
         return 2
 
-    raw_scale = os.environ.get("SIGMA_SUPERVISE_SLEEP_SCALE", "1")
+    raw_scale = legacy.getenv("SIGMA_SUPERVISE_SLEEP_SCALE", "1")
     try:
         scale = float(raw_scale)
     except ValueError:

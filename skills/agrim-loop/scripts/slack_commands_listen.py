@@ -143,6 +143,7 @@ def _load(name, directory=None):
 _REBASE_SCRIPTS = _HERE.parent.parent / "agrim-rebase" / "scripts"
 
 ledger = _load("ledger")
+legacy = _load("legacy")   # #239: token variables under the previous prefix
 feature_registry = _load("feature_registry")
 slack_client = _load("slack_client")
 scrub = _load("scrub")
@@ -1613,8 +1614,8 @@ def _missing_token_envs(config):
     shared by `run()`'s own startup guard and `ensure()`'s pre-spawn fast-fail (#2396), so the two
     checks can never independently drift apart."""
     app_env, bot_env = app_token_env(config), bot_token_env(config)
-    return [name for name, tok in ((app_env, os.environ.get(app_env, "")),
-                                    (bot_env, os.environ.get(bot_env, "")))
+    return [name for name, tok in ((app_env, legacy.getenv(app_env, "")),
+                                    (bot_env, legacy.getenv(bot_env, "")))
             if not tok]
 
 
@@ -1642,8 +1643,8 @@ def run(sdlc_dir, config, client_factory=None, sleep=time.sleep, poll_seconds=1)
         _log(sdlc_dir, "refusing to start -- missing env var(s): %s (see SLACK_COMMANDS.md)"
              % ", ".join(missing))
         return 1
-    app_token = os.environ.get(app_token_env(config), "")
-    bot_token = os.environ.get(bot_token_env(config), "")
+    app_token = legacy.getenv(app_token_env(config), "")
+    bot_token = legacy.getenv(bot_token_env(config), "")
     ok, reason = acquire_single_instance(sdlc_dir)
     if not ok:
         _log(sdlc_dir, reason)

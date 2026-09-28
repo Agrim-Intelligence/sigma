@@ -154,6 +154,7 @@ def _load(name):
 
 registry = _load("feature_registry")     # the store: read, normalise_entry, is_authorized
 sync = _load("feature_sync")             # same_repo/repo_key/repo_slug, and the per-unit lock
+legacy = _load("legacy")                 # #239: the watermark under the previous name
 ledger = _load("ledger")                 # team record (config-gated, default OFF; fail-open)
 
 #: THE VERDICT VOCABULARY. Each value is a different FACT about why the answer is what it is, not a
@@ -1004,7 +1005,7 @@ def _flag(source, goal, text, again_text):
         _note("sigma: features: could not read #%s's comments (%s) — the ownership flag was not "
               "posted this pass; the next pick retries it\n" % (goal, _flat(exc)))
         return FLAG_NONE
-    again = any(OWNER_MARKER in ((comment or {}).get("body") or "")
+    again = any(legacy.has_marker((comment or {}).get("body") or "", OWNER_MARKER)
                 for comment in (seen.get("comments") or []))
     try:
         source.note(goal, again_text if again else text)

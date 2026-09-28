@@ -138,9 +138,10 @@ def _parent(sdlc_dir, goal_body, source=None):
         marker = _load("goal_size").DECOMPOSED_FROM_MARKER
     except Exception:               # noqa: BLE001 - fail-open; no marker constant, no parent block
         return ""
-    if marker not in lines[0]:
+    at, spelled = _load("legacy").find_marker(lines[0], marker)   # #239: either spelling
+    if at == -1:
         return ""
-    match = re.match(r"\s*#?(\d+)", lines[0].split(marker, 1)[1])
+    match = re.match(r"\s*#?(\d+)", lines[0][at + len(spelled):])
     number = match.group(1) if match else ""
     return _issue_text(_fetch_issue(sdlc_dir, number, source)) if number else ""
 

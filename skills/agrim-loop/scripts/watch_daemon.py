@@ -112,6 +112,7 @@ def _load(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+legacy = _load("legacy")            # #239: operator env vars under the previous prefix
 ledger = _load("ledger")            # pid_alive() for the POSIX liveness probe, _config() for the
                                      # read. #2498: win32 no longer delegates here -- see pid_alive()
                                      # below, which routes to _win32_pid_alive() instead.
@@ -257,7 +258,7 @@ def resolve_int_env(env, name, default):
     Unset OR empty falls through to the default: bash used `${VAR:-default}`, so an explicitly-empty
     value behaves exactly like an unset one. A whitespace-only value is treated as empty too, a
     harmless widening of bash's abort."""
-    raw = (env.get(name) or "").strip()
+    raw = (legacy.getenv(name, environ=env) or "").strip()
     if not raw:
         return default, None
     try:
@@ -276,7 +277,7 @@ def resolve_call_timeout(env):
     a working `0.5` into `120` -- a 240x change to a live configuration, announced by a warning that
     would claim a perfectly valid timeout "is not a valid integer". A value that parses is used
     verbatim including `0` and negatives, exactly as bash did."""
-    raw = (env.get("SIGMA_WATCH_CALL_TIMEOUT") or "").strip()
+    raw = (legacy.getenv("SIGMA_WATCH_CALL_TIMEOUT", environ=env) or "").strip()
     if not raw:
         return DEFAULT_CALL_TIMEOUT, None
     try:
@@ -300,7 +301,7 @@ def resolve_interval(config, env):
     exactly that reason; the env path must not be weaker. (`SIGMA_WATCH_SLEEP_SCALE=0` stays
     valid and still means "no sleep" -- that is the documented test knob, not a malformation.)"""
     from_config = sync.watch_interval_seconds(config)
-    raw = (env.get("SIGMA_WATCH_INTERVAL") or "").strip()
+    raw = (legacy.getenv("SIGMA_WATCH_INTERVAL", environ=env) or "").strip()
     if not raw:
         return from_config, None
     try:

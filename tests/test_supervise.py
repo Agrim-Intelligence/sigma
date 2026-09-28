@@ -762,6 +762,8 @@ def test_the_shell_anchor_alone_resists_an_unsanitised_reason(tmp_path):
     """
     daemon_copy = tmp_path / "supervise_daemon.py"
     daemon_copy.write_text((S / "supervise_daemon.py").read_text())
+    # #239: the daemon reads its env through the sibling `legacy.py`, which ships beside it.
+    (tmp_path / "legacy.py").write_text((S / "legacy.py").read_text())
 
     # Beside it: a stub classifier `_HERE` resolves to and calls instead of the real one. Ignores
     # argv entirely and always emits the same UNSANITIZED verdict line -- what `_ABNORMAL` printed

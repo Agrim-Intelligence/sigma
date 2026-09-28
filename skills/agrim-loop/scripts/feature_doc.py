@@ -100,6 +100,7 @@ def _load(name):
 
 registry = _load("feature_registry")
 ledger = _load("ledger")            # team record (config-gated, default OFF; every call fail-open)
+legacy = _load("legacy")            # #239: the same markers under the plugin's previous name
 
 #: THE one rule for what a unit may be called, taken from the registry rather than re-derived --
 #: which took it from `features.py` for the same reason. A unit name is a `feature:<name>` label, a
@@ -500,6 +501,24 @@ def _find_all(data, needle):
     return out
 
 
+def _marker_pair(data):
+    """-> `(begin_open, end)` as BYTES: the marker pair this file's managed block is spelled with.
+
+    #239. A doc written before the rename carries the SAME markers under the plugin's previous name,
+    and reading it through the Sigma pair alone found no block at all -- `sync` then PREPENDED a
+    second one and orphaned the first as prose. The previous pair is used ONLY when the file holds no
+    Sigma marker whatsoever: any Sigma marker means Sigma manages its own pair, and a previous-name
+    block beside it is prose owned by a teammate still on the old plugin (plan-review BLOCKER 2 --
+    each plugin keeps its own block, so a mixed team cannot lock the file into GARBLED). A half-and-
+    half pair (a previous-name begin with a Sigma end) therefore resolves to the Sigma pair, finds an
+    end with no begin, and is GARBLED -- a refusal to guess, as for any other broken pair."""
+    begin, end = BEGIN_OPEN.encode("ascii"), END.encode("ascii")
+    if begin in data or end in data:
+        return begin, end
+    return (legacy.retired_spelling(BEGIN_OPEN).encode("ascii"),
+            legacy.retired_spelling(END).encode("ascii"))
+
+
 def _garbled(reason):
     return Block(GARBLED, None, None, None, None, None, reason)
 
@@ -515,8 +534,9 @@ def locate(data):
 
     A begin marker whose `-->` is only found beyond the end marker is unclosed, not wide: `-->` also
     ends the END marker, so an unguarded `find` would happily return a body that swallowed it."""
-    begins = _find_all(data, BEGIN_OPEN.encode("ascii"))
-    ends = _find_all(data, END.encode("ascii"))
+    begin_open, end_marker = _marker_pair(data)
+    begins = _find_all(data, begin_open)
+    ends = _find_all(data, end_marker)
     if not begins and not ends:
         return Block(ABSENT, None, None, None, None, None, None)
     if len(begins) > 1:
@@ -529,10 +549,10 @@ def locate(data):
         return _garbled("it has an end marker with no begin marker")
     if not ends:
         return _garbled("its end marker is missing, so where the managed block stops is unknown")
-    start, stop = begins[0], ends[0] + len(END)
+    start, stop = begins[0], ends[0] + len(end_marker)
     if ends[0] < start:
         return _garbled("its end marker comes before its begin marker")
-    close = data.find(BEGIN_CLOSE.encode("ascii"), start + len(BEGIN_OPEN))
+    close = data.find(BEGIN_CLOSE.encode("ascii"), start + len(begin_open))
     if close == -1 or close > ends[0]:
         return _garbled("its begin marker is never closed")
     # No further ordering guard is needed, and one that looked prudent was MEASURED DEAD: the body
@@ -862,8 +882,11 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
     # nothing had. The non-circular half is an EXACT comparison against the marker `render_block`
     # would emit for the digest that marker itself carries: nothing is hashed that contains a hash,
     # and every byte of the block is now covered by one check or the other.
-    marker_intact = recorded is not None and data[where.start:where.inner_start] == _marker(
-        recorded).encode("utf-8")
+    # #239: a block written under the plugin's previous name is vouched for by the same rule, spelled
+    # the old way -- the digest covers the body only, so the rename never touched what it proves.
+    marker_intact = recorded is not None and data[where.start:where.inner_start] in (
+        _marker(recorded).encode("utf-8"),
+        legacy.retired_spelling(_marker(recorded)).encode("utf-8"))
     vouched = marker_intact and recorded == _checksum(body)
     spliced = data[:where.start] + block.encode("utf-8") + data[where.stop:]
 
@@ -897,6 +920,10 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
         return _report(path, UNCHANGED, entry=registry.normalise_entry(entry))
 
     _atomic_write_bytes(path, spliced)
+    if _marker_pair(data)[0] != BEGIN_OPEN.encode("ascii"):
+        # #239: said once, on the write that respells it -- silent when there was nothing old.
+        sys.stderr.write("feature_doc: migrated legacy managed-block markers in %s to Sigma's on use\n"
+                         % (path,))
 
     if vouched:
         return _report(path, UPDATED, entry=registry.normalise_entry(entry))

@@ -130,6 +130,9 @@ def _load(name):
 #: second opinion, because the name it validates is the same string that becomes a branch segment.
 is_unit_name = _load("features")._is_unit_name
 
+#: #239: the previous name's schema id (`<previous>/features@1`) reads as `SCHEMA`; see legacy.py.
+legacy = _load("legacy")
+
 #: The version key. `index.json` is duplicated in full into every participating repo (§7.1), so this
 #: string is a cross-repo contract: a document that does not carry it is not one this code can read.
 SCHEMA = "sigma/features@1"
@@ -448,7 +451,7 @@ def parse(doc):
     the sheet name paths the name rule exists to forbid."""
     if not isinstance(doc, dict):
         return {}
-    if doc.get("schema") != SCHEMA:
+    if not legacy.schema_is(doc.get("schema"), SCHEMA):
         if doc.get("features") is not None:
             _note("sigma: features: a registry document declares schema %r, not %r, so none of "
                   "it was read. Upgrade the plugin, or correct the schema key.\n"
@@ -729,7 +732,7 @@ def resolve_any_unit(sdlc_dir, name):
 # --------------------------------------------------------------------------- writing
 
 
-def _atomic_write_text(path, text):
+def _atomic_write_text(path, text, schema=None):
     """Write via a temp file in the SAME directory, then `os.replace`.
 
     Mirrors `triage._atomic_write_text` and `state._patch_cursor`'s publish tail: same directory so
@@ -745,8 +748,12 @@ def _atomic_write_text(path, text):
 
     `exist_ok=True` on the shared parent is load-bearing: two concurrent writers on DIFFERENT units
     both reach this line, and the race is resolved in the kernel with the same directory either
-    way. Without it, whichever writer loses the race dies on a directory that already exists."""
+    way. Without it, whichever writer loses the race dies on a directory that already exists.
+
+    `schema`, when given, is the id `text` declares: if the file being replaced carried the previous
+    name's id, one stderr line says so (#239). It only reads the file being replaced, never another."""
     path = pathlib.Path(path)
+    old = _legacy_schema_at(path) if schema is not None else None
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
     try:
@@ -759,6 +766,22 @@ def _atomic_write_text(path, text):
         except OSError:                   # noqa: S110 - cleanup must not mask the original failure
             pass
         raise
+    if old is not None:
+        # #239: said once, on the write that replaces an old schema id with Sigma's -- the same
+        # line `feature_doc.sync` and `upstream._history` print; silent when there was nothing old.
+        _note("feature_registry: migrated legacy schema id %r in %s to %s on use\n"
+              % (old, path, schema))
+
+
+def _legacy_schema_at(path):
+    """The previous name's schema id `path` currently declares, else None. Never raises: it only
+    decides whether a one-line notice is printed, never whether or what to write."""
+    try:
+        got = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+        value = got.get("schema") if isinstance(got, dict) else None
+    except Exception:                     # noqa: BLE001 - a missing/corrupt file is simply not legacy
+        return None
+    return value if legacy.is_legacy_schema(value) else None
 
 
 def write_unit(features_dir, name, entry):
@@ -789,7 +812,7 @@ def write_unit(features_dir, name, entry):
     and nothing is written when it does."""
     path = unit_path(features_dir, name)
     _atomic_write_text(path, dumps({"schema": SCHEMA,
-                                    "features": {name: normalise_entry(entry)}}))
+                                    "features": {name: normalise_entry(entry)}}), schema=SCHEMA)
     return path
 
 
@@ -803,5 +826,5 @@ def write_index(features_dir, registry):
     the branch a shard names still exists. Until it does, `read`'s shard-wins rule keeps the union
     correct with both present."""
     path = index_path(features_dir)
-    _atomic_write_text(path, dumps(document(registry)))
+    _atomic_write_text(path, dumps(document(registry)), schema=SCHEMA)
     return path

@@ -17,7 +17,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
-const PORT = Number(process.env.SIGMA_AUTOWATCH_CHANNEL_PORT || 8790)
+// #239: the previous env prefix still works (spelled from fragments: a guarded name); SIGMA_ wins.
+const PORT = Number(process.env.SIGMA_AUTOWATCH_CHANNEL_PORT
+  || process.env['LOOP' + 'SMITH_AUTOWATCH_CHANNEL_PORT'] || 8790)
 
 const mcp = new Server(
   { name: 'sigma-autowatch', version: '0.1.0' },

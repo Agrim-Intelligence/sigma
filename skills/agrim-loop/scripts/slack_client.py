@@ -42,6 +42,7 @@ def _load(name):
 
 scrub = _load("scrub")
 ledger = _load("ledger")
+legacy = _load("legacy")    # #239: the token variable and the channel key under the previous name
 
 DEFAULT_TOKEN_ENV = "SIGMA_SLACK_BOT_TOKEN"
 SLACK_POST_URL = "https://slack.com/api/chat.postMessage"
@@ -103,7 +104,7 @@ def post_message(channel_id, text, config, post=None, token_env=None):
         return False
     text = scrub.scrub(text) if text else (text or "")
     env_name = token_env if (isinstance(token_env, str) and token_env.strip()) else _token_env(config)
-    token = os.environ.get(env_name, "")
+    token = legacy.getenv(env_name, "")
     if not token:
         preview = text[:STUB_PREVIEW_CHARS]
         ellipsis = "..." if len(text) > STUB_PREVIEW_CHARS else ""
@@ -135,7 +136,7 @@ def _resolve_channel(config, channel):
     than a network call worth swallowing."""
     if channel in CHANNEL_ALIASES:
         channels = ((config or {}).get("drift_watch") or {}).get("channels") or {}
-        value = channels.get(channel)
+        value = legacy.channel_value(channels, channel)
         if isinstance(value, str) and value.strip():
             return value.strip(), None
         return None, ('drift_watch.channels.%s is not set in config.json -- fill it in, or pass a '

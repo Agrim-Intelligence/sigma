@@ -301,6 +301,11 @@ def test_the_store_prunes_itself_without_the_reader_ever_running(tmp_path, monke
     unbounded growth the action log's own directory already suffers (`doctor.py` records that a log
     file is never pruned once its goal is done). So the writer sweeps, once per process."""
     d = _sdlc(tmp_path)
+    # Seeding the ancient interval must not itself be this process's once-only sweep: when this test
+    # is the first timing write in its process (alone, or first on an xdist worker) that sweep wrote
+    # `.last-prune` NOW and the sweep under test below then skipped -- an order-dependent red, seen
+    # on origin/main too during #239's verify. The flag is shut for the seed, then opened.
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)
     timing_store.append(d, "ancient", "phase", "implement", 1000, started=1)
     for f in timing_store.goal_files(d, "ancient"):
         _age(f, timing_store.RETENTION_DAYS + 5)
@@ -389,12 +394,16 @@ def test_intervals_with_no_start_key_are_never_deduplicated(tmp_path):
 # --------------------------------------------------------------------- sessions (process time, S1)
 
 
-def test_a_session_line_never_lands_under_a_goal_stem(tmp_path):
+def test_a_session_line_never_lands_under_a_goal_stem(tmp_path, monkeypatch):
     """S1's acceptance criterion, and the plan-review finding it answers: the first draft had NO
     path from a session line to disk at all, because `append` resolves through `goal_dir` and
     `goal_dir` refuses the reserved name. Session lines take their own route, and that route
     creates no goal directory as a side effect."""
     d = _sdlc(tmp_path)
+    # The once-per-process prune sweep writes `.last-prune` at the store's top level when this is the
+    # process's first timing write (run alone, or first on an xdist worker) -- an order-dependent red
+    # on origin/main too, seen in #239's verify. Shut the flag: the sweep is not what is under test.
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)
     timing_store.append_session(d, "4f2a91", "turn", "agrim-plan", 1238000, started=1789041912400)
 
     entries = timing_store.read_session(d, "4f2a91")
@@ -405,10 +414,11 @@ def test_a_session_line_never_lands_under_a_goal_stem(tmp_path):
     assert timing_store.read_goal(d, "4f2a91") == []
 
 
-def test_the_reserved_session_name_is_refused_as_a_goal(tmp_path):
+def test_the_reserved_session_name_is_refused_as_a_goal(tmp_path, monkeypatch):
     """`state.unsafe_goal_reason` refuses only separators and `..`, so `_sessions` is a legal goal
     id today. The refusal lives here, in the one place a goal becomes a store path, and the
     fail-open wrapper turns it into a skipped write rather than a misfiled one."""
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)   # see the session-line test
     d = _sdlc(tmp_path)
     with pytest.raises(ValueError):
         timing_store.goal_dir(d, timing_store.SESSIONS)
@@ -717,13 +727,14 @@ def test_session_totals_for_nothing_recorded_are_absent(tmp_path):
 # --------------------------------------------------------------------- retention over sessions (S7)
 
 
-def test_a_stale_session_is_pruned_goal_dirs_are_untouched_and_the_sweep_is_throttled(tmp_path):
+def test_a_stale_session_is_pruned_goal_dirs_are_untouched_and_the_sweep_is_throttled(tmp_path, monkeypatch):
     """S7's acceptance criterion, three properties in one sequence:
       - a session whose last activity is outside the window is removed, by the same
         most-recent-file rule a goal gets;
       - a goal directory of the same age is handled by the goal pass, never by the sessions
         pass, and a FRESH goal is untouched by either;
       - the sweep is throttled: within the window a second call does one `stat` and no sweep."""
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)   # see the session-line test
     d = _sdlc(tmp_path)
     now = time.time()      # real time, so the aged fixtures and the cutoff mean what they say
     timing_store.append_session(d, "old-session", "turn", "agrim-plan", 1000, started=1)
@@ -766,6 +777,7 @@ def test_the_hook_path_prunes_through_the_throttle_not_once_per_process(tmp_path
     """Every hook invocation is a fresh process, so "once per process" would be "on every event" —
     measured at up to 553 ms per sweep on a synthetic store. The hook path goes through the stamp
     instead: with a fresh stamp present, a session append does not sweep."""
+    monkeypatch.setattr(timing_store, "_pruned_this_process", True)   # see the session-line test
     d = _sdlc(tmp_path)
     timing_store.append_session(d, "old", "turn", "agrim-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old"):

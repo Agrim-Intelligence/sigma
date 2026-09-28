@@ -71,6 +71,7 @@ feature_sync = _load("feature_sync")
 unit_completion = _load("unit_completion")
 scrub = _load("scrub")
 slack_client = _load("slack_client")
+legacy = _load("legacy")                 # #239: `channels.<previous name>` still reads
 
 DEFAULT_TTL_MINUTES = 90
 WATERMARK_NAME = "drift.meta.json"
@@ -283,7 +284,7 @@ def _channel_id(config):
     fixed tie-break beats an ambiguous double-post)."""
     channels = settings(config).get("channels") or {}
     for key in ("sigma", "org"):
-        value = channels.get(key)
+        value = legacy.channel_value(channels, key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None

@@ -296,14 +296,30 @@ a bypass for its force-push.
 """
 
 
-def scaffold_codex(target_dir):
-    """Add a managed Codex rule block without replacing a project's existing AGENTS.md."""
-    dest = pathlib.Path(target_dir) / "AGENTS.md"
-    if dest.is_symlink():
-        raise ValueError(f"refusing to replace a symlinked AGENTS.md: {dest}")
-    existing = dest.read_text(encoding="utf-8") if dest.exists() else ""
-    start = "<!-- sigma:codex:start -->"
-    end = "<!-- sigma:codex:end -->"
+def _legacy():
+    """The shared previous-name helper (#239), loaded by path from the sibling agrim-loop skill --
+    the same cross-skill idiom `doctor._load_loop_script` uses."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent.parent.parent / "agrim-loop" / "scripts" / "legacy.py"
+    spec = importlib.util.spec_from_file_location("legacy", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def codex_block_update(existing, dest="AGENTS.md"):
+    """-> the new AGENTS.md text with Sigma's Codex block in place, or None when it is already
+    current. Pure: `scaffold_codex` writes the result, `migrate.py` previews and writes it too.
+
+    WHICH PAIR IS OURS (#239). The Sigma pair when the file carries any Sigma Codex marker; the
+    plugin's PREVIOUS-name pair only when it carries none -- that block is this adapter's own text
+    from before the rename, so it is replaced in place like any owned block. With a Sigma block
+    already present, a previous-name block beside it is left alone: it belongs to a teammate's old
+    plugin, not to this one. Raises ValueError on a malformed or reversed pair (never guesses)."""
+    start, end = "<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->"
+    if start not in existing and end not in existing:
+        legacy = _legacy()
+        start, end = legacy.retired_spelling(start), legacy.retired_spelling(end)
     starts, ends = existing.count(start), existing.count(end)
     if starts > 1 or ends > 1 or (ends and not starts):
         raise ValueError(f"malformed Sigma Codex managed block in {dest}")
@@ -313,20 +329,30 @@ def scaffold_codex(target_dir):
             raise ValueError(f"reversed Sigma Codex markers in {dest}")
         current = existing[first:last]
         if current == _CODEX_RULE.rstrip("\n"):
-            return False
+            return None
         # This is an owned block: refresh it when the installed plugin changes while preserving
         # every byte outside the markers. A project can keep its own rules before or after it.
-        data = (existing[:first] + _CODEX_RULE.rstrip("\n") + existing[last:]).encode("utf-8")
-    elif starts:
+        return existing[:first] + _CODEX_RULE.rstrip("\n") + existing[last:]
+    if starts:
         # Recover a previous interrupted append. Only the managed partial tail is replaced.
         existing = existing[:existing.index(start)].rstrip("\n") + "\n"
-        separator = "\n"
-        data = (existing + separator + _CODEX_RULE).encode("utf-8")
-    else:
-        separator = "\n" if existing and not existing.endswith("\n") else ""
-        if existing:
-            separator += "\n"
-        data = (existing + separator + _CODEX_RULE).encode("utf-8")
+        return existing + "\n" + _CODEX_RULE
+    separator = "\n" if existing and not existing.endswith("\n") else ""
+    if existing:
+        separator += "\n"
+    return existing + separator + _CODEX_RULE
+
+
+def scaffold_codex(target_dir):
+    """Add a managed Codex rule block without replacing a project's existing AGENTS.md."""
+    dest = pathlib.Path(target_dir) / "AGENTS.md"
+    if dest.is_symlink():
+        raise ValueError(f"refusing to replace a symlinked AGENTS.md: {dest}")
+    existing = dest.read_text(encoding="utf-8") if dest.exists() else ""
+    updated = codex_block_update(existing, dest)
+    if updated is None:
+        return False
+    data = updated.encode("utf-8")
     fd, tmp = tempfile.mkstemp(prefix=".AGENTS.md.sigma-", dir=str(dest.parent))
     try:
         with os.fdopen(fd, "wb") as out:

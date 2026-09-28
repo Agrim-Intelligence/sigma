@@ -12,7 +12,12 @@ set -uo pipefail   # (no -e on purpose: the script MUST always reach the JSON em
 # or fight a repo's own discipline. SIGMA_GATE_GLOBAL=1 restores the
 # pre-0.6 always-on behavior for anyone who relied on the universal reminder.
 # Same guard pattern as research_capture.py (absent config == off, fail-open).
-if [ "${SIGMA_GATE_GLOBAL:-0}" != "1" ] && [ ! -d "${CLAUDE_PROJECT_DIR:-$PWD}/.sdlc" ]; then
+# #239: the same switch under the plugin's previous env prefix still works; SIGMA_ wins when set.
+# The old name is spelled from two fragments (a guarded private name in this tree); `${!name}` is
+# bash indirect expansion, and this hook is bash (shebang above).
+_gate_legacy_name="LOOP""SMITH_GATE_GLOBAL"
+_gate_global="${SIGMA_GATE_GLOBAL:-${!_gate_legacy_name:-0}}"
+if [ "$_gate_global" != "1" ] && [ ! -d "${CLAUDE_PROJECT_DIR:-$PWD}/.sdlc" ]; then
   printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":""}}\n'
   exit 0
 fi

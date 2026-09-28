@@ -219,6 +219,7 @@ def _load(name):
 
 
 features = _load("features")     # the read half (#1465): zero-dep, mutates nothing
+legacy = _load("legacy")         # #239: flag markers posted under the previous name
 ledger = _load("ledger")         # every automatic action is recorded; every call here is fail-open
 feature_registry = _load("feature_registry")   # #2263: `.sdlc/features/` existence gate (D-7)
 
@@ -411,7 +412,7 @@ def _flag(source, goal, marker, text):
               "posted this pass; it will be retried on the next pick\n" % (goal, exc))
         return False
     for comment in seen.get("comments") or []:
-        if marker in ((comment or {}).get("body") or ""):
+        if legacy.has_marker((comment or {}).get("body") or "", marker):
             return False
     try:
         source.note(goal, text)

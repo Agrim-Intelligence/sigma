@@ -46,6 +46,7 @@ def _load_velocity():
 
 scrub = _load("scrub").scrub
 mirror = _load("mirror")
+legacy = _load("legacy")   # #239: dismissals and decomposition markers under the previous name
 sources = _load("sources")
 blocker_scan = _load("blocker_scan")   # #1487: the blocker vocabulary + unpark-QA strip, shared
                                        # with mirror.py so a full-body scan at fetch time and an
@@ -502,7 +503,7 @@ def _filter_dismissal_comments(texts):
     The marker itself is still scanned for separately and exactly — `cross_check` passes the
     UNFILTERED raw comments to `_dismissed_findings` — this only ever narrows the broader
     trigger-phrase corpus that produces NEW findings, never the marker read-back."""
-    return [t for t in texts if DISMISS_MARKER not in t]
+    return [t for t in texts if not legacy.has_marker(t, DISMISS_MARKER)]
 
 
 def _strip_offboard_prefixes(texts):
@@ -616,7 +617,8 @@ def _goal_comment_text(sdlc_dir, config, goal_doc, run=None):
 # the human's dismissal was itself wrong, the evidence is still there to be reconsidered, just no
 # longer park-confident.
 DISMISS_MARKER = "sigma:dismissed-finding"
-_DISMISS_RE = re.compile(re.escape(DISMISS_MARKER) + r"\s+kind=([a-z-]+)\s+ref=(\d+)")
+_DISMISS_RE = re.compile("(?:%s)" % "|".join(re.escape(s) for s in legacy.spellings(DISMISS_MARKER))
+                         + r"\s+kind=([a-z-]+)\s+ref=(\d+)")
 
 
 def dismiss_comment(kind, ref, reason=""):
@@ -684,7 +686,7 @@ def _local_dismissal_flag(sdlc_dir, config, goal_doc):
     try:
         stem = pathlib.Path(goal_doc["ref"]).stem
         text = (pathlib.Path(sdlc_dir) / "journey" / (stem + ".md")).read_text(encoding="utf-8")
-        return DISMISS_MARKER in text
+        return legacy.has_marker(text, DISMISS_MARKER)
     except Exception:
         return False
 
@@ -935,8 +937,8 @@ def cross_check(sdlc_dir, goal, config=None, run=None, now=None, velocity_measur
         # a partial doc.
         first_line = (goal_doc.get("body") or "").lstrip().splitlines()[:1]
         first_line = first_line[0] if first_line else ""
-        exempt = (goal_size.DECOMPOSED_FROM_MARKER in first_line
-                  or goal_size.DECOMPOSE_OF_MARKER in first_line)
+        exempt = (legacy.has_marker(first_line, goal_size.DECOMPOSED_FROM_MARKER)
+                  or legacy.has_marker(first_line, goal_size.DECOMPOSE_OF_MARKER))
         window = _closed_window_days(config, run=run, velocity_measure=velocity_measure)
 
         # Opt-in dense/embedding channel (Q5): catches paraphrases that share NO lexical term. Fail-open
