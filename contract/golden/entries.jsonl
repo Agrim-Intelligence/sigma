@@ -1,0 +1,11 @@
+{"id":"dana:1","ts":"2026-08-01T09:00:00Z","actor":"dana","kind":"claimed","goal":"0298"}
+{"id":"dana:2","ts":"2026-08-01T09:30:00Z","actor":"dana","kind":"done","goal":"0298"}
+{"id":"dana:3","ts":"2026-08-01T09:35:00Z","actor":"dana","kind":"parked","goal":"0299","why":"blocked on review"}
+{"id":"dana:4","ts":"2026-08-01T09:40:00Z","actor":"dana","kind":"failed","goal":"0300","why":"verify red"}
+{"id":"dana:5","ts":"2026-08-01T09:45:00Z","actor":"dana","kind":"handoff","goal":"0301","to":"amy","issue":61,"area":"web","priority":"P1"}
+{"id":"amy:1","ts":"2026-08-01T10:00:00Z","actor":"amy","kind":"ack","goal":"0301","issue":61,"state":"accepted"}
+{"id":"dana:6","ts":"2026-08-01T11:00:00Z","actor":"dana","kind":"release","goal":"0301","ref":"v1.2.3"}
+{"id":"dana:7","ts":"2026-08-01T11:05:00Z","actor":"dana","kind":"note","goal":"0298","why":"context for next reader"}
+{"id":"dana:8","ts":"2026-08-01T11:10:00Z","actor":"dana","kind":"merged","goal":"0298","pr":298,"merged_entry_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+{"id":"dana:9","ts":"2026-08-01T11:15:00Z","actor":"dana","kind":"note","goal":"0298","future_experimental_field":"an older reader must ignore this, not fail"}
+{"id":"dana:10","ts":"2026-08-01T11:20:00Z","actor":"dana","kind":"merge-armed","goal":"0298","pr":298}

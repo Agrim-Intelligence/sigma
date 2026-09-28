@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""Deterministic, idempotent scaffolder for the per-project .sdlc/ layer.
+Copies templates/**/<x>.tmpl -> <target>/.sdlc/<x>, skip-if-exists. Zero deps."""
+import sys, json, pathlib, os, subprocess, tempfile
+
+# script is at skills/agrim-init/scripts/sdlc_init.py; templates sit beside scripts/
+TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "templates"
+GITHUB_TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "github-templates"
+
+# script is at skills/agrim-init/scripts/sdlc_init.py; the sibling agrim-setup skill sits beside it
+SETUP_SCRIPT = pathlib.Path(__file__).resolve().parent.parent.parent / "agrim-setup" / "scripts" / "setup.py"
+
+
+class RuntimeIgnoreWriteFailed(Exception):
+    """Raised by _ignore_runtime_dirs() when the runtime dirs could not be git-ignored (#2626).
+    Never swallowed anywhere in this module -- a caller that let this pass silently would leave
+    `.sdlc/events/` and friends committable, the exact bug this fix exists to close. By the time
+    this can raise, scaffold()'s template-writing loop has already finished and every template
+    write is skip-if-exists, so a rerun after fixing the cause repeats no work."""
+
+
+def _ignore_runtime_dirs(target_dir):
+    """Shell out to the sibling agrim-setup skill's own CLI -- never a cross-skill Python import
+    (skills do not import each other's Python; a skill needing a sibling shells out to that
+    sibling's CLI, #2626). No timeout: a synchronous, local, no-network write the operator is
+    already blocking on; a fixed constant here would be a limit copied from a laptop, not
+    measured. Raises RuntimeIgnoreWriteFailed on any failure -- never prints and returns --
+    because scaffold()'s two real callers (main() and wizard_actions.run_scaffold()) each need
+    to notice this in their own idiom (a nonzero CLI exit vs. an {"ok": False} dict), and only an
+    exception lets each one do that. setup.py itself is unmodified by this goal (Rev 8): any
+    failure inside its ensure_ignore() -- e.g. a directory named .gitignore -- surfaces here as
+    an ordinary nonzero CLI exit (Python's own default behavior on an uncaught exception), no
+    extra code needed."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(SETUP_SCRIPT), "ignore", str(target_dir), "--scope", "tracked"],
+            capture_output=True, text=True)
+    except OSError as exc:          # defensive: sys.executable itself unusable
+        raise RuntimeIgnoreWriteFailed(
+            f"could not start the git-ignore write ({exc}) -- the .sdlc templates under "
+            f"{target_dir} are already written and safe to keep; rerun this same /agrim-init "
+            f"command once the underlying cause is fixed (already-written templates are "
+            f"skipped, not overwritten)") from exc
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeIgnoreWriteFailed(
+            f"git-ignore write failed (exit {proc.returncode}): {detail} -- the .sdlc templates "
+            f"under {target_dir} are already written and safe to keep; rerun this same "
+            f"/agrim-init command once the underlying cause is fixed (already-written templates "
+            f"are skipped, not overwritten)")
+
+
+def scaffold(target_dir):
+    target = pathlib.Path(target_dir)
+    sdlc = target / ".sdlc"
+    project_name = target.resolve().name
+    created, skipped = [], []
+    for tmpl in sorted(TEMPLATES.rglob("*.tmpl")):
+        rel = tmpl.relative_to(TEMPLATES).with_name(tmpl.name[:-len(".tmpl")])  # strip literal .tmpl
+        dest = sdlc / rel
+        if dest.exists():
+            skipped.append(str(rel))
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(tmpl.read_text(encoding="utf-8").replace("{{PROJECT_NAME}}", project_name), encoding="utf-8")
+        created.append(str(rel))
+    _ignore_runtime_dirs(target)
+    return created, skipped
+
+
+_DEMO_GOAL = """---
+id: 0000
+title: "Demo - write a Sigma hello note"
+lane: auto
+done_when: "sigma-demo.md exists with a one-line note"
+auto_ok: true
+status: pending
+---
+
+A throwaway demo goal so you can watch the SDLC run end to end. Create
+`sigma-demo.md` containing a single line noting that Sigma ran this goal
+through Goal -> Research -> Plan -> Plan-Review -> Implement -> Review. Delete this
+goal file once you've seen it work.
+"""
+
+
+def scaffold_demo(target_dir):
+    """Queue a small, safe, runnable demo goal so `/agrim-loop` shows the SDLC immediately.
+    Returns True if written, False if it already exists (never clobbered)."""
+    dest = pathlib.Path(target_dir) / ".sdlc" / "goals" / "0000-demo.md"
+    if dest.exists():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_DEMO_GOAL, encoding="utf-8")
+    return True
+
+
+_NORTH_STAR = """# {{PROJECT_NAME}} - North Star
+
+The product context that grounds every goal. Fill the tiers top-down and keep each short - this is
+direction, not a spec. `/agrim-context` recalls this first; `agrim-plan-review` checks plans against it.
+
+## Vision (why this exists, for whom)
+<the change you want to make in the world, and who it's for>
+
+## Strategy (what we're building now)
+- Priorities: <the few things that matter this cycle>
+- Non-goals: <what we are deliberately NOT doing - the alignment gate uses these>
+
+## Design (how the product should feel)
+<the experience + the principles a change must respect>
+
+## Architecture (how it's built + the rules we develop by)
+<the shape of the system - the stack itself lives in project.md. Then the **rules** that govern changes
+as a NUMBERED, checkable list: plan-review enforces these (a plan that violates one is blocked). Unlike
+the tiers above, this tier can be AI-drafted from the codebase and user-approved.>
+1. <e.g. the UI layer holds no business logic>
+2. <e.g. dependencies point inward; no sibling imports across modules>
+"""
+
+
+def scaffold_vision(target_dir):
+    """Scaffold the opt-in vision-first north-star (.sdlc/context/north-star.md), skip-if-exists.
+    Opt-in via --vision so plain /agrim-init stays drop-in. Returns True if written, False if present."""
+    target = pathlib.Path(target_dir)
+    dest = target / ".sdlc" / "context" / "north-star.md"
+    if dest.exists():
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_NORTH_STAR.replace("{{PROJECT_NAME}}", target.resolve().name), encoding="utf-8")
+    return True
+
+
+_CURSOR_RULE = """---
+description: Goal-Based SDLC - standing discipline for every change (Sigma)
+globs:
+alwaysApply: true
+---
+
+# Goal-Based SDLC (Sigma)
+
+Cursor has no UserPromptSubmit hook, so this always-applied rule is the standing policy. For any
+non-trivial or implementation task, do NOT jump straight to coding - follow the phases and state which
+one you are on:
+
+1. **Goal** - restate the objective as one concrete, checkable goal.
+2. **Research** - blast radius: affected files, existing patterns, constraints.
+3. **Plan** - steps, files, tests, definition-of-done.
+4. **Plan-Review** - adversarially review the plan BEFORE implementing. Never skip.
+5. **Implement** - test-first (red -> green -> refactor); minimal code to pass.
+6. **Review** - evidence before claims: run the checks, paste the output; a KPI + qualitative scan.
+7. **Retrospective** - capture lessons.
+
+**Intent-aware:** trivial / conversational / read-only requests may be answered directly - but say so
+explicitly. The moment it turns into a code change, switch to the spine.
+
+**Never run an irreversible or expensive action** (deploy, delete, overwrite, spend, migrate)
+unattended - stop and ask.
+
+**Nobody commits directly to a feature branch. All work reaches it through `sdlc/*` goal
+branches.** Concretely: the `sdlc/<goal-id>` branch cut for a goal, then a pull request into
+`feature/<name>`. Rebasing a shared branch rewrites published history, which normally forces every
+holder to hard-reset; that risk disappears only because nobody is holding commits on it.
+
+What Sigma does is MEASURE the branch before it force-pushes, and refuse to bring it forward
+when it finds a commit no pull request accounts for. It checks only on a pick, and only when the
+branch is BEHIND its base -- when it skips, it reports nothing at all, so silence is not evidence
+the rule held. Sigma cannot stop a direct commit; only branch protection on the host can, and
+protecting `feature/*` in the ordinary way blocks the force-push upkeep itself needs, which stops
+upkeep entirely. Protect the integration branch; on `feature/*`, grant upkeep's actor a bypass.
+
+**Executors (portable):** this host has no `superpowers` / `code-review` companion, so each phase runs
+via Sigma's portable executor - the disciplines in `skills/agrim-*/SKILL.md` (`agrim-brainstorm` ->
+Goal, `agrim-plan` -> Plan, `agrim-implement` -> Implement, `agrim-review` + `agrim-verify` -> Review).
+Same discipline as the Claude companions, portable.
+
+**Backlog + helpers (optional):** the loop, model-selection, status and KG helpers are plain, zero-dep
+`python3` - run them from your Sigma checkout via Cursor's terminal, e.g.
+`python3 <sigma>/skills/agrim-loop/scripts/loop.py next .sdlc` or
+`python3 <sigma>/skills/agrim-model/scripts/predict.py "<goal>"`.
+Status output is the sibling rule `output-contract.mdc`: every status block is constructed by
+`python3 <sigma>/skills/agrim-loop/scripts/render.py`, never written by hand.
+"""
+
+#: The second always-apply Cursor rule (#2114): status output is CONSTRUCTED by render.py, never
+#: written by hand. Pure ASCII on purpose -- it NAMES the contract's markers, separator and arrows
+#: and points at `docs/output-contract.md` for them; the source file is read as ASCII by
+#: `tests/test_sdlc_init.py`. This repo's own `.cursor/rules/output-contract.mdc` is this text byte
+#: for byte (single source; pinned by the same tests), so `<sigma>` reads as `.` there.
+_CURSOR_OUTPUT_RULE = """---
+description: Status output is constructed by Sigma's render.py, never hand-written (blocks, triggers, refusal)
+globs:
+alwaysApply: true
+---
+
+# Output contract (Sigma)
+
+All status reporting in this repo follows `<sigma>/docs/output-contract.md`, and that document is
+the SPECIFICATION of a renderer, not prose to imitate. A status block is CONSTRUCTED by
+`<sigma>/skills/agrim-loop/scripts/render.py` from facts you pass it, and never written by hand.
+(`<sigma>` is your Sigma checkout; inside the Sigma repository itself it is `.`.)
+
+Three commands, run from Cursor's terminal:
+
+- `python3 <sigma>/skills/agrim-loop/scripts/render.py status|event|decision` -- the facts are one
+  JSON object on stdin, or inline as `--json '<facts>'`. `status` builds Block A (STATUS), `event`
+  Block B (EVENT), `decision` Block C (DECISION). Relay its stdout exactly as printed.
+- `python3 <sigma>/skills/agrim-log/scripts/log.py slots .sdlc` -- the live Block A: one two-line
+  slot per active goal, read from the action log and built by render.py. Relay it verbatim; do not
+  reword it, re-order it, or add a slot. When it says the log is off or unknown, relay that too.
+- `python3 <sigma>/skills/agrim-loop/scripts/phase_report.py end .sdlc <goal> <phase> --pid "$PPID"` -- prints
+  Block B at a phase boundary, carrying that phase's measured cost or an honest "unavailable" line.
+  Read it; do not restate its numbers or imitate its shape.
+
+A refusal is `render.py: REFUSED [<code>] at <path>: <detail>` on stderr, exit 2, and nothing on
+stdout. It means the facts were malformed: fix the facts and run it again. Never patch the prose by
+hand, and never emit a block the renderer did not build.
+
+Emit only on a trigger, one block each: work dispatched or a slot refilled (A); a phase boundary
+crossed (B); a background task or agent completing (B, then A if slot state changed); a merge
+landing (B); a decision needed from the human (C); end of turn with nothing in flight (A). Starting
+or finishing a tool call, reading files, thinking and every other intermediate step are not
+triggers. If no trigger fires, emit nothing.
+
+Dispatch labels follow the same identity: every subagent label, task title and branch name carries
+the goal ref and the phase.
+
+One limit, stated rather than discovered: the constructed line is unforgeable in shape, but it is
+not guaranteed to reach the user unparaphrased -- anywhere a reply is read rather than the raw tool
+output, it can still be paraphrased -- so relay the block exactly as printed and add nothing around it.
+
+This governs status output only. Content the user explicitly asked for (a report, a walkthrough, an
+explanation) is given in full.
+"""
+
+
+#: The always-apply Cursor rules `--cursor` writes, in write order. Each is skip-if-exists on its
+#: own, so an adopter who already carries one still receives the other.
+_CURSOR_RULES = (("sdlc.mdc", _CURSOR_RULE), ("output-contract.mdc", _CURSOR_OUTPUT_RULE))
+
+
+def scaffold_cursor_rules(target_dir):
+    """Write each rule in `_CURSOR_RULES` into <target>/.cursor/rules/, skip-if-exists PER FILE.
+    Returns (created, skipped) as file names -- the same shape as `scaffold_github`."""
+    rules_dir = pathlib.Path(target_dir) / ".cursor" / "rules"
+    created, skipped = [], []
+    for name, text in _CURSOR_RULES:
+        dest = rules_dir / name
+        if dest.exists():
+            skipped.append(name)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+        created.append(name)
+    return created, skipped
+
+
+def scaffold_cursor(target_dir):
+    """Scaffold the Cursor host adapter: two always-apply rules under .cursor/rules/ -- `sdlc.mdc`
+    carrying the SDLC discipline (Cursor's analog of the Claude UserPromptSubmit hook) and
+    `output-contract.mdc` pointing status output at render.py instead of at prose to imitate
+    (#2114). Opt-in via --cursor, each file skip-if-exists. Returns True if anything was written,
+    False if both were already present."""
+    created, _ = scaffold_cursor_rules(target_dir)
+    return bool(created)
+
+
+_CODEX_RULE = """<!-- sigma:codex:start -->
+## Sigma on Codex
+
+For a non-trivial implementation task, use the installed Sigma skills and run Goal -> Research
+-> Plan -> Plan-Review -> Implement -> Review -> Retrospective. Follow each skill's phase gates,
+record the evidence, and keep the maker and checker in separate contexts. Read-only and trivial
+requests may be answered directly. Use the project `.sdlc/config.json` for optional features.
+
+Codex does not set `CLAUDE_SKILL_DIR`. Before running a Sigma skill command, take the absolute
+directory containing that skill's `SKILL.md` from the installed skill path and substitute it for
+`${CLAUDE_SKILL_DIR}` in that command. Do this for every independent shell call. An empty variable
+would point at `/scripts/...`; never execute that unresolved path. Do not infer the plugin's versioned
+cache directory from another machine.
+
+Model tiers in the shared ledger are `haiku`, `sonnet`, `opus`, and `fable`. They are relative work
+tiers, not Codex model IDs. Before every Codex subagent dispatch, run
+`python3 "<absolute agrim-model skill directory>/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc`.
+Pass its exact `model=` and `effort=` values to the subagent; never pass an Anthropic tier as a
+model ID. If it refuses the mapping, do not dispatch: choose an approved current Codex model in the
+affected `model_host_overrides.codex` entry, or update the plugin for a changed host catalog, then
+rerun the resolver.
+
+Nobody commits directly to a feature branch. All work reaches it through `sdlc/*` goal branches.
+Use the `sdlc/<goal-id>` branch for a goal, then a pull request into `feature/<name>`. Sigma's
+check runs only on a pick when that branch is behind its base; silence is not evidence it ran.
+Only branch protection can prevent a direct commit. If protecting `feature/*`, grant upkeep's actor
+a bypass for its force-push.
+<!-- sigma:codex:end -->
+"""
+
+
+def scaffold_codex(target_dir):
+    """Add a managed Codex rule block without replacing a project's existing AGENTS.md."""
+    dest = pathlib.Path(target_dir) / "AGENTS.md"
+    if dest.is_symlink():
+        raise ValueError(f"refusing to replace a symlinked AGENTS.md: {dest}")
+    existing = dest.read_text(encoding="utf-8") if dest.exists() else ""
+    start = "<!-- sigma:codex:start -->"
+    end = "<!-- sigma:codex:end -->"
+    starts, ends = existing.count(start), existing.count(end)
+    if starts > 1 or ends > 1 or (ends and not starts):
+        raise ValueError(f"malformed Sigma Codex managed block in {dest}")
+    if starts and ends:
+        first, last = existing.index(start), existing.index(end) + len(end)
+        if first >= existing.index(end):
+            raise ValueError(f"reversed Sigma Codex markers in {dest}")
+        current = existing[first:last]
+        if current == _CODEX_RULE.rstrip("\n"):
+            return False
+        # This is an owned block: refresh it when the installed plugin changes while preserving
+        # every byte outside the markers. A project can keep its own rules before or after it.
+        data = (existing[:first] + _CODEX_RULE.rstrip("\n") + existing[last:]).encode("utf-8")
+    elif starts:
+        # Recover a previous interrupted append. Only the managed partial tail is replaced.
+        existing = existing[:existing.index(start)].rstrip("\n") + "\n"
+        separator = "\n"
+        data = (existing + separator + _CODEX_RULE).encode("utf-8")
+    else:
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        if existing:
+            separator += "\n"
+        data = (existing + separator + _CODEX_RULE).encode("utf-8")
+    fd, tmp = tempfile.mkstemp(prefix=".AGENTS.md.sigma-", dir=str(dest.parent))
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
+            out.flush()
+            os.fsync(out.fileno())
+        if dest.exists():
+            os.chmod(tmp, dest.stat().st_mode & 0o777)
+        os.replace(tmp, dest)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return True
+
+
+def scaffold_github(target_dir):
+    """Materialize the GitHub PM scaffolding (issue templates, auto-add workflow, label rule, the
+    critical-insight template) into <target>/.github/, skip-if-exists. Opt-in via the --github flag."""
+    target = pathlib.Path(target_dir)
+    project_name = target.resolve().name
+    created, skipped = [], []
+    for tmpl in sorted(GITHUB_TEMPLATES.rglob("*.tmpl")):
+        rel = tmpl.relative_to(GITHUB_TEMPLATES).with_name(tmpl.name[:-len(".tmpl")])
+        dest = target / ".github" / rel
+        if dest.exists():
+            skipped.append(str(rel))
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(tmpl.read_text(encoding="utf-8").replace("{{PROJECT_NAME}}", project_name), encoding="utf-8")
+        created.append(str(rel))
+    return created, skipped
+
+
+USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
+
+
+def main(argv):
+    if argv[1:] in (["-h"], ["--help"]):
+        print(USAGE)
+        return 0
+    flags = {a for a in argv[1:] if a.startswith("--")}
+    pos = [a for a in argv[1:] if not a.startswith("--")]
+    target = pos[0] if pos else "."
+    if not pathlib.Path(target).is_dir():
+        print(f"agrim-init: target directory does not exist: {target}", file=sys.stderr)
+        return 1
+    try:
+        created, skipped = scaffold(target)
+    except RuntimeIgnoreWriteFailed as exc:
+        print(f"agrim-init: {exc}", file=sys.stderr)
+        return 1
+    root = pathlib.Path(target).resolve()
+    print(f"agrim-init: {len(created)} created, {len(skipped)} skipped (target: {root})")
+    for c in created:
+        print(f"  + .sdlc/{c}")
+    for s in skipped:
+        print(f"  = .sdlc/{s} (exists, kept)")
+    if created:
+        print("\nTip: commit .sdlc/goals/, .sdlc/project.md and .sdlc/config.json. The machine-written "
+              "dirs ('.sdlc/state/', '.sdlc/ledger/', '.sdlc/work/', '.sdlc/knowledge/') are now "
+              "git-ignored automatically (`setup.py ignore`, the same mechanism /agrim-setup uses). To "
+              "change the ignore scope later (tracked vs. local-only), move the lines from "
+              ".gitignore to .git/info/exclude by hand -- /agrim-setup never relocates an existing "
+              "rule.")
+    if "--github" in flags:
+        gcreated, gskipped = scaffold_github(target)
+        print(f"\nagrim-init: GitHub PM scaffolding - {len(gcreated)} created, {len(gskipped)} skipped")
+        for c in gcreated:
+            print(f"  + .github/{c}")
+        for s in gskipped:
+            print(f"  = .github/{s} (exists, kept)")
+    if "--demo" in flags:
+        if scaffold_demo(target):
+            print("\nagrim-init: demo goal queued - `.sdlc/goals/0000-demo.md`. Run `/agrim-loop` to watch "
+                  "the SDLC run it end to end (Goal -> Research -> ... -> Review).")
+            if "--github" in flags:
+                print("  github mode: file it as an issue - `gh issue create --label sdlc:goal "
+                      "--title \"[Demo] Sigma\" --body \"<paste the demo goal body>\"` - then `/agrim-loop` "
+                      "creates the board and moves the card Backlog -> ... -> Done.")
+        else:
+            print("\nagrim-init: demo goal already present (kept).")
+    if "--vision" in flags:
+        if scaffold_vision(target):
+            print("\nagrim-init: vision-first north-star queued - `.sdlc/context/north-star.md`. Run "
+                  "`/agrim-vision` to fill the tiers (Vision -> Strategy -> Design -> Architecture); "
+                  "`/agrim-context` then grounds every goal in it.")
+        else:
+            print("\nagrim-init: north-star already present (kept).")
+    if "--cursor" in flags:
+        rules_created, rules_skipped = scaffold_cursor_rules(target)
+        # Cursor never has the superpowers/code-review companions - pin companions:off so the portable
+        # executors are used without a pointless `claude plugin list` probe (fail-open if config's odd).
+        try:
+            cfgp = pathlib.Path(target) / ".sdlc" / "config.json"
+            cfg = json.loads(cfgp.read_text(encoding="utf-8"))
+            if cfg.get("companions") != "off":
+                cfg["companions"] = "off"
+                cfgp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+        if rules_created:
+            print("\nagrim-init: Cursor adapter queued - "
+                  + ", ".join("`.cursor/rules/%s`" % n for n in rules_created)
+                  + " (always-applied rules; `sdlc.mdc` is the SDLC discipline, the hook analog, "
+                  "and `output-contract.mdc` points status output at render.py). companions pinned "
+                  "off (portable executors). The zero-dep python helpers run from your Sigma "
+                  "checkout via Cursor's terminal.")
+            for s in rules_skipped:
+                print("  = .cursor/rules/%s (exists, kept)" % s)
+        else:
+            print("\nagrim-init: Cursor rules already present (kept).")
+    if "--codex" in flags:
+        if scaffold_codex(target):
+            print("\nagrim-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
+        else:
+            print("\nagrim-init: Codex rule already present (kept).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

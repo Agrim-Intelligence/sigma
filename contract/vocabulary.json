@@ -1,0 +1,183 @@
+{
+  "contract_version": "1.2",
+  "entries_kinds": [
+    "claimed",
+    "done",
+    "parked",
+    "failed",
+    "handoff",
+    "ack",
+    "release",
+    "note",
+    "merged",
+    "merge-armed"
+  ],
+  "entry_schemas": {
+    "merged": {
+      "fields": {
+        "merged_entry_key": {
+          "error": "merged_entry_key must be 64 lowercase hexadecimal characters",
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      }
+    }
+  },
+  "event_fields": {
+    "ci_observed": [
+      "observation_key",
+      "pr",
+      "head_sha",
+      "gate_verdict",
+      "checks_total",
+      "checks_truncated",
+      "checks"
+    ],
+    "gate": [
+      "gate",
+      "verdict",
+      "cycle",
+      "why",
+      "decision_id"
+    ],
+    "merge_observed": [
+      "observation_key",
+      "subject_kind",
+      "subject",
+      "pr",
+      "merge_sha"
+    ],
+    "model_choice": [
+      "model",
+      "signal"
+    ],
+    "park": [
+      "reason_class",
+      "why",
+      "decision_tier"
+    ],
+    "phase": [
+      "phase",
+      "state",
+      "ms",
+      "tokens_in",
+      "tokens_out",
+      "attempt_id"
+    ],
+    "retro": [
+      "grade",
+      "debt_count",
+      "lessons_count"
+    ],
+    "review_posted": [
+      "observation_key",
+      "brief_hash",
+      "evidence_id",
+      "comment_id",
+      "pr",
+      "head_sha",
+      "verdict"
+    ],
+    "run_stop": [
+      "reason_class",
+      "why"
+    ],
+    "scan": [
+      "category",
+      "file",
+      "count"
+    ],
+    "slice": [
+      "slice",
+      "wave",
+      "mode",
+      "files_declared",
+      "ms"
+    ],
+    "spend": [
+      "phase",
+      "model",
+      "tokens_in",
+      "tokens_out",
+      "cost_cents",
+      "attempt_id"
+    ],
+    "verify": [
+      "ok",
+      "exit",
+      "ms",
+      "command_sha256",
+      "absent"
+    ]
+  },
+  "event_kinds": [
+    "phase",
+    "gate",
+    "verify",
+    "slice",
+    "spend",
+    "retro",
+    "park",
+    "scan",
+    "run_stop",
+    "model_choice",
+    "merge_observed",
+    "review_posted",
+    "ci_observed"
+  ],
+  "gate_kinds": [
+    "plan_review",
+    "code_review",
+    "post_review",
+    "merge",
+    "decision",
+    "alignment",
+    "verify",
+    "risk_security",
+    "risk_contract",
+    "risk_migration",
+    "risk_release",
+    "risk_debug",
+    "test_trust"
+  ],
+  "phase_kinds": [
+    "goal",
+    "research",
+    "plan",
+    "plan_review",
+    "implement",
+    "review",
+    "retro"
+  ],
+  "reason_classes": [
+    "irreversible",
+    "needs_decision",
+    "merge_conflict",
+    "failing_check",
+    "no_evidence",
+    "dependency",
+    "review_cap",
+    "budget",
+    "backlog-empty",
+    "quota",
+    "unknown",
+    "handoff"
+  ],
+  "retro_grades": [
+    "achieved",
+    "partial",
+    "diverged"
+  ],
+  "severity_order": {
+    "ABSENT": 1,
+    "FAIL": 3,
+    "PASS": 0,
+    "WARN": 2
+  },
+  "verdicts": [
+    "pass",
+    "block",
+    "warn",
+    "absent"
+  ]
+}

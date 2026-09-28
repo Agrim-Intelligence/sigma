@@ -1,0 +1,2 @@
+# The generator prints LF; pin the checkout to LF on every platform so byte comparisons hold (#2623).
+vocabulary.json text eol=lf

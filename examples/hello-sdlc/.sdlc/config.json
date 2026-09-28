@@ -1,0 +1,11 @@
+{
+  "_comment": "Authoritative machine config for the loop. Mirrors project.md prose; this file wins on conflict.",
+  "mode": { "default": "goal" },
+  "discovery": { "source": "local-goals" },
+  "budget": { "max_iterations": 20, "max_tokens": 500000, "max_minutes": 480 },
+  "gates": {
+    "irreversible_actions": ["deploy", "delete", "overwrite", "spend", "migrate"],
+    "on_block": "park"
+  },
+  "verify": { "command": "python3 -m pytest test_greeter.py" }
+}

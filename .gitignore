@@ -1,0 +1,34 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.coverage.*
+
+# A knowledge-graph build's output, at the repository root (`<builder>-out/`).
+/*-out/
+
+# Sigma's own runtime state when the kit runs its SDLC on itself; tracked design, plans and
+# research are re-included (git cannot re-include under an excluded parent, hence `.sdlc/*`).
+.sdlc/*
+!.sdlc/design/
+!.sdlc/changelog-fragments/
+!.sdlc/plans/
+.sdlc/plans/reconcile/
+.sdlc/plans/triage/
+.sdlc/plans/scope/
+!.sdlc/research/
+
+# Python build and virtual-environment trees.
+.venv/
+venv/
+/build/
+/dist/
+*.egg-info/
+
+# Local agent-host state (live worktrees, per-machine settings).
+.claude/
+
+# Secrets: never commit.
+.env
+.env.*
+!.env.example

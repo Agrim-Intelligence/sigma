@@ -1,0 +1,504 @@
+"""Sigma must never autonomously delete a `feature/<name>` branch (issue #1819).
+
+`docs/branching-model.md` (S13/S13a) already treats `feature/<name>` as long-lived: finishing a
+unit is a REGISTRY EDIT (`open: false`), never a branch deletion. A prior audit found no code path
+in the kit deletes a `feature/<name>` branch today -- but that was true only by absence, never
+checked or stated as an invariant. This file makes it checked (S13b in the doc is the stated half).
+
+WHAT THIS PROVES, in two parts:
+
+1. STRUCTURAL INVENTORY (`_delete_call_sites` + `test_every_delete_shaped_call_site_...`). Every
+   `.py` file `git` tracks under `skills/` or `hooks/` is scanned, with comments and docstrings
+   blanked out first (a tokenize pass, not a raw substring scan -- see `_python_scannable_lines`),
+   for four shapes:
+   - `branch_dD`    -- `git branch -d/-D <name>` (a local delete)
+   - `push_delete`  -- `git push ... --delete <name>` (GitHub's explicit remote-delete flag)
+   - `rest_delete_ref` -- a REST `-X DELETE .../git/refs/heads/<name>` call
+   - `colon_refspec` -- a two-sided push refspec `<src>:refs/heads/<dst>` -- git's THIRD, easy to
+     miss delete syntax: when `<src>` is empty, `git push` DELETES `<dst>`. This is not itself a
+     deletion, but a BUILD SITE for one, and it is exactly the shape a naive "just check for -d/-D
+     and --delete" scanner would miss entirely.
+   The inventory is then pinned to the EXACT, already-reviewed set of sites this scan currently
+   finds -- a FIFTH site appearing anywhere (a new delete, or a new unaudited colon-refspec build)
+   fails the pin immediately, by file, function and kind, forcing a conscious decision rather than
+   a silent regression.
+
+2. BEHAVIORAL PROOF for the two shapes that are structurally live. `work.py`'s `finish()` and
+   `merge()` really do delete a branch (the GOAL's own throwaway `sdlc/<goal>` branch, once its PR
+   is confirmed merged) -- so the inventory pin alone is not enough; this proves that even when the
+   SAME goal's `base` is a `feature/<name>` unit branch, no delete-shaped call ever names it.
+   `feature_rebase.py`'s colon-refspec site is proven safe differently (its source side is the
+   fixed literal `"HEAD"`, never a variable) and `define.py`'s is proven safe via `resolved_base()`
+   never returning a falsy value.
+
+WHY TOKENIZE, NOT A RAW SUBSTRING SCAN. `_delete_remote_branch`'s own real docstring in
+`work.py` contains the literal prose `"gh pr merge --delete-branch"` -- a raw scan for the
+substring `"--delete"` would flag its own explanatory comment. `_python_scannable_lines` (the same
+shape `tests/test_no_unsupervised_process_pause.py` already established in this repo, reimplemented
+here rather than imported -- this repo has no shared test-helper module) blanks every `COMMENT`
+token and every triple-quoted, non-f-string `STRING` token via the stdlib `tokenize` module, leaving
+ordinary string literals (`"branch"`, `"-D"`, `"DELETE"`) -- exactly where the real git/gh
+arguments live -- fully scannable.
+
+WHY TRACKED FILES, NOT `Path.rglob()`. This repo's own `tests/test_self_contained.py`
+(`_tracked_files()`) already fixed this exact defect class (#1434, #1461, landed as #1821 the same
+day as this file): a raw filesystem walk picks up untracked clutter -- a stray local scratch file,
+a `.claude/worktrees/` checkout -- that never ships and is not this project's code. `_owned_py_files`
+below asks `git ls-files` the same way, so a stray untracked `.py` file on a developer's disk (or a
+concurrent goal's own worktree) can never spuriously trip the inventory pin at `verify` time.
+
+NAMED, ACCEPTED GAP. Like the SIGSTOP guard, this is a TEXT/line scan, not a full data-flow
+analysis: a delete-shaped call built with the flag as a separate list element assembled across
+several statements (rather than one contiguous literal call) would not be caught. Each pattern is
+also matched PER PHYSICAL LINE, not per logical statement -- a call deliberately wrapped across
+multiple lines (unlike every real call site today, which is single-line) could split a pattern's
+two halves onto different lines and slip through; `test_a_planted_rest_delete_ref_call_is_caught`
+pins today's single-line shape rather than papering over this with a multi-line join. This closes
+the LIKELY reintroduction shape -- a literal `git branch -d/-D`, `--delete`, REST DELETE, or
+colon-refspec construction, written the way every real call site in this repo already is -- not
+every conceivable way to construct one dynamically.
+"""
+import ast
+import io
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import tokenize
+import types
+import importlib.util
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+DEFINE_SCRIPTS = ROOT / "skills" / "agrim-define" / "scripts"
+
+
+def _load(name, directory=SCRIPTS):
+    spec = importlib.util.spec_from_file_location(name, directory / f"{name}.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+work = _load("work")
+define = _load("define", DEFINE_SCRIPTS)
+
+ON = {"work": {"enabled": True}}
+ALWAYS_GITHUB = {"work": {"enabled": True, "auto_merge": "always"},
+                  "discovery": {"source": "github"}}
+NOSLEEP = lambda _: None                                          # noqa: E731 - one-liner test stub
+HEAD_SHA = "0" * 40
+REMOTE_URL = "git@github.com:acme/app.git"
+
+
+# =====================================================================================================
+# Part 1 -- the structural inventory: scanner + comment/docstring stripper + pin
+# =====================================================================================================
+
+_STRING_PREFIX_RE = re.compile(r"^[A-Za-z]*")
+
+
+def _is_triple_quoted(token_text):
+    """Whether a `tokenize` STRING token's own source text is an exemptable, real docstring-shaped
+    triple-quoted, non-f-string literal -- same rule `test_no_unsupervised_process_pause.py`
+    established: f-strings are never exempt, on any Python version, because an f-string can never
+    actually be a compiled `__doc__` in the first place."""
+    prefix_end = _STRING_PREFIX_RE.match(token_text).end()
+    prefix, body = token_text[:prefix_end], token_text[prefix_end:]
+    if "f" in prefix.lower():
+        return False
+    return body.startswith('"""') or body.startswith("'''")
+
+
+def _blank_span(line_chars, start, end):
+    """Overwrite `line_chars` (one mutable per-line list of characters) with spaces across the
+    half-open `tokenize` span `[start, end)` -- spaces, never deletion, so no two separated code
+    fragments can ever be accidentally concatenated into a new false match."""
+    (start_row, start_col), (end_row, end_col) = start, end
+    if start_row == end_row:
+        row = start_row - 1
+        if 0 <= row < len(line_chars):
+            width = len(line_chars[row])
+            for col in range(start_col, min(end_col, width)):
+                line_chars[row][col] = " "
+        return
+    row = start_row - 1
+    if 0 <= row < len(line_chars):
+        for col in range(start_col, len(line_chars[row])):
+            line_chars[row][col] = " "
+    for row in range(start_row, end_row - 1):
+        if 0 <= row < len(line_chars):
+            for col in range(len(line_chars[row])):
+                line_chars[row][col] = " "
+    row = end_row - 1
+    if 0 <= row < len(line_chars):
+        width = len(line_chars[row])
+        for col in range(0, min(end_col, width)):
+            line_chars[row][col] = " "
+
+
+def _python_scannable_lines(text):
+    """The code-only view of a `.py` file's lines: every COMMENT token and every real triple-quoted,
+    non-f-string STRING token (a docstring) is blanked; an ordinary string literal is left fully
+    scannable. Fails SAFE on an unparsable file: falls back to the raw lines (comments/docstrings
+    not stripped there), which can only ever cause a false positive, never a false negative."""
+    lines = text.split("\n")
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return lines
+    line_chars = [list(line) for line in lines]
+    for tok in tokens:
+        if tok.type == tokenize.COMMENT:
+            _blank_span(line_chars, tok.start, tok.end)
+        elif tok.type == tokenize.STRING and _is_triple_quoted(tok.string):
+            _blank_span(line_chars, tok.start, tok.end)
+    return ["".join(chars) for chars in line_chars]
+
+
+def _owned_py_files(root):
+    """Every `.py` file `git` tracks under `root` inside `skills/` or `hooks/` -- TRACKED files,
+    never a raw walk (module docstring's "WHY TRACKED FILES"). Returns `None` when `root` is not a
+    git checkout (or `git` is unavailable), so callers can skip honestly rather than silently
+    scanning nothing."""
+    try:
+        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z"],
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    files = [f for f in out.stdout.split("\0") if f]
+    owned = [f for f in files
+             if f.endswith(".py") and (f.startswith("skills/") or f.startswith("hooks/"))]
+    return sorted(root / f for f in owned)
+
+
+#: `"branch", "-D"` / `"branch", "-d"` -- a local delete, e.g. `["git", "branch", "-D", branch]`.
+_BRANCH_DD_RE = re.compile(r'"branch"\s*,\s*"-[dD]"')
+
+#: `"-X", "DELETE"` -- paired below with a `refs/heads` check on the same line, since the real REST
+#: delete call (`work.py`'s `_delete_remote_branch`) is a single physical-line call.
+_REST_X_DELETE_RE = re.compile(r'"-X"\s*,\s*"DELETE"')
+
+
+def _delete_call_sites(root):
+    """The guard, as a pure function: `(path, lineno, kind, line_text)` for every branch/ref
+    delete-shaped (or delete-CAPABLE, for `colon_refspec`) line found under `root`'s tracked
+    `skills/`+`hooks/` tree. `None` when `root` is not a git checkout -- see `_owned_py_files`."""
+    files = _owned_py_files(root)
+    if files is None:
+        return None
+    hits = []
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(_python_scannable_lines(text), start=1):
+            if _BRANCH_DD_RE.search(line):
+                hits.append((path, lineno, "branch_dD", line))
+            if "--delete" in line:
+                hits.append((path, lineno, "push_delete", line))
+            if _REST_X_DELETE_RE.search(line) and "refs/heads" in line:
+                hits.append((path, lineno, "rest_delete_ref", line))
+            if ":refs/heads/" in line:
+                hits.append((path, lineno, "colon_refspec", line))
+    return sorted(hits, key=lambda h: (str(h[0]), h[1], h[2]))
+
+
+def _enclosing_function(path, lineno):
+    """The innermost `def`/`async def` in `path` whose body spans `lineno`, by real AST ranges --
+    immune to line-number drift, unlike pinning an exact line number. `None` if the file can't be
+    parsed or no function contains the line (a module-level statement)."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except SyntaxError:
+        return None
+    best = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            start, end = node.lineno, getattr(node, "end_lineno", node.lineno)
+            if start <= lineno <= end:
+                if best is None or (end - start) < (best[1] - best[0]):
+                    best = (start, end, node.name)
+    return best[2] if best else None
+
+
+def _make_tracked_repo(tmp_path, rel_path, content):
+    """A throwaway git repo with exactly one tracked `.py` file, staged (not necessarily committed
+    -- `git ls-files` reports the index) -- enough for `_owned_py_files`/`_delete_call_sites` to see
+    it as tracked."""
+    subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(tmp_path), check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=str(tmp_path), check=True)
+    full = tmp_path / rel_path
+    full.parent.mkdir(parents=True, exist_ok=True)
+    full.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), check=True)
+    return tmp_path
+
+
+def test_a_planted_branch_dash_capital_d_call_is_caught(tmp_path):
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f(run, cwd, name):\n'
+                       '    run(cwd, ["git", "branch", "-D", name])\n')
+    hits = _delete_call_sites(tmp_path)
+    assert any(kind == "branch_dD" for _, _, kind, _ in hits), hits
+
+
+def test_the_same_pattern_inside_a_docstring_is_not_flagged(tmp_path):
+    """The exact shape `_delete_remote_branch`'s own real docstring has for `--delete-branch`, and
+    the equivalent for `branch_dD`: prose describing the pattern, not code performing it."""
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f():\n'
+                       '    """Never do ["git", "branch", "-D", x] -- this is only documentation."""\n'
+                       '    return 1\n')
+    hits = _delete_call_sites(tmp_path)
+    assert not any(kind == "branch_dD" for _, _, kind, _ in hits), hits
+
+
+def test_the_same_pattern_inside_a_hash_comment_is_not_flagged(tmp_path):
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f():\n'
+                       '    # ["git", "branch", "-D", x] -- do not actually do this\n'
+                       '    return 1\n')
+    hits = _delete_call_sites(tmp_path)
+    assert not any(kind == "branch_dD" for _, _, kind, _ in hits), hits
+
+
+def test_a_planted_push_delete_flag_is_caught(tmp_path):
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f(run, cwd, remote, name):\n'
+                       '    run(cwd, ["git", "push", remote, "--delete", name])\n')
+    hits = _delete_call_sites(tmp_path)
+    assert any(kind == "push_delete" for _, _, kind, _ in hits), hits
+
+
+def test_a_planted_rest_delete_ref_call_is_caught(tmp_path):
+    """A single physical line, matching the real call's own shape (`work.py`'s
+    `_delete_remote_branch`) -- the scanner is a per-line scan (module docstring's "NAMED,
+    ACCEPTED GAP"), so a call deliberately split across lines is a different, accepted gap."""
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f(run, cwd, branch):\n'
+                       '    run(cwd, ["gh", "api", "-X", "DELETE", "repos/o/r/git/refs/heads/%s" % branch])\n')
+    hits = _delete_call_sites(tmp_path)
+    assert any(kind == "rest_delete_ref" for _, _, kind, _ in hits), hits
+
+
+def test_a_planted_colon_refspec_is_caught(tmp_path):
+    """`git push <src>:refs/heads/<dst>` deletes `<dst>` when `<src>` is empty -- git's third,
+    easy-to-miss delete syntax, not covered by any of the other three patterns."""
+    _make_tracked_repo(tmp_path, "skills/x/scripts/y.py",
+                       'def f(run, cwd, remote, base, name):\n'
+                       '    run(cwd, ["git", "push", remote, "%s:refs/heads/%s" % (base, name)])\n')
+    hits = _delete_call_sites(tmp_path)
+    assert any(kind == "colon_refspec" for _, _, kind, _ in hits), hits
+
+
+def test_owned_py_files_scans_a_meaningful_number_of_real_files():
+    """Non-vacuous by construction: a scan scoped to nothing would pass every test below for the
+    wrong reason. Floor of 50 is well under this repo's real tracked count under skills/+hooks/."""
+    files = _owned_py_files(ROOT)
+    assert files is not None, "not a git checkout -- cannot verify the real tree"
+    assert len(files) >= 50, len(files)
+
+
+def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_ones():
+    """THE INVENTORY PIN. Every branch/ref-delete-shaped (or delete-capable) line in this repo's own
+    tracked `skills/`+`hooks/` tree, today, is one of exactly these five -- two real deletes (both
+    scoped structurally to the GOAL's own throwaway `sdlc/<goal>` branch, never `feature/<name>`,
+    proven behaviorally in Part 2 below) and three colon-refspec BUILD sites, each independently
+    proven safe (Part 2). A sixth site appearing anywhere -- including one that could delete a
+    `feature/<name>` branch -- fails this test immediately, by file, function and kind, which is
+    the whole point: it forces a conscious decision (update this pin AND
+    docs/branching-model.md S13b) instead of a silent regression."""
+    hits = _delete_call_sites(ROOT)
+    assert hits is not None, "not a git checkout -- cannot verify the real tree"
+    found = {(str(path.relative_to(ROOT)), _enclosing_function(path, lineno), kind)
+             for path, lineno, kind, _line in hits}
+    assert found == {
+        ("skills/agrim-loop/scripts/work.py", "finish", "branch_dD"),
+        ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "rest_delete_ref"),
+        ("skills/agrim-define/scripts/define.py", "_step_branch", "colon_refspec"),
+        ("skills/agrim-loop/scripts/feature_rebase.py", "_pushed", "colon_refspec"),
+        ("skills/agrim-loop/scripts/release_manifest.py", "publish_to_ledger_branch", "colon_refspec"),
+    }, found
+
+
+def test_the_feature_rebase_colon_refspec_source_side_is_the_fixed_literal_HEAD():
+    """The `feature_rebase.py` colon-refspec site is safe for a DIFFERENT reason than the
+    `define.py` one (proven behaviorally below): its refspec's source side is the fixed literal
+    `"HEAD"`, never a runtime variable, so it can never go empty regardless of any other state.
+    Inspects the exact scannable line the inventory pin above already located -- a more direct
+    proof than exercising the whole rebase pass end-to-end and observing the branch survived once."""
+    hits = _delete_call_sites(ROOT)
+    assert hits is not None
+    (line,) = [line for path, _lineno, kind, line in hits
+               if kind == "colon_refspec" and path.name == "feature_rebase.py"]
+    assert '"HEAD:refs/heads/' in line, line
+
+
+def test_the_release_manifest_colon_refspec_source_side_is_the_fixed_literal_HEAD():
+    """`publish_to_ledger_branch` is safe for the same reason `feature_rebase.py`'s site is: the
+    refspec's source side is the fixed literal `"HEAD"`, never a runtime variable, so it can never
+    go empty and become a delete. Its destination is the `sdlc-ledger` ops branch rather than any
+    `feature/<name>` ref, so it cannot reach a unit branch at all -- but the source-side proof is
+    what makes it safe independent of that."""
+    hits = _delete_call_sites(ROOT)
+    assert hits is not None
+    (line,) = [line for path, _lineno, kind, line in hits
+               if kind == "colon_refspec" and path.name == "release_manifest.py"]
+    assert '"HEAD:refs/heads/' in line, line
+    assert "refs/heads/sdlc-ledger" in line, line
+
+
+# =====================================================================================================
+# Part 2 -- behavioral proof for the two structurally-live call sites, plus the two build sites
+# =====================================================================================================
+
+def _runner(handlers):
+    """First substring match wins -- same contract as `tests/test_work.py`'s own `_runner`,
+    duplicated here (no shared test-helper module in this repo)."""
+    calls = []
+
+    def run(cwd, argv):
+        line = " ".join(str(a) for a in argv)
+        calls.append(line)
+        for token, resp in handlers:
+            if token in line:
+                if isinstance(resp, Exception):
+                    raise resp
+                return resp(line) if callable(resp) else resp
+        if "rev-parse HEAD" in line:
+            return HEAD_SHA
+        if "remote get-url" in line:
+            return REMOTE_URL
+        return ""
+
+    run.calls = calls
+    return run
+
+
+def _sdlc(tmp_path, config=None):
+    state = _load("state")
+    d = tmp_path / ".sdlc"
+    (d / "state").mkdir(parents=True)
+    (d / "config.json").write_text(json.dumps(config or ON))
+    state.start_run(str(d))
+    return str(d)
+
+
+def _started(sdlc_dir, goal="0001-x.md", pr="7", base="main"):
+    wt = pathlib.Path(sdlc_dir).parent / ".sdlc" / "work" / "0001-x"
+    wt.mkdir(parents=True, exist_ok=True)
+    work._save(sdlc_dir, goal, {"worktree": str(wt), "branch": "sdlc/0001-x", "base": base,
+                                "remote": "origin", "pr": pr})
+    return goal
+
+
+def _pr_state(state="OPEN", auto_merge=False):
+    return json.dumps({"state": state,
+                       "autoMergeRequest": ({"mergeMethod": "SQUASH"} if auto_merge else None)})
+
+
+def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), head=HEAD_SHA):
+    return json.dumps({"mergeable": mergeable, "mergeStateStatus": status, "headRefOid": head,
+                       "statusCheckRollup": [{"name": n, "conclusion": c} for n, c in checks]})
+
+
+def _rights(cross=False, perm="ADMIN"):
+    return [("isCrossRepository", json.dumps({"isCrossRepository": cross})),
+            ("viewerPermission", perm),
+            ("nameWithOwner", "acme/app")]
+
+
+def _default_branch(name="main"):
+    return [("default_branch", name)]
+
+
+def _evidence(sdlc_dir, goal="0001-x.md", exit_code=0, age=0):
+    state = _load("state")
+    ev = state.evidence_path(sdlc_dir, goal)
+    ev.parent.mkdir(parents=True, exist_ok=True)
+    at = state.load_cursor(sdlc_dir)["run_started_at"] - age
+    ev.write_text(json.dumps({"command": "pytest", "exit": exit_code, "at": at, "tail": []}))
+
+
+_UNIT_BRANCH = "feature/guard-test-unit"
+
+
+def _delete_shaped(call):
+    return "--delete" in call or "DELETE" in call or re.search(r"\bbranch\s+-[dD]\b", call)
+
+
+def test_finish_never_names_the_feature_branch_when_the_goal_declared_a_unit(tmp_path):
+    """The goal this whole file exists to prove for `finish()`: even with a unit-based goal (`base`
+    is a `feature/<name>` branch), only the goal's OWN throwaway `sdlc/<goal>` branch is ever
+    deleted -- `finish()` never even reads or names `base` anywhere."""
+    d = _sdlc(tmp_path)
+    goal = _started(d, base=_UNIT_BRANCH)
+    run = _runner([("pr view", _pr_state("MERGED"))])
+    out = work.finish(d, ON, goal, run=run)
+    # existing behavior untouched: the goal's own branch really is deleted, both sides --
+    # otherwise the assertion below would pass vacuously (nothing delete-shaped ran at all).
+    assert "deleted branch sdlc/0001-x" in out, out
+    assert any(c == "git branch -D sdlc/0001-x" for c in run.calls), run.calls
+    assert any(c == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
+              for c in run.calls), run.calls
+    # the actual invariant: the feature branch is never even named, delete-shaped call or not.
+    assert not any(_UNIT_BRANCH in c for c in run.calls), run.calls
+
+
+def test_merge_never_deletes_the_feature_branch_base_after_a_direct_landing(tmp_path):
+    """`merge()` DOES legitimately mention `base` for an unrelated, non-delete reason (closing the
+    goal's issue itself when the base can't -- docs/branching-model.md S13a), so the correct
+    assertion is narrower than "base is never mentioned": no DELETE-SHAPED call ever names it."""
+    d = _sdlc(tmp_path)
+    goal = _started(d, base=_UNIT_BRANCH)
+    _evidence(d, goal)
+    run = _runner(_rights() + _default_branch("main") + [("pr view", _view())])
+    out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged"), out
+    # existing behavior untouched: the goal's own branch really is deleted.
+    assert any(c == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
+              for c in run.calls), run.calls
+    # the actual invariant.
+    assert not any(_UNIT_BRANCH in c for c in run.calls if _delete_shaped(c)), run.calls
+
+
+def test_resolved_base_never_returns_a_falsy_value(tmp_path):
+    """The ONE colon-refspec build site whose source side is a runtime variable is `define.py`'s
+    `_step_branch`, via `ctx.resolved_base()`. This is what makes that pinned site safe: it either
+    returns a truthy, non-empty base, or refuses loudly (`_Refused`) -- it can never silently hand
+    back `""`/`None`, the one value that would turn `"%s:refs/heads/%s" % (base, ctx.branch)` into
+    the exact delete shape `define.py`'s own docstring names."""
+    def ctx(config, base, run):
+        return define._Ctx(str(tmp_path / ".sdlc"), "widget", "feature", config, run,
+                           str(tmp_path), None, base)
+
+    run_home = _runner([("rev-parse --abbrev-ref HEAD", "main\n")])
+    explicit = ctx({}, "feature/explicit", run_home)
+    assert explicit.resolved_base() == "feature/explicit"
+
+    configured = ctx({"work": {"base": "feature/configured"}}, None, run_home)
+    assert configured.resolved_base() == "feature/configured"
+
+    from_head = ctx({}, None, run_home)
+    assert from_head.resolved_base() == "main"
+
+    detached_run = _runner([("rev-parse --abbrev-ref HEAD", "HEAD\n")])
+    detached = ctx({}, None, detached_run)
+    try:
+        result = detached.resolved_base()
+    except define._Refused:
+        pass
+    else:
+        assert result, "resolved_base() returned a falsy value instead of refusing: %r" % (result,)
+
+    empty_head_run = _runner([("rev-parse --abbrev-ref HEAD", "")])
+    empty_head = ctx({}, None, empty_head_run)
+    try:
+        result = empty_head.resolved_base()
+    except define._Refused:
+        pass
+    else:
+        assert result, "resolved_base() returned a falsy value instead of refusing: %r" % (result,)

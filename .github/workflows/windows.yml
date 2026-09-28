@@ -1,0 +1,24 @@
+name: Windows verification
+
+# On demand only (workflow_dispatch): it proves one narrow thing, on a runner several times slower
+# than the Linux jobs, so it runs when that thing may have changed -- before a release, or after a
+# change to the watcher primitives. Trigger it with `gh workflow run windows.yml`.
+#
+# WHAT THIS PROVES THAT NO OTHER JOB CAN: supervise_daemon.py, watch_daemon.py and
+# run_with_timeout.py's process-tree kill, on a real Windows host -- see tests/test_windows_real.py's
+# own module docstring for what each test proves. That file skips itself everywhere else.
+on:
+  workflow_dispatch:
+
+jobs:
+  watchers-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pytest
+      - name: Watcher primitives, for real
+        run: python -m pytest tests/test_windows_real.py -v --no-header

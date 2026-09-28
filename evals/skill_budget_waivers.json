@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Skills that breach a structural budget TODAY (issue #1616). A waiver is a DEBT RECORD, not a",
+    "dispensation: it freezes the breach at the size it was on the day it was written and names who",
+    "fixes it. Three ratchets in tests/test_skill_structure.py stop it becoming permanent scenery —",
+    "(1) a waived skill may never EXCEED its recorded numbers, so the +51%-in-10-days growth that",
+    "made #1611 worse between filing and fixing now turns CI red instead of going unnoticed;",
+    "The 2026-09-17 description trim moved selection detail into linked references and lowered",
+    "the two recorded token ceilings without raising their line ceilings; the debt remains.",
+    "(2) a waiver whose skill is back inside every budget is a FAILURE, so the entry must be deleted",
+    "the moment the fix lands, rather than sitting here forever; (3) the number of entries is capped",
+    "by a test, so a new breach cannot be absorbed by quietly adding a third line here.",
+    "",
+    "To retire one: shrink the skill, then delete its entry. To raise a ceiling: you must edit the",
+    "number below, which shows up as a diff line in your PR and has to be argued there.",
+    "",
+    "'recorded' fields are as measured by evals/skill_structure.py on 2026-09-03 (chars/4 estimator",
+    "— see that file's docstring for its calibration against a real tokenizer). Only fields that",
+    "actually breach are recorded; the gate compares field-by-field."
+  ],
+  "waivers": {}
+}

@@ -1,0 +1,22 @@
+{
+  "name": "sigma",
+  "description": "Guardrails + an overnight autopilot for your AI coding agent: a plan-gated 7-phase SDLC that runs your backlog autonomously and tracks each goal on a GitHub Projects board.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Swapnil Dubey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sdlc",
+    "workflow",
+    "autonomous",
+    "agentic",
+    "loop",
+    "tdd",
+    "code-review",
+    "github-projects",
+    "claude-code",
+    "codex",
+    "skills"
+  ]
+}
