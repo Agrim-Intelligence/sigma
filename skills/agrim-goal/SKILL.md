@@ -34,10 +34,13 @@ counterpart to the autonomous `/agrim-loop`).
    a cited brief from the graph + past issues + conventions (no-op when the KG is off). If
    `model_selection` is `auto`, also surface the recommended tier. For a local goal file, run
    `python3 "${CLAUDE_SKILL_DIR}/../agrim-model/scripts/predict.py" resolve "<goal-path>" .sdlc`.
-   For a GitHub issue number, read its real title and body with `gh issue view "<goal>" --json
-   title,body` and run `python3 "${CLAUDE_SKILL_DIR}/../agrim-model/scripts/predict.py" resolve
-   "<combined title and body>" .sdlc "<goal>"`; the final
-   argument keeps the ledger event attributed to the issue number. Passing the bare issue number
+   For a GitHub issue number, read its real text with
+   `gh issue view "<goal>" --json title,body --jq '.title + "\n\n" + (.body // "")'` (POSIX
+   shell) — the TITLE on the first line, because a haiku signal counts only there (#2827); plain
+   `--json title,body` prints one-line JSON, which reads as all title — and run
+   `python3 "${CLAUDE_SKILL_DIR}/../agrim-model/scripts/predict.py" resolve "<that text>" .sdlc
+   "<goal>"`; the final argument keeps the ledger event attributed to the issue number. Passing
+   the bare issue number
    as the text classifies its digits and can silently choose the wrong tier. This is the
    same GitHub-mode distinction as `/agrim-loop`'s `../agrim-loop/references/running.md`. Surface the result so you and the user
    know the intended model. **`/agrim-goal` dispatches each phase as its own subagent with the resolved

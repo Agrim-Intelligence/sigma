@@ -39,6 +39,51 @@ All notable changes to Sigma are recorded here, newest first.
   unparseable config on a repo with no board prints nothing. The backlog sync's lone case-variant
   `PRIORITY` adoption now fills blank cells on adopted boards where it wrote nothing before.
 
+- **Ported the predecessor's 1.4.26: a haiku signal counts only in the title, and a review send-back
+  escalates the tier instead of parking** (#283). Its two changes, merged file by file with their tests:
+  - A haiku model-tier signal counts only in the goal's title: the text's first line, or a goal
+    file's frontmatter `title:` (else its file stem). `predict.py` scanned title and body together, and
+    the predecessor found that a real issue body almost always quotes a code comment, a docstring or a
+    lint (its observation, not measured on Sigma's boards), so a non-trivial goal was routed to
+    `haiku` by one body word. The predecessor counted 24 open goals across its two boards
+    routed that way; that is its measurement, not one taken on Sigma's boards. A body-only haiku stem
+    now gets the `sonnet` default; opus and fable stems still count anywhere; `resolve-step` is
+    unchanged. `predict.py why` says where the signal was found (`model=haiku in=title signal=typo`),
+    with the signal still the text after `signal=`. The documented GitHub fallback prints the title on
+    its own first line (`gh issue view N --json title,body --jq '.title + "\n\n" + (.body // "")'`).
+  - New `loop.py escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review`, backed by
+    `tier_escalation.py`. The first word of its output is the answer. `ESCALATE <next> effort=<e>`
+    (exit 0) steps one rung up `haiku` → `sonnet` → `opus` within `model_selection_max_tier`. It
+    records a `model_choice` event with the signal `escalated: <gate> send-back at <tier>` when the
+    journal is on (it ships off) and, separately, a row in the action log when that is on (it ships
+    on from `/agrim-init`). `CEILING <tier>` (exit 3) means no higher
+    tier is allowed, so the usual fix cycle continues. `OFF` (exit 3) means `model_selection` is not
+    `auto`. `fable` is never a target. The raised tier is control state in
+    `.sdlc/state/escalation/<goal>.json`, written whatever the journal, ledger and action-log settings
+    are, so a goal escalates at most twice even when a resumed caller repeats its pick-time tier, and
+    `loop.py escalate <dir> <goal> --show` returns the raised ceiling. The `/agrim-loop` park list and
+    `/agrim-plan-review` now say that budget or tier size is not a park reason and print the gesture,
+    which a test runs. `README.md` and `docs/label-model.md` now say a send-back can raise a goal's tier
+    after the pick, so the tier no longer comes from the goal text alone.
+  - Where Sigma differs from the predecessor. The verb checks the Codex host mapping
+    (`model_host_overrides.codex`) before it writes anything, as `predict.py resolve` does, and exits 2
+    with nothing recorded when the mapping is refused. On Codex the `host-model` resolver's effort is
+    the one to use, not `effort=`. `OFF` no longer claims the phases run at the session model, which
+    is not true of a Codex dispatch. `tier_escalation.py` has no `__main__` stub: a direct call to the
+    module would be a silent no-op, and the entry point is `loop.py escalate`. To keep
+    `skills/agrim-loop/SKILL.md` under its size cap, the optional pipeline-report-card paragraph moved
+    out (`references/landing.md` already carries it in full), the wake-and-work paragraph lost the
+    clause `AUTOWATCH.md` already opens with, and the park-list paragraph is a shorter wording with
+    the same trigger: escalate before any park after a review send-back, at the latest on the second
+    send-back at one tier. `references/running.md` has the full text.
+  - Scope, said plainly: the verb decides and records on every host, and the re-dispatch at the new
+    tier is the host's. Claude and Codex can do it. Cursor has no per-subagent model override, so
+    there the answer is advisory and the operator switches the session model. Not measured: a real
+    host re-dispatch at an escalated tier, and the effect on Sigma's own boards. The escalation file is
+    about 73 bytes plus one inode for each goal ever escalated (at most one per goal) and is never
+    pruned, so 100x the goals is at most 100x those files; a call reads it by exact path. Inode and
+    directory-scan cost were not measured. Pruning it once its goal is done is a follow-up, not done here.
+
 - **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
   an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as
   a "Merge pull request #N" commit was flattened by the next upkeep pass: a plain `git rebase`

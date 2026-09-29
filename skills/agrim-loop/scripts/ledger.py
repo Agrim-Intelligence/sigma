@@ -169,7 +169,9 @@ EVENT_FIELDS = {
     # a SKILL.md -- see that file's own _emit_model_choice), shelling out to `loop.py emit ... kind
     # model_choice --model <tier> --signal <signal>`. Deliberately ONLY these two fields -- `effort`/
     # `phase` exist on the separate, pre-existing `loop.py log ... model_choice` ACTIONLOG kind
-    # (actionlog.AGENT_KINDS), a different vocabulary this issue does not touch.
+    # (actionlog.AGENT_KINDS), a different vocabulary this issue does not touch. #2828 adds a second
+    # writer: `loop.py escalate` records a tier escalation here, signal `escalated: <gate> send-back
+    # at <tier>` (skills/agrim-loop/scripts/tier_escalation.py).
     "model_choice": ("model", "signal"),
     "merge_observed": ("observation_key", "subject_kind", "subject", "pr", "merge_sha"),
     "review_posted": ("observation_key", "brief_hash", "evidence_id", "comment_id", "pr", "head_sha", "verdict"),

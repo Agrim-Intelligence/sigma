@@ -707,7 +707,11 @@ def _check_cross_repo_at_pick(sdlc_dir, goal, config):
         print(f"sigma: cross-repo landing check skipped (non-fatal): {exc}", file=sys.stderr)
 
 
-_WHY_LINE = re.compile(r"^model=(\S+) signal=(.*)$")
+#: `predict.py why`'s line. #2827 added an optional `in=<title|body>` BEFORE `signal=`, so the
+#: signal stays the free-text tail (signals contain spaces: `dead code`). The location is parsed
+#: and not recorded -- the ledger's `model_choice` fields are unchanged.
+_WHY_LINE = re.compile(
+    r"^model=(?P<model>\S+)(?: in=(?P<where>title|body))? signal=(?P<signal>.*)$")
 
 # Keep the pick-time recording boundary strict even if a resolver process is stale or corrupted.
 # This mirrors the versioned Codex catalog in agrim-model without importing that skill's Python.
@@ -796,8 +800,10 @@ def _predict_model_choice_at_pick(sdlc_dir, source, goal, config):
         if not ledger.journal_on(sdlc_dir, config):
             return
         title_body = source.fetch_title_body(goal) or {}
-        text = f"{title_body.get('title') or ''}\n\n{title_body.get('body') or ''}".strip()
-        if not text:
+        # #2827: the title must stay the FIRST LINE, where predict.py reads haiku signals -- so
+        # never `.strip()` this: with an empty title, stripping promoted the body's first line.
+        text = f"{title_body.get('title') or ''}\n\n{title_body.get('body') or ''}"
+        if not text.strip():
             return
         predict_py = _HERE.parent.parent / "agrim-model" / "scripts" / "predict.py"
         r = subprocess.run([sys.executable, str(predict_py), "why", text, str(sdlc_dir)],
@@ -812,7 +818,7 @@ def _predict_model_choice_at_pick(sdlc_dir, source, goal, config):
             print(f"sigma: model-tier prediction returned an unexpected shape "
                   f"(non-fatal): {r.stdout!r}", file=sys.stderr)
             return
-        tier, signal = m.group(1), m.group(2)
+        tier, signal = m.group("model"), m.group("signal")
         # `why` is deliberately pure and permissive so it can explain a candidate tier. Before
         # that candidate becomes a durable advisory event, run the strict Codex resolver too. This
         # is a sibling process rather than an import: Sigma skill modules deliberately do not
@@ -5426,7 +5432,137 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> | "
          "release <dir> <goal> [reason] | "
          "spend <dir> <tokens> [goal] [--k v ...] | emit <dir> <goal> <kind> [--k v ...] | "
          "log <dir> <goal> <kind> [--thread T] [--k v ...] | "
+         "escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review | "
+         "escalate <dir> <goal> --show | "
          "verify <dir> <goal>")
+
+
+_ESCALATE_USAGE = ("usage: loop.py escalate <dir> <goal> <current-tier> "
+                    "--after plan-review|code-review|pr-review | escalate <dir> <goal> --show")
+
+
+def _codex_mapping_problem(sdlc_dir, tier):
+    """None when `predict.py host-model codex <tier>` gives a strictly valid model/effort pair, else
+    the reason. The same two checks `_predict_model_choice_at_pick` makes (a sibling process, never
+    an import: skills do not import each other's Python), so a bad `model_host_overrides.codex`
+    leaves no `model_choice` row and no floor for a tier a Codex dispatch would refuse. Fails
+    CLOSED: a resolver that cannot run is a refusal, never a pass."""
+    predict_py = _HERE.parent.parent / "agrim-model" / "scripts" / "predict.py"
+    try:
+        host = subprocess.run([sys.executable, str(predict_py), "host-model", "codex", tier,
+                               str(sdlc_dir)], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"the host-model resolver could not run: {exc}"
+    if host.returncode != 0:
+        return ((host.stderr or "").strip().splitlines()[-1:] or [f"exit {host.returncode}"])[0]
+    try:
+        _parse_codex_host_model(host.stdout)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _escalation_floor_path(sdlc_dir, goal):
+    """`<sdlc>/state/escalation/<stem>.json` -- the goal's escalation floor (#2828). Same stem and
+    same unsafe-goal refusal as the action log's own per-goal file (`actionlog.log_path`)."""
+    stem = work.stem(goal)
+    reason = state.unsafe_goal_reason(stem)
+    if reason:
+        raise ValueError(f"unsafe goal {goal!r}: {reason}")
+    return pathlib.Path(sdlc_dir) / "state" / "escalation" / f"{stem}.json"
+
+
+def _escalate_show(sdlc_dir, goal):
+    """`loop.py escalate <dir> <goal> --show`: the tier this goal was escalated to, or `none`. A
+    later phase's dispatch reads its ceiling as the higher of the pick-time tier and this, so an
+    escalation outlives the phase that earned it and survives a resume. Clamped to the CURRENT
+    price ceiling, and `none` unless `model_selection` is "auto". Writes nothing."""
+    te = _load("tier_escalation")
+    try:
+        path = _escalation_floor_path(sdlc_dir, goal)
+    except ValueError as exc:
+        print(f"loop.py escalate: {exc}", file=sys.stderr)
+        return 2
+    try:
+        entries = actionlog.read_goal(sdlc_dir, goal)
+    except Exception:                               # noqa: BLE001 - memory is best-effort
+        entries = []
+    print(te.shown_tier(state.load_config(sdlc_dir), entries, te.read_floor(path)) or "none")
+    return 0
+
+
+def _escalate(sdlc_dir, goal, current, rest):
+    """#2828: `loop.py escalate` -- the one sanctioned move when a review sends work back and the
+    tier it ran at cannot converge the revision. The decision lives in `tier_escalation.py` (pure,
+    host-agnostic); this is the CLI shell around it plus the recording.
+
+    stdout's FIRST WORD is the answer, the same read-the-first-word convention `work.py merge` uses:
+      `ESCALATE <tier> effort=<e>` (exit 0) -- re-dispatch the phase fresh at <tier>; recorded as
+                        `model_choice`.
+      `CEILING <tier>`  (exit 3) -- no higher tier within the price ceiling; park/fail rules apply.
+      `OFF`             (exit 3) -- `model_selection` is not "auto"; there is no tier to raise.
+    Bad input (unknown tier, a missing or unknown `--after`, any other argument) exits 2 and writes
+    nothing. `--after` is REQUIRED: a default would silently label a code-review escalation as a
+    plan-review one in the recorded signal.
+    Sigma: an ESCALATE whose target tier the Codex host mapping refuses also exits 2 with nothing
+    written -- the mapping is validated before any `model_choice` is recorded, as `predict.resolve` does.
+    Exit 3 rather than 0 at the ceiling so a caller that only checks the status cannot mistake "no
+    higher tier" for "escalated"."""
+    after = None
+    i = 0
+    while i < len(rest):
+        tok = rest[i]
+        if tok == "--after" and i + 1 < len(rest):
+            after, i = rest[i + 1], i + 2
+        elif tok == "--after":
+            print(f"loop.py escalate: --after needs a value\n{_ESCALATE_USAGE}", file=sys.stderr)
+            return 2
+        elif tok.startswith("--after="):
+            after, i = tok.partition("=")[2], i + 1
+        else:
+            print(f"loop.py escalate: unexpected argument {tok!r}\n{_ESCALATE_USAGE}",
+                  file=sys.stderr)
+            return 2
+    if after is None:
+        print(f"loop.py escalate: --after is required\n{_ESCALATE_USAGE}", file=sys.stderr)
+        return 2
+    te = _load("tier_escalation")
+    config = state.load_config(sdlc_dir)
+    try:
+        floor_path = _escalation_floor_path(sdlc_dir, goal)
+    except ValueError as exc:
+        print(f"loop.py escalate: {exc}", file=sys.stderr)
+        return 2
+    try:
+        entries = actionlog.read_goal(sdlc_dir, goal)
+    except Exception:                               # noqa: BLE001 - memory is best-effort
+        entries = []
+    floor = te.read_floor(floor_path)
+    try:
+        verdict, tier, message = te.decide(config, current, after, entries, floor)
+    except ValueError as exc:
+        print(f"loop.py escalate: {exc}\n{_ESCALATE_USAGE}", file=sys.stderr)
+        return 2
+    if verdict == te.ESCALATE:
+        problem = _codex_mapping_problem(sdlc_dir, tier)     # before the floor and before any record
+        if problem:
+            print(f"loop.py escalate: Codex host mapping refused for {tier} ({problem}); nothing "
+                  f"was recorded. Fix model_host_overrides.codex in config.json and run it again.",
+                  file=sys.stderr)
+            return 2
+        frm = te.from_tier(config, current, entries, floor)
+        try:
+            te.write_floor(floor_path, tier, after, frm)
+        except OSError as exc:
+            # The floor is what bounds the ladder, so an unwritable one is said out loud -- the
+            # answer still stands (a re-dispatch at a higher tier is the correct move either way).
+            print(f"loop.py escalate: escalation floor not saved ({exc}); pass {tier} as "
+                  f"<current-tier> next time", file=sys.stderr)
+        te.record(sdlc_dir, goal, config, frm, tier, after, ledger, actionlog)
+        print(f"{te.ESCALATE} {tier} effort={te.EFFORT[tier]} -- {te.signal(after, frm)}; {message}")
+        return 0
+    print(f"{verdict} {tier} -- {message}" if verdict == te.CEILING else f"{verdict} -- {message}")
+    return 3
 
 
 def main(argv):
@@ -5937,6 +6073,10 @@ def _dispatch(argv):
               "OFF (the journal is not enabled: set \"journal\": {\"enabled\": true}, "
               "or have your organisation's managed settings lock it on)")
         return 0
+    if len(argv) >= 5 and argv[1] == "escalate":    # #2828: a send-back the tier cannot converge
+        if argv[4] == "--show" and len(argv) == 5:
+            return _escalate_show(argv[2], argv[3])
+        return _escalate(argv[2], argv[3], argv[4], argv[5:])
     if len(argv) >= 5 and argv[1] == "log":         # agent-emitted LOCAL action-trace (never the ledger)
         sdlc_dir, goal, kind = argv[2], argv[3], argv[4]
         flags = _flags(argv[5:])

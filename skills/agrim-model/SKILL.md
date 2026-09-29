@@ -46,12 +46,19 @@ Prints one of `haiku | sonnet | opus | fable`:
 |------|------|---------|
 | **opus** | hard / risky / high blast-radius | migrate, architecture, security, auth, concurrency, performance, breaking change, payments |
 | **fable** | creative / writing-heavy — **opt-in, see the price ceiling below** | vision, narrative, storytelling, blog, marketing copy |
-| **haiku** | trivial / mechanical | typo, rename, whitespace, reformat, docstring, dead code |
+| **haiku** | trivial / mechanical — **title only** | typo, rename, whitespace, reformat, docstring, dead code |
 | **sonnet** | everything else (default) | ordinary implementation |
 
 Deterministic (regex over the goal text — no LLM, no cost, no drift). Conflicts resolve **upward**:
 "fix the typo in the security module" → `opus`, because under-powering a hard goal costs more than
 over-powering a trivial one.
+
+**A haiku signal counts only in the title (#2827).** The title is the text's first line (for a goal
+file path: its frontmatter `title:`, else its file stem). A real issue body almost always mentions a
+comment, a docstring or a lint, so a haiku stem found only in the body is ignored and the goal gets
+the `sonnet` default; opus and fable stems still count anywhere. `why` says where the signal was
+found — `model=haiku in=title signal=typo` — and the signal stays the text after `signal=`.
+`resolve-step` is unchanged: a mechanical step's downgrade is what it is for.
 
 ### The price ceiling (`model_selection_max_tier`, default `opus`)
 
@@ -66,7 +73,7 @@ what happened:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" why "Draft the launch blog series"
-model=sonnet signal=blog           # `blog` fired; the tier was capped
+model=sonnet in=title signal=blog  # `blog` fired; the tier was capped
 ```
 
 A repo whose work genuinely is creative writing opts the ceiling up, in `.sdlc/config.json`:
@@ -98,9 +105,13 @@ The loop resolves the tier with:
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve "<goal>" .sdlc   # prints a tier, or "off"
 ```
 
-For a GitHub issue number, pass its actual title and body as the first argument and the issue
+For a GitHub issue number, pass its actual title and body as the first argument — **the title on
+the first line**, e.g. from
+`gh issue view N --json title,body --jq '.title + "\n\n" + (.body // "")'`
+(POSIX shell, run by the calling skill, which grants `gh issue view`; plain `--json` prints
+one-line JSON, which reads as all title) — and the issue
 number as a final argument: `python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve
-"<combined title and body>" .sdlc "<issue-number>"`. This classifies the text while recording
+"<title-then-body text>" .sdlc "<issue-number>"`. This classifies the text while recording
 `model_choice` under the issue ID. The three-argument local-file form above is unchanged.
 
 ### When a signal is your domain vocabulary, not a judgement (issue #1601)
@@ -122,7 +133,7 @@ Find the values by asking the router itself, and copy the literal it prints:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" why "Align the retry logic with the north-star vision doc"
-model=sonnet signal=vision         # -> add "vision"   (tier capped; the signal is what you copy)
+model=sonnet in=title signal=vision  # -> add "vision" (tier capped; copy what follows signal=)
 ```
 
 What it keys on, and what that buys:
