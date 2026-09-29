@@ -512,11 +512,7 @@ def bootstrap_github_labels(target_dir):
     Returns False -- init exits 1, before the remaining optional steps; every step is
     skip-if-exists, so rerunning once the token can write labels completes them -- when any label
     failed."""
-    try:
-        repo = subprocess.run([sys.executable, str(SETUP_SCRIPT), "detect", str(target_dir)],
-                              capture_output=True, text=True).stdout.strip()
-    except OSError:
-        repo = ""
+    repo = _detect_repo(target_dir)
     if not repo:
         print("\nagrim-init: labels not created - no GitHub `origin` remote detected. Set "
               "discovery.github.repo (`/agrim-setup`); `loop.py start` creates them before the "
@@ -535,6 +531,57 @@ def bootstrap_github_labels(target_dir):
               file=sys.stderr)
         return False
     return True
+
+
+BOARD_SETUP = pathlib.Path(__file__).resolve().parent / "board_setup.py"
+
+
+def _detect_repo(target_dir):
+    """`owner/name` of the GitHub origin via the sibling `setup.py detect` (local; no network)."""
+    try:
+        return subprocess.run([sys.executable, str(SETUP_SCRIPT), "detect", str(target_dir)],
+                              capture_output=True, text=True).stdout.strip()
+    except OSError:
+        return ""
+
+
+def board_offer(target_dir, github_flag):
+    """#235: the lines that OFFER a GitHub Project board -- github mode only (`--github`, or
+    `discovery.source: github`), never in local-goals mode, and never when a number is already
+    pinned. It makes no gh call and changes nothing: the board is created only by the printed
+    `board_setup.py create ... --yes`, which Claude Code runs after asking and Codex/Cursor users
+    run themselves."""
+    sdlc = os.path.abspath(os.path.join(str(target_dir), ".sdlc"))
+    try:
+        cfg = json.loads(pathlib.Path(sdlc, "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    disc = cfg.get("discovery") if isinstance(cfg, dict) and isinstance(cfg.get("discovery"), dict) else {}
+    if not (github_flag or disc.get("source") == "github"):
+        return []
+    gh = disc.get("github") if isinstance(disc.get("github"), dict) else {}
+    proj = gh.get("project") if isinstance(gh.get("project"), dict) else {}
+    if proj.get("number"):
+        return [f"agrim-init: board - project #{proj.get('number')} is pinned "
+                f"(discovery.github.project.number); nothing to set up."]
+    repo = str(gh.get("repo") or "").strip() or _detect_repo(target_dir)
+    if not repo or "/" not in repo:
+        return ["agrim-init: board - not offered: no GitHub `origin` remote detected (set "
+                "discovery.github.repo, then run board_setup.py create <.sdlc>)."]
+    vd = _verify_detect()
+    cmd = f"{vd.python_command()} {vd._q(str(BOARD_SETUP))} create {vd._q(sdlc)}"
+    owner, name = repo.split("/", 1)
+    title = proj.get("title") or f"{name} \u2014 SDLC"
+    return [
+        "agrim-init: GitHub Project board - none is pinned (discovery.github.project.number is unset).",
+        f"  OFFER: create '{title}' under {owner}, linked to {repo}, with the Status columns "
+        "(project.columns) and a Priority field, and pin its number in config.json.",
+        "  Nothing is created unless you say yes. It needs the gh `project` scope, and it refuses "
+        "(printing a manual runbook) if that title already exists.",
+        f"  Preview (read-only): {cmd}",
+        f"  Claude Code: the agent asks you yes/no; on yes it runs: {cmd} --yes",
+        f"  Codex / Cursor: to have the board, run it yourself: {cmd} --yes",
+    ]
 
 
 USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
@@ -648,6 +695,11 @@ def main(argv):
     print()
     for line in preflight_report(target):
         print(line)
+    offer = board_offer(target, "--github" in flags)      # #235: an offer only; nothing runs
+    if offer:
+        print()
+        for line in offer:
+            print(line)
     if "config.json" in created:
         vd = _verify_detect()
         vd.write_verify(pathlib.Path(target) / ".sdlc", None, vd.unconfirmed_why(vd.detect(target)))

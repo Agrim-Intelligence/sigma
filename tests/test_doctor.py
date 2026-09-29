@@ -6784,3 +6784,100 @@ def test_doctor_resolves_an_ssh_alias_to_its_real_host(tmp_path):
     status = _wizard().wizard_status(base, run=_alias_run("hostname github.com")[0], dismissed=set(),
                                      allow_cache=False)
     assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status
+
+
+def _board_view(d, found=12, failure=None):
+    """A doctor `run` for `gh project view`: board `found` answers; any other number fails with
+    `failure` -- gh's real stderr for a missing board by default (measured: `gh project view 99999
+    --owner <org>` -> "GraphQL: Could not resolve to a ProjectV2 with the number 99999.")."""
+    import json as _json
+    calls = []
+
+    def run(a):
+        calls.append(a)
+        if a[:3] == ["gh", "project", "view"]:
+            if a[3] == str(found) and "acme" in a:
+                return _json.dumps({"number": found, "id": "PVT_x", "title": "widget — SDLC"})
+            return d._RawFailure(failure if failure is not None else
+                                 "GraphQL: Could not resolve to a ProjectV2 with the number %s. "
+                                 "(organization.projectV2)" % a[3])
+        return ""
+    run.calls = calls
+    return run
+
+
+def test_pinned_board_reachable_row_235():
+    """#235: a pinned project.number gets its own row -- ok when `gh project view` returns that
+    board under the owner, FAIL (with the fix) when GitHub ANSWERED that it does not exist. No pin
+    -> no row (the duplicate-board check owns that case)."""
+    d = _doc()
+    view = _board_view(d)
+    gh = {"repo": "acme/widget", "project": {"enabled": True, "number": 12}}
+    assert d._pinned_board_unreachable(gh, view) is None
+    gone = d._pinned_board_unreachable(dict(gh, project={"enabled": True, "number": 13}), view)
+    assert gone and "#13" in gone and "does not exist" in gone
+    assert d._pinned_board_unreachable({"repo": "acme/widget", "project": {"enabled": True}},
+                                       view) is None
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github", "github": gh}}
+        rows = _by_name(d.check(_sdlc(t, cfg), run=view))
+        assert rows["pinned board #12 reachable"]["ok"] is True
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github",
+                             "github": dict(gh, project={"enabled": True, "number": 13})}}
+        row = _by_name(d.check(_sdlc(t, cfg), run=view))["pinned board #13 reachable"]
+        assert row["ok"] is False and "does not exist" in row["fix"]
+
+
+@pytest.mark.parametrize("failure", [
+    "",                                                        # gh gave nothing (killed, missing)
+    "error connecting to api.github.com\ncheck your internet connection",
+    "GraphQL: API rate limit exceeded for user ID 1.",
+    "gh: No such file or directory",
+    "error: your authentication token is missing required scopes [read:project]",
+], ids=["empty", "offline", "rate-limit", "gh-missing", "scope"])
+def test_pinned_board_row_is_silent_when_the_read_itself_failed_235(failure):
+    """Review of PR #279: a read that FAILED says nothing about the board, so it is no row at all
+    (never a FAIL, never a pass) -- only GitHub answering "could not resolve" is an alarm. The
+    missing-scope case has its own row ("gh project scope") and is not doubled here."""
+    d = _doc()
+    view = _board_view(d, failure=failure)
+    gh = {"repo": "acme/widget", "project": {"enabled": True, "number": 13}}
+    assert d._pinned_board_unreachable(gh, view) is None
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github", "github": gh}}
+        names = _by_name(d.check(_sdlc(t, cfg), run=view))
+        assert not [n for n in names if n.startswith("pinned board")], names
+
+
+def test_pinned_board_read_is_skipped_under_cheap_only_235():
+    """The read is a GraphQL call (`gh project view`): the unconditional SessionStart wizard
+    (`cheap_only=True`) must not spend it, like the preflight network checks."""
+    d = _doc()
+    view = _board_view(d)
+    gh = {"repo": "acme/widget", "project": {"enabled": True, "number": 12}}
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github", "github": gh}}
+        names = _by_name(d.check(_sdlc(t, cfg), run=view, cheap_only=True))
+    assert not [c for c in view.calls if c[:3] == ["gh", "project", "view"]], view.calls
+    assert not [n for n in names if n.startswith("pinned board")]
+
+
+def test_runner_failure_contract_reaches_the_pinned_board_row_235():
+    """Review of PR #279: `_pinned_board_state` tells "GitHub answered: no such board" from "the
+    read failed" only through the text the REAL runner attaches to a failure. Pin that coupling end
+    to end: `_real_run` on a process that exits 1 with gh's real stderr must come back falsy, carry
+    the text through `_failure_text`, and turn the row into "gone"; the same text on a SUCCESS is
+    not a failure. Break `_RawFailure.raw` or `_failure_text` and this goes red."""
+    import sys as _sys
+    d = _doc()
+    said = "GraphQL: Could not resolve to a ProjectV2 with the number 13. (organization.projectV2)"
+    fail = [_sys.executable, "-c", "import sys; sys.stderr.write(%r); sys.exit(1)" % said]
+    res = d._real_run(fail)
+    assert not res and d._failure_text(res) == said
+    assert d._failure_text("") == "" and d._failure_text('{"number": 1}') == ""
+    gh = {"repo": "acme/widget", "project": {"enabled": True, "number": 13}}
+    state, fix = d._pinned_board_state(gh, lambda _a: d._real_run(fail))
+    assert state == "gone" and "#13" in fix
+    offline = [_sys.executable, "-c", "import sys; sys.stderr.write('error connecting'); sys.exit(1)"]
+    assert d._pinned_board_state(gh, lambda _a: d._real_run(offline))[0] == "unverifiable"
