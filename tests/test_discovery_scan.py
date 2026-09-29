@@ -3,7 +3,7 @@ mechanical tech-debt signals (TODO/FIXME/HACK/XXX clusters) and test-gaps (skipp
 emits candidate backlog items. Guards its three principles: correct detection, FAIL-OPEN, and
 SECRET-SAFETY (a candidate carries the marker LOCATION + count, never the marker TEXT — a TODO can
 contain a secret)."""
-import json, os, subprocess, pathlib
+import json, os, re, subprocess, pathlib
 
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "discovery-scan.sh"
 
@@ -86,3 +86,28 @@ def test_deterministic(tmp_path):
     (repo / "b.py").write_text("# FIXME two\n")
     _git(repo, "add", "-A")
     assert _run(repo) == _run(repo)
+
+
+def test_locale_is_pinned_once_and_never_changed_in_a_forked_shell(tmp_path):
+    # A per-command `LC_ALL=C cmd` in a pipeline / <(...) is set-and-restored by a forked, not-exec'd
+    # bash whose setlocale() can SIGSEGV (Homebrew bash + libintl/CoreFoundation); fail-open hides it.
+    # Deterministic control: xtrace the script; the ONLY locale assignment allowed is the top-level
+    # `export LC_ALL=C`, which must come before the first `++` (forked) trace line. Deliberately
+    # fails against a script that still carries `| LC_ALL=C sort`.
+    repo = _repo(tmp_path)
+    (repo / "a.py").write_text("# TODO one\n")
+    _git(repo, "add", "-A")
+    p = subprocess.run(["bash", "-x", str(SCRIPT)], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "PS4": "+ "})
+    assert p.returncode == 0, p.stderr
+    lines = p.stderr.splitlines()
+    depth = lambda l: len(l) - len(l.lstrip("+"))
+    assign = re.compile(r"\b(LC_[A-Z]+|LANG|LANGUAGE)=")
+    hits = [(i, l) for i, l in enumerate(lines) if assign.search(l)]
+    # bash 5.3 traces the pin as `+ export LC_ALL=C` and then its inner `+ LC_ALL=C`; both depth 1
+    assert hits and hits[0][1] == "+ export LC_ALL=C", hits
+    assert all(l in ("+ export LC_ALL=C", "+ LC_ALL=C") for _, l in hits), hits
+    first_forked = next((i for i, l in enumerate(lines) if depth(l) > 1), len(lines))
+    assert hits[-1][0] < first_forked
+    after_pin = SCRIPT.read_text().split("\nexport LC_ALL=C\n", 1)[1]
+    assert not re.search(r"^[^#\n]*\b(LC_[A-Z]+|LANG)=", after_pin, re.M)

@@ -17,6 +17,11 @@
 
 case "${1:-}" in -h|--help) echo "usage: discovery-scan.sh   (no args; scans \$CLAUDE_PROJECT_DIR or the cwd)"; exit 0 ;; esac
 set -uo pipefail
+# Pin the locale ONCE, in the main shell. A per-command `LC_ALL=C cmd` inside a pipeline or
+# $(...)/<(...) runs in a forked, not-exec'd bash, whose temporary-env setlocale() (Homebrew bash
+# links libintl -> CoreFoundation, not fork-safe) intermittently SIGSEGVs under load; fail-open
+# then reads the dead subshell as "nothing found". Byte-order sort is unchanged (already LC_ALL=C).
+export LC_ALL=C
 SCHEMA="discovery-scan/v1"
 
 json_string() {
@@ -79,7 +84,7 @@ scan_category() { # regex category title_fmt priority
     title="$(printf "$fmt" "$cnt" "$file")"
     append CANDS "$(printf '{"title":%s,"category":%s,"source":"discovery","priority":%s,"count":%s,"evidence":[%s]}' \
       "$(json_string "$title")" "$(json_string "$cat")" "$(json_string "$prio")" "$cnt" "$ev")"
-  done < <(git -C "$PROJECT_DIR" grep -lI -E "$re" "${EXCL[@]}" 2>/dev/null | LC_ALL=C sort)
+  done < <(git -C "$PROJECT_DIR" grep -lI -E "$re" "${EXCL[@]}" 2>/dev/null | sort)
 }
 
 scan_category "$TODO_RE" tech-debt "Resolve %s TODO/FIXME marker(s) in %s" low

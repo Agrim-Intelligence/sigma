@@ -551,3 +551,28 @@ def test_plan_freshness_still_works_after_the_hoist(tmp_path):
     os.utime(old, (0, 0))                       # epoch 0 -- decades from any commit here
     _commit(stale, "src/a.py", "x = 1\n", "feat: a")
     assert _run(stale)["dimensions"]["d1"]["commits_with_fresh_plan"] == 0
+
+
+def test_locale_is_pinned_once_and_never_changed_in_a_forked_shell(tmp_path):
+    # A per-command `LC_ALL=C sort` in a pipeline / <(...) / $(...) is set-and-restored by a forked,
+    # not-exec'd bash whose setlocale() can SIGSEGV (Homebrew bash + libintl/CoreFoundation);
+    # fail-open hides it. Deterministic control: xtrace the script; the ONLY locale assignment
+    # allowed is the top-level `export LC_ALL=C`, before the first `++` (forked) trace line. The
+    # static scan covers the branches this run does not execute. Deliberately fails against a
+    # script that still carries `| LC_ALL=C sort`.
+    repo = _repo(tmp_path)
+    _commit(repo, "a.py", "x = 1\n", "init")
+    p = subprocess.run(["bash", "-x", str(SCRIPT), "--since-days", "3650"], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo), "PS4": "+ "})
+    assert p.returncode == 0, p.stderr
+    lines = p.stderr.splitlines()
+    depth = lambda l: len(l) - len(l.lstrip("+"))
+    assign = re.compile(r"\b(LC_[A-Z]+|LANG|LANGUAGE)=")
+    hits = [(i, l) for i, l in enumerate(lines) if assign.search(l)]
+    # bash 5.3 traces the pin as `+ export LC_ALL=C` and then its inner `+ LC_ALL=C`; both depth 1
+    assert hits and hits[0][1] == "+ export LC_ALL=C", hits
+    assert all(l in ("+ export LC_ALL=C", "+ LC_ALL=C") for _, l in hits), hits
+    first_forked = next((i for i, l in enumerate(lines) if depth(l) > 1), len(lines))
+    assert hits[-1][0] < first_forked
+    after_pin = SCRIPT.read_text().split("\nexport LC_ALL=C\n", 1)[1]
+    assert not re.search(r"^[^#\n]*\b(LC_[A-Z]+|LANG)=", after_pin, re.M)
