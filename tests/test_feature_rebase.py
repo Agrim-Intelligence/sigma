@@ -2318,7 +2318,94 @@ def test_278_work_rebase_refuses_a_goal_replay_that_would_lose_its_own_content(t
     _git(world.local, "checkout", "-q", INTEGRATION)
     before = world.tip("sdlc/11")
     out = work.rebase(str(world.sdlc), _cfg(), "11")
-    assert out.startswith("rebase deferred") and "g.txt" in out, out
+    assert out.startswith(work.REBASE_WOULD_DROP) and "g.txt" in out, out
     assert world.tip("sdlc/11") == before
     assert _git(path, "rev-parse", "HEAD") == goal_sha
     assert (path / "g.txt").read_text() == body + "\n"
+
+
+def test_278_work_rebase_union_rescue_path_is_behind_the_guard_too(tmp_path):
+    """#278 note (a): the CHANGELOG union-rescue path force-pushes too, so it sits behind
+    `_replay_would_lose` as well. The goal's 300-line commit reached the feature branch as a copy
+    and was reverted there; its CHANGELOG entry then conflicts (pure insertion) with the feature's
+    own entry, so the replay goes through `_union_rescue` -- and still must not push the loss."""
+    changelog = "# Changelog\n\n## Unreleased\n\n## 1.0.0"
+    world = World(tmp_path).build(feature_commits=(("CHANGELOG.md", changelog, "seed changelog"),))
+    work = _load("work")
+    body = "".join("GOAL %d\n" % i for i in range(300))
+    path = world.goal_branch(11, files=(
+        ("g.txt", body),
+        ("CHANGELOG.md", changelog.replace("## Unreleased\n", "## Unreleased\n- goal entry\n"))))
+    goal_head = _git(path, "rev-parse", "HEAD")
+    work_commit = _git(path, "rev-parse", "HEAD~1")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "cherry-pick", "-x", work_commit)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _write(world.local / "CHANGELOG.md",
+           changelog.replace("## Unreleased\n", "## Unreleased\n- feature entry\n") + "\n")
+    _git(world.local, "commit", "-qam", "feature changelog entry")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    before = world.tip("sdlc/11")
+    out = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert not out.startswith("rebased"), out
+    assert "g.txt" in out, out
+    assert world.tip("sdlc/11") == before
+    assert _git(path, "rev-parse", "HEAD") == goal_head
+    assert (path / "g.txt").read_text() == body + "\n"
+
+
+def _reverted_goal_world(tmp_path):
+    world = World(tmp_path).build()
+    body = "".join("GOAL %d\n" % i for i in range(300))
+    path = world.goal_branch(11, files=(("g.txt", body),))
+    goal_sha = _git(path, "rev-parse", "HEAD")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "cherry-pick", "-x", goal_sha)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    return world, path, goal_sha
+
+
+def test_278_work_rebase_a_failed_put_back_refuses_every_later_push(tmp_path):
+    """#278 note (c), the goal-branch side: `reset --keep` failing leaves the worktree rebased, and
+    the NEXT `rebase()` would find nothing to replay and force-push the loss. The marker stops it."""
+    world, path, goal_sha = _reverted_goal_world(tmp_path)
+    work = _load("work")
+    before = world.tip("sdlc/11")
+
+    def failing(cwd, argv):
+        if list(argv[:3]) == ["git", "reset", "--keep"]:
+            raise RuntimeError("simulated: reset --keep refused")
+        return work._run(cwd, argv)
+    out = work.rebase(str(world.sdlc), _cfg(), "11", run=failing)
+    assert out.startswith(work.REBASE_WOULD_DROP), out
+    assert "git reset --keep %s" % goal_sha in out and "marker" in out, out
+    assert _git(path, "rev-parse", "HEAD") != goal_sha               # still the lossy replay
+    again = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert again.startswith(work.REBASE_WOULD_DROP) and "git reset --keep %s" % goal_sha in again, again
+    assert world.tip("sdlc/11") == before
+    assert work._push_refused(str(path), "sdlc/11")
+    opened = work.pr(str(world.sdlc), _cfg(), "11")
+    assert opened.startswith(work.REBASE_WOULD_DROP) and "nothing pushed" in opened, opened
+    _git(path, "reset", "-q", "--keep", goal_sha)                     # the printed recovery
+    assert work._push_refused(str(path), "sdlc/11") is None
+    assert world.tip("sdlc/11") == before
+
+
+def test_278_a_would_drop_refusal_is_not_classified_as_a_merge_conflict(tmp_path):
+    """#278 note (b): the refusal has its own wording and reason class, both from `rebase()` and
+    wrapped by `ensure_fresh` -- nothing conflicts, and it must not read as a conflict to resolve."""
+    world, path, _goal_sha = _reverted_goal_world(tmp_path)
+    work = _load("work")
+    loop = _load("loop")
+    out = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert out.startswith(work.REBASE_WOULD_DROP), out
+    assert loop._reason_class(out) == "needs_decision"
+    assert loop._reason_class("rebase deferred: could not apply") == "merge_conflict"
+    stale = work.ensure_fresh(str(world.sdlc), _cfg(), "11")
+    assert stale and work.REBASE_WOULD_DROP in stale, stale
+    assert "could not apply cleanly" not in stale and "conflict" not in stale.lower(), stale
+    assert loop._reason_class(stale) == "needs_decision"
+    assert "re-run `loop.py verify`" not in work._without_verify_remediation(stale)

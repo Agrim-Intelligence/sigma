@@ -402,7 +402,7 @@ def _rebase_just_concluded_locally(run, cwd):
     return subject.strip().startswith("rebase (finish):")
 
 
-def _manual_recovery_push(run, cwd, remote, branch):
+def _manual_recovery_push(run, cwd, remote, branch, base_ref=None):
     """#2324: `walk_conflicts`'s own `NOTHING_TO_DO` entry check (`not rebase_stopped`) fires both
     for the ORDINARY case (this branch was never mid-rebase -- nothing to push, nothing wrong) and
     for the state a human's raw-git escape hatch leaves behind after `_empty_commit_about_to_land`'s
@@ -427,7 +427,11 @@ def _manual_recovery_push(run, cwd, remote, branch):
     though a rebase conclusion WAS seen (already matches remote, the fetch failed, no such
     remote-tracking ref, or the push itself was refused) -- read from the SAME
     `rebase_brief.push_branch` #2319's own DONE path already calls, one force-with-lease call site,
-    never a second copy."""
+    never a second copy.
+
+    `base_ref` (#278, review block #1) is what `push_branch` attributes a remote -> pre-rebase-head
+    loss against (`feature_rebase.own_losses`); without it no such loss is exempt, so a bare call
+    can refuse a healthy local deletion but never publish a loss an earlier lossy rebase left."""
     if not _rebase_just_concluded_locally(run, cwd):
         return None
     try:
@@ -444,7 +448,7 @@ def _manual_recovery_push(run, cwd, remote, branch):
     if ahead in ("", "0"):
         return {"pushed": False,
                "why": "already matches %s/%s -- nothing to push" % (remote, branch)}
-    push = rebase_brief.push_branch(run, cwd, remote, branch)
+    push = rebase_brief.push_branch(run, cwd, remote, branch, base_ref=base_ref)
     if not push["ok"]:
         # #144: `refused` when `push_branch`'s own tree guard said no (it would lose content the
         # remote branch has, or could not tell) -- distinct from an ordinary stale lease, and
@@ -497,7 +501,7 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
     (+ "why" on FAILED/EMPTY_AFTER_RESOLVE, + "pushed"/"why" on a NOTHING_TO_DO recovery push).
     """
     if not feature_rebase.rebase_stopped(run, cwd):
-        recovery = _manual_recovery_push(run, cwd, remote, brief["branch"])
+        recovery = _manual_recovery_push(run, cwd, remote, brief["branch"], brief.get("base_ref"))
         if recovery is None:
             return {"outcome": NOTHING_TO_DO, "resolved": []}
         found = {"outcome": NOTHING_TO_DO, "resolved": [], "pushed": recovery["pushed"],
@@ -543,7 +547,7 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
             if not feature_rebase.rebase_stopped(run, cwd):
                 push = rebase_brief.push_branch(
                     run, cwd, remote, brief["branch"], accepted=_accepted_losses(resolved),
-                    pre_head=pre_head)
+                    pre_head=pre_head, base_ref=brief.get("base_ref"))
                 if not push["ok"]:
                     # #144: `push_branch` itself refuses a HEAD that would lose content the remote
                     # branch has (`dropped`), and leaves the branch unpushed; FAILED either way.
@@ -734,8 +738,10 @@ def main(argv):
     run = feature_rebase._run
     remote = rebase_brief.resolve_remote(config)
     branch = resolve_branch(run, cwd, explicit)
+    base = rebase_brief.resolve_base(config)
     if not feature_rebase.rebase_stopped(run, cwd):
-        recovery = _manual_recovery_push(run, cwd, remote, branch)
+        base_ref = "%s/%s" % (remote, base) if base and base != branch else None
+        recovery = _manual_recovery_push(run, cwd, remote, branch, base_ref)
         if recovery and recovery["pushed"]:
             print("`%s` was not mid-rebase -- but a rebase had concluded outside this tool and "
                  "left it ahead of `%s/%s`; pushed (#2324)." % (branch, remote, branch))
@@ -746,7 +752,6 @@ def main(argv):
         else:
             print("no rebase is currently stopped in %r -- nothing to walk." % cwd)
         return 0
-    base = rebase_brief.resolve_base(config)
     if not base or base == branch:
         print("no integration branch to compare against (work.base is %r)" % base, file=sys.stderr)
         return 1

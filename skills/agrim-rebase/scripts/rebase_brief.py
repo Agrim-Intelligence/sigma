@@ -519,7 +519,7 @@ def conflicted_files(run, cwd):
     return sorted({line.strip() for line in str(out or "").splitlines() if line.strip()})
 
 
-def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None):
+def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=None):
     """`git push --force-with-lease <remote> HEAD:<branch>` -- the ONE force-with-lease push this
     skill performs, so there is exactly one call site to reason about rather than several that
     could quietly drift apart (#2319: `conflict_walk.walk_conflicts` reuses this directly for its
@@ -543,17 +543,29 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None):
     deleted-by-us file IS a deletion -- so only OTHER paths can refuse the push. The manual-recovery
     push has no such record and passes none, so everything it would lose refuses it.
 
-    #278: `pre_head` is the head the branch had BEFORE the rebase being pushed. A loss already
-    present between the remote tip and `pre_head` -- a local, not-yet-pushed `drop obsolete` commit
-    -- is the branch's OWN history, not something the rebase did, so it is exempt; what the rebase
-    itself loses (`pre_head` -> HEAD) is always measured. `None` derives it from git's own record:
-    the branch reflog's newest entry, when that entry is a `rebase (finish)`, has the pre-rebase
-    head as `<branch>@{1}` (`pre_rebase_head`). Unknown (no such entry, reflogs off) falls back to
-    the remote-tip comparison alone -- conservative: it can refuse a healthy local deletion, never
-    pass a loss. The undo advice names `pre_head` when known, never the remote tip, because
-    resetting to the remote tip would throw the unpushed local commits away.
+    #278: `pre_head` is the head the branch had BEFORE the rebase being pushed; what the rebase
+    itself loses (`pre_head` -> HEAD) is always measured. A loss already present between the remote
+    tip and `pre_head` is exempt ONLY when the branch's own commit made it --
+    `feature_rebase.own_losses` against `base_ref` (a local, unpushed `git rm` commit: exempt; the
+    same loss left by an earlier, unpushed LOCAL rebase onto a base holding a revert: refused, since
+    the deletion came in with the base's revert -- review block #1). No `base_ref` exempts nothing.
+    `None` derives `pre_head` from git's own record: when the branch reflog's newest entry is a
+    rebase's own `(finish)` line for this branch, the pre-rebase head is `<branch>@{1}`
+    (`pre_rebase_head`). Unknown (no such entry, reflogs off) falls back to the remote-tip
+    comparison alone. Either way the fallback exempts nothing: it can refuse a healthy local
+    deletion, and it never exempts a loss the attribution rule would refuse (a loss of content the
+    remote never had, with no pre-rebase head to measure from, is not seen -- `_would_lose` and the
+    refused-push marker cover the paths this skill itself rebases). The undo advice names
+    `pre_head` when known, never the remote tip, because resetting to the remote tip would throw
+    the unpushed local commits away.
+
+    A branch a refused replay could not put back (`feature_rebase.push_refused`'s marker) is refused
+    before anything is measured.
 
     Returns `{"ok": True, "why": ""}` or `{"ok": False, "why": <flat text>, "dropped": [...]}`."""
+    marked = feature_rebase.push_refused(cwd, branch)
+    if marked:
+        return {"ok": False, "dropped": [], "why": marked}
     try:
         overwritten = _remote_tip(run, cwd, remote, branch)
         if pre_head is None:
@@ -564,7 +576,8 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None):
             if overwritten:
                 lost |= set(feature_rebase.dropped_paths(cwd, overwritten, "HEAD"))
                 if pre_head and pre_head != overwritten and lost:
-                    lost -= set(feature_rebase.dropped_paths(cwd, overwritten, pre_head))
+                    already = set(feature_rebase.dropped_paths(cwd, overwritten, pre_head)) & lost
+                    lost -= feature_rebase.own_losses(cwd, overwritten, pre_head, base_ref, already)
             if pre_head:
                 lost |= set(feature_rebase.dropped_paths(cwd, pre_head, "HEAD"))
             refusal = feature_rebase.refuse_losing_push(cwd, overwritten, "HEAD", accepted,
@@ -593,16 +606,32 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None):
     return {"ok": True, "why": ""}
 
 
+def _rebase_finish_re(branch):
+    """The branch-reflog subject a rebase writes when it lands on `branch` (#278). Measured against
+    real git 2.55: `rebase (finish): refs/heads/<b> onto <sha>` for a plain, `--apply`, `-i`, or
+    conflicted-then-`--continue`/`--skip` rebase and for a `pull --rebase` that stopped and was
+    continued; `pull <its own argv> (finish): ...` for a `pull --rebase` that landed in one go; and
+    `rebase (continue) (finish): ...` where the reflog action carries the continue (a caller-set
+    `GIT_REFLOG_ACTION`; measured with that set). Older gits' apply backend wrote `rebase finished:
+    ...` -- accepted, not measured here (no such git on hand). The
+    subject must name THIS branch and an `onto` sha, so nothing but a rebase's own landing matches;
+    a pull argv with a `:` in it (a refspec) does not, and reads as unknown -- conservative."""
+    name = re.escape("refs/heads/%s" % branch)
+    return re.compile(r"^(?:(?:rebase|pull)(?: [^:]*)? \(finish\)|rebase finished): %s onto "
+                      r"[0-9a-f]{7,}$" % name)
+
+
 def pre_rebase_head(run, cwd, branch):
     """The head `branch` had before the rebase that JUST finished on it, or "" when that cannot be
     read from git itself (#278). A rebase moves `refs/heads/<branch>` exactly once, when its last
-    step lands, and records that move as `rebase (finish): ...` in the branch's own reflog -- so
-    when that is the NEWEST entry, `<branch>@{1}` is the pre-rebase head. Anything else newest (a
-    reset, a commit since) means the answer is not known; never raises."""
+    step lands, and records that move in the branch's own reflog (`_rebase_finish_re`: `rebase
+    (finish): ...`, `pull ... (finish): ...`, and the other shapes git writes) -- so when that is
+    the NEWEST entry, `<branch>@{1}` is the pre-rebase head. Anything else newest (a reset, a
+    commit since) means the answer is not known; never raises."""
     ref = "refs/heads/%s" % branch
     try:
         subject = str(run(cwd, ["git", "reflog", "show", "-1", "--format=%gs", ref]) or "").strip()
-        if not subject.startswith("rebase (finish):"):
+        if not _rebase_finish_re(branch).match(subject):
             return ""
         return str(run(cwd, ["git", "rev-parse", "--verify", "-q", "%s@{1}" % ref]) or "").strip()
     except Exception:                           # noqa: BLE001 - unknown, never a guess
@@ -654,10 +683,10 @@ def attempt_rebase(run, cwd, remote, branch, base):
                        "(autostash pop conflict)" % base_ref}
     # #144: THE SAME TREE GUARD upkeep's own force-push sits behind, before this one. A replay onto
     # a base holding a revert of the branch's own work succeeds cleanly and would publish the loss.
-    refused = _would_lose(run, cwd, pre_head, base_ref)
+    refused = _would_lose(run, cwd, pre_head, base_ref, branch)
     if refused is not None:
         return refused
-    push = push_branch(run, cwd, remote, branch, pre_head=pre_head)
+    push = push_branch(run, cwd, remote, branch, pre_head=pre_head, base_ref=base_ref)
     if not push["ok"]:
         if push.get("dropped"):
             return {"outcome": WOULD_DROP, "files": push["dropped"], "why": push["why"]}
@@ -665,13 +694,16 @@ def attempt_rebase(run, cwd, remote, branch, base):
     return {"outcome": REBASED, "why": ""}
 
 
-def _would_lose(run, cwd, pre_head, base_ref):
+def _would_lose(run, cwd, pre_head, base_ref, branch=""):
     """None when the rebased HEAD keeps everything `pre_head` had, else the refusal report.
 
     On a refusal the LOCAL branch is put back with `git reset --keep <pre_head>` -- `--keep`, not
     `--hard`, because an autostash may just have re-applied the human's uncommitted edits, and
-    `--keep` refuses rather than discard them. If it refuses, the report says how to undo by hand.
-    Fails closed: a comparison that cannot be made is a `FAILED` with nothing pushed."""
+    `--keep` refuses rather than discard them. If it refuses, the report says how to undo by hand,
+    and (#278) `feature_rebase.mark_push_refused` records it: the branch still holds the lossy
+    replay, a later run would find it current and a recovery push would publish it, so
+    `push_branch` refuses `branch` until HEAD is back at `pre_head`. Fails closed: a comparison
+    that cannot be made is a `FAILED` with nothing pushed."""
     try:
         head = str(run(cwd, ["git", "rev-parse", "HEAD"]) or "").strip()
         dropped = feature_rebase.dropped_paths(cwd, pre_head, head)
@@ -689,9 +721,13 @@ def _would_lose(run, cwd, pre_head, base_ref):
     try:
         run(cwd, ["git", "reset", "--keep", pre_head])
         why += "; nothing was pushed and the local branch was put back at %s" % pre_head[:12]
-    except Exception:                           # noqa: BLE001
-        why += ("; nothing was pushed, but the local branch is still rebased -- undo it with "
-                "`git reset --keep %s`" % pre_head)
+    except Exception as exc:                    # noqa: BLE001
+        marker = feature_rebase.mark_push_refused(cwd, branch, pre_head, why) if branch else ""
+        why += ("; nothing was pushed, but putting the branch back failed (%s) and it is still "
+                "rebased -- undo it with `git reset --keep %s`; %s"
+                % (_flat(exc), pre_head,
+                   "pushes of %s are refused until it is (marker %s)" % (branch, marker) if marker
+                   else "the refusal could NOT be recorded, so do this before anything pushes it"))
     return {"outcome": outcome, "files": dropped, "why": why}
 
 

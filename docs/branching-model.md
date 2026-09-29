@@ -219,15 +219,39 @@ The human-attended `agrim-rebase` skill is behind the same check at its **single
 rebase`, and Slack's `--rebase`), `conflict_walk.walk_conflicts`'s push once every conflict is
 resolved, and its manual-recovery push after a rebase a human finished with raw git. Before pushing
 it compares HEAD with `<remote>/<branch>`, exactly the commit the lease would overwrite, and with the
-**pre-rebase head** — the head the branch had before this rebase (#278). A loss already present
-between the remote tip and the pre-rebase head is the branch's own unpushed history (a local `drop
-obsolete` commit), not something the rebase did, so it is let through; anything else HEAD loses is
-refused with the paths named, and the remote is left alone. `attempt_rebase` passes the head it
-started from; the walker reads the stopped rebase's own `orig-head`; the manual-recovery push reads
-it from the branch reflog, whose newest entry is the `rebase (finish)` move (`<branch>@{1}`). When
-none is known — reflogs off, or something newer on the branch — only the remote-tip comparison runs,
-which can refuse a healthy local deletion but never passes a loss. With no remote-tracking ref and no
-pre-rebase head there is nothing to compare, so nothing is refused.
+**pre-rebase head** — the head the branch had before this rebase (#278). Everything the rebase
+itself loses (pre-rebase head → HEAD) is refused. A loss already present between the remote tip and
+the pre-rebase head is let through **only when the branch's own commit made it**
+(`feature_rebase.own_losses`): for each such path, a commit reachable from the pre-rebase head but
+from neither the remote tip nor the base (`git log <pre> --not <remote>/<branch> <base> -- <path>`,
+non-merge, full history) must have touched it, the newest one's own result must be exactly what the
+pre-rebase head holds (the deletion, or the same blob), and that commit must not be a replay of a
+base change (`--cherry-mark` against the base finds no patch-equivalent). A local, unpushed `git rm`
+commit passes. The same loss left by an **earlier local rebase that was never pushed** — the base
+landed a file, the feature was cut and pushed, the base reverted it, someone ran `git rebase
+origin/main` by hand — does not: the deletion came in with the base's revert, which the base
+reaches, so it is refused (review block #1 on #278; before, any remote → pre-rebase-head loss was
+exempt and this one was force-pushed). So is a base revert cherry-picked onto the branch, and a
+deletion or rollback a merge of the base brought in. Anything refused is named, and the remote is
+left alone. `attempt_rebase` passes the head it started from; the walker reads the stopped rebase's
+own `orig-head`; the manual-recovery push reads it from the branch reflog when the newest entry is a
+rebase's own landing on that branch — `rebase (finish): <its full ref> onto <sha>` (a plain,
+`--apply`, `-i`, or `--continue`/`--skip`-concluded rebase, and a `pull --rebase` that stopped and
+was continued), `pull <argv> (finish): …` (a `pull --rebase` that landed in one go), or `rebase
+(continue) (finish): …`, all measured against real git 2.55; older gits' `rebase finished: …` is
+accepted but not measured — and takes `<branch>@{1}`. The base is the walker's own brief (`walk`
+resolves `work.base` for the recovery push too). When the pre-rebase head or the base is not known —
+reflogs off, something newer on the branch, a caller that passes no base — no remote → pre-rebase-head
+loss is exempt: that can refuse a healthy local deletion, and does not pass a loss the attribution
+rule would refuse. With no remote-tracking ref and no pre-rebase head there is nothing to compare, so
+nothing is refused.
+
+When a refusal cannot put the branch back — `git reset --keep` itself fails, typically because
+uncommitted edits are in the way — the local branch still holds the lossy replay, and a later run
+would find it current and push it. The refusal is then recorded in the repository's common git dir
+(`sigma-push-refused/<branch>.json`), and every push of that branch — `push_branch`, `work.rebase()`'s
+two force-pushes and `work.pr()`'s push — is refused, printing `git reset --keep <pre-rebase head>`,
+until HEAD is back at that head (the record then clears itself) or a person deletes the file.
 
 A human's decision in the walk exempts **only a deletion**: a path the walker resolved with action
 `removed` (ABANDON on a file the base deleted). A **content** resolution — whichever option made it —
@@ -246,8 +270,11 @@ A **goal** branch's own replay (`work.rebase()`: the BEHIND reconcile, `ensure_f
 upkeep's goal replay, and its CHANGELOG union rescue) runs the same comparison before its
 force-push, scoped to the paths the goal changed since it forked: a goal whose commit reached the
 base as a copy (a rebase-merge) that was then reverted is skipped by `git rebase` as already
-upstream, and the replay would silently drop the goal's work. It returns `rebase deferred: …`,
-pushes nothing and puts the worktree back at its pre-rebase head. The scope keeps a plain base
+upstream, and the replay would silently drop the goal's work. It returns `rebase refused, it would
+lose content: …` — its own wording, which the loop classifies `needs_decision`, not
+`merge_conflict`, because nothing conflicts (`ensure_fresh` says "the automatic rebase was
+refused", not "could not apply cleanly") — pushes nothing and puts the worktree back at its
+pre-rebase head. A comparison that cannot be made still returns `rebase deferred: …`. The scope keeps a plain base
 deletion of a file the goal never touched from deferring every goal's rebase.
 
 What it does **not** flag: paths the branch deleted itself (they are not in the tip), paths the
@@ -1739,6 +1766,11 @@ Two things about it that are easy to get wrong:
   since it forked, so a goal whose commits reached the base as the **same** commits (a true
   merge) and were then reverted is not seen there — its diff since the fork is empty. Replaying a
   goal whose PR has merged is not a flow the loop takes.
+  The `agrim-rebase` pushes exempt a loss between the remote tip and the pre-rebase head only when
+  a branch-only commit made it (§3b), which is only as good as the base ref it is told: a base
+  **rewritten** (force-pushed) after an earlier lossy local rebase no longer reaches the revert that
+  caused it, so that revert reads as branch-only — and is exempt if the rewritten base kept no
+  patch-equivalent of it. A caller with no base, or no pre-rebase head, exempts nothing instead.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that

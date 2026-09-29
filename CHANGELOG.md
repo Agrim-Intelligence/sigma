@@ -16,15 +16,25 @@ All notable changes to Sigma are recorded here, newest first.
   remote tip, so a local `drop obsolete` commit was refused, and the advice (`git reset --keep
   <remote tip>`) threw away the local commits. It now also takes the pre-rebase head:
   `attempt_rebase` passes it, the walker reads the stopped rebase's `orig-head`, and the
-  manual-recovery push reads `<branch>@{1}` when the branch reflog's newest entry is `rebase
-  (finish)`. A loss that already exists between the remote tip and that head is exempt. Everything
-  the rebase itself loses is still refused. The advice names the pre-rebase head. When that head is
-  unknown, the advice points at `git reflog <branch>` and no longer at the remote tip.
+  manual-recovery push reads `<branch>@{1}` when the branch reflog's newest entry is a rebase's own
+  landing on that branch (`rebase (finish): …`, `pull <argv> (finish): …` for a one-go `pull
+  --rebase`, or `rebase (continue) (finish): …`, measured against real git; older gits' `rebase
+  finished: …` accepted, not measured). A loss that already exists between the remote tip and that
+  head is exempt **only when a commit unique to the branch made it** — it touched the path, its
+  result is what that head holds, and it is not a replay of a base change — so a local `git rm`
+  commit passes, but the same loss left by an earlier, never-pushed local rebase onto a base holding
+  a revert is refused (it was force-pushed before). With no base or no pre-rebase head nothing is
+  exempt. Everything the rebase itself loses is still refused. The advice names the pre-rebase
+  head. When that head is unknown, the advice points at `git reflog <branch>` and no longer at the
+  remote tip. If a refusal cannot put the branch back (`git reset --keep` fails), the refusal is
+  recorded in the git dir and every later push of that branch (`push_branch`, `work.rebase()`,
+  `work.pr()`) is refused with the recovery command until HEAD is back at the pre-rebase head.
   **`work.rebase()` runs the same guard before its goal-branch force-push**, on both the plain path
   and the CHANGELOG union rescue, but only over the paths the goal changed since it forked. So a goal
   whose commit reached the base as a copy (a rebase-merge) that was later reverted is no longer
-  replayed away silently. It returns `rebase deferred: …`, pushes nothing and resets the worktree to
-  its pre-rebase head. `docs/branching-model.md` §15 now states the fleet-wide cost of the
+  replayed away silently. It returns `rebase refused, it would lose content: …` (classified
+  `needs_decision`, not `merge_conflict`: nothing conflicts), pushes nothing and resets the worktree
+  to its pre-rebase head. `docs/branching-model.md` §15 now states the fleet-wide cost of the
   conservative refusal: a reverted dependency bump blocks upkeep on every feature branch cut in
   that window, and each branch stays blocked until a person resolves it. Each fix has a real-git
   test, and each test was seen red against the old code and against a deliberately broken guard.

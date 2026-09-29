@@ -1425,6 +1425,9 @@ _NO_UNIT_NAME = {
     ("feature_sync", "_load"),
     ("feature_propagate", "record_path"),     # keyed by GOAL, not by unit
     ("feature_rebase", "rebase_stopped"),     # takes a path that is already built
+    # #278: keyed by a git BRANCH name (which may be a goal's `sdlc/<n>`), never a unit name; its
+    # stem is case-folded anyway and the exact branch is checked inside (see its docstring).
+    ("feature_rebase", "_refused_marker"),
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),

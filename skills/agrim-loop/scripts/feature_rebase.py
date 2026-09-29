@@ -691,12 +691,21 @@ def _raw_entries(out):
     entry (`::`, one colon per parent -- what a merge prints under `-c`/`--cc`) is read too: its
     LAST blob is the result, its first the first parent's; it carries one path. Pinned config asks
     for the separate format, so this is defence, not the normal path."""
+    return [entry[1:] for entry in _raw_records(out)]
+
+
+def _raw_records(out):
+    """`_raw_entries`, each entry prefixed with the commit it belongs to: a `git log --raw -z
+    --format=C%H` header token (`C` + a 40/64-hex sha, read only where a header can stand, never in
+    a path slot) sets it; "" before any header (plain `git diff` output)."""
     tokens = str(out or "").split("\0")
-    found, i = [], 0
+    found, i, commit = [], 0, ""
     while i < len(tokens):
         meta = tokens[i].lstrip("\n")
         i += 1
         if not meta.startswith(":"):
+            if _COMMIT_HEADER_RE.match(meta):
+                commit = meta[1:]
             continue                      # the empty `--format=` line between commits, or the tail
         parents = len(meta) - len(meta.lstrip(":"))
         fields = meta[parents:].split()
@@ -710,7 +719,7 @@ def _raw_entries(out):
         if parents == 1 and status[:1] in ("R", "C") and i < len(tokens):
             dst = tokens[i]
             i += 1
-        found.append((status, blobs[0], blobs[-1], src, dst))
+        found.append((commit, status, blobs[0], blobs[-1], src, dst))
     return found
 
 
@@ -813,6 +822,158 @@ def refuse_losing_push(cwd, before, after, accepted=(), dropped=None):
                      "has (%s) -- the base most likely holds a revert of the branch's own commits; "
                      "nothing was pushed and the remote branch is unchanged (see "
                      "docs/branching-model.md §3b)" % (len(dropped), shown))
+
+
+#: `git log --raw -z --format=C%H`'s per-commit header token, as `_raw_records` reads it.
+_COMMIT_HEADER_RE = re.compile(r"^C(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def own_losses(cwd, remote_tip, pre_head, base_ref, paths):
+    """The subset of `paths` -- losses measured from `remote_tip` (what a push overwrites) to
+    `pre_head` (the branch as it was before the rebase being pushed) -- that the BRANCH ITSELF made,
+    as a set (#278, review block #1). Only those are exempt at a push; every other loss refuses it.
+
+    WHY A LOSS INSIDE remote..pre_head IS NOT AUTOMATICALLY THE BRANCH'S OWN. A local, unpushed
+    `git rm` commit is (the healthy case). But a previous LOCAL rebase that silently lost content --
+    the base landed w.txt, the feature was cut and pushed, the base reverted w.txt, a human ran `git
+    rebase origin/main` without pushing -- leaves the very same shape: w.txt is in the remote tip
+    and absent from `pre_head`. There it came in with the BASE's revert, and pushing publishes it.
+
+    THE RULE, per path P, all three required:
+      1. a commit reachable from `pre_head` but from neither `remote_tip` nor `base_ref` touches P
+         (`git log pre_head --not remote_tip base_ref -- P`, `--no-merges`: a merge's result is its
+         parents' story, and bringing the base in by merge is the same shape as the lossy rebase;
+         `--full-history`, so path simplification never picks which side of a merge is seen);
+      2. the NEWEST such commit's own result for P is exactly `pre_head`'s state of P -- a deletion
+         where `pre_head` lacks P, the same blob where it holds one -- so what `pre_head` has is
+         attributable to that commit's diff and not to something that came after it;
+      3. that commit is not itself a replay of a base change: `--cherry-mark` against `base_ref`
+         finds no patch-equivalent there (a base revert cherry-picked onto the branch by hand is
+         still the base's loss).
+    In the lossy-rebase repro the revert is reachable from `base_ref`, so (1) finds nothing for w.txt.
+
+    CONSERVATIVE BY CONSTRUCTION: a missing `remote_tip`, `pre_head` or `base_ref` exempts nothing;
+    the documented cost is a healthy local deletion refused (`docs/branching-model.md` §3b). A base rewritten (force-pushed) since the lossy rebase no longer reaches its revert,
+    so (1) could then see the branch-side copy -- (3) still catches it only if the rewritten base
+    kept a patch-equivalent commit; that residual is named in §15.
+
+    COST, only when there is a remote -> pre_head loss at all: one `git log` over the branch-only
+    commits and one `--cherry-mark` walk of `base_ref...pre_head`, each per `_HISTORY_CHUNK` paths,
+    plus one `ls-tree`; all config-pinned, `--literal-pathspecs`, bounded by
+    `SIGMA_REBASE_GUARD_TIMEOUT`. RAISES when a read fails: the caller refuses the push."""
+    paths = sorted(set(paths or ()))
+    if not (paths and remote_tip and pre_head and base_ref):
+        return set()
+    newest = {}
+    for start in range(0, len(paths), _HISTORY_CHUNK):
+        chunk = paths[start:start + _HISTORY_CHUNK]
+        out = _git_read(cwd, ["--literal-pathspecs", "log", "--no-merges", "--full-history",
+                              "--topo-order", "--no-renames", "--raw", "-z", "--no-abbrev",
+                              "--no-color",
+                              "--no-ext-diff", "--format=C%H", pre_head, "--not", remote_tip,
+                              base_ref, "--"] + chunk)
+        for commit, status, _old, new_blob, src, _dst in _raw_records(out):
+            newest.setdefault(src, (commit, status[:1], new_blob))
+    if not newest:
+        return set()
+    touched = sorted(newest)
+    replays, held = set(), {}
+    for start in range(0, len(touched), _HISTORY_CHUNK):
+        chunk = touched[start:start + _HISTORY_CHUNK]
+        out = _git_read(cwd, ["--literal-pathspecs", "log", "--no-merges", "--cherry-mark",
+                              "--right-only", "--no-color", "--format=%m%H",
+                              "%s...%s" % (base_ref, pre_head), "--"] + chunk)
+        replays |= {line[1:].strip() for line in out.splitlines() if line.startswith("=")}
+        listed = _git_read(cwd, ["--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree",
+                                 pre_head, "--"] + chunk)
+        for entry in listed.split("\0"):
+            meta, tab, name = entry.partition("\t")
+            if tab and len(meta.split()) == 3:
+                held[name] = meta.split()[2]
+    own = set()
+    for path, (commit, kind, blob) in newest.items():
+        if not commit or commit in replays:
+            continue
+        if path in held:
+            if kind != "D" and blob == held[path]:
+                own.add(path)
+        elif kind == "D":
+            own.add(path)
+    return own
+
+
+# --------------------------------------------------------------------------- refused-push marker
+# #278 (review block #1, note c): when a refused replay cannot put the branch back (`git reset
+# --keep` itself fails -- typically uncommitted edits in the way), the LOCAL branch still holds the
+# lossy history, and a later run would find nothing to rebase and push it. So the refusal leaves a
+# marker in the repository's own common git dir -- shared by every worktree, visible to every host,
+# gone with the clone -- and every push site asks `push_refused` first. Fail closed: while the
+# marker stands, pushes of that branch are refused; it clears itself the moment HEAD is back at the
+# recorded pre-rebase head (the recovery command it prints), or a human deletes it.
+
+_REFUSED_DIR = "sigma-push-refused"
+
+
+def _refused_marker(cwd, branch):
+    """`<git-common-dir>/sigma-push-refused/<branch-stem>.json`. Keyed by a git BRANCH name, not a
+    unit name; the stem is still case-folded, so two branches differing only in case share one
+    record on every host alike (a case-insensitive filesystem would merge them anyway, and only on
+    some hosts). The exact branch is stored inside, and `push_refused` clears a record only for
+    that branch -- a shared record refuses the other branch too, never clears it (fail closed)."""
+    common = _git_read(cwd, ["rev-parse", "--git-common-dir"]).strip()
+    if not common:
+        raise RuntimeError("git rev-parse --git-common-dir printed nothing")
+    here = pathlib.Path(common)
+    if not here.is_absolute():
+        here = pathlib.Path(cwd) / here
+    stem = str(branch).replace("/", "_").replace("\\", "_").replace("..", "_").lower()
+    return here / _REFUSED_DIR / ("%s.json" % stem)
+
+
+def mark_push_refused(cwd, branch, pre_head, why):
+    """Record that `branch` was left holding a refused, lossy replay -> the marker path, or "" when
+    it could not be written (the caller's message then says so)."""
+    try:
+        marker = _refused_marker(cwd, branch)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({"branch": branch, "pre_head": pre_head, "why": why,
+                                      "at": int(time.time())}), encoding="utf-8")
+        return str(marker)
+    except Exception:                     # noqa: BLE001 - the refusal text carries the recovery
+        return ""
+
+
+def push_refused(cwd, branch):
+    """None when nothing stands against pushing `branch` from `cwd`, else the refusal text. A marker
+    whose pre-rebase head IS the current HEAD has been recovered from and is removed. Not a git
+    repository (nothing could have been marked there) reads as None; a marker that exists but cannot
+    be read, or a HEAD that cannot be read, refuses."""
+    try:
+        marker = _refused_marker(cwd, branch)
+    except Exception:                     # noqa: BLE001 - no git dir: no marker can exist there
+        return None
+    if not marker.exists():
+        return None
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+        pre = str(data.get("pre_head") or "")
+        head = _git_read(cwd, ["rev-parse", "HEAD"]).strip()
+    except Exception as exc:              # noqa: BLE001 - unreadable is never "cleared"
+        return ("refused to push %s: a previous refused rebase left it marked (%s) and the marker "
+                "could not be checked (%s); inspect the branch, then delete that file"
+                % (branch, marker, _flat(exc)))
+    if pre and head == pre and data.get("branch") == branch:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        return None
+    return ("refused to push %s: a previous rebase was refused because it would lose content, and "
+            "putting the branch back failed, so the local branch may still hold that lossy history "
+            "(%s). Recover with `git reset --keep %s` in %s -- pushes of this branch stay refused "
+            "until HEAD is back there; if you have checked the branch by hand and it is right, "
+            "delete %s" % (branch, data.get("why") or "no reason recorded", pre or "<the pre-rebase "
+                          "head from `git reflog`>", cwd, marker))
 
 
 # --------------------------------------------------------------------------- the ephemeral worktree

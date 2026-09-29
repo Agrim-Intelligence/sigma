@@ -1417,8 +1417,356 @@ def test_278_the_manual_recovery_push_keeps_a_local_unpushed_deletion(tmp_path):
     _git(local, "add", "w.txt")
     _run(str(local), ["git", "-c", "core.editor=true", "rebase", "--continue"])
     assert m.rebase_brief.pre_rebase_head(_run, str(local), BRANCH) == pre
-    report = m.walk_conflicts(_run, str(local), {"branch": BRANCH},
+    # Review block #1: without the base the loss cannot be attributed, so it is refused (never
+    # passed); with it, the `git rm` commit is the branch's own and the push goes through.
+    bare = m.walk_conflicts(_run, str(local), {"branch": BRANCH},
+                            lambda s: {"option": m.RECREATE}, "origin")
+    assert bare["pushed"] is False and bare["dropped"] == ["old.txt"], bare
+    report = m.walk_conflicts(_run, str(local), {"branch": BRANCH, "base_ref": "origin/%s" % BASE},
                               lambda s: {"option": m.RECREATE}, "origin")
     assert report["outcome"] == m.NOTHING_TO_DO and report["pushed"] is True, report
     after = _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0]
     assert after != before and "old.txt" not in _git(local, "ls-tree", "--name-only", after)
+
+
+# --------------------------------------------------------------------------- #278 review block #1
+# A remote -> pre-rebase-head loss is exempt ONLY when a commit unique to the branch made it. An
+# earlier LOCAL rebase that silently lost content (main landed w.txt, the feature was cut and pushed,
+# main reverted w.txt, a human ran `git rebase origin/main` without pushing) leaves that loss inside
+# remote..pre_head too -- but there it came in with the BASE's revert, so it must still refuse.
+
+
+def _lossy_local_rebase_world(tmp_path):
+    """The reviewer's repro (atk/test_stale.py): `feature/x` on the remote still has w.txt's 300
+    lines; the local branch was rebased onto main's revert by hand and never pushed; main moved on."""
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "a.txt", "a\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _write(local / "w.txt", "".join("WORK %d\n" % i for i in range(300)))
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "feat: work (#10)")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _write(local / "y.txt", "y\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "y (#11)")
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "revert", "--no-edit", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    _git(local, "rebase", "-q", "origin/%s" % BASE)      # by hand, lossy, NOT pushed
+    assert not (local / "w.txt").exists()
+    _git(local, "checkout", "-q", BASE)
+    _write(local / "m.txt", "m\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "main moves")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    return local
+
+
+def _remote_keeps_w(local):
+    _git(local, "fetch", "-q", "origin")
+    return "w.txt" in _git(local, "ls-tree", "-r", "--name-only", "origin/%s" % BRANCH).split()
+
+
+def test_278_b1_attempt_rebase_refuses_after_a_lossy_local_rebase(tmp_path):
+    m = _mod()
+    local = _lossy_local_rebase_world(tmp_path)
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.WOULD_DROP and report["files"] == ["w.txt"], report
+    assert _remote_keeps_w(local), "remote feature/x lost w.txt (300 lines)"
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+
+
+def test_278_b1_manual_recovery_refuses_after_a_lossy_then_benign_rebase(tmp_path):
+    """`pre_rebase_head` returns the LOSSY intermediate head here (`<branch>@{1}` after the second,
+    benign rebase), so the remote -> pre_head loss must be attributed, not exempted -- with the base
+    known (the walker's own brief) and without it (the bare call)."""
+    m = _mod()
+    local = _lossy_local_rebase_world(tmp_path)
+    lossy = _git(local, "rev-parse", "HEAD")
+    _git(local, "rebase", "-q", "origin/%s" % BASE)       # second, benign rebase
+    assert m.rebase_brief.pre_rebase_head(_run, str(local), BRANCH) == lossy
+    report = m.walk_conflicts(_run, str(local), {"branch": BRANCH, "base_ref": "origin/%s" % BASE},
+                              lambda s: {"option": m.RECREATE}, "origin")
+    assert report["outcome"] == m.NOTHING_TO_DO and report["pushed"] is False, report
+    assert report["dropped"] == ["w.txt"], report
+    rec = m._manual_recovery_push(_run, str(local), "origin", BRANCH)
+    assert rec["pushed"] is False and rec["dropped"] == ["w.txt"], rec
+    assert _remote_keeps_w(local), "remote feature/x lost w.txt (300 lines)"
+
+
+def test_278_b1_push_branch_directly_refuses_after_a_lossy_local_rebase(tmp_path):
+    m = _mod()
+    local = _lossy_local_rebase_world(tmp_path)
+    for base_ref in (None, "origin/%s" % BASE):
+        push = m.rebase_brief.push_branch(_run, str(local), "origin", BRANCH, base_ref=base_ref)
+        assert push["ok"] is False and push["dropped"] == ["w.txt"], (base_ref, push)
+    assert _remote_keeps_w(local)
+
+
+def test_278_b1_the_walkers_done_push_refuses_when_orig_head_is_lossy(tmp_path):
+    """The walker reads `orig-head` from the stopped rebase -- here the lossy head a hand rebase left
+    -- so its DONE push must attribute the remote -> orig-head loss too."""
+    m = _mod()
+    local = _lossy_local_rebase_world(tmp_path)
+    lossy = _git(local, "rev-parse", "HEAD")
+    _git(local, "checkout", "-q", BASE)
+    _write(local / "y.txt", "base y\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "main also writes y.txt")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.CONFLICT, report
+
+    def decide(state):
+        _write(local / "y.txt", "y\nbase y\n")
+        _git(local, "add", "y.txt")
+        return {"option": m.MANUAL}
+    brief = {"branch": BRANCH, "base_ref": "origin/%s" % BASE, "changelog_entries": [],
+             "merge_base": _git(local, "merge-base", lossy, "origin/%s" % BASE)}
+    walk = m.walk_conflicts(_run, str(local), brief, decide, "origin")
+    assert walk["outcome"] == m.FAILED and walk["dropped"] == ["w.txt"], walk
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+    assert _remote_keeps_w(local)
+
+
+def test_278_b1_a_cherry_picked_base_revert_is_not_the_branchs_own_deletion(tmp_path):
+    """The second half of the attribution rule: a branch-only commit that is a REPLAY of the base's
+    own change (here main's revert, cherry-picked onto the branch by hand) is the base's loss, not
+    the branch's -- so it is not exempt either. A plain `git rm` commit of the branch's own is."""
+    m = _mod()
+    fr = m.feature_rebase
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "a.txt", "a\n")
+    _write(local / "old.txt", "obsolete\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _write(local / "w.txt", "".join("WORK %d\n" % i for i in range(300)))
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "feat: work (#10)")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _write(local / "y.txt", "y\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "y (#11)")
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "revert", "--no-edit", "HEAD")
+    revert = _git(local, "rev-parse", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    _git(local, "cherry-pick", revert)                      # the base's revert, replayed here
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete (the branch's own)")
+    remote_tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    lost = fr.dropped_paths(str(local), remote_tip, head)
+    assert sorted(lost) == ["old.txt", "w.txt"], lost
+    own = fr.own_losses(str(local), remote_tip, head, "origin/%s" % BASE, lost)
+    assert own == {"old.txt"}, own
+    assert fr.own_losses(str(local), remote_tip, head, None, lost) == set()
+
+
+def test_278_b1_a_branch_edit_does_not_excuse_a_deletion_a_base_merge_brought_in(tmp_path):
+    """Rule (2): the branch's own commit touching P is not enough -- its RESULT must be what the
+    pre-rebase head has. Here the branch edits w.txt, then merges the base's revert (resolving the
+    modify/delete by deleting): the deletion is the base's, and it is not exempt."""
+    m = _mod()
+    fr = m.feature_rebase
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "a.txt", "a\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _write(local / "w.txt", "".join("WORK %d\n" % i for i in range(300)))
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "feat: work (#10)")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "revert", "--no-edit", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    with open(local / "w.txt", "a", encoding="utf-8") as fh:
+        fh.write("branch line\n")
+    _git(local, "commit", "-qam", "branch edits w.txt (local)")
+    with pytest.raises(AssertionError):
+        _git(local, "merge", "--no-edit", "origin/%s" % BASE)   # modify/delete: resolved by deleting
+    _git(local, "rm", "-q", "w.txt")
+    _git(local, "-c", "core.editor=true", "commit", "-q", "--no-edit")
+    remote_tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    assert fr.dropped_paths(str(local), remote_tip, head) == ["w.txt"]
+    assert fr.own_losses(str(local), remote_tip, head, "origin/%s" % BASE, ["w.txt"]) == set()
+
+
+def _unpushed_work_copied_and_reverted_on_base(tmp_path, conflict):
+    """The branch's LOCAL, unpushed commit adds big.txt; the base took a copy of it and reverted
+    it, so a replay skips it as already upstream and loses big.txt -- which the remote branch never
+    had, so a remote-tip comparison alone sees nothing. With `conflict`, c.txt also clashes."""
+    local = _seeded_pair(tmp_path, "c.txt", "c\n")
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _write(local / "big.txt", "".join("BIG %d\n" % i for i in range(300)))
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "big work (local, unpushed)")
+    big = _git(local, "rev-parse", "HEAD")
+    if conflict:
+        _write(local / "c.txt", "branch c\n")
+        _git(local, "commit", "-qam", "branch edits c")
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "cherry-pick", big)
+    _git(local, "revert", "--no-edit", "HEAD")
+    if conflict:
+        _write(local / "c.txt", "base c\n")
+        _git(local, "commit", "-qam", "base edits c")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    return local
+
+
+def test_278_the_walkers_done_push_measures_what_the_rebase_itself_lost(tmp_path):
+    """#278 note (a): `push_branch`'s `pre_head -> HEAD` measurement is the only thing that sees
+    big.txt go; the c.txt conflict makes the walker do the push."""
+    m = _mod()
+    local = _unpushed_work_copied_and_reverted_on_base(tmp_path, conflict=True)
+    pre = _git(local, "rev-parse", "HEAD")
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    _try_rebase(str(local))
+    assert m.feature_rebase.rebase_stopped(_run, str(local))
+
+    def decide(state):
+        _write(local / "c.txt", "branch c\nbase c\n")
+        _git(local, "add", "c.txt")
+        return {"option": m.MANUAL}
+    brief = {"branch": BRANCH, "base_ref": "origin/%s" % BASE, "changelog_entries": [],
+             "merge_base": _git(local, "merge-base", pre, "origin/%s" % BASE)}
+    walk = m.walk_conflicts(_run, str(local), brief, decide, "origin")
+    assert walk["outcome"] == m.FAILED and walk["dropped"] == ["big.txt"], walk
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+
+
+def test_278_a_failed_put_back_marks_the_branch_and_refuses_later_pushes(tmp_path):
+    """#278 note (c): when `git reset --keep` cannot put the branch back after a refusal, the local
+    branch still holds the lossy replay. Once anything lands on top (here a commit), the reflog no
+    longer names the pre-rebase head and the remote never had big.txt -- so only the recorded
+    refusal stops a push. It names the recovery command, and doing that recovery clears it."""
+    m = _mod()
+    rb = m.rebase_brief
+    local = _unpushed_work_copied_and_reverted_on_base(tmp_path, conflict=False)
+    cwd = str(local)
+    pre = _git(local, "rev-parse", "HEAD")
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+
+    def failing(cwd_, argv):
+        if list(argv[:3]) == ["git", "reset", "--keep"]:
+            raise RuntimeError("simulated: reset --keep refused")
+        return _run(cwd_, argv)
+    report = rb.attempt_rebase(failing, cwd, "origin", BRANCH, BASE)
+    assert report["outcome"] == rb.WOULD_DROP and report["files"] == ["big.txt"], report
+    assert "git reset --keep %s" % pre in report["why"] and "marker" in report["why"], report
+    assert not (local / "big.txt").exists()                        # still the lossy replay
+    _write(local / "z.txt", "more work\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "more work on top")
+    assert rb.pre_rebase_head(_run, cwd, BRANCH) == ""
+    push = rb.push_branch(_run, cwd, "origin", BRANCH, base_ref="origin/%s" % BASE)
+    assert push["ok"] is False and "git reset --keep %s" % pre in push["why"], push
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+    _git(local, "reset", "-q", "--keep", pre)                      # the printed recovery
+    assert m.feature_rebase.push_refused(cwd, BRANCH) is None
+    assert (local / "big.txt").exists()
+
+
+def test_278_b1_a_branch_edit_does_not_excuse_a_rollback_a_base_merge_brought_in(tmp_path):
+    """Rule (2), the held-path arm: the branch edits w.txt, then merges the base's revert of w.txt's
+    newer version and takes the base's side -- pre_head holds the OLD blob (a rollback), which is
+    not what the branch's own commit produced, so it is not exempt."""
+    m = _mod()
+    fr = m.feature_rebase
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    v1 = "".join("line %d\n" % i for i in range(40))
+    _write(local / "w.txt", v1)
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _write(local / "w.txt", v1.replace("line 5\n", "V2\n"))
+    _git(local, "commit", "-qam", "feat: v2 (#10)")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "revert", "--no-edit", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    _write(local / "w.txt", v1.replace("line 5\n", "V2 and the branch\n"))
+    _git(local, "commit", "-qam", "branch edits w.txt (local)")
+    with pytest.raises(AssertionError):
+        _git(local, "merge", "--no-edit", "origin/%s" % BASE)   # conflicts on line 5
+    _write(local / "w.txt", v1)                                    # take the base's whole file
+    _git(local, "add", "w.txt")
+    _git(local, "-c", "core.editor=true", "commit", "-q", "--no-edit")
+    remote_tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    assert fr.dropped_paths(str(local), remote_tip, head) == ["w.txt"]
+    assert fr.own_losses(str(local), remote_tip, head, "origin/%s" % BASE, ["w.txt"]) == set()
+
+
+# --------------------------------------------------------------------------- #278 note (d)
+
+
+def test_278_pre_rebase_head_reads_the_other_finish_subjects_git_writes(tmp_path, monkeypatch):
+    """Real git, not a fake: a `pull --rebase` that lands in one go writes `pull <argv> (finish):`,
+    and a reflog action carrying the continue writes `rebase (continue) (finish):` -- both name the
+    pre-rebase head as `<branch>@{1}`. Anything else newest (here a reset) stays unknown."""
+    m = _mod()
+    rb = m.rebase_brief
+    world = World(tmp_path).build()
+    cwd = str(world.local)
+    world.commit_on_base("b1.txt", "b1", "base one")
+    pre = _git(world.local, "rev-parse", "HEAD")
+    _git(world.local, "pull", "-q", "--rebase", "origin", BASE)
+    subject = _git(world.local, "reflog", "show", "-1", "--format=%gs", "refs/heads/%s" % BRANCH)
+    assert subject.startswith("pull ") and "(finish): refs/heads/%s onto " % BRANCH in subject, subject
+    assert rb.pre_rebase_head(_run, cwd, BRANCH) == pre
+
+    world.commit_on_base("b2.txt", "b2", "base two")
+    _git(world.local, "fetch", "-q", "origin")
+    pre = _git(world.local, "rev-parse", "HEAD")
+    monkeypatch.setenv("GIT_REFLOG_ACTION", "rebase (continue)")
+    _git(world.local, "rebase", "-q", "origin/%s" % BASE)
+    monkeypatch.delenv("GIT_REFLOG_ACTION")
+    subject = _git(world.local, "reflog", "show", "-1", "--format=%gs", "refs/heads/%s" % BRANCH)
+    assert subject.startswith("rebase (continue) (finish): "), subject
+    assert rb.pre_rebase_head(_run, cwd, BRANCH) == pre
+
+    _git(world.local, "reset", "-q", "--hard", "HEAD~1")
+    assert rb.pre_rebase_head(_run, cwd, BRANCH) == ""
+    # Another branch's landing is never this branch's answer.
+    assert rb._rebase_finish_re(BRANCH).match(
+        "rebase (finish): refs/heads/other onto %s" % ("a" * 40)) is None
