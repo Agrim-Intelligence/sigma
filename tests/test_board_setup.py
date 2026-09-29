@@ -712,11 +712,31 @@ def test_a_resume_with_the_old_bare_marker_drops_it_and_the_board_stays_a_humans
     assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
 
 
-def _documented_marker_recovery():
+def _documented_marker_recovery_commands():
     doc = (ROOT / "docs" / "board-fields.md").read_text(encoding="utf-8")
-    commands = doc.split("<!-- setup-created-recovery -->", 1)[1].split("```sh", 1)[1].split("```", 1)[0]
-    python, command = commands.strip().removeprefix("python3 - <<'PY'\n").split("\nPY\n", 1)
+    return doc.split("<!-- setup-created-recovery -->", 1)[1].split("```sh", 1)[1].split("```", 1)[0]
+
+
+def _documented_marker_recovery():
+    first, rest = _documented_marker_recovery_commands().strip().split("\n", 1)
+    assert first.startswith("python3 - <<'PY'")
+    python, command = rest.split("\nPY\n", 1)
     return python, shlex.split(command)
+
+
+def test_documented_marker_recovery_stops_before_board_setup_if_config_edit_fails(tmp_path):
+    """The pasted runbook must not adopt/mutate the old pinned board after its edit fails."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    python = tools / "python3"
+    python.write_text('#!/bin/sh\nif [ "$1" = "-" ]; then exit 97; fi\n'
+                      ': > "${0%/*}/board-setup-called"\n')
+    python.chmod(0o755)
+    result = subprocess.run(["/bin/sh", "-c", _documented_marker_recovery_commands()],
+                            cwd=tmp_path, env={"PATH": str(tools), "SIGMA_PLUGIN_ROOT": str(ROOT)},
+                            capture_output=True, text=True, timeout=10)
+    assert not (tools / "board-setup-called").exists()
+    assert result.returncode == 97, result.stderr
 
 
 def test_documented_marker_recovery_creates_a_separate_owned_board(tmp_path):

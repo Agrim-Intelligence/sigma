@@ -238,11 +238,12 @@ the old board's title is refused as a duplicate.
 
 From the project root, set `SIGMA_PLUGIN_ROOT` to the installed Sigma plugin directory. Choose
 an unused title in the second command (the example uses `Sigma recovery board`). The first command
-writes a temporary sibling and replaces the config only after that write succeeds:
+writes a temporary sibling and replaces the config only after that write succeeds; `&&` prevents
+board setup from running if the config edit fails:
 
 <!-- setup-created-recovery -->
 ```sh
-python3 - <<'PY'
+python3 - <<'PY' &&
 import json, os, pathlib, tempfile
 
 p = pathlib.Path(".sdlc/config.json")
