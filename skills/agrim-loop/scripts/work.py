@@ -3229,6 +3229,9 @@ def rebase(sdlc_dir, config, goal, run=None):
         # only inserted (see `_union_diff3`). That shape is mechanical and lossless, and it is the
         # single most frequent conflict in this repo. Everything else still aborts.
         if _union_rescue(path, run):
+            refused = _replay_would_lose(path, run, pre_rebase_head, f"{remote}/{base}")
+            if refused:
+                return refused
             run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
             return "rebased (CHANGELOG union-merged)"
         try:
@@ -3278,8 +3281,53 @@ def rebase(sdlc_dir, config, goal, run=None):
                     f"fully restored; inspect it by hand before retrying")
         return (f"rebase deferred: the worktree's own uncommitted changes conflict with what's "
                 f"now on {remote}/{base} (autostash pop conflict)")
+    refused = _replay_would_lose(path, run, pre_rebase_head, f"{remote}/{base}")
+    if refused:
+        return refused
     run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
     return "rebased"
+
+
+def _replay_would_lose(path, run, pre, base_ref):
+    """#278: `None` when the replayed HEAD keeps every path the GOAL itself changed, else a
+    "rebase deferred: ..." string, with the worktree put back at `pre` and nothing pushed.
+
+    #144's tree guard (`feature_rebase.dropped_paths`), reused before this force-push too. A goal
+    branch has a single writer, but the data-loss shape is the same: when the goal's commit reached
+    the base as a patch-equivalent copy (a rebase-merge) and was then REVERTED there, `git rebase`
+    skips it as already upstream and the replay silently loses the goal's own work.
+
+    Scoped to the paths the goal changed since it forked (`git diff --name-only <merge-base> pre`),
+    and that scope is deliberate: unscoped, `dropped_paths` refuses a plain base deletion of a file
+    the goal never touched -- routine on a busy base, and `ensure_fresh` runs this before every
+    verify, so every goal would stall on an ordinary cleanup. The cost of the scope: a goal whose
+    commits reached the base as the SAME commits (a true merge) and were then reverted forks above
+    them, so its diff is empty and nothing is seen -- its PR has merged by then, and replaying a
+    finished goal is not a flow this function serves. Fails closed: a comparison that cannot be
+    made defers the rebase too."""
+    pre = str(pre or "").strip()
+    try:
+        fork = str(run(path, ["git", "merge-base", pre, base_ref]) or "").strip()
+        listed = run(path, ["git", "diff", "--name-only", "--no-renames", fork, pre]) if fork else ""
+        own = {line.strip() for line in str(listed or "").splitlines() if line.strip()}
+        dropped = (sorted(set(_feature_rebase().dropped_paths(path, pre, "HEAD")) & own)
+                   if own else [])
+    except Exception as exc:                # noqa: BLE001 - unmeasured is never "nothing lost"
+        why = f"the pre/post tree comparison could not be made ({exc})"
+    else:
+        if not dropped:
+            return None
+        shown = ", ".join(dropped[:3]) + (f" and {len(dropped) - 3} more" if len(dropped) > 3 else "")
+        why = (f"replaying onto {base_ref} would remove or roll back {len(dropped)} path(s) this "
+               f"goal changed ({shown}) -- the base most likely holds a revert of the goal's own "
+               f"commits; see docs/branching-model.md §3b")
+    try:
+        run(path, ["git", "reset", "--keep", pre])
+        return (f"rebase deferred: {why}; nothing was pushed and the worktree was put back at "
+                f"{pre[:12]}")
+    except Exception:                       # noqa: BLE001 - say how to undo rather than guess
+        return (f"rebase deferred: {why}; nothing was pushed, but the worktree is still rebased -- "
+                f"undo it with `git reset --keep {pre}`")
 
 
 def _behind_count(path, remote, base, run):

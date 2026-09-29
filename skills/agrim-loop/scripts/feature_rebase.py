@@ -157,6 +157,7 @@ import pathlib
 import re
 import shutil
 import sys
+import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -267,8 +268,18 @@ CONFLICT = "conflict"                 # the feature branch would not replay
 LEASE_REFUSED = "lease-refused"       # the remote moved under us; the other writer keeps the branch
 REBASED = "rebased"                   # the feature moved (its goal branches are in `replayed`)
 FAILED = "failed"                     # something went wrong; nothing here is claimed
+#: #144: the replay SUCCEEDED, and its tree lacks tracked paths the branch tip has -- so pushing it
+#: would delete the branch's own content. Refused BEFORE the push; the remote is untouched. The
+#: reported shape: the base's tip was a deliberate REVERT of the branch's own commits, the replay
+#: faithfully re-applied the revert's deletions, and the pass used to report `rebased (0 replayed,
+#: 0 conflicted, 0 skipped)` -- the "nothing to do" line -- over a force-push that removed 72 files.
+#: A STABLE NAME: this is the OUTER guard on the replay result, evaluated where the replayed head is
+#: computed and before `_pushed` or any later accept/keep logic, so everything layered on top of the
+#: replay (a different replay strategy, an acknowledgement lever) sits inside it, never around it.
+WOULD_DROP = "would-drop"
 OUTCOMES = (DISABLED, NO_UNIT, NOT_ADOPTED, NO_BASE, NO_BRANCH, OCCUPIED, REMOTE_UNREADABLE,
-            CURRENT, BUSY, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED)
+            CURRENT, BUSY, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED,
+            WOULD_DROP)
 
 #: The outcomes worth a clause on `work.start()`'s own one-line result -- the ONLY channel any of
 #: this reaches a person through on a normal run.
@@ -282,7 +293,16 @@ OUTCOMES = (DISABLED, NO_UNIT, NOT_ADOPTED, NO_BASE, NO_BRANCH, OCCUPIED, REMOTE
 #: `REMOTE_UNREADABLE` is deliberately still out: `feature_sync` files its own `remote-unreadable`
 #: divergence from the SAME `live_branches` call on the SAME pick and puts it in ITS clause, so
 #: repeating it here would report one unreachable remote twice on one line.
-IN_CLAUSE = (BUSY, OCCUPIED, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED)
+IN_CLAUSE = (BUSY, OCCUPIED, UNVERIFIABLE, DIRECT_COMMITS, CONFLICT, LEASE_REFUSED, REBASED, FAILED,
+             WOULD_DROP)
+
+#: #144: how many removed paths `report["dropped"]` (and the filed issue, and the doctor marker)
+#: name. The COUNT is always exact (`dropped_count`); only the listing is capped, so a revert of a
+#: 10,000-file unit costs a bounded report, issue body and state file rather than one per path.
+DROPPED_LISTED = 20
+#: ...and how many the ONE-LINE clause names. A line is read at a glance; three names are enough to
+#: recognise the work, and the count says how much more there is.
+DROPPED_IN_CLAUSE = 3
 
 #: The area label every issue this module files carries. Not a CODEOWNERS lookup -- these are filed
 #: `same_area=True`, so `area` is a label and nothing else.
@@ -601,6 +621,200 @@ def goal_liveness(sdlc_dir, config, goal):
     return IDLE if evidence else UNKNOWN
 
 
+# --------------------------------------------------------------------------- #144: the tree guard
+
+
+#: How many paths one `git log` history read names. Bounds the argv (a revert of 10,000 files must
+#: not build one 10,000-path command line); the cost is one history read per chunk.
+_HISTORY_CHUNK = 200
+
+#: Seconds ONE guard read (the tree diff, or one history chunk) may take before it is killed and the
+#: push refused. Mirrors `SIGMA_WATCH_CALL_TIMEOUT`'s convention (default 120, env-overridable). A
+#: history read walks every commit reachable from the branch tip, so on a very long history it is
+#: the one read here whose cost grows with the repository; a timeout is a refusal, never "nothing
+#: dropped".
+_GUARD_TIMEOUT_ENV = "SIGMA_REBASE_GUARD_TIMEOUT"
+_GUARD_TIMEOUT_DEFAULT = 120.0
+
+#: Configuration pinned on every guard read, so a person's own git config cannot switch the check
+#: off or change the shape it parses (review block #2): `log.showRoot=false` hid the root commit's
+#: version, `log.diffMerges=combined` would turn `-m`'s per-parent `:` lines into `::` lines,
+#: `log.showSignature` prints gpg output into stdout, `diff.relative` rewrites paths, `log.follow`
+#: turns a one-path read into a rename chase. Unknown keys are ignored by older git, so pinning
+#: them costs nothing where they do not exist.
+_GUARD_CONFIG = ("log.showRoot=true", "log.diffMerges=separate", "log.follow=false",
+                 "log.showSignature=false", "diff.relative=false", "diff.renames=false",
+                 "diff.external=", "color.ui=never", "color.diff=never", "core.quotePath=false")
+
+
+_LEGACY = None
+
+
+def _guard_timeout():
+    global _LEGACY
+    if _LEGACY is None:
+        _LEGACY = _load("legacy")         # #239: operator env names are read through its helper
+    try:
+        value = float(_LEGACY.getenv(_GUARD_TIMEOUT_ENV) or _GUARD_TIMEOUT_DEFAULT)
+    except ValueError:
+        value = _GUARD_TIMEOUT_DEFAULT
+    return value if value > 0 else _GUARD_TIMEOUT_DEFAULT
+
+
+def _git_read(cwd, args):
+    """One config-pinned, time-bounded git read for the guard -> stdout as str. NOT the injected
+    `run`: every runner in this kit decodes with the LOCALE (`text=True`), which on a non-UTF-8
+    Windows code page garbles a non-ASCII path, strips trailing whitespace a `-z` path may end in,
+    and has no timeout. Bytes in, UTF-8 with `surrogateescape` out, so any byte a path holds
+    round-trips. RAISES on a non-zero exit or on the timeout -- the caller refuses the push."""
+    import subprocess                     # local: only the guard reads git this way
+    argv = ["git"]
+    for pin in _GUARD_CONFIG:
+        argv += ["-c", pin]
+    argv += list(args)
+    timeout = _guard_timeout()
+    try:
+        proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("the guard's git read timed out after %gs (%s=%s to raise it), so the "
+                           "check is unanswered and nothing is pushed: git %s"
+                           % (timeout, _GUARD_TIMEOUT_ENV, "N", " ".join(str(a) for a in args[:3])))
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(err or "git exited %s" % proc.returncode)
+    return (proc.stdout or b"").decode("utf-8", "surrogateescape")
+
+
+def _raw_entries(out):
+    """`git diff|log --raw -z --no-abbrev` output -> [(status, old_blob, new_blob, src, dst)].
+    `dst` is `src` for every status but a rename/copy, which carries two paths. A combined-format
+    entry (`::`, one colon per parent -- what a merge prints under `-c`/`--cc`) is read too: its
+    LAST blob is the result, its first the first parent's; it carries one path. Pinned config asks
+    for the separate format, so this is defence, not the normal path."""
+    tokens = str(out or "").split("\0")
+    found, i = [], 0
+    while i < len(tokens):
+        meta = tokens[i].lstrip("\n")
+        i += 1
+        if not meta.startswith(":"):
+            continue                      # the empty `--format=` line between commits, or the tail
+        parents = len(meta) - len(meta.lstrip(":"))
+        fields = meta[parents:].split()
+        if len(fields) < 2 * (parents + 1) + 1 or i >= len(tokens):
+            continue
+        blobs = fields[parents + 1:2 * (parents + 1)]
+        status = fields[2 * (parents + 1)]
+        src = tokens[i]
+        i += 1
+        dst = src
+        if parents == 1 and status[:1] in ("R", "C") and i < len(tokens):
+            dst = tokens[i]
+            i += 1
+        found.append((status, blobs[0], blobs[-1], src, dst))
+    return found
+
+
+def _history_blobs(cwd, tip, paths):
+    """{path: every blob that path has held anywhere in `tip`'s history}, one `git log` per
+    `_HISTORY_CHUNK` paths. `-m` so a MERGE's own result counts (a version born in a conflict
+    resolution, or in a clean two-sided merge, exists in no single-parent commit and `git log --raw`
+    prints nothing for merges by default); `log.showRoot=true` (pinned) so the ROOT commit's
+    versions count. `--literal-pathspecs` because a path is a name, never a glob. RAISES like
+    `dropped_paths` does, for the same reason."""
+    seen = {}
+    for start in range(0, len(paths), _HISTORY_CHUNK):
+        chunk = paths[start:start + _HISTORY_CHUNK]
+        out = _git_read(cwd, ["--literal-pathspecs", "log", "-m", "--no-renames", "--raw", "-z",
+                              "--no-abbrev", "--no-color", "--no-ext-diff", "--format=", tip,
+                              "--"] + chunk)
+        for _status, _old, new_blob, src, _dst in _raw_entries(out):
+            seen.setdefault(src, set()).add(new_blob)
+    return seen
+
+
+def dropped_paths(cwd, before, after):
+    """Paths whose content the branch tip `before` has and the replayed head `after` LOSES ->
+    sorted list. Two shapes count, both measured on trees plus the branch's own history:
+
+    1. a path `before` has that `after` does not, net of a rename by the base (see below);
+    2. a path the replay RESTORES to an older version -- `after`'s blob for it (at the same path,
+       or at the destination of a rename) is one the path already held somewhere in `before`'s
+       history, merges and the root commit included. That is the signature of a revert of the
+       branch's own work: an edit rolled back (review block #1, case 2: a 500-line edit silently
+       back to one line) or a rename undone (case 1: engine.py -> legacy.py, which `-M` alone
+       excused as "a rename").
+
+    #144's measurement, and deliberately NOT a merge-base question: the reported failure was
+    invisible to every history-shaped check (`0 replayed`, a head whose subject was unchanged, a
+    clean `--first-parent` walk), because the branch's commits are in the base's history, merely
+    reverted -- so they sit BELOW the merge-base, and "what did the branch add since the fork" is
+    empty for exactly the content being lost. The trees are where the loss is visible, and the
+    branch's history is what tells a revert from the base's own new work.
+
+    NOT A FINDING: a path the branch deleted itself (absent from `before`); a pure base rename to a
+    path the branch never held (git's rename detection pairs it); a base edit producing a version
+    the branch never had (the ordinary upstream edit); a MODE-only change (chmod: an M/T entry whose
+    blob is unchanged -- no content is lost, and the blob is trivially "one the branch held"). REFUSED
+    SAFELY, pinned by tests: a base that deletes a file the branch carries; a base move that rewrites
+    past git's rename similarity; a base that reverts its OWN older change to a file the branch
+    carries unchanged (as trees, all three are identical to a revert of the branch). NOT SEEN, the
+    documented limits (`docs/branching-model.md` §15): a PARTIAL revert, merged with other changes
+    into a version that never existed; and a FULL base revert of a file the branch has KEPT
+    EDITING since -- the replay applies the branch's later edit on top of the reverted text, and
+    that result is also a version that never existed. No version-identity test can see either.
+
+    COST: one `git diff`; plus, only when the replay modified or renamed paths, one `git log -m`
+    over `before`'s whole history per `_HISTORY_CHUNK` such paths, each bounded by
+    `SIGMA_REBASE_GUARD_TIMEOUT`. A base move touching nothing the branch has changed paths as
+    additions only and pays no history read.
+
+    `-z` because a path may hold any byte but NUL, and this list names files in an issue. RAISES when
+    any read cannot be run or times out: the caller must treat an unanswered question as "do not
+    push", never as "nothing was dropped"."""
+    out = _git_read(cwd, ["diff", "--no-ext-diff", "--no-color", "--raw", "-z", "--no-abbrev", "-M",
+                          before, after])
+    dropped, restored = set(), {}
+    for status, old_blob, new_blob, src, dst in _raw_entries(out):
+        kind = status[:1]
+        if kind == "D":
+            dropped.add(src)
+        elif kind == "R":
+            restored[dst] = (new_blob, src)         # `src` is what is lost if `dst` is a restoration
+        elif kind in ("M", "T"):
+            if old_blob == new_blob:
+                continue                            # mode-only (chmod / type bit): no content lost
+            restored[src] = (new_blob, src)
+    if restored:
+        seen = _history_blobs(cwd, before, sorted(restored))
+        for path, (blob, lost) in restored.items():
+            if blob in seen.get(path, ()):
+                dropped.add(lost)
+    return sorted(dropped)
+
+
+def refuse_losing_push(cwd, before, after, accepted=(), dropped=None):
+    """None when `after` keeps everything `before` has, else `(dropped, one-paragraph refusal naming
+    the paths)`. The shared wording for every push site that sits behind `dropped_paths`.
+    `accepted`: paths a HUMAN explicitly decided in this session (a conflict walker's resolved
+    files) -- losing one of those is the decision, not a side effect, so it is not a finding.
+    `dropped`: an already-measured loss list (#278: `rebase_brief.push_branch` combines several
+    comparisons), used instead of measuring `before`..`after` here. RAISES when the comparison
+    cannot be made (the caller refuses the push on that too)."""
+    accepted = set(accepted or ())
+    if dropped is None:
+        dropped = dropped_paths(cwd, before, after)
+    dropped = sorted(one for one in set(dropped) if one not in accepted)
+    if not dropped:
+        return None
+    shown = ", ".join(dropped[:DROPPED_LISTED])
+    if len(dropped) > DROPPED_LISTED:
+        shown += " and %d more" % (len(dropped) - DROPPED_LISTED)
+    return dropped, ("refused to push: it would remove or roll back %d tracked path(s) the branch "
+                     "has (%s) -- the base most likely holds a revert of the branch's own commits; "
+                     "nothing was pushed and the remote branch is unchanged (see "
+                     "docs/branching-model.md §3b)" % (len(dropped), shown))
+
+
 # --------------------------------------------------------------------------- the ephemeral worktree
 
 
@@ -672,6 +886,21 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
         except Exception as exc:          # noqa: BLE001
             report["why"] = _flat(exc)
             return FAILED
+        # #144: THE OUTER GUARD, between computing the replayed head and pushing it. Nothing below
+        # this line may run for a replay that would delete what the branch currently has.
+        try:
+            dropped = dropped_paths(path, sha, after)
+        except Exception as exc:          # noqa: BLE001 - unmeasured is never "nothing dropped"
+            report["why"] = ("the pre/post tree comparison could not be made, so nothing was "
+                             "pushed: %s" % _flat(exc))
+            return FAILED
+        if dropped:
+            report["dropped"] = dropped[:DROPPED_LISTED]
+            report["dropped_count"] = len(dropped)
+            report["would_be"] = after
+            report["why"] = ("bringing it forward onto %s would remove or roll back %d tracked "
+                             "path(s) it has" % (base_ref, len(dropped)))
+            return WOULD_DROP
         outcome = _pushed(run, cwd, path, branch, sha, remote, report)
         if outcome == REBASED:
             report["after"] = after
@@ -1065,6 +1294,74 @@ def _direct_body(unit, branch, base, found):
         % (branch, len(found), listed, branch, base, unit))
 
 
+def _would_drop_body(unit, branch, base, before, report):
+    listed = "\n".join("- `%s`" % one for one in report["dropped"])
+    more = report["dropped_count"] - len(report["dropped"])
+    if more > 0:
+        listed += "\n- ... and %d more" % more
+    return (
+        "`%s` was **not rebased** onto `%s`: the replay succeeded, but it would remove %d tracked "
+        "path(s) the branch has now, or roll them back to a version the branch's own history "
+        "already moved past, so pushing it would have lost that content. Nothing was pushed; "
+        "the branch still points at `%s`.\n\n%s\n\n"
+        "The usual cause is that `%s` holds a **revert of this branch's own commits** (the work was "
+        "moved off `%s` onto the branch). Git treats those commits as already present -- they are "
+        "in `%s`'s history, merely reverted -- so a replay re-applies the revert and nothing "
+        "restores them. A base that simply deleted a file this branch still carries, or reverted its "
+        "own older change to one, reads the same way, and is refused for the same reason: this "
+        "pass cannot tell intent from a tree.\n\n"
+        "**To resolve**, a human decides which content the branch should keep:\n\n"
+        "- keep the branch's work: in ONE goal branch (`sdlc/<n>`) cut from `%s`, merge `origin/%s` "
+        "and re-apply the reverted commits (`git revert <the revert's sha>`), then land that goal on "
+        "`%s` through its pull request **as a merge commit, not a squash** (a squash flattens the "
+        "merge away and the next replay is refused again) -- never a direct commit on the feature "
+        "branch; once the branch contains the base, upkeep reports `current`;\n"
+        "- or accept the deletion: land a goal on `%s` that removes those paths itself;\n"
+        "- meanwhile, `work.rebase_upkeep: \"off\"` stops this pass from retrying.\n\n"
+        "Every pick reports this until one of those happens; the refusal is also visible in "
+        "`/agrim-doctor`. Filed by Sigma's rebase upkeep for unit `%s`.\n"
+        % (branch, base, report["dropped_count"], before, listed, base, base, base,
+           branch, base, branch, branch, unit))
+
+
+BLOCKED_SUFFIX = ".rebase-blocked.json"
+
+
+def blocked_path(sdlc_dir, name):
+    """`.sdlc/state/features/<unit>.rebase-blocked.json` -- #144's durable, doctor-readable record
+    that this unit's upkeep is REFUSING, and why. Beside `filed_path` for the same reasons (runtime
+    bookkeeping under `setup.RUNTIME_IGNORES`); `.rebase-blocked.json` ends no other store's or
+    lock's name, so no unit name can collide. Folded, by #1566's rule, AFTER the guard."""
+    if not (isinstance(name, str) and registry.is_unit_name(name)):
+        raise registry.InvalidUnitName("%r is not a unit name" % (name,))
+    return pathlib.Path(sdlc_dir) / "state" / sync.LOCK_DIRNAME / (name.lower() + BLOCKED_SUFFIX)
+
+
+def _mark_blocked(sdlc_dir, unit, report):
+    """Persist the refusal so `/agrim-doctor` shows it between picks. One small file per unit,
+    overwritten in place (bounded), removed by the next clean pass (`_clear_blocked`). Never
+    raises: the clause already carries the refusal, and bookkeeping must not cost it."""
+    try:
+        path = blocked_path(sdlc_dir, unit)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "unit": unit, "branch": report["branch"], "base": report["base"],
+            "outcome": WOULD_DROP, "before": report["before"],
+            "dropped": report["dropped"], "dropped_count": report["dropped_count"],
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            indent=2, sort_keys=True), encoding="utf-8")
+    except (OSError, ValueError):         # noqa: S110
+        pass
+
+
+def _clear_blocked(sdlc_dir, unit):
+    """A pass that found the branch current or moved it cleanly ends the block. Never raises."""
+    try:
+        blocked_path(sdlc_dir, unit).unlink()
+    except (OSError, ValueError):         # noqa: S110 - absent is the ordinary case
+        pass
+
+
 #: One sentence per reportable outcome, for the clause `work.start()` appends to its own result. The
 #: table is TOTAL over `IN_CLAUSE` so widening that tuple raises `KeyError` rather than silently
 #: saying nothing -- a mutant that removes a kind from the clause must break something visible.
@@ -1097,7 +1394,22 @@ _WORDING = {
                     "refused rather than forced -- the other writer's commits are intact"),
     REBASED: "%(branch)s brought forward onto %(base)s (%(replayed)d replayed, %(conflicts)d "
              "conflicted, %(skipped)d skipped)",
+    #: #144. Loud on purpose, and never shaped like `REBASED`: the old line for this exact failure
+    #: WAS the `REBASED` line, and it read as "nothing to do".
+    WOULD_DROP: ("%(branch)s was NOT rebased: bringing it forward onto %(base)s would remove or "
+                 "roll back %(dropped)d tracked path(s) it has (%(named)s) -- the base most likely holds a "
+                 "revert of the branch's own commits; the push was refused and the remote left "
+                 "unchanged"),
 }
+
+
+def _named(report):
+    listed = list(report.get("dropped") or [])
+    if not listed:
+        return "none listed"
+    shown = ", ".join(listed[:DROPPED_IN_CLAUSE])
+    more = (report.get("dropped_count") or len(listed)) - min(len(listed), DROPPED_IN_CLAUSE)
+    return shown + (" and %d more" % more if more > 0 else "")
 
 
 def clause(report):
@@ -1113,6 +1425,8 @@ def clause(report):
         "merge_method": report["merge_method"], "direct": len(report["direct"]),
         "replayed": len(report["replayed"]), "conflicts": len(report["conflicts"]),
         "skipped": len(report["skipped"]),
+        "dropped": report.get("dropped_count") or len(report.get("dropped") or []),
+        "named": _named(report),
         "why": " ".join(str(report["why"]).split())[:_CLAUSE_WHY_CHARS] or "no reason recorded",
         "path": " ".join(str(report["why"]).split()) or "this unit's rebase path"}
     # WHAT HAPPENED TO THE FILING, from the measurement rather than from the wording. `issues` had
@@ -1137,6 +1451,7 @@ def _report(goal, unit, config):
     return {"outcome": FAILED, "goal": str(goal), "unit": unit, "branch": None, "base": None,
             "before": None, "after": None, "tip": None, "replayed": [], "conflicts": [],
             "skipped": [], "direct": [], "issues": [], "leftovers": [], "filing": NO_FILING,
+            "dropped": [], "dropped_count": 0, "would_be": None,
             "serialised": True, "merge_method": merge_method(config), "why": "", "note": ""}
 
 
@@ -1272,6 +1587,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     # one fetch and two reads -- deliberately cheaper than everything below it.
     if behind == "0":
         report["outcome"] = CURRENT
+        _clear_blocked(sdlc_dir, unit)
         return report
 
     if not _verifiable(config):
@@ -1292,7 +1608,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     path = worktree_path(sdlc_dir, unit)
     outcome = _rebase_feature(run, cwd, path, branch, base_ref, before, remote, report)
     report["outcome"] = outcome
-    if outcome in (CONFLICT, FAILED):
+    if outcome in (CONFLICT, FAILED, WOULD_DROP):
         # MEASURED, not asserted. The body used to state "no half-applied rebase, no stranded
         # worktree" unconditionally, and a cleanup that refused produced an issue asserting the
         # opposite of what was on disk -- for a human to act on.
@@ -1307,8 +1623,20 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
                     body=_feature_conflict_body(unit, branch, base, before, report["why"],
                                                 report["leftovers"], report["tip"]))
         return report
+    if outcome == WOULD_DROP:
+        _mark_blocked(sdlc_dir, unit, report)
+        _file_issue(sdlc_dir, config, goal, report,
+                    slot="would-drop:%s" % branch,
+                    key="%s#%d" % (before, report["dropped_count"]),
+                    title="Rebase upkeep refused: %s onto %s would lose %d path(s)"
+                          % (branch, base, report["dropped_count"]),
+                    why="%s was not rebased onto %s: the replay would remove or roll back %d "
+                        "tracked path(s) the branch has" % (branch, base, report["dropped_count"]),
+                    body=_would_drop_body(unit, branch, base, before, report))
+        return report
     if outcome != REBASED:
         return report
+    _clear_blocked(sdlc_dir, unit)
 
     entry = registry.read(registry.registry_dir(sdlc_dir)).get(unit) or {}
     repo = sync.repo_slug(config, run, cwd, remote)
@@ -1357,7 +1685,8 @@ def main(argv):
         report = upkeep(argv[2], state.load_config(argv[2]), argv[4] if len(argv) >= 5 else "-",
                         argv[3])
         print(json.dumps(report, indent=2, sort_keys=True))
-        return 0 if report["outcome"] != FAILED else 1
+        # #144: a refused replay is a BLOCKED pass, not a clean one, and a script must see that.
+        return 1 if report["outcome"] in (FAILED, WOULD_DROP) else 0
     if len(argv) >= 4 and argv[1] == "show":
         config = state.load_config(argv[2])
         remote, branch = _remote(config), features.BRANCH_PREFIX + argv[3]

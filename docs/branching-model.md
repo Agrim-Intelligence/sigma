@@ -145,8 +145,8 @@ conflict before the rebase runs. On the clean path it rebases (autostash if dirt
 `--force-with-lease`, exactly as this section's upkeep pass does. On a genuine conflict it shows
 that file's own decision context and hands off to an interactive conflict-options walker
 (`conflict_walk.py`): Recreate here, Follow the move (only when a symbol search finds a plausible
-destination), Abandon this hunk, or Resolve by hand — already strictly better than a bare `git`
-error even for the file it cannot classify.
+destination), Take the base's version of the whole file, or Resolve by hand — already strictly
+better than a bare `git` error even for the file it cannot classify.
 
 It resolves its base the identical way this pass does — `work.base`, unconditionally — so it works
 whether or not a repo has adopted the registry below, and on any branch, not only
@@ -159,6 +159,121 @@ Answering yes finds or opens the landing pull request and merges it with a plain
 the same human-owned act §13 describes, just carried out through this skill on explicit request,
 never routed through `work.py merge()` or `unit_completion.py`'s own (deliberately merge-less)
 completion signal.
+
+### 3b. Upkeep refuses a replay that would delete what the branch has (#144)
+
+A replay can succeed and still be destructive. The reported case: the integration branch's tip was
+a deliberate **revert of the feature branch's own commits** (the work had been moved off `main` onto
+the branch). Git treats those commits as already present — they are in the base's history, merely
+reverted — so bringing the branch forward re-applies the revert's deletions and nothing restores
+them. The pass used to report `brought forward onto main (0 replayed, 0 conflicted, 0 skipped)`,
+the "nothing to do" line, over a force-push that removed 72 files, and `git log -1` looked healthy
+because the new tip kept the old subject.
+
+So before it pushes anything, upkeep compares the feature tip it started from with the replayed
+head (`feature_rebase.dropped_paths`, one `git diff -M --raw` between the two trees). A path the
+branch has **loses its content** in either of two ways, and both count:
+
+- it is **missing** from the replayed head, net of a rename by the base;
+- the replay **restores an older version** of it: the replayed blob, at the same path or at the
+  destination of a rename, is one that path already held somewhere in the branch tip's own history
+  (one `git log -m --raw` over those paths, per 200 of them). That is what a revert of the branch's
+  work looks like when no path disappears: a 500-line edit rolled back to one line, or the branch's
+  rename of `legacy.py` to `engine.py` undone — which rename detection alone reads as a harmless
+  rename. "Anywhere in the history" includes the versions a **merge commit** created (a conflict
+  resolution, or a clean two-sided merge — `git log --raw` prints nothing for merges unless asked,
+  hence `-m`) and the **root commit's** versions. A **mode-only** change (a chmod: the blob is
+  unchanged) is not a rollback and does not count; a mode change that also reverts content does.
+
+Every read the guard makes pins its own git configuration (`log.showRoot`, `log.diffMerges`,
+`log.follow`, `log.showSignature`, `diff.relative`, `diff.renames`, `diff.external`, colour,
+`core.quotePath`), so a person's own git config cannot switch the check off or change the shape it
+parses; decodes git's bytes as UTF-8 with `surrogateescape` rather than with the locale, so a
+non-ASCII path is not garbled on a non-UTF-8 Windows code page; and is bounded by
+`SIGMA_REBASE_GUARD_TIMEOUT` (seconds per read, default `120`). A read that times out is a refusal
+that says it timed out — never "nothing dropped". These reads go through the guard's own reader, not
+the injected runner every other git call here uses.
+
+A merge-base comparison cannot do this job: the reverted commits are in the base's history, so they
+sit *below* the merge-base, and "what the branch added since the fork" is empty for exactly the
+content being lost. If any path loses content, the outcome is `would-drop`
+(`feature_rebase.WOULD_DROP`) and the pass stops:
+
+- **nothing is pushed** — the remote ref and the branch tip stay byte-identical, and the throwaway
+  worktree is removed as on every other path;
+- the pick line says so: `upkeep: feature/<name> was NOT rebased: bringing it forward onto <base>
+  would remove or roll back N tracked path(s) it has (a, b, c and N-3 more) …` — a blocked pass, never shaped
+  like `rebased`;
+- the finding is filed as a tracked issue (up to 20 paths listed, the count always exact);
+- `/agrim-doctor` shows it too: `.sdlc/state/features/<name>.rebase-blocked.json` records the
+  refusal, `doctor.py features` reports the unit as BLOCKED and `doctor.py check` adds a failing
+  row. The next clean pass (`current` or `rebased`) removes the record;
+- `feature_rebase.py upkeep <sdlc_dir> <unit> [goal]` exits 1 on it, as on `failed`.
+
+The check runs where the replayed head is computed, before the push and before anything else that
+acts on the replay, so it is the outer guard on that result. It fails closed: a comparison that
+cannot be made (either read, or a timeout) reports `failed` and pushes nothing.
+
+The human-attended `agrim-rebase` skill is behind the same check at its **single push chokepoint**,
+`rebase_brief.push_branch`, so every caller of it is covered — `attempt_rebase` (`rebase_brief.py
+rebase`, and Slack's `--rebase`), `conflict_walk.walk_conflicts`'s push once every conflict is
+resolved, and its manual-recovery push after a rebase a human finished with raw git. Before pushing
+it compares HEAD with `<remote>/<branch>`, exactly the commit the lease would overwrite, and with the
+**pre-rebase head** — the head the branch had before this rebase (#278). A loss already present
+between the remote tip and the pre-rebase head is the branch's own unpushed history (a local `drop
+obsolete` commit), not something the rebase did, so it is let through; anything else HEAD loses is
+refused with the paths named, and the remote is left alone. `attempt_rebase` passes the head it
+started from; the walker reads the stopped rebase's own `orig-head`; the manual-recovery push reads
+it from the branch reflog, whose newest entry is the `rebase (finish)` move (`<branch>@{1}`). When
+none is known — reflogs off, or something newer on the branch — only the remote-tip comparison runs,
+which can refuse a healthy local deletion but never passes a loss. With no remote-tracking ref and no
+pre-rebase head there is nothing to compare, so nothing is refused.
+
+A human's decision in the walk exempts **only a deletion**: a path the walker resolved with action
+`removed` (ABANDON on a file the base deleted). A **content** resolution — whichever option made it —
+stays guarded, because resolving one conflicted hunk says nothing about the rest of the file, where
+git has already merged everything outside the markers, including a base revert's removal of
+hundreds of the branch's lines (#278: one resolved line used to exempt the whole path). The walker's
+option `[3]` says what it does — "Take the base's version of the whole file" — not "Abandon this
+hunk". The manual-recovery push has no record of decisions, so everything it would lose refuses it.
+Every refusal gives the `git push --force-with-lease` to run by hand if the loss is intended, and
+names the pre-rebase head for `git reset --keep` — never the remote tip, which would throw away
+local commits not yet pushed. `attempt_rebase` additionally puts the local branch back with `git
+reset --keep` on a refusal; the walker leaves the local branch as the rebase left it and says how to
+undo it.
+
+A **goal** branch's own replay (`work.rebase()`: the BEHIND reconcile, `ensure_fresh` before verify,
+upkeep's goal replay, and its CHANGELOG union rescue) runs the same comparison before its
+force-push, scoped to the paths the goal changed since it forked: a goal whose commit reached the
+base as a copy (a rebase-merge) that was then reverted is skipped by `git rebase` as already
+upstream, and the replay would silently drop the goal's work. It returns `rebase deferred: …`,
+pushes nothing and puts the worktree back at its pre-rebase head. The scope keeps a plain base
+deletion of a file the goal never touched from deferring every goal's rebase.
+
+What it does **not** flag: paths the branch deleted itself (they are not in the tip), paths the
+base **renamed** to a name the branch never used (rename detection pairs them), and a base edit that
+produces a version the branch never had (the ordinary upstream edit). What it flags that is not a
+revert of the branch — each identical to one as trees, so each is refused the same way, costing an
+upkeep pass and a human decision, never data: a base that simply deleted a file the branch still
+carries; a base move that rewrites the file past git's rename similarity (it reads as a deletion);
+and a base that reverts its *own* older change to a file the branch carries unchanged. What it
+does not see is any replay result that is a version which **never existed** — a *partial* revert
+merged with other changes, or a full base revert of a file the branch has **kept editing** since;
+§15 names both.
+
+**Resolving it** is a human decision about which content the branch keeps, and either way it
+reaches the feature branch through a goal branch (§3's no-direct-commits rule),
+never as a commit made on the feature branch itself. To keep the branch's work, cut one goal branch
+(`sdlc/<n>`) from the feature branch, merge `origin/<base>` into it and re-apply the reverted
+commits in the same branch (`git revert <the revert's sha>`), then land that goal through its pull
+request **as a merge commit, not a squash**: the feature branch then contains its base, and upkeep
+reports `current`. A squash landing flattens the merge away, the branch is still behind, and the
+next replay re-applies the revert and is refused again. To accept the
+loss, land a goal that removes (or rolls back) those paths on the branch itself. Meanwhile
+`work.rebase_upkeep: "off"` stops the retries (and `/agrim-doctor` stops reporting the block). If an older
+Sigma already pushed such a replay, restore the old tip with
+`git push --force-with-lease=refs/heads/feature/<name>:<bad-sha> origin <good-sha>:refs/heads/feature/<name>`
+and check a few of the removed paths with `git cat-file -e <sha>:<path>`.
 
 ---
 
@@ -424,16 +539,17 @@ Some are paid per goal the loop **considers**, one per goal it **claims**, most 
 | the cross-repo access check — one issue read, then one access probe per repo the unit names | `gh` | goal **claimed** — after the claim is durable, before anything has been built | **yes** |
 | `gh api repos/<slug>/issues/<n>` | REST | goal **started**, in github mode with a numeric stem | no — gated on §6a instead |
 | `git ls-remote --heads <remote> 'feature/*'` — **twice, not once** | git | goal **started**: once for the registry reconcile (§8f), once for rebase upkeep (§3) | **yes** |
-| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and eight local git calls around them | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
+| the rest of rebase upkeep (§3) — one `fetch`, one `push --force-with-lease`, and nine local git calls around them (plus one local `git log -m` per 200 paths the replay modified or renamed, §3b) | git | goal **started**; the `push` only where the feature branch is actually behind its base | **yes** |
 | the sibling registry copy (§15) | `gh`, Contents API | goal **started** × sibling repo, and only on a `granted` verdict | **yes** |
 
 **How this was measured, and how to redo it — because it went stale once and will again.** Every
 git and `gh` call on the start path goes through one injected runner, so the *started* rows are
 counted by driving `work.start()` against a throwaway project with a recording runner and diffing
 an adopted project against one with no `.sdlc/features/`: for one goal declaring a unit whose branch
-is behind its base, **4 calls become 16** — one `ls-remote` for the registry reconcile, and eleven
-for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and eight local git
-calls). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
+is behind its base, **4 calls become 17** — one `ls-remote` for the registry reconcile, and twelve
+for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and nine local git
+calls — the ninth is #144's pre/post tree comparison, §3b, which runs through the guard's own
+config-pinned reader rather than the injected runner, so the measurement records it explicitly). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
 `work.start()`'s dirty-root-checkout guard (#2014) runs a `git status --porcelain` unconditionally,
 on every start whether or not `.sdlc/features/` exists — so it fires before either project in this
 diff has a chance to differ, and correctly never appears as a row above (it did not exist before
@@ -1590,6 +1706,39 @@ Two things about it that are easy to get wrong:
 ---
 
 ## 15. Honest limitations, and the gaps that are deliberate
+
+- **Upkeep's loss guard sees whole reverts, not every loss** (§3b, #144). It stops a replay that
+  removes a path the branch has or restores a version of it the branch's history already held —
+  merge-born and root-commit versions included — including an undone rename. It is a
+  version-identity test, so it cannot see a replay result that is a version which **never
+  existed**, and there are two such shapes, both NOT CAUGHT:
+  - a **partial** revert, merged with other changes into a new version;
+  - a **full** base revert of a file the branch has **kept editing since**: the base rolls
+    `x.txt` back from 330 lines to 30, the branch had one later commit tweaking one line of it,
+    and the replay applies that tweak on top of the 30-line text. The result — 30 lines plus the
+    tweak — is a version no commit ever held, so it is pushed, and the 300 lines are gone from the
+    branch. `test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit` pins this as a
+    strict expected failure, so fixing it turns a test red and this entry gets rewritten.
+  What IS caught around it: the same revert when the branch did not edit that file again, a revert
+  to a version created by a merge or in the root commit, and every push the `agrim-rebase` skill
+  makes (all behind `push_branch`, §3b). It errs the other way on purpose: a plain upstream
+  deletion, a move-and-rewrite past rename similarity, and a base reverting its own older change to
+  a file the branch carries are all refused like a revert, because as trees they are the same. Its
+  cost grows with history: one `git log -m` over the branch tip's whole history per 200
+  modified-or-renamed paths, each bounded by `SIGMA_REBASE_GUARD_TIMEOUT` and failing closed.
+  **The conservative refusal is paid fleet-wide, per branch.** Upkeep runs per feature branch, so
+  one base change the guard reads as a revert blocks upkeep on EVERY feature branch that carries
+  the affected paths: a reverted dependency bump (a lock file and a manifest rolled back to a
+  version each branch's history held) refuses upkeep on every feature branch cut in the window
+  between the bump and its revert, and each stays blocked — a failing `/agrim-doctor` row and an
+  issue per branch — until a person resolves that branch (§3b), or sets `work.rebase_upkeep:
+  "off"` while it stands. Nothing is lost and nothing is pushed while it waits; the cost is N
+  human decisions and N branches drifting further behind their base until each is taken. The
+  `agrim-rebase` skill's pushes (§3b) are the same guard and cost the same decision.
+  A **goal** branch's replay (`work.rebase()`) is guarded only over the paths the goal changed
+  since it forked, so a goal whose commits reached the base as the **same** commits (a true
+  merge) and were then reverted is not seen there — its diff since the fork is empty. Replaying a
+  goal whose PR has merged is not a flow the loop takes.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that
