@@ -103,6 +103,12 @@ from PRs — #1548). Both copies are wanted, not one: the reviewer BRIEF reads t
 the PR's reviewer reads the branch's. `pr` refuses to push without it, naming the file and the
 branch — unless the repo's own `.gitignore` covers the plan path, in which case that repo has
 decided plans are not committed there and nothing is asked (never force-add past an ignore rule).
+**With `gates.plan_review.enabled`, `pr` also refuses (nothing pushed) unless `work.py
+record-plan-review` recorded an approving verdict (SOUND or SOUND-WITH-REFINEMENTS) for the exact
+bytes of the plan it hashes** — the branch's copy, or the main checkout's only when the branch
+carries none — so a plan edited after its review needs a fresh plan-review, recorded (`running.md`).
+It is checked at `pr` only, not at a later `work.py rebase` force-push, and covers the plan `.md`
+only: not `<stem>.slices.json`, not a design PR.
 **`commit` REFUSES when `git add -A` staged a secret-shaped file** (#1555) — `.env` and its
 variants, `*.pem`/`*.key`, `id_rsa` and friends, `credentials.json`, service-account JSON. It
 names every offending path, takes those paths back out of the index, and leaves every file on

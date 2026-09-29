@@ -164,6 +164,21 @@ ENFORCEMENT_GATES = (
                   "Python, so it is the one plan gate that holds on every host",
      "condition": "an organisation can lock it on through managed settings",
      "readme": "Hard plan-gate (opt-in)"},
+    {"control": "Plan review before implementation", "function": "_plan_review_refusal",
+     "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled", "gates.plan_review.enabled"), "settings": (),
+     "mechanism": "refuses `work.py pr` unless `work.py record-plan-review` recorded an approving "
+                  "plan-review verdict (SOUND or SOUND-WITH-REFINEMENTS) whose sha256 matches the "
+                  "goal's plan as it is on the branch (the main checkout's copy when the branch "
+                  "carries none); the verdict is recorded only for bytes every existing copy "
+                  "holds; the record is agent-written, so it proves a verdict was recorded for "
+                  "these bytes, not that an independent reviewer produced it",
+     "condition": "checked at `work.py pr`'s push only -- not at the first edit, not at a later "
+                  "`work.py rebase` force-push onto the open PR, and not at `merge()`; covers "
+                  "`.sdlc/plans/<stem>.md` only -- not a `.slices.json` manifest, not a design PR; "
+                  "a goal with no plan is not checked here (`gates.hard_plan_gate` requires one); "
+                  "not org-lockable",
+     "readme": "Plan review before any edit"},
     {"control": "Dirty root checkout refuses `start`", "function": "_dirty_root_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py start` while the root checkout carries tracked, uncommitted "
@@ -1010,6 +1025,114 @@ def _save(sdlc_dir, goal, rec):
     p = record_path(sdlc_dir, goal)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+
+
+#: #258: the plan-review skill's own three verdict words (case-insensitive), mapped onto the journal
+#: `gate` vocabulary (`ledger.VERDICTS`), so the record and its journal mirror cannot disagree.
+#: Approving means `pass` or `warn`; the gate in `pr()` refuses anything else.
+PLAN_REVIEW_VERDICTS = {"SOUND": "pass", "SOUND-WITH-REFINEMENTS": "warn", "FIX-FIRST": "block"}
+_PLAN_REVIEW_APPROVING = ("pass", "warn")
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def plan_review_record_path(sdlc_dir, goal):
+    """`<sdlc_dir>/state/gates/<stem>.json`: where a goal's recorded plan-review verdict lives (#258).
+    `record_path`'s safety, copied: the stem is one path component or a `ValueError`."""
+    goal_stem = stem(goal)
+    reason = state.unsafe_goal_reason(goal_stem)
+    if reason:
+        raise ValueError(f"unsafe goal {goal!r} for the plan-review record: {reason}")
+    return pathlib.Path(sdlc_dir) / "state" / "gates" / f"{goal_stem}.json"
+
+
+def _relative_posix(path, base):
+    """`path` relative to `base` (posix), or its own posix spelling when it is not under `base`."""
+    try:
+        return pathlib.Path(path).resolve().relative_to(pathlib.Path(base).resolve()).as_posix()
+    except ValueError:
+        return pathlib.Path(path).as_posix()
+
+
+def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None):
+    """Record a plan-review verdict against the exact plan bytes the reviewer was briefed on (#258).
+
+    `plan_sha256` is the `Plan sha256:` line of the brief written at DISPATCH time, never a rebuilt
+    one: a record-time rebuild hashes the edited plan, so this check could never fail. It must match
+    the REVIEWED copy (`main or branch`, see `plan_copies`) and, when both copies exist, the branch's
+    too, so a verdict is recorded only for bytes every existing copy holds. A mismatch refuses and
+    writes nothing: a refinement applied to the plan FILE takes it outside the approval, and the one
+    documented path is a fresh plan-review of the refined plan.
+
+    KEPT only while `work.enabled` is on AND this `sdlc_dir` holds the goal's work record. Its one
+    reader (`pr()`) and its one pruner (`finish()`) both need exactly that, so otherwise the verb
+    still validates and still writes the journal mirror but keeps no file (no table nothing prunes)
+    and says so on stderr. It never refuses there: `/agrim-goal` runs plan-review without `work.py
+    start`, and a refusal would fail every such run even with the gate off. A run from a goal
+    worktree (no work record there) therefore satisfies nothing, and `pr` still refuses.
+
+    HONESTY. `reviewer_route` is what `reviewer.resolve` selects HERE, at record time, not proof of
+    which route produced the verdict. Like `record_subagent_review`'s binding, the record is written
+    by an agent: it proves a verdict was recorded for these bytes, not that an independent reviewer
+    produced it. A determined maker can still hash an edited plan by hand; this stops honest drift.
+
+    The record is replaced atomically (`review_context._atomic_bytes`): a re-review overwrites it, a
+    failed write leaves the prior record whole. `reason` goes to the journal mirror's `why` only."""
+    target = plan_review_record_path(sdlc_dir, goal)
+    mapped = PLAN_REVIEW_VERDICTS.get(str(verdict or "").strip().upper())
+    if not mapped:
+        raise ValueError(f"unknown plan-review verdict {verdict!r}: one of "
+                         + ", ".join(PLAN_REVIEW_VERDICTS))
+    sha = str(plan_sha256 or "").strip().lower()
+    if not _SHA256_HEX.match(sha):
+        raise ValueError(f"--plan-sha256 {plan_sha256!r} is not a sha256: pass the 64-hex `Plan sha256:` "
+                         "line of the plan-review brief the reviewer was given (a brief with no such "
+                         "line found no plan to review)")
+    rec = _record(sdlc_dir, goal) if enabled(config) else None
+    kept = enabled(config) and bool(rec)
+    main, branch = plan_copies(sdlc_dir, goal, rec, run or _run)
+    reviewed = main or branch
+    plans_dir = pathlib.Path(sdlc_dir, "plans").as_posix()
+    if not reviewed:
+        raise ValueError(f"no plan for {goal} in {plans_dir}/ or committed on its branch (a copy in the "
+                         f"goal worktree with uncommitted edits does not count: copy it into {plans_dir}/ "
+                         "and review that copy; do not run `work.py commit` during plan-review)")
+    rc = _load("review_context")
+    if rc.plan_sha256(reviewed) != sha:
+        raise ValueError(f"the plan changed since its review brief was built ({reviewed.as_posix()} is no "
+                         f"longer sha256 {sha[:12]}…): run a fresh plan-review of the current plan and "
+                         "record that verdict")
+    if main and branch and rc.plan_sha256(branch) != sha:
+        rel = _relative_posix(branch, rec["worktree"])
+        raise ValueError(f"the plan on the branch ({rel} on {rec['branch']}) differs from the reviewed "
+                         f"copy {main.as_posix()}: copy the reviewed plan over {branch.as_posix()} and "
+                         "leave it uncommitted (step 6 commits it), or copy the branch's version back to "
+                         f"{main.as_posix()} and review that; then record")
+    route = _load("reviewer").resolve(sdlc_dir)
+    plan_rel = (_relative_posix(main, project_root(sdlc_dir)) if main
+                else _relative_posix(branch, rec["worktree"]))
+    record = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "goal": str(goal),
+              "plan": plan_rel, "plan_hash": sha,
+              "reviewer_route": {key: route.get(key) for key in ("host", "mechanism", "verified")},
+              "verdict": mapped}
+    path = None
+    if kept:
+        rc._atomic_bytes(target, (json.dumps(record, sort_keys=True, separators=(",", ":"))
+                                  + "\n").encode("utf-8"))
+        path = str(target)
+    elif not enabled(config):
+        print("work: no record is kept: work.enabled is off, so no `work.py pr` reads one (the "
+              "journal mirror, when enabled, still has the verdict).", file=sys.stderr)
+    else:
+        note = (f"work: no record is kept: no work record for {goal} under {sdlc_dir} (the journal "
+                "mirror, when enabled, still has the verdict).")
+        if _plan_review_on(config):
+            note += (" gates.plan_review is on, so `work.py pr` will refuse this goal unless the "
+                     "verdict is recorded from the main checkout that ran `work.py start`.")
+        print(note, file=sys.stderr)
+    mirror = {"why": reason} if reason else {}
+    ledger.safe_append(sdlc_dir, "gate", goal, config=config, stream=ledger.EVENTS,
+                       gate="plan_review", verdict=mapped, **mirror)
+    return {**record, "path": path}
 
 
 def _run(cwd, argv):
@@ -2613,6 +2736,43 @@ def _phase_doc_missing_from_branch(sdlc_dir, rec, goal, run, subdir, label):
             % (label, rel, rec["branch"], pathlib.Path(path, rel).as_posix()))
 
 
+def plan_copies(sdlc_dir, goal, rec, run):
+    """(main, branch): the two copies of this goal's plan that can exist, each a Path or None. #258.
+
+    `main` is the main checkout's copy, `review_context.phase_doc_file(sdlc_dir, ...)` (no git call).
+    `branch` is the goal worktree's copy, found by the SAME resolver under `<worktree>/<sdlc name>`,
+    and it counts only when `git ls-files` says it is TRACKED (so it is on the branch) and `git status
+    --porcelain` says it is UNMODIFIED (so its disk bytes are the branch's bytes). Disk bytes, never
+    `git show` stdout: `_run` strips it, so that hash could never match a file's. None when there is
+    no work record, no worktree copy (no git call then), or either check fails; `run` errors propagate.
+
+    WHICH COPY IS AUTHORITATIVE. The PUBLISHED copy is `branch or main`: the branch's is what the PR
+    publishes and its reviewer reads, and the main copy stands in only when the branch carries none
+    (a repo that ignores plans). The REVIEWED copy is `main or branch`, the filesystem-first order
+    `review_context.brief()` already uses: Plan writes to the main checkout and corrections land
+    there first (#2237), with the branch as the #2647 fallback. `record_plan_review` records a
+    verdict only for bytes EVERY existing copy holds, so the two rules cannot disagree at the gate.
+
+    NOT GUARDED: a branch copy flagged `git update-index --skip-worktree` / `--assume-unchanged`.
+    `git status` hides its local edits, so its disk bytes can differ from the branch's and all three
+    sites then hash bytes the branch does not hold (fails OPEN). The flag is a deliberate local act."""
+    rc = _load("review_context")
+    main = rc.phase_doc_file(sdlc_dir, goal, "plans")
+    if not rec:
+        return main, None
+    name = pathlib.Path(sdlc_dir).resolve().name
+    branch = rc.phase_doc_file(pathlib.Path(rec["worktree"]) / name, goal, "plans")
+    if not branch:
+        return main, None
+    rel = (pathlib.PurePosixPath(name) / "plans" / branch.name).as_posix()
+    worktree = rec["worktree"]
+    if not run(worktree, ["git", "ls-files", "--", rel]):
+        return main, None               # an untracked copy is not on the branch
+    if run(worktree, ["git", "status", "--porcelain", "--", rel]):
+        return main, None               # modified: the disk bytes are not the branch's bytes
+    return main, branch
+
+
 def _plan_missing_from_branch(sdlc_dir, rec, goal, run):
     """The refusal line when this goal's plan is on disk but not on its branch — "" otherwise.
     #1548. See `_phase_doc_missing_from_branch` for the shared reasoning; this is the `plans`/`plan`
@@ -2784,6 +2944,12 @@ def pr(sdlc_dir, config, goal, run=None):
     gate_refusal = _hard_plan_gate_refusal(sdlc_dir, config, rec, goal, run)
     if gate_refusal:
         return gate_refusal
+    # #258: `gates.plan_review` -- the plan published here must carry an approving plan-review
+    # verdict recorded for its exact bytes. After the sibling guard, so a main-checkout plan the
+    # repo does not ignore is already on the branch by now.
+    review_refusal = _plan_review_refusal(sdlc_dir, config, rec, goal, run)
+    if review_refusal:
+        return review_refusal
     missing_research = _research_missing_from_branch(sdlc_dir, rec, goal, run)
     if missing_research:
         return missing_research
@@ -3764,9 +3930,10 @@ SOURCE_EXTENSIONS = frozenset(
 )
 
 
-def _gate_block(config):
-    """`config["gates"]["hard_plan_gate"]` RAW -- the value at the exact path `ledger.LOCKABLE_KEYS`
-    locks, whatever shape it is, or None.
+def _gate_block(config, name="hard_plan_gate"):
+    """`config["gates"][name]` RAW, whatever shape it is, or None. The default, `hard_plan_gate`, is
+    the value at the exact path `ledger.LOCKABLE_KEYS` locks; `plan_review` (#258) reuses the same
+    total read, unlocked (see `_plan_review_on`).
 
     TOTAL AT BOTH LEVELS, and both levels were live crashes found by review. `config.get("gates")`
     can be a scalar on a hand-edited config (`{"gates": true}`), and `(config.get("gates") or {})`
@@ -3780,7 +3947,16 @@ def _gate_block(config):
     interprets it. Coercing a non-dict to `{}` here -- `doctor._block`'s shape -- would read that
     Org's lock as OFF, which is precisely the silent half-guarantee this issue exists to remove."""
     gates = config.get("gates") if isinstance(config, dict) else None
-    return (gates if isinstance(gates, dict) else {}).get("hard_plan_gate")
+    return (gates if isinstance(gates, dict) else {}).get(name)
+
+
+def _plan_review_on(config):
+    """`gates.plan_review` (#258) as a bool, through `hard_plan_gate_on`'s one truth table: a scalar
+    `gates` is off (no crash), a scalar leaf `{"plan_review": true}` is on, and `enabled` takes the
+    same generous truthiness. LOCAL config only, deliberately not `managed_settings.gated_check`: by
+    #174, an org file that is `status: ok` but does not lock the key resolves it to None, which would
+    turn a local ON into OFF. Not in `ledger.LOCKABLE_KEYS`; a lockable version is a follow-up."""
+    return hard_plan_gate_on(_gate_block(config, "plan_review"))
 
 
 def hard_plan_gate_on(value):
@@ -4004,6 +4180,88 @@ def _hard_plan_gate_refusal(sdlc_dir, config, rec, goal, run, check=None):
             "(nothing pushed) — or `touch "
             f"{pathlib.Path(sdlc_dir, '.allow-direct-edits').as_posix()}` for a deliberate "
             "unplanned change")
+
+
+_PLAN_REVIEW_WORDS = {mapped: word for word, mapped in PLAN_REVIEW_VERDICTS.items()}
+
+
+def _plan_review_refusal(sdlc_dir, config, rec, goal, run):
+    """The refusal line when `gates.plan_review` is on and this goal's plan has no approving review
+    recorded for its exact bytes -- "" otherwise (#258).
+
+    WHY HERE: `pr()`'s own docstring argues it for the sibling plan guards and every word applies --
+    the push is the last gate before the plan's reviewer reads the branch, refusing a PUSH leaves
+    the branch and worktree exactly as they were, and "`commit()` can be skipped for a whole run;
+    `pr()` cannot". Plain Python, so it holds on every host; a hook would be an accelerator at most.
+
+    WHAT IT HASHES: the PUBLISHED copy, `branch or main` from `plan_copies` -- what the PR carries
+    and its reviewer reads; the main checkout's copy only when the branch carries none (a repo that
+    ignores plans). `record_plan_review` recorded the verdict only for bytes every existing copy
+    held, so a plan edited on either side after its review lands here as a mismatch.
+
+    FAILS CLOSED on an unreadable or malformed record, an unreadable plan, and a `git` failure inside
+    `plan_copies` (it propagates; `main()` prints it and exits 1 before the push). The gate is
+    opt-in, the remedy costs one command, and the party best placed to break the record is the one
+    the gate stops. NO PLAN IN EITHER COPY is silent -- `gates.hard_plan_gate` owns that, which is
+    also what lets a design PR through -- UNLESS a record exists (R-d): that goal had a reviewed
+    plan, so one deleted after its review is refused (one `exists()`, on the no-plan path only).
+
+    NOT CLAIMED: only `pr()`'s push is checked, not the first edit, not a later `work.py rebase`
+    force-push onto the open PR, not `merge()`. The `.md` only, never `<stem>.slices.json`. Local
+    config only (#174: not org-lockable). The record is agent-written. Gate off: zero extra calls."""
+    if not _plan_review_on(config):
+        return ""
+    rc = _load("review_context")
+    main, branch = plan_copies(sdlc_dir, goal, rec, run)
+    published = branch or main
+    record_file = plan_review_record_path(sdlc_dir, goal)
+    gesture = (f"`work.py record-plan-review {sdlc_dir} {goal} --verdict "
+               "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <the brief's Plan sha256>`")
+    slices = pathlib.Path(sdlc_dir, "plans", stem(goal) + ".slices.json").as_posix()
+
+    def refuse(problem, remedy):
+        hashed = published.as_posix() if published else "none"
+        return (f"gates.plan_review is on and {problem}: {remedy} and re-run (nothing pushed). "
+                f"Hashed: {hashed}. Covers the goal's plan .md only — not {slices}, and not a "
+                "design PR's .sdlc/design/<n>.md.")
+
+    if not published:
+        if not record_file.exists():
+            return ""
+        return refuse(f"this goal has a recorded plan review ({record_file.as_posix()}) but no plan "
+                      f"resolves in {pathlib.Path(sdlc_dir, 'plans').as_posix()}/ or committed on "
+                      "its branch",
+                      f"restore the reviewed plan (or delete {record_file.as_posix()} if this goal "
+                      "no longer has one)")
+    try:
+        recorded = json.loads(record_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return refuse("this goal's plan has no recorded review",
+                      f"run plan-review, record its verdict with {gesture}")
+    except (OSError, ValueError):
+        recorded = None
+    # `isinstance(..., str)` first: a JSON list/dict `verdict` is unhashable, so `in` would raise
+    # TypeError and crash `pr()` instead of printing this refusal with its remedy.
+    if not (isinstance(recorded, dict)
+            and isinstance(recorded.get("plan_hash"), str)
+            and _SHA256_HEX.match(recorded["plan_hash"])
+            and isinstance(recorded.get("verdict"), str)
+            and recorded["verdict"] in _PLAN_REVIEW_WORDS):
+        return refuse(f"this goal's review record {record_file.as_posix()} is unreadable or malformed",
+                      f"run a fresh plan-review, record its verdict with {gesture}")
+    if recorded["verdict"] not in _PLAN_REVIEW_APPROVING:
+        return refuse(f"this goal's recorded plan review is {_PLAN_REVIEW_WORDS[recorded['verdict']]} "
+                      f"({recorded['verdict']})",
+                      f"revise the plan, run a fresh plan-review, record its verdict with {gesture}")
+    try:
+        current = rc.plan_sha256(published)
+    except OSError as exc:
+        return refuse(f"the plan could not be read ({exc})", f"make {published.as_posix()} readable")
+    if recorded["plan_hash"] != current:
+        return refuse("the plan changed after its review (the recorded review is of sha256 "
+                      f"{recorded['plan_hash'][:12]}…, the plan now differs)",
+                      f"run a fresh plan-review of the current plan, record its verdict with {gesture}")
+    return ""
 
 
 def _unresolved_threads(rec, run):
@@ -5296,6 +5554,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False):
         shutil.rmtree(wt_path, ignore_errors=True)
     run(project_root(sdlc_dir), ["git", "worktree", "prune"])
     record_path(sdlc_dir, goal).unlink(missing_ok=True)
+    plan_review_record_path(sdlc_dir, goal).unlink(missing_ok=True)   # #258: the work record's lifetime
     _clear_completed_merge_deliveries(sdlc_dir, goal)
     branch = rec.get("branch")
     # `force` skips the PR read entirely (same contract `_open_pr_refusal` already has above) --
@@ -5626,6 +5885,11 @@ _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
              "post-review": post_review, "merge": merge, "finish": finish}
 
 
+_RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal> --verdict "
+                             "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
+                             "[--reason \"<text>\"]")
+
+
 def _flag(argv, name):
     return argv[argv.index(name) + 1] if name in argv and len(argv) > argv.index(name) + 1 else ""
 
@@ -5654,6 +5918,7 @@ def main(argv):
             "record-subagent-review": "usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text>",
             "reconcile-review-post": "usage: work.py reconcile-review-post <sdlc_dir> <goal> --evidence <path>",
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
+            "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -5717,6 +5982,30 @@ def main(argv):
         except (OSError, ValueError) as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 2 and argv[1] == "record-plan-review":
+        # #258: dispatched OUTSIDE `_COMMANDS`, like the review verbs above: plan-review is a portable
+        # executor that also runs with `work.enabled` off, where the verb keeps no file but still
+        # validates and mirrors the verdict. Usage is keyed on the flag being ABSENT, never on
+        # `_flag(...)` being empty: `_flag` returns "" for a present-but-empty value too, and that
+        # value (a `sed` that found no `Plan sha256:` line) must reach `record_plan_review`, whose
+        # refusal names the brief's line.
+        if len(argv) < 4 or "--verdict" not in argv or "--plan-sha256" not in argv:
+            print(_RECORD_PLAN_REVIEW_USAGE, file=sys.stderr)
+            return 2
+        reason = _flag(argv, "--reason")
+        newline_error = ledger.reject_newline(reason, "--reason")
+        if newline_error:
+            print(f"work: {newline_error}", file=sys.stderr)
+            return 2
+        try:
+            config = state.load_config(argv[2])
+            result = record_plan_review(argv[2], config, argv[3], _flag(argv, "--verdict"),
+                                        _flag(argv, "--plan-sha256"), reason=reason)
+        except (state.ConfigMissing, OSError, ValueError, RuntimeError) as exc:
+            print(f"work: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if len(argv) >= 3 and argv[1] == "root":                    # no config needed; never fails
         print(root(argv[2], argv[3] if len(argv) > 3 else ""))
         return 0
@@ -5841,6 +6130,8 @@ def main(argv):
     print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
           "         start [--session-pid <pid>]   commit --message \"<text>\"   finish [--force]\n"
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
+          "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
+          "--plan-sha256 <hex> [--reason \"<text>\"]\n"
           "       work.py root <sdlc_dir> <goal>\n"
           "       work.py merge-design|close-design <sdlc_dir> <goal>   "
           "close-design [--comment \"<text>\"]", file=sys.stderr)
