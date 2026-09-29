@@ -94,9 +94,15 @@ Checked by reading GitHub's GraphQL schema (introspection, no mutation). The evi
   deep link: `https://github.com/{orgs|users}/<owner>/projects/<n>/workflows` → Item closed → Edit →
   Status: Done → Save and turn on workflow.
 - **Views.** `createProjectV2View` and `updateProjectV2View` exist, but board_setup creates no views.
+  The canonical six views and the Phase / Area / Model tier fields are a separate, explicit step,
+  `scripts/board_layout.py fields|views|verify` (#234). A view's name, layout, visible columns and
+  filter can be set through the API. Its grouping, sort, column field and tab order cannot, and are
+  printed as UI steps. The design, the runbook and the evidence are in `docs/board.md`.
 - **copyProjectV2.** Its input is `projectId, ownerId, title, includeDraftIssues`. Whether a copy
   keeps views and workflows could not be checked without a mutation. So the template path sets the
-  Status and Priority fields afterwards anyway and reads the workflow state back.
+  Status and Priority fields afterwards anyway and reads the workflow state back. `docs/board.md`
+  control (c) is the owner's measurement: `gh project copy`, then `board_layout.py verify` on the
+  copy.
 
 ### Manual check for the owner (5 steps)
 

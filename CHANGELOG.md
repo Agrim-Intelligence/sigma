@@ -4,6 +4,28 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The canonical board: fields and six views, applied and checked by a script** (#234). New
+  `skills/agrim-init/scripts/board_spec.py` is the single definition of the board, built from the
+  kit's own vocabulary: the configured Status lanes, `discovery.PRIORITIES`, `PHASE_TOKENS`, and the
+  parked, blocked and needs-confirmation labels. It covers the fields (Priority P0..P4, Phase, Area,
+  Model tier) and six views: Board · by Status, Priority table, In flight, Needs a human, v1.0
+  roadmap and Epics. New `board_layout.py fields|views|verify|spec` applies it. It is a dry run
+  until `--yes`, and it acts on the pinned board only when `board_setup.py` created it; any other
+  board needs `--number N`. It never deletes or renames anything, and never duplicates a field or a
+  view. If several views answer to one name, that view is refused. A drifted spec view gets only
+  the differing properties, and columns you added are kept. **Measured, read-only schema
+  introspection (2026-09-29):** the API can set a view's name, layout and visible columns
+  (`createProjectV2View`) and its filter (`updateProjectV2View` only). It cannot set group-by,
+  sort, the board's column field, roadmap markers or the default view, and it cannot create a
+  workflow. Those are printed as exact UI steps, and only while the board reads differently.
+  `verify` is the read-only acceptance check: 3 reads, 1.6–1.8s on board #17, exit 1 naming each
+  difference. **Decision:** "Needs a human" filters on the three labels, because a project filter
+  cannot OR across two fields. `/agrim-init --board yes` now prints the layout commands and the
+  `--template` alternative, and still runs only `create`. `docs/board.md` has the design and the
+  owner runbook: building board #17, setting the `v1.0` milestone on open P0/P1 issues, the
+  `copyProjectV2` control and the timed 15-minute reproduction. **None of it has been run on real
+  GitHub.** Area and Model tier have no writer yet.
+
 - **The board card shows each goal's Phase and Priority** (#233). Before this, only Status reached
   the board. Now every `phase_report.py start` writes the phase the loop is entering (`P1 GOAL` ..
   `P7 RETRO`, imported from `PHASE_TOKENS`) to a `Phase` field on the goal's card, and mirrors its

@@ -59,6 +59,7 @@ import sys
 _HERE = pathlib.Path(__file__).resolve().parent
 SETUP_SCRIPT = _HERE.parent.parent / "agrim-setup" / "scripts" / "setup.py"
 BOARD_SETUP = _HERE / "board_setup.py"
+BOARD_LAYOUT = _HERE / "board_layout.py"
 LOOP_SCRIPT = _HERE.parent.parent / "agrim-loop" / "scripts" / "loop.py"
 SYNC_SCRIPT = _HERE.parent.parent / "agrim-loop" / "scripts" / "sync.py"
 ANSWERS = pathlib.Path("state") / "init.json"
@@ -391,7 +392,8 @@ def board_step(target, sdlc, answer, repo, how="flag"):
             # board_setup's own "enabled is not true" note is true when it prints and false one line
             # later, when this turns it on: not shown in this flow.
             lines = [l for l in lines if BOARD_NOT_ENABLED_NOTE not in l]
-            return lines + [f"  [ok] board: project #{pinned} pinned and reachable - mirroring on"], True
+            return (lines + [f"  [ok] board: project #{pinned} pinned and reachable - mirroring on"]
+                    + layout_lines(sdlc)), True
         why = (f"board_setup.py exited {rc} (its resume command is above)" if rc
                else "board_setup.py pinned no board")
         return lines + [f"  [FAIL] board: {why}; project.enabled left as it was ({prev_enabled})"], False
@@ -411,8 +413,24 @@ def board_step(target, sdlc, answer, repo, how="flag"):
     if not offer:
         offer = [f"  OFFER: create a GitHub Project board for {repo} and pin it. Preview: "
                  + " ".join(_vd._q(c) for c in cmd)]
+    template = [_vd.python_command(), str(BOARD_SETUP), "create", os.path.abspath(str(sdlc)),
+                "--template", "OWNER/N", "--yes"]
     return (["  " + l for l in offer]
-            + ["  [ask] board: re-run with --board yes to create it now, or --board no to decline"]), True
+            + ["  [ask] board: re-run with --board yes to create it now, or --board no to decline",
+               "  (or copy a template board that already has the canonical fields and views; which "
+               "views a copy keeps is not yet measured, see docs/board.md: "
+               + " ".join(_vd._q(c) for c in template) + ")"]), True
+
+
+def layout_lines(sdlc):
+    """#234: the canonical fields and six views are a separate, explicit step. PRINTED, never run:
+    this flow's one board mutation is `create` on `--board yes`, and that stays true."""
+    base = [_vd.python_command(), str(BOARD_LAYOUT)]
+    cmd = lambda verb: " ".join(_vd._q(c) for c in base + [verb, os.path.abspath(str(sdlc))])  # noqa: E731
+    return ["  next (optional): give the board the canonical fields and six views (docs/board.md). "
+            "Each is a dry run until you add --yes:",
+            "    " + cmd("fields"), "    " + cmd("views"),
+            "  then check it (read-only): " + cmd("verify")]
 
 
 def _run_board(argv):

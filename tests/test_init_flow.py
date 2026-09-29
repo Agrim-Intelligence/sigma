@@ -504,6 +504,34 @@ def test_board_is_created_only_on_an_explicit_yes(tmp_path):
     assert not ok and any("FAIL" in l for l in lines)
 
 
+def test_board_yes_points_at_the_canonical_layout_and_runs_only_create(tmp_path):
+    """#234: after `--board yes` the flow PRINTS the fields/views/verify gestures and the template
+    alternative; the one board call it makes is still `create`."""
+    flow = _load_flow()
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps(
+        {"discovery": {"source": "github", "github": {"repo": REPO}}}))
+    calls = []
+
+    def pins(argv):
+        calls.append(argv)
+        cfg = json.loads((sdlc / "config.json").read_text())
+        cfg["discovery"]["github"]["project"] = {"number": 3, "owner": "acme"}
+        (sdlc / "config.json").write_text(json.dumps(cfg))
+        return 0, "[ok] board created\n"
+    flow.BOARD_RUNNER = pins
+    lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer=None, repo=REPO)
+    assert calls == [] and any("--template" in l and "docs/board.md" in l for l in lines), lines
+    lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer="yes", repo=REPO)
+    text = "\n".join(lines)
+    assert ok and len(calls) == 1 and "create" in calls[0]
+    for verb in ("fields", "views", "verify"):
+        assert "board_layout.py" in text and (" %s " % verb) in text, verb
+    printed = [l for l in lines if "board_layout.py" in l]
+    assert len(printed) == 3 and not any(l.rstrip().endswith("--yes") for l in printed)  # dry runs
+
+
 def test_yes_never_answers_board_verify_or_work():
     flow = _load_flow()
     res = flow.resolve_answers({"yes": True}, answered={}, scaffolded={}, current={},
