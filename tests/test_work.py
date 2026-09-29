@@ -8613,3 +8613,462 @@ def test_org_lock_pr_parks_on_an_unverifiable_org_file_before_the_sentinel(tmp_p
     out = work.pr(d, cfg, goal, run=run)
     assert out.startswith("PARK:"), out
     assert not any("git push" in c for c in run.calls)
+
+
+# --- #258: the plan-review verdict is a record ---------------------------------------------------
+
+#: `plan_copies`' second worktree read: is the branch copy COMMITTED AND UNMODIFIED, so its disk bytes
+#: are the branch's bytes? Whole-argv, like LS_FILES: a pathspec-less `git status --porcelain` is
+#: non-empty on any dirty worktree and would silently disqualify every branch copy.
+STATUS = "git status --porcelain -- .sdlc/plans/0001-x.md"
+
+
+@pytest.mark.parametrize("case", ["main only", "branch only", "tracked but modified", "no work record"])
+def test_plan_copies_finds_the_main_and_the_committed_branch_copy(tmp_path, case):
+    """#258: ONE resolver finds both copies of a plan -- the main checkout's (no git call) and the
+    goal worktree's, which counts only when it is tracked (so it IS on the branch) and unmodified
+    (so its disk bytes are the branch's). The brief, the record writer and the `pr` gate all use it,
+    so a remedy one of them names is always satisfiable at the other two."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    rec = work._record(d, goal)
+    wt_copy = pathlib.Path(rec["worktree"]) / ".sdlc" / "plans" / "0001-x.md"
+    wt_copy.parent.mkdir(parents=True)
+    wt_copy.write_text("# plan\n")
+    main = pathlib.Path(d) / "plans" / "0001-x.md"
+    if case in ("main only", "no work record"):
+        main.parent.mkdir(parents=True)
+        main.write_text("# plan\n")
+    handlers = {
+        "main only": [(LS_FILES, "")],
+        "branch only": [(LS_FILES, ".sdlc/plans/0001-x.md"), (STATUS, "")],
+        "tracked but modified": [(LS_FILES, ".sdlc/plans/0001-x.md"),
+                                 (STATUS, " M .sdlc/plans/0001-x.md")],
+        "no work record": [],
+    }[case]
+    run = _runner(handlers)
+    got = work.plan_copies(d, goal, None if case == "no work record" else rec, run)
+    expected = {"main only": (main, None), "branch only": (None, wt_copy),
+                "tracked but modified": (None, None), "no work record": (main, None)}[case]
+    assert got == expected, (case, got)
+    if case == "no work record":
+        assert run.calls == []
+
+
+PLAN_A = b"# plan\n1. step A\n"
+WORK_OFF = {"work": {"enabled": False}}
+
+
+def _plan_bytes(d, data=PLAN_A, main=True, branch=False):
+    """Write this goal's plan where the phases put it -- the main checkout's `<d>/plans/` (`main`),
+    and/or the landing copy in `_started`'s worktree (`branch`) -- and return the bytes' sha256. The
+    default is the P4 shape: the plan in the main checkout, no copy on the branch yet."""
+    targets = []
+    if main:
+        targets.append(pathlib.Path(d) / "plans" / "0001-x.md")
+    if branch:
+        targets.append(pathlib.Path(d) / "work" / "0001-x" / ".sdlc" / "plans" / "0001-x.md")
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    return hashlib.sha256(data).hexdigest()
+
+
+def _gate_record(d):
+    return pathlib.Path(d) / "state" / "gates" / "0001-x.json"
+
+
+def _plan_review_events(d):
+    return [e for e in journal_events(ledger, d) if e["kind"] == "gate"]
+
+
+def test_record_plan_review_writes_the_record_for_the_current_plan_bytes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    out = work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))
+    on_disk = json.loads(_gate_record(d).read_text())
+    for got in (out, on_disk):
+        assert got["goal"] == "0001-x.md"
+        assert got["plan"] == ".sdlc/plans/0001-x.md"
+        assert got["plan_hash"] == sha
+        assert got["verdict"] == "pass"
+        assert got["reviewer_route"] == {"mechanism": "subagent", "host": "claude", "verified": True}
+        assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", got["at"])
+    assert "reason" not in on_disk
+    assert out["path"] == str(_gate_record(d))
+    assert sorted(p.name for p in _gate_record(d).parent.iterdir()) == ["0001-x.json"]
+
+
+@pytest.mark.parametrize("word,mapped", [("SOUND", "pass"), ("sound-with-refinements", "warn"),
+                                         ("FIX-FIRST", "block")])
+def test_record_plan_review_maps_the_skill_verdicts(tmp_path, word, mapped):
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    assert work.record_plan_review(d, ON, goal, word, sha, run=_runner([]))["verdict"] == mapped
+    with pytest.raises(ValueError) as refused:
+        work.record_plan_review(d, ON, goal, "approve", sha, run=_runner([]))
+    for name in ("SOUND", "SOUND-WITH-REFINEMENTS", "FIX-FIRST"):
+        assert name in str(refused.value)
+
+
+def test_record_plan_review_refuses_a_sha_that_is_not_the_current_plan(tmp_path):
+    """The verdict binds to the bytes the brief named: a plan edited after the brief was built (a
+    refinement applied before recording) is not the plan that was reviewed."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    old = _plan_bytes(d)
+    _plan_bytes(d, PLAN_A + b"2. step B\n")
+    with pytest.raises(ValueError, match="fresh plan-review"):
+        work.record_plan_review(d, ON, goal, "SOUND", old, run=_runner([]))
+    assert not _gate_record(d).exists()
+
+
+@pytest.mark.parametrize("value", ["", "abc"])
+def test_record_plan_review_refuses_a_malformed_sha(tmp_path, value):
+    d = _sdlc(tmp_path); goal = _started(d); _plan_bytes(d)
+    with pytest.raises(ValueError, match="Plan sha256:"):
+        work.record_plan_review(d, ON, goal, "SOUND", value, run=_runner([]))
+    assert not _gate_record(d).exists()
+
+
+def test_record_plan_review_refuses_when_no_plan_resolves(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    with pytest.raises(ValueError, match="no plan for"):
+        work.record_plan_review(d, ON, goal, "SOUND", "0" * 64, run=_runner([]))
+    assert not _gate_record(d).exists()
+
+
+def test_record_plan_review_hashes_the_branch_copy_when_the_main_checkout_has_none(tmp_path):
+    """B1: a plan that is only on the branch (the shape #2575 measured) can still be recorded."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    sha = _plan_bytes(d, main=False, branch=True)
+    out = work.record_plan_review(d, ON, goal, "SOUND", sha,
+                                  run=_runner([(LS_FILES, ".sdlc/plans/0001-x.md")]))
+    assert out["plan_hash"] == sha and out["plan"] == ".sdlc/plans/0001-x.md"
+    assert json.loads(_gate_record(d).read_text())["plan_hash"] == sha
+
+
+def test_record_plan_review_refuses_while_the_branch_copy_differs(tmp_path):
+    """A verdict on one copy is never recorded while the branch publishes another. The remedy needs
+    no commit during plan-review: a tracked copy with uncommitted edits is not a branch copy, so the
+    re-record checks the main copy alone -- and `pr` refuses an uncommitted worktree anyway."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    sha_a = _plan_bytes(d, PLAN_A)
+    _plan_bytes(d, PLAN_A + b"2. only on the branch\n", main=False, branch=True)
+    tracked = [(LS_FILES, ".sdlc/plans/0001-x.md")]
+    with pytest.raises(ValueError) as refused:
+        work.record_plan_review(d, ON, goal, "SOUND", sha_a, run=_runner(tracked))
+    assert "differs from the reviewed copy" in str(refused.value)
+    assert "leave it uncommitted" in str(refused.value)
+    assert "work.py commit" not in str(refused.value)
+    assert not _gate_record(d).exists()
+    _plan_bytes(d, PLAN_A, main=False, branch=True)          # the remedy: copied over, uncommitted
+    out = work.record_plan_review(d, ON, goal, "SOUND", sha_a,
+                                  run=_runner(tracked + [(STATUS, " M .sdlc/plans/0001-x.md")]))
+    assert out["plan_hash"] == sha_a
+
+
+def test_record_plan_review_refuses_an_unsafe_goal(tmp_path):
+    d = _sdlc(tmp_path)
+    with pytest.raises(ValueError, match="unsafe goal"):
+        work.record_plan_review(d, ON, "../evil", "SOUND", "0" * 64, run=_runner([]))
+
+
+@pytest.mark.parametrize("gate_on", [False, True])
+def test_record_plan_review_keeps_no_record_without_a_work_record(tmp_path, capsys, gate_on):
+    """R-c: with work on but no work record under this `.sdlc` -- `/agrim-goal` never runs
+    `work.py start`, and a goal worktree's `.sdlc` has none -- the verb validates, still mirrors the
+    verdict, keeps NO file, and says so. It must not refuse (that would fail every `/agrim-goal`,
+    gate off or on). The one reader, `pr`, needs the same work record, so it still fails closed."""
+    cfg = {**ON, **JOURNAL_ON}
+    if gate_on:
+        cfg["gates"] = {"plan_review": {"enabled": True}}
+    d = _sdlc(tmp_path, cfg); sha = _plan_bytes(d)
+    run = _runner([])
+    out = work.record_plan_review(d, cfg, "0001-x.md", "SOUND", sha, run=run)
+    err = capsys.readouterr().err
+    assert out["path"] is None
+    assert not (pathlib.Path(d) / "state" / "gates").exists()
+    assert run.calls == []
+    events = _plan_review_events(d)
+    assert len(events) == 1 and events[0]["verdict"] == "pass", events
+    assert "no record is kept" in err
+    assert ("main checkout" in err) is gate_on, err
+
+
+def test_record_plan_review_overwrites_an_earlier_verdict(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    work.record_plan_review(d, ON, goal, "FIX-FIRST", sha, run=_runner([]))
+    work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))
+    assert json.loads(_gate_record(d).read_text())["verdict"] == "pass"
+
+
+def test_record_plan_review_keeps_the_prior_record_when_the_write_fails(tmp_path, monkeypatch):
+    """Atomic replace: a failed re-record leaves the prior record whole, and no temp file behind."""
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))
+
+    def boom(*_a, **_k):
+        raise OSError("boom")
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError):
+        work.record_plan_review(d, ON, goal, "FIX-FIRST", sha, run=_runner([]))
+    monkeypatch.undo()
+    assert json.loads(_gate_record(d).read_text())["verdict"] == "pass"
+    assert sorted(p.name for p in _gate_record(d).parent.iterdir()) == ["0001-x.json"]
+
+
+def test_record_plan_review_keeps_no_record_when_work_is_off(tmp_path, capsys):
+    """Nothing reads the record without `work.py pr` and nothing prunes it without `work.py finish`
+    -- both need `work.enabled` -- so with work off no file is kept (no table nothing prunes)."""
+    d = _sdlc(tmp_path, WORK_OFF); sha = _plan_bytes(d)
+    out = work.record_plan_review(d, WORK_OFF, "0001-x.md", "SOUND", sha, run=_runner([]))
+    assert out["path"] is None
+    assert not (pathlib.Path(d) / "state" / "gates").exists()
+    assert "work.enabled is off" in capsys.readouterr().err
+
+
+def test_record_plan_review_mirrors_one_gate_event(tmp_path):
+    """One emitter, in Python (the #1013/#1626 double-emission lesson): the skill no longer also
+    types `loop.py emit gate --gate plan_review`."""
+    cfg = {**ON, **JOURNAL_ON}
+    d = _sdlc(tmp_path, cfg); goal = _started(d); sha = _plan_bytes(d)
+    work.record_plan_review(d, cfg, goal, "SOUND", sha, reason="ok", run=_runner([]))
+    events = _plan_review_events(d)
+    assert len(events) == 1, events
+    assert (events[0]["gate"], events[0]["verdict"], events[0]["why"]) == ("plan_review", "pass", "ok")
+
+
+def test_record_plan_review_cli(tmp_path, capsys):
+    def cli(d, *args):
+        code = work.main(["work.py", "record-plan-review", d, "0001-x.md", *args])
+        return code, capsys.readouterr()
+
+    d = _sdlc(tmp_path / "on"); _started(d); sha = _plan_bytes(d)
+    code, got = cli(d, "--verdict", "SOUND", "--plan-sha256", sha)
+    assert code == 0, got.err
+    assert json.loads(got.out)["plan_hash"] == sha
+
+    off = _sdlc(tmp_path / "off", WORK_OFF); _plan_bytes(off)
+    code, got = cli(off, "--verdict", "SOUND", "--plan-sha256", sha)
+    assert code == 0 and "no record is kept" in got.err and "work.enabled is off" in got.err, got
+
+    unstarted = _sdlc(tmp_path / "unstarted"); _plan_bytes(unstarted)
+    code, got = cli(unstarted, "--verdict", "SOUND", "--plan-sha256", sha)
+    assert code == 0 and "no record is kept" in got.err, got
+
+    for args in (["--verdict", "SOUND"], ["--plan-sha256", sha]):
+        code, got = cli(d, *args)
+        assert code == 2 and "usage: work.py record-plan-review" in got.err, (args, got)
+
+    code, got = cli(d, "--verdict", "SOUND", "--plan-sha256", "")   # a `sed` that found no line
+    assert code == 2 and "Plan sha256:" in got.err and "usage:" not in got.err, got
+
+    code, got = cli(d, "--verdict", "SOUND", "--plan-sha256", sha, "--reason", "a\nb")
+    assert code == 2, got
+
+    _plan_bytes(d, PLAN_A + b"2. edited after the brief\n")
+    code, got = cli(d, "--verdict", "SOUND", "--plan-sha256", sha)
+    assert code == 2 and "fresh plan-review" in got.err, got
+
+    assert work.main(["work.py", "record-plan-review", "--help"]) == 0
+    assert "usage: work.py record-plan-review" in capsys.readouterr().out
+
+
+PLAN_REVIEW_ON = {"work": {"enabled": True}, "gates": {"plan_review": {"enabled": True}}}
+TRACKED_PLAN = ".sdlc/plans/0001-x.md"
+SHA_A = hashlib.sha256(PLAN_A).hexdigest()
+
+
+def _review_pr(tmp_path, config=None, plan=PLAN_A, main=True, branch=True, record=None, tracked=None):
+    """A started goal ready for `pr()` -- clean worktree, one commit ahead -- with its plan in the main
+    checkout (`main`) and/or committed on the branch (`branch`), and optionally a recorded verdict.
+    `check-ignore` -> "" (exit 0) is an IGNORING repo, which is what `branch=False` means. `STATUS`
+    falls through to "" (clean). The record is written with its own runner, so `run.calls` holds only
+    `pr()`'s calls."""
+    cfg = PLAN_REVIEW_ON if config is None else config
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d, pr="")
+    sha = _plan_bytes(d, plan, main=main, branch=branch)
+    if tracked is None:
+        tracked = TRACKED_PLAN if branch else ""
+    if record:
+        work.record_plan_review(d, cfg, goal, record, sha, run=_runner([(LS_FILES, tracked)]))
+    run = _runner([("rev-list", "1"), (LS_FILES, tracked), ("check-ignore", ""),
+                   ("log -1", "feat: x"), ("pulls?head", "31")])
+    return d, cfg, goal, run
+
+
+def _wt_plan(d):
+    return pathlib.Path(d) / "work" / "0001-x" / ".sdlc" / "plans" / "0001-x.md"
+
+
+def _main_plan(d):
+    return pathlib.Path(d) / "plans" / "0001-x.md"
+
+
+def _tail(d, hashed):
+    """The tail every `gates.plan_review` refusal ends with: the file it hashed, and what it does NOT
+    cover -- stated in the refusal itself, not only in the docs."""
+    return (f" Hashed: {hashed}. Covers the goal's plan .md only — not "
+            f"{pathlib.Path(d, 'plans', '0001-x.slices.json').as_posix()}, and not a design PR's "
+            ".sdlc/design/<n>.md.")
+
+
+def _pushed(run):
+    return any("git push" in c for c in run.calls) or any(c.startswith("gh ") for c in run.calls)
+
+
+@pytest.mark.parametrize("cfg", [ON, {"work": {"enabled": True}, "gates": True},
+                                 {"work": {"enabled": True}, "gates": {"plan_review": {"enabled": "off"}}}],
+                         ids=["no-gates", "scalar-gates", "enabled-off"])
+def test_plan_review_gate_off_changes_nothing(tmp_path, cfg):
+    """A pin of the off path: it passes before #258 too. Its control is C6 (`_plan_review_on` forced
+    True turns every one of these into a refusal). Off, the gate makes ZERO calls: the one `ls-files`
+    is the sibling plan guard's."""
+    d, cfg, goal, run = _review_pr(tmp_path, config=cfg)
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+    assert run.calls.count(LS_FILES) == 1, run.calls
+
+
+def test_plan_review_gate_refuses_a_plan_with_no_record(tmp_path):
+    d, cfg, goal, run = _review_pr(tmp_path)
+    out = work.pr(d, cfg, goal, run=run)
+    assert out == ("gates.plan_review is on and this goal's plan has no recorded review: run "
+                   "plan-review, record its verdict with `work.py record-plan-review " + d
+                   + " 0001-x.md --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 "
+                   "<the brief's Plan sha256>` and re-run (nothing pushed)."
+                   + _tail(d, _wt_plan(d).as_posix())), out
+    assert ".slices.json" in out and ".sdlc/design/" in out
+    assert not any("git push" in c for c in run.calls)
+    assert not any(c.startswith("gh ") for c in run.calls)
+
+
+@pytest.mark.parametrize("gates", [{"plan_review": True}, {"plan_review": {"enabled": "true"}}])
+def test_plan_review_gate_reads_a_scalar_or_generous_enabled_as_on(tmp_path, gates):
+    d, cfg, goal, run = _review_pr(tmp_path, config={"work": {"enabled": True}, "gates": gates})
+    assert "has no recorded review" in work.pr(d, cfg, goal, run=run)
+    assert not _pushed(run)
+
+
+def test_plan_review_gate_refuses_a_fix_first_verdict(tmp_path):
+    d, cfg, goal, run = _review_pr(tmp_path, record="FIX-FIRST")
+    out = work.pr(d, cfg, goal, run=run)
+    assert "FIX-FIRST (block)" in out, out
+    assert not _pushed(run)
+
+
+def test_plan_review_gate_refuses_a_plan_edited_after_its_review(tmp_path):
+    d, cfg, goal, run = _review_pr(tmp_path, record="SOUND")
+    edited = PLAN_A + b"2. step B, added after the review\n"
+    _plan_bytes(d, edited, main=True, branch=True)
+    out = work.pr(d, cfg, goal, run=run)
+    assert "changed after its review" in out and SHA_A[:12] in out, out
+    assert hashlib.sha256(edited).hexdigest() not in out      # never hand over the hash to copy
+    assert not _pushed(run)
+
+
+@pytest.mark.parametrize("verdict", ["SOUND", "SOUND-WITH-REFINEMENTS"])
+def test_plan_review_gate_proceeds_on_a_fresh_matching_record(tmp_path, verdict):
+    """Passes before #258 (nothing refused then); its control is C2(ii)."""
+    d, cfg, goal, run = _review_pr(tmp_path, record=verdict)
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+
+
+def test_plan_review_gate_hashes_the_plan_as_it_is_on_the_branch(tmp_path):
+    """What is published is what must have been reviewed: the BRANCH copy is hashed, the main
+    checkout's copy only stands in when the branch carries none."""
+    d, cfg, goal, run = _review_pr(tmp_path / "i", record="SOUND")
+    _plan_bytes(d, PLAN_A + b"2. edited on the branch\n", main=False, branch=True)
+    out = work.pr(d, cfg, goal, run=run)
+    assert "changed after its review" in out and out.endswith(_tail(d, _wt_plan(d).as_posix())), out
+    assert not _pushed(run)
+    d, cfg, goal, run = _review_pr(tmp_path / "ii", record="SOUND")
+    _plan_bytes(d, PLAN_A + b"2. edited in the main checkout only\n", main=True, branch=False)
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+
+
+def test_plan_review_gate_refuses_a_plan_only_on_the_branch(tmp_path):
+    """B1: the plan is only on the branch (#2575's shape) -- still hashed, still gated."""
+    d, cfg, goal, run = _review_pr(tmp_path / "i", main=False, branch=True)
+    out = work.pr(d, cfg, goal, run=run)
+    assert "has no recorded review" in out and out.endswith(_tail(d, _wt_plan(d).as_posix())), out
+    assert not _pushed(run)
+    d, cfg, goal, run = _review_pr(tmp_path / "ii", main=False, branch=True, record="SOUND")
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+    d, cfg, goal, run = _review_pr(tmp_path / "iii", main=False, branch=True, record="SOUND")
+    _plan_bytes(d, PLAN_A + b"2. edited on the branch\n", main=False, branch=True)
+    assert "changed after its review" in work.pr(d, cfg, goal, run=run)
+    assert not _pushed(run)
+
+
+def test_plan_review_gate_hashes_the_main_checkout_when_the_repo_ignores_plans(tmp_path):
+    d, cfg, goal, run = _review_pr(tmp_path, branch=False, record="SOUND")
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+    _plan_bytes(d, PLAN_A + b"2. edited after the review\n")
+    run = _runner([("rev-list", "1"), (LS_FILES, ""), ("check-ignore", ""), ("pulls?head", "31")])
+    out = work.pr(d, cfg, goal, run=run)
+    assert "changed after its review" in out and out.endswith(_tail(d, _main_plan(d).as_posix())), out
+    assert not _pushed(run)
+
+
+@pytest.mark.parametrize("case", ["no copy anywhere", "untracked worktree copy"])
+def test_plan_review_gate_is_silent_when_no_plan_resolves(tmp_path, case):
+    """The design-PR / docs-only case: no plan and no record, so this gate says nothing
+    (`gates.hard_plan_gate` owns "no plan"). Passes before #258; its control is C12(i)."""
+    if case == "no copy anywhere":
+        d, cfg, goal, run = _review_pr(tmp_path, main=False, branch=False)
+    else:
+        d, cfg, goal, run = _review_pr(tmp_path, main=False, branch=True, tracked="")
+    assert work.pr(d, cfg, goal, run=run) == "PR #31"
+
+
+def test_plan_review_gate_refuses_a_recorded_plan_that_no_longer_resolves(tmp_path):
+    """R-d: a record proves this goal HAD a reviewed plan, so a plan deleted from both copies after
+    its review is not a plan-less goal."""
+    d, cfg, goal, run = _review_pr(tmp_path, branch=False, record="SOUND")
+    _main_plan(d).unlink()
+    out = work.pr(d, cfg, goal, run=run)
+    assert "recorded plan review" in out and "no plan resolves" in out, out
+    assert out.endswith(_tail(d, "none")), out
+    assert not _pushed(run)
+
+
+@pytest.mark.parametrize("content", ["{not json", "[]", '{"verdict":"pass"}',
+                                     '{"plan_hash":"zz","verdict":"pass"}',
+                                     json.dumps({"plan_hash": SHA_A, "verdict": "approve"}),
+                                     json.dumps({"plan_hash": SHA_A, "verdict": ["pass"]}),
+                                     json.dumps({"plan_hash": SHA_A, "verdict": {"v": "pass"}}),
+                                     json.dumps({"plan_hash": [SHA_A], "verdict": "pass"})])
+def test_plan_review_gate_refuses_a_malformed_record(tmp_path, content):
+    """Fails CLOSED: the party best placed to make a record unreadable is the one the gate stops,
+    and the remedy (re-record) costs one command."""
+    d, cfg, goal, run = _review_pr(tmp_path)
+    target = work.plan_review_record_path(d, goal)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    out = work.pr(d, cfg, goal, run=run)
+    assert "unreadable or malformed" in out, out
+    assert not _pushed(run)
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads a mode-0 file")
+def test_plan_review_gate_refuses_when_the_plan_on_the_branch_cannot_be_read(tmp_path):
+    d, cfg, goal, run = _review_pr(tmp_path, record="SOUND")    # recorded BEFORE the chmod
+    os.chmod(_wt_plan(d), 0)
+    try:
+        out = work.pr(d, cfg, goal, run=run)
+    finally:
+        os.chmod(_wt_plan(d), 0o644)
+    assert "could not be read" in out, out
+    assert not _pushed(run)
+
+
+def test_finish_prunes_the_plan_review_record_and_only_its_own(tmp_path):
+    """The record has the work record's lifetime: `finish` drops both, so the directory holds only
+    in-flight goals (no table nothing prunes)."""
+    d = _sdlc(tmp_path); goal = _started(d, pr=""); sha = _plan_bytes(d)
+    work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))
+    other = pathlib.Path(d) / "state" / "gates" / "0002-y.json"
+    other.write_text('{"verdict":"pass"}')
+    work.finish(d, ON, goal, run=_runner([]))
+    assert not _gate_record(d).exists()
+    assert other.read_text() == '{"verdict":"pass"}'

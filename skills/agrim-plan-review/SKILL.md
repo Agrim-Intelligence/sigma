@@ -117,9 +117,32 @@ operator command | inline, author self-review`. Then one of: **SOUND** (implemen
 (blocking issues). Be specific and opinionated; don't pad with praise. If you didn't try to break
 it, you didn't review it.
 
-Record it as an event too (optional, `journal.enabled`) — SOUND → `pass`,
-SOUND-WITH-REFINEMENTS → `warn`, FIX-FIRST → `block`:
-`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" emit .sdlc "$goal" gate --gate plan_review --verdict pass|warn|block`
+**Record it** — the site that dispatched this review does, never the dispatched reviewer; from the
+main checkout; before anything edits the plan. It READS the brief file written at dispatch above,
+never a rebuilt one (a rebuild hashes the edited plan, so the check could never fail):
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/work.py" record-plan-review .sdlc "<goal>" \
+  --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST \
+  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' /tmp/brief-<goal>.md)"
+```
+
+It records SOUND → `pass`, SOUND-WITH-REFINEMENTS → `warn`, FIX-FIRST → `block` (a FIX-FIRST is
+recorded too), and it is the only emitter of the `plan_review` journal gate: do not also `loop.py
+emit` one. It refuses, writing nothing, when the plan no longer hashes to that `Plan sha256:` line.
+With `gates.plan_review.enabled`, `work.py pr` refuses to push unless an approving verdict (SOUND or
+SOUND-WITH-REFINEMENTS) is recorded for the exact bytes of the plan on the branch.
+
+**SOUND-WITH-REFINEMENTS:** record the verdict as returned, BEFORE editing the plan. Refinements
+carried into Implement without editing the plan file stay inside the approval (note each
+disposition with `loop.py note`). Edit the plan FILE and the approval no longer covers it: run a
+fresh plan-review of the refined plan and record that verdict.
+
+The record is agent-written: it proves a verdict was recorded for these bytes, not that an
+independent reviewer produced it. Without a work record (`/agrim-goal` never runs `work.py start`)
+it keeps no file, still mirrors the verdict to the journal, exits 0 and prints a note; with
+`gates.plan_review` on, `pr` then refuses unless the verdict is recorded from the main checkout
+that ran `work.py start`.
 
 ## 5. Disposition — closing the loop on a FIX-FIRST
 A verdict that sends the plan back is only half the gate. When the revised plan returns, **give every

@@ -359,13 +359,13 @@ def test_readme_check_control():
     found = gen.readme_problems(renamed, all_rows)
     assert any("Strategy-alignment check" in p and "missing" in p for p in found), found
     # (b) an advice row calling itself a gate.
-    old = _readme_row(text, "Plan review before any edit")
+    old = _readme_row(text, "Strategy-alignment check")
     cells = old.split(" | ")
     cells[1] = cells[1] + " gate"
     gated = text.replace(old, " | ".join(cells))
     assert gated != text
     found = gen.readme_problems(gated, all_rows)
-    assert any("Plan review before any edit" in p and "gate" in p for p in found), found
+    assert any("Strategy-alignment check" in p and "gate" in p for p in found), found
     # (c) a labelled row that lost its link.
     old = _readme_row(text, "Stop gate (opt-in)")
     assert "docs/enforcement.md" in old

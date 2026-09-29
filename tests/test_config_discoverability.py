@@ -64,6 +64,17 @@ def test_the_off_switch_is_documented_where_someone_would_look_for_it():
     assert "enabled" in section and ("OFF" in section or "off" in section)
 
 
+def test_plan_review_gate_ships_off_and_says_how_it_is_turned_on():
+    """#258: `gates.plan_review` is read through `_gate_block(config, "plan_review")`, which the
+    `_GATE_READ` idiom above cannot see -- so its discoverability is pinned by name. It ships OFF, and
+    its comment names the verb that satisfies it, the key it needs, and what it does not cover."""
+    import json
+    gates = json.loads(TMPL)["gates"]
+    assert gates["plan_review"] == {"enabled": False}
+    for needed in ("record-plan-review", "work.enabled", "slices.json"):
+        assert needed in gates["_plan_review"], needed
+
+
 def test_template_is_valid_json_once_comments_are_stripped():
     """The `_name` comment convention means a stray quote breaks EVERY adopter's scaffold, and the
     added entry embeds escaped quotes — exactly where that goes wrong."""

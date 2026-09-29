@@ -97,13 +97,14 @@ Then repeat until the helper says stop:
    via its **executor**. `$goal` is a **file path** in local mode (read the file) or a **GitHub
    issue number** in github mode (`gh issue view "$goal"` to read it).
 
-   **The maker is never the checker (`config.review.independent`, default on).** Every review gate —
-   plan-review, the pre-PR code review, and the post-PR review at step 6 — runs as a **fresh subagent
-   that never saw the maker's context**. Give it the PROJECT, not the author: `review_context.py
-   brief .sdlc "$goal" --for plan-review|code-review|pr-review [--artifact <path|PR#>]` assembles
-   the pack and you hand the subagent **only that**. Where the host has no subagents this is **not**
-   a degradation — run `reviewer.py resolve .sdlc` and use the mechanism it names. Only a machine
-   where the resolver returns `inline` reviews inline, and that verdict must say so.
+   **The maker is never the checker (`config.review.independent`, default on).** Every review gate
+   (plan-review, pre-PR code review, post-PR review at step 6) runs as a **fresh subagent that never
+   saw the maker's context**, given the PROJECT, not the author: `review_context.py brief .sdlc
+   "$goal" --for plan-review|code-review|pr-review [--artifact <path|PR#>] >
+   "/tmp/brief-$(basename "$goal" .md).md"` writes the pack to that file; hand over **only that**.
+   No subagents is **not** a degradation: use the mechanism `reviewer.py resolve .sdlc` names. Only
+   an `inline` answer reviews inline, and says so. `work.py record-plan-review` records a
+   plan-review verdict against the file's `Plan sha256:`.
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every
    dispatched phase subagent (research, plan, plan-review, implement, review, retro, and each

@@ -120,11 +120,6 @@ HOOK_FACTS = (
 #: host's own settings (`git-host`). A control named here AND in a module registry is a problem --
 #: the day one of these becomes a Python gate, its advice row must go.
 EXTERNAL_CONTROLS = (
-    {"control": "Plan review before implementation", "kind": "advice", "hosts": "all",
-     "enabled_by": (), "settings": (),
-     "mechanism": "`agrim-plan-review` asks the agent to review the plan before any edit; "
-                  "`loop.py emit gate --gate plan_review` only records a verdict, no code reads it",
-     "readme": "Plan review before any edit"},
     {"control": "Strategy alignment (FIX-FIRST)", "kind": "advice", "hosts": "all",
      "enabled_by": (), "settings": (),
      "mechanism": "`agrim-plan-review` asks the reviewer to send back a plan that contradicts the "

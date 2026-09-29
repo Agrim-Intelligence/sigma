@@ -138,7 +138,8 @@ dependency `loop.py verify`/`work.py merge` are — see the REQUIRED PATTERN at 
 this dispatch too: your very next action depends on its verdict, so dispatch it foreground/
 blocking rather than inventing a separate "wait" step. Give it the PROJECT, not the author:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for
-plan-review|code-review|pr-review [--artifact <path|PR#>]` assembles the pack — north-star +
+plan-review|code-review|pr-review [--artifact <path|PR#>] > "/tmp/brief-$(basename "$goal" .md).md"`
+assembles the pack into that file (`basename`: `$goal` is a path in local mode) — north-star +
 conventions + contracts + the goal + a pointer to the artifact — and you hand the subagent **only
 that**. So it re-derives blast radius from the whole repo and can *disagree*, instead of
 rubber-stamping the plan/diff it just wrote (which a lower-tier maker does — that is where a
@@ -150,6 +151,24 @@ author-blind reviewer by its own route. Only a machine where the resolver return
 inline, and that verdict must say so. With
 `review.independent: false` reviews run inline as before (the maker reviews its own work — only for a
 trivial solo repo where the ceremony isn't worth it).
+
+**Record the plan-review verdict before Implement** (`gates.plan_review`). The dispatching site —
+never the dispatched reviewer — records it from the main checkout (3a), before anything edits the
+plan, against the brief file the dispatch gesture above wrote. It only READS that file; never
+rebuild the brief here, because a rebuild hashes the edited plan and the check could never fail:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-plan-review .sdlc "$goal" --verdict <VERDICT> \
+  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' "/tmp/brief-$(basename "$goal" .md).md")"
+```
+
+`<VERDICT>` is the reviewer's SOUND, SOUND-WITH-REFINEMENTS or FIX-FIRST; a FIX-FIRST is recorded
+too. This is the one writer of the verdict and the one emitter of its `plan_review` journal gate
+(never also `loop.py emit` one). It refuses a sha the plan no longer holds, so record a
+SOUND-WITH-REFINEMENTS as returned, before applying any refinement to the plan file. Copy the plan
+to the branch unchanged; after any edit of either copy, re-review and re-record. With
+`gates.plan_review.enabled`, `work.py pr` refuses to push unless an approving verdict is recorded
+for the exact bytes of the plan on the branch (`landing.md`).
 
 **A PR review posts only generation-bound evidence.** For `pr-review`, create the generation with
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for pr-review
@@ -186,9 +205,11 @@ needs: the reviewer's (or verify's) own blocking findings, the plan path
 a fresh subagent by construction does not have anyway. The re-review that follows is equally
 fresh — never the same reviewer subagent asked to look again — and is handed only its own prior
 verdict (the block reason just posted or recorded) plus a live pointer to what changed since:
-re-run `review_context.py brief` for that gate (its `pr-review` brief already resolves to the live
-`gh pr diff <PR#>`; `plan-review`/`code-review` point at the current plan file or worktree diff the
-same way) — never the earlier review's transcript pasted in by hand. Step 6's worked example (the
+for `plan-review`/`code-review`, re-run the dispatch gesture above for that gate, redirect included
+(a fresh `/tmp/brief-<stem>.md` pointing at the current plan file or worktree diff, and the brief a
+re-reviewed plan's verdict is recorded against); for `pr-review`, publish a fresh `--output`
+generation, whose brief already resolves to the live `gh pr diff <PR#>` — never the earlier
+review's transcript pasted in by hand. Step 6's worked example (the
 post-PR cycle) carries a code-enforced cap (`work.max_review_cycles`); plan-review and
 pre-PR/code-review have no equivalent counter, so a fix that does not resolve after a couple of
 rounds is "a failure you cannot resolve" (above) — park it rather than cycling indefinitely. **On

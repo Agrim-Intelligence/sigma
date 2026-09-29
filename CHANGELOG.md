@@ -65,6 +65,33 @@ All notable changes to Sigma are recorded here, newest first.
   conservative refusal: a reverted dependency bump blocks upkeep on every feature branch cut in
   that window, and each branch stays blocked until a person resolves it. Each fix has a real-git
   test, and each test was seen red against the old code and against a deliberately broken guard.
+- **The plan-review verdict is a record: `work.py pr` can refuse a plan that was not reviewed**
+  (#258). Until now the plan-review verdict was an optional journal event nothing read.
+  - The plan-review brief now names the exact bytes under review: a `Plan file:` line and a
+    `Plan sha256:` line (sha256 of the plan's raw bytes; the committed branch copy, pointed at with
+    `git show`, when the main checkout has none).
+  - New verb `work.py record-plan-review <sdlc> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST
+    --plan-sha256 <hex> [--reason <text>]`. The sha comes from the brief written at dispatch (the
+    documented gestures read its first `Plan sha256:` line, never a rebuilt brief). It refuses,
+    writing nothing, when any existing copy of the plan (main checkout, committed on the branch) no
+    longer holds those bytes. It stores `{at, goal, plan, plan_hash, reviewer_route, verdict}` at
+    `.sdlc/state/gates/<stem>.json` (atomic replace) only while `work.enabled` is on and that
+    `.sdlc` holds the goal's work record; otherwise it keeps no file and says so. `work.py finish`
+    prunes it with the work record.
+  - It is now the single emitter of the `gate` journal event (`gate=plan_review`, verdict
+    `pass|warn|block`, no new field); `agrim-plan-review` no longer tells the agent to `loop.py
+    emit` one.
+  - New opt-in `gates.plan_review.enabled` (ships OFF, not org-lockable, #174). With it on,
+    `work.py pr` refuses to push unless an approving verdict (SOUND or SOUND-WITH-REFINEMENTS) is
+    recorded for the exact bytes of the plan on the branch (the main checkout's copy when the branch
+    carries none). A malformed record, an unreadable plan, or a recorded plan that no longer
+    resolves fails closed. Not covered: `<stem>.slices.json`, design PRs, a goal with no plan (left
+    to `gates.hard_plan_gate`), and pushes after `pr`'s own (a `work.py rebase` force-push,
+    `merge()`). The record is agent-written: it proves a verdict was recorded, not who reviewed.
+  - `docs/enforcement.md` regenerated: "Plan review before implementation" moves from `advice` to a
+    `Python gate` row (`work.py` `_plan_review_refusal`). `/agrim-doctor` gains a
+    `plan-review gate` row, including ON-but-not-enforced when `work.enabled` is off.
+
 - **`/agrim-init` offers to create the GitHub Project board, and pins it** (#235). The loop only
   creates a board when the owner has none, so in any real organisation nothing ever wrote
   `discovery.github.project.number`. Now:

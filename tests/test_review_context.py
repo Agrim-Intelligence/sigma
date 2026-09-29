@@ -1,4 +1,4 @@
-import pathlib, importlib.util, tempfile, os, subprocess, sys, json, re
+import hashlib, pathlib, importlib.util, tempfile, os, subprocess, sys, json, re
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
 
@@ -329,6 +329,73 @@ def test_plan_review_does_not_duplicate_the_plan_it_already_reviews():
             "# plan\n1. Recolor the button.\n", encoding="utf-8")
         out = _rc().brief(base, "0007-blue-button.md", "plan-review", repo_root=root)
         assert "unplanned scope" not in out
+
+
+# --- #258: the plan-review brief names the exact bytes under review ---------------------------------
+
+def test_plan_sha256_hashes_raw_bytes():
+    """#258: the one plan hash the brief, the record writer and the `pr` gate all share. Raw bytes,
+    never decoded or stripped -- `work._run` strips stdout, so a hash of `git show` output could never
+    match a file hash, and two plans differing only by a trailing newline must not collide."""
+    with tempfile.TemporaryDirectory() as d:
+        with_nl, without_nl = pathlib.Path(d, "a.md"), pathlib.Path(d, "b.md")
+        with_nl.write_bytes(b"# plan\n"); without_nl.write_bytes(b"# plan")
+        rc = _rc()
+        assert rc.plan_sha256(with_nl) == hashlib.sha256(b"# plan\n").hexdigest()
+        assert rc.plan_sha256(without_nl) == hashlib.sha256(b"# plan").hexdigest()
+        assert rc.plan_sha256(with_nl) != rc.plan_sha256(without_nl)
+
+
+def test_plan_review_brief_names_the_plan_file_and_its_sha256():
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        plan = pathlib.Path(base) / "plans" / "0007-blue-button.md"
+        plan.write_bytes(b"# plan\n1. Recolor the button.\n")
+        out = _rc().brief(base, "0007-blue-button.md", "plan-review", repo_root=root)
+        found = re.search(r"^Plan sha256: ([0-9a-f]{64})$", out, re.M)
+        assert found and found.group(1) == hashlib.sha256(plan.read_bytes()).hexdigest()
+        assert ("Plan file: " + plan.as_posix()) in out.splitlines()
+
+
+def test_plan_review_brief_without_a_plan_has_no_plan_identity():
+    """A PIN of today's behaviour, not a red-first test: it passes before #258 and no single edit of
+    the new code makes it fail, since a plan that does not exist cannot be hashed."""
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        out = _rc().brief(base, "0007-blue-button.md", "plan-review", repo_root=root)
+        assert "Plan sha256:" not in out
+
+
+def test_code_review_brief_does_not_carry_the_plan_identity():
+    """Passes before #258 too; its control is C11(ii) (the phase check widened to every phase)."""
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        (pathlib.Path(base) / "plans" / "0007-blue-button.md").write_text("# plan\n", encoding="utf-8")
+        out = _rc().brief(base, "0007-blue-button.md", "code-review", repo_root=root)
+        assert "Plan sha256:" not in out
+
+
+def test_plan_review_brief_falls_back_to_the_branch_copy_without_naming_the_worktree():
+    """#258 B1: the main checkout has no plan and the goal's worktree carries it committed. The brief
+    hashes the branch copy and points at it with the runnable `git show` shape `_branch_doc` already
+    hands a reviewer -- never the worktree path, which `reviewer.py check --scratch` refuses."""
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _goal_branch_repo(d)
+        wt = pathlib.Path(root) / ".sdlc" / "work" / "0007-blue-button"
+        _git(root, "worktree", "add", "-q", str(wt), "sdlc/0007-blue-button")
+        record = pathlib.Path(base) / "state" / "work" / "0007-blue-button.json"
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({"worktree": str(wt), "branch": "sdlc/0007-blue-button",
+                                      "base": "main", "remote": "origin", "pr": ""}))
+        rc = _rc()
+        out = rc.brief(base, "0007-blue-button.md", "plan-review", repo_root=root)
+        sha = hashlib.sha256((wt / ".sdlc" / "plans" / "0007-blue-button.md").read_bytes()).hexdigest()
+        assert ("Plan sha256: " + sha) in out.splitlines()
+        assert ("Plan file: git -C %s show sdlc/0007-blue-button:.sdlc/plans/0007-blue-button.md"
+                % pathlib.Path(base).resolve().parent) in out.splitlines()
+        identity = out.split("## The plan under review, by content", 1)[1].split("\n\n## ", 1)[0]
+        assert ".sdlc/work/" not in identity
+        assert rc._load("reviewer")._check_brief_text(out, [str(wt), str(wt.resolve())]) == (True, [])
 
 
 # --- intent grounding: a github-mode goal is a NUMBER; the brief must carry its body, not a pointer ---

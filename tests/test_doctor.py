@@ -806,6 +806,26 @@ def test_features_dashboard_reports_states(tmp_path):
     assert rows["team ledger"].startswith("off")           # an absent block reads as off
 
 
+def test_features_reports_the_plan_review_gate(tmp_path):
+    """#258: the dashboard answers "is the plan-review gate on here?" the way `work.py pr` would --
+    including the ON-but-not-enforced case, where `work.enabled` is off and `pr` never runs."""
+    import json, importlib.util, pathlib as _pl
+    spec = importlib.util.spec_from_file_location(
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+    d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+    key = "plan-review gate (PR push needs an approving review of the exact plan)"
+
+    def state(config, name):
+        base = tmp_path / name / ".sdlc"; base.mkdir(parents=True)
+        base.joinpath("config.json").write_text(json.dumps(config))
+        return {row: value for row, value, _ in d.features(str(base))}[key]
+
+    on = {"work": {"enabled": True}, "gates": {"plan_review": {"enabled": True}}}
+    assert state(on, "on").startswith("ON"), state(on, "on")
+    assert "NOT ENFORCED" in state({**on, "work": {"enabled": False}}, "work-off")
+    assert state({}, "absent") == "off"
+
+
 def test_features_flags_a_legacy_env_var_name_under_any_env_key(tmp_path):
     """#2729 (D24/D25, plan D-p): one informational row names a `*_env` config value that still
     carries the retired brand's env-var prefix, at any nesting, by dotted key path -- and reads
