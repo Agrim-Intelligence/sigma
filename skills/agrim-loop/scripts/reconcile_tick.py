@@ -62,7 +62,9 @@ def tick(sdlc_dir, config=None, run=None, now=None):
     # #232: the second, UNGATED duty of this tick -- close goals `record review` left waiting whose
     # PR has since merged. Not behind `discovery.reconcile.mode` (default off): done-means-merged is
     # the shipped behaviour, so its close must not depend on an opt-in. Bounded and throttled inside
-    # `_reconcile_awaiting_merges` itself; zero `gh` calls when nothing is awaiting.
+    # `_reconcile_awaiting_merges` itself; zero `gh` calls when nothing is awaiting. #255: it holds a
+    # kernel lock (a racing `next` skips rather than recording `done` twice) and stops starting goals
+    # after half of SIGMA_WATCH_CALL_TIMEOUT, the bound this very call is killed by.
     merged = loop._reconcile_awaiting_merges(sdlc_dir, config, run=run, now=now)
     parts = []
     if swept:

@@ -4,6 +4,28 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Done-means-merged hardening** (#255, the review findings on #232). (1) The documented cost is
+  now true. A merge-reconcile pass that closed a goal used to read its PR twice over REST and then
+  make three `gh pr view` (GraphQL) calls in the checkout release, while the docs said "at most 10
+  REST reads per pass, never GraphQL". It now makes one REST `pulls/<n>` read per goal and no
+  GraphQL read: the close and the release reuse that read. Closing a goal adds one REST read only
+  when the ledger or journal is on. The issue writes `source.complete()` makes are separate and not
+  counted in that figure. (2) The pass holds a kernel lock (`state/merge-reconcile.lock`, `flock` or
+  `msvcrt`), so a `next` and the watch tick can no longer both record `done`. A second pass skips
+  and names the holder pid, and a host with no lock refuses loudly. (3) `record` clears the awaiting
+  flag right after its terminal ledger entry, before the slow tail, so a pass killed by the tick
+  timeout never records `done` again. The pass also stops starting goals after half of
+  `SIGMA_WATCH_CALL_TIMEOUT`. (4) LIVENESS: `/agrim-doctor` has a `goals awaiting merge` row, not OK
+  past 3 days of waiting or a day without a PR read. `/agrim-status` adds an `awaiting merge: N
+  (oldest … for 3d 04h, last PR read …)` segment. `log.py` keeps a `review` goal in flight
+  (`awaiting merge for 3d 04h`) where it used to count it as closed. (5) `record parked` or `record
+  failed` on a goal awaiting merge clears the flag, so a later merge no longer records `done` over
+  the decision. (6) `work.py finish` refuses a goal awaiting merge, armed PR included, where it used
+  to delete the only record of the PR. (7) A failed close is retried quietly, and only the 3rd
+  consecutive failure parks the goal, once. (8) The end-to-end repick check now drops the
+  `sdlc:in-progress` label first, so it tests the local skip. (9) `run_loop` reports `review`
+  apart from `parked`. Tests: `tests/test_merge_reconcile.py`, `tests/test_public_bootstrap_control.py`.
+
 - **Board mirroring survives a repo rename, the docs now say what the old `setup_created` marker
   does, and a Phase-field race recovers** (#308, follow-ups from the #233 review). (1) Since #233 the
   status path skipped board cards whose `content.repository` differs from `discovery.github.repo`.

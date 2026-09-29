@@ -938,7 +938,14 @@ def _run_sequence(world, run_probe):
     obs["remote_has_feature_before_merge"] = _remote_show(world, "main:feature.txt").returncode == 0
     obs["worktree_exists_before_merge"] = worktree.exists()
 
-    # A goal awaiting merge is not pickable: `next` must not serve goal 1 again.
+    # A goal awaiting merge is not pickable: `next` must not serve goal 1 again. #255 (8): the
+    # claim's `sdlc:in-progress` overlay alone already hides the issue from `_fetch_pending`, so
+    # with it in place this asserted nothing about the LOCAL skip (`_awaiting_merge_skip`). Drop
+    # the overlay first -- a label lost in between is exactly the case the local skip exists for
+    # -- so only the work record's `awaiting_merge` flag can keep goal 1 from being served again.
+    _fakegh(world, ["issue", "edit", "1", "--repo", world["repo"],
+                    "--remove-label", "sdlc:in-progress"], cwd=clone_dir)
+    obs["issue1_labels_before_repick"] = _issue_labels(world, "1")
     repick = _cli([LOOP, "next", sdlc, "--session-pid", pid], clone_dir, env)
     obs["repick_stdout"] = repick.stdout.strip()
 
@@ -1036,6 +1043,8 @@ def test_a_goal_goes_from_filed_to_merged_on_the_public_profile(primary_world):
     assert "sdlc:goal" in obs["issue1_labels_awaiting_merge"]
     # The claim's overlay stays (the goal is still in flight); `next` does not serve goal 1 again.
     assert "sdlc:in-progress" in obs["issue1_labels_awaiting_merge"]
+    assert "sdlc:in-progress" not in obs["issue1_labels_before_repick"]
+    assert "sdlc:goal" in obs["issue1_labels_before_repick"]
     assert obs["repick_stdout"] != "1", obs["repick_stdout"]
     assert obs["pr_state_before_merge"] == "OPEN"
     assert obs["remote_has_feature_before_merge"] is False

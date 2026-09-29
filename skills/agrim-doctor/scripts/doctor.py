@@ -917,6 +917,43 @@ def _load_loop_script(name):
     return m
 
 
+def _awaiting_merge_row(sdlc_dir, now=None):
+    """#255 LIVENESS: one row for every goal awaiting a merge. A goal that waits reports no error,
+    ever -- an armed auto-merge whose required check failed never lands, a PR that can no longer be
+    read stays `unknown`, and a machine where nothing runs `next` or the watcher never reads it --
+    so AGE is what this row reads: not OK once the oldest wait passes `work.MERGE_STUCK_SECONDS`
+    (the PR is not landing) or no pass has read a waiting PR for `work.MERGE_UNREAD_SECONDS` (the
+    pass is dead, not idle). The numbers come from `work.awaiting_merge_report`, the one source of
+    both verdicts; this only words them. Never raises."""
+    try:
+        work = _load_loop_script("work")
+        rows = work.awaiting_merge_report(sdlc_dir, now=now)
+        line = work.awaiting_merge_line(sdlc_dir, now=now)
+    except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
+        return _chk(f"goals awaiting merge: could not check ({type(exc).__name__})", True, "")
+    if not rows:
+        return _chk("goals awaiting merge: none", True, "")
+    stuck = [r for r in rows if r["stuck"]]
+    unwatched = [r for r in rows if r["unwatched"]]
+    if not stuck and not unwatched:
+        return _chk(f"goals {line}", True, "")
+    parts = []
+    if stuck:
+        parts.append(f"{len(stuck)} waiting over {work._age(work.MERGE_STUCK_SECONDS)}")
+    if unwatched:
+        oldest = max(unwatched, key=lambda r: r["unread"] if r["unread"] is not None else r["waited"])
+        gap = oldest["unread"] if oldest["unread"] is not None else oldest["waited"]
+        parts.append(f"no PR read for {work._age(gap)}")
+    prs = ", ".join(f"PR #{r['pr']}" for r in (stuck or unwatched)[:5])
+    fix = (f"merge or close {prs} (an armed auto-merge whose required check failed never lands; a "
+           "closed PR parks the goal), then run `python3 skills/agrim-loop/scripts/loop.py "
+           "reconcile-merges .sdlc`")
+    if unwatched:
+        fix += ("; nothing has read a waiting PR recently -- no `loop.py next` and no watcher is "
+                "running the merge-reconcile pass, so start the watcher or run that command")
+    return _chk(f"goals {line} -- {'; '.join(parts)}", False, fix)
+
+
 def _load_log_script(name):
     """`_load_loop_script`'s sibling, pointed at the `agrim-log` skill instead of `agrim-loop`
     (skills/agrim-doctor/scripts/doctor.py -> skills/agrim-log/scripts/<name>.py) — issue #1779 is
@@ -2387,6 +2424,11 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         "verify.command has a RELATIVE .venv/venv/node_modules path — but work.enabled "
                         "runs it in a fresh worktree with NONE of your installed deps (fails exit=127). "
                         "Use an absolute interpreter path, a venv activated on PATH, or a wrapper script."))
+
+    # #255 LIVENESS: goals `record review` left awaiting a merge. Local reads only (the work
+    # records), so it is not gated by `cheap_only`; silent (no row) when work is off.
+    if _block(cfg, "work").get("enabled") is True:
+        out.append(_awaiting_merge_row(sdlc_dir))
 
     # #1555: BEFORE the loop ever commits. `work.commit()` stages with `git add -A`, which honours
     # .gitignore and nothing else, so "is this repo's `.env` ignored?" decides whether an unattended

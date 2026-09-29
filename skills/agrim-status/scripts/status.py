@@ -361,6 +361,20 @@ def _coexist_warning(sdlc_dir):
         return None
 
 
+def _awaiting_merge_segment(sdlc_dir, now=None):
+    """#255 LIVENESS: `awaiting merge: N (oldest <goal> PR #n for 3d 04h, last PR read 2m ago)` --
+    goals whose PR is open and not merged yet, with the age that tells a stuck wait from a fresh
+    one. "" when nothing waits (the line stays as it was). Local reads only; fail-open."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "work", _HERE.parent.parent / "agrim-loop" / "scripts" / "work.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.awaiting_merge_line(sdlc_dir, now=now)
+    except Exception:
+        return ""
+
+
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
@@ -381,6 +395,9 @@ def main(argv):
         line += f" | repo audit due ({s['goals_since_audit']} goals since the last): /agrim-audit"
     if s.get("merge_queue_advice"):             # #976: silent unless the #408 shape is actually present
         line += f" | {s['merge_queue_advice']}"
+    awaiting = _awaiting_merge_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if awaiting:                                # #255: silent unless a goal is awaiting a merge
+        line += f" | {awaiting}"
     print(line)
     return 0
 

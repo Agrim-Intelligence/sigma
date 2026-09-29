@@ -3134,6 +3134,13 @@ def protection(sdlc_dir, config, goal, run=None):
 #: waiting on a human merge; the price of a larger backlog is close LATENCY, never more calls.
 MERGE_RECONCILE_MAX_PER_PASS = 10
 MERGE_RECHECK_SECONDS = 120
+#: #255 LIVENESS: how long a goal may wait on a merge before doctor calls it STUCK (an armed PR whose
+#: required check failed never lands, and nothing else would ever say so), and how old the newest
+#: PR read may be before doctor calls the PASS dead (no `next`, no watcher, nothing reading it). A
+#: policy age, not a resource limit: three days covers a weekend without a false alarm, and a day
+#: without a single read is ~720 missed re-check intervals (MERGE_RECHECK_SECONDS).
+MERGE_STUCK_SECONDS = 3 * 86400
+MERGE_UNREAD_SECONDS = 86400
 
 MERGED, OPEN_PR, CLOSED_PR, UNKNOWN = "merged", "open", "closed", "unknown"
 
@@ -3167,7 +3174,7 @@ def pr_landing_state(sdlc_dir, rec, run=None):
     return UNKNOWN, f"unrecognised PR state {data.get('state')!r}"
 
 
-def done_refusal(sdlc_dir, config, goal, run=None):
+def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
     """None iff `done` may be recorded for `goal`, else the reason to refuse -- #232: DONE MEANS
     MERGED. Called from loop.py's `record` dispatch before `_record()` runs, and by the
     merge-reconcile pass before it records the `done` a later merge earns.
@@ -3188,7 +3195,11 @@ def done_refusal(sdlc_dir, config, goal, run=None):
 
     MERGED replays the per-sink merge-delivery receipt, exactly as before: a direct merge, a later
     `record done`, and the reconcile pass all converge on the same ownership/merge-SHA-derived keys,
-    so a crash between the two sinks is retried rather than lost."""
+    so a crash between the two sinks is retried rather than lost.
+
+    `landing` (#255): a `(state, detail)` pair the caller JUST read with `pr_landing_state` for this
+    same record -- the merge-reconcile pass -- so the PR is not read a second time for one close.
+    Every other caller omits it and gets the read."""
     if not enabled(config):
         return None
     run = run or _run
@@ -3196,7 +3207,7 @@ def done_refusal(sdlc_dir, config, goal, run=None):
     if not rec or not rec.get("pr"):
         return None
     pr = rec["pr"]
-    landing, detail = pr_landing_state(sdlc_dir, rec, run)
+    landing, detail = landing if landing is not None else pr_landing_state(sdlc_dir, rec, run)
     if landing == MERGED:
         rec_for_receipt = dict(rec, pr=pr)
         _record_confirmed_merge(sdlc_dir, config, goal, rec_for_receipt, run, f"PR #{pr} merged")
@@ -3244,6 +3255,74 @@ def stamp_merge_check(sdlc_dir, goal, now=None):
     if rec and isinstance(rec.get("awaiting_merge"), dict):
         rec["awaiting_merge"]["checked_at"] = int(now if now is not None else time.time())
         _save(sdlc_dir, goal, rec)
+
+
+def note_close_failure(sdlc_dir, goal):
+    """#255: count one more failed close of a MERGED goal's issue on its flag. -> the new count (0
+    when the flag is gone). The reconcile pass retries quietly and parks in public only on the
+    `MERGE_CLOSE_ATTEMPTS`-th consecutive failure, so a transient `gh` error never parks first."""
+    rec = _record(sdlc_dir, goal)
+    flag = rec.get("awaiting_merge") if rec else None
+    if not isinstance(flag, dict):
+        return 0
+    flag["close_failures"] = int(flag.get("close_failures") or 0) + 1
+    _save(sdlc_dir, goal, rec)
+    return flag["close_failures"]
+
+
+def _age(seconds):
+    """`3d 04h`, `5h 02m`, `12m`, `40s` -- the one age format every #255 liveness surface shares."""
+    s = max(0, int(seconds))
+    if s >= 86400:
+        return f"{s // 86400}d {(s % 86400) // 3600:02d}h"
+    if s >= 3600:
+        return f"{s // 3600}h {(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m"
+    return f"{s}s"
+
+
+def awaiting_merge_report(sdlc_dir, now=None):
+    """#255 LIVENESS: one dict per goal awaiting merge, oldest wait first -- `goal`, `pr`, `waited`
+    (seconds since `record review`), `unread` (seconds since the last PR read, or None if never
+    read), `close_failures`, and the two death verdicts: `stuck` (waited past
+    MERGE_STUCK_SECONDS -- the PR is not landing) and `unwatched` (no read for MERGE_UNREAD_SECONDS
+    -- nothing is running the pass). AGE IS THE TELL: a stuck wait reports zero errors forever, so
+    these are read off timestamps, never off an error state. Local directory listing, no `gh`."""
+    wdir = pathlib.Path(sdlc_dir) / "state" / "work"
+    now = int(now if now is not None else time.time())
+    out = []
+    for path in sorted(wdir.glob("*.json")) if wdir.is_dir() else ():
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        flag = rec.get("awaiting_merge") if isinstance(rec, dict) else None
+        if not isinstance(flag, dict):
+            continue
+        since = int(flag.get("since") or 0)
+        checked = int(flag.get("checked_at") or 0)
+        waited = now - since if since else 0
+        unread = now - checked if checked else None
+        out.append({"goal": str(flag.get("goal") or path.stem), "pr": str(flag.get("pr") or rec.get("pr")),
+                    "waited": waited, "unread": unread,
+                    "close_failures": int(flag.get("close_failures") or 0),
+                    "stuck": waited >= MERGE_STUCK_SECONDS,
+                    "unwatched": (unread if unread is not None else waited) >= MERGE_UNREAD_SECONDS})
+    return sorted(out, key=lambda r: -r["waited"])
+
+
+def awaiting_merge_line(sdlc_dir, now=None):
+    """`awaiting merge: 2 (oldest 0001 PR #7 for 3d 04h, last PR read 2m ago)`, or "" when nothing
+    waits -- the status/doctor wording, built once."""
+    rows = awaiting_merge_report(sdlc_dir, now=now)
+    if not rows:
+        return ""
+    top = rows[0]
+    read = ("never read" if top["unread"] is None else f"last PR read {_age(top['unread'])} ago")
+    extra = f", {top['close_failures']} failed close(s)" if top["close_failures"] else ""
+    return (f"awaiting merge: {len(rows)} (oldest {stem(top['goal'])} PR #{top['pr']} for "
+            f"{_age(top['waited'])}, {read}{extra})")
 
 
 def awaiting_merge_goals(sdlc_dir, now=None, min_interval=0):
@@ -5487,7 +5566,7 @@ def _pr_merged(sdlc_dir, rec, run):
     return isinstance(data, dict) and data.get("state") == "MERGED"
 
 
-def finish(sdlc_dir, config, goal, run=None, force=False):
+def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     """Drop the worktree once the goal is done. Not optional housekeeping: one leaked checkout per
     goal is a slow disk leak that also makes `git worktree list` unreadable. Refuses when the tree
     still holds work, so a PARKED goal keeps everything the human needs to pick it up.
@@ -5518,14 +5597,25 @@ def finish(sdlc_dir, config, goal, run=None, force=False):
     if not rec:
         return "nothing to finish"
     pr = rec.get("pr")
-    if pr and not force:
+    # #255 (6): a goal `record review` left awaiting merge keeps its record, armed PR or not. The
+    # armed carve-out in `_open_pr_refusal` below released it, deleting the only place the PR number
+    # lives -- so the merge-reconcile pass could never record its `done`. The pass clears the flag
+    # (inside `_record`) before it releases the checkout, so this never blocks the real release.
+    if pr and not force and isinstance(rec.get("awaiting_merge"), dict):
+        return (f"kept {rec['worktree']}: PR #{pr} is awaiting merge (`record review`) -- the "
+                f"merge-reconcile pass records done and releases this checkout once it merges; "
+                f"finish --force to release anyway")
+    # #255 (1): `merged` is the caller's word that it JUST confirmed this PR merged with a REST read
+    # (`done_refusal` on the `record done` path, the merge-reconcile pass). Both `gh pr view` reads
+    # below are GraphQL and would only re-ask the answer already in hand.
+    if pr and not force and not merged:
         refusal = _open_pr_refusal(sdlc_dir, rec, pr, run)
         if refusal:
             return refusal
-    merged_before_cleanup = bool(not force and pr and _pr_merged(sdlc_dir, rec, run))
+    merged_before_cleanup = bool(not force and pr and (merged or _pr_merged(sdlc_dir, rec, run)))
     if merged_before_cleanup:
         observation_required = ledger.enabled(config) or ledger.journal_on(sdlc_dir, config)
-        if observation_required:
+        if observation_required and not (merged and _merge_delivery_complete(sdlc_dir, goal)):
             _record_confirmed_merge(sdlc_dir, config, goal, rec, run, f"PR #{pr} merged")
             if _receipt_sharing_enabled(config):
                 try:
