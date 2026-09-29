@@ -2195,7 +2195,12 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         out.append(_chk("verify command present (enforce is on)",
                         bool(verify.get("command")) or _any_goal_verify_command(base),
                         "verify.enforce is on but no verify.command (and no goal sets verify_command) — "
-                        "every `done` is refused. Set verify.command, or turn enforce off."))
+                        "every `done` is refused. Fix: " + _python_command() + " <sigma>/skills/"
+                        "agrim-init/scripts/verify_detect.py detect . lists candidates, then "
+                        "`... confirm .sdlc <n> <id>` sets candidate n if it still has that id (it "
+                        "re-reads the repo and refuses if it changed; nothing "
+                        "pasted reaches a shell), or put your command in verify.command; or "
+                        "`... decline .sdlc` to turn enforce off."))
 
     # A backlog cross-check whose park_threshold sits BELOW its candidate threshold parks EVERYTHING it
     # finds — the opposite of "confident hits only". Flag it (only when the feature is actually on).
@@ -2548,6 +2553,16 @@ def _count_jsonl_lines(directory):
     return total
 
 
+def _python_command():
+    """`python3`, else `python`, else the Windows `py` launcher -- whichever is on PATH (a lookup,
+    not an execution), so the printed fix runs on an install without `python3` (#228)."""
+    import shutil
+    for name in ("python3", "python", "py"):
+        if shutil.which(name):
+            return name
+    return "python3"
+
+
 def _any_goal_verify_command(base):
     """True if any local goal declares its own `verify_command` in frontmatter — that satisfies
     verify.enforce even when the config command is empty, so it isn't the refusal trap."""
@@ -2556,7 +2571,10 @@ def _any_goal_verify_command(base):
         return False
     for path in goals.glob("*.md"):
         try:
-            if "verify_command:" in path.read_text(encoding="utf-8", errors="replace"):
+            # #228: a NON-EMPTY value -- `verify_command: ""` declares nothing, and loop.py's
+            # verify reads it as absent (NO-COMMAND), so it must not satisfy this row either.
+            if re.search(r'^verify_command:[ \t]*(?!["\']?[ \t]*["\']?[ \t]*$)\S',
+                         path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE):
                 return True
         except OSError:
             continue

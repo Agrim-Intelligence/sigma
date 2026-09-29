@@ -6555,3 +6555,26 @@ def test_a_garbage_refresh_record_reads_as_none_recorded():
         (pathlib.Path(base) / "state" / "kg-refresh.json").write_text("{not json")
         row = _by_name(d.check(base, run=_runner(builder="graphify 1.0")))["knowledge graph auto-refresh is working"]
         assert "none recorded" in row["fix"]
+
+
+def test_verify_trap_fix_names_the_one_line_gesture():
+    """#228: the fix is a command the user can paste, not only advice."""
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _sdlc(t, {"verify": {"enforce": True, "command": ""}})
+        fix = _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]["fix"]
+        assert "confirm .sdlc <n> <id>" in fix and "decline .sdlc" in fix
+
+
+def test_an_empty_goal_verify_command_does_not_satisfy_the_verify_trap_row():
+    """#228: `verify_command: ""` declares nothing -- loop.py verify reads it as NO-COMMAND -- so it
+    must not turn this row green while every `done` is still refused."""
+    d = _doc()
+    for empty in ('verify_command: ""', "verify_command:", "verify_command:   ", "verify_command: ''"):
+        with tempfile.TemporaryDirectory() as t:
+            base = _sdlc(t, {"verify": {"enforce": True, "command": ""}})
+            (pathlib.Path(base) / "goals").mkdir()
+            (pathlib.Path(base) / "goals" / "0001.md").write_text(
+                f"---\nstatus: pending\n{empty}\n---\nx\n")
+            row = _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]
+            assert row["ok"] is False, empty

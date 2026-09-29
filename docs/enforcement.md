@@ -12,10 +12,12 @@ hook*: a `hooks/hooks.json` hook denies the action; Cursor and Codex have no hoo
 nowhere else. *advice*: the skills ask the agent to do it and no code checks that it did.
 
 **Default (scaffolded)** is the value `/agrim-init` writes from `config.json.tmpl`, read from
-that template at generation time. `work.enabled` and `verify.enforce` ship `true` directly
-as of #2741 (1.0.0) -- so on a bare `/agrim-init` every `work.py` row below reads `on`
-unless its own second key says otherwise. `/agrim-setup` still writes `ledger.enabled: true`
-where it is `null` (unchanged, still off by default).
+that template at generation time. `work.enabled` ships `true` directly as of #2741 (1.0.0)
+-- so on a bare `/agrim-init` every `work.py` row below reads `on` unless its own second key
+says otherwise. `verify.enforce` ships `false` (#228): the template cannot know a command, and
+enforce on with an empty one refuses every `done`. `/agrim-init` turns it on once a verify
+command is confirmed (`verify_detect.py confirm`). `/agrim-setup` still writes
+`ledger.enabled: true` where it is `null` (unchanged, still off by default).
 
 **Hosts** names where the mechanism holds *by construction* -- a Python gate runs wherever
 the kit runs; a hook exists only on Claude Code -- not where it has been run end to end. The
@@ -42,7 +44,7 @@ Cursor adapter is not verified in a live session; Codex has partial live validat
 | Review-to-fix cycle cap | Python gate | `work.py` `post_review`: parks the goal once its review-to-fix cycles reach `work.max_review_cycles` (a value below 1 falls back to 3), so a review loop cannot run away | on — `work.enabled: true` (`work.max_review_cycles: 3`) | Claude Code, Cursor, Codex |
 | Secret-shaped filename refused at commit | Python gate | `work.py` `_secret_refusal`: refuses `work.py commit` when a staged path has a secret-shaped basename (`.env`, `*.pem`, `id_rsa`, `credentials.json`, ...); a basename denylist only, no content scan; `work.allow_secret_paths` lists exact repo-relative exceptions | on — `work.enabled: true` (`work.allow_secret_paths: []`) | Claude Code, Cursor, Codex |
 | Stale worktree resume refused | Python gate | `work.py` `_stale_resume_refusal`: refuses to resume an existing worktree that is stale against its base, first moving the goal out of the claimed state so the refusal leaves nothing to un-park | on — `work.enabled: true` (`work.rebase_upkeep: "on"`) | Claude Code, Cursor, Codex |
-| Verify evidence before `record done` | Python gate | `state.py` `done_refusal`: `loop.py record done` exits 4 (REFUSED) without this run's passing verify evidence; the command run is the local goal's `verify_command` frontmatter, else the repo-wide `verify.command` (GitHub-mode goals always use the latter) | on — `verify.enforce: true` | Claude Code, Cursor, Codex |
+| Verify evidence before `record done` | Python gate | `state.py` `done_refusal`: `loop.py record done` exits 4 (REFUSED) without this run's passing verify evidence; the command run is the local goal's `verify_command` frontmatter, else the repo-wide `verify.command` (GitHub-mode goals always use the latter) | off — `verify.enforce: false` | Claude Code, Cursor, Codex |
 | Verify evidence before a merge | Python gate | `work.py` `merge`: refuses the merge (PARK) without this run's passing `loop.py verify` evidence, whether or not `verify.enforce` is set; the command run is the local goal's `verify_command` frontmatter, else the repo-wide `verify.command` (GitHub-mode goals always use the latter) | on — `work.enabled: true` | Claude Code, Cursor, Codex |
 | Branch protection (required checks / reviews) | git host | GitHub refuses the merge; `work.auto_merge: "protected"` merges only where the base requires them | your repository's own settings; Sigma never configures them | Claude Code, Cursor, Codex |
 | Quality-drift eval corpus | git host | `evals/run.py` fails the CI job; blocks a merge only where branch protection requires the check | Sigma's own public CI on push/PR; nothing installs it into your repository | Claude Code, Cursor, Codex |

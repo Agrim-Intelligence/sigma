@@ -3235,7 +3235,8 @@ def _config_warnings(config):
     verify = config.get("verify") or {}
     if _enforce_enabled(verify) and not verify.get("command"):
         out.append("verify.enforce is on but verify.command is empty — EVERY `done` will be refused. "
-                   "Set verify.command (or a per-goal verify_command), or turn enforce off.")
+                   "Set verify.command (or a per-goal verify_command) — "
+                   + _VERIFY_SET_HINT + ".")
     out.extend(_autowatch_setup_warnings(config))
     return out
 
@@ -4636,6 +4637,42 @@ def _verified_tree(sdlc_dir, goal, config=None):
     return (root, head, fell_back)
 
 
+def _python_command():
+    """`python3`, else `python`, else the Windows `py` launcher -- whichever is on PATH (a lookup,
+    not an execution), so a printed gesture runs on an install without `python3` (#228)."""
+    import shutil
+    for name in ("python3", "python", "py"):
+        if shutil.which(name):
+            return name
+    return "python3"
+
+
+#: The one gesture every "no verify command" message names (#228), so the loop, /agrim-init and
+#: /agrim-doctor all point at the same fix. `confirm .sdlc <n> <id>` re-derives candidate n from the
+#: repo itself: no repository text is ever pasted into a shell.
+_VERIFY_SET_HINT = (f"set one: {_python_command()} <sigma>/skills/agrim-init/scripts/verify_detect.py "
+                    "detect . lists candidates with ids, `... confirm .sdlc <n> <id>` sets candidate n if its id "
+                    "still matches (enforce ON), "
+                    "or put your command in config verify.command; or `... decline .sdlc` to turn "
+                    "verify.enforce off")
+
+
+def _declared_verify_command(goal, config):
+    """The proving command `verify` would run for this goal, or None: goal frontmatter
+    `verify_command` (local mode, goal given as a `.md` path), else config `verify.command`.
+    Shared by `verify_goal` and the `record done` refusal so the two never disagree (#228)."""
+    cmd = None
+    goal_path = pathlib.Path(str(goal))
+    if goal_path.suffix == ".md" and goal_path.exists():
+        cmd = state.frontmatter.get(goal_path.read_text(), "verify_command")
+        # `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips
+        # only `"`, so `''` would otherwise reach the shell as a command. doctor's trap row reads
+        # it as empty too; the two must agree (#228).
+        if cmd is not None and not cmd.strip().strip("'\"").strip():
+            cmd = None
+    return cmd or (config.get("verify") or {}).get("command") or None
+
+
 def verify_goal(sdlc_dir, goal):
     """Run the goal's proving command and persist MACHINE evidence (agrim-verify's
     prose gate, made checkable). Command source: goal frontmatter `verify_command`
@@ -4653,14 +4690,10 @@ def verify_goal(sdlc_dir, goal):
         print(f"loop.py verify: unsafe goal {goal!r}: {reason}", file=sys.stderr)
         return 2
     config = state.load_config(sdlc_dir)
-    cmd = None
-    goal_path = pathlib.Path(str(goal))
-    if goal_path.suffix == ".md" and goal_path.exists():
-        cmd = state.frontmatter.get(goal_path.read_text(), "verify_command")
-    cmd = cmd or (config.get("verify") or {}).get("command") or None
+    cmd = _declared_verify_command(goal, config)
     if not cmd:
-        print("NO-COMMAND (set goal frontmatter `verify_command` or config `verify.command`)",
-              file=sys.stderr)
+        print("NO-COMMAND (set goal frontmatter `verify_command` or config `verify.command`; "
+              f"{_VERIFY_SET_HINT})", file=sys.stderr)
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS,
                            ok=False, exit=3, absent=True)
         return 3
@@ -5502,6 +5535,13 @@ def _dispatch(argv):
                 print(f"loop.py record: {exc}", file=sys.stderr)
                 return 2
             if refusal:
+                if _declared_verify_command(argv[3], config) is None:
+                    # #228: "run verify first" is the wrong advice when there is nothing to run --
+                    # verify would print NO-COMMAND. Name the real cause and the one-line fix.
+                    print("REFUSED: no verify command declared for this goal (config "
+                          "verify.enforce is on, verify.command is empty, and the goal has no "
+                          f"`verify_command`) — {_VERIFY_SET_HINT}", file=sys.stderr)
+                    return 4
                 print(f"REFUSED: {refusal} — run `loop.py verify {argv[2]} <goal>` first "
                       "(config verify.enforce is on)", file=sys.stderr)
                 return 4

@@ -143,7 +143,7 @@ Inside a Claude Code / Claude Desktop session:
 ```
 /plugin marketplace add <git-url-or-local-path>
 /plugin install sigma
-/agrim-init --demo     # scaffolds a small, safe, runnable demo goal
+/agrim-init --demo     # scaffolds a small, safe, runnable demo goal (and proposes a verify command)
 /agrim-loop            # watch it run Goal → Research → … → Review end-to-end
 ```
 
@@ -221,7 +221,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Hard plan-gate (opt-in)** | With `gates.hard_plan_gate.enabled`, unplanned source is refused at two points. **On every host** (Claude Code, Cursor, Codex): `work.py pr` refuses to PUSH a branch whose goal has no plan under `.sdlc/plans/` — plain Python, and the only enforcement an org lock can rely on. The org-lock lookup behind it is memoised on the goal's work record, so it runs **at most once per goal** however many review cycles `pr` runs through. **On Claude Code additionally**: the `PreToolUse` hook denies the EDIT itself, earlier, when no plan is fresher than `plan_freshness_hours`. Both honour `touch .sdlc/.allow-direct-edits` **only when the key is not org-locked ON** — under an org lock (`.sdlc/managed-settings.json`) the sentinel does not apply at either point and neither refusal offers it — and both skip `.sdlc/`, `docs/` and non-source extensions. Since 1.0.9 a Jupyter notebook counts as source in **both** gates. **With `work.enabled` off** only the hook applies, so the lock is Claude-Code-only there — `/agrim-doctor` and `loop.py record done` say so | `skills/agrim-loop/scripts/work.py`, `hooks/plan_gate.sh` · [enforcement](docs/enforcement.md) |
 | **Stop gate (opt-in)** | On Claude Code, with `gates.stop_gate.enabled`, a session can't END with source changed but no fresh plan — the Stop-time counterpart to the plan-gate, so an interactive session doesn't quietly finish unplanned work | `hooks/completion_gate.sh` · [enforcement](docs/enforcement.md) |
 | **SessionStart brief (opt-in)** | With `session_start.enabled`, injects the SDLC policy + a doctor-lite install self-check at session start, so the conventions are in context before the first prompt | `hooks/session_start.sh` · [enforcement](docs/enforcement.md) |
-| **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On by default since #2741 | `loop.py verify` · [enforcement](docs/enforcement.md) |
+| **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On once `/agrim-init` records a confirmed command (#228); never on with an empty one | `loop.py verify` · [enforcement](docs/enforcement.md) |
 | **Bidirectional report card** | Declare your pipeline's stages once; every stage gets a forward (nothing dropped) + reverse (nothing invented) lane — uninstrumented lanes read ABSENT, never green — with a recurrence delta across runs | `.sdlc/pipeline.json` + `pipeline.py card` |
 | **Model + effort auto-selection (opt-in)** | Per-goal ceiling AND per-step downgrade: mechanical steps run on a cheaper tier/effort (`model_selection: "auto"`, default off) | `predict.py resolve / resolve-step` |
 | **Findings become work** | The card's failing signals become `proposed` goals (proof-of-fix pre-wired); the loop never runs one until you promote it | `pipeline.py propose` |
@@ -295,12 +295,12 @@ What you don't get anywhere else, in one kit:
 
 ## Feature flags at a glance
 
-Defaults below are what `/agrim-init` scaffolds (`config.json.tmpl`). Not everything optional ships off — e.g. `discovery.dependency_gate`, `discovery.auto_unpark`, `review.independent`, `handoff`, `work.rebase_upkeep`, `verify.enforce`, `work.enabled` and `work.require_review: "changes"` ship on (#2741), and so do the iteration, minute and token budgets (`max_codex_raw_tokens` ships `0`, off). `/agrim-setup` still writes `ledger.enabled` as `true` where it is unset. What holds each control, and where: [docs/enforcement.md](docs/enforcement.md). `/agrim-doctor` prints this dashboard live (`doctor.py features`):
+Defaults below are what `/agrim-init` scaffolds (`config.json.tmpl`). Not everything optional ships off — e.g. `discovery.dependency_gate`, `discovery.auto_unpark`, `review.independent`, `handoff`, `work.rebase_upkeep`, `work.enabled` and `work.require_review: "changes"` ship on (#2741; `verify.enforce` ships off and turns on when `/agrim-init` records a confirmed verify command, #228), and so do the iteration, minute and token budgets (`max_codex_raw_tokens` ships `0`, off). `/agrim-setup` still writes `ledger.enabled` as `true` where it is unset. What holds each control, and where: [docs/enforcement.md](docs/enforcement.md). `/agrim-doctor` prints this dashboard live (`doctor.py features`):
 
 | Flag | Default | What it turns on |
 |---|---|---|
 | `model_selection: "auto"` | off | per-goal model ceiling + per-step model/effort downgrade |
-| `verify: {"enforce": true}` | on (#2741) | `record done` refused without fresh machine evidence (`loop.py verify`) |
+| `verify: {"enforce": true}` | off until a command is confirmed (#228; was on with an empty command, which refused every `done`) | `record done` refused without fresh machine evidence (`loop.py verify`) |
 | `gates.hard_plan_gate.enabled` | off | unplanned source refused: the PR push on every host (`work.py pr`, needs `work.enabled`), plus the edit itself on Claude Code (`hooks/plan_gate.sh`, `plan_freshness_hours` window) |
 | `decision_tier: "auto"` | off | classify a `needs_decision`/`irreversible`/`unknown` park's detail text into an L0/L1/L2 escalation tier (`escalate_l0`/`escalate_l1`/`autonomous`, `decision_tier.py`) and surface it in the ledger `park` event, `review-queue.md`, and the park comment — **advisory only**, it never changes what the loop does with the parked goal |
 | `.sdlc/pipeline.json` | absent | the bidirectional report card + `propose` (findings → groomable goals) |

@@ -317,3 +317,17 @@ def test_both_writers_still_work_once_the_repo_has_adopted(tmp_path):
     setup_wizard._write_cache(str(sdlc), needs_wizard=False, now=1000.0)
     assert (sdlc / "state" / "setup-wizard-dismissed.json").exists()
     assert (sdlc / "state" / "setup-wizard-cache.json").exists()
+
+
+def test_verify_trap_is_a_first_run_wizard_step_against_the_real_doctor(tmp_path):
+    """#228: enforce ON + empty command refuses every `done`, and an older /agrim-init shipped it as
+    the default -- a first-run gap, so the wizard raises it. Run against the REAL doctor.check (no
+    fake), so a rename on either side of the name coupling turns this red."""
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps(
+        {"discovery": {"source": "local-goals"}, "verify": {"command": "", "enforce": True}}))
+    status = setup_wizard.wizard_status(str(sdlc), allow_cache=False, dismissed=set())
+    step = [s for s in status["steps"] if s["name"] == "verify command present (enforce is on)"]
+    assert step and step[0]["mode"] == "human_command"
+    assert "verify_detect.py detect ." in step[0]["fix"] and "confirm .sdlc <n> <id>" in step[0]["fix"]

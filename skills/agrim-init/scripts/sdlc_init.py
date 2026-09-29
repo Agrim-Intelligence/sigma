@@ -64,8 +64,50 @@ def scaffold(target_dir):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(tmpl.read_text(encoding="utf-8").replace("{{PROJECT_NAME}}", project_name), encoding="utf-8")
         created.append(str(rel))
+    if "config.json" in created:
+        # #228: the template cannot know a command, so it ships enforce OFF; record WHY here, naming
+        # the detected candidate (if any) and the exact gesture that confirms it. Enforce turns ON
+        # only through a confirmed command -- never ON with an empty one (every `done` refused).
+        vd = _verify_detect()
+        vd.write_verify(sdlc, None, vd.unconfirmed_why(vd.detect(target)))
     _ignore_runtime_dirs(target)
     return created, skipped
+
+
+def _verify_detect():
+    """The sibling verify_detect.py, loaded by path: this module is itself loaded by path from
+    wizard_actions.py, where the scripts dir is not on sys.path."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent / "verify_detect.py"
+    spec = importlib.util.spec_from_file_location("verify_detect", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_report(target_dir):
+    """Lines /agrim-init prints about the verify command, on every host: the detected candidate and
+    the exact gesture (Codex/Cursor have no interactive question, so this IS their prompt), or a
+    loud warning when an existing config holds the permanent-refusal trap."""
+    cfgp = pathlib.Path(target_dir) / ".sdlc" / "config.json"
+    try:
+        verify = json.loads(cfgp.read_text(encoding="utf-8")).get("verify") or {}
+    except (OSError, ValueError, AttributeError):
+        return []
+    vd = _verify_detect()
+    if verify.get("command"):
+        return [f"agrim-init: verify command - `{vd.printable(verify['command'])}` "
+                f"(enforce {'ON' if verify.get('enforce') else 'OFF'})."]
+    enforce = verify.get("enforce")        # read generously, as loop.py's _enforce_enabled does
+    if isinstance(enforce, str):
+        enforce = enforce.strip().lower() not in ("", "false", "0", "no", "off")
+    skipped = []
+    # One coherent message: on the trap, proposal_lines leads with the WARNING and describes
+    # confirm/decline against enforce ON -- it never also claims enforce is OFF.
+    # The gestures name this .sdlc by absolute path (abspath: a symlinked .sdlc is left as named, and
+    # verify_detect refuses it loudly), so a line pasted from any directory reaches it.
+    sdlc = os.path.abspath(os.path.join(str(target_dir), ".sdlc"))
+    return vd.proposal_lines(vd.detect(target_dir, skipped), skipped, trap=bool(enforce), sdlc=sdlc)
 
 
 _DEMO_GOAL = """---
@@ -75,12 +117,16 @@ lane: auto
 done_when: "sigma-demo.md exists with a one-line note"
 auto_ok: true
 status: pending
+verify_command: {python} -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text().strip() else 1)" sigma-demo.md
 ---
 
 A throwaway demo goal so you can watch the SDLC run end to end. Create
 `sigma-demo.md` containing a single line noting that Sigma ran this goal
 through Goal -> Research -> Plan -> Plan-Review -> Implement -> Review. Delete this
 goal file once you've seen it work.
+
+`verify_command` above is this goal's machine-checked done_when: `loop.py verify` runs it (it wins
+over config `verify.command`), and `record done` needs it green whenever `verify.enforce` is on.
 """
 
 
@@ -91,7 +137,9 @@ def scaffold_demo(target_dir):
     if dest.exists():
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(_DEMO_GOAL, encoding="utf-8")
+    # #228: the interpreter name is resolved on THIS machine (python3 / python / py), so the demo's
+    # verify_command runs on a Windows install that has no `python3` on PATH.
+    dest.write_text(_DEMO_GOAL.replace("{python}", _verify_detect().python_command()), encoding="utf-8")
     return True
 
 
@@ -469,6 +517,18 @@ def main(argv):
             print("\nagrim-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
         else:
             print("\nagrim-init: Codex rule already present (kept).")
+    # #246 review 2: the verify report comes LAST, after every step above that writes files
+    # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
+    # prints are detected from the repository exactly as `confirm` will see it. The config's
+    # `_why` is recomputed here for the same reason.
+    if "config.json" in created:
+        vd = _verify_detect()
+        vd.write_verify(pathlib.Path(target) / ".sdlc", None, vd.unconfirmed_why(vd.detect(target)))
+    report = verify_report(target)
+    if report:
+        print()
+        for line in report:
+            print(line)
     return 0
 
 

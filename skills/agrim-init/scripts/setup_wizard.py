@@ -69,7 +69,7 @@ def _doctor_check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_pac
 #: months ago. It also leaked _DEFAULT_MODE's placeholder prose to users, and dismissals could not
 #: stick for a check whose name embeds a counter that changes between sessions.
 #:
-#: The six below are the genuine first-run setup gaps: things a NEW adopter has not done yet, each
+#: The seven below are the genuine first-run setup gaps: things a NEW adopter has not done yet, each
 #: with authored, verified "what breaks if you skip this" text. A future check joins the wizard by
 #: being added here with that text -- deliberately an explicit act, never automatic.
 _MODES = {
@@ -90,6 +90,14 @@ _MODES = {
     "no open issue stranded at board Done": ("guidance_only",
         "A reopened issue's card can get stuck showing Done even though the work isn't. "
         "Cosmetic only -- the issue's real state is unaffected."),
+    # #228: the permanent-refusal trap. A first-run gap, not hygiene: an older /agrim-init shipped
+    # it as the default, and until it is fixed EVERY goal is refused at `done`. human_command, not
+    # auto_fixable: only the user knows which command proves their repo -- the wizard must not
+    # guess one. doctor.py's fix text carries the exact one-line gesture; doctor rechecks.
+    "verify command present (enforce is on)": ("human_command",
+        "Until this is fixed, EVERY goal is refused at `record done`: verify.enforce is on but no "
+        "verify command exists, so `loop.py verify` has nothing to run (NO-COMMAND) and no goal "
+        "can ever finish. Set the command, or turn enforce off -- either unblocks the loop."),
     "graphify installed": ("auto_fixable",
         "Without this, the knowledge graph feature silently does nothing -- Claude won't recall "
         "prior decisions automatically. Every other phase of the SDLC works identically either way."),
@@ -232,7 +240,7 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     checks = _doctor_check(sdlc_dir=sdlc_dir, run=run)
     steps = []
     for c in checks:
-        # `not in _MODES` is the allow-list gate (see `_MODES`): only the six explicitly-authored
+        # `not in _MODES` is the allow-list gate (see `_MODES`): only the seven explicitly-authored
         # FIRST-RUN SETUP checks can ever become a wizard step. Every other failing doctor row --
         # ongoing hygiene, board-state drift, anything added to doctor.py later -- is silently
         # ignored here and left to `/agrim-doctor`, which is where it belongs. This is also what
