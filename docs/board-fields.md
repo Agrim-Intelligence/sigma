@@ -237,11 +237,28 @@ reuses that board even if `--title` names a different one. Removing only the pin
 the old board's title is refused as a duplicate.
 
 From the project root, set `SIGMA_PLUGIN_ROOT` to the installed Sigma plugin directory. Choose
-an unused title in the second command (the example uses `Sigma recovery board`):
+an unused title in the second command (the example uses `Sigma recovery board`). The first command
+writes a temporary sibling and replaces the config only after that write succeeds:
 
 <!-- setup-created-recovery -->
 ```sh
-python3 -c 'import json, pathlib; p = pathlib.Path(".sdlc/config.json"); c = json.loads(p.read_text(encoding="utf-8")); c["discovery"]["github"]["project"].pop("number", None); p.write_text(json.dumps(c, indent=2) + "\n", encoding="utf-8")'
+python3 - <<'PY'
+import json, os, pathlib, tempfile
+
+p = pathlib.Path(".sdlc/config.json")
+c = json.loads(p.read_text(encoding="utf-8"))
+c["discovery"]["github"]["project"].pop("number", None)
+fd, name = tempfile.mkstemp(dir=p.parent, prefix=".config-recovery-", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(c, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(name, p)
+finally:
+    pathlib.Path(name).unlink(missing_ok=True)
+PY
 python3 "$SIGMA_PLUGIN_ROOT/skills/agrim-init/scripts/board_setup.py" create .sdlc --title "Sigma recovery board" --yes
 ```
 
