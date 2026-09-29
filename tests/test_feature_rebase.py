@@ -1605,3 +1605,807 @@ def test_the_occupied_clause_says_how_to_clear_it(tmp_path):
     assert report["outcome"] == m.OCCUPIED
     assert "git worktree remove --force" in report["note"], report["note"]
     assert str(occupied) in report["note"]
+
+
+# ===========================================================================================
+# #144 -- upkeep must REFUSE, before any push, when bringing the feature branch forward would
+# remove paths the branch currently has. The reported shape: the integration branch's tip is a
+# deliberate REVERT of the branch's own commits (the work was moved off `main` onto the branch).
+# Replaying onto that base replays the revert's deletions, and the pass used to report `rebased
+# (0 replayed, 0 conflicted, 0 skipped)` -- the "nothing to do" line -- over a force-push that
+# deleted the branch's content. Every assertion below is on MEASURED shas and trees.
+# ===========================================================================================
+
+
+def _revert_world(tmp_path):
+    """`main` carries the branch's own work (X1), the branch is cut from there and grows one landed
+    goal (F1), then `main` REVERTS X1. Returns `(world, x1_paths)`.
+
+    Explicit branch names throughout, a bare origin, and nothing but `git` -- no shell -- so the
+    fixture runs the same on Linux, macOS and Windows."""
+    world = World(tmp_path).build(feature_commits=None)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    x1 = ["pay/ledger.txt", "pay/refunds.txt", "pay/deep/nested.txt"]
+    for name in x1:
+        _write(world.local / name, "work for %s\n" % name)
+    _git(world.local, "add", *x1)
+    _git(world.local, "commit", "-q", "-m", "feat: payments module (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _write(world.local / "pay" / "later.txt", "a later goal\n")
+    _git(world.local, "add", "pay/later.txt")
+    _git(world.local, "commit", "-q", "-m", "feat: a later payments goal (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")          # main's tip reverts X1
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    return world, x1
+
+
+def _tree_paths(world, sha):
+    return set(_git(world.local, "ls-tree", "-r", "--name-only", sha).splitlines())
+
+
+def test_144_control_a_base_holding_a_revert_of_the_branch_is_refused_before_any_push(tmp_path):
+    """THE CONTROL, on the documented standalone gesture: `feature_rebase.py upkeep <sdlc_dir>
+    <unit> [goal]` (the same `upkeep()` `work.start()` calls on every pick). Seen RED against the
+    unpatched module first: it force-pushed and dropped all three X1 paths."""
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    filed = _filer(m)
+    remote_before = world.tip(FEATURE)
+    local_before = _git(world.local, "rev-parse", "refs/heads/" + FEATURE)
+    assert set(x1) <= _tree_paths(world, remote_before)          # the branch HAS the work
+    code = m.main(["feature_rebase.py", "upkeep", str(world.sdlc), UNIT, "7"])
+    # the remote ref and the branch tip are byte-identical: nothing was pushed
+    assert world.tip(FEATURE) == remote_before, "upkeep force-pushed a net-destructive replay"
+    assert _git(world.local, "rev-parse", "refs/heads/" + FEATURE) == local_before
+    assert set(x1) <= _tree_paths(world, world.tip(FEATURE))
+    # and it said so, loudly, as a blocked pass rather than a clean one
+    assert code != 0
+    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["outcome"] != m.REBASED and m.WOULD_DROP in m.IN_CLAUSE
+    assert sorted(report["dropped"]) == sorted(x1), report["dropped"]
+    assert report["dropped_count"] == 3
+    assert "NOT" in report["note"] and "pay/ledger.txt" in report["note"], report["note"]
+    assert world.dirt()["worktrees"] == [str(world.local)]         # the throwaway tree is gone
+    assert world.tip(FEATURE) == remote_before
+    assert filed and FEATURE in filed[0]["title"], filed
+
+
+def test_144_the_start_line_carries_the_refusal(tmp_path):
+    """`work.start()`'s upkeep clause -- the one line a person reads on a pick -- names the block."""
+    m = _mod()
+    world, _x1 = _revert_world(tmp_path)
+    _filer(m)
+    work = _load("work")
+    work._FEATURE_REBASE = m
+    before = world.tip(FEATURE)
+    line = work._rebase_upkeep(str(world.sdlc), _cfg(), "7", UNIT, m._run, world.local, "origin")
+    assert "upkeep:" in line and "NOT" in line and "would remove or roll back 3" in line, line
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_fixture_is_destructive_without_the_guard(tmp_path):
+    """Sensitivity of the control, kept in the suite: with the comparison disabled, the SAME
+    scenario force-pushes and the branch loses all three paths. If this ever stops holding, the
+    control above has stopped being able to fail and proves nothing."""
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    _filer(m)
+    m.dropped_paths = lambda *a, **k: []
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED
+    assert world.tip(FEATURE) != before
+    assert not (set(x1) & _tree_paths(world, world.tip(FEATURE))), "the fixture lost no content"
+
+
+def test_144_a_branch_that_deleted_a_file_itself_is_brought_forward(tmp_path):
+    """No false positive on the branch's OWN deletions: a path absent from the tip is never a
+    finding, whatever the base does."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=None)
+    _write(world.local / "old.txt", "old\n")
+    _git(world.local, "add", "old.txt")
+    _git(world.local, "commit", "-q", "-m", "seed old")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _git(world.local, "rm", "-q", "old.txt")
+    _git(world.local, "commit", "-q", "-m", "chore: drop old (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    world.move_integration()
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert report["dropped"] == [] and report["dropped_count"] == 0
+    assert "old.txt" not in _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_a_base_that_renamed_a_file_the_branch_carries_is_brought_forward(tmp_path):
+    """Renames are the base's refactor arriving, not content lost -- excused by `-M`."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "mv", "seed.txt", "renamed-seed.txt")
+    _git(world.local, "commit", "-q", "-m", "refactor: rename seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert "renamed-seed.txt" in _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_a_base_that_deleted_a_file_the_branch_still_carries_is_refused_too(tmp_path):
+    """THE DOCUMENTED TRADE-OFF, pinned so it is a decision rather than an accident: a plain
+    upstream deletion of a file the branch carries unchanged is, as a tree, identical to the revert
+    case, so it is refused the same way. It costs an upkeep pass and a human decision, never data."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "rm", "-q", "seed.txt")
+    _git(world.local, "commit", "-q", "-m", "chore: drop seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_refusal_persists_for_the_doctor_and_a_clean_pass_clears_it(tmp_path):
+    m = _mod()
+    world, x1 = _revert_world(tmp_path)
+    _filer(m)
+    marker = m.blocked_path(str(world.sdlc), UNIT)
+    assert _upkeep(m, world)["outcome"] == m.WOULD_DROP
+    got = json.loads(marker.read_text(encoding="utf-8"))
+    assert got["branch"] == FEATURE and got["dropped_count"] == 3 and got["outcome"] == m.WOULD_DROP
+    # a human resolves it: the branch takes the base and re-applies the reverted work
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "merge", "-q", "--no-edit", "origin/" + INTEGRATION)
+    revert = _git(world.local, "rev-parse", "origin/" + INTEGRATION)
+    _git(world.local, "revert", "--no-edit", revert)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.CURRENT, report
+    assert not marker.exists()
+    assert set(x1) <= _tree_paths(world, world.tip(FEATURE))
+
+
+def test_144_the_listing_is_capped_and_the_count_is_exact(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", FEATURE)
+    names = ["bulk/f%02d.txt" % i for i in range(m.DROPPED_LISTED + 7)]
+    for name in names:
+        _write(world.local / name, name + "\n")
+    _git(world.local, "add", *names)
+    _git(world.local, "commit", "-q", "-m", "feat: bulk (#12)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    # the base picks the bulk commit up and reverts it -- the reported shape at a larger size
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "cherry-pick", "origin/" + FEATURE)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped_count"] == len(names)
+    assert len(report["dropped"]) == m.DROPPED_LISTED
+    assert "and %d more" % (len(names) - m.DROPPED_IN_CLAUSE) in report["note"], report["note"]
+
+
+def test_144_a_comparison_that_cannot_be_made_pushes_nothing(tmp_path):
+    """Unmeasured is never "nothing dropped": the guard fails CLOSED."""
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    real = m._git_read
+
+    def no_diff(cwd, args):
+        if args[:1] == ["diff"]:
+            raise RuntimeError("diff unavailable")
+        return real(cwd, args)
+
+    m._git_read = no_diff
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def _doctor():
+    spec = importlib.util.spec_from_file_location(
+        "doctor", ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+    d = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(d)
+    return d
+
+
+def test_144_the_doctor_shows_a_blocked_upkeep_and_stops_showing_it_once_cleared(tmp_path):
+    """LIVENESS: a refusal repeated on every pick must also be visible between picks, where a person
+    runs `/agrim-doctor` -- both on the capability dashboard and as a failing setup check."""
+    m = _mod()
+    d = _doctor()
+    world, _x1 = _revert_world(tmp_path)
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    _filer(m)
+    row = "feature-branch rebase upkeep (#144 refuses a replay that would delete content)"
+    healthy = {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    assert "BLOCKED" not in healthy and healthy.startswith("ON")
+    assert _upkeep(m, world)["outcome"] == m.WOULD_DROP
+    blocked = {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    assert "BLOCKED" in blocked and FEATURE in blocked and "3 tracked path" in blocked, blocked
+    checks = [c for c in d.check(str(world.sdlc), run=lambda *a, **k: "", cheap_only=True)
+              if FEATURE in c["name"]]
+    assert len(checks) == 1 and checks[0]["ok"] is False, checks
+    m.blocked_path(str(world.sdlc), UNIT).unlink()
+    assert "BLOCKED" not in {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+
+
+def test_144_doctor_blocked_suffix_matches_feature_rebase():
+    """The doctor duplicates the marker suffix rather than importing across skills; this is the
+    sync mechanism."""
+    assert _doctor()._REBASE_BLOCKED_SUFFIX == _mod().BLOCKED_SUFFIX
+
+
+# ===========================================================================================
+# #144 review block #1 -- two silent data-loss shapes the path-only guard let through, found by an
+# independent reviewer and ported here from their repro. Neither removes a PATH net of renames:
+#  (1) rename-then-revert: the branch's work renamed legacy.py -> engine.py and edited it; the base
+#      reverts it. `-M` paired engine.py -> legacy.py as a "rename", excused it, and upkeep pushed.
+#  (2) edit-only revert: the branch's work is a 500-line edit to an existing file; the base reverts
+#      it. No path disappears, so upkeep pushed and the file went back to one line.
+# Both are a replay RESTORING an older version the branch's own history moved away from, which is
+# what `dropped_paths` now also measures. Seen RED against the path-only guard before the fix.
+# ===========================================================================================
+
+
+def _landed_then_reverted(world, change):
+    """`main` lands `change()` as the branch's own work (#10), the branch is cut from there and
+    grows one later goal (#11), then `main` REVERTS #10 -- `_revert_world`'s shape for any change."""
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    change()
+    _git(world.local, "commit", "-q", "-m", "feat: the branch's own work (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _write(world.local / "later.txt", "later\n")
+    _git(world.local, "add", "later.txt")
+    _git(world.local, "commit", "-q", "-m", "feat: later (#11)")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    return world
+
+
+_LEGACY = "".join("line %d\n" % i for i in range(40))
+_BIG = "seed\n" + "".join("work %d\n" % i for i in range(500))
+
+
+def _rename_revert_world(tmp_path):
+    world = World(tmp_path).build(feature_commits=None)
+    _write(world.local / "legacy.py", _LEGACY)
+    _git(world.local, "add", "legacy.py")
+    _git(world.local, "commit", "-q", "-m", "seed legacy")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+
+    def change():
+        _git(world.local, "mv", "legacy.py", "engine.py")
+        _write(world.local / "engine.py", _LEGACY + "IMPORTANT NEW WORK\n")
+        _git(world.local, "add", "engine.py")
+    return _landed_then_reverted(world, change)
+
+
+def _edit_revert_world(tmp_path):
+    world = World(tmp_path).build(feature_commits=None)
+
+    def change():
+        _write(world.local / "seed.txt", _BIG)
+        _git(world.local, "add", "seed.txt")
+    return _landed_then_reverted(world, change)
+
+
+def _show(world, sha, path):
+    return _git(world.local, "show", "%s:%s" % (sha, path))
+
+
+def test_144_a_base_reverting_the_branchs_rename_is_refused_before_any_push(tmp_path):
+    m = _mod()
+    world = _rename_revert_world(tmp_path)
+    _filer(m)
+    before = world.tip(FEATURE)
+    assert "engine.py" in _tree_paths(world, before)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["engine.py"] and report["dropped_count"] == 1, report
+    assert world.tip(FEATURE) == before, "upkeep force-pushed away the branch's renamed work"
+
+
+def test_144_a_base_reverting_the_branchs_edit_is_refused_before_any_push(tmp_path):
+    m = _mod()
+    world = _edit_revert_world(tmp_path)
+    _filer(m)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before, "upkeep force-pushed away a 500-line edit"
+    assert _show(world, world.tip(FEATURE), "seed.txt") == _BIG.rstrip("\n")
+
+
+@pytest.mark.parametrize("fixture,path", [(_rename_revert_world, "engine.py"),
+                                          (_edit_revert_world, "seed.txt")])
+def test_144_the_new_fixtures_are_destructive_without_the_guard(tmp_path, fixture, path):
+    """Sensitivity, kept in the suite: with the comparison disabled each fixture really loses the
+    branch's content -- so the two refusals above are able to fail."""
+    m = _mod()
+    world = fixture(tmp_path)
+    _filer(m)
+    m.dropped_paths = lambda *a, **k: []
+    before = world.tip(FEATURE)
+    lost = _show(world, before, path)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED and world.tip(FEATURE) != before
+    after = world.tip(FEATURE)
+    assert path not in _tree_paths(world, after) or _show(world, after, path) != lost
+
+
+def test_144_unicode_and_space_paths_are_named_exactly(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=None)
+    names = ["pay/café ü.txt", "pay/sp ace.txt", "pay/日本.txt"]
+    for n in names:
+        _write(world.local / n, n + "\n")
+    _git(world.local, "add", *names)
+    _git(world.local, "commit", "-q", "-m", "feat (#10)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _git(world.local, "checkout", "-q", "-b", FEATURE)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    _filer(m)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == sorted(names), report
+
+
+def test_144_a_base_that_edits_a_file_the_branch_carries_is_brought_forward(tmp_path):
+    """No false positive on the ordinary case the new edit rule sits next to: the base's own NEW
+    version of a file the branch carries unchanged is not a restoration of anything."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _write(world.local / "seed.txt", "seed, edited on main\n")
+    _git(world.local, "commit", "-q", "-am", "edit seed")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert _show(world, world.tip(FEATURE), "seed.txt") == "seed, edited on main"
+
+
+def test_144_a_case_only_rename_on_the_base_is_brought_forward(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "mv", "seed.txt", "tmp.txt")
+    _git(world.local, "mv", "tmp.txt", "Seed.txt")
+    _git(world.local, "commit", "-q", "-m", "case rename")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+
+
+def test_144_a_base_move_that_also_rewrites_the_file_is_refused_safely(tmp_path):
+    """THE DOCUMENTED TRADE-OFF for renames: a move that rewrites the file past git's rename
+    similarity is, as a tree, a deletion -- so it is refused like one. A blocked pass, never data."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _filer(m)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    (world.local / "src").mkdir(exist_ok=True)
+    _git(world.local, "mv", "seed.txt", "src/seed.txt")
+    _write(world.local / "src" / "seed.txt", "totally rewritten\n")
+    _git(world.local, "commit", "-q", "-am", "refactor")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["seed.txt"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_the_history_read_failing_pushes_nothing(tmp_path):
+    """The new half of the comparison fails closed exactly like the first half."""
+    m = _mod()
+    world = _edit_revert_world(tmp_path)
+    real = m._git_read
+
+    def no_log(cwd, args):
+        if "--literal-pathspecs" in args:          # the history read, and only it
+            raise RuntimeError("log unavailable")
+        return real(cwd, args)
+
+    m._git_read = no_log
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.FAILED and "tree comparison" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def _blocked_marker(world, m):
+    world_marker = m.blocked_path(str(world.sdlc), UNIT)
+    world_marker.parent.mkdir(parents=True, exist_ok=True)
+    world_marker.write_text(json.dumps({"unit": UNIT, "branch": FEATURE, "dropped": ["a"],
+                                        "dropped_count": 1, "at": "then"}), encoding="utf-8")
+
+
+@pytest.mark.parametrize("why", ["upkeep-off", "unit-closed", "unit-gone"])
+def test_144_the_doctor_ignores_a_block_that_can_no_longer_resolve_itself(tmp_path, why):
+    """A marker is cleared only by a clean pass; with upkeep off, or the unit closed or gone, no
+    pass will ever run, so the doctor must stop reporting it rather than fail forever."""
+    m = _mod()
+    d = _doctor()
+    world = World(tmp_path).build()
+    cfg = _cfg(rebase_upkeep="off") if why == "upkeep-off" else _cfg()
+    (world.sdlc / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    _blocked_marker(world, m)
+    row = "feature-branch rebase upkeep (#144 refuses a replay that would delete content)"
+    assert "BLOCKED" in {n: s for n, s, _ in d.features(str(world.sdlc))}[row] or why == "upkeep-off"
+    if why == "unit-closed":
+        world.write_registry(open_=False)
+    elif why == "unit-gone":
+        for shard in _load("feature_registry").registry_dir(world.sdlc).rglob("*.json"):
+            shard.unlink()
+    assert "BLOCKED" not in {n: s for n, s, _ in d.features(str(world.sdlc))}[row]
+    checks = [c for c in d.check(str(world.sdlc), run=lambda *a, **k: "", cheap_only=True)
+              if FEATURE in c["name"]]
+    assert checks == [], checks
+
+
+# --------------------------------------------------------------------------- #144 review block #2
+# Ported from the independent reviewer's repros (test_r2.py, cfg.py). Each was seen RED against the
+# block-#1 guard before the fix: a merge-born version was invisible to `git log --raw` (B, B2), a
+# user's `log.showRoot=false` hid the root commit's version (root), and a chmod-only base change
+# read as a rollback (A).
+
+
+def _land_on_main(w, files, msg):
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    for name, body in files.items():
+        _write(w.local / name, body)
+    _git(w.local, "add", "-A")
+    _git(w.local, "commit", "-q", "-m", msg)
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+
+
+def _cut_feature(w):
+    _git(w.local, "checkout", "-q", "-b", FEATURE)
+    _write(w.local / "later.txt", "later\n")
+    _git(w.local, "add", "later.txt")
+    _git(w.local, "commit", "-q", "-m", "feat: later (#11)")
+    _git(w.local, "push", "-q", "origin", FEATURE)
+    _git(w.local, "checkout", "-q", INTEGRATION)
+
+
+def _revert_main_head(w):
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "revert", "--no-edit", "HEAD")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+
+
+def test_144_r2_a_chmod_only_base_change_is_not_a_rollback(tmp_path):
+    """Review block #2, finding 2: an M entry whose blob is unchanged is a mode change, and the
+    unchanged blob is trivially "one the branch held" -- it used to refuse a healthy rebase."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build()
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "update-index", "--chmod=+x", "seed.txt")
+    _git(w.local, "commit", "-q", "-m", "make seed executable")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.REBASED, report
+
+
+def test_144_r2_a_chmod_plus_a_real_revert_is_still_caught(tmp_path):
+    """The chmod exemption is on EQUAL blobs only: a base that flips the mode AND reverts the
+    branch's content still changes the blob, and is still refused."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    _land_on_main(w, {"x.txt": "v0\n"}, "x")
+    _land_on_main(w, {"x.txt": "v0\n" + "WORK\n" * 100}, "feat: big work (#10)")
+    _cut_feature(w)
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _git(w.local, "revert", "--no-edit", "--no-commit", "HEAD")
+    _git(w.local, "update-index", "--chmod=+x", "x.txt")
+    _git(w.local, "commit", "-q", "-m", "Revert big work, and chmod")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    before = w.tip(FEATURE)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped"] == ["x.txt"], report
+    assert w.tip(FEATURE) == before
+
+
+def _merge_born_world(tmp_path, conflict):
+    """x.txt's older version v0 exists ONLY as a merge commit's result -- a conflict resolution
+    (`conflict=True`) or a clean two-sided merge -- then 300 lines land on top, the feature is cut,
+    and the base reverts the 300 lines back to v0."""
+    w = World(tmp_path).build(feature_commits=None)
+    base = "".join("l%d\n" % i for i in range(30))
+    _land_on_main(w, {"x.txt": base}, "x")
+    _git(w.local, "checkout", "-q", "-b", "side")
+    _write(w.local / "x.txt", base.replace("l5\n" if conflict else "l25\n", "SIDE\n"))
+    _git(w.local, "commit", "-qam", "side")
+    _git(w.local, "checkout", "-q", INTEGRATION)
+    _write(w.local / "x.txt", base.replace("l5\n" if conflict else "l2\n", "MAIN\n"))
+    _git(w.local, "commit", "-qam", "main")
+    if conflict:
+        with pytest.raises(AssertionError):
+            _git(w.local, "merge", "-q", "--no-ff", "side", "-m", "merge side")
+        _write(w.local / "x.txt", base.replace("l5\n", "RESOLVED\n"))
+        _git(w.local, "add", "x.txt")
+        _git(w.local, "commit", "-q", "--no-edit")
+    else:
+        _git(w.local, "merge", "-q", "--no-ff", "side", "-m", "Merge pull request #9")
+    _git(w.local, "push", "-q", "origin", INTEGRATION)
+    v0 = _git(w.local, "show", "HEAD:x.txt") + "\n"
+    _land_on_main(w, {"x.txt": v0 + "".join("WORK %d\n" % i for i in range(300))},
+                  "feat: big work (#10)")
+    _cut_feature(w)
+    _revert_main_head(w)
+    return w
+
+
+@pytest.mark.parametrize("conflict", [True, False], ids=["conflict-merge", "clean-merge"])
+def test_144_r2_a_revert_to_a_version_born_in_a_merge_is_refused(tmp_path, conflict):
+    """Review block #2, finding 1 (BLOCKING): `git log --raw` prints nothing for a merge, so a
+    version created BY a merge was invisible and the full revert (330 -> 30 lines) was pushed."""
+    m = _mod()
+    _filer(m)
+    w = _merge_born_world(tmp_path, conflict)
+    before = w.tip(FEATURE)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["x.txt"], report
+    assert w.tip(FEATURE) == before
+    assert len(_show(w, before, "x.txt").splitlines()) == 330
+
+
+def _revert_world_for_config(root, root_file):
+    """cfg.py's shape: x.txt's older version lives in the ROOT commit (`root_file=True`) or in an
+    ordinary one; 100 lines land; HEAD reverts them. -> (repo, before, after)."""
+    root = pathlib.Path(root)
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    (root / "x.txt").write_text("v0\n")
+    if not root_file:
+        (root / "r.txt").write_text("r\n")
+        _git(root, "add", "r.txt")
+        _git(root, "commit", "-qm", "root")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "x")
+    (root / "x.txt").write_text("v0\n" + "WORK\n" * 100)
+    _git(root, "commit", "-qam", "work")
+    before = _git(root, "rev-parse", "HEAD")
+    _git(root, "revert", "--no-edit", "HEAD")
+    return root, before, _git(root, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("config, root_file", [
+    ("", True),
+    ("[log]\n\tshowRoot = false\n", True),
+    ("[log]\n\tdiffMerges = combined\n\tshowSignature = true\n", True),
+    ("[log]\n\tfollow = true\n", False),
+    ("[color]\n\tui = always\n[diff]\n\trenames = copies\n\trelative = true\n", False),
+    ("[core]\n\tquotePath = true\n", False),
+], ids=["baseline", "showRoot-false", "diffMerges-combined", "follow", "color-renames-relative",
+        "quotePath"])
+def test_144_r2_the_users_git_config_cannot_switch_the_check_off(tmp_path, monkeypatch, config,
+                                                                  root_file):
+    """Review block #2: `log.showRoot=false` in a person's own config hid the root commit's version,
+    so a revert to it read as clean. Every guard read pins its config (`_GUARD_CONFIG`)."""
+    m = _mod()
+    repo, before, after = _revert_world_for_config(tmp_path / "r", root_file)
+    cfg = tmp_path / "gitconfig"
+    cfg.write_text(config, encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
+    assert m.dropped_paths(str(repo), before, after) == ["x.txt"]
+
+
+@pytest.mark.xfail(strict=True, reason="DOCUMENTED LIMIT (docs/branching-model.md §15): a full base "
+                   "revert of a file the branch has KEPT EDITING replays into a version that never "
+                   "existed, which no version-identity test can see. Strict, so a fix flips it red "
+                   "and the doc gets updated.")
+def test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit(tmp_path):
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    base = "".join("l%d\n" % i for i in range(60))
+    _land_on_main(w, {"x.txt": base}, "x")
+    v1 = "".join("WORK %d\n" % i for i in range(300)) + base
+    _land_on_main(w, {"x.txt": v1}, "feat: big work (#10)")
+    _git(w.local, "checkout", "-q", "-b", FEATURE)
+    _write(w.local / "x.txt", v1.replace("l55\n", "BRANCH TWEAK\n"))
+    _git(w.local, "commit", "-qam", "feat: tweak (#11)")
+    _git(w.local, "push", "-q", "origin", FEATURE)
+    _revert_main_head(w)
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP, report
+
+
+def test_144_r2_batching_and_pathspec_magic_names(tmp_path):
+    """455 paths (three `_HISTORY_CHUNK` reads) including names git would otherwise read as
+    pathspec magic, a glob, a leading dash, and non-ASCII: every one is counted."""
+    m = _mod()
+    _filer(m)
+    w = World(tmp_path).build(feature_commits=None)
+    names = (["d/f%03d.txt" % i for i in range(450)] +
+             [":(top)x.txt", "*.txt", "a[1].txt", "-dash.txt", "é/ü ñ.txt"])
+    _land_on_main(w, {n: "v0 %s\n" % n for n in names}, "seed many")
+    _land_on_main(w, {n: "v1 %s\n" % n for n in names}, "feat: edit many (#10)")
+    _cut_feature(w)
+    _revert_main_head(w)
+    reads = []
+    real = m._git_read
+
+    def counting(cwd, args, *rest):
+        reads.append(list(args))
+        return real(cwd, args, *rest)
+
+    m._git_read = counting
+    report = _upkeep(m, w)
+    assert report["outcome"] == m.WOULD_DROP and report["dropped_count"] == len(names), report
+    history = [a for a in reads if "--literal-pathspecs" in a]
+    assert len(history) == 3, len(history)                      # 455 paths / 200 per read
+    assert all(len(a) - a.index("--") - 1 <= m._HISTORY_CHUNK for a in history)
+
+
+def test_144_r2_a_history_read_that_times_out_pushes_nothing(tmp_path, monkeypatch):
+    """Non-blocking finding: the history read walks the whole history, so it is bounded; a timeout
+    is a refusal whose message says it timed out, never "nothing dropped"."""
+    m = _mod()
+    _filer(m)
+    world = _edit_revert_world(tmp_path)
+    import subprocess as sp
+    real = sp.run
+
+    def slow(argv, *a, **k):
+        if "--literal-pathspecs" in argv:
+            raise sp.TimeoutExpired(argv, k.get("timeout"))
+        return real(argv, *a, **k)
+
+    monkeypatch.setattr(sp, "run", slow)
+    monkeypatch.setenv(m._GUARD_TIMEOUT_ENV, "7")
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.FAILED, report
+    assert "timed out after 7s" in report["why"] and "nothing is pushed" in report["why"], report
+    assert world.tip(FEATURE) == before
+
+
+def test_144_r2_guard_output_is_decoded_as_utf8_not_the_locale(monkeypatch):
+    """Non-blocking finding: the injected runners decode with the locale (`text=True`), which on a
+    non-UTF-8 Windows code page garbles a non-ASCII path. The guard reads bytes and decodes UTF-8
+    with `surrogateescape`, so every byte round-trips -- and keeps a `-z` path's trailing space."""
+    m = _mod()
+    import subprocess as sp
+    payload = (b":100644 100644 " + b"a" * 40 + b" " + b"b" * 40 + b" M\0" +
+               "\u00e9 ".encode("utf-8") + b"\xff.txt \0")
+    monkeypatch.setattr(sp, "run", lambda *a, **k: sp.CompletedProcess(a, 0, payload, b""))
+    [(status, old, new, src, dst)] = m._raw_entries(m._git_read(".", ["diff"]))
+    assert src == "\u00e9 \udcff.txt ", repr(src)
+    assert src.encode("utf-8", "surrogateescape") == "\u00e9 ".encode("utf-8") + b"\xff.txt "
+
+
+def test_278_work_rebase_refuses_a_goal_replay_that_would_lose_its_own_content(tmp_path):
+    """#278 (non-blocking note on #144): `work.rebase()` force-pushes a GOAL branch after the same
+    kind of replay. Single-writer, but the same data-loss shape: the goal's commit reached the
+    feature branch as a patch-equivalent copy (a rebase-merge) and was then reverted there, so `git
+    rebase` skips it as "already upstream" and the replay silently loses the goal's 300 lines. The
+    guard refuses: nothing pushed, the worktree put back at its pre-rebase head."""
+    world = World(tmp_path).build()
+    work = _load("work")
+    body = "".join("GOAL %d\n" % i for i in range(300))
+    path = world.goal_branch(11, files=(("g.txt", body),))
+    goal_sha = _git(path, "rev-parse", "HEAD")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "cherry-pick", "-x", goal_sha)       # a copy: new sha, same patch-id
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    before = world.tip("sdlc/11")
+    out = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert out.startswith(work.REBASE_WOULD_DROP) and "g.txt" in out, out
+    assert world.tip("sdlc/11") == before
+    assert _git(path, "rev-parse", "HEAD") == goal_sha
+    assert (path / "g.txt").read_text() == body + "\n"
+
+
+def test_278_work_rebase_union_rescue_path_is_behind_the_guard_too(tmp_path):
+    """#278 note (a): the CHANGELOG union-rescue path force-pushes too, so it sits behind
+    `_replay_would_lose` as well. The goal's 300-line commit reached the feature branch as a copy
+    and was reverted there; its CHANGELOG entry then conflicts (pure insertion) with the feature's
+    own entry, so the replay goes through `_union_rescue` -- and still must not push the loss."""
+    changelog = "# Changelog\n\n## Unreleased\n\n## 1.0.0"
+    world = World(tmp_path).build(feature_commits=(("CHANGELOG.md", changelog, "seed changelog"),))
+    work = _load("work")
+    body = "".join("GOAL %d\n" % i for i in range(300))
+    path = world.goal_branch(11, files=(
+        ("g.txt", body),
+        ("CHANGELOG.md", changelog.replace("## Unreleased\n", "## Unreleased\n- goal entry\n"))))
+    goal_head = _git(path, "rev-parse", "HEAD")
+    work_commit = _git(path, "rev-parse", "HEAD~1")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "cherry-pick", "-x", work_commit)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _write(world.local / "CHANGELOG.md",
+           changelog.replace("## Unreleased\n", "## Unreleased\n- feature entry\n") + "\n")
+    _git(world.local, "commit", "-qam", "feature changelog entry")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    before = world.tip("sdlc/11")
+    out = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert not out.startswith("rebased"), out
+    assert "g.txt" in out, out
+    assert world.tip("sdlc/11") == before
+    assert _git(path, "rev-parse", "HEAD") == goal_head
+    assert (path / "g.txt").read_text() == body + "\n"
+
+
+def _reverted_goal_world(tmp_path):
+    world = World(tmp_path).build()
+    body = "".join("GOAL %d\n" % i for i in range(300))
+    path = world.goal_branch(11, files=(("g.txt", body),))
+    goal_sha = _git(path, "rev-parse", "HEAD")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "cherry-pick", "-x", goal_sha)
+    _git(world.local, "revert", "--no-edit", "HEAD")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    return world, path, goal_sha
+
+
+def test_278_work_rebase_a_failed_put_back_refuses_every_later_push(tmp_path):
+    """#278 note (c), the goal-branch side: `reset --keep` failing leaves the worktree rebased, and
+    the NEXT `rebase()` would find nothing to replay and force-push the loss. The marker stops it."""
+    world, path, goal_sha = _reverted_goal_world(tmp_path)
+    work = _load("work")
+    before = world.tip("sdlc/11")
+
+    def failing(cwd, argv):
+        if list(argv[:3]) == ["git", "reset", "--keep"]:
+            raise RuntimeError("simulated: reset --keep refused")
+        return work._run(cwd, argv)
+    out = work.rebase(str(world.sdlc), _cfg(), "11", run=failing)
+    assert out.startswith(work.REBASE_WOULD_DROP), out
+    assert "git reset --keep %s" % goal_sha in out and "marker" in out, out
+    assert _git(path, "rev-parse", "HEAD") != goal_sha               # still the lossy replay
+    again = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert again.startswith(work.REBASE_WOULD_DROP) and "git reset --keep %s" % goal_sha in again, again
+    assert world.tip("sdlc/11") == before
+    assert work._push_refused(str(path), "sdlc/11")
+    opened = work.pr(str(world.sdlc), _cfg(), "11")
+    assert opened.startswith(work.REBASE_WOULD_DROP) and "nothing pushed" in opened, opened
+    _git(path, "reset", "-q", "--keep", goal_sha)                     # the printed recovery
+    assert work._push_refused(str(path), "sdlc/11") is None
+    assert world.tip("sdlc/11") == before
+
+
+def test_278_a_would_drop_refusal_is_not_classified_as_a_merge_conflict(tmp_path):
+    """#278 note (b): the refusal has its own wording and reason class, both from `rebase()` and
+    wrapped by `ensure_fresh` -- nothing conflicts, and it must not read as a conflict to resolve."""
+    world, path, _goal_sha = _reverted_goal_world(tmp_path)
+    work = _load("work")
+    loop = _load("loop")
+    out = work.rebase(str(world.sdlc), _cfg(), "11")
+    assert out.startswith(work.REBASE_WOULD_DROP), out
+    assert loop._reason_class(out) == "needs_decision"
+    assert loop._reason_class("rebase deferred: could not apply") == "merge_conflict"
+    stale = work.ensure_fresh(str(world.sdlc), _cfg(), "11")
+    assert stale and work.REBASE_WOULD_DROP in stale, stale
+    assert "could not apply cleanly" not in stale and "conflict" not in stale.lower(), stale
+    assert loop._reason_class(stale) == "needs_decision"
+    assert "re-run `loop.py verify`" not in work._without_verify_remediation(stale)

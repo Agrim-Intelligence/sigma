@@ -1378,6 +1378,7 @@ _FOLDS = {
     ("feature_sync", "lock_path"),            # #1566 — the per-unit write lock
     ("feature_rebase", "lock_path"),          # #1577 — the upkeep lock
     ("feature_rebase", "filed_path"),         # #1577 — the "already filed this conflict" marker
+    ("feature_rebase", "blocked_path"),       # #144 — the "upkeep is refusing" marker the doctor reads
     ("feature_propagate", "sibling_path"),    # #1672 — a shard path in ANOTHER repo
     ("feature_rebase", "worktree_path"),      # #1673 — the throwaway upkeep checkout
     ("feature_doc", "doc_path"),              # #1673 — the `<name>.md` page a person opens
@@ -1424,6 +1425,9 @@ _NO_UNIT_NAME = {
     ("feature_sync", "_load"),
     ("feature_propagate", "record_path"),     # keyed by GOAL, not by unit
     ("feature_rebase", "rebase_stopped"),     # takes a path that is already built
+    # #278: keyed by a git BRANCH name (which may be a goal's `sdlc/<n>`), never a unit name; its
+    # stem is case-folded anyway and the exact branch is checked inside (see its docstring).
+    ("feature_rebase", "_refused_marker"),
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),

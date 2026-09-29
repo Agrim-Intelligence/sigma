@@ -300,6 +300,15 @@ _VERIFY_TAIL_TRANSIENT = "; re-run `loop.py verify` to retry the whole check."
 _VERIFY_TAIL_CONFLICT = (". Running the suite now would test code that provably still conflicts "
                          "with what's on {base} -- resolve the conflict in the worktree by hand, "
                          "then re-run `loop.py verify`.")
+#: #278: `ensure_fresh`'s tail when the rebase was REFUSED by the tree guard rather than conflicting
+#: -- not a conflict to resolve by hand, a base holding a revert of the goal's own work.
+_VERIFY_TAIL_WOULD_DROP = (". Running the suite now would test code that is still behind {base}; "
+                           "replaying it would lose this goal's own content -- see "
+                           "docs/branching-model.md §3b, then re-run `loop.py verify`.")
+#: #278: the prefix of `rebase()`'s refusal when replaying would lose the goal's own content. Its
+#: own wording, not "rebase deferred", so `loop.py`'s reason classifier does not file it as a merge
+#: conflict: nothing conflicts, and a human must decide what the base's revert means.
+REBASE_WOULD_DROP = "rebase refused, it would lose content"
 #: Prefix marking a stale-resume refusal specifically. Deliberately NOT the bare `REFUSED — ` that
 #: three other refusals in this file already use (`_resume_blocked_by_a_live_sibling`,
 #: `_blocked_by_a_live_foreign_agent`, `commit`): `main()` keys exit 4 on this, and keying on
@@ -2757,6 +2766,9 @@ def pr(sdlc_dir, config, goal, run=None):
     if not rec:
         return "not started — run `work.py start` first (nothing pushed)"
     path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    refused = _push_refused(path, rec["branch"])    # #278: a lossy replay could not be put back
+    if refused:
+        return f"{refused} (nothing pushed)"
     if run(path, ["git", "status", "--porcelain"]):
         return "worktree has uncommitted changes — commit them first (nothing pushed)"
     if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
@@ -3229,6 +3241,11 @@ def rebase(sdlc_dir, config, goal, run=None):
         # only inserted (see `_union_diff3`). That shape is mechanical and lossless, and it is the
         # single most frequent conflict in this repo. Everything else still aborts.
         if _union_rescue(path, run):
+            refused = (_replay_would_lose(path, run, pre_rebase_head, f"{remote}/{base}",
+                                          rec["branch"])
+                       or _push_refused(path, rec["branch"]))
+            if refused:
+                return refused
             run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
             return "rebased (CHANGELOG union-merged)"
         try:
@@ -3278,8 +3295,72 @@ def rebase(sdlc_dir, config, goal, run=None):
                     f"fully restored; inspect it by hand before retrying")
         return (f"rebase deferred: the worktree's own uncommitted changes conflict with what's "
                 f"now on {remote}/{base} (autostash pop conflict)")
+    refused = (_replay_would_lose(path, run, pre_rebase_head, f"{remote}/{base}", rec["branch"])
+               or _push_refused(path, rec["branch"]))
+    if refused:
+        return refused
     run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
     return "rebased"
+
+
+def _replay_would_lose(path, run, pre, base_ref, branch=""):
+    """#278: `None` when the replayed HEAD keeps every path the GOAL itself changed, else a refusal
+    string, with the worktree put back at `pre` and nothing pushed: `REBASE_WOULD_DROP: ...` when
+    the loss was measured (its own reason class -- not a conflict), `rebase deferred: ...` when the
+    comparison itself could not be made.
+
+    #144's tree guard (`feature_rebase.dropped_paths`), reused before this force-push too. A goal
+    branch has a single writer, but the data-loss shape is the same: when the goal's commit reached
+    the base as a patch-equivalent copy (a rebase-merge) and was then REVERTED there, `git rebase`
+    skips it as already upstream and the replay silently loses the goal's own work.
+
+    Scoped to the paths the goal changed since it forked (`git diff --name-only <merge-base> pre`),
+    and that scope is deliberate: unscoped, `dropped_paths` refuses a plain base deletion of a file
+    the goal never touched -- routine on a busy base, and `ensure_fresh` runs this before every
+    verify, so every goal would stall on an ordinary cleanup. The cost of the scope: a goal whose
+    commits reached the base as the SAME commits (a true merge) and were then reverted forks above
+    them, so its diff is empty and nothing is seen -- its PR has merged by then, and replaying a
+    finished goal is not a flow this function serves. Fails closed: a comparison that cannot be
+    made defers the rebase too.
+
+    If `git reset --keep` cannot put the worktree back, the branch still holds the lossy replay and
+    the NEXT `rebase()` would find nothing to replay and push it: `feature_rebase.mark_push_refused`
+    records that, and every push of `branch` from here (`rebase()`'s two, `pr()`'s) refuses until
+    HEAD is back at `pre` -- the recovery command this prints."""
+    pre = str(pre or "").strip()
+    head = REBASE_WOULD_DROP
+    try:
+        fork = str(run(path, ["git", "merge-base", pre, base_ref]) or "").strip()
+        listed = run(path, ["git", "diff", "--name-only", "--no-renames", fork, pre]) if fork else ""
+        own = {line.strip() for line in str(listed or "").splitlines() if line.strip()}
+        dropped = (sorted(set(_feature_rebase().dropped_paths(path, pre, "HEAD")) & own)
+                   if own else [])
+    except Exception as exc:                # noqa: BLE001 - unmeasured is never "nothing lost"
+        head, why = "rebase deferred", f"the pre/post tree comparison could not be made ({exc})"
+    else:
+        if not dropped:
+            return None
+        shown = ", ".join(dropped[:3]) + (f" and {len(dropped) - 3} more" if len(dropped) > 3 else "")
+        why = (f"replaying onto {base_ref} would remove or roll back {len(dropped)} path(s) this "
+               f"goal changed ({shown}) -- the base most likely holds a revert of the goal's own "
+               f"commits; see docs/branching-model.md §3b")
+    try:
+        run(path, ["git", "reset", "--keep", pre])
+        return (f"{head}: {why}; nothing was pushed and the worktree was put back at "
+                f"{pre[:12]}")
+    except Exception as exc:                # noqa: BLE001 - say how to undo rather than guess
+        marker = _feature_rebase().mark_push_refused(path, branch, pre, why) if branch else ""
+        held = (f"pushes of {branch} are refused until it is (marker {marker})" if marker else
+                "the refusal could NOT be recorded, so do this before anything pushes the branch")
+        return (f"{head}: {why}; nothing was pushed, but putting the worktree back failed "
+                f"({exc}) and it is still rebased -- undo it with `git reset --keep {pre}` in "
+                f"{path}; {held}")
+
+
+def _push_refused(path, branch):
+    """`feature_rebase.push_refused` in `rebase()`/`pr()`'s own wording, or None (#278)."""
+    marked = _feature_rebase().push_refused(path, branch)
+    return f"{REBASE_WOULD_DROP}: {marked}" if marked else None
 
 
 def _behind_count(path, remote, base, run):
@@ -3371,6 +3452,10 @@ def ensure_fresh(sdlc_dir, config, goal, run=None):
               f"{remote}/{base} -- auto-rebased before verify ({result}). If the suite's result "
               f"is surprising, this is why: the base moved under it.", file=sys.stderr)
         return None
+    if result.startswith(REBASE_WOULD_DROP):
+        return (f"worktree for {stem(goal)!r} is {count} commit(s) behind {remote}/{base} and "
+                f"the automatic rebase was refused ({result})"
+                + _VERIFY_TAIL_WOULD_DROP.format(base=base))
     return (f"worktree for {stem(goal)!r} is {count} commit(s) behind {remote}/{base} and "
             f"{_PARK_STALE_RESUME_CONFLICT} ({result})" + _VERIFY_TAIL_CONFLICT.format(base=base))
 
@@ -3509,7 +3594,8 @@ def _without_verify_remediation(stale):
     message cannot leave this silently matching nothing -- the same single-source-of-truth rule
     `MECHANICAL_PARK_PREFIXES` follows. `_VERIFY_TAIL_CONFLICT` carries a `{base}` placeholder, so
     only its literal head is used as the needle."""
-    for marker in (_VERIFY_TAIL_TRANSIENT, _VERIFY_TAIL_CONFLICT.split("{")[0]):
+    for marker in (_VERIFY_TAIL_TRANSIENT, _VERIFY_TAIL_CONFLICT.split("{")[0],
+                   _VERIFY_TAIL_WOULD_DROP.split("{")[0]):
         cut = stale.find(marker)
         if cut != -1:
             return stale[:cut] + "."

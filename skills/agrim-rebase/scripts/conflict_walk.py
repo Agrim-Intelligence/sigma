@@ -402,7 +402,7 @@ def _rebase_just_concluded_locally(run, cwd):
     return subject.strip().startswith("rebase (finish):")
 
 
-def _manual_recovery_push(run, cwd, remote, branch):
+def _manual_recovery_push(run, cwd, remote, branch, base_ref=None):
     """#2324: `walk_conflicts`'s own `NOTHING_TO_DO` entry check (`not rebase_stopped`) fires both
     for the ORDINARY case (this branch was never mid-rebase -- nothing to push, nothing wrong) and
     for the state a human's raw-git escape hatch leaves behind after `_empty_commit_about_to_land`'s
@@ -427,7 +427,11 @@ def _manual_recovery_push(run, cwd, remote, branch):
     though a rebase conclusion WAS seen (already matches remote, the fetch failed, no such
     remote-tracking ref, or the push itself was refused) -- read from the SAME
     `rebase_brief.push_branch` #2319's own DONE path already calls, one force-with-lease call site,
-    never a second copy."""
+    never a second copy.
+
+    `base_ref` (#278, review block #1) is what `push_branch` attributes a remote -> pre-rebase-head
+    loss against (`feature_rebase.own_losses`); without it no such loss is exempt, so a bare call
+    can refuse a healthy local deletion but never publish a loss an earlier lossy rebase left."""
     if not _rebase_just_concluded_locally(run, cwd):
         return None
     try:
@@ -444,9 +448,13 @@ def _manual_recovery_push(run, cwd, remote, branch):
     if ahead in ("", "0"):
         return {"pushed": False,
                "why": "already matches %s/%s -- nothing to push" % (remote, branch)}
-    push = rebase_brief.push_branch(run, cwd, remote, branch)
+    push = rebase_brief.push_branch(run, cwd, remote, branch, base_ref=base_ref)
     if not push["ok"]:
-        return {"pushed": False, "why": push["why"]}
+        # #144: `refused` when `push_branch`'s own tree guard said no (it would lose content the
+        # remote branch has, or could not tell) -- distinct from an ordinary stale lease, and
+        # something `main` must SAY rather than fold into "nothing to walk".
+        return {"pushed": False, "why": push["why"], "refused": "dropped" in push,
+                "dropped": push.get("dropped") or []}
     return {"pushed": True, "why": ""}
 
 
@@ -493,12 +501,17 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
     (+ "why" on FAILED/EMPTY_AFTER_RESOLVE, + "pushed"/"why" on a NOTHING_TO_DO recovery push).
     """
     if not feature_rebase.rebase_stopped(run, cwd):
-        recovery = _manual_recovery_push(run, cwd, remote, brief["branch"])
+        recovery = _manual_recovery_push(run, cwd, remote, brief["branch"], brief.get("base_ref"))
         if recovery is None:
             return {"outcome": NOTHING_TO_DO, "resolved": []}
-        return {"outcome": NOTHING_TO_DO, "resolved": [], "pushed": recovery["pushed"],
-                "why": recovery["why"]}
+        found = {"outcome": NOTHING_TO_DO, "resolved": [], "pushed": recovery["pushed"],
+                 "why": recovery["why"]}
+        if recovery.get("refused"):
+            found["dropped"] = recovery["dropped"]
+        return found
     resolved = []
+    # #278: read while the rebase is still stopped -- the state directory is gone once it lands.
+    pre_head = _rebase_state_file(run, cwd, "orig-head") or None
     while True:
         pending = rebase_brief.conflicted_files(run, cwd)
         if not pending:
@@ -532,9 +545,14 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
                     continue                # a later commit conflicted again -- next loop picks it up
                 return {"outcome": FAILED, "resolved": resolved, "why": rebase_brief._flat(exc)}
             if not feature_rebase.rebase_stopped(run, cwd):
-                push = rebase_brief.push_branch(run, cwd, remote, brief["branch"])
+                push = rebase_brief.push_branch(
+                    run, cwd, remote, brief["branch"], accepted=_accepted_losses(resolved),
+                    pre_head=pre_head, base_ref=brief.get("base_ref"))
                 if not push["ok"]:
-                    return {"outcome": FAILED, "resolved": resolved, "why": push["why"]}
+                    # #144: `push_branch` itself refuses a HEAD that would lose content the remote
+                    # branch has (`dropped`), and leaves the branch unpushed; FAILED either way.
+                    return {"outcome": FAILED, "resolved": resolved, "why": push["why"],
+                            "dropped": push.get("dropped") or []}
                 rebase_brief.clear_context_snapshots(sdlc_dir, brief["branch"])
                 return {"outcome": DONE, "resolved": resolved}
             continue
@@ -558,7 +576,43 @@ def walk_conflicts(run, cwd, brief, decide, remote, sdlc_dir=None):
         resolved.append(outcome)
 
 
+def _accepted_losses(resolved):
+    """The paths whose LOSS a human decided in this walk, for `push_branch(accepted=...)` (#278).
+
+    Only a resolution that IS a deletion -- `action == "removed"`: ABANDON (or FOLLOW) on a file the
+    base deleted -- counts. A content resolution does not, whichever option produced it: resolving
+    ONE conflicted hunk says nothing about the rest of the file, where git has already merged
+    everything outside the markers -- including, when the base holds a revert, the silent removal
+    of hundreds of the branch's lines. Exempting the whole path for a one-line decision let that
+    through (#144's final review), so those paths stay behind the tree guard."""
+    return [one.get("path") for one in resolved
+            if isinstance(one, dict) and one.get("action") == "removed"]
+
+
 # --------------------------------------------------------------------------- resumability
+
+
+def _rebase_state_file(run, cwd, name):
+    """One file of a stopped rebase's own on-disk state (`<gitdir>/rebase-merge/<name>`, or
+    `rebase-apply/<name>` for the `am` backend), stripped, or "" when nothing is stopped or the
+    file is absent/unreadable -- fails closed, like `rebase_stopped`."""
+    for state in ("rebase-merge", "rebase-apply"):
+        try:
+            got = str(run(cwd, ["git", "rev-parse", "--git-path", state]) or "").strip()
+        except Exception:                  # noqa: BLE001 - unmeasurable is not "found"
+            continue
+        if not got:
+            continue
+        here = pathlib.Path(got)
+        if not here.is_absolute():
+            here = pathlib.Path(cwd) / here
+        try:
+            text = (here / name).read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            return text
+    return ""
 
 
 def _rebase_original_branch(run, cwd):
@@ -569,25 +623,9 @@ def _rebase_original_branch(run, cwd):
     string "HEAD" while a rebase has HEAD detached, which is exactly when resumability needs this
     answer most. `None` when nothing is stopped or the on-disk shape is not what was expected --
     fails closed, matching `rebase_stopped`'s own "not knowing is never an answer"."""
-    for name in ("rebase-merge", "rebase-apply"):
-        try:
-            got = str(run(cwd, ["git", "rev-parse", "--git-path", name]) or "").strip()
-        except Exception:                  # noqa: BLE001 - unmeasurable is not "found"
-            continue
-        if not got:
-            continue
-        here = pathlib.Path(got)
-        if not here.is_absolute():
-            here = pathlib.Path(cwd) / here
-        head_name = here / "head-name"
-        if not head_name.exists():
-            continue
-        try:
-            ref = head_name.read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        if ref.startswith("refs/heads/"):
-            return ref[len("refs/heads/"):]
+    ref = _rebase_state_file(run, cwd, "head-name")
+    if ref.startswith("refs/heads/"):
+        return ref[len("refs/heads/"):]
     return None
 
 
@@ -629,8 +667,9 @@ def _interactive_decide(conflict_state):
     `walk_conflicts` (see module docstring: no `input()` scattered through the walking logic
     itself). This is the ONE place this module blocks on a human."""
     _print_conflict_state(conflict_state)
-    print("Options: [1] Recreate here  [3] Abandon this hunk  [4] Resolve by hand  "
-         "[abort] Bail out")
+    # #278: `[3]` is `git checkout --ours` of the WHOLE file (or its deletion), never one hunk.
+    print("Options: [1] Recreate here  [3] Take the base's version of the whole file (drops this "
+          "branch's changes to it)  [4] Resolve by hand  [abort] Bail out")
     if FOLLOW in conflict_state["options"]:
         print("         [2] Follow the move -> %s" % conflict_state["candidates"][0])
     while True:
@@ -699,15 +738,20 @@ def main(argv):
     run = feature_rebase._run
     remote = rebase_brief.resolve_remote(config)
     branch = resolve_branch(run, cwd, explicit)
+    base = rebase_brief.resolve_base(config)
     if not feature_rebase.rebase_stopped(run, cwd):
-        recovery = _manual_recovery_push(run, cwd, remote, branch)
+        base_ref = "%s/%s" % (remote, base) if base and base != branch else None
+        recovery = _manual_recovery_push(run, cwd, remote, branch, base_ref)
         if recovery and recovery["pushed"]:
             print("`%s` was not mid-rebase -- but a rebase had concluded outside this tool and "
                  "left it ahead of `%s/%s`; pushed (#2324)." % (branch, remote, branch))
+        elif recovery and recovery.get("refused"):
+            print("`%s` was not mid-rebase -- a rebase had concluded outside this tool, but it was "
+                  "NOT pushed: %s" % (branch, recovery["why"]))
+            return 1
         else:
             print("no rebase is currently stopped in %r -- nothing to walk." % cwd)
         return 0
-    base = rebase_brief.resolve_base(config)
     if not base or base == branch:
         print("no integration branch to compare against (work.base is %r)" % base, file=sys.stderr)
         return 1

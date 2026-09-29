@@ -4,6 +4,47 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The rebase loss guard (#144) is now exact about what a human decided and what the branch already
+  had (#278, closes #144's two open review findings). **The conflict walker no longer exempts a
+  whole file for a one-line resolution.** Resolving one conflicted hunk used to exempt the whole
+  path from the guard, so a base revert that git had already merged outside the markers (300 of the
+  branch's lines in the repro) was force-pushed. Now only a resolution that deletes the file
+  (action `removed`, ABANDON on a file the base deleted) is exempt, and content resolutions stay
+  guarded. The walker's option `[3]` now says what it does: "Take the base's version of the whole
+  file (drops this branch's changes to it)", not "Abandon this hunk". **`rebase_brief.push_branch`
+  now allows a local deletion that was never pushed.** It used to compare HEAD only with the
+  remote tip, so a local `drop obsolete` commit was refused, and the advice (`git reset --keep
+  <remote tip>`) threw away the local commits. It now also takes the pre-rebase head:
+  `attempt_rebase` passes it, the walker reads the stopped rebase's `orig-head`, and the
+  manual-recovery push reads `<branch>@{1}` when the branch reflog's newest entry is a rebase's own
+  landing on that branch (`rebase (finish): …`, `pull <argv> (finish): …` for a one-go `pull
+  --rebase`, or `rebase (continue) (finish): …`, measured against real git; older gits' `rebase
+  finished: …` accepted, not measured). A loss that already exists between the remote tip and that
+  head is exempt **only when it is the branch's own deliberate local DELETION**: the path is in
+  the remote tip and gone from that head, a non-merge commit unique to the branch has a `D` for
+  exactly that path, and the base has not touched the path since the remote tip. So a local `git
+  rm` commit passes (amended or squashed too), but the same loss left by an earlier, never-pushed
+  local rebase onto a base holding a revert is refused (it was force-pushed before) — including
+  when a sibling branch commit edited the same file, which the first version of this rule took for
+  the loss's author (review block #2: `x.txt` 359 → 60 lines force-pushed). **A rollback in that
+  range is never exempt**, even the branch's own: the human confirms a deliberate one with the
+  `git push --force-with-lease <remote> HEAD:<branch>` the refusal prints. With no base, no
+  pre-rebase head, or a **shallow clone** (the refusal says so) nothing is exempt, and all of one
+  push's guard reads share one wall-clock budget, `SIGMA_WATCH_CALL_TIMEOUT` (default 120s);
+  running out refuses the push. Everything the rebase itself loses is still refused. The advice names the pre-rebase
+  head. When that head is unknown, the advice points at `git reflog <branch>` and no longer at the
+  remote tip. If a refusal cannot put the branch back (`git reset --keep` fails), the refusal is
+  recorded in the git dir and every later push of that branch (`push_branch`, `work.rebase()`,
+  `work.pr()`) is refused with the recovery command until HEAD is back at the pre-rebase head.
+  **`work.rebase()` runs the same guard before its goal-branch force-push**, on both the plain path
+  and the CHANGELOG union rescue, but only over the paths the goal changed since it forked. So a goal
+  whose commit reached the base as a copy (a rebase-merge) that was later reverted is no longer
+  replayed away silently. It returns `rebase refused, it would lose content: …` (classified
+  `needs_decision`, not `merge_conflict`: nothing conflicts), pushes nothing and resets the worktree
+  to its pre-rebase head. `docs/branching-model.md` §15 now states the fleet-wide cost of the
+  conservative refusal: a reverted dependency bump blocks upkeep on every feature branch cut in
+  that window, and each branch stays blocked until a person resolves it. Each fix has a real-git
+  test, and each test was seen red against the old code and against a deliberately broken guard.
 - **`/agrim-init` offers to create the GitHub Project board, and pins it** (#235). The loop only
   creates a board when the owner has none, so in any real organisation nothing ever wrote
   `discovery.github.project.number`. Now:
@@ -209,6 +250,27 @@ All notable changes to Sigma are recorded here, newest first.
   on with no command, with a one-line fix. `record done` now names a missing command rather than
   saying "run verify first".
 
+- Feature-branch rebase upkeep no longer deletes branch content when the base holds a revert of the
+  branch's own commits (#144). Before it pushes, upkeep now compares the branch tip's tree with the
+  replayed tree. If any tracked path would disappear, or would be rolled back to a version the
+  branch's own history already moved past (a reverted edit, or an undone rename), it refuses with
+  the new `would-drop` outcome and pushes nothing. Base renames and ordinary base edits are allowed,
+  and the branch's own deletions never count. The pick line says `was NOT rebased` and names the
+  paths, a tracked issue is filed, and `/agrim-doctor` shows the unit as blocked until a clean pass
+  clears it (not while `rebase_upkeep` is off or the unit is closed). `feature_rebase.py upkeep`
+  exits 1 on it, and `rebase_brief.py rebase` runs the same check before its own force-push. The
+  trade-offs: a plain upstream deletion, a move that rewrites past rename similarity, or a base
+  reverting its own older change to a file the branch carries is refused the same way; a partial
+  revert merged with other changes is not seen, and neither is a full base revert of a file the
+  branch kept editing afterwards (the replay yields a version that never existed). The history read
+  counts versions created by merge commits and the root commit, ignores chmod-only changes, pins its
+  own git config so a user's `log.showRoot`/`log.diffMerges`/colour settings cannot switch it off,
+  decodes paths as UTF-8, and fails closed after `SIGMA_REBASE_GUARD_TIMEOUT` seconds (default 120).
+  The `agrim-rebase` skill's single push chokepoint, `rebase_brief.push_branch`, runs the same check
+  against the commit the lease would overwrite, so `rebase_brief.py rebase`, Slack `--rebase`, the
+  conflict walker's final push and its manual-recovery push all refuse a push that would lose
+  content, naming the paths; only a path the walk resolved by deletion is that human's decision. See
+  `docs/branching-model.md` §3b and §15.
 - Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
   name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
   (features, landing, withheld and propagation records), the old feature-doc and Codex

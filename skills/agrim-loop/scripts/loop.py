@@ -3341,6 +3341,9 @@ _REASON_CLASS_RULES = (
                                                               # unknown_by_design's replacement below.
     ("no pr for this goal", "dependency"),
     ("no fresh verify evidence", "no_evidence"),
+    # #278: `work.rebase()`'s tree-guard refusal. Before "rebase deferred" and its own needle: nothing
+    # conflicts -- the base holds a revert of the goal's own work, and a human decides what it means.
+    (work.REBASE_WOULD_DROP, "needs_decision"),
     ("rebase deferred", "merge_conflict"),
     ("conflicts with the base branch", "merge_conflict"),
     ("stale head", "merge_conflict"),
