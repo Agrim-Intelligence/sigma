@@ -826,6 +826,12 @@ def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
         return []
 
 
+#: The loop's board columns: (config key under `project.columns`, default name). #280: doctor's
+#: unmatched-column row reads this same table, so the two can never disagree about a default.
+BOARD_COLUMNS = (("backlog", "Backlog"), ("ready", "Ready"), ("in_progress", "In Progress"),
+                 ("qc", "QC"), ("done", "Done"), ("blocked", "Blocked"), ("parked", "Parked"))
+
+
 class GitHubSource:
     """Goals are open GitHub issues labelled `goal_label`, ordered by issue number. Status via labels;
     done closes the issue; parked labels + comments it. Talks to GitHub through `run` (default _run_gh)."""
@@ -1033,10 +1039,7 @@ class GitHubSource:
         self._project_cfg = gh.get("project") or {}
         self.project_enabled = bool(self._project_cfg.get("enabled", False))
         _cols = self._project_cfg.get("columns") or {}     # board column names (configurable for existing boards)
-        self.col = {k: _cols.get(k, d) for k, d in
-                    (("backlog", "Backlog"), ("ready", "Ready"), ("in_progress", "In Progress"),
-                     ("qc", "QC"), ("done", "Done"), ("blocked", "Blocked"),
-                     ("parked", "Parked"))}
+        self.col = {k: _cols.get(k, d) for k, d in BOARD_COLUMNS}
         # #693: which representation DECIDES what is queued. "status" (default) makes the board's
         # `Ready` column authoritative and the goal label a written-but-never-decisive mirror;
         # "label" is the historical rule. This is only an ESCAPE HATCH — the real backward-compat
@@ -1089,6 +1092,10 @@ class GitHubSource:
         # vanish with zero trace. Keyed by the exception's own text (not a bare bool) so two
         # genuinely different failures in one process both get reported, not just the first.
         self._board_write_failures_warned = set()
+        # #280: the columns already reported as having no matching Status option this run (one
+        # warning each, never a silent no-op).
+        self._unmatched_warned = set()
+        self._ready_variant_noticed = False   # #280: `_notice_ready_variant`, once per instance
         # #905: was the MOST RECENT `_fetch_pending` call a genuine empty read, or a give-up after
         # exhausting retries? See `read_degraded()`.
         self._last_read_degraded = False
@@ -1720,6 +1727,12 @@ class GitHubSource:
         to the historical label queue, byte for byte. Nothing here ever ADDS the option — migrating
         an existing board is an explicit, human-invoked command (#696), never a loop tick.
 
+        #280 (review of PR #325): `Ready` is matched EXACTLY, never by #280's case/whitespace rule.
+        A board lane spelled `READY` / `ready` / `Ready ` would otherwise switch the queue mode
+        without anyone choosing it. Such a lane keeps the label queue and prints ONE notice per
+        instance naming it; setting `project.columns.ready` to the board's spelling (or running
+        board_migrate.py) is the explicit opt-in, and an exact configured name wins as before.
+
         Strictly READ-ONLY, deliberately: this runs on the pick path, and a queue read that quietly
         created a GitHub Project (which `_ensure_board` would) is exactly the kind of surprise an
         adopter should never meet. Provisioning stays where it was — on the first status WRITE.
@@ -1740,8 +1753,11 @@ class GitHubSource:
             fields = self._list_fields(owner, self._project_number)
             fld = self._find_field(fields, self._project_cfg.get("status_field") or "Status")
             names = {o.get("name") for o in ((fld or {}).get("options") or [])}
+            self._adopt_column_spellings(names)   # #280: never `ready` -- see the docstring
             if self.col["ready"] in names:
                 self._ro_ready = self.col["ready"]
+            else:
+                self._notice_ready_variant(names)
         except Exception as exc:
             self._note_scope(exc)
             self._ro_ready = None
@@ -3090,7 +3106,7 @@ class GitHubSource:
         # Fail-open by construction: `_set_board_status` returns False without writing when the
         # board has no such option (and spends no `gh` call to find out), so a board with no
         # `Parked` option falls through to exactly the historical column.
-        if not self._set_board_status(goal, self.col["parked"]):
+        if not self._set_board_status(goal, self.col["parked"], warn=False):
             self._set_board_status(goal, self.col["blocked"])
 
     def note(self, goal, text):
@@ -3624,8 +3640,14 @@ class GitHubSource:
     # SDLC status -> GitHub's built-in "Status" single-select. The whole layer is fail-open: a missing
     # `project` token scope, an API hiccup, anything — it swallows the error so the loop never breaks.
 
-    def _set_board_status(self, goal, status_name):
+    def _set_board_status(self, goal, status_name, warn=True):
         """Move `goal`'s card to `status_name`. Returns True only if the write GENUINELY LANDED.
+
+        #280: `status_name` is matched against the board's Status options by `_status_option` --
+        the exact spelling first, else the ONE option equal to it ignoring case and whitespace
+        (`In progress` for `In Progress`). No option at all is reported ONCE per column per run
+        (`_warn_unmatched_column`) instead of silently writing nothing; `warn=False` is for a caller
+        with its own fallback (`_offboard`'s Parked -> Blocked).
 
         #1391 step 4: the return value is new. This used to return `None` unconditionally — success,
         board-disabled, board-unresolvable and a swallowed exception were all indistinguishable to
@@ -3643,7 +3665,10 @@ class GitHubSource:
             if not self._ensure_board(exclude=goal):
                 return False
             item_id = self._item_id(int(goal))
-            opt = self._status_options.get(status_name)
+            name, opt = self._status_option(status_name)
+            if not opt and warn:
+                self._warn_unmatched_column(status_name)
+            status_name = name or status_name
             if item_id and opt and self._field_id:
                 self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
                            "--field-id", self._field_id, "--single-select-option-id", opt])
@@ -3692,7 +3717,9 @@ class GitHubSource:
             # Carding the issue here to stamp its custom fields means _sync_backlog will now SKIP it as
             # "already on the board", so seed its Status here too or the card sits blank. A brand-new
             # hand-off belongs in Backlog — exactly where _sync_backlog would have placed it.
-            backlog = self._status_options.get(self.col["backlog"])
+            backlog = self._status_option(self.col["backlog"])[1]
+            if not backlog:
+                self._warn_unmatched_column(self.col["backlog"])
             if backlog and self._field_id:
                 self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
                            "--field-id", self._field_id, "--single-select-option-id", backlog])
@@ -3705,6 +3732,100 @@ class GitHubSource:
             self._mirror_priority(int(goal), labels, item_id)
         except Exception as exc:
             self._note_board_write_failed(exc)   # #1733: was _note_scope alone, same gap as above
+
+    @staticmethod
+    def _norm_option(name):
+        """#280: an option name compared ignoring case and runs of whitespace."""
+        return " ".join(str(name or "").split()).casefold()
+
+    @classmethod
+    def _match_option(cls, names, want):
+        """#280, THE Status-option rule -> (the board's name to use or None, [its variants]).
+        The exact name wins; else the ONE option equal to `want` ignoring case and whitespace
+        (GitHub's default `In progress` for our `In Progress`); several such variants and no exact
+        one is ambiguous and matches nothing -- never a guess between two lanes."""
+        # Deduplicated: a board with two lanes of one name (seen on a real board, research #280) is
+        # one name to the loop's option dict, so it is one name here too -- doctor and the loop
+        # resolve through this same function and must agree.
+        names = list(dict.fromkeys(n for n in (names or ()) if isinstance(n, str)))
+        if not want:
+            return None, []
+        if want in names:
+            return want, []
+        variants = [n for n in names if cls._norm_option(n) == cls._norm_option(want)]
+        return (variants[0], []) if len(variants) == 1 else (None, variants)
+
+    def _status_option(self, name):
+        """(the board's spelling, option id) for column `name`, or (None, None). The Ready column
+        is matched exactly (see `_ready_lane`): a write never lands in a lane the queue ignores."""
+        if name == self.col["ready"]:
+            opt = self._status_options.get(name)
+            return (name, opt) if opt else (None, None)
+        hit, _ = self._match_option(list(self._status_options), name)
+        return (hit, self._status_options.get(hit)) if hit else (None, None)
+
+    def _adopt_column_spellings(self, option_names):
+        """#280: point every `self.col` entry the board spells differently (case/whitespace only)
+        at the board's own spelling, IN MEMORY for this run -- so a card read back as `In progress`
+        compares equal to the column the loop just wrote. Config is never written and the board is
+        never renamed here: an adopted board's options are its owner's (board_setup.py maps them in
+        config, #235). A column with no match keeps its configured name and is reported by
+        `_warn_unmatched_column` when a write needs it."""
+        names = list(option_names or ())
+        for key, want in list(self.col.items()):
+            if key == "ready":
+                continue      # queue-mode selection is never spelling-adopted (`_ready_lane`)
+            hit, _ = self._match_option(names, want)
+            if hit:
+                self.col[key] = hit
+
+    def _notice_ready_variant(self, option_names):
+        """#280 (review of PR #325): ONE informational line when the board has a lane that differs
+        from the Ready column only in case/whitespace. The label queue stays in force (never a
+        silent switch); the line names the explicit opt-ins. Never raises."""
+        if self._ready_variant_noticed:
+            return
+        hit, variants = self._match_option(option_names, self.col["ready"])
+        lanes = [hit] if hit else variants
+        if not lanes:
+            return
+        self._ready_variant_noticed = True
+        try:
+            sys.stderr.write(
+                "sigma: board #%s has a %s lane that differs from the Ready column %r only in case "
+                "or spacing, so the loop stays on the label queue (the queue mode is never switched "
+                "by spelling). To make that lane the queue, set "
+                "discovery.github.project.columns.ready to %r, or run board_migrate.py.\n"
+                % (self._project_number, " / ".join(repr(v) for v in lanes), self.col["ready"],
+                   lanes[0]))
+        except Exception:
+            pass
+
+    def _warn_unmatched_column(self, status_name):
+        """#280: a card move whose column has NO matching Status option on the board. It used to
+        write nothing and say nothing (the loop's own board kept GitHub's `In progress` while every
+        pick asked for `In Progress`). Loud, once per column per run, never raises. `ready` is
+        exempt: a board without it is the designed label queue (`_ready_lane`), not a fault."""
+        key = next((k for k, v in self.col.items() if v == status_name), None)
+        if key == "ready" or status_name in self._unmatched_warned:
+            return
+        self._unmatched_warned.add(status_name)
+        opts = list(self._status_options)
+        _, variants = self._match_option(opts, status_name)
+        why = ("has no matching option (several differ from it only in case/spacing: %s, and none "
+               "is exact)" % ", ".join(repr(v) for v in variants)) if variants else \
+            "has no matching option"
+        where = ("discovery.github.project.columns.%s" % key) if key else "discovery.github.project.columns"
+        try:
+            sys.stderr.write(
+                "sigma: board column %r (project.columns.%s) %s on board #%s's %s field (options: "
+                "%s) - card(s) NOT moved to it this run. Add that option on the board, or set %s to "
+                "the board's spelling; /agrim-doctor lists every unmatched column.\n"
+                % (status_name, key or "?", why, self._project_number,
+                   self._project_cfg.get("status_field") or "Status",
+                   ", ".join(opts) or "none", where))
+        except Exception:
+            pass
 
     def _warn_board_unresolved(self, owner, title):
         """Loud one-time note: board mirroring is on but the config doesn't identify an existing board,
@@ -3883,14 +4004,22 @@ class GitHubSource:
             # one rename we need (`Todo` -> our backlog column) safe to name explicitly. If GitHub
             # ever changes that default the rename simply does not fire and `Todo` survives as an
             # extra lane: cosmetic, not broken.
+            # #280: `In progress` too. Real default boards carry a lowercase-p `In progress`
+            # (read-only, 2026-09-29, `.sdlc/research/280.md`; others carry `In Progress`, when the
+            # rename is a no-op), and without this rename rule 1 of `_options_mutation` CLAIMS it
+            # under GitHub's spelling -- so the loop's own board kept
+            # `In progress` while every pick looked up `In Progress` and silently moved nothing.
+            # Same id-preserving update as `Todo`; board_setup.py's fresh path renames both too.
             self._run(["api", "graphql", "-f",
                        self._options_mutation(fld.get("id"), cols, fld.get("options") or [],
-                                              rename={"Todo": self.col["backlog"]})])
+                                              rename={"Todo": self.col["backlog"],
+                                                      "In progress": self.col["in_progress"]})])
             fields = self._list_fields(owner, number)        # re-list to read back the new option ids
             fld = self._find_field(fields, fname)
         if fld:
             self._field_id = fld.get("id")
             self._status_options = {o.get("name"): o.get("id") for o in (fld.get("options") or [])}
+            self._adopt_column_spellings(list(self._status_options))
         # Cache EVERY single-select field's options (Status plus any custom Priority/Section/…), so a
         # custom-field write can resolve a field id + option id by name. Single-select fields are the
         # ones that carry `options`; a text/number/date field has none and isn't settable this way.
@@ -4077,6 +4206,8 @@ class GitHubSource:
         # so an adopted board's cards land exactly where they always did.
         seed_name = self.col["ready"] if self._status_options.get(self.col["ready"]) else self.col["backlog"]
         seed = self._status_options.get(seed_name)
+        if not seed:
+            self._warn_unmatched_column(seed_name)      # #280: never a silently uncarded backlog
         backlog_name = self.col["backlog"]
         on_board = set(self._items or {})            # numbers already carded
         for it in issues:
