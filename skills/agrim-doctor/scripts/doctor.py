@@ -847,7 +847,32 @@ def _open_issue_done_card(gh_cfg, run):
             "board-derived metric silently under-counts it. Reset each card's Status on the board.")
 
 
-def _unmapped_board_fields(gh_cfg, run):
+_UNREAD = object()   # "no field list passed": the function reads it itself
+
+
+def _board_field_list(gh_cfg, run):
+    """The pinned board's fields from ONE read-only `gh project field-list`, or None when it cannot
+    be read (nothing pinned, no scope, an API error, bad JSON). #280: shared by
+    `_unmapped_board_fields` and `_board_columns_unmatched`, so `check` pays one call for both."""
+    proj = _block(gh_cfg, "project")
+    repo = gh_cfg.get("repo") or ""
+    owner = proj.get("owner") or (repo.split("/")[0] if "/" in repo else "")
+    number = proj.get("number")
+    if not owner or not number:
+        return None
+    try:
+        raw = run(["gh", "project", "field-list", str(number), "--owner", owner, "--format", "json",
+                   "--limit", "100"])
+        if not raw:
+            return None
+        data = json.loads(raw)
+    except Exception:
+        return None
+    return [f for f in ((data.get("fields") if isinstance(data, dict) else data) or [])
+            if isinstance(f, dict)]
+
+
+def _unmapped_board_fields(gh_cfg, run, fields=_UNREAD):
     """Single-select board fields — beyond the Status field sigma drives, and beyond what
     project.custom_fields already maps — that an issue the loop CREATES (a hand-off) would be left
     blank on while every human-made issue carries them. Returns the unmapped names, [] when every
@@ -855,19 +880,10 @@ def _unmapped_board_fields(gh_cfg, run):
     error) — so a can't-tell never reports a false all-clear. The one silent-data-loss trap doctor
     can catch before it fires."""
     proj = _block(gh_cfg, "project")
-    repo = gh_cfg.get("repo") or ""
-    owner = proj.get("owner") or (repo.split("/")[0] if "/" in repo else "")
-    number = proj.get("number")
-    if not owner or not number:
+    if fields is _UNREAD:
+        fields = _board_field_list(gh_cfg, run)
+    if fields is None:
         return None
-    raw = run(["gh", "project", "field-list", str(number), "--owner", owner, "--format", "json", "--limit", "100"])
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return None
-    fields = (data.get("fields") if isinstance(data, dict) else data) or []
     status_field = proj.get("status_field") or "Status"
     cf = proj.get("custom_fields")                    # a malformed (non-dict) value must not crash the run
     mapped = set(cf.keys()) if isinstance(cf, dict) else set()
@@ -875,6 +891,45 @@ def _unmapped_board_fields(gh_cfg, run):
             if f.get("options")                       # single-select fields are the ones that carry options
             and f.get("name") != status_field
             and f.get("name") not in mapped]
+
+
+def _board_columns_unmatched(gh_cfg, run, fields=_UNREAD):
+    """#280: the loop's columns (`project.columns`, defaults `sources.BOARD_COLUMNS`) that match NO
+    option of the pinned board's Status field -- a card move to one of them writes nothing (the
+    loop warns once per run). Matching is the loop's own resolver, `GitHubSource._match_option`
+    (exact, else the ONE option equal ignoring case and whitespace; duplicate lane names count
+    once, as in the loop's option dict), so doctor and the loop cannot disagree. Returns
+    ["<key> '<name>'", ...] (an ambiguous column carries its variants), [] when every column
+    matches, or None when the board cannot be read -- a can't-tell is never a false all-clear.
+
+    Not counted: `ready` (a board without an exact `Ready` is the designed label queue,
+    `_ready_lane`), and `parked` while `blocked` matches (the loop parks into Blocked then).
+    READ-ONLY: `fields` is the caller's one `_board_field_list` read, shared with
+    `_unmapped_board_fields`; the caller keeps it out of `cheap_only`."""
+    proj = _block(gh_cfg, "project")
+    if fields is _UNREAD:
+        fields = _board_field_list(gh_cfg, run)
+    if fields is None:
+        return None
+    try:
+        src = _load_loop_script("sources")
+    except Exception:
+        return None
+    status_field = proj.get("status_field") or "Status"
+    fld = next((f for f in fields if f.get("name") == status_field), None)
+    names = [o.get("name") for o in ((fld or {}).get("options") or []) if isinstance(o, dict)]
+    cfg_cols = proj.get("columns") if isinstance(proj.get("columns"), dict) else {}
+    missing = {}
+    for k, d in src.BOARD_COLUMNS:
+        n = cfg_cols.get(k, d)
+        hit, variants = src.GitHubSource._match_option(names, n)
+        if hit is None:
+            missing[k] = f"{k} {n!r}" + (" (ambiguous: %s)" % ", ".join(repr(v) for v in variants)
+                                         if variants else "")
+    missing.pop("ready", None)
+    if "blocked" not in missing:
+        missing.pop("parked", None)
+    return list(missing.values())
 
 
 _DEFAULT_DOCTOR_MAX_ISSUES = 10            # backlog_check.doctor_scan.max_issues (R6, see docstring below)
@@ -2043,6 +2098,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             dup = _board_dup_risk(gh_disc, run)
             if dup:
                 out.append(_chk("project.number pinned (no duplicate-board risk)", False, dup))
+            # #280: ONE field-list read, shared by the Status-columns row and the custom-fields
+            # row below (the custom-fields row always made this read, cheap_only or not).
+            board_fields = _board_field_list(gh_disc, run)
             # #235: a GraphQL-backed read, so never under cheap_only (the SessionStart wizard).
             # A read that failed is no row at all -- never a pass, never a false alarm.
             if not cheap_only:
@@ -2050,13 +2108,25 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                 if state in ("ok", "gone"):
                     out.append(_chk("pinned board #%s reachable"
                                     % _block(gh_disc, "project").get("number"), state == "ok", gone))
+                # #280: read-only, same gate. A column with no matching Status option makes that
+                # card move a no-op; a case/spacing-only difference already matches.
+                unmatched = (_board_columns_unmatched(gh_disc, run, board_fields)
+                             if state == "ok" else None)
+                if unmatched is not None:
+                    out.append(_chk(
+                        "board Status options match the loop's columns", not unmatched,
+                        "pinned board #%s's Status field has no single matching option for %s, so "
+                        "the loop cannot move a card there (it warns once per run). Add the option "
+                        "on the board, or set discovery.github.project.columns.<key> to the "
+                        "board's exact spelling."
+                        % (_block(gh_disc, "project").get("number"), ", ".join(unmatched))))
             stale_cards = _item_closed_workflow_off(gh_disc, run)
             if stale_cards:
                 out.append(_chk("board marks closed items Done", False, stale_cards))
             stranded_done = _open_issue_done_card(gh_disc, run)
             if stranded_done:
                 out.append(_chk("no open issue stranded at board Done", False, stranded_done))
-            unmapped = _unmapped_board_fields(gh_disc, run)
+            unmapped = _unmapped_board_fields(gh_disc, run, board_fields)
             if unmapped is not None:
                 out.append(_chk("board custom fields mapped", not unmapped,
                                 "the board has single-select field(s) sigma won't set on issues it "

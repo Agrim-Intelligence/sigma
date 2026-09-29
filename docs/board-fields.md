@@ -86,6 +86,49 @@ is the operator's explicit choice of board.
   The run prints one warning naming the option. Add it on the board by hand.
 - **A same-named field is not single-select.** It is skipped with one warning.
 
+## Status options spelled differently (#280)
+
+A card move names a column from `project.columns` (`In Progress` by default). The Status field's
+options are matched with the same rule as the fields above, and whitespace is ignored as well:
+
+- **An exact option wins.** A board with both `In Progress` and `In progress` uses `In Progress`.
+- **Otherwise one option that differs only in case or spacing is used** under the board's own
+  spelling. For example, `in   progress` matches `In Progress`. This happens only in memory, for
+  the current run. The board is never renamed and config is never written. `board_setup.py` is
+  the place that maps an adopted board's spelling into `project.columns` (#235).
+- **Several such options and no exact one** match nothing. The loop does not guess between two lanes.
+  Two lanes with the *same* name count as one, as they do in the loop's option map.
+- **`Ready` is matched exactly, always.** It decides whether the board or the label queue is used,
+  and that is never switched by spelling. A board with a `READY`, `ready` or `Ready ` lane keeps
+  the label queue. The run prints **one** notice naming that lane. To use it as the queue, set
+  `project.columns.ready` to its exact spelling (an explicit choice, which then wins) or run
+  `board_migrate.py`. The loop also never writes a card into such a lane.
+- **No match** means the card is not moved. The run prints **one** warning for each column. It
+  names the column, its `project.columns.<key>`, and the options the board actually has. Before
+  #280 this was a silent no-op. There are two exceptions. A board without `Ready` gets no warning,
+  because that is the designed label queue. A park into a missing `Parked` falls back to `Blocked`
+  with no warning. A board with neither `Ready` nor `Backlog` also gets one warning, because the
+  sync then cannot card new goals.
+- **A board the loop creates itself** (`_ensure_board`, when the owner has no boards) renames
+  GitHub's defaults `Todo` and `In progress` to `Backlog` and `In Progress`. It does this in the
+  same update that preserves option ids, which is the same thing `board_setup.py` does on its fresh
+  path. Workflows stay enabled. Before #280 only `Todo` was renamed. The loop's own board kept
+  `In progress`, and every pick wrote nothing to it.
+
+GitHub's default spelling, as one read-only GraphQL read of an organisation's 14 boards on
+2026-09-29 shows (`.sdlc/research/280.md`). 4 boards still have GitHub's default `Todo` lane and
+carry `In progress`, with a lowercase p. One of them has the loop's own default title
+`<repo> — SDLC`, and it holds a duplicated `In progress` lane. 3 other `Todo / In Progress / Done`
+boards carry `In Progress`. Both spellings are live, so neither one is assumed. What GitHub's API gives a
+brand-new board today was not measured, because doing so would mean creating a board on real
+GitHub.
+
+`/agrim-doctor` has a row, **board Status options match the loop's columns**. It lists every loop
+column that has no matching option on the pinned board. `ready` is never listed. `parked` is not
+listed while `blocked` matches. The row uses the loop's own matching function, so the two never
+disagree. It shares one read-only `gh project field-list` with the **board custom fields mapped**
+row. It runs only when the pinned board is reachable, and it is never run under `cheap_only`.
+
 ## Which card
 
 A card is matched by **repository and issue number**, never by number alone. A board can hold cards
