@@ -49,7 +49,8 @@ continue.
 real command: `python3 <sigma>/skills/agrim-init/scripts/verify_detect.py detect .` lists the
 candidates it finds by reading files (pytest, `package.json` scripts.test, `go.mod`, `Cargo.toml`, a
 `Makefile` test target, a CI test step). Confirm one with the user, then record it with
-`... verify_detect.py confirm .sdlc <n>` -- never paste a detected command into a shell line, since
+`... verify_detect.py confirm .sdlc <n> <id>` (the id `detect` prints beside it; a changed
+repository is refused, not silently re-numbered) -- never paste a detected command into a shell line, since
 its text comes from the repository -- or ask them for the exact command and record it with
 `... set .sdlc --command-file <file>`. If you genuinely can't get one yet, leave verify off and say so; never
 enable enforce without a command. `setup.py configure` guarantees this, but choose the command here.

@@ -9,29 +9,39 @@ refuses EVERY `record done` (loop.py verify prints NO-COMMAND, exit 3; record do
 (`write_verify` raises instead), and a scaffold that has no confirmed command writes enforce OFF
 with the reason in `verify._why`.
 
-DETECTION READS FILES, NEVER RUNS THEM. Stdlib only, deterministic (fixed source order, sorted
-directory listings), bounded scans (a fixed cap on files looked at, so a monorepo costs the same as
-a toy repo -- the cap, not the repo size, bounds the work). `shutil.which` decides between
-`python3`, `python` and `py`: a PATH lookup, not an execution.
+DETECTION READS FILES, NEVER RUNS THEM. Stdlib only, deterministic (fixed source order, listings
+sorted by name), bounded scans. The pytest scan counts only what could hold a test -- directories it
+descends into and `.py` files -- toward its cap; hidden entries (`.git`, `.sdlc`, `.pytest_cache`,
+`.venv`, `.cursor`...), vendored/cache directories and non-source files (AGENTS.md, a log) are
+skipped without counting, so neither tool output nor a file /agrim-init itself writes can move
+what is found. Ceiling: at most _SCAN_CAP directories are descended into, each read with one
+listing (a single directory of 10x or 100x the entries costs 10x or 100x one readdir; measured, not
+bounded). `shutil.which` decides between `python3`, `python` and `py`: a PATH lookup, not an
+execution.
 
 REPOSITORY TEXT IS UNTRUSTED, AND NO PRINTED GESTURE CARRIES IT. A CI `run:` line is written by
-whoever wrote the repo. The confirm gesture is therefore `confirm <sdlc_dir> <n>`: it re-derives
-candidate n from the repository itself, so no candidate text is ever pasted into a shell, and what
-is stored is byte-identical to what was shown. (The old gesture, `set .sdlc "<candidate>"`, ran a
-CI line like `pytest -q $(touch X)` on the user's machine when pasted, stored something other than
-what it showed, and broke on a benign `pytest -m "not slow"`.) On top of that, a CI step carrying a
+whoever wrote the repo. The confirm gesture is therefore `confirm <sdlc_dir> <n> <id>`, where `<id>`
+is `command_id()` of the exact command shown as candidate n: it re-runs detection, and stores the
+candidate only if candidate n STILL has that id -- otherwise it refuses ("the repository changed
+since the report"), so what is stored is byte-identical to what the user saw and confirmed, never
+whatever happens to be n-th in a fresh list. (#246 review 2: a bare position stored a hostile CI
+step after one new root entry shifted the list.) No candidate text is ever pasted into a shell.
+(The first gesture, `set .sdlc "<candidate>"`, ran a CI line like `pytest -q $(touch X)` on the
+user's machine when pasted.) A `.sdlc` that is a symlink is refused: detecting in one repository
+and writing another's config is not a thing this tool does. On top of that, a CI step carrying a
 shell metacharacter (` $ ; & | < >) or any control/format character is never proposed at all --
 it is reported by file name only, its text not reproduced -- and everything printed passes through
 `printable()`, so an ESC sequence in a file name or package.json cannot repaint the terminal.
 
 CLI (the exact gestures /agrim-init, /agrim-doctor and the setup wizard print):
-    verify_detect.py detect  [repo_root]                    # JSON list of candidates
-    verify_detect.py confirm <sdlc_dir> <n>                 # candidate n (1-based), enforce ON
+    verify_detect.py detect  [repo_root]                    # JSON list: command, source, id
+    verify_detect.py confirm <sdlc_dir> <n> <id>            # candidate n, only if its id matches
     verify_detect.py set     <sdlc_dir> --command-file <f>  # your own command, from a file
     verify_detect.py set     <sdlc_dir> -                   # ... or from stdin (one line)
     verify_detect.py set     <sdlc_dir> "<command>"         # ... or as one argument you typed
     verify_detect.py decline <sdlc_dir>                     # enforce OFF, reason names what was declined
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -45,6 +55,18 @@ import unicodedata
 #: Upper bound on files a bounded scan looks at. A constant is right here: it bounds work, it is
 #: not a resource limit copied from a laptop -- past it, detection stops looking, it never fails.
 _SCAN_CAP = 200
+
+#: Directories the pytest scan never enters (hidden ones -- a leading dot -- are skipped too).
+_SKIP_DIRS = frozenset({"node_modules", "venv", "env", "site-packages", "build", "dist",
+                        "__pycache__", "vendor", "third_party"})
+
+#: A repository string (a package.json script, a Makefile recipe) shown as context is cut here.
+_SHOW_CAP = 160
+
+#: Hex digits of a candidate's id. 12 (48 bits), not 8: an id is what binds `confirm` to the command
+#: the user saw, and a repository author choosing a CI line could brute-force a 32-bit collision
+#: with a short proposal in minutes; 48 bits is out of reach of that.
+_ID_HEX = 12
 
 #: npm init's placeholder test script -- present in almost every package.json, and it always fails.
 _NPM_PLACEHOLDER = "no test specified"
@@ -92,6 +114,19 @@ def printable(text):
                    for ch in str(text))
 
 
+def command_id(command):
+    """The id printed beside a candidate and required by `confirm`: a hash of the exact command
+    string, so `confirm` stores only the command that was shown -- never a position's new tenant."""
+    return hashlib.sha256(command.encode("utf-8")).hexdigest()[:_ID_HEX]
+
+
+def _shown(text):
+    """A repository string shown as context: one line, bounded, repr-quoted (so control characters
+    are visible escapes even before printable())."""
+    text = " ".join(str(text).split())
+    return repr(text if len(text) <= _SHOW_CAP else text[:_SHOW_CAP] + "...")
+
+
 def _q(path):
     """Quote a path for a printed gesture: POSIX shell quoting, or double quotes on Windows."""
     return f'"{path}"' if os.name == "nt" else shlex.quote(str(path))
@@ -111,27 +146,39 @@ def _read(path):
 
 
 def _has_pytest_tests(root):
-    """A bounded scan for test_*.py / *_test.py at the root and up to two levels down, skipping
-    hidden, virtualenv and vendored directories. Returns the first match (or None)."""
-    skip = {"node_modules", "venv", ".venv", "env", "site-packages", "build", "dist", "__pycache__"}
+    """A bounded scan for test_*.py / *_test.py at the root and up to two levels down. Returns the
+    first match in name order (or None). Only entries that could hold a test count toward the cap:
+    a directory it will descend into, or a `.py` file. Hidden entries, _SKIP_DIRS, symlinked
+    directories and every other file are skipped WITHOUT counting -- so `.pytest_cache` from one
+    pytest run, or the AGENTS.md / .cursor that /agrim-init writes, never changes the answer."""
     seen = 0
     frontier = [root]
     for _depth in range(3):
         nxt = []
         for d in frontier:
             try:
-                entries = sorted(d.iterdir(), key=lambda p: p.name)
+                with os.scandir(d) as it:
+                    entries = sorted(it, key=lambda e: e.name)
             except OSError:
                 continue
-            for p in entries:
+            for e in entries:
+                if e.name.startswith("."):
+                    continue
+                try:
+                    is_dir = e.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                if is_dir:
+                    if e.name in _SKIP_DIRS:
+                        continue
+                    nxt.append(pathlib.Path(e.path))
+                elif not e.name.endswith(".py"):
+                    continue
                 seen += 1
                 if seen > _SCAN_CAP:
                     return None
-                if p.is_dir():
-                    if not p.name.startswith(".") and p.name not in skip:
-                        nxt.append(p)
-                elif p.suffix == ".py" and (p.name.startswith("test_") or p.stem.endswith("_test")):
-                    return p
+                if not is_dir and (e.name.startswith("test_") or e.name[:-3].endswith("_test")):
+                    return pathlib.Path(e.path)
         frontier = nxt
     return None
 
@@ -161,14 +208,32 @@ def _package_json(root):
         return None
     runner = "pnpm" if (root / "pnpm-lock.yaml").is_file() else \
         "yarn" if (root / "yarn.lock").is_file() else "npm"
-    return f"{runner} test", f"package.json scripts.test = {test.strip()!r}"
+    return f"{runner} test", f"package.json scripts.test = {_shown(test.strip())}"
+
+
+def _make_recipe(text):
+    """The `test` target's recipe lines (tab-indented lines after `test:`, plus an inline `; cmd`),
+    or None when there is no `test` target. `test :=` / `test ::=` is a variable, not a target."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"^test\s*::?(?!=)(.*)$", line)
+        if not m:
+            continue
+        recipe = [m.group(1).split(";", 1)[1].strip()] if ";" in m.group(1) else []
+        for nxt in lines[i + 1:]:
+            if not nxt.startswith("\t"):
+                break
+            recipe.append(nxt.strip())
+        return [r for r in recipe if r]
+    return None
 
 
 def _makefile(root):
     for name in ("Makefile", "makefile", "GNUmakefile"):
         path = root / name
-        if path.is_file() and re.search(r"^test\s*:", _read(path), re.MULTILINE):
-            return f"{name} has a `test:` target"
+        recipe = _make_recipe(_read(path)) if path.is_file() else None
+        if recipe is not None:
+            return f"{name} test target runs {_shown('; '.join(recipe)) if recipe else 'no recipe'}"
     return None
 
 
@@ -202,7 +267,7 @@ def _ci_steps(root, skipped=None):
 
 
 def detect(repo_root=".", skipped=None):
-    """Ordered candidates: [{"command", "source"}]. First is the proposal. Duplicates dropped.
+    """Ordered candidates: [{"command", "source", "id"}]. First is the proposal. Duplicates dropped.
     Pass a list as `skipped` to learn the sources of CI steps refused as shell-unsafe."""
     root = pathlib.Path(repo_root)
     found = []
@@ -224,7 +289,7 @@ def detect(repo_root=".", skipped=None):
     for cmd, source in found:
         if cmd not in seen:
             seen.add(cmd)
-            out.append({"command": cmd, "source": source})
+            out.append({"command": cmd, "source": source, "id": command_id(cmd)})
     return out
 
 
@@ -267,15 +332,19 @@ def unconfirmed_why(candidates):
                 + gesture("set .sdlc --command-file <file>", SCRIPT))
     top = candidates[0]
     return (f"enforce OFF until a command is confirmed: /agrim-init detected `{printable(top['command'])}` "
-            f"({printable(top['source'])}) but nobody has confirmed it. Confirm with: "
-            + gesture("confirm .sdlc 1", SCRIPT))
+            f"({printable(top['source'])}, id {top['id']}) but nobody has confirmed it. Confirm with "
+            "(from the repository root): " + gesture(f"confirm .sdlc 1 {top['id']}", SCRIPT))
 
 
-def proposal_lines(candidates, skipped=(), trap=False):
+def proposal_lines(candidates, skipped=(), trap=False, sdlc=".sdlc"):
     """What /agrim-init prints on every host (Codex/Cursor have no interactive question). No line
-    carries candidate text inside a shell gesture: `confirm .sdlc <n>` re-derives it from the repo.
+    carries candidate text inside a shell gesture: `confirm <sdlc> <n> <id>` re-derives it from the
+    repo and refuses unless candidate n still has the id shown. `sdlc` is the scaffolded directory,
+    printed quoted (pass it absolute, so a gesture pasted from any directory reaches it).
     `trap` is an EXISTING config with enforce ON and an empty command: the lines then say so once,
     and describe confirm/decline against that state instead of claiming enforce is OFF."""
+    where = printable(_q(sdlc))
+    cfg = printable(os.path.join(str(sdlc), "config.json"))
     if trap:
         lines = ["agrim-init: WARNING - existing .sdlc/config.json has verify.enforce ON with an EMPTY "
                  "verify.command: EVERY `record done` is refused until you fix it."]
@@ -287,30 +356,34 @@ def proposal_lines(candidates, skipped=(), trap=False):
         lines += ["agrim-init: verify command - none detected" +
                   ("." if trap else "; verify.enforce is OFF (done is not machine-checked).")]
         lines += [state] if trap else []
-        lines += ["  Set your own: put it in .sdlc/config.json as "
+        lines += [f"  Set your own: put it in {cfg} as "
                   + json.dumps({"verify": {"command": "<your command>", "enforce": True}}),
-                  "  or write it to a file and run: " + gesture("set .sdlc --command-file <file>"),
-                  "  or turn enforce off: " + gesture("decline .sdlc")]
+                  "  or write it to a file and run: "
+                  + printable(gesture(f"set {where} --command-file <file>")),
+                  "  or turn enforce off: " + printable(gesture(f"decline {where}"))]
     else:
         top = candidates[0]
         lines += [f"agrim-init: verify command - detected `{printable(top['command'])}` "
-                  f"({printable(top['source'])}).",
+                  f"({printable(top['source'])}) [id {top['id']}].",
                   state,
-                  "  Confirm it (re-reads candidate 1 from this repo; sets the command, enforce ON):",
-                  "  " + gesture("confirm .sdlc 1"),
-                  "  or put this in .sdlc/config.json yourself:",
+                  "  Confirm it (re-detects; stores it only if candidate 1 still has id "
+                  f"{top['id']}, else refuses; enforce ON):",
+                  "  " + printable(gesture(f"confirm {where} 1 {top['id']}")),
+                  f"  or put this in {cfg} yourself:",
                   "  " + json.dumps({"verify": {"command": top["command"], "enforce": True}}),
-                  "  none of these? " + gesture("decline .sdlc") + "  (enforce OFF, says why)"]
+                  "  none of these? " + printable(gesture(f"decline {where}"))
+                  + "  (enforce OFF, says why)"]
         for n, c in enumerate(candidates[1:], start=2):
             lines.append(f"  other candidate {n}: `{printable(c['command'])}` ({printable(c['source'])})"
-                         f" -- confirm .sdlc {n}")
+                         f" [id {c['id']}] -- confirm with: "
+                         + printable(gesture(f"confirm {where} {n} {c['id']}")))
     for source in skipped:
         lines.append(f"  not proposed: a {printable(source)} contains shell metacharacters or control "
                      "characters; review that file yourself (its text is not reproduced here).")
     return lines
 
 
-USAGE = ("usage: verify_detect.py detect [repo_root] | confirm <sdlc_dir> <n> | "
+USAGE = ("usage: verify_detect.py detect [repo_root] | confirm <sdlc_dir> <n> <id> | "
          "set <sdlc_dir> (--command-file <file> | - | <command>) | decline <sdlc_dir>")
 
 
@@ -349,22 +422,48 @@ def main(argv):
         print(json.dumps(detect(args[1] if len(args) == 2 else "."), indent=2))
         return 0
     if verb in ("set", "confirm", "decline"):
-        if (verb == "decline" and len(args) != 2) or (verb == "confirm" and len(args) != 3) \
+        if verb == "confirm" and len(args) == 3:
+            return _refuse("confirm needs the candidate's id as well as its number, exactly as "
+                           "/agrim-init printed it: confirm <sdlc_dir> <n> <id> (`detect` lists ids)")
+        if (verb == "decline" and len(args) != 2) or (verb == "confirm" and len(args) != 4) \
                 or (verb == "set" and len(args) < 3):
             print(USAGE, file=sys.stderr)
             return 2
-        sdlc = pathlib.Path(args[1])
+        # abspath, never resolve(): the repository detected is the directory that CONTAINS the
+        # given .sdlc, not wherever a symlink points. And a symlinked .sdlc is refused outright --
+        # writing through it would store a command detected here into another repository's config.
+        sdlc = pathlib.Path(os.path.abspath(args[1]))
+        if sdlc.is_symlink():
+            return _refuse(f"{printable(sdlc)} is a symlink (to {printable(os.path.realpath(sdlc))});"
+                           " detecting in one repository and writing another's config is not "
+                           "supported -- run this against the real directory, from its own repository")
+        repo = sdlc.parent
         if not (sdlc / "config.json").is_file():
             print(f"verify_detect: no config.json under {printable(sdlc)} -- run /agrim-init first",
                   file=sys.stderr)
             return 2
         if verb == "confirm":
-            cands = detect(sdlc.resolve().parent)
+            want = args[3]
+            if not re.fullmatch(f"[0-9a-f]{{{_ID_HEX}}}", want):
+                return _refuse(f"{printable(want)} is not a candidate id ({_ID_HEX} lowercase hex "
+                               "digits, printed beside each candidate)")
+            cands = detect(repo)
             if not (args[2].isdigit() and 1 <= int(args[2]) <= len(cands)):
-                return _refuse(f"no candidate {printable(args[2])} -- this repository has "
-                               f"{len(cands)} (`detect .` lists them)")
-            cmd = cands[int(args[2]) - 1]["command"]
-            origin = f"candidate {args[2]} ({printable(cands[int(args[2]) - 1]['source'])})"
+                return _refuse(f"no candidate {printable(args[2])} -- the repository changed since "
+                               f"the report, or the number is wrong (it has {len(cands)} now); "
+                               "nothing stored. Re-run /agrim-init (or `detect`) and confirm from "
+                               "the new report")
+            chosen = cands[int(args[2]) - 1]
+            if chosen["id"] != want:
+                moved = [n for n, c in enumerate(cands, start=1) if c["id"] == want]
+                return _refuse(f"the repository changed since the report: candidate {args[2]} is "
+                               f"now a different command (id {chosen['id']}, not {want})"
+                               + (f"; id {want} is now candidate {moved[0]}" if moved else
+                                  f"; no candidate has id {want} any more")
+                               + ". Nothing stored. Re-run /agrim-init (or `detect`) and confirm "
+                               "from the new report")
+            cmd = chosen["command"]
+            origin = f"candidate {args[2]}, id {want} ({printable(chosen['source'])})"
         elif verb == "set":
             cmd, err = _read_command(args[2:])
             if err:
@@ -382,11 +481,12 @@ def main(argv):
             print(f"verify: command = {json.dumps(cmd)}, enforce ON "
                   "(loop.py verify runs it; record done needs it green)")
             return 0
-        declined = [c["command"] for c in detect(sdlc.resolve().parent)]
+        declined = [c["command"] for c in detect(repo)]
         why = ("enforce OFF: the user declined every detected verify command at /agrim-init"
-               + (f" ({', '.join(declined)})" if declined else " (none was detected)")
+               + (f" ({printable(', '.join(declined))})" if declined else " (none was detected)")
                + ", so `done` is not machine-checked. Turn it on with: "
-               + gesture("confirm .sdlc <n>", SCRIPT) + " (after `detect .`), or put the command "
+               + gesture("confirm .sdlc <n> <id>", SCRIPT) + " (after `detect .`, which lists "
+               "each candidate's id), or put the command "
                "in verify.command and set verify.enforce true")
         write_verify(sdlc, None, why)
         print("verify: " + why)

@@ -2197,7 +2197,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         "verify.enforce is on but no verify.command (and no goal sets verify_command) — "
                         "every `done` is refused. Fix: " + _python_command() + " <sigma>/skills/"
                         "agrim-init/scripts/verify_detect.py detect . lists candidates, then "
-                        "`... confirm .sdlc <n>` sets candidate n (it re-reads the repo; nothing "
+                        "`... confirm .sdlc <n> <id>` sets candidate n if it still has that id (it "
+                        "re-reads the repo and refuses if it changed; nothing "
                         "pasted reaches a shell), or put your command in verify.command; or "
                         "`... decline .sdlc` to turn enforce off."))
 

@@ -4648,10 +4648,11 @@ def _python_command():
 
 
 #: The one gesture every "no verify command" message names (#228), so the loop, /agrim-init and
-#: /agrim-doctor all point at the same fix. `confirm .sdlc <n>` re-derives candidate n from the
+#: /agrim-doctor all point at the same fix. `confirm .sdlc <n> <id>` re-derives candidate n from the
 #: repo itself: no repository text is ever pasted into a shell.
 _VERIFY_SET_HINT = (f"set one: {_python_command()} <sigma>/skills/agrim-init/scripts/verify_detect.py "
-                    "detect . lists candidates, `... confirm .sdlc <n>` sets candidate n (enforce ON), "
+                    "detect . lists candidates with ids, `... confirm .sdlc <n> <id>` sets candidate n if its id "
+                    "still matches (enforce ON), "
                     "or put your command in config verify.command; or `... decline .sdlc` to turn "
                     "verify.enforce off")
 

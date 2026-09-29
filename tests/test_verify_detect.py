@@ -188,7 +188,7 @@ def test_init_prints_the_candidate_and_exact_config_line(tmp_path):
     cmd = f"{vd.python_command()} -m pytest -q"
     assert f"detected `{cmd}`" in r.stdout
     assert json.dumps({"verify": {"command": cmd, "enforce": True}}) in r.stdout
-    assert "confirm .sdlc 1" in r.stdout
+    assert f"confirm {vd._q(os.path.abspath(str(tmp_path / '.sdlc')))} 1 {vd.command_id(cmd)}" in r.stdout
     assert f'"{cmd}"' not in r.stdout.replace(json.dumps(cmd), "")   # never inside a shell gesture
 
 
@@ -202,7 +202,8 @@ def test_skill_and_templates_no_longer_send_the_command_to_project_md():
     tmpl = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     assert "fill its **Verify command**" not in skill
     assert "fill in Verify command in project.md" not in tmpl
-    assert "verify_detect.py\" confirm .sdlc <n>" in skill and "decline" in skill
+    assert "verify_detect.py\" confirm .sdlc <n> <id>" in skill and "decline" in skill
+    assert "confirm .sdlc <n>`" not in skill          # the position-only form is gone (#246 review 2)
     # #228 review: the gesture that pasted repository text into a shell is gone from the docs.
     assert 'set .sdlc "<command>"' not in skill
 
@@ -275,7 +276,7 @@ def test_record_done_names_the_missing_command_not_run_verify_first(tmp_path):
     assert _loop(sdlc, "verify", ".sdlc", ".sdlc/goals/0000-demo.md").returncode == 3
     d = _loop(sdlc, "record", ".sdlc", ".sdlc/goals/0000-demo.md", "done")
     assert d.returncode == 4 and "no verify command declared" in d.stderr
-    assert "confirm .sdlc <n>" in d.stderr and f"{vd.python_command()} <sigma>" in d.stderr
+    assert "confirm .sdlc <n> <id>" in d.stderr and f"{vd.python_command()} <sigma>" in d.stderr
 
 
 def test_the_shipped_template_itself_never_holds_the_trap():
@@ -340,7 +341,7 @@ def test_benign_quoted_ci_step_is_proposed_and_confirm_stores_it_byte_identical(
     root = _ci_repo(tmp_path / "r", 'pytest -m "not slow"')
     assert _cmds(root) == ['pytest -m "not slow"']
     sdlc = _cfg(root, {"command": "", "enforce": False})
-    r = _run(DETECT, "confirm", sdlc, "1", cwd=root)
+    r = _run(DETECT, "confirm", sdlc, "1", vd.command_id('pytest -m "not slow"'), cwd=root)
     assert r.returncode == 0, r.stderr
     v = json.loads((sdlc / "config.json").read_text())["verify"]
     assert v["command"] == 'pytest -m "not slow"' and v["enforce"] is True
@@ -351,7 +352,7 @@ def test_confirm_refuses_an_index_that_is_not_a_candidate(tmp_path):
     root = _ci_repo(tmp_path / "r", "pytest -q")
     sdlc = _cfg(root, {"command": "", "enforce": False})
     for bad in ("0", "2", "x", "-1"):
-        r = _run(DETECT, "confirm", sdlc, bad, cwd=root)
+        r = _run(DETECT, "confirm", sdlc, bad, vd.command_id("pytest -q"), cwd=root)
         assert r.returncode == 2 and "REFUSED" in r.stderr, bad
     assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False
 
@@ -400,7 +401,7 @@ def _confirm_lines(stdout):
     verify_detect.py with `confirm` or `set` (the pre-fix gesture was `set .sdlc "<candidate>"`, so
     a filter blind to `set` would let this test pass against the very bug it targets)."""
     return [l.strip() for l in stdout.splitlines()
-            if "verify_detect.py" in l and (" confirm .sdlc " in l or " set .sdlc " in l)
+            if "verify_detect.py" in l and (" confirm " in l or " set " in l)
             and not l.strip().startswith(("agrim-init", "{", "other candidate", "or "))]
 
 
@@ -431,3 +432,180 @@ def test_pasting_the_printed_confirm_gesture_runs_nothing_and_stores_what_was_sh
     else:
         assert shown == [] and confirm == [] and stored["enforce"] is False
         assert "not proposed" in r.stdout and run_line not in r.stdout
+
+
+# ---------------------------------------------------------------- confirm is bound to what was SHOWN (#246 review 2)
+#
+# `confirm` re-runs detection, so a bare position `n` names whatever is n-th in a FRESH list. The
+# reviewer's two repositories: one new root entry between the report and the confirm (AGENTS.md
+# written by --codex AFTER the report was printed; .pytest_cache from running pytest once) pushed
+# the pytest test file past the scan cap, and `confirm .sdlc 1` stored the next candidate instead
+# -- a hostile CI step, or `make test`. These tests take the gesture /agrim-init PRINTS and run it.
+
+def _argv(line):
+    """A printed gesture line split the way the host's shell would split it."""
+    if os.name == "nt":
+        import re as _re
+        return [t[1:-1] if t.startswith('"') else t for t in _re.findall(r'"[^"]*"|\S+', line)]
+    return shlex.split(line)
+
+
+def _printed_confirm(stdout, n=1):
+    """argv (minus the interpreter) of the printed confirm gesture for candidate n."""
+    for line in stdout.splitlines():
+        if "verify_detect.py" not in line or " confirm " not in line:
+            continue
+        toks = _argv(line.strip().split("-- confirm with: ")[-1])
+        i = toks.index("confirm")
+        if toks[i + 2] == str(n):
+            return toks[1:]
+    raise AssertionError(f"no printed confirm gesture for candidate {n}:\n{stdout}")
+
+
+def _fill(root, count):
+    for i in range(count):
+        (root / f"f{i:03d}").write_text("")
+
+
+def _stored(repo):
+    return json.loads((repo / ".sdlc" / "config.json").read_text())["verify"]
+
+
+def test_cap_codex_repo_confirm_1_stores_the_pytest_candidate_not_the_ci_step(tmp_path):
+    """The reviewer's cap--codex repo: 195 filler files, one test file sorting last, and a CI step
+    `go test -exec "touch X" ./...` (no rejected metacharacter). `--codex` writes AGENTS.md after
+    the report; pre-fix, that one root entry shifted candidate 1 to the CI step."""
+    mark = tmp_path / "PWNED_cap"
+    repo = _ci_repo(_git_repo(tmp_path / "cap"), f'go test -exec "touch {mark}" ./...')
+    _fill(repo, 195)
+    (repo / "test_z.py").write_text("def test_z():\n    pass\n")
+    r = _run(INIT, repo, "--codex", cwd=repo)
+    assert r.returncode == 0, r.stderr
+    pytest_cmd = f"{vd.python_command()} -m pytest -q"
+    assert f"detected `{pytest_cmd}`" in r.stdout
+    c = _run(*_printed_confirm(r.stdout, 1), cwd=repo)
+    stored = _stored(repo)
+    assert "go test" not in stored["command"], (c.stdout, c.stderr)
+    assert c.returncode == 0 and stored["command"] == pytest_cmd and stored["enforce"] is True, c.stderr
+    assert not mark.exists()
+
+
+def test_benign_repo_running_pytest_once_does_not_turn_confirm_1_into_make_test(tmp_path):
+    """The reviewer's benign repo: running pytest once creates .pytest_cache, one more root entry;
+    pre-fix `confirm .sdlc 1` then stored `make test` though the user confirmed pytest."""
+    repo = _git_repo(tmp_path / "benign")
+    (repo / "Makefile").write_text("test:\n\techo make-ran\n")
+    (repo / "__pycache__").mkdir()
+    _fill(repo, 194)
+    (repo / "test_z.py").write_text("def test_z():\n    pass\n")
+    r = _run(INIT, repo, cwd=repo)
+    assert r.returncode == 0, r.stderr
+    pytest_cmd = f"{vd.python_command()} -m pytest -q"
+    assert f"detected `{pytest_cmd}`" in r.stdout
+    (repo / ".pytest_cache").mkdir()                        # the user runs pytest once
+    c = _run(*_printed_confirm(r.stdout, 1), cwd=repo)
+    assert c.returncode == 0, c.stderr
+    assert _stored(repo)["command"] == pytest_cmd
+
+
+def test_confirm_refuses_when_the_candidate_changed_since_the_report(tmp_path):
+    """The hash, not the position, names what the user confirmed: if the repository changed so
+    candidate n is now a different command, confirm stores NOTHING and says to re-run init."""
+    mark = tmp_path / "PWNED"
+    repo = _ci_repo(_git_repo(tmp_path / "r"), f'go test -exec "touch {mark}" ./...')
+    (repo / "test_z.py").write_text("")
+    r = _run(INIT, repo, cwd=repo)
+    argv = _printed_confirm(r.stdout, 1)
+    (repo / "test_z.py").unlink()                           # candidate 1 is now the CI step
+    c = _run(*argv, cwd=repo)
+    assert c.returncode == 2 and "REFUSED" in c.stderr, (c.stdout, c.stderr)
+    assert "repository changed since the report" in c.stderr and "Re-run /agrim-init" in c.stderr
+    assert _stored(repo)["enforce"] is False and _stored(repo)["command"] == ""
+    assert not mark.exists()
+
+
+def test_confirm_requires_the_printed_id_and_rejects_a_wrong_one(tmp_path):
+    root = _ci_repo(tmp_path / "r", "pytest -q")
+    sdlc = _cfg(root, {"command": "", "enforce": False})
+    cid = vd.detect(root)[0]["id"]
+    assert cid == vd.command_id("pytest -q")
+    for args in (["1"], ["1", "0" * len(cid)], ["1", cid.upper()], ["1", cid[:-1]], ["2", cid]):
+        r = _run(DETECT, "confirm", sdlc, *args, cwd=root)
+        assert r.returncode == 2, args
+        assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False, args
+    r = _run(DETECT, "confirm", sdlc, "1", cid, cwd=root)
+    assert r.returncode == 0, r.stderr
+    assert json.loads((sdlc / "config.json").read_text())["verify"]["command"] == "pytest -q"
+
+
+def test_detection_ignores_hidden_cache_vendored_and_non_source_entries(tmp_path):
+    """Deterministic: what init and tool runs write at the root never changes what is detected.
+    Padded with .py files so the test file is EXACTLY the cap-th counted entry: any hidden or
+    non-source entry that counted would push it past the cap and turn this red."""
+    for i in range(vd._SCAN_CAP - 1):
+        (tmp_path / f"m{i:03d}.py").write_text("")
+    (tmp_path / "test_z.py").write_text("")
+    before = vd.detect(tmp_path)
+    assert before and before[0]["command"].endswith("-m pytest -q")
+    for d in (".pytest_cache", ".sdlc", ".cursor", ".venv", ".git", "__pycache__", "node_modules"):
+        (tmp_path / d).mkdir()
+    for f in ("AGENTS.md", ".gitignore", "out.txt", "README.md"):
+        (tmp_path / f).write_text("")
+    assert vd.detect(tmp_path) == before
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="needs POSIX symlinks")
+def test_a_symlinked_sdlc_is_refused_and_the_other_repo_is_never_written(tmp_path):
+    """The reviewer's sym repo: .sdlc -> ../real/.sdlc. Detecting in one repository and writing
+    another's config is refused loudly, for every writing verb."""
+    real = tmp_path / "real"
+    (real / ".sdlc").mkdir(parents=True)
+    (real / "go.mod").write_text("module x\n")
+    cfg = real / ".sdlc" / "config.json"
+    cfg.write_text(json.dumps({"verify": {"command": "", "enforce": False}}))
+    before = cfg.read_text()
+    sym = tmp_path / "sym"
+    (sym / "tests").mkdir(parents=True)
+    (sym / "tests" / "test_a.py").write_text("")
+    os.symlink("../real/.sdlc", sym / ".sdlc")
+    cid = vd.command_id(f"{vd.python_command()} -m pytest -q")
+    for args in (["confirm", ".sdlc", "1", cid], ["set", ".sdlc", "make check"], ["decline", ".sdlc"]):
+        r = _run(DETECT, *args, cwd=sym)
+        assert r.returncode == 2 and "symlink" in r.stderr, (args, r.stdout, r.stderr)
+    assert cfg.read_text() == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="pastes the printed gesture through a POSIX shell")
+def test_printed_gestures_carry_the_absolute_quoted_sdlc_path(tmp_path):
+    """Printed from a relative target and pasted from ANOTHER directory, the gesture still finds
+    the scaffolded .sdlc -- a bare `.sdlc` would name whatever the current directory holds."""
+    repo = _git_repo(tmp_path / "my repo's dir")
+    (repo / "test_a.py").write_text("")
+    r = _run(INIT, "my repo's dir", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    sdlc_abs = os.path.abspath(str(repo / ".sdlc"))
+    assert shlex.quote(sdlc_abs) in r.stdout
+    assert " .sdlc " not in "\n".join(l for l in r.stdout.splitlines() if "verify_detect.py" in l)
+    line = [l.strip() for l in r.stdout.splitlines()
+            if "verify_detect.py" in l and " confirm " in l][0]
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    pasted = shlex.quote(sys.executable) + line[line.index(" "):]
+    p = subprocess.run(["sh", "-c", pasted], cwd=elsewhere, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    assert _stored(repo)["command"].endswith("-m pytest -q")
+
+
+def test_makefile_test_recipe_is_shown_bounded_and_escaped(tmp_path):
+    (tmp_path / "Makefile").write_text("build:\n\techo b\ntest: build\n\tpytest -q\n\techo \x1b[2K"
+                                       + "x" * 400 + "\n\nother:\n\techo o\n")
+    c = vd.detect(tmp_path)
+    assert [x["command"] for x in c] == ["make test"]
+    printed = "\n".join(vd.proposal_lines(c))
+    assert "pytest -q" in printed and "echo o" not in printed and "\x1b" not in printed
+    assert len(c[0]["source"]) < 300
+
+
+def test_make_variable_named_test_is_not_a_target(tmp_path):
+    (tmp_path / "Makefile").write_text("test := foo\nbuild:\n\techo b\n")
+    assert _cmds(tmp_path) == []

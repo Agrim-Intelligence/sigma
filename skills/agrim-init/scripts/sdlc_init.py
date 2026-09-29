@@ -104,7 +104,10 @@ def verify_report(target_dir):
     skipped = []
     # One coherent message: on the trap, proposal_lines leads with the WARNING and describes
     # confirm/decline against enforce ON -- it never also claims enforce is OFF.
-    return vd.proposal_lines(vd.detect(target_dir, skipped), skipped, trap=bool(enforce))
+    # The gestures name this .sdlc by absolute path (abspath: a symlinked .sdlc is left as named, and
+    # verify_detect refuses it loudly), so a line pasted from any directory reaches it.
+    sdlc = os.path.abspath(os.path.join(str(target_dir), ".sdlc"))
+    return vd.proposal_lines(vd.detect(target_dir, skipped), skipped, trap=bool(enforce), sdlc=sdlc)
 
 
 _DEMO_GOAL = """---
@@ -462,11 +465,6 @@ def main(argv):
               "change the ignore scope later (tracked vs. local-only), move the lines from "
               ".gitignore to .git/info/exclude by hand -- /agrim-setup never relocates an existing "
               "rule.")
-    report = verify_report(target)
-    if report:
-        print()
-        for line in report:
-            print(line)
     if "--github" in flags:
         gcreated, gskipped = scaffold_github(target)
         print(f"\nagrim-init: GitHub PM scaffolding - {len(gcreated)} created, {len(gskipped)} skipped")
@@ -519,6 +517,18 @@ def main(argv):
             print("\nagrim-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
         else:
             print("\nagrim-init: Codex rule already present (kept).")
+    # #246 review 2: the verify report comes LAST, after every step above that writes files
+    # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
+    # prints are detected from the repository exactly as `confirm` will see it. The config's
+    # `_why` is recomputed here for the same reason.
+    if "config.json" in created:
+        vd = _verify_detect()
+        vd.write_verify(pathlib.Path(target) / ".sdlc", None, vd.unconfirmed_why(vd.detect(target)))
+    report = verify_report(target)
+    if report:
+        print()
+        for line in report:
+            print(line)
     return 0
 
 

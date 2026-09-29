@@ -51,19 +51,26 @@ Scaffold the `.sdlc/` project layer, then report what happened.
    `verify.command` in `.sdlc/config.json`. `.sdlc/project.md` is not read for it. The scaffold
    never leaves `verify.enforce` on with an empty command, because that refuses every `done`. A
    fresh config ships enforce OFF, with the reason in `verify._why`, and the scaffolder prints the
-   numbered candidates (`python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" detect .` lists
-   them all; use `python` or `py` where `python3` is absent).
+   numbered candidates LAST, after every file it writes (`--codex`, `--cursor`, `--github`), each
+   with its `[id ...]` -- a hash of the exact command -- and the gestures naming the scaffolded
+   `.sdlc` by its absolute, quoted path
+   (`python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" detect .` lists them all with ids; use
+   `python` or `py` where `python3` is absent).
    **Never paste a detected command into a shell line.** Candidate text comes from the repository
    (a CI `run:` line is whatever its author wrote), so the gestures below never carry it: `confirm`
-   re-reads candidate `<n>` from the repository itself, and stores exactly what was shown.
+   re-detects, and stores candidate `<n>` only if it still has the `<id>` that was shown --
+   otherwise it refuses ("the repository changed since the report") and stores nothing; re-run
+   `/agrim-init` and confirm from the new report. A `.sdlc` that is a symlink is refused.
    - **Claude Code:** ask the user with a real question: confirm a detected candidate, replace
      it with their own command, or decline. On confirm, run
-     `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" confirm .sdlc <n>`. On replace,
+     `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" confirm .sdlc <n> <id>` with the
+     number and id printed beside the chosen candidate (or paste the printed confirm line, which
+     already carries the absolute `.sdlc` path). On replace,
      write their command to a file with your file-writing tool (not a shell `echo`), then run
      `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" set .sdlc --command-file <file>`.
      Either sets the command and turns enforce ON. On decline, run
      `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" decline .sdlc`. That keeps enforce
      OFF and records why. If nothing was detected, say so and say that enforce is OFF.
    - **Codex / Cursor:** relay the printed candidate block verbatim. It carries the exact
-     `confirm` gesture and the exact config line. Do not guess a command on the user's behalf.
+     `confirm` gesture (number and id) and the exact config line. Do not guess a command on the user's behalf.
 4. Relay the git tip. Never overwrite a file the scaffolder reports as skipped — those hold live state.

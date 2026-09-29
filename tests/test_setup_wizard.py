@@ -330,4 +330,4 @@ def test_verify_trap_is_a_first_run_wizard_step_against_the_real_doctor(tmp_path
     status = setup_wizard.wizard_status(str(sdlc), allow_cache=False, dismissed=set())
     step = [s for s in status["steps"] if s["name"] == "verify command present (enforce is on)"]
     assert step and step[0]["mode"] == "human_command"
-    assert "verify_detect.py detect ." in step[0]["fix"] and "confirm .sdlc <n>" in step[0]["fix"]
+    assert "verify_detect.py detect ." in step[0]["fix"] and "confirm .sdlc <n> <id>" in step[0]["fix"]
