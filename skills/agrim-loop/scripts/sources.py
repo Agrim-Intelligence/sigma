@@ -1054,6 +1054,8 @@ class GitHubSource:
         self._ro_attempted = False       # resolved the read-only board queue this run?
         self._ro_ready = None            # the board's `Ready` option name, or None => label queue
         self._item_status = {}           # {issue number -> current Status name}, filled by _load_items
+        self._repo_resolved = None       # #308: `repo`'s current name, casefolded ("" unreadable)
+        self._repo_current = ""          # #308: ... as GitHub spells it, for issue URLs
         self._item_priority = {}         # {issue number -> current Priority value}, same source
         # Static values for the adopter's CUSTOM single-select board fields (name -> option name),
         # applied to issues the loop itself creates so a loop-made card isn't blank on a field like
@@ -4554,8 +4556,10 @@ class GitHubSource:
             # #233 review: a board may carry cards from SEVERAL repos, and issue numbers are per
             # repo -- `acme/other#11` must never be mistaken for our #11 and have its card moved.
             # A row that names no repository (older `gh`, or a fake) is kept, as before.
+            # #308: a card names the repo's CURRENT name, so after a rename/transfer with a stale
+            # `discovery.github.repo` every card used to read as foreign; the resolved name counts.
             where = str((it.get("content") or {}).get("repository") or "").casefold()
-            if mine and where and where != mine:
+            if mine and where and where != mine and where != self._resolved_repo():
                 continue
             if n is not None:
                 self._items[int(n)] = it.get("id")
@@ -4565,6 +4569,25 @@ class GitHubSource:
                 # 'priority': 'P3'}. Caching it here is what makes the mirror diff-only, so a board
                 # already in agreement costs zero writes.
                 self._item_priority[int(n)] = it.get((self.priority_field or "").lower())
+
+    def _resolved_repo(self):
+        """#308: `discovery.github.repo` as GitHub resolves it NOW (casefolded `full_name`) -- the
+        same repository under its current name after a rename or transfer, which GitHub redirects
+        (REST `repos/<old>` answers with the new `full_name`; measured read-only in
+        `.sdlc/evidence/308/`). ONE read per run, and only when a card names a repository other
+        than the configured one; cached, failure included. Unreadable -> "" (matches no card):
+        the strict #233 rule, so another repo's card is still never written."""
+        if self._repo_resolved is None:
+            self._repo_resolved = ""
+            try:
+                data = self._gh_json(["api", "repos/%s" % self.repo])
+                full = data.get("full_name") if isinstance(data, dict) else None
+                if isinstance(full, str) and full.count("/") == 1:
+                    self._repo_resolved = full.casefold()
+                    self._repo_current = full
+            except Exception:
+                pass
+        return self._repo_resolved
 
     def _list_fields(self, owner, number):
         data = self._gh_json(["project", "field-list", str(number), "--owner", owner,
@@ -4612,7 +4635,8 @@ class GitHubSource:
         this code can vouch for. THE one parse, shared with `board_setup.py` (its writer). Only the
         `{"number": N, "owner": "<login>"}` form counts; the older bare-number form (number only,
         so it cannot tell two owners' boards apart) reads as NOT ours -- the safe direction: the
-        label stays the one Priority writer until `board_setup.py create` re-pins it."""
+        label stays the one Priority writer until `board_setup.py create` re-pins it (which
+        upgrades it when the owner pinned beside it is unchanged, #308)."""
         if not isinstance(value, dict):
             return None
         owner = value.get("owner")
@@ -4805,6 +4829,15 @@ class GitHubSource:
                     if fld and fld.get("id"):
                         fields.append(dict(fld, dataType="SINGLE_SELECT"))
                 except Exception as exc:
+                    # #308: two first phase starts race to create the field; GitHub refuses the
+                    # second ("Name has already been taken"). Whatever the refusal says, re-read the
+                    # card ONCE: if the field is there now, the winner made it -- adopt it and go
+                    # on. Only a field still absent is a failure worth the one warning.
+                    again = self._read_card(n, number)
+                    if again is not None and again["item_id"] == item_id and self._match_field(
+                            [f.get("name") for f in again["fields"]], name) != (None, []):
+                        card, fields = again, again["fields"]
+                        continue
                     self._warn_field("could not create the %r field (%s)"
                                      % (name, getattr(exc, "hint", None) or exc))
             self._mirror_board_priority(n, card, fields, item_id)
@@ -4862,7 +4895,9 @@ class GitHubSource:
         return True
 
     def _issue_url(self, n):
-        repo = self.repo
+        # #308: an issue URL under a repo's OLD name does not resolve (`resource(url:)` is null,
+        # measured), so once the current name is known it is the one used.
+        repo = self._repo_current or self.repo
         if not repo:
             try:
                 repo = (self._gh_json(["repo", "view", "--json", "nameWithOwner"]) or {}).get("nameWithOwner", "")

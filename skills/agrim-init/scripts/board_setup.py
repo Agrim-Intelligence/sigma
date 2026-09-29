@@ -232,16 +232,34 @@ def pin(sdlc, owner, number, created=False):
     """Write ONLY discovery.github.project.number/owner (+ `setup_created` when this run created
     the board; dropped when a DIFFERENT board is pinned -- another number OR another owner, #233
     review); every other key is kept. Atomic. The marker is `{"number": N, "owner": login}`: a
-    bare number cannot tell a hand-made board of another owner, reusing the number, from ours."""
+    bare number cannot tell a hand-made board of another owner, reusing the number, from ours.
+    #308: the pre-#233 bare-number marker is UPGRADED to that form when it names the number being
+    pinned and the owner already pinned beside it is this owner (the board it was written for);
+    otherwise it is dropped. -> the marker now in the config, or None."""
     path, cfg = _config(sdlc)
     _gh, proj = _gh_block(cfg)
+    before = proj.get("owner")
+    marker = proj.get(CREATED_KEY)
     proj["number"] = int(number)
     proj["owner"] = owner
-    if created:
+    if created or _legacy_ours(marker, before, number, owner):
         proj[CREATED_KEY] = {"number": int(number), "owner": owner}
-    elif CREATED_KEY in proj and not _ours(proj.get(CREATED_KEY), number, owner):
+    elif CREATED_KEY in proj and not _ours(marker, number, owner):
         del proj[CREATED_KEY]
     pf._vd._atomic_write_json(path, cfg)
+    return proj.get(CREATED_KEY)
+
+
+def _legacy_ours(marker, pinned_owner, number, owner):
+    """#308: is `marker` the pre-#233 bare-number form naming board `number`, with the owner pinned
+    beside it (`pinned_owner`, before this pin) the same login as `owner`? Only then can it be
+    vouched for; `@me` names no login and never counts."""
+    if isinstance(marker, bool) or not isinstance(marker, int) or marker != int(number):
+        return False
+    if not (isinstance(pinned_owner, str) and isinstance(owner, str)):
+        return False
+    a, b = pinned_owner.strip(), owner.strip()
+    return bool(a) and not a.startswith("@") and a.casefold() == b.casefold()
 
 
 def _ours(marker, number, owner):
@@ -483,7 +501,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
 
     # 4. pin -- before anything else can fail, so a resume finds this board by its number
     try:
-        pin(sdlc, owner, num, created=fresh)
+        created_before = pin(sdlc, owner, num, created=fresh)   # #308: an upgraded marker counts
         b.step("ok", "pin", f"discovery.github.project.number = {num}, owner = {pf.printable(owner)}")
     except (OSError, ValueError) as exc:
         b.step("FAIL", "pin", f"{pf.printable(exc)} -- set discovery.github.project.number = {num} "

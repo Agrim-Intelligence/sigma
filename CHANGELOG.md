@@ -4,6 +4,27 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Board mirroring survives a repo rename, the old `setup_created` marker is upgraded, and a
+  Phase-field race recovers** (#308, follow-ups from the #233 review). (1) Since #233 the status
+  path skipped board cards whose `content.repository` differs from `discovery.github.repo`. After a
+  rename or transfer with a stale config, every card read as uncarded. The sync then tried
+  `item-add` with an old-name issue URL, and on github.com such a URL does not resolve
+  (`resource(url:)` is null, measured read-only in `.sdlc/evidence/308/`), so board mirroring
+  stopped. If `item-add` had returned the existing card instead, In Progress and Blocked cards would
+  have been reset to Ready, which the fake reproduced. The configured name is now resolved with one
+  `gh api repos/<repo>` read. GitHub answers with the current `full_name`. The read happens only
+  when a card names another repository, and at most once per run. New cards are added under the
+  current name. If the read fails, the strict rule stands and another repo's card is never written.
+  (2) `docs/board-fields.md` promised that `board_setup.py create` would re-pin the pre-#233
+  bare-number marker, but `pin()` deleted it. It is now upgraded to `{"number", "owner"}` when it
+  names the pinned number and the owner pinned beside it is unchanged, and that same run treats the
+  board as Sigma's. Otherwise it is dropped as before. The #233 entry below said the bare form reads
+  as not Sigma's; that is still true until the re-pin. (3) When two first phase starts both create
+  the Phase field, the loser's create is refused ("Name has already been taken" on the fake; not
+  measured on a live board). The loser now re-reads the card once and writes Phase into the
+  winner's field, where before it printed a warning and skipped the write. Tests: `tests/test_board_phase.py`, `tests/test_board_setup.py`.
+  The fake's `renames` models a renamed repo. None of it was run against a live board.
+
 - **The canonical board: fields and six views, applied and checked by a script** (#234). New
   `skills/agrim-init/scripts/board_spec.py` is the single definition of the board, built from the
   kit's own vocabulary: the configured Status lanes, `discovery.PRIORITIES`, `PHASE_TOKENS`, and the

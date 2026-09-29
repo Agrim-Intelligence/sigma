@@ -67,7 +67,11 @@ is the operator's explicit choice of board.
   tokens. Phase is Sigma's own column: no board had one before #233, so nothing it could overwrite
   existed. **Priority is absent:** created only on Sigma's board (above). The create is
   `createProjectV2Field`, every literal JSON-escaped the same way #235's `_options_mutation` does it,
-  and it returns the new option ids, so no re-read follows.
+  and it returns the new option ids, so no re-read follows. Two first phase starts can race to
+  create it: the fake rejects the second create ("Name has already been taken"), as GitHub rejects a
+  duplicate field name (not measured on a live board). The loser then re-reads the card once. If the
+  field is there, it uses the winner's field and writes its Phase with no warning. Only a field that
+  is still absent gets the one warning (#308).
 - **One field differs only in case** (`phase`, `PRIORITY`). It is adopted as it is: never renamed,
   and no duplicate is created. The sync and the phase path share one rule (`_match_field`).
 - **Several fields differ only in case.** An exact name wins, and the run prints one note naming the
@@ -87,6 +91,13 @@ is the operator's explicit choice of board.
 A card is matched by **repository and issue number**, never by number alone. A board can hold cards
 from several repos, and `acme/other#11` is not `acme/widget#11`. The phase path reads the issue by
 repository, and the status path skips `item-list` rows whose `content.repository` names another repo.
+A card names the repo's **current** name. After a rename or transfer, a stale `discovery.github.repo`
+still matches its own cards (#308). The first card naming another repository costs one read,
+`gh api repos/<configured repo>`. GitHub answers it with the current `full_name` (measured read-only
+on a renamed repo, `.sdlc/evidence/308/`). That name counts as ours for the rest of the run, and new
+cards are added by an issue URL under it: a URL under the old name does not resolve. If the read
+fails, only the configured name counts, so another repo's card is still never written. A board with
+only our cards makes no such read.
 The phase path also requires the card's board to be the pinned number under the configured owner. A
 board that merely has the expected title never stands in for a pin that cannot be read.
 
@@ -156,7 +167,10 @@ whole-board read (`_sync_backlog` does not run here).
   pinned owner: a hand-made board of another owner that reuses the number is not Sigma's, and
   re-pinning under another owner or number drops it. The older bare-number form (`"setup_created": 17`)
   cannot tell two owners' boards apart, so it reads as **not** Sigma's board (the label stays the
-  one Priority writer) until `board_setup.py create` re-pins it. Not for hand editing.
+  one Priority writer). `board_setup.py create --number 17` upgrades it to
+  `{"number": 17, "owner": "<login>"}` when it names the number being pinned and the `owner` already
+  pinned beside it is the same login (#308). Otherwise it is dropped: another number, another owner,
+  no owner pinned, or `@me`. Not for hand editing.
 - `enabled` off, or no `number`: nothing runs. A phase start makes zero `gh` calls and does not load
   the board code.
 
