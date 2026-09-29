@@ -1379,7 +1379,10 @@ def test_a_symlinked_unit_keeps_the_index_legacy_and_says_so(tmp_path):
     target = tmp_path / "elsewhere" / "alpha.json"
     target.parent.mkdir()
     record.rename(target)
-    record.symlink_to(target)
+    try:
+        record.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:   # Windows without the symlink privilege
+        pytest.skip("symlinks cannot be created here (%s)" % exc)
     index = sdlc / "features" / "index.json"
     before = index.read_bytes()
     env = _env(**_host(tmp_path / "clear"))
@@ -1587,6 +1590,142 @@ def test_a_sigma_pick_never_silently_drops_a_legacy_delta_value(tmp_path, kind):
     _kept(_served(repo), [201, 202, 7])
 
 
+class _ClassifySource:
+    """The four calls tier 1 makes on a Source, recorded."""
+
+    def __init__(self):
+        self.attached = []
+
+    def attach_label(self, goal, label):
+        self.attached.append((goal, label))
+        return True
+
+    def fetch_comments_strict(self, goal):
+        return {"comments": []}
+
+    def note(self, goal, text):
+        pass
+
+    def comment(self, *a, **k):
+        pass
+
+
+def _closed_converted_with_newer_p0(tmp_path, kind):
+    """Converted, `alpha` CLOSED in Sigma's index, then the previous plugin's `set-priority P0`
+    (its own record, in its schema) -- the state #327 review block #2's repro starts from."""
+    pred = _Predecessor(tmp_path, kind)
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    index = sdlc / "features" / "index.json"
+    doc = json.loads(index.read_text())
+    doc["schema"] = "sigma/features@1"
+    doc["features"]["alpha"]["open"] = False
+    index.write_text(json.dumps(doc) + "\n")
+    now = time.time()
+    os.utime(index, (now - 60, now - 60))
+    assert pred.set_priority(repo, "P0")["ok"] is True
+    record = sdlc / "features" / "units" / "alpha.json"
+    os.utime(record, (now, now))
+    assert json.loads(record.read_text())["schema"] == OLD + "/features@1"
+    return repo, sdlc, record, now
+
+
+@pytest.mark.parametrize("kind", REAL_KINDS)
+def test_classify_reopen_never_silently_drops_a_legacy_delta_value(tmp_path, kind):
+    """#327 review block #2: tier-1 classify reopened a closed unit with `write_unit` DIRECTLY,
+    skipping the one legacy-delta rule -- the previous plugin's newer P0 vanished from disk, nothing
+    printed. Now the reopen goes through `amend`: a record NEWER than the index is refused (nothing
+    attached, nothing written, the value named); an older one is reopened and the discard printed."""
+    repo, sdlc, record, now = _closed_converted_with_newer_p0(tmp_path, kind)
+    before = record.read_bytes()
+    cls = _load(LOOP / "feature_classify.py", "classify_reopen_" + "".join(
+        c if c.isalnum() else "_" for c in kind))
+    src, err = _ClassifySource(), io.StringIO()
+    with contextlib.redirect_stderr(err):
+        d = cls.classify(str(sdlc), src, "9", {}, None, cls.Judgment("alpha", False, None, None))
+    assert (d.proceed, d.outcome) == (False, cls.TIER1_REOPEN_REFUSED), (d, err.getvalue())
+    assert record.read_bytes() == before and src.attached == []
+    assert "priority 'P0'" in err.getvalue() and not _sends_to_migrate(err.getvalue())
+    assert _served(repo)["open"] is False
+    os.utime(record, (now - 120, now - 120))                   # older than the index now
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        d = cls.classify(str(sdlc), src, "9", {}, None, cls.Judgment("alpha", False, None, None))
+    assert (d.proceed, d.outcome) == (True, cls.TIER1_REOPENED), (d, err.getvalue())
+    assert "discarded" in err.getvalue() and "priority 'P0'" in err.getvalue(), err.getvalue()
+    doc = json.loads(record.read_text())
+    assert doc["schema"] == "sigma/features@1" and doc["features"]["alpha"]["open"] is True
+    _kept(_served(repo), [201, 202])
+
+
+def test_write_unit_itself_refuses_a_newer_legacy_delta(tmp_path):
+    """The class, closed where every writer passes: `write_unit` applies the one rule itself, so a
+    writer that goes around `amend` still cannot discard a newer legacy delta record's value."""
+    repo, sdlc, record, now = _closed_converted_with_newer_p0(tmp_path, "stand-in")
+    before = record.read_bytes()
+    reg = _load(LOOP / "feature_registry.py", "registry_write_guard")
+    entry = dict(reg.read(sdlc / "features")["alpha"], open=True)
+    with pytest.raises(reg.LegacyDeltaConflict) as caught:
+        reg.write_unit(sdlc / "features", "alpha", entry)
+    assert not isinstance(caught.value, ValueError)            # never read as a bad unit name
+    assert caught.value.path == record and "priority 'P0'" in "; ".join(caught.value.discarded)
+    assert record.read_bytes() == before
+    os.utime(record, (now - 120, now - 120))
+    assert reg.write_unit(sdlc / "features", "alpha", entry) == record   # older: it writes
+
+
+def test_a_pick_that_discards_says_so_as_a_divergence(tmp_path):
+    """#327 review (d): a pick that rewrites an OLDER legacy delta, dropping a value, used to say so
+    on stderr only. It is a `legacy-delta-discard` divergence now: in the result clause the loop
+    logs, and ledgered to the unit's owner."""
+    repo, sdlc, record, now = _closed_converted_with_newer_p0(tmp_path, "stand-in")
+    os.utime(record, (now - 120, now - 120))
+    fs = _load(LOOP / "feature_sync.py", "fs_discard_divergence")
+    with contextlib.redirect_stderr(io.StringIO()):
+        report = fs.sync_at_pick(str(sdlc), {}, "7", "alpha", run=_Predecessor._git)
+    [div] = [d for d in report["divergences"] if d["kind"] == fs.LEGACY_DELTA_DISCARD]
+    assert "priority 'P0'" in div["detail"], report
+    assert fs.LEGACY_DELTA_DISCARD in report["note"] and "priority 'P0'" in report["note"]
+    assert fs.LEGACY_DELTA_DISCARD in fs.LEDGERED and fs.LEGACY_DELTA_CONFLICT in fs.IN_CLAUSE
+
+
+def test_a_fold_that_changes_nothing_leaves_the_index_time_alone(tmp_path):
+    """#327 review (c): `newer_than_index` reads file time, so a fold that rewrote identical bytes
+    turned every newer delta into an older one -- a later repair then discarded instead of
+    refusing. A no-op fold writes nothing; the refusal survives it."""
+    repo, sdlc, record, now = _closed_converted_with_newer_p0(tmp_path, "stand-in")
+    index = sdlc / "features" / "index.json"
+    fs = _load(LOOP / "feature_sync.py", "fs_noop_fold")
+    with contextlib.redirect_stderr(io.StringIO()):
+        fs.fold(str(sdlc))                       # first fold: canonical bytes (may change them)
+    os.utime(index, (now - 60, now - 60))
+    stamp = index.stat().st_mtime_ns
+    with contextlib.redirect_stderr(io.StringIO()):
+        fs.fold(str(sdlc))
+    assert index.stat().st_mtime_ns == stamp
+    p = _run([LOOP / "feature_sync.py", "repair", sdlc], _env(**_host(tmp_path / "clear")))
+    assert p.returncode == 2 and "refused alpha" in p.stderr, p.stdout + p.stderr
+
+
+def test_doctor_and_status_list_live_legacy_delta_records(tmp_path):
+    """#327 review (e), LIVENESS: a live legacy delta record is visible without reading stderr --
+    one doctor row and one status segment, each with the count and the repair command."""
+    repo, sdlc, record, now = _closed_converted_with_newer_p0(tmp_path, "stand-in")
+    fs = _load(LOOP / "feature_sync.py", "fs_delta_row")
+    row = fs.legacy_delta_row(str(sdlc))
+    assert row["ok"] is True and "1 legacy delta record" in row["name"], row
+    assert "1 would be refused" in row["name"] and "feature_sync.py" in row["fix"], row
+    assert "repair" in row["fix"]
+    assert fs.legacy_delta_segment(str(sdlc)).startswith("legacy delta records: 1")
+    doctor = _load(DOCTOR, "doctor_delta_row")
+    rows = doctor.check(str(sdlc), run=lambda *a, **k: "", cheap_only=True)
+    assert [r for r in rows if r["name"].startswith("legacy delta records")], rows
+    p = _run([STATUS, sdlc], _env(**_host(tmp_path / "clear")))
+    assert p.returncode == 0 and "legacy delta records: 1" in p.stdout, p.stdout + p.stderr
+    record.unlink()
+    assert fs.legacy_delta_row(str(sdlc)) is None and fs.legacy_delta_segment(str(sdlc)) == ""
+
+
 def test_a_record_written_just_before_the_index_replace_puts_the_index_back(tmp_path):
     """#327 review (5), the race `apply`'s last check cannot see: the previous plugin writes its
     whole record (it read ITS index) after that check and before the replace. The re-scan after
@@ -1645,7 +1784,10 @@ def test_no_message_sends_a_user_to_migrate_over_a_delta():
 
 MODEL_DEPTH = 5
 MODEL_OPS = ("migrate --apply", "migrate dry-run", "predecessor pick", "predecessor set-priority",
-             "predecessor claim", "sigma pick", "sigma show", "sigma fold", "sigma repair")
+             "predecessor claim", "sigma pick", "sigma show", "sigma fold", "sigma repair",
+             # #327 review block #2: the direct writer that bypassed the one rule, and the Sigma
+             # write that makes it reachable (a closed unit; `amend`, as reconcile's close is).
+             "sigma close", "sigma classify reopen")
 #: The ONLY value an op may change a field to. Everything else it must keep. After conversion the
 #: two predecessor edits are documented not-applied edges: they may fail to apply, never remove.
 MODEL_EXPLICIT = {"predecessor set-priority": {"priority": "p0"},
@@ -1665,16 +1807,22 @@ def _facts(entry):
 
 
 class _Model:
-    def __init__(self, tmp_path, kind):
+    def __init__(self, tmp_path, kind, start="open"):
         self.pred = _Predecessor(tmp_path, kind)
         self.repo = _adopted(tmp_path)
         self.sdlc = self.repo / ".sdlc"
         self.features = self.sdlc / "features"
+        if start == "closed":                 # a unit the previous plugin had already closed
+            index = self.features / "index.json"
+            doc = json.loads(index.read_text())
+            doc["features"]["alpha"]["open"] = False
+            index.write_text(json.dumps(doc) + "\n")
         self.home = tmp_path / "no-home"
         self.home.mkdir()
         tag = "model_" + "".join(c if c.isalnum() else "_" for c in kind)
         self.fs = _load(LOOP / "feature_sync.py", tag + "_feature_sync")
         self.migrate = _load(MIGRATE, tag + "_migrate")
+        self.classify = _load(LOOP / "feature_classify.py", tag + "_feature_classify")
 
     def snapshot(self):
         return {p.relative_to(self.features).as_posix(): (p.read_bytes(), p.stat().st_mtime_ns)
@@ -1696,9 +1844,21 @@ class _Model:
     def served(self):
         return self.fs.registry.read(self.features).get("alpha")
 
+    def pending(self):
+        """-> (alpha's legacy delta record entry, is it at least as new as index.json), or None
+        when alpha has no legacy delta record."""
+        reg = self.fs.registry
+        got = reg.legacy_delta_record(self.features, "alpha")
+        return None if got is None else (got[2], reg.newer_than_index(self.features, got[0]))
+
+    def dropped(self, record, written):
+        """Each non-empty `record` value `written` (what replaced it) does not keep."""
+        return self.fs.registry.delta_discards(written, record)
+
     def run(self, op):
+        """-> everything the op printed, stdout and stderr (what a user could have read)."""
         sdlc, out = str(self.sdlc), io.StringIO()
-        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(out):
+        with contextlib.redirect_stderr(out), contextlib.redirect_stdout(out):
             if op == "migrate --apply":
                 self.migrate.main(["migrate.py", sdlc, "--apply"], environ=dict(os.environ),
                                   home=self.home, stdout=out)
@@ -1719,6 +1879,11 @@ class _Model:
                 self.fs.main(["feature_sync.py", "fold", sdlc])
             elif op == "sigma repair":
                 self.fs.main(["feature_sync.py", "repair", sdlc])
+            elif op == "sigma close":
+                self.fs.amend(sdlc, "alpha", lambda e: e.__setitem__("open", False))
+            elif op == "sigma classify reopen":
+                self.classify.classify(sdlc, _ClassifySource(), "9", {}, None,
+                                       self.classify.Judgment("alpha", False, None, None))
             else:
                 raise AssertionError(op)
         return out.getvalue()
@@ -1735,6 +1900,28 @@ def _violations(op, floor, entry):
     lost += ["goal #%s" % g for g in sorted(f_goals - goals)]
     lost += ["grant on %s" % r for r in sorted(f_grants - grants)]
     return lost
+
+
+def _silent_discards(model, pending, record_before, record_after, said):
+    """#327 review block #2's invariant: a legacy delta record is never replaced SILENTLY. When
+    the op rewrote alpha's legacy delta record (it is no longer in the previous schema), every value
+    that rewrite dropped must be named in what the op printed -- and a record at least as new as
+    index.json with anything to drop must not have been rewritten at all (refused instead)."""
+    if pending is None or record_after == record_before:
+        return []
+    try:
+        schema = json.loads(record_after or b"{}").get("schema")
+    except ValueError:
+        schema = None
+    if schema != "sigma/features@1":
+        return []                             # still a legacy record (the previous plugin wrote)
+    record, newer = pending
+    written = next(iter(json.loads(record_after)["features"].values()))
+    discarded = model.dropped(record, written)
+    if discarded and newer:
+        return ["rewrote a newer legacy delta record, dropping %s" % "; ".join(discarded)]
+    return ["dropped %s without saying so" % v for v in discarded
+            if v.split(" (kept")[0] not in said]
 
 
 def _raise_floor(floor, entry):
@@ -1757,12 +1944,15 @@ def _explore(model, depth=MODEL_DEPTH):
         for seq, snap, floor in frontier:
             for op in MODEL_OPS:
                 model.restore(snap)
-                model.run(op)
+                pending = model.pending()
+                said = model.run(op)
                 after = model.snapshot()
                 if op in ("migrate dry-run", "sigma show"):
                     assert model.key(after) == model.key(snap), (seq + (op,), "a read wrote")
                 entry = model.served()
                 lost = _violations(op, floor, entry)
+                lost += _silent_discards(model, pending, snap.get("units/alpha.json", (None,))[0],
+                                         after.get("units/alpha.json", (None,))[0], said)
                 if lost:
                     failures.append((seq + (op,), lost))
                     continue
@@ -1777,15 +1967,18 @@ def _explore(model, depth=MODEL_DEPTH):
     return failures, len(seen)
 
 
+@pytest.mark.parametrize("start", ["open", "closed"])
 @pytest.mark.parametrize("kind", REAL_KINDS)
-def test_model_no_sequence_of_five_steps_loses_what_sigma_served(tmp_path, kind):
+def test_model_no_sequence_of_five_steps_loses_what_sigma_served(tmp_path, kind, start):
     """#327 review: the invariant, over every sequence of <= 5 steps from `MODEL_OPS` (Sigma's
     migrate/dry-run/pick/show/fold/repair and the previous plugin's own pick/set-priority/claim, its
     REAL code when `SIGMA_TEST_PREDECESSOR_GIT` is set, else skipped -- the stand-in always runs):
     what Sigma serves for `alpha` never loses a title, owner, priority, tracking issue, branch,
     goal or grant it served before, unless the step is one that explicitly sets that field (and
-    then only to the value it sets)."""
-    model = _Model(tmp_path, kind)
+    then only to the value it sets). And (#327 review block #2) no step replaces a legacy delta
+    record silently: every value it drops is printed, and a newer one is refused (`_silent_discards`).
+    `start="closed"` is what reaches tier-1 classify's reopen of a closed unit."""
+    model = _Model(tmp_path, kind, start)
     failures, states = _explore(model)
     assert states > 20, states                  # the search reached past the trivial states
     assert not failures, "\n".join("%s: %s" % (" -> ".join(s), "; ".join(l))

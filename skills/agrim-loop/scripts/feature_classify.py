@@ -80,7 +80,11 @@ def _load(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
-feature_registry = _load("feature_registry")   # resolve_any_unit / resolve_open_unit / read / write_unit
+feature_registry = _load("feature_registry")   # resolve_any_unit / resolve_open_unit / read
+#: #327 review block #2: the reopen is a registry WRITE, so it goes through `feature_sync.amend` --
+#: the unit's lock and the one legacy-delta rule every Sigma write uses -- never `write_unit`
+#: directly. No cycle: `feature_sync` loads neither this module nor `feature_labels`.
+feature_sync = _load("feature_sync")
 #: Eager, safe in this direction: `feature_labels.py` loads THIS module lazily (see its own
 #: `_feature_classify` accessor), so this module loading `feature_labels` eagerly cannot recurse --
 #: it never loads `feature_classify` itself at module scope, only inside a function.
@@ -93,6 +97,11 @@ Decision = feature_labels.Decision           # same shape every caller of `attac
 TIER1_ATTACHED = "tier1-attached"
 #: Tier 1: attached to a single existing unit that was CLOSED, and is now reopened. `proceed` True.
 TIER1_REOPENED = "tier1-reopened"
+#: Tier 1: the matched unit is CLOSED and reopening it was REFUSED (#327 review block #2): its
+#: record is one the previous plugin wrote after the conversion, newer than `index.json`, and the
+#: write would discard a value of it -- or the record is unreadable (#1565). Nothing was attached
+#: and nothing written; `proceed` is False; the stderr line names the recovery.
+TIER1_REOPEN_REFUSED = "tier1-reopen-refused"
 #: Tier 1: the label exists and resolved, but the attach write itself did not land. Transient,
 #: exactly like `feature_labels.REFUSED_WRITE_FAILED` -- no flag, no overlay, retried next pass.
 TIER1_WRITE_FAILED = "tier1-write-failed"
@@ -210,24 +219,34 @@ def _tier1(sdlc_dir, source, goal, config, judgment):
     if not resolved:
         return None
     label = feature_labels.label_for(resolved)
-    if not source.attach_label(goal, label):
-        _note("sigma: features: tier 1 classification matched #%s to %s but the attach did "
-              "not land — refusing this pass; the next pass retries it. No overlay and no flag: "
-              "the label exists, so this is the write that failed, not a human's problem to "
-              "solve\n" % (goal, label))
-        return Decision(False, TIER1_WRITE_FAILED, resolved)
     reopened = False
     entry = feature_registry.read(feature_registry.registry_dir(sdlc_dir)).get(resolved)
     if isinstance(entry, dict) and entry.get("open") is not True:
         # THE ONE DELIBERATE REOPEN, per `feature_registry.resolve_open_unit`'s own docstring (the
-        # exception it names and defers to this module). Read-modify-write of the FULL entry --
-        # only `open` flips, every other field survives byte-for-byte -- because `write_unit`
-        # demands the whole entry (a partial write silently erases whatever it omits; see that
-        # function's own docstring).
-        new_entry = dict(entry)
-        new_entry["open"] = True
-        feature_registry.write_unit(feature_registry.registry_dir(sdlc_dir), resolved, new_entry)
+        # exception it names and defers to this module). Through `feature_sync.amend` (#327 review
+        # block #2): a read-modify-write of the FULL entry under the unit's lock -- only `open`
+        # flips -- and the one legacy-delta rule, so a record the previous plugin wrote after the
+        # conversion is never silently replaced. BEFORE the attach: a refused reopen attaches
+        # nothing, so the goal is never left labelled onto a unit that stayed closed.
+        try:
+            amended = feature_sync.amend(sdlc_dir, resolved,
+                                         lambda e: e.__setitem__("open", True))
+        except (OSError, ValueError) as exc:   # `InvalidUnitName`, or a write that failed
+            amended = {"refused": "%s: %s" % (type(exc).__name__, exc), "written": False}
+        if amended.get("refused") or not amended.get("written"):
+            _note("sigma: features: tier 1 classification matched #%s to %s, which is CLOSED, "
+                  "and reopening it was refused -- nothing attached, nothing written; the pick is "
+                  "refused this pass and retried on the next: %s\n"
+                  % (goal, resolved, amended.get("refused") or "the write did not land"))
+            return Decision(False, TIER1_REOPEN_REFUSED, resolved)
         reopened = True
+    if not source.attach_label(goal, label):
+        _note("sigma: features: tier 1 classification matched #%s to %s but the attach did "
+              "not land — refusing this pass; the next pass retries it%s. No overlay and no flag: "
+              "the label exists, so this is the write that failed, not a human's problem to "
+              "solve\n" % (goal, label, " (the unit was reopened and stays open)" if reopened
+                             else ""))
+        return Decision(False, TIER1_WRITE_FAILED, resolved)
     feature_labels._flag(source, goal, TIER1_MARKER, _tier1_text(resolved, reopened))
     feature_labels._record(
         sdlc_dir, goal, config,

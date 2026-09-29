@@ -92,7 +92,9 @@ rule this module now holds itself to: a promise stated in terms of an exception 
 checked against every member of that hierarchy that can reach the caller, not only the one the
 author was thinking about. This is the third defect of exactly that shape found here -- NUL raising
 `ValueError` rather than `OSError`, the surrogate above, and `is_authorized` raising `TypeError` on
-an unhashable repo key.
+an unhashable repo key. (#327 added ONE more, on purpose and under its own non-`ValueError` name:
+`LegacyDeltaConflict`, a refusal to discard a newer legacy delta record's values -- it depends on
+what is on disk beside the unit, never on the data `read` accepted.)
 
 DEFAULTS ARE CHOSEN FOR WHICH WAY THEY FAIL, and the two that matter fail in opposite directions
 for the same reason -- each towards the state you get by doing nothing:
@@ -205,6 +207,20 @@ class InvalidUnitName(ValueError):
     was told about; it still subclasses `ValueError`, so nothing that already catches the broad form
     changes behaviour. Same reasoning as `features.AmbiguousUnit`: an exception a caller is expected
     to handle deserves a name, not a base class."""
+
+
+class LegacyDeltaConflict(Exception):
+    """#327 (review block #2): `write_unit` refused to replace a legacy delta record (a unit record
+    in the previous plugin's schema, read as a delta onto a Sigma `index.json` entry) because the
+    new content would discard a non-empty record value and the record is at least as new as
+    `index.json` -- `delta_verdict` is the rule. Nothing was written. NOT a `ValueError`: a caller
+    catching the bad-name contract must not read a refusal as a bad name. `.path`, `.discarded`
+    and `str(exc)` (the full recovery text) are what a caller reports."""
+
+    def __init__(self, text, path, discarded):
+        super().__init__(text)
+        self.path = path
+        self.discarded = list(discarded)
 
 
 def _note(message):
@@ -676,10 +692,14 @@ def read(features_dir):
 # Sigma record that REPLACES the entry -- a second `migrate.py --apply` did exactly that, serving a
 # one-goal stub -- so migrate refuses such a record unless the merge equals it, and names `repair`.
 # Every Sigma rewrite of such a record -- `feature_sync.py repair`, and `feature_sync.amend` (a
-# pick, a claim, `set-priority`) -- goes through ONE rule (`feature_sync._delta_verdict`): each
-# record value the rewrite would drop is listed, and when there is one and the record is at least
-# as new as `index.json`, the unit is REFUSED and nothing is written. The merge itself loses nothing
-# on disk: the record stays as it is until one of those runs.
+# pick, a claim, `set-priority`, tier-1 classify's reopen) -- goes through ONE rule
+# (`delta_verdict`): each record value the rewrite would drop is listed, and when there is one and
+# the record is at least as new as `index.json`, the unit is REFUSED and nothing is written.
+# ENFORCED, NOT ONLY FOLLOWED: `write_unit` itself applies the rule and raises
+# `LegacyDeltaConflict`, so a writer that skips `amend` cannot skip it (#327 review block #2, where
+# classify's reopen called `write_unit` directly); `tests/test_feature_registry.py` inventories
+# every caller of `write_unit`/`write_index`. The merge itself loses nothing on disk: the record
+# stays as it is until one of those runs.
 #
 # KNOWN EDGE, DOCUMENTED NOT FIXED: an ownership (or title/priority) change that the previous
 # plugin makes AFTER conversion is not applied while the index entry has a value for that field --
@@ -838,11 +858,55 @@ def legacy_delta_record(features_dir, name):
     if not path.is_file():
         return None
     got = _read_unit_doc(path)
-    if got is None:
-        return None
+    if got is None or not legacy.is_legacy_schema(got[2]):
+        return None                       # a Sigma-schema record: no index read at all
     index, sigma_index = _index_and_kind(features_dir)
     base = _delta_base(index, sigma_index, got[0], got[2])
     return None if base is None else (path, base, got[1])
+
+
+def newer_than_index(features_dir, path):
+    """Is the record at least as new as `index.json`, by file mtime? `>=`, not `>`: equal times
+    cannot be ordered (a coarse filesystem clock, or both written by one `git checkout`), and the
+    safe reading of "cannot tell" is "newer" -- the caller then refuses rather than discards.
+
+    FILE TIME, AND ONLY A HINT. The registry carries no timestamp of its own. A `git checkout`,
+    `clone`, `pull` or `stash pop` stamps every file it writes with the time of the checkout, not
+    of the edit, so after one the order says which file git wrote last, nothing about who edited
+    last. A Sigma `fold` that CHANGES `index.json` makes it the newer file too (one that changes
+    nothing leaves it untouched: `write_index`). Both outcomes stay safe to be wrong about: a
+    refusal writes nothing, and a rewrite lists every value it discards."""
+    try:
+        return os.stat(path).st_mtime >= os.stat(index_path(features_dir)).st_mtime
+    except OSError:
+        return True                           # cannot tell: treat it as the newer statement
+
+
+def delta_verdict(features_dir, name, entry=None):
+    """#327: THE rule for replacing a legacy delta record with a record in Sigma's schema. Every
+    Sigma write of a unit record reaches it: `write_unit` applies it itself (and refuses), and
+    `feature_sync.amend` / `repair` apply it first to report rather than raise.
+    -> None when `name`'s own file is not a legacy delta, else `(record path, [each non-empty
+    record value the rewrite drops], record is at least as new as index.json)`. `entry` is what
+    will be written (default: the delta merge, which is what `repair` writes). REFUSE when the list
+    is non-empty and the record is newer; otherwise print the list."""
+    got = legacy_delta_record(features_dir, name)
+    if got is None:
+        return None
+    path, base, record = got
+    lost = delta_discards(base if entry is None else entry, record)
+    return path, lost, newer_than_index(features_dir, path)
+
+
+def delta_conflict_text(features_dir, verdict):
+    """The one refusal sentence for a `delta_verdict` that refuses."""
+    path, lost, _newer = verdict
+    return ("%s is a record in the previous plugin's schema, at least as new as %s, and rewriting it "
+            "in Sigma's schema would discard %s -- most likely an edit that plugin made after the "
+            "conversion, which Sigma reads but does not apply while %s has a value (file time; "
+            "see docs/upgrading.md). Nothing was written. To keep those values, copy them into %s; "
+            "to drop them, delete them from %s; then retry."
+            % (path, INDEX_NAME, "; ".join(lost), INDEX_NAME, index_path(features_dir), path))
 
 
 def bare_rewrite_changes_it(index_entry, record):
@@ -1099,8 +1163,10 @@ def _legacy_schema_at(path):
 def write_unit(features_dir, name, entry):
     """Record one unit, and touch nothing else. -> the path written.
 
-    This is the pick path's write, and its entire contract is negative: it opens `units/<name>.json`
-    and no other file. Not `index.json`, not any other unit's file, not any `.md`. That is what
+    This is the pick path's write, and its entire contract is negative: it WRITES `units/<name>.json`
+    and no other file, and opens no other unit's file and no `.md`. It reads `index.json` in exactly
+    one case -- its own file carries the previous plugin's schema id (the legacy-delta rule below)
+    -- and never writes or holds it. That is what
     makes two concurrent picks on different units structurally incapable of corrupting each other,
     and it is why the chart sheet is materialised separately (`write_index`) rather than here.
 
@@ -1117,12 +1183,27 @@ def write_unit(features_dir, name, entry):
     problem, not something a helper here could honestly promise.
 
     RAISES `InvalidUnitName` -- a `ValueError` subclass, so existing broad handlers are unaffected --
-    on a name that is not a unit name, and NOTHING ELSE. That "nothing else" is a promise, not an
+    on a name that is not a unit name, and otherwise only `LegacyDeltaConflict` (below, deliberately
+    NOT a `ValueError`). That "nothing else" is a promise, not an
     omission: `dumps` is ASCII-only precisely so that no value `read` accepted can make this raise
-    from the serialiser. The read side is total; the write side is total except for the one
-    condition it names, because a caller writing `../escape` has a bug rather than a corrupt file,
-    and nothing is written when it does."""
+    from the serialiser. The read side is total; the write side is total except for the two
+    conditions it names, because a caller writing `../escape` has a bug rather than a corrupt file,
+    and nothing is written when it does.
+
+    ONE MORE REFUSAL, AND IT IS HERE SO NO WRITER CAN BYPASS IT (#327 review block #2). When
+    `name`'s own file is a legacy delta record (`legacy_delta_record`) and `entry` would discard a
+    non-empty value it holds while it is at least as new as `index.json` -- an edit the previous
+    plugin made after the conversion -- this raises `LegacyDeltaConflict` and writes nothing:
+    `delta_verdict`, the ONE rule `feature_sync.amend` and `repair` report through. A caller that
+    goes around them (tier-1 classify's reopen once did) still hits it. It costs one read of the
+    unit's own file, plus `index.json` only when that file carries the previous schema id. What it
+    cannot close: the previous plugin takes no Sigma lock, so a record it writes between this check
+    and the replace is replaced (the same window `migrate.apply` states for its own re-check)."""
     path = unit_path(features_dir, name)
+    verdict = delta_verdict(features_dir, name, entry)
+    if verdict is not None and verdict[1] and verdict[2]:
+        raise LegacyDeltaConflict(delta_conflict_text(features_dir, verdict), verdict[0],
+                                  verdict[1])
     _protect(features_dir)
     _atomic_write_text(path, dumps({"schema": SCHEMA,
                                     "features": {name: normalise_entry(entry)}}), schema=SCHEMA)
@@ -1137,8 +1218,20 @@ def write_index(features_dir, registry):
     sync pass that folds accumulated per-unit files back into the sheet. Whether that pass then
     removes the shards it folded in is #1473's call, not this module's: only the sync knows whether
     the branch a shard names still exists. Until it does, `read`'s shard-wins rule keeps the union
-    correct with both present."""
+    correct with both present.
+
+    WRITTEN ONLY WHEN THE BYTES CHANGE (#327 review block #2). `newer_than_index` reads file time,
+    so rewriting identical bytes would make every legacy delta record look OLDER than the index
+    for no reason -- turning a later `repair`'s refusal into a printed discard. A fold that
+    changes nothing leaves `index.json`, and its mtime, alone. One that does change it still makes
+    it the newer file; that is stated in docs/upgrading.md."""
     path = index_path(features_dir)
+    text = dumps(document(registry))
+    try:
+        if path.read_text(encoding="utf-8") == text:  # universal newlines: same on Windows
+            return path
+    except (OSError, ValueError):
+        pass                                  # absent, unreadable or undecodable: write it
     _protect(features_dir)
-    _atomic_write_text(path, dumps(document(registry)), schema=SCHEMA)
+    _atomic_write_text(path, text, schema=SCHEMA)
     return path

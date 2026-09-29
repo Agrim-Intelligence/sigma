@@ -111,23 +111,38 @@ python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each
 `migrate.py --apply` does not convert such a record: it refuses it and names `repair`, because
 rewriting only the schema id would make the record replace the entry. Two Sigma steps rewrite it,
 by one rule: `repair`, and a Sigma write to that unit (a pick recording a goal, an owner claim,
-`set-priority`). Neither is lossless: a non-empty record value that differs from the entry (an
-owner, a priority, a branch, a grant) is dropped, and each one is printed. When there is such a
-value and the record is at least as new as `index.json`, both refuse that unit and write nothing
-(a pick reports a `legacy-delta-conflict` divergence): the value is most likely an edit the old
-plugin made after the conversion, which Sigma never applied and you may still want. Copy the values
-you want into `index.json`, or delete them from the record, then rerun `repair`.
+`set-priority`, or automatic classification reopening a closed unit). The rule is enforced where
+every unit-record write passes, so no Sigma step can skip it. Neither step is lossless: a non-empty
+record value that differs from the entry (an owner, a priority, a branch, a grant) is dropped, and
+each one is printed; a pick also reports it as a `legacy-delta-discard` divergence, on its result
+line and in the ledger for the unit's owner. When there is such a value and the record is at least
+as new as `index.json`, both refuse that unit and write nothing (a pick reports a
+`legacy-delta-conflict` divergence; classification attaches nothing and refuses the pick that pass):
+the value is most likely an edit the old plugin made after the conversion, which Sigma never applied
+and you may still want. Copy the values you want into `index.json`, or delete them from the record,
+then rerun `repair`.
+
+You can tell such records exist without reading stderr: `/agrim-doctor` shows a `legacy delta
+records` row, and `status.py` adds a `legacy delta records: N (M would be refused)` segment, each
+naming the `repair` command. Both are silent when there are none.
 
 "At least as new" is file time: the registry carries no timestamp of its own, equal times count as
 newer, and a `git checkout`, `clone` or `pull` stamps every file it writes with the checkout's time,
-not the edit's. After one, the order only says which file git wrote last. Either answer stays safe:
-a refusal writes nothing, and a rewrite prints what it drops.
+not the edit's. After one, the order only says which file git wrote last. A Sigma `feature_sync.py
+fold` that changes `index.json` also makes it the newer file: after it, a delta record written
+before the fold is older, so a later `repair` or pick DISCARDS its differing values (printed, and a
+`legacy-delta-discard` divergence) instead of refusing. A fold that would write identical bytes
+leaves `index.json` and its time untouched. So check the doctor row, and settle any delta record,
+before you fold. Either answer stays safe: a refusal writes nothing, and a rewrite prints what it
+drops.
 
-After converting, do not run the old plugin's own `feature_sync.py fold` (the copy under its
-loop skill's `scripts/`, run by hand) on the repository: it cannot read Sigma's `index.json` and
-rebuilds it from its own records alone, in its own schema -- run on a converted repository
-with no such records, its 1.4.25 release wrote an empty index. If it happened, `git checkout`
-the committed `index.json`.
+Once `index.json` is in Sigma's schema, do not run the old plugin's own `feature_sync.py fold`
+(the copy under its loop skill's `scripts/`, run by hand) on the repository. That is true however
+the index got there: `migrate.py --apply`, or ANY Sigma `feature_sync.py fold` -- Sigma's own
+fold writes the index in Sigma's schema, so it converts the index even if you never migrated. The
+old fold cannot read Sigma's `index.json` and rebuilds it from its own records alone, in its own
+schema -- run on a converted repository with no such records, its 1.4.25 release wrote an empty
+index. If it happened, `git checkout` the committed `index.json`.
 
 **Known edge.** Because the `index.json` entry wins, an ownership, title or priority change the old
 plugin makes after the conversion is not applied while the entry already has a value for that
@@ -217,7 +232,7 @@ found and the cut-over steps, and exits 0.
 | `watch_daemon.py` | Proceeds to the shared lock; the notice goes to `.sdlc/state/watch.log`. |
 | `migrate.py` | The dry run proceeds with the notice. `--apply` waits for the old plugin to be stopped on this repository (exit 2, dry run shown, the exact disable step) unless `--replace-old-plugin` is given, which takes the `.sdlc/features` backup first. `--apply` still refuses while a watcher is live. This is the only step that waits: it is the one that converts the registry the old plugin cannot read. |
 | Registry writes (`.sdlc/features`) | Proceed. The first one saves the one-time copy to `.sdlc/state/backup/features-<time>/`. |
-| Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` (and a Sigma pick on that unit) rewrites such records in Sigma's schema, lists each record value it discards, and refuses when there is one and the record is at least as new as `index.json`. `migrate.py --apply` converts `index.json` only once every unit record has converted (and puts it back if one appears during the run), and refuses to convert such a delta record, naming `repair`. |
+| Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` (and any Sigma write to that unit: a pick, a claim, `set-priority`, a classification reopen) rewrites such records in Sigma's schema, lists each record value it discards, and refuses when there is one and the record is at least as new as `index.json`; the doctor row and the status segment `legacy delta records` count them. `migrate.py --apply` converts `index.json` only once every unit record has converted (and puts it back if one appears during the run), and refuses to convert such a delta record, naming `repair`. |
 | `/agrim-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |

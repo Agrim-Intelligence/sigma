@@ -4,6 +4,37 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Automatic classification can no longer drop the old plugin's post-conversion edit, and no
+  Sigma writer can skip the one legacy-delta rule** (#326, review block #2 on PR #327). Tier-1
+  classification reopened a closed unit by calling `feature_registry.write_unit` directly, so it
+  skipped the rule `repair`, a pick, a claim and `set-priority` use: the old plugin's newer record
+  value (e.g. priority P0) was dropped from disk, nothing printed. Reachable only with
+  `discovery.no_dangling_goal.core` configured, the live judge enabled, and a closed unit the old
+  plugin wrote a record for after the conversion. Now: (1) the reopen goes through
+  `feature_sync.amend`, BEFORE the label is attached; a refusal attaches nothing, writes nothing and
+  refuses the pick that pass (`tier1-reopen-refused`, naming the value and the recovery). (2)
+  `write_unit` itself applies the rule (`feature_registry.delta_verdict`, moved from
+  `feature_sync`) and raises `LegacyDeltaConflict` (not a `ValueError`) instead of discarding a
+  newer record's value; `amend` and `repair` report it. It reads the unit's own file, and
+  `index.json` only when that file is in the old schema. (3) `tests/test_feature_registry.py`
+  inventories every `write_unit`/`write_index` caller and every module that names the registry's
+  files and writes something (by AST and source scan); an unclassified new one fails. (4) A pick
+  that discards a value from an older delta record reports a `legacy-delta-discard` divergence (on
+  the pick's result line and in the ledger for the unit's owner), and both delta kinds now reach the
+  result line. (5) `write_index` writes nothing when the bytes are unchanged, so a no-op fold no
+  longer makes a newer delta record look older; a fold that changes `index.json` still does, and
+  `docs/upgrading.md` says so. (6) Doctor shows a `legacy delta records` row and `status.py` a
+  segment (count, how many would be refused, the repair command), each silent when there are none.
+  (7) The model test gains `sigma close` and `sigma classify reopen`, a start with the unit closed,
+  and a second invariant: a legacy delta record is never replaced silently (each dropped value
+  printed, a newer one refused). Before the fix it found 43 failing sequences on the stand-in and 52
+  on each real release (1.4.24, 1.4.25), the shortest being the reviewer's; after it none, over 287
+  and 302 (stand-in, open and closed start) and 382 and 404 (real) distinct states. Docs:
+  `docs/upgrading.md` now says the old plugin's own `fold` must not run once `index.json` is in
+  Sigma's schema by any route (migrate, or any Sigma fold), and `skills/agrim-doctor/SKILL.md` no
+  longer says a partial migrate can leave the complete, newer record. The symlink test skips where
+  symlinks cannot be created.
+
 - **A second migrate, or a Sigma pick, can no longer erase a unit the old plugin touched after the
   conversion** (#326, review block #1 on PR #327). After the conversion the old plugin's `pick` or
   `set-priority` writes a near-empty unit record in its own schema, which Sigma serves as a delta

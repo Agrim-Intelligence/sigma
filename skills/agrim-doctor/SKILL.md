@@ -77,10 +77,11 @@ plugin. The old plugin cannot read Sigma's registry, so while it can still run h
 refuses (exit 2, dry run shown) unless `--replace-old-plugin` is added: never add that flag, disable,
 uninstall, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice) on the user's behalf. A
 registry line saying a record `still declares the schema id` of the old plugin means it already
-wrote a unit record after the conversion (Sigma merges it as a delta; after a partial migrate it can
-instead be the complete, newer record): relay the recovery it prints. `feature_sync.py repair` lists
-every record value it discards and refuses a record newer than `index.json`; never work around that
-refusal on the user's behalf.
+wrote a unit record after the conversion (Sigma merges it as a delta; a partial migrate never leaves
+one, because `migrate.py --apply` keeps `index.json` in the old schema until every record has
+converted): relay the recovery it prints. The `legacy delta records` row counts such records and how
+many would be refused. `feature_sync.py repair` lists every record value it discards and refuses a
+record newer than `index.json`; never work around that refusal on the user's behalf.
 
 ## Secret-file coverage
 
