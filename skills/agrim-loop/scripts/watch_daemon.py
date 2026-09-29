@@ -601,18 +601,15 @@ def _coexist():
     return _COEXIST[0]
 
 
-def _coexist_refusal(sdlc_dir, stream=None):
-    """The refusal text when the old plugin is active here and no override is set, else "".
-    The override's own warning goes to stderr. A detector that cannot run refuses nothing."""
+def _coexist_notice(sdlc_dir):
+    """#240/#314: the notice line (once per run) when the old plugin is also active here, else "".
+    Never a refusal -- the shared lock below admits one watcher whoever started it. A detector
+    that cannot run says nothing."""
     import io
     buf = io.StringIO()
     try:
-        allowed = _coexist().gate(sdlc_dir, "watcher start", stream=buf)
+        _coexist().gate(sdlc_dir, "watcher start", stream=buf, once=True)
     except Exception:                        # noqa: BLE001 - the lock below still admits one watcher
-        return ""
-    if allowed:
-        if buf.getvalue():
-            print(buf.getvalue().rstrip("\n"), file=stream or sys.stderr, flush=True)
         return ""
     return buf.getvalue().rstrip("\n")
 
@@ -879,15 +876,12 @@ def _run(p, sdlc_dir):
         tee(p, f"watch: SIGMA_WATCH_CALL_TIMEOUT ({call_timeout}s) >= STALE_AFTER "
                f"({stale_after}s) -- a single hung call could still misread as a dead watcher")
 
-    # #240: the plugin under the previous name takes the SAME lock files, so two watchers are
-    # already impossible; what this adds is that a Sigma watcher refuses LOUDLY, naming the fix,
-    # while that plugin is active here, instead of racing it for the lock (coexist.py). The
-    # override (SIGMA_ALLOW_COEXIST=1) lets it proceed to the lock, which still admits only one.
-    refusal = _coexist_refusal(sdlc_dir)
-    if refusal:
-        for line in refusal.splitlines():
-            tee(p, "watch: " + line)
-        return 2
+    # #240/#314: the plugin under the previous name takes the SAME lock files, so two watchers are
+    # impossible whoever starts first; its presence is a NOTICE (once per run, into the log), and
+    # this watcher goes on to the lock. A foreign holder is named below, never signalled.
+    notice = _coexist_notice(sdlc_dir)
+    if notice:
+        tee(p, "watch: " + notice)
 
     outcome = decide(p, stale_after, time.time())
     if outcome == "sibling":
@@ -900,8 +894,10 @@ def _run(p, sdlc_dir):
             pid_text = ""
         tee(p, f"watch: already running (pid {pid_text}) — nothing to do")
         if pid_text.isdigit() and _coexist().watch_owner_pid(p.state) != int(pid_text):
-            tee(p, f"watch: pid {pid_text} was not started by this Sigma release (no matching "
-                   f"state/watch.owner) — if it is the old plugin's, run `coexist.py check {sdlc_dir}`")
+            tee(p, f"watch: pid {pid_text} was not started by Sigma (no matching state/watch.owner:"
+                   f" the old plugin's, or a Sigma watcher from before that marker) — Sigma starts "
+                   f"no second watcher beside it and never signals it; to hand over, "
+                   f"{_coexist().stop_lever(sdlc_dir)}")
         return 0
 
     _install_cleanup(p, os.getpid())
@@ -926,8 +922,8 @@ USAGE = "usage: watch_daemon.py [sdlc_dir]"
 
 def main(argv):
     """B-3/B-36. `exit 0` everywhere: the only non-zero exits this function can PRODUCE are `_run`'s
-    deliberate refusals (an unwritable state dir -> 1; the plugin under the previous name active on
-    this repository, #240 -> 2, see coexist.py) -- the win32 refusal that used to be
+    deliberate refusal (an unwritable state dir -> 1; #240's exit 2 for the plugin under the previous
+    name being active here is gone since #314 -- a notice now, see coexist.py) -- the win32 refusal that used to be
     a second one here is gone (#2498; `pid_alive()` now probes win32 safely instead of refusing).
     Everything else -- every tick failure, every malformed env value, every mutex OSError, every
     loser and every early exit -- returns 0.

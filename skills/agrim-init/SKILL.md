@@ -69,7 +69,15 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
 
    Exit 0: every attempted step passed (open questions are allowed). Exit 1: a step failed; the last
    line is `Resume: <command>` -- relay it. Exit 2: refused before anything was written (not a git
-   repository, another plugin active, github mode with no repository).
+   repository, github mode with no repository).
+
+   The plugin under Sigma's previous name being installed is never a refusal (#314): relay its one
+   `sigma: notice:` line (it names the uninstall command; never uninstall on the user's behalf). A
+   repository that plugin adopted also gets one `sigma: takeover:` line with the exact `migrate.py`
+   dry-run command: run that dry run and show it, and add `--apply` only after the user explicitly
+   says yes AND has stopped the old plugin on this repository (the old plugin cannot read Sigma's
+   registry; `--apply` refuses while it can still run here) -- Sigma reads the old state as it is
+   until then.
 
    The scaffolder underneath, `scripts/sdlc_init.py`, still runs alone (same `--codex` / `--cursor`
    / `--demo` / `--vision` flags); it asks nothing and never sets the mode -- its `--github` creates

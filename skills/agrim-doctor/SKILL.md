@@ -67,9 +67,19 @@ refuses anything it cannot rewrite with certainty (exit 2), and never runs on th
 without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
 
 The `coexistence` row reports whether the old plugin is also active on this repository. When it is,
-init, loop start, the watcher and `migrate.py --apply` refuse until one plugin is disabled; relay
-the exact steps `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints, and never set
-`SIGMA_ALLOW_COEXIST=1` on the user's behalf.
+the row is a WARN, never a failure: Sigma runs normally beside it and is handling the repository
+(one notice line per run names the uninstall command). Relay the cut-over steps
+`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints, IN ORDER --
+stop the old plugin on this repository first (`claude plugin disable <id> --scope local`, run by
+the user), migrate dry run, `--apply` only on the user's explicit yes, then uninstall the old
+plugin. The old plugin cannot read Sigma's registry, so while it can still run here `--apply`
+refuses (exit 2, dry run shown) unless `--replace-old-plugin` is added: never add that flag, disable,
+uninstall, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice) on the user's behalf. A
+registry line saying a record `still declares the schema id` of the old plugin means it already
+wrote a unit record after the conversion (Sigma merges it as a delta; after a partial migrate it can
+instead be the complete, newer record): relay the recovery it prints. `feature_sync.py repair` lists
+every record value it discards and refuses a record newer than `index.json`; never work around that
+refusal on the user's behalf.
 
 ## Secret-file coverage
 

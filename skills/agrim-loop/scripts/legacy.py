@@ -44,9 +44,9 @@ FALLBACK_ENV = frozenset({
 #: Set by Sigma for its own child processes; read under the Sigma name only.
 INTERNAL_ENV = frozenset({"SIGMA_RUN_ID", "SIGMA_AUTOWATCH_HOP"})
 #: Operator settings introduced AFTER the rename: the previous plugin never read them, so a
-#: previous-prefix spelling means nothing and is never consulted. `SIGMA_ALLOW_COEXIST` (#240) is
-#: the override that lets a write surface proceed beside that plugin -- adopting it from a stale
-#: previous-prefix export would switch a safety refusal off by accident.
+#: previous-prefix spelling means nothing and is never consulted. `SIGMA_ALLOW_COEXIST` (#240) now
+#: only silences the one-line coexistence notice (#314) -- adopting it from a stale previous-prefix
+#: export would hide that notice by accident.
 POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST"})
 
 #: The schema ids (kind@version) whose spelling changed only in its brand segment. A previous-name id

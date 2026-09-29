@@ -572,8 +572,11 @@ def main(argv):
         coexist = None
         print(f"agrim-init: warning: cannot check for a second plugin ({type(exc).__name__})",
               file=sys.stderr)
-    if coexist is not None and not coexist.gate(sdlc, "agrim-init"):
-        return 2
+    if coexist is not None:                              # #314: a notice, never a refusal
+        coexist.gate(sdlc, "agrim-init")
+        offer = coexist.takeover_line(sdlc)              # the dry-run command; never --apply
+        if offer:
+            print(offer, file=sys.stderr)
 
     answered, scaffolded = load_memory(sdlc)
     cfg_path = pathlib.Path(sdlc) / "config.json"

@@ -1118,21 +1118,84 @@ def _clause(report):
 # --------------------------------------------------------------------------- the fold
 
 
+class FoldRefused(Exception):
+    """`fold` will not write an `index.json` that loses anything the current one records (#314).
+    The message names each loss and the exact recovery."""
+
+
 def fold(sdlc_dir):
     """Materialise `index.json` from the whole registry. -> the path written.
 
     A DELIBERATE MATERIALISATION, OFF THE PICK PATH -- see the module docstring for why it is not on
     it, and why the shards it folds are never removed. `read`'s shard-wins union is already correct
     with both present, so this changes what a fresh clone carries and nothing about what this
-    checkout answers."""
+    checkout answers.
+
+    It writes `read`'s view, which already merges a legacy-id record as a DELTA onto the index
+    entry (`feature_registry.merge_legacy_delta`, #314) -- so a record the plugin under the previous
+    name wrote cannot shrink the entry by construction. And it CHECKS that rather than trusting it:
+    `feature_registry.monotonic_violations` compares the result with the current index, and any
+    loss (a goal, or a field/grant of a merged unit) refuses the fold (`FoldRefused`, nothing
+    written) with the repair command."""
     features_dir = registry.registry_dir(sdlc_dir)
-    return registry.write_index(features_dir, registry.read(features_dir))
+    merged = registry.read(features_dir)
+    lost = registry.monotonic_violations(features_dir, merged)
+    if lost:
+        raise FoldRefused(
+            "feature_sync: fold refused, nothing written: it would lose what %s records -- %s. "
+            "Recover: %s. If a record in Sigma's schema dropped these on purpose, edit %s to match."
+            % (registry.INDEX_NAME, "; ".join(lost), registry.delta_recovery(features_dir),
+               registry.index_path(features_dir)))
+    return registry.write_index(features_dir, merged)
+
+
+def _newer_than_index(features_dir, path):
+    try:
+        return os.stat(path).st_mtime > os.stat(registry.index_path(features_dir)).st_mtime
+    except OSError:
+        return True                           # cannot tell: treat it as the newer statement
+
+
+def repair(sdlc_dir, timeout=LOCK_TIMEOUT):
+    """Rewrite each legacy-id record `read` merges as a delta (`feature_registry.legacy_deltas`)
+    in Sigma's schema, as exactly what `read` serves for it -- the index entry plus what the record
+    adds -- under the unit's own lock, re-checked inside it. Idempotent: a second run finds nothing.
+    The plugin under the previous name cannot read the rewritten record (Sigma's schema id) and its
+    own #1565 guard then refuses that unit rather than replacing it -- so disable it first anyway.
+
+    NOT LOSSLESS, AND IT SAYS SO (#326). The rewrite DISCARDS every non-empty record value the delta
+    merge does not keep (`feature_registry.delta_discards`: a differing owner, priority, branch, a
+    grant). Each is returned. And when there is anything to discard and the record is NEWER than
+    `index.json` (mtime -- the registry carries no timestamp of its own), the record may be the
+    complete one a partial migrate left, not a delta: that unit is REFUSED, nothing is written,
+    and the caller names the ways forward. -> (done [(name, path, discarded)], refused [(name,
+    path, discarded)])."""
+    features_dir = registry.registry_dir(sdlc_dir)
+    done, refused = [], []
+    for name, _path in registry.legacy_deltas(features_dir):
+        fd = _acquire(lock_path(sdlc_dir, name), timeout)
+        try:
+            now = [r for r in registry.legacy_delta_records(features_dir) if r[0] == name]
+            if not now:
+                continue
+            _n, path, base, record = now[0]
+            discarded = registry.delta_discards(base, record)
+            if discarded and _newer_than_index(features_dir, path):
+                refused.append((name, path, discarded))
+                continue
+            entry = registry.read(features_dir).get(name)
+            if entry is not None:
+                done.append((name, registry.write_unit(features_dir, name, entry), discarded))
+        finally:
+            _release(fd)
+    return done, refused
 
 
 # --------------------------------------------------------------------------- CLI
 
 
-USAGE = "usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir>"
+USAGE = ("usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir> | "
+         "feature_sync.py repair <sdlc_dir>")
 
 
 def main(argv):
@@ -1141,13 +1204,35 @@ def main(argv):
     THERE IS NO `sync` VERB, and the omission is the same one `cross_repo.main` makes for the same
     reason: the sync belongs to the pick, and a second way to run it is a second answer. `fold` is
     here because it is explicitly NOT part of a pick, and `show` because a record nobody can read is
-    not much of a record."""
+    not much of a record. `repair` (#314) rewrites a legacy-id record merged as a delta in Sigma's
+    schema."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "fold":
-        print(fold(argv[2]))
+        try:
+            print(fold(argv[2]))
+        except FoldRefused as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         return 0
+    if len(argv) >= 3 and argv[1] == "repair":
+        done, refused = repair(argv[2])
+        for name, path, discarded in done:
+            print("repaired %s: %s" % (name, path))
+            for what in discarded:
+                print("  discarded %s: %s" % (name, what))
+        for name, path, discarded in refused:
+            print("feature_sync: repair refused %s, nothing written: %s is NEWER than %s and "
+                  "rewriting it would discard %s. It may be the complete record a partial migrate "
+                  "left, not a delta. If `migrate.py --apply` reported refusals, rerun it first "
+                  "(it converts the record); if the record's values are the right ones, copy them "
+                  "into %s; then rerun repair."
+                  % (name, path, registry.INDEX_NAME, "; ".join(discarded),
+                     registry.index_path(registry.registry_dir(argv[2]))), file=sys.stderr)
+        if not done and not refused:
+            print("feature_sync: nothing to repair in %s" % argv[2])
+        return 2 if refused else 0
     if len(argv) >= 3 and argv[1] == "show":
         print(json.dumps(registry.read(registry.registry_dir(argv[2])), indent=2, sort_keys=True))
         return 0

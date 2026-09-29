@@ -46,21 +46,15 @@ decision_tier = _load("decision_tier")   # #953: needs_decision-park tier classi
 feature_labels = _load("feature_labels") # #1468: attach a declared unit's label at pick, never create one
 
 
-def _coexist_allows(sdlc_dir, surface, brief=False):
-    """#240: may this WRITE surface proceed, given the plugin under the previous name? Delegates to
-    `coexist.gate` (the refusal text and the `SIGMA_ALLOW_COEXIST=1` override live there). `brief`
-    prints one line instead of the full message -- for a trigger that fires on every loop verb."""
-    import io
-    coexist = _load("coexist")
-    buf = io.StringIO()
-    allowed = coexist.gate(sdlc_dir, surface, stream=buf)
-    text = buf.getvalue().rstrip("\n")
-    if text:
-        if brief and not allowed:
-            text = ("loop: not starting the ledger watcher -- the old plugin is also active on "
-                    "this repository; `coexist.py check %s` prints the fix" % sdlc_dir)
-        print(text, file=sys.stderr)
-    return allowed
+def _coexist_notice(sdlc_dir, surface, once=False):
+    """#240/#314: the plugin under the previous name also active here is a NOTICE, never a
+    refusal -- `coexist.gate` prints its one line on stderr (silenced by `SIGMA_ALLOW_COEXIST=1`).
+    `once`: a per-verb surface (the watcher spawn, claim, record) says it once per run, not per
+    verb (#251). Fail-open: a detector that cannot run must never stop the verb."""
+    try:
+        _load("coexist").gate(sdlc_dir, surface, once=once)
+    except Exception:                # noqa: BLE001 - see the docstring
+        pass
 
 
 def _ensure_watcher(sdlc_dir, config, spawn=None):
@@ -76,8 +70,7 @@ def _ensure_watcher(sdlc_dir, config, spawn=None):
         sync = _load("sync")
         if not sync.is_worktree(sdlc_dir):
             return
-        if not _coexist_allows(sdlc_dir, "watcher start", brief=True):
-            return                   # #240: said on stderr; the old plugin is active here
+        _coexist_notice(sdlc_dir, "watcher start", once=True)   # #314: the shared lock decides
         launch = spawn or (lambda: subprocess.Popen(
             [sys.executable, str(_HERE / "watch_daemon.py"), str(sdlc_dir)],
             start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -5783,9 +5776,12 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         for warning in _config_warnings(config):
             print("loop: " + warning, file=sys.stderr)       # surface the trap up front, not 40 goals in
-        if not _coexist_allows(argv[2], "loop.py start"):    # #240: refuse BEFORE any write
-            return 2
-        _load("coexist").write_owner(argv[2])
+        _coexist_notice(argv[2], "loop.py start")            # #314: a notice, never a refusal
+        coexist = _load("coexist")
+        coexist.write_owner(argv[2])                         # Sigma owns this state dir now
+        offer = coexist.takeover_line(argv[2])               # the dry-run command; never --apply
+        if offer:
+            print(offer, file=sys.stderr)
         if not _bootstrap_github_labels(argv[2], config):     # #230: before any session is registered
             return 1
         # #1199: registers a session by DEFAULT now, not only when a caller remembers `--session-
@@ -5984,6 +5980,7 @@ def _dispatch(argv):
         print("beat" if agent_heartbeat_all(argv[2], argv[3]) else "no marker registered")
         return 0
     if len(argv) >= 5 and argv[1] == "record":
+        _coexist_notice(argv[2], "loop.py record", once=True)   # #251/#314: once per run
         config = state.load_config(argv[2])
         # #2041: finishing a goal is the moment a stalled watcher most needs restarting -- it is
         # precisely when there is new activity to publish. `next`/`next-batch`/`verify`/`run_loop`
@@ -6104,6 +6101,7 @@ def _dispatch(argv):
         _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],
                 reason, retro_grade=retro_grade); return 0
     if len(argv) >= 4 and argv[1] == "claim":       # #1962: claim a goal you already chose
+        _coexist_notice(argv[2], "loop.py claim", once=True)    # #251/#314: once per run
         config = state.load_config(argv[2])
         goal = argv[3]
         # `open_claims_detailed` returns {goal: (actor, writer)} -- a TWO-tuple (see its own

@@ -109,6 +109,7 @@ Module shape follows `features.py` and `owners.py`: zero third-party dependencie
 constants, pure functions apart from the filesystem calls that are the point, loaded by siblings
 via `_load("feature_registry")`.
 """
+import copy
 import importlib.util
 import json
 import os
@@ -545,6 +546,20 @@ def read_index(features_dir):
     return {} if doc is None else parse(doc)
 
 
+def _read_unit_doc(path):
+    """-> `(name, entry, schema id as written)` for one per-unit file, or None. `_read_unit_file`'s
+    rule, plus the id the file itself declares -- which `read` needs to tell a record the plugin
+    under Sigma's previous name wrote after conversion from one Sigma wrote (#314)."""
+    doc = _read_json(path)
+    if doc is None:
+        return None
+    stem = pathlib.Path(path).name[:-len(UNIT_SUFFIX)].lower()
+    for name, entry in parse(doc).items():
+        if name.lower() == stem:
+            return name, entry, doc.get("schema")
+    return None
+
+
 def _read_unit_file(path):
     """-> `(name, entry)` for one per-unit file, or None.
 
@@ -558,14 +573,8 @@ def _read_unit_file(path):
     `alpha.json` to one file, and GitHub label names are case-insensitively unique anyway -- so two
     casings were never two units. The FILE's own spelling is what is returned, because that is what
     its author wrote."""
-    doc = _read_json(path)
-    if doc is None:
-        return None
-    stem = pathlib.Path(path).name[:-len(UNIT_SUFFIX)].lower()
-    for name, entry in parse(doc).items():
-        if name.lower() == stem:
-            return name, entry
-    return None
+    got = _read_unit_doc(path)
+    return None if got is None else got[:2]
 
 
 def _unit_files(features_dir):
@@ -600,6 +609,11 @@ def read(features_dir):
     together invent a third that neither source ever said. A shard is a write that has not been
     folded into the sheet yet, so for its own unit it is the later statement.
 
+    THE ONE EXCEPTION (#314): a record still declaring the previous name's schema id, beside an
+    `index.json` in Sigma's own schema with an entry for that unit, is merged onto that entry as a
+    DELTA (`merge_legacy_delta`) instead of replacing it -- see the section below for why the two
+    schema ids alone prove it was written without sight of the entry.
+
     ONE UNREADABLE UNIT FILE COSTS EXACTLY THAT ONE UNIT, AND COSTS IT OUTRIGHT. A shard that exists
     but cannot be used -- truncated, undecodable, declaring a schema version this code cannot read,
     or naming a different unit than its filename -- REMOVES its unit from the result rather than
@@ -615,19 +629,278 @@ def read(features_dir):
     doing the opposite in silence -- a stale sheet entry winning over a corrupt shard, with no note
     and no signal to the caller. A note now names the file, because a unit vanishing from the
     registry is exactly the kind of thing whose cause has to be findable."""
-    registry = read_index(features_dir)
+    index, sigma_index = _index_and_kind(features_dir)
+    registry = dict(index)
     for path in _unit_files(features_dir):
-        got = _read_unit_file(path)
+        got = _read_unit_doc(path)
         if got is None:
             _drop_same_unit(registry, path.name[:-len(UNIT_SUFFIX)])
             _note("sigma: features: %s could not be read as its unit's record, so that unit is "
                   "reported as unknown rather than from the older %s. Repair or delete the file.\n"
                   % (path, INDEX_NAME))
             continue
-        name, entry = got
+        name, entry, schema = got
+        base = _delta_base(index, sigma_index, name, schema)
+        if base is not None:
+            # #314: the ONE exception to shard-wins -- a legacy-id record next to a Sigma index
+            # entry is a DELTA onto that entry, never a replacement. See `merge_legacy_delta`.
+            _note_delta(features_dir, name, path)
+            entry = merge_legacy_delta(base, entry)
         _drop_same_unit(registry, name)
         registry[name] = entry
     return registry
+
+
+# ------------------------------------------------------------------------ the legacy delta (#314)
+#
+# STRUCTURAL, NOT A HEURISTIC. The plugin under Sigma's previous name cannot read a Sigma-schema
+# document -- it treats `index.json` in Sigma's schema as empty, and its #1565 guard REFUSES to
+# replace a unit record in Sigma's schema -- and it always writes its own schema id. So a per-unit
+# record that still declares the previous id, sitting beside an `index.json` in Sigma's schema that
+# has an entry for the same unit, is NORMALLY a post-conversion delta: written by that plugin after
+# the conversion, starting from nothing (a pick, an owner claim onto that near-empty record,
+# `define.py set-priority`), so at most a DELTA onto the entry it could not see, and it is merged
+# as one -- never served in place of the entry, whatever fields it happens to carry. No field
+# presence, no timestamp and no content shape is consulted here: only the two schema ids.
+#
+# NOT ALWAYS (#326): after a PARTIAL conversion it can be the complete, NEWER record -- that plugin
+# writes its record first and rebuilds its index only on demand -- and a delta merge then serves
+# the older entry's owner/priority/branch/grants over it. `migrate.py --apply` therefore refuses to
+# convert the index unless every unit record converted (it writes units first); what remains is a
+# record written in the milliseconds between its last check and the index replace, or an index
+# Sigma itself rewrote while such a record existed. The merge still loses nothing on disk -- the
+# record stays as it is -- and `feature_sync.py repair`, the one step that rewrites it, names every
+# value it would discard and refuses a record newer than the index (`delta_discards`).
+#
+# KNOWN EDGE, DOCUMENTED NOT FIXED: an ownership (or title/priority) change that the previous
+# plugin makes AFTER conversion is not applied while the index entry has a value for that field --
+# the index wins. Change it with Sigma (or edit `index.json` / the record in Sigma's schema), after
+# disabling the previous plugin (docs/upgrading.md).
+
+#: The unit-level fields where the index entry wins whenever it has a value, and a legacy delta
+#: only fills a blank. `open` is not here because it is never blank: the index's value stands.
+DELTA_FIELDS = ("title", "owner", "parent", "tracking_issue", "priority")
+_DELTA_NOTED = set()
+
+
+def _index_and_kind(features_dir):
+    """-> (`{name: entry}` from `index.json`, is that file in Sigma's OWN schema id). The id is
+    read as written: `legacy.schema_is` reads the previous id as Sigma's, which is right for
+    parsing and exactly wrong for this question."""
+    doc = _read_json(index_path(features_dir))
+    if doc is None:
+        return {}, False
+    return parse(doc), isinstance(doc, dict) and doc.get("schema") == SCHEMA
+
+
+def _delta_base(index, sigma_index, name, schema):
+    """The index entry a unit record is a legacy delta onto, or None when it is not one."""
+    if not (sigma_index and legacy.is_legacy_schema(schema)):
+        return None
+    return _same_unit(index, name)
+
+
+def _same_unit(registry, name):
+    lowered = name.lower()
+    for key, entry in registry.items():
+        if key.lower() == lowered:
+            return entry
+    return None
+
+
+def _repo_of(repos, key):
+    for other in (repos or {}):
+        if isinstance(other, str) and other.lower() == key.lower():
+            return other
+    return None
+
+
+def merge_legacy_delta(index_entry, record):
+    """The index entry, with a legacy-id record applied as a DELTA. The whole rule:
+
+      - the index entry wins on EVERY field it has a value for (`DELTA_FIELDS`, `open`, and each
+        repo's `branch` and `owner`); the record only FILLS a blank;
+      - goals are UNIONED per repo, the index's first, in order;
+      - a repo only the record names is ADDED, with `authorized: false`;
+      - `authorized` is NEVER taken from the record: a grant stays exactly what the index says.
+
+    So the result never has fewer goals, fields or grants than the index entry
+    (`monotonic_violations` is the cross-check `fold` runs)."""
+    out = copy.deepcopy(normalise_entry(index_entry))
+    rec = normalise_entry(record)
+    for field in DELTA_FIELDS:
+        if not out.get(field) and rec.get(field):
+            out[field] = rec[field]
+    for key, one in rec["repos"].items():
+        other = _repo_of(out["repos"], key)
+        if other is None:
+            added = copy.deepcopy(one)
+            added["authorized"] = False
+            out["repos"][key] = added
+            continue
+        mine = out["repos"][other]
+        mine["goals"] = _goals(list(mine["goals"]) + list(one["goals"]))
+        for field in ("branch", "owner"):
+            if not mine.get(field) and one.get(field):
+                mine[field] = one[field]
+    return normalise_entry(out)
+
+
+def legacy_deltas(features_dir):
+    """-> [(name, record path)] for each legacy-id record `read` merges as a delta. Never raises."""
+    return [(name, path) for name, path, _i, _r in legacy_delta_records(features_dir)]
+
+
+def _all_goals(entry):
+    return {g for one in ((entry or {}).get("repos") or {}).values() if isinstance(one, dict)
+            for g in _goals(one.get("goals"))}
+
+
+def monotonic_violations(features_dir, registry):
+    """-> [one line per loss] that writing `registry` as `index.json` would cause. Empty is good.
+
+    `fold`'s cross-check on the merge above, and deliberately independent of it: (1) for EVERY
+    unit in the index, no recorded goal may disappear (Sigma never removes a goal from a unit); and
+    (2) for every unit a legacy delta was merged into, no non-empty index field, repo branch/owner,
+    repo or grant may change. A unit `read` drops outright (an unreadable record) is its own,
+    already-noted case and not judged here."""
+    index, _sigma = _index_and_kind(features_dir)
+    deltas = {name.lower() for name, _p in legacy_deltas(features_dir)}
+    lost = []
+    for name, before in index.items():
+        after = _same_unit(registry, name)
+        if after is None:
+            continue
+        gone = sorted(_all_goals(before) - _all_goals(after))
+        if gone:
+            lost.append("%s: goal(s) %s" % (name, ", ".join("#%d" % g for g in gone)))
+        if name.lower() not in deltas:
+            continue
+        for field in DELTA_FIELDS + ("open",):
+            if before.get(field) not in (None, "") and after.get(field) != before.get(field):
+                lost.append("%s: %s %r -> %r" % (name, field, before.get(field), after.get(field)))
+        for key, one in before["repos"].items():
+            other = _repo_of(after.get("repos"), key)
+            if other is None:
+                lost.append("%s: repo %s" % (name, key))
+                continue
+            now = after["repos"][other]
+            for field in ("branch", "owner"):
+                if one.get(field) and now.get(field) != one.get(field):
+                    lost.append("%s: %s.%s %r -> %r" % (name, key, field, one.get(field),
+                                                        now.get(field)))
+            if now.get("authorized") is not one.get("authorized"):
+                lost.append("%s: %s.authorized %r -> %r" % (name, key, one.get("authorized"),
+                                                            now.get("authorized")))
+    return lost
+
+
+def delta_discards(index_entry, record):
+    """-> [one line per non-empty RECORD value the delta merge does not keep] -- what `repair`
+    discards when it rewrites the record as `merge_legacy_delta(index_entry, record)`. Goals are
+    unioned and blanks filled, so they never appear; a differing unit field, `open`, a repo's
+    differing branch/owner, and a grant the record has but the result lacks do."""
+    merged = merge_legacy_delta(index_entry, record)
+    rec = normalise_entry(record)
+    lost = []
+    for field in DELTA_FIELDS:
+        if rec.get(field) and merged.get(field) != rec[field]:
+            lost.append("%s %r (kept %r)" % (field, rec[field], merged.get(field)))
+    if rec["open"] != merged["open"]:
+        lost.append("open %r (kept %r)" % (rec["open"], merged["open"]))
+    for key, one in sorted(rec["repos"].items()):
+        now = merged["repos"][_repo_of(merged["repos"], key)]
+        for field in ("branch", "owner"):
+            if one.get(field) and now.get(field) != one[field]:
+                lost.append("%s.%s %r (kept %r)" % (key, field, one[field], now.get(field)))
+        if one["authorized"] and not now["authorized"]:
+            lost.append("%s.authorized True (kept False)" % key)
+    return lost
+
+
+def legacy_delta_records(features_dir):
+    """-> [(name, record path, index entry, record entry)] for each legacy delta (`legacy_deltas`,
+    with both sides `repair` needs to say what it discards). Never raises."""
+    index, sigma_index = _index_and_kind(features_dir)
+    found = []
+    if not sigma_index:
+        return found
+    for path in _unit_files(features_dir):
+        got = _read_unit_doc(path)
+        if got is None:
+            continue
+        base = _delta_base(index, sigma_index, got[0], got[2])
+        if base is not None:
+            found.append((got[0], path, base, got[1]))
+    return found
+
+
+def delta_recovery(features_dir):
+    """The exact recovery, one sentence: disable the previous plugin, then `feature_sync.py
+    repair`; the one-time backup only as a last resort, and only within the cut-over window."""
+    sdlc_dir = pathlib.Path(features_dir).parent
+    try:
+        coexist = _coexist()
+        repair = coexist.shell_command("python3", _HERE / "feature_sync.py", "repair", sdlc_dir)
+        backup = coexist.existing_backup(sdlc_dir)
+    except Exception:                     # noqa: BLE001 - the text degrades, never the reader
+        repair, backup = "python3 %s repair %s" % (_HERE / "feature_sync.py", sdlc_dir), None
+    where = ("the one-time copy %s (taken at the time in its name)" % backup if backup is not None
+             else "a backup (Sigma keeps a one-time copy under .sdlc/state/backup/ when the old "
+             "plugin was active at its first registry write)")
+    return ("disable the plugin under Sigma's previous name on this repository first (docs/"
+            "upgrading.md), then run `%s` (rewrites each such record in Sigma's schema as the %s "
+            "entry plus what the record adds -- goals and blanks. It DISCARDS any other non-empty "
+            "record value that differs from the entry (owner, priority, branch, a grant) and lists "
+            "each; it refuses a record newer than %s, which may be the complete record left by a "
+            "partial migrate: rerun `migrate.py --apply` if one reported refusals, or copy the "
+            "record's values into %s first). Restore %s over %s ONLY if a unit is still missing "
+            "data and ONLY within the cut-over window -- it predates every later write, and "
+            "restoring it discards them"
+            % (repair, INDEX_NAME, INDEX_NAME, INDEX_NAME, where, features_dir))
+
+
+def _note_delta(features_dir, name, path):
+    if str(path) in _DELTA_NOTED:
+        return
+    _DELTA_NOTED.add(str(path))
+    _note("sigma: features: %s still declares the schema id of the plugin under Sigma's previous "
+          "name, next to a Sigma %s entry for unit %r -- normally that plugin wrote it after the "
+          "conversion, without seeing the entry (after a partial migrate it can instead be the "
+          "complete, newer record: rerun migrate first). Sigma reads it as a DELTA: the %s entry wins on "
+          "every field it has (a grant is never taken from the record), the record only fills "
+          "blanks and adds goals. An ownership or priority change made there is NOT applied while "
+          "%s has a value. Recover: %s.\n"
+          % (path, INDEX_NAME, name, INDEX_NAME, INDEX_NAME, delta_recovery(features_dir)))
+
+
+# --------------------------------------------------------------------------- the backup hook (#314)
+
+_COEXIST = []
+
+
+def _coexist():
+    if not _COEXIST:
+        _COEXIST.append(_load("coexist"))
+    return _COEXIST[0]
+
+
+def _protect(features_dir):
+    """Before ANY Sigma write to the registry: the one-time backup of `.sdlc/features` when the old
+    plugin can still run on this repository (`coexist.protect_features`). Fail-open by contract --
+    a registry write must never fail because a safety copy could not be taken; that is said on
+    stderr by `protect_features` itself, and the reader-side guard above still stands.
+
+    THE ISOLATION RULE, READ EXACTLY: a write for unit A still never WRITES (or holds) unit B's
+    file. The one-time copy READS every file under `features/` once per repository, beside a
+    runnable old plugin only, and writes only under `state/backup/` -- nothing another writer
+    replaces, so it adds no conflict and no lost update. With a copy present, or no old plugin, it
+    opens nothing under `features/` at all (tested: `test_a_write_for_one_unit_never_opens_another
+    _units_file` runs with no old plugin)."""
+    try:
+        _coexist().protect_features(pathlib.Path(features_dir).parent)
+    except Exception:                     # noqa: BLE001 - see the docstring
+        pass
 
 
 def read_unit(features_dir, name):
@@ -811,6 +1084,7 @@ def write_unit(features_dir, name, entry):
     condition it names, because a caller writing `../escape` has a bug rather than a corrupt file,
     and nothing is written when it does."""
     path = unit_path(features_dir, name)
+    _protect(features_dir)
     _atomic_write_text(path, dumps({"schema": SCHEMA,
                                     "features": {name: normalise_entry(entry)}}), schema=SCHEMA)
     return path
@@ -826,5 +1100,6 @@ def write_index(features_dir, registry):
     the branch a shard names still exists. Until it does, `read`'s shard-wins rule keeps the union
     correct with both present."""
     path = index_path(features_dir)
+    _protect(features_dir)
     _atomic_write_text(path, dumps(document(registry)), schema=SCHEMA)
     return path

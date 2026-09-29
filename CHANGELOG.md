@@ -4,6 +4,29 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A partial migrate can no longer lose a unit record** (#326, the last blocking finding on #314's
+  PR #319). `migrate.py --apply` wrote in path order, so `features/index.json` took Sigma's schema
+  before `features/units/*.json`. A unit record refused in the same run (changed after it was read,
+  or a symlink) stayed in the old plugin's schema. That record can be the complete, newer one,
+  because the old plugin writes its record first and rebuilds its index only on demand. The reader
+  then merged it as a delta under the older index entry, so its owner, priority, branch and grants
+  were lost, `feature_sync.py repair` made the loss permanent, and a second migrate found nothing to
+  do. Now: (1) unit records are written first and `index.json` last; (2) the index converts only if
+  no unit record is left in the old schema when it is written. A record refused in the run, a
+  symlinked one (refused already in the dry run) or one the old plugin created during the run keeps
+  the index in the old schema, and the reader keeps reading the record whole. The index is listed as
+  refused with the reason (exit 2), and a rerun converts both. (3) `repair` says what it discards: every non-empty record value
+  the delta merge does not keep, one line each. When there is something to discard and the record
+  is newer than `index.json` (file time), it refuses that unit (exit 2, nothing written) and names
+  the ways forward. The recovery text no longer says "nothing is lost". (4) The reader comment, its
+  notice and `docs/upgrading.md` now say a legacy-id record next to a Sigma index is normally a
+  delta and, after a partial migrate, can be the complete record. The docs also warn against
+  running the old plugin's own `feature_sync.py fold` after the conversion: its 1.4.25 release
+  wrote an empty `index.json` on a converted repository (measured on a scratch repository). Tests in
+  `tests/test_coexist.py` cover the reviewer's race on the stand-in and on the real previous plugin,
+  the symlink case, a record created during the run, a clean run, and repair. Each guard was broken
+  once and its test went red on 3.10 and 3.12.
+
 - **Done-means-merged hardening** (#255, the review findings on #232). (1) The documented cost is
   now true. A merge-reconcile pass that closed a goal used to read its PR twice over REST and then
   make three `gh pr view` (GraphQL) calls in the checkout release, while the docs said "at most 10
@@ -480,27 +503,73 @@ All notable changes to Sigma are recorded here, newest first.
   script under xtrace and checks that the only locale assignment is the top-level pin. The other
   runs a copy of the script whose scan is killed partway through, and checks that it prints the
   stderr warning.
-- Sigma now detects the plugin under its previous name on the same repository, and refuses rather
-  than writing alongside it (#240). `skills/agrim-loop/scripts/coexist.py` reads the Claude Code
-  settings (`enabledPlugins` and hand-registered hooks, with local over project over user
-  precedence), Codex's `config.toml`, the `.sdlc` owner markers, and the live watcher. While the
-  old plugin is active, `/agrim-init`, `loop.py start`, `watch_daemon.py` and `migrate.py --apply`
-  refuse (exit 2) and print what was found and the fix. The automatic watcher start stays off.
-  `/agrim-doctor` shows a failing `coexistence` row, `status.py` warns on stderr, and the
-  session-start hook repeats the message. `SIGMA_ALLOW_COEXIST=1` lets the write surfaces continue
-  with a warning. Two watchers were already impossible, because both plugins use the same lock
-  files. Sigma now also names a watcher it did not start instead of only reporting "already
-  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. Only an
-  active signal can make an unmarked watcher active, so a Sigma-only upgrade with old state and a
-  running pre-upgrade watcher is not refused. The detector also reads Claude Code's managed
-  settings, accepts comments in settings files, treats a plugin enabled but not installed on this
-  machine as a note, matches hooks by path rather than by substring, and reads every TOML spelling
-  of a Codex plugin entry. A running watcher is identified as the old plugin's only by a directory
-  named exactly the old name in its script path, never by the repository path it was given. The
-  session-start hook no longer stops after the message: the ledger-watcher staleness warning, the
-  wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
-  `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
-  was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
+- Sigma now runs fully next to the plugin under its previous name and replaces it (#314, which
+  reverses #240's refusal on the owner's direction; #251). With both installed and enabled, every
+  Sigma skill, the loop and the watcher work normally: `/agrim-init`, `loop.py start`,
+  `loop.py claim`/`record`, `watch_daemon.py` and its automatic start, and `migrate.py` proceed and
+  print ONE notice line naming the exact uninstall command (`claude plugin uninstall <id>`, with
+  `--scope` when the install has one; for Codex, the `config.toml` table to remove). Init, loop
+  start and migrate always say it; the per-verb surfaces say it at most once per run
+  (`.sdlc/state/coexist.notice`, 6 hours). `SIGMA_ALLOW_COEXIST=1` now only silences the notice.
+  `/agrim-doctor`'s `coexistence` row is a WARN, never a failure; `coexist.py check` prints the
+  cut-over steps and exits 0; the session-start hook adds one read-only line. In a repository the
+  old plugin adopted, init and `loop.py start` print one `sigma: takeover:` line with the exact
+  `migrate.py` dry-run command; `--apply` runs only when the user says yes. What stays impossible:
+  two watchers on one `.sdlc` (the shared lock; a Sigma watcher that meets the old plugin's names
+  it and the polite `watch.stop` lever, and never signals it), and `migrate.py --apply` while any
+  watcher is live (exit 2, naming the same lever). A foreign `owner.json` is a notice, not a lock:
+  init and loop start record Sigma as the owner. See `docs/upgrading.md`, "Switching over from the
+  previous plugin".
+  The one step that converts the registry now waits for the old plugin to stop. The old plugin
+  reads a registry carrying Sigma's schema id as empty. So a goal it starts afterwards in a unit
+  that exists only in `index.json` writes a record for that unit in its own schema, starting from
+  nothing, and Sigma's `feature_sync.py show` and `fold` then served and saved that record in place
+  of the full entry (title, owner, priority, tracking issue, branch and goals lost; `authorized`
+  flipped to false). Five changes (#314, reviews of PR #319):
+  - `migrate.py --apply` refuses (exit 2, nothing written, dry run shown) while the old plugin can
+    still run on the repository. It prints the reason and the exact step:
+    `claude plugin disable <id> --scope local` (checked against Claude Code's CLI in a fake home),
+    or the Codex `config.toml` edit, then the rerun. `--replace-old-plugin` converts anyway, after a
+    backup.
+  - Before Sigma's first registry write on a repository where the old plugin can still run, it
+    saves one copy of `.sdlc/features` to `.sdlc/state/backup/features-<time>/`. That directory is
+    machine-local and git-ignored, and the copy is capped at 5,000 files or 64 MB. `migrate.py`
+    never rewrites the copy. The check costs 0.08 ms per registry write (measured, macOS). The
+    message gives the time it was taken and says to restore it only within the cut-over window
+    (it predates every later write) and to prefer `feature_sync.py repair`.
+  - The registry reader treats a unit record that still carries the old plugin's schema id, next to
+    an `index.json` in Sigma's schema with an entry for that unit, as a DELTA onto that entry,
+    never a replacement. The rule is keyed on the two schema ids only. A first version keyed on
+    the record having no title/owner/tracking issue/priority/parent. That failed on the old
+    plugin's very next pick, whose owner claim fills `owner`, and on its `define.py set-priority`:
+    the record was served and folded again. The index entry now wins every field it has, the
+    record only fills blanks, goals are unioned, a repository only the record names is added
+    without a grant, and `authorized` is never taken from the record. `feature_sync.py fold`
+    writes that merged view, and it refuses (exit 2, nothing written, loss and repair named) any
+    result that loses a goal of any unit, or a field, repository or grant of a merged unit. The new
+    `feature_sync.py repair` rewrites such records in Sigma's schema. Known edge: an ownership or
+    priority change the old plugin makes after conversion is not applied while the entry has a
+    value. Tested against the old plugin's real 1.4.25 pick, owner claim and `set-priority` code
+    (opt-in: `SIGMA_TEST_PREDECESSOR_GIT`) and a stand-in that always runs.
+  - `docs/upgrading.md` now also says what else the old plugin overwrites on a shared repository:
+    Sigma-format withheld-findings indexes (dedup history and the upstream cap erased) and landing
+    and propagation records (duplicates, not loss). These are why the old plugin is stopped first.
+  - The docs, the notice, the takeover line and `coexist.py check` now give the order: stop the
+    old plugin on the repository, migrate, then uninstall it. `coexist.py check` prints
+    `claude plugin marketplace remove` with the marketplace from the plugin id. Every printed
+    command is quoted for the platform (`list2cmdline` on Windows).
+- Sigma detects the plugin under its previous name on the same repository (#240).
+  `skills/agrim-loop/scripts/coexist.py` reads the Claude Code settings (`enabledPlugins` and
+  hand-registered hooks, with local over project over user precedence, plus the managed settings;
+  comments in settings files are accepted), Codex's `config.toml` (every TOML spelling of a plugin
+  entry), the `.sdlc` owner markers, and the live watcher. As first written it refused (exit 2) on
+  every write surface unless `SIGMA_ALLOW_COEXIST=1` was set; that never shipped in a release, and
+  #314 above replaced it with the notice. Kept from #240: a plugin enabled but not installed on this
+  machine is a note; hooks match by path, not by substring; a running watcher is identified as the
+  old plugin's only by a directory named exactly the old name in its script path, never by the
+  repository path it was given (on macOS and Windows, where the command line cannot be read, only
+  beside another active signal); Sigma names a watcher it did not start instead of only reporting
+  "already running"; new local state `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`.
 - `/agrim-init` now checks what the loop needs from git and `gh` before the first goal does
   (#229). The new `skills/agrim-init/scripts/preflight.py` (stdlib only) checks: a git repository,
   the `work.remote` remote (default `origin`, or which remotes exist), the base branch pushed
