@@ -906,11 +906,22 @@ def pr_diff_sha256(worktree, base_ref, head):
     return hashlib.sha256(diff.stdout).hexdigest()
 
 
-def publish_generation(sdlc_dir, goal, text, artifact, output):
-    """Publish immutable review input then atomically replace the sole manifest pointer."""
+def publish_generation(sdlc_dir, goal, text, artifact, output, phase=""):
+    """Publish immutable review input then atomically replace the sole manifest pointer.
+
+    `phase` is optional and only sharpens one failure mode: for `pr-review`, a malformed
+    `--artifact` (a bare number, a path, anything not `PR#<N>`) must not silently publish an
+    UNBOUND manifest -- no `pr`/`head_sha`/`base_ref`/`diff_sha256` -- because that manifest still
+    passes `work.py record-subagent-review`/`review-evidence` and only fails much later, opaquely,
+    at `work.py post-review`, after a whole review cycle already ran on the wrong assumption."""
     root = pathlib.Path(sdlc_dir) / "state"
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     binding = _pr_generation_binding(sdlc_dir, goal, artifact)
+    if phase == "pr-review" and artifact and not binding:
+        raise ValueError(
+            'pr-review needs --artifact in the exact form "PR#<N>" (e.g. "PR#2819"), got %r -- a '
+            "malformed --artifact would otherwise silently drop PR binding (head_sha/base_ref/"
+            "diff_sha256) from the manifest instead of failing here" % str(artifact))
     # A generation is ONE publication, not a pure function of the brief and the revision.  When it
     # was, a re-review of the same head landed on the same generation, whose create-once result
     # already held the first verdict -- so a documented same-revision `unblock` could never succeed.
@@ -938,7 +949,7 @@ def publish_generation(sdlc_dir, goal, text, artifact, output):
 
 def main(argv):
     if any(arg in ("--help", "-h") for arg in argv[1:]):
-        print("usage: review_context.py brief <sdlc_dir> <goal> --for %s [--artifact <path|PR#>] [--repo-root <dir>] [--output <manifest>]" % "|".join(sorted(PHASES)))
+        print("usage: review_context.py brief <sdlc_dir> <goal> --for %s [--artifact <path|\"PR#<N>\" for pr-review>] [--repo-root <dir>] [--output <manifest>]" % "|".join(sorted(PHASES)))
         return 0
     if len(argv) >= 4 and argv[1] == "brief":
         sdlc_dir, goal = argv[2], argv[3]
@@ -957,19 +968,21 @@ def main(argv):
             else:
                 i += 1
         if not phase:
-            print("usage: review_context.py brief <sdlc_dir> <goal> --for %s [--artifact <path|PR#>] "
+            print("usage: review_context.py brief <sdlc_dir> <goal> --for %s "
+                  "[--artifact <path|\"PR#<N>\" for pr-review>] "
                   "[--repo-root <dir>]" % "|".join(sorted(PHASES)), file=sys.stderr)
             return 2
         try:
             result = brief(sdlc_dir, goal, phase, artifact, repo_root)
             if output:
-                publish_generation(sdlc_dir, goal, result, artifact, output)
+                publish_generation(sdlc_dir, goal, result, artifact, output, phase)
             print(result)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
-    print("usage: review_context.py brief <sdlc_dir> <goal> --for %s [--artifact <path|PR#>] "
+    print("usage: review_context.py brief <sdlc_dir> <goal> --for %s "
+          "[--artifact <path|\"PR#<N>\" for pr-review>] "
           "[--repo-root <dir>]" % "|".join(sorted(PHASES)), file=sys.stderr)
     return 2
 

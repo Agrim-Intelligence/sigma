@@ -1,4 +1,6 @@
-import hashlib, pathlib, importlib.util, tempfile, os, subprocess, sys, json, re
+import hashlib, pathlib, importlib.util, tempfile, os, subprocess, sys, json, re, shlex
+
+import pytest
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
 
@@ -1045,6 +1047,109 @@ def test_pr_review_generation_binds_the_current_pr_and_head(tmp_path):
     assert code == 0
     data = json.loads(manifest.read_text())
     assert data["pr"] == 7 and re.fullmatch(r"[0-9a-f]{40}", data["head_sha"])
+
+
+def test_pr_review_bare_number_artifact_refuses_the_manifest_loudly(tmp_path):
+    """A caller who forgets the documented "PR#<N>" prefix (--artifact 2819 instead of --artifact
+    "PR#2819") must be refused here, not silently handed an unbound manifest -- no pr/head_sha/
+    base_ref/diff_sha256 -- that then passes record-subagent-review/review-evidence and only fails
+    much later, opaquely, at `work.py post-review`, after a whole review cycle already ran on it."""
+    base, root = _repo(tmp_path)
+    manifest = pathlib.Path(base) / "state" / "review-manifests" / "2819.json"
+    code = _rc().main(["review_context.py", "brief", base, "2819", "--for", "pr-review",
+                       "--artifact", "2819", "--repo-root", root, "--output", str(manifest)])
+    assert code == 2
+    assert not manifest.exists(), "a bare-number artifact must not publish any manifest, bound or not"
+    assert not (pathlib.Path(base) / "state" / "review-generations").exists(), \
+        "nor the immutable generation directory a manifest would point at"
+
+
+def test_publish_generation_rejects_a_malformed_pr_review_artifact_directly(tmp_path):
+    base, root = _repo(tmp_path)
+    manifest = pathlib.Path(base) / "state" / "review-manifests" / "2819.json"
+    for bad in ("2819", "src/pay.py", "PR2819", "pr#2819"):
+        try:
+            _rc().publish_generation(base, "2819", "review\n", bad, str(manifest), "pr-review")
+            assert False, "expected a ValueError for artifact=%r" % bad
+        except ValueError as exc:
+            assert "PR#<N>" in str(exc)
+    assert not manifest.exists()
+
+
+def test_publish_generation_phase_omitted_keeps_prior_unbound_behavior(tmp_path):
+    """`phase` is optional and backward compatible: an existing direct caller that omits it (both
+    real call sites in tests/test_work.py always pass a well-formed PR# artifact anyway) keeps
+    publishing an unbound manifest for a non-PR artifact, exactly as before this fix."""
+    base, root = _repo(tmp_path)
+    manifest = pathlib.Path(base) / "state" / "review-manifests" / "2819.json"
+    data = _rc().publish_generation(base, "2819", "review\n", "not-a-pr", str(manifest))
+    assert "pr" not in data and "head_sha" not in data
+
+
+def test_publish_generation_for_another_phase_keeps_an_unbound_manifest(tmp_path):
+    """The guard is pr-review's alone: every other phase publishes the same publisher's unbound
+    manifest for an artifact that is not a PR, a bare number included."""
+    base, root = _repo(tmp_path)
+    manifest = pathlib.Path(base) / "state" / "review-manifests" / "2819.json"
+    for phase in ("plan-review", "code-review", "retro", "goal-review"):
+        data = _rc().publish_generation(base, "2819", "review\n", "2819", str(manifest), phase)
+        assert "pr" not in data and "head_sha" not in data, phase
+
+
+def _pr_review_repo(tmp_path, goal, pr):
+    """`_repo` + a committed checkout + the active work record `--artifact PR#<pr>` binds to."""
+    base, root = _repo(tmp_path)
+    _committed_repo(pathlib.Path(root))
+    subprocess.run(["git", "-C", root, "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   check=True, capture_output=True)
+    record = pathlib.Path(base) / "state" / "work" / (goal + ".json"); record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"pr": pr, "worktree": root, "remote": "origin", "base": "main"}))
+    return base, root
+
+
+#: The publishing gesture as the docs print it: `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py"
+#: brief .sdlc "$goal" --for pr-review --artifact "PR#$pr" --output ".sdlc/state/review-manifests/$goal.json"`.
+_PUBLISH_GESTURE = re.compile(r'python3 "\$\{CLAUDE_SKILL_DIR\}/scripts/review_context\.py"\s+(brief\s[^`]*--output\s[^`]+)`')
+_PUBLISH_DOCS = ("running.md", "landing.md")
+
+
+def _documented_publish_argv(name):
+    text = (S.parent / "references" / name).read_text(encoding="utf-8")
+    found = [" ".join(m.group(1).split()) for m in _PUBLISH_GESTURE.finditer(text)]
+    found = [g for g in found if "--for pr-review" in g]
+    assert len(found) == 1, (name, found)
+    return found[0]
+
+
+def _run_documented_publish(tmp_path, name, artifact_word):
+    """Copy the gesture out of the doc, substitute only its placeholders, run it as printed:
+    cwd = the repo, a relative `.sdlc`, no `--repo-root`. `artifact_word` replaces `"PR#$pr"`."""
+    base, root = _pr_review_repo(tmp_path, "2577", 2819)
+    gesture = _documented_publish_argv(name)
+    assert '--artifact "PR#$pr"' in gesture, gesture
+    argv = gesture.replace('--artifact "PR#$pr"', "--artifact " + artifact_word).replace('"$goal"', "2577")
+    argv = shlex.split(argv.replace('".sdlc/state/review-manifests/$goal.json"',
+                                     ".sdlc/state/review-manifests/2577.json"))
+    proc = subprocess.run([sys.executable, str(S / "review_context.py"), *argv], cwd=root,
+                          capture_output=True, text=True, timeout=120)
+    return proc, pathlib.Path(base)
+
+
+@pytest.mark.parametrize("name", _PUBLISH_DOCS)
+def test_the_documented_pr_review_gesture_still_publishes_a_bound_manifest(tmp_path, name):
+    proc, base = _run_documented_publish(tmp_path, name, "PR#2819")
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads((base / "state" / "review-manifests" / "2577.json").read_text())
+    assert data["pr"] == 2819 and re.fullmatch(r"[0-9a-f]{40}", data["head_sha"])
+
+
+@pytest.mark.parametrize("name", _PUBLISH_DOCS)
+def test_the_documented_pr_review_gesture_without_the_pr_prefix_refuses_and_writes_nothing(tmp_path, name):
+    proc, base = _run_documented_publish(tmp_path, name, "2819")
+    assert proc.returncode == 2 and proc.stdout == "", proc
+    assert "PR#<N>" in proc.stderr, proc.stderr
+    assert not (base / "state" / "review-manifests").exists()
+    assert not (base / "state" / "review-generations").exists()
 
 
 def test_pr_review_generations_are_distinct_for_two_heads_with_the_same_brief(tmp_path):

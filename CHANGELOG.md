@@ -26,6 +26,32 @@ All notable changes to Sigma are recorded here, newest first.
   `sdlc:in-progress` label first, so it tests the local skip. (9) `run_loop` reports `review`
   apart from `parked`. Tests: `tests/test_merge_reconcile.py`, `tests/test_public_bootstrap_control.py`.
 
+- **Ported two fixes the predecessor has not released: `release()` says when a `gh` call failed, and
+  `pr-review` refuses a malformed `--artifact`** (#285). Both are in the predecessor's tree but in
+  neither its released 1.4.26 nor Sigma; each was merged file by file with its tests.
+  - `GitHubSource.release()` used to swallow a failed label removal or audit comment, so a release
+    reported success while the label stayed attached and no comment was posted. Each failure now
+    writes one `sigma:` line to stderr and is recorded in a new `release_warnings()` getter that
+    resets on every call, as `read_degraded()` does. The return contract is unchanged (`True`
+    released, `False` for the no-op on a closed or parked goal), so `_release()` in `loop.py`, the
+    `release` verb and every test double behave as before. A failure still does not stop the
+    release, and `_release()` still writes its ledger entry when the label stayed attached: the
+    stderr line is the only surface today, because nothing reads the getter yet. Where Sigma differs
+    from the predecessor: the warning quotes `gh`'s own stderr, whitespace collapsed and capped at
+    200 characters, and the getter returns a copy. The predecessor formatted the whole exception,
+    which for the audit comment carries the comment `--body` (a stale-resume reason); that text was
+    bound for the issue anyway, but a log line should not carry it whole.
+  - `review_context.py brief ... --for pr-review --artifact 2819 --output <path>` (no `PR#`) used to
+    publish a manifest with no `pr`, `head_sha`, `base_ref` or `diff_sha256` and exit 0, and the
+    mistake surfaced only at `work.py post-review`, after a whole review cycle. It now exits 2, names
+    the required `PR#<N>` form and writes neither a manifest nor a generation directory;
+    `--artifact "PR#2819"` still publishes. The check is in `publish_generation`, which takes an
+    optional `phase`: `brief()` stays permissive (a bare number still prints a brief), and every
+    other phase keeps its unbound manifest. The usage strings now spell `"PR#<N>" for pr-review`.
+    Not closed here: `--for pr-review --output X` with no `--artifact` still writes an unbound
+    manifest; that gap is a follow-up.
+  - Not measured: a real `gh` failure against GitHub. Both fixes were exercised with a fake `gh`
+    script and the test doubles.
 - **Board mirroring survives a repo rename, the docs now say what the old `setup_created` marker
   does, and a Phase-field race recovers** (#308, follow-ups from the #233 review). (1) Since #233 the
   status path skipped board cards whose `content.repository` differs from `discovery.github.repo`.
