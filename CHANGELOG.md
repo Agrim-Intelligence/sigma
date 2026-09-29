@@ -26,6 +26,40 @@ All notable changes to Sigma are recorded here, newest first.
   sessions, Windows -- #300-#303, #305) and an owner runbook for real GitHub:
   [docs/onboarding-control.md](docs/onboarding-control.md). Its gh call log found the loop's
   label self-heal making 20 needless `label create` calls per goal cycle (#304).
+- **The board card shows each goal's Phase and Priority** (#233). Before this, only Status reached
+  the board. Now every `phase_report.py start` writes the phase the loop is entering (`P1 GOAL` ..
+  `P7 RETRO`, imported from `PHASE_TOKENS`) to a `Phase` field on the goal's card, and mirrors its
+  Priority from the `priority:*` label. Every status write also mirrors the moved goal's Priority,
+  using labels the run has already read (not onto a card moved to Done). On a pinned board
+  (`project.enabled` + `project.number`) a missing Phase field is created once as a single-select
+  with fixed options. **The label stays the source of truth:** a Priority field is created, and
+  treated as a writer (#719's field-wins rule), only on Sigma's own board — one the loop or
+  `board_setup.py` created (`project.setup_created`), or with the new opt-in
+  `project.mirror_priority: true`. On any other board the loop never creates the column, never
+  rewrites a label from it, and only fills a blank one, so a person's `priority:P1` -> `priority:P0`
+  edit is never reverted. Fields are matched by one case-insensitive name rule in both the phase path
+  and the backlog sync; ambiguous case-variants are never guessed. Extra options are kept, a
+  missing option is reported and never appended, and nothing is renamed, recoloured or dropped. A
+  card is matched by repository and number, so a multi-repo board's same-numbered card is never
+  written (the status path's `item-list` read now skips other repos' rows too). **Cost:** one
+  GraphQL read of the issue's own card per boundary, plus at most 2 writes. Measured read-only on
+  board #17 (246 cards): 0.66–0.72s, against about 11.6s for the three whole-board reads it
+  replaced; it does not grow with the board. The write is fail-open: it never changes a pick's or a
+  start's exit code or banner, and prints at most one warning per run. Each `gh` call is
+  time-bounded; an overrunning one is killed with its whole process group (POSIX) or tree (Windows,
+  `taskkill /T`), is never retried as transient, and ends that boundary's board write. New config:
+  `project.phase_field` (default `"Phase"`, `false` disables it) and `project.mirror_priority`.
+  **Decision:** an unlabelled goal's Priority stays blank, not P3. "No priority" sorts after P4, and
+  writing P3 would reorder the queue. Acceptance ran on the in-memory board fake only. The live run
+  on board #17 was not executed; it is an owner runbook in
+  [docs/board-fields.md](docs/board-fields.md). **Review fixes:** `project.owner: "@me"` is resolved
+  to the viewer's login in the same GraphQL read and compared like any owner (it used to skip the
+  owner check, so a phase start could write an org's same-numbered board instead of the user's own);
+  an unresolvable viewer writes nothing. `project.setup_created` is now `{"number", "owner"}`
+  (`board_setup.pin` drops it on an owner or number change; the old bare-number form reads as not
+  Sigma's board). Ctrl-C during a board call kills `gh`'s process group before re-raising. An
+  unparseable config on a repo with no board prints nothing. The backlog sync's lone case-variant
+  `PRIORITY` adoption now fills blank cells on adopted boards where it wrote nothing before.
 
 - **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
   an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as

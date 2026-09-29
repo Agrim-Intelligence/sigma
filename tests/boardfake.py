@@ -19,7 +19,13 @@ It models GITHUB'S BEHAVIOUR that the tests depend on, not the transport:
     option whose id is left out is DELETED: every card whose value was that option loses it
     (the card-value wipe board_migrate's rehearsal measures), and a workflow targeting it goes off;
   - GraphQL string literals are parsed as GraphQL parses them (JSON escapes), and an option list
-    that does not parse is a GraphQL error, never a silently shorter list.
+    that does not parse is a GraphQL error, never a silently shorter list;
+  - #233: ONE issue's cards are read over GraphQL (`repository(owner, name) { issue(number) {
+    projectItems ... } }`), scoped by REPOSITORY as the real API is: a board may carry cards from
+    several repos with the same issue number (`add_item(..., repo="acme/other")`), and field values
+    come back keyed by field ID, never flattened by name. The same read carries `viewer { login }`
+    (`self.viewer`; None models a viewer that cannot be read), and `gh project create` makes a fresh
+    board with GitHub's default fields.
 
 Imported as a plain sibling module (`import boardfake`), like gqlfake.
 """
@@ -83,6 +89,7 @@ class GitHub:
         self.ignore = set()         # substring of a gh call -> exit 0, "{}", and NOTHING applied
         self.calls = []             # every argv, as passed (without the leading "gh")
         self.issues = []            # REST issue dicts for the loop's backlog read
+        self.viewer = "someone"     # the token's own login (`gh api user`, GraphQL `viewer`); None = unreadable
         self.labels = {}
 
     # ------------------------------------------------------------ state helpers
@@ -127,9 +134,14 @@ class GitHub:
         return next((o for o in (self.field(board, field) or {}).get("options") or []
                      if o["name"] == name), None)
 
-    def add_item(self, board, number, **values):
-        """A card for issue `number`, with single-select values by field name -> option name."""
-        it = {"id": "PVTI_%d" % number, "content": {"type": "Issue", "number": number},
+    def add_item(self, board, number, repo=None, **values):
+        """A card for issue `number` (of `repo`, default this fake's own), with single-select values
+        by field name -> option name."""
+        full = repo or "%s/%s" % (self.owner, self.repo)
+        tag = "%d" % number if full == "%s/%s" % (self.owner, self.repo) \
+            else "%s_%d" % (full.replace("/", "_"), number)
+        it = {"id": "PVTI_%s" % tag, "content": {"type": "Issue", "number": number,
+                                                 "repository": full},
               "status": None, "values": {}}
         board["items"].append(it)
         for fname, oname in values.items():
@@ -194,6 +206,8 @@ class GitHub:
         if a[:2] == ["api", "graphql"]:
             swap = gqlfake.swap(a, labels=set())
             doc = next((x[len("query="):] for x in a if str(x).startswith("query=")), "")
+            if "projectItems(" in doc:
+                return self._card_read(doc)
             if swap is not None and ("label" in doc and "Project" not in doc
                                      or "issue(number" in doc):
                 return swap
@@ -212,7 +226,9 @@ class GitHub:
         path, _, query = full.partition("?")
         per = int(re.search(r"per_page=(\d+)", query).group(1)) if "per_page=" in query else 30
         if path == "user":
-            return "someone\n"
+            if self.viewer is None:
+                raise LookupError(path)
+            return "%s\n" % self.viewer
         m = re.fullmatch(r"users/([^/]+)", path)
         if m:
             login = m.group(1)
@@ -291,6 +307,50 @@ class GitHub:
                                         for k, v in b["workflows"].items()]}}}})
         raise LookupError("graphql read not modelled: " + doc[:80])
 
+    def _card_read(self, doc):
+        """#233's single-card read: the issue's labels and every card it has, each with its board's
+        fields (options only on a single-select) and its single-select values keyed by field id."""
+        owner, name = self._s(doc, "owner"), self._s(doc, "name")
+        number = int(re.search(r"issue\(number: (\d+)\)", doc).group(1))
+        full = "%s/%s" % (owner, name)
+        mine = full == "%s/%s" % (self.owner, self.repo)
+        issue = next((i for i in self.issues if i["number"] == number), None) if mine else None
+        cards = [(b, it) for b in self.boards for it in b["items"]
+                 if (it.get("content") or {}).get("number") == number
+                 and (it.get("content") or {}).get("repository",
+                                                   "%s/%s" % (self.owner, self.repo)) == full]
+        if issue is None and not cards:
+            return json.dumps({"data": {"viewer": ({"login": self.viewer} if self.viewer is not None
+                                                   else None), "repository": {"issue": None}}})
+        labels = [(lb.get("name") if isinstance(lb, dict) else lb)
+                  for lb in ((issue or {}).get("labels") or [])]
+
+        def field(f):
+            single = f["options"] is not None
+            return {"id": f["id"], "name": f["name"],
+                    "dataType": "SINGLE_SELECT" if single else str(f.get("data_type") or "text").upper(),
+                    **({"options": [{"id": o["id"], "name": o["name"]} for o in f["options"]]}
+                       if single else {})}
+
+        def values(b, it):
+            out = []
+            for fid, oid in (it.get("values") or {}).items():
+                f = next((f for f in b["fields"] if f["id"] == fid), None)
+                o = next((o for o in ((f or {}).get("options") or []) if o["id"] == oid), None)
+                if f and o:
+                    out.append({"name": o["name"], "optionId": oid,
+                                "field": {"id": fid, "name": f["name"]}})
+            return out
+
+        nodes = [{"id": it["id"], "project": {"id": b["id"], "number": b["number"],
+                                              "owner": {"login": b["owner"]},
+                                              "fields": {"nodes": [field(f) for f in b["fields"]]}},
+                  "fieldValues": {"nodes": values(b, it)}} for b, it in cards]
+        viewer = {"login": self.viewer} if self.viewer is not None else None
+        return json.dumps({"data": {"viewer": viewer, "repository": {"issue": {
+            "labels": {"nodes": [{"name": n} for n in labels]},
+            "projectItems": {"nodes": nodes}}}}})
+
     @staticmethod
     def _s(doc, key):
         m = re.search(key + r': ("(?:[^"\\]|\\.)*")', doc)
@@ -358,7 +418,8 @@ class GitHub:
                  "options": [dict(o, id="o_%s_%d" % (o["name"], b["number"])) for o in opts]}
             b["fields"].append(f)
             return json.dumps({"data": {"createProjectV2Field": {"projectV2Field": {
-                "id": f["id"]}}}})
+                "id": f["id"], "name": name,
+                "options": [{"id": o["id"], "name": o["name"]} for o in f["options"]]}}}})
         raise LookupError("mutation not modelled: " + doc[:80])
 
     def _arg(self, a, flag):
@@ -371,6 +432,9 @@ class GitHub:
             limit = int(self._arg(a, "--limit") or 30)
             return json.dumps({"projects": [{"number": b["number"], "id": b["id"],
                                              "title": b["title"]} for b in visible[:limit]]})
+        if verb == "create":        # a fresh board: GitHub's own Title + default Status field
+            b = self.add_board(self._arg(a, "--title"), owner=self._arg(a, "--owner"))
+            return json.dumps({"number": b["number"], "id": b["id"], "title": b["title"]})
         if verb == "view":
             b = self.board(number=a[2], owner=self._arg(a, "--owner"))
             if not b:
@@ -399,8 +463,10 @@ class GitHub:
         if verb == "item-list":
             return json.dumps({"items": [dict(i) for i in b["items"]]})
         if verb == "item-add":
-            num = int(self._arg(a, "--url").rstrip("/").split("/")[-1])
-            it = {"id": "PVTI_%d" % num, "content": {"type": "Issue", "number": num},
+            url = self._arg(a, "--url").rstrip("/").split("/")
+            num = int(url[-1])
+            it = {"id": "PVTI_%d" % num, "content": {"type": "Issue", "number": num,
+                                                     "repository": "/".join(url[-4:-2])},
                   "status": None, "values": {}}
             b["items"].append(it)
             return json.dumps(it)

@@ -1037,6 +1037,18 @@ class GitHubSource:
         # recognised field value wins and the label is rewritten to match; a blank field is filled
         # from a recognised label; an unrecognised field value is left alone. Falsy disables it.
         self.priority_field = self._project_cfg.get("priority_field", "Priority")
+        # #233: the board's Phase column, written ONLY at a phase boundary (`set_board_phase`, called
+        # by `phase_report.py start`). Falsy disables it; Priority is unaffected by that switch.
+        self.phase_field = self._project_cfg.get("phase_field", "Phase")
+        # #233 review: WHO WRITES the Priority field on this board. Sigma's field (a board this run
+        # created, `project.setup_created` naming the pinned number+owner, or this opt-in) keeps
+        # #719's field-wins rule and may be CREATED by the loop. Anyone else's board: the loop never
+        # creates the field and never rewrites a label from it (`_priority_owned`).
+        self.mirror_priority = self._project_cfg.get("mirror_priority") is True
+        self._created_board_now = False  # `_ensure_board` created the board in THIS run
+        self._priority_label_writes = True  # may `_mirror_priority` rewrite a label from the field?
+        self._issue_labels = {}          # {issue number -> labels}, from `_sync_backlog`'s one read
+        self._field_warned = False       # #233: printed the ONE Phase/Priority warning this run?
         self._priority_options = {}      # {P0..P4 -> option id}, filled by _ensure_status_field
         self._priority_field_id = None
         self._ro_attempted = False       # resolved the read-only board queue this run?
@@ -1198,7 +1210,10 @@ class GitHubSource:
             try:
                 return self._raw_run(args)
             except Exception as e:
-                if attempt == self._PROJECT_RETRIES - 1 or not self._is_transient(e):
+                # #233: a runner that already KILLED a hung call marks it `no_retry` -- a timeout is
+                # not a blip, and retrying it would spend the whole boundary budget on one card.
+                if attempt == self._PROJECT_RETRIES - 1 or getattr(e, "no_retry", False) \
+                        or not self._is_transient(e):
                     raise
                 time.sleep(self._RETRY_BASE * (2 ** attempt))
 
@@ -3560,6 +3575,21 @@ class GitHubSource:
             if item_id and opt and self._field_id:
                 self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
                            "--field-id", self._field_id, "--single-select-option-id", opt])
+                # #233: the same card update carries its Priority. `_sync_backlog` skips the goal
+                # being moved (`exclude`), so without this the moved card's Priority waited for the
+                # NEXT process's sync. Labels come from that sync's own read -- zero extra calls --
+                # and a goal it never read (not goal-labelled) is left alone. `_mirror_priority`
+                # never raises, so the Status write above is reported as landed whatever happens.
+                #
+                # #233 review: not onto a card this call just moved to Done -- a finished goal's
+                # Priority is moot, and `_write_priority_field`'s #1206 guard would otherwise read
+                # our own write as a STRANDED card and print a false "stuck at Done". And on a board
+                # whose Priority field is not Sigma's, the label is the writer: never rewritten here.
+                self._item_status[int(goal)] = status_name
+                labels = self._issue_labels.get(int(goal))
+                if labels is not None and status_name != self.col["done"]:
+                    self._mirror_priority(int(goal), labels, item_id,
+                                          label_writes=self._priority_owned())
                 return True
             return False
         except Exception as exc:
@@ -3705,6 +3735,7 @@ class GitHubSource:
             number, pid, created_now = data.get("number"), data.get("id"), True
         if number is None or pid is None:
             return False
+        self._created_board_now = bool(created_now)
         self._project_number, self._project_id = number, pid
         if self.repo:
             try:
@@ -3810,7 +3841,22 @@ class GitHubSource:
         the behaviour every existing adopter already has."""
         if not self.priority_field:
             return
-        fld = self._all_fields.get(self.priority_field)
+        # #233 review: ONE name rule for both paths (`_match_field`): the exact name, else a single
+        # case-only variant (`PRIORITY`), never a guess between several. A case-only adoption, or
+        # any Priority field on a board whose field is not Sigma's, is mirrored label -> field only:
+        # #719's field-wins label rewrite stays exactly where it already ran (an exact-name field),
+        # plus Sigma's own field, and is never extended to a column the sync did not read before.
+        name, clash = self._match_field(list(self._all_fields), self.priority_field)
+        if clash:
+            # `gh project item-list` flattens every field under its LOWERCASED name, so with two
+            # case-variants of the column one card value overwrites the other: whatever is read
+            # may be the wrong field's. Mirror nothing rather than write from a guess.
+            self._warn_field("the board has several %r fields differing only in case (%s), so "
+                             "their values cannot be told apart" % (self.priority_field,
+                                                                    ", ".join(clash)))
+            return
+        fld = self._all_fields.get(name) if name else None
+        self._priority_label_writes = self._priority_owned() or name == self.priority_field
         if fld is None and created_now:
             try:
                 self._run(["project", "field-create", str(number), "--owner", owner,
@@ -3963,6 +4009,8 @@ class GitHubSource:
         on_board = set(self._items or {})            # numbers already carded
         for it in issues:
             n = it.get("number")
+            if n is not None:
+                self._issue_labels[int(n)] = it.get("labels")   # #233: `_set_board_status` reads it
             if n is None or str(n) == str(exclude):
                 continue
             was_new = int(n) not in on_board
@@ -4328,7 +4376,7 @@ class GitHubSource:
                     return opt_id
         return None
 
-    def _mirror_priority(self, n, labels, item_id):
+    def _mirror_priority(self, n, labels, item_id, on_error=None, label_writes=None):
         """Keep a card's Priority column and its `priority:P*` label in agreement. The FIELD wins.
 
         Three cases, and only the first two write anything — a board already in agreement costs
@@ -4359,15 +4407,23 @@ class GitHubSource:
         human may have put that text there for a reason sigma just doesn't understand yet: no
         recognised priority on EITHER side, or the field's one is unrecognised, is always left alone
         rather than guessed at. Fail-open throughout — a column is a nicety, never a reason to fail a
-        sync."""
+        sync.
+
+        #233 review: `label_writes` False (a Priority field that is not Sigma's: see
+        `_priority_owned`) drops the first case entirely -- the LABEL is the only writer, so the loop
+        never rewrites a label from the field, and never overwrites a recognised field value either
+        (the sync's own exact-name field-wins pass would then fight it). Only a BLANK field is
+        filled from the label. None -> `self._priority_label_writes`, set by the field's resolver."""
         if not (self._priority_field_id and self._priority_options and item_id):
             return
+        if label_writes is None:
+            label_writes = self._priority_label_writes
         field_value = self._item_priority.get(n)
         label_value = self._priority_name(labels)
         field_rank = discovery.priority_rank(field_value, self.priority_aliases) if field_value else discovery.UNPRIORITISED
         label_rank = discovery.priority_rank(label_value) if label_value else discovery.UNPRIORITISED
         try:
-            if field_rank < discovery.UNPRIORITISED and field_rank != label_rank:
+            if label_writes and field_rank < discovery.UNPRIORITISED and field_rank != label_rank:
                 canon = discovery.PRIORITIES[field_rank]
                 # #814: this correction used to be silent. field_value is only ever fresher than
                 # label_value when the board has genuinely been the live interface since the label
@@ -4384,7 +4440,7 @@ class GitHubSource:
             elif not field_value and label_rank < discovery.UNPRIORITISED:
                 self._write_priority_field(n, label_rank, item_id)
         except Exception as exc:
-            self._note_scope(exc)
+            (on_error or self._note_scope)(exc)   # #233's boundary path passes its one-warning sink
 
     def _write_priority_label(self, n, canon, labels):
         """Set issue `n`'s priority label to the canonical `priority:P<n>` spelling for `canon` —
@@ -4438,6 +4494,12 @@ class GitHubSource:
         doesn't even have the column, is pure noise."""
         if not (self._priority_field_id and self._priority_options and item_id):
             return
+        canon = discovery.PRIORITIES[rank]
+        option = self._priority_options.get(canon) or self._option_for_rank(rank)
+        if not option:
+            return              # the board's Priority field offers neither P<n> nor an alias for it
+        # #233 review: checked AFTER the option is resolved -- a card that was never going to be
+        # written (no matching option) is not reported as skipped.
         if self._item_status.get(int(n)) == self.col["done"]:
             sys.stderr.write(
                 "sigma: issue #%s is open but its board card is stuck at %s -- GitHub has no "
@@ -4445,10 +4507,6 @@ class GitHubSource:
                 "there until a human resets it. Skipping the Priority field write on this card; "
                 "run /agrim-doctor to see it flagged.\n" % (n, self.col["done"]))
             return
-        canon = discovery.PRIORITIES[rank]
-        option = self._priority_options.get(canon) or self._option_for_rank(rank)
-        if not option:
-            return              # the board's Priority field offers neither P<n> nor an alias for it
         self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
                    "--field-id", self._priority_field_id, "--single-select-option-id", option])
         self._item_priority[n] = canon
@@ -4490,8 +4548,15 @@ class GitHubSource:
                               "--format", "json", "--limit", str(self._BOARD_ITEM_LIMIT)])
         items = (data.get("items") if isinstance(data, dict) else data) or []
         self._warn_truncated("board items", len(items))
+        mine = self.repo.casefold()
         for it in items:
             n = (it.get("content") or {}).get("number")
+            # #233 review: a board may carry cards from SEVERAL repos, and issue numbers are per
+            # repo -- `acme/other#11` must never be mistaken for our #11 and have its card moved.
+            # A row that names no repository (older `gh`, or a fake) is kept, as before.
+            where = str((it.get("content") or {}).get("repository") or "").casefold()
+            if mine and where and where != mine:
+                continue
             if n is not None:
                 self._items[int(n)] = it.get("id")
                 self._item_status[int(n)] = it.get("status")
@@ -4509,6 +4574,292 @@ class GitHubSource:
     @staticmethod
     def _find_field(fields, name):
         return next((f for f in fields if f.get("name") == name), None)
+
+    # ----- #233: Phase (and Priority) at a phase boundary -----------------------------------------
+
+    #: The one-card read's page sizes. An issue on more than `_CARD_BOARDS` boards may not see the
+    #: pinned one (it then reads as uncarded, with the one warning); GitHub caps a project at 50
+    #: fields, so `_CARD_FIELDS` reads them all. Neither depends on how many cards the board has.
+    _CARD_BOARDS = 50
+    _CARD_FIELDS = 50
+
+    def _pinned_number(self):
+        try:
+            value = int(self._project_cfg.get("number"))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    def _priority_owned(self):
+        """#233 review: is this board's Priority field SIGMA'S? True for a board `_ensure_board`
+        created in this run, the board `board_setup.py` created (`project.setup_created` naming
+        the pinned number AND owner, `setup_marker`), or the explicit opt-in `project.mirror_priority: true`. Only then may
+        the loop create the field, and only then does #719's field-wins rule rewrite labels from it
+        on #233's paths. Anyone else's board keeps the label as the one writer."""
+        if self.mirror_priority or self._created_board_now:
+            return True
+        made = self.setup_marker(self._project_cfg.get("setup_created"))
+        if made is None:
+            return False
+        # #233 review (block #2): the marker names a board by number AND owner -- a hand-made board
+        # of another owner that happens to reuse the number is not the one board_setup created.
+        return made == ((self._project_number or self._pinned_number()),
+                        str(self._proj_owner() or "").casefold())
+
+    @staticmethod
+    def setup_marker(value):
+        """`project.setup_created` -> (number, casefolded owner), or None when it names no board
+        this code can vouch for. THE one parse, shared with `board_setup.py` (its writer). Only the
+        `{"number": N, "owner": "<login>"}` form counts; the older bare-number form (number only,
+        so it cannot tell two owners' boards apart) reads as NOT ours -- the safe direction: the
+        label stays the one Priority writer until `board_setup.py create` re-pins it."""
+        if not isinstance(value, dict):
+            return None
+        owner = value.get("owner")
+        try:
+            number = int(value.get("number"))
+        except (TypeError, ValueError):
+            return None
+        if isinstance(value.get("number"), bool) or number <= 0 \
+                or not isinstance(owner, str) or not owner.strip() or owner.startswith("@"):
+            return None
+        return number, owner.strip().casefold()
+
+    @staticmethod
+    def _match_field(names, name):
+        """THE field-name rule, shared by the sync (`_ensure_priority_field`) and the phase path:
+        -> (the board's name to use or None, [every case-variant of `name` when that is ambiguous]).
+        The exact name wins; else a SINGLE case-only variant is adopted under its own spelling (never
+        renamed, never shadowed by a duplicate); several case-only variants and no exact one is
+        ambiguous and adopts nothing. An exact name with case-variants beside it is also reported
+        (second element non-empty) so a caller whose reads flatten by lowercased name can refuse."""
+        if not name:
+            return None, []
+        names = [str(n) for n in names if n is not None]
+        variants = [n for n in names if n.casefold() == str(name).casefold()]
+        if name in names:
+            return name, (variants if len(variants) > 1 else [])
+        if len(variants) == 1:
+            return variants[0], []
+        return None, variants
+
+    @staticmethod
+    def _single_select(field):
+        return field is not None and (field.get("options") is not None
+                                      or field.get("type") == "ProjectV2SingleSelectField"
+                                      or field.get("dataType") == "SINGLE_SELECT")
+
+    @staticmethod
+    def _create_field_mutation(project_id, name, options):
+        """`createProjectV2Field` for a single-select with fixed `options` [(name, colour)], every
+        literal JSON-quoted exactly as `_options_mutation` quotes them (#235's escaping). It asks for
+        the new field's options back, so a create costs no re-read."""
+        q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
+        opts = ", ".join("{name: %s, color: %s, description: %s}" % (q(n), c, q(""))
+                         for n, c in options)
+        return ("query=mutation { createProjectV2Field(input: {projectId: %s, dataType: SINGLE_SELECT, "
+                "name: %s, singleSelectOptions: [%s]}) { projectV2Field { ... on "
+                "ProjectV2SingleSelectField { id name options { id name } } } } }"
+                % (q(project_id), q(name), opts))
+
+    def _card_query(self, owner, name, n):
+        q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
+        # #233 review (block #2): `viewer { login }` rides the SAME read, so a `project.owner` of
+        # `@me` is resolved to a login and compared like any other owner -- never a wildcard.
+        return ("query=query { viewer { login } repository(owner: %s, name: %s) { issue(number: %d) { "
+                "labels(first: 100) { nodes { name } } "
+                "projectItems(first: %d, includeArchived: false) { nodes { id "
+                "project { id number owner { ... on Organization { login } ... on User { login } } "
+                "fields(first: %d) { nodes { ... on ProjectV2FieldCommon { id name dataType } "
+                "... on ProjectV2SingleSelectField { options { id name } } } } } "
+                "fieldValues(first: %d) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { "
+                "name optionId field { ... on ProjectV2FieldCommon { id name } } } } } } } } } }"
+                % (q(owner), q(name), int(n), self._CARD_BOARDS, self._CARD_FIELDS,
+                   self._CARD_FIELDS))
+
+    def _read_card(self, n, number):
+        """ONE GraphQL read: issue `n` of THIS repo, its labels, and its card on the pinned board
+        `number` (with that board's fields and the card's single-select values keyed by FIELD ID).
+        -> dict, or None when the issue has no card on that board. Scoped by repository, so a
+        multi-repo board's same-numbered card from another repo can never be the one returned; and
+        by board number + owner, so a board that merely matches the title never stands in for an
+        unreadable pin. Cost is independent of the board's card count (research/233: `item-list
+        --limit 5000` was 6.5s on 246 cards; this read measured 0.66-0.72s on the same board)."""
+        owner, name = self._owner_name()
+        if not (owner and name):
+            raise RuntimeError("no repository to read issue #%d from (set discovery.github.repo)" % n)
+        data = self._gh_json(["api", "graphql", "-f", self._card_query(owner, name, n)])
+        issue = (((data.get("data") or {}).get("repository") or {}).get("issue")) \
+            if isinstance(data, dict) else None
+        if not issue:
+            raise RuntimeError("issue #%d was not found in %s/%s" % (n, owner, name))
+        want_owner = str(self._proj_owner() or "").strip()
+        if not want_owner or want_owner.startswith("@"):
+            # #233 review (block #2): `@me` (board_migrate --owner @me, or `_proj_owner`'s own
+            # fallback) used to SKIP the owner check, so the first card on ANY board numbered
+            # `number` -- an org's #5 as readily as the user's own #5 -- was written. It is the
+            # viewer's login, read in this same query; unresolved, nothing is written.
+            viewer = ((data.get("data") or {}).get("viewer") or {}).get("login")
+            if not (isinstance(viewer, str) and viewer.strip()):
+                raise RuntimeError("could not resolve project.owner %r to a login, so board #%d "
+                                   "cannot be told from another owner's board of that number"
+                                   % (want_owner or "@me", number))
+            want_owner = viewer.strip()
+        for node in ((issue.get("projectItems") or {}).get("nodes") or []):
+            proj = (node or {}).get("project") or {}
+            login = str((proj.get("owner") or {}).get("login") or "")
+            if proj.get("number") != number or not proj.get("id") or not node.get("id"):
+                continue
+            if login.casefold() != want_owner.casefold():
+                continue
+            fields = [f for f in ((proj.get("fields") or {}).get("nodes") or []) if f and f.get("id")]
+            values = {}
+            for v in ((node.get("fieldValues") or {}).get("nodes") or []):
+                fid = ((v or {}).get("field") or {}).get("id")
+                if fid:
+                    values[fid] = v.get("name")
+            labels = [lb.get("name") for lb in ((issue.get("labels") or {}).get("nodes") or [])
+                      if isinstance(lb, dict)]
+            return {"project_id": proj["id"], "item_id": node["id"], "fields": fields,
+                    "values": values, "labels": labels}
+        return None
+
+    def _warn_field(self, what, written=False):
+        """THE one warning a run prints about Phase/Priority (#233), whatever else goes wrong after
+        it: the board is a mirror, so one line saying it is behind is the whole useful signal.
+        `written`: a notice about a board shape, not a failed write -- it must not claim one."""
+        if self._field_warned:
+            return
+        self._field_warned = True
+        hint = (" Run: gh auth refresh -s project." if "scope" in what.lower() else "")
+        lead = "board Phase/Priority note" if written else "board Phase/Priority not written"
+        try:
+            sys.stderr.write("sigma: %s - %s. The goal continues unaffected; issue labels remain "
+                             "the source of truth.%s\n" % (lead, what, hint))
+        except Exception:
+            pass
+
+    def _resolve(self, fields, name):
+        """`_match_field` over a field list -> the field dict, or None (warning once when the name is
+        ambiguous between case-variants: which one a human means cannot be guessed)."""
+        chosen, clash = self._match_field([f.get("name") for f in fields], name)
+        if chosen is None and clash:
+            self._warn_field("the board has several %r fields differing only in case (%s) and none "
+                             "named exactly %r" % (name, ", ".join(map(repr, clash)), name))
+            return None
+        if clash:
+            self._warn_field("the board has several %r fields differing only in case (%s); only "
+                             "the exact %r is used" % (name, ", ".join(map(repr, clash)), name),
+                             written=True)
+        return next((f for f in fields if f.get("name") == chosen), None) if chosen else None
+
+    def set_board_phase(self, goal, token, vocabulary):
+        """#233: set issue `goal`'s card Phase to `token`, and mirror its Priority from its labels.
+        Called once per phase boundary by `phase_report.py start`; returns True only when the Phase
+        value on the card is now `token`.
+
+        `vocabulary` is [(token, colour)] from `phase_report.PHASE_TOKENS` -- passed in, never copied
+        here, so the board's options and the output contract cannot say different things.
+
+        Gated: a no-op with ZERO gh calls unless `project.enabled` and a `project.number` is pinned
+        (the operator's explicit choice of board), and `goal` is an issue number. Light on purpose:
+        ONE read (`_read_card`: this issue's card on the pinned board, by repository and number) and
+        at most one write per field; a card whose Phase already reads `token` costs no write at all.
+        No repo link, no backlog sync, no board creation, no whole-board item list.
+
+        Phase is Sigma's own column: absent, it is created ONCE (single-select, fixed options) on the
+        pinned board. Priority is created only where the field is Sigma's (`_priority_owned`); on
+        anyone else's board it is mirrored label -> field into an existing column only, and a blank
+        one only, and a label is never rewritten from it. A field is matched by `_match_field`
+        (exact, else one case-only variant); its options exactly, then by case, and a missing one is
+        NEVER appended (the loop cannot read option colours, and #235's rule is to refuse rather than
+        reset them). Nothing is renamed, recoloured, reordered or dropped. Status is never written
+        and an uncarded goal is never carded here. Fail-open: never raises, and at most ONE stderr
+        line per run (`_warn_field`)."""
+        number = self._pinned_number()
+        if not (self.project_enabled and number) or not str(goal).isdigit():
+            return False
+        n = int(goal)
+        try:
+            card = self._read_card(n, number)
+            if card is None:
+                self._warn_field("issue #%d has no card on board #%d yet (or the board is not "
+                                 "readable)" % (n, number))
+                return False
+            self._project_number, self._project_id = number, card["project_id"]
+            fields, item_id = card["fields"], card["item_id"]
+            wanted = []
+            if self.priority_field and self._priority_owned():
+                wanted.append((self.priority_field, [(p, "GRAY") for p in discovery.PRIORITIES]))
+            if self.phase_field:
+                wanted.append((self.phase_field, list(vocabulary)))
+            for name, options in wanted:
+                if self._match_field([f.get("name") for f in fields], name) != (None, []):
+                    continue                      # present, or ambiguous (`_resolve` warns below)
+                try:
+                    made = self._gh_json(["api", "graphql", "-f",
+                                          self._create_field_mutation(card["project_id"], name,
+                                                                      options)])
+                    fld = (((made.get("data") or {}).get("createProjectV2Field") or {})
+                           .get("projectV2Field")) if isinstance(made, dict) else None
+                    if fld and fld.get("id"):
+                        fields.append(dict(fld, dataType="SINGLE_SELECT"))
+                except Exception as exc:
+                    self._warn_field("could not create the %r field (%s)"
+                                     % (name, getattr(exc, "hint", None) or exc))
+            self._mirror_board_priority(n, card, fields, item_id)
+            return self._write_board_phase(card, fields, item_id, token) if self.phase_field \
+                else False
+        except Exception as exc:
+            self._warn_field(str(getattr(exc, "hint", None) or exc))
+            return False
+
+    def _mirror_board_priority(self, n, card, fields, item_id):
+        if not self.priority_field:
+            return
+        fld = self._resolve(fields, self.priority_field)
+        if fld is None:
+            return                     # not Sigma's to create, its create already warned, or ambiguous
+        if not self._single_select(fld):
+            self._warn_field("the board's %r field is not single-select" % fld.get("name"))
+            return
+        status = self._resolve_quiet(fields, self._project_cfg.get("status_field") or "Status")
+        self._item_status[n] = card["values"].get((status or {}).get("id"))   # #1206's Done guard
+        self._priority_field_id = fld.get("id")
+        self._priority_options = {o.get("name"): o.get("id") for o in (fld.get("options") or [])}
+        self._item_priority[n] = card["values"].get(fld.get("id"))
+        self._mirror_priority(n, card["labels"], item_id,
+                              label_writes=self._priority_owned(),
+                              on_error=lambda exc: self._warn_field(
+                                  "the Priority write failed (%s)" % (getattr(exc, "hint", None) or exc)))
+
+    def _resolve_quiet(self, fields, name):
+        chosen, _clash = self._match_field([f.get("name") for f in fields], name)
+        return next((f for f in fields if f.get("name") == chosen), None) if chosen else None
+
+    def _write_board_phase(self, card, fields, item_id, token):
+        fld = self._resolve(fields, self.phase_field)
+        if fld is None:
+            return False                 # its create already warned, or ambiguous (warned)
+        if not self._single_select(fld):
+            self._warn_field("the board's %r field is not single-select" % fld.get("name"))
+            return False
+        opts = [o for o in (fld.get("options") or []) if isinstance(o, dict)]
+        opt = next((o for o in opts if o.get("name") == token), None) or next(
+            (o for o in opts if str(o.get("name") or "").casefold() == token.casefold()), None)
+        if opt is None:
+            self._warn_field("the %r field has no %r option (add it on the board by hand; the "
+                             "loop never edits a field's options)" % (fld.get("name"), token))
+            return False
+        if card["values"].get(fld.get("id")) == opt.get("name"):
+            return True                              # already there: dedupe, zero writes
+        try:
+            self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
+                       "--field-id", fld.get("id"), "--single-select-option-id", opt.get("id")])
+        except Exception as exc:
+            self._warn_field("the Phase write failed (%s)" % (getattr(exc, "hint", None) or exc))
+            return False
+        return True
 
     def _issue_url(self, n):
         repo = self.repo

@@ -908,6 +908,21 @@ RENDER_SCRIPT = _HERE / "render.py"
 #: sick host, and the fallback banner is better than a stalled phase boundary.
 RENDER_TIMEOUT_S = 20
 
+#: #233: the board colour each phase's option gets when the loop CREATES the Phase field -- the
+#: nearest GitHub single-select colour to its `PHASE_BADGES` square. Never RED (a badge is not
+#: `🔴`), so 🟫 plan-review, which GitHub has no brown for, is PINK. Keyed like `PHASE_TOKENS`.
+PHASE_BOARD_COLORS = {"goal": "GRAY", "research": "YELLOW", "plan": "ORANGE",
+                      "plan_review": "PINK", "implement": "BLUE", "review": "PURPLE",
+                      "retro": "GREEN"}
+
+#: #233: the board write at a phase start is bounded so a sick `gh` can never hang a phase: each
+#: call times out, and the whole write stops issuing calls past its budget (fail-open either way).
+BOARD_CALL_TIMEOUT_S = 20
+BOARD_BUDGET_S = 45
+BOARD_RETRY_BASE = 0.5
+#: The `gh` runner for the board write; None -> the bounded real one. Tests put a fake here.
+_BOARD_RUN = None
+
 
 def phase_token(phase):
     """`research` -> `P2 RESEARCH`. An unknown phase returns itself rather than raising: the CLI
@@ -1708,7 +1723,143 @@ def cmd_start(argv):
     for line in start_lines(goal_ref(goal), phase, model, title,
                             host_model or requested_model):
         print(line)
+    sys.stdout.flush()
+    # #233: AFTER the marker, the ledger event and the banner, so no board outcome can change what
+    # this boundary records, prints or returns.
+    mirror_phase_to_board(sdlc_dir, goal, phase)
     return 0
+
+
+#: #233 review: how long a KILLED `gh` may take to release its pipes before the runner gives up on
+#: it. Bounded on every platform: a grandchild that escaped the kill (or a Windows tree `taskkill`
+#: could not reach) can hold stdout open, and an unbounded reap would hang the boundary anyway.
+BOARD_REAP_S = 5
+#: The `gh` executable the bounded runner spawns (tests point it at a local stub).
+BOARD_GH = "gh"
+
+
+class BoardCallTimeout(RuntimeError):
+    """A board `gh` call overran its timeout and was killed. `no_retry`: `sources.GitHubSource._run`
+    must not retry it as transient -- the boundary skips its board write instead (one warning)."""
+    no_retry = True
+
+
+def _on_windows():
+    return os.name == "nt"
+
+
+def _kill_tree(proc):
+    """Kill a hung `gh` AND everything it spawned: its whole process group on POSIX (it was started
+    in a session of its own), `taskkill /T /F` on Windows -- the same split `run_with_timeout.py`
+    makes. Never raises; the tree may already be gone."""
+    try:
+        if _on_windows():
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
+                           timeout=BOARD_REAP_S)
+        else:
+            import signal
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _bounded_gh(budget_s=None, call_timeout_s=None):
+    """A `gh` runner for `sources.GitHubSource` that cannot hang a boundary: every call has a
+    timeout, a call that overruns is killed with its whole process tree and ends the write (every
+    later call raises at once, `BoardCallTimeout`, never retried), and once the budget is spent every
+    further call raises at once too."""
+    budget = BOARD_BUDGET_S if budget_s is None else budget_s
+    deadline = time.monotonic() + budget
+    timeout = BOARD_CALL_TIMEOUT_S if call_timeout_s is None else call_timeout_s
+    killed = []
+
+    def run(args):
+        if killed:
+            raise BoardCallTimeout("an earlier board call was killed after %ss; no further calls "
+                                   "this boundary" % killed[0])
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise RuntimeError("board write budget (%ss) spent" % budget)
+        wait = min(timeout, left)
+        spawn = ({"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)}
+                 if _on_windows() else {"start_new_session": True})
+        env = dict(os.environ, GH_PROMPT_DISABLED="1", GH_NO_UPDATE_NOTIFIER="1")
+        proc = subprocess.Popen([BOARD_GH, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                errors="replace", env=env, **spawn)
+        try:
+            out, err = proc.communicate(timeout=wait)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            try:
+                proc.communicate(timeout=BOARD_REAP_S)
+            except Exception:
+                pass                              # a pipe still held open: abandon it, never hang
+            killed.append("%g" % wait)
+            raise BoardCallTimeout("gh %s gave no answer within %gs and was killed"
+                                   % (" ".join(map(str, args[:2])), wait))
+        except BaseException:
+            # #233 review (block #2): Ctrl-C (KeyboardInterrupt), SystemExit or anything else that
+            # unwinds out of the wait. `gh` runs in a session of its own, so the terminal's SIGINT
+            # never reached it: without this kill it was left orphaned, with no timeout. Kill the
+            # group, then let the interrupt through unchanged -- the operator asked to stop.
+            _kill_tree(proc)
+            raise
+        if proc.returncode != 0:
+            exc = RuntimeError("gh %s failed: %s" % (" ".join(map(str, args[:2])),
+                                                     (err or "").strip()[:300]))
+            exc.hint = (err or "").strip()[:300]
+            raise exc
+        return out
+    return run
+
+
+def _config_mentions_board(sdlc_dir):
+    """Does config.json's raw text name a board (`"project"`)? Used only when it cannot be parsed,
+    to decide between silence (no board could be configured) and the one warning. Never raises."""
+    try:
+        text = (pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    return '"project"' in text
+
+
+def mirror_phase_to_board(sdlc_dir, goal, phase, run=None):
+    """#233: write the phase the loop is ENTERING onto the goal's board card (and mirror its
+    Priority). One write per boundary, from Sigma's own Python on every host. A no-op unless the
+    config is github mode with `project.enabled` and a pinned `project.number`; fail-open always
+    -- returns True/False, never raises, and at most one stderr line (`GitHubSource._warn_field`)."""
+    try:
+        try:
+            cfg = _load("state").load_config(sdlc_dir)
+        except Exception:
+            # #233 review (block #2): an unreadable config (missing, not JSON, not an object) is
+            # other code's to report. Say nothing here unless its text at least names a board --
+            # a repo with no board must never read "board ... not written".
+            if not _config_mentions_board(sdlc_dir):
+                return False
+            raise
+        disc = cfg.get("discovery") or {}
+        project = ((disc.get("github") or {}).get("project")) or {}
+        if disc.get("source") != "github" or not project.get("enabled") \
+                or not project.get("number") or not str(_load("work").stem(goal)).isdigit():
+            return False
+        sources = _load("sources")
+        source = sources.GitHubSource(cfg, run=run or _BOARD_RUN or _bounded_gh(),
+                                      sdlc_dir=str(sdlc_dir))
+        source._RETRY_BASE = BOARD_RETRY_BASE
+        vocabulary = [(token, PHASE_BOARD_COLORS.get(kind, "GRAY")) for kind, token in PHASE_TOKENS]
+        return bool(source.set_board_phase(_load("work").stem(goal), phase_token(phase), vocabulary))
+    except Exception as exc:                                  # the board is a mirror, never a gate
+        try:
+            print("sigma: board Phase/Priority not written - %s. The goal continues unaffected."
+                  % str(exc)[:300], file=sys.stderr)
+        except Exception:
+            pass
+        return False
 
 
 def _recorded_attempt_kinds(ledger, sdlc_dir, attempt_id):
