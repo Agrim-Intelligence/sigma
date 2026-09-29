@@ -22,6 +22,11 @@
 
 case "${1:-}" in -h|--help) echo "usage: alignment-collect.sh [--since-days N]   (N integer, default 1)"; exit 0 ;; esac
 set -uo pipefail
+# Pin the locale ONCE, in the main shell. A per-command `LC_ALL=C cmd` inside a pipeline or
+# $(...)/<(...) runs in a forked, not-exec'd bash, whose temporary-env setlocale() (Homebrew bash
+# links libintl -> CoreFoundation, not fork-safe) intermittently SIGSEGVs under load; fail-open
+# then reads the dead subshell as "nothing found". Byte-order sort is unchanged (already LC_ALL=C).
+export LC_ALL=C
 
 SCHEMA="alignment-collect/v1"
 
@@ -56,7 +61,7 @@ add_degraded() {
 degraded_json() {
   local first=1 c
   printf '['
-  for c in $(printf '%s\n' $DEGRADED | LC_ALL=C sort); do
+  for c in $(printf '%s\n' $DEGRADED | sort); do
     [ "$first" -eq 1 ] && first=0 || printf ','
     json_string "$c"
   done
@@ -210,7 +215,7 @@ json_file_array() {
     [ -n "$p" ] || continue
     if [ "$first" -eq 1 ]; then out="$(json_string "$p")"; first=0
     else out="${out},$(json_string "$p")"; fi
-  done < <(printf '%s\n' "$list" | grep . | LC_ALL=C sort)
+  done < <(printf '%s\n' "$list" | grep . | sort)
   printf '[%s]' "$out"
 }
 
@@ -231,7 +236,7 @@ json_hotspots_array() {
   while IFS= read -r -d '' c && IFS= read -r -d '' p; do
     if [ "$first" -eq 1 ]; then out="{\"file\":$(json_string "$p"),\"changes\":$c}"; first=0
     else out="${out},{\"file\":$(json_string "$p"),\"changes\":$c}"; fi
-  done < <(printf '%s\n' "$@" | LC_ALL=C sort | uniq -c | sort -rn \
+  done < <(printf '%s\n' "$@" | sort | uniq -c | sort -rn \
              | awk '{ match($0,/^ *[0-9]+ /); c=substr($0,1,RLENGTH)+0; p=substr($0,RLENGTH+1);
                       printf "%d%c%s%c", c, 0, p, 0 }')
   printf '[%s]' "$out"
@@ -249,7 +254,7 @@ json_outside_plan_array() {
     [ -n "$p" ] || continue
     if [ "$first" -eq 1 ]; then out="$(json_string "$p")"; first=0
     else out="${out},$(json_string "$p")"; fi
-  done < <(printf '%s' "$list" | grep . | LC_ALL=C sort -u)
+  done < <(printf '%s' "$list" | grep . | sort -u)
   printf '[%s]' "$out"
 }
 
@@ -260,7 +265,7 @@ SHAS="$(git -C "$PROJECT_DIR" log --no-merges --reverse \
           --since="$SINCE_ARG" --format='%H' \
           -- . "$PATHSPEC_EXCLUDE" 2>/dev/null)" || SHAS=""
 
-SHA_SORTED="$(printf '%s\n' $SHAS | grep . | LC_ALL=C sort)"
+SHA_SORTED="$(printf '%s\n' $SHAS | grep . | sort)"
 COMMIT_COUNT=0
 [ -n "$SHA_SORTED" ] && COMMIT_COUNT="$(printf '%s\n' "$SHA_SORTED" | wc -l | tr -d ' ')"
 
@@ -275,7 +280,7 @@ fi
 # -- artifact inventories (paths relative to PROJECT_DIR) ----------------------
 list_plan_paths() {
   [ -d "$PROJECT_DIR/.sdlc/plans" ] || return 0
-  find "$PROJECT_DIR/.sdlc/plans" -maxdepth 1 -name '*.md' 2>/dev/null | LC_ALL=C sort
+  find "$PROJECT_DIR/.sdlc/plans" -maxdepth 1 -name '*.md' 2>/dev/null | sort
 }
 PLAN_PATHS="$(list_plan_paths)"
 # Hoisted out of the commit loop (#1486): plan mtimes are invariant for this run.
@@ -536,7 +541,7 @@ OUTSIDE_JSON="$(json_outside_plan_array "$OUTSIDE_PLAN_FILES")"
 # to json_outside_plan_array() directly rather than a fifth escaper: this list is already sorted+
 # deduped the same way OUTSIDE_JSON's is (both ultimately via `sort -u` ahead of the same `grep .`
 # empty-line filter), and json_outside_plan_array does exactly that plus the escaping internally, so
-# the local `grep . | LC_ALL=C sort -u` step is now redundant and dropped. json_outside_plan_array's
+# the local `grep . | sort -u` step is now redundant and dropped. json_outside_plan_array's
 # own output is already `[...]`-wrapped (matching OUTSIDE_JSON's own contract, used the same way at
 # d1 below), so DECISIONS_JSON now carries the brackets itself -- the "[]" default mirrors
 # HOTSPOTS_JSON's own empty-case default a few lines up, and the d7 printf below no longer adds its
