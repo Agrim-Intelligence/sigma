@@ -206,8 +206,8 @@ is that checkout (whether Cursor's own plugin support could install Sigma is unv
 ([details](#cursor-experimental)):
 
 ```
-git clone <SIGMA_REPO> ~/sigma
-python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo
+git clone <SIGMA_REPO> <installed-sigma>
+python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --cursor --demo
 ```
 
 ### The next step is `/agrim-init`
@@ -875,10 +875,11 @@ stalled behind is by definition not speculative. And the label pair is decisive:
 means Sigma filed it, `sdlc:needs-confirmation` means **no human has ever ruled on it**. When a
 person filed the proposal themselves, `sdlc:followup` is absent and it is left alone.
 
-The park that follows names each blocker and what happened to it, so a park is never a bare
-"blocked" a human has to investigate from scratch — and when every blocker was resolved, it says so:
-the goal is parked behind work that is now moving, and the auto-unpark sweep resumes it when that
-work closes.
+The comment that follows names each blocker and what happened to it, so a block is never a bare
+"blocked" a human has to investigate from scratch. When every blocker is now workable, the goal is
+not parked at all: it gets the `sdlc:blocked` overlay, keeps `sdlc:goal`, and the auto-unpark sweep
+resumes it when that work closes. When one is not (a parked blocker, a human's proposal, a
+third-party issue), the goal is parked, and only a person resumes it.
 
 #### The blocker chain, which is what the loop does by default
 
@@ -1167,14 +1168,10 @@ there.
 Config: `discovery.blocker_promotion.mode` (`off` default | `smart` | `always`) is the only key this
 feature reads.
 
-**A goal BLOCKED on another issue is re-examined automatically once that blocker closes.** A goal a
-human PARKED never is — that is the whole distinction, and it is why the sweep can be on by default
-without ever overriding a person. The human-driven undos are **`/agrim-unpark`** (which answers the question that
-caused the park before flipping anything) and `/agrim-triage`'s `enact`, the third stage of a
-manually-driven `survey` → `plan --pick` → `enact --apply` campaign; the unattended loop never calls
-into either, so a park-on-blocked-by goal could sit `sdlc:parked` forever even after the thing
-blocking it closed. `discovery.auto_unpark` closes that gap automatically — opt-in, mirroring
-`blocker_promotion`'s own gating pattern exactly:
+**A goal BLOCKED on another issue resumes by itself once that blocker closes. A goal a human
+PARKED never does.** That split is why this sweep ships on. When work on a goal finds a genuine
+dependency, the loop gives it the `sdlc:blocked` overlay: it keeps `sdlc:goal`, and nothing picks it
+while the overlay is on. `discovery.auto_unpark` is the sweep that lifts it:
 
 ```json
 "discovery": {
@@ -1184,52 +1181,41 @@ blocking it closed. `discovery.auto_unpark` closes that gap automatically — op
 }
 ```
 
-`discovery.auto_unpark.mode` is **`"on"` by default** — set it to `"off"` to turn the sweep off.
-Every pick re-examines each
-`sdlc:parked` **or `sdlc:blocked`** issue: if its recorded `blocked by #N` reference (read from the issue's own body or its
-comments — including the automated park comment itself, minus Sigma's own fixed "Parked by
-Sigma — needs human review: " prefix text, which is never itself read as a reference) is
-now closed, `sdlc:goal` is re-added and
-`sdlc:parked` dropped, so a pick can pick it back up — never the SAME pick that just unparked it (see
-the cooldown paragraph below), only a later one. A parked issue referencing several blockers waits for
-every one of them; a parked issue with no machine-detectable blocker reference at all is left
-completely alone, whatever else it was parked for — this never guesses at a park it can't prove is
-stale. Every automated unpark is paired with an explanatory comment naming the closed blocker(s) —
-never a silent label change, the identical rule `blocker_promotion` above already follows. Off by
-default on purpose: a park can be a deliberate human checkpoint, not just a dependency wait, and
-turning this on is a decision to make for your own repo, not something that should change
-unattended-loop behavior for an adopter who never asked for it.
+`discovery.auto_unpark.mode` is **`"on"` by default**: the scaffolded config ships it, and a missing
+or unrecognised value also reads as `"on"`. Set it to `"off"` to turn the sweep off. On every pick
+it reads each open `sdlc:blocked` issue. If every `blocked by #N` reference the issue recorded (in
+its body or its comments; Sigma's own fixed "Parked by Sigma — needs human review: " prefix is never
+read as one) now points at a closed issue or pull request, it drops `sdlc:blocked` (and a stale
+`sdlc:in-progress`), re-adds `sdlc:goal` if it is missing, moves the card back to Ready on a board
+repository, and posts a comment naming the closed blocker(s). A label never changes silently. A goal
+naming several blockers waits for all of them, and one with no machine-detectable reference is left
+alone. The same sweep keeps `sdlc:blocking` in sync on the blocker issues themselves.
 
-**A per-goal opt-out, for a park you already know is deliberate.** Post a comment on the parked
-issue carrying an HTML-comment marker — `<!-- sigma:keep-parked -->` — and that ONE issue is
-skipped by every future sweep pass, unconditionally, for as long as the comment stays on the issue:
-whatever its park text says, even after `discovery.auto_unpark.mode` is `"on"` for the rest of the
-repo. This mirrors the `DISMISS_MARKER` convention `backlog_check`'s dismissal-of-a-finding feature
-already uses (an issue comment, never a body rewrite) — post it the same way, via
-`python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/loop.py" note <sdlc_dir> <goal> "<text>"`,
-or generate the exact narrative-plus-marker text with `auto_unpark.keep_parked_comment(reason=...)`.
-The check runs before any blocker-phrase matching at all, not as a filter layered on top of one, so
-it can never be defeated by how the park text happens to read.
+**It never resumes an `sdlc:parked` issue** (#1394). The sweep decides from the text's shape alone,
+so it cannot tell a stale dependency from a person's deliberate checkpoint that happens to say
+"blocked by #N". A park stays a human decision: resume it with **`/agrim-unpark`**, which answers the
+question that caused the park before it changes a label, or with `/agrim-triage`'s `enact`, the
+third stage of a manually driven `survey` → `plan --pick` → `enact --apply` campaign. The sweep still
+reads a parked issue for the blockers it names, so those blockers get `sdlc:blocking`.
 
-**Know what you're accepting before you opt in.** The sweep decides purely from TEXTUAL SHAPE — a
-`blocked by #N`-style phrase plus the `sdlc:parked` or `sdlc:blocked` label — never intent, so it has no way to tell a
-deliberate human checkpoint apart from an ordinary stale block; both look identical to it, and it
-unparks either one the moment the referenced `#N` closes, unless it carries the opt-out marker above.
-There IS a cooldown: the pick that unparks a goal can never also be the one that picks it back up, so
-a human always gets one real pick's worth of window — the audit comment lands first — to notice and
-re-park it before autonomous work resumes. Composing this with goal-level parallelism
-(`parallel.goals.enabled: true` plus `max_concurrent >= 2`, both independently opt-in) can shrink that
-window to near-zero wall-clock time: a goal unparked in one `next_batch()` slot can be dispatched from
-a different slot in that SAME batch, milliseconds later. That window is a mitigation for a block the
-sweep could not have known was deliberate ahead of time — it is not detection. For a park you already
-know is deliberate, use the opt-out marker instead: it is real detection, checked before the sweep
-ever looks at the park text, and is not affected by the cooldown/parallelism timing above at all.
+**A cooldown.** The pick that lifts a block never also picks that goal up; a later pick does, so the
+audit comment lands first. Goal-level parallelism (`parallel.goals.enabled: true` plus
+`max_concurrent >= 2`, both opt-in) can shrink that window to milliseconds: a goal lifted in one
+`next_batch()` slot can be dispatched from another slot of the same batch.
+
+**A per-goal opt-out.** A comment carrying the HTML marker `<!-- sigma:keep-parked -->` makes every
+sweep skip that one issue, for as long as the comment stays on it: a blocked goal carrying it stays
+`sdlc:blocked` until a person acts. The check runs before any blocker phrase is read, so the wording
+of the park text cannot defeat it. Post it like any comment the loop writes,
+`python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "<text>"`, or generate
+the text with `auto_unpark.keep_parked_comment(reason=...)`; `/agrim-unpark`'s keep-parked decision
+writes the same marker.
 
 Same reach as `blocker_promotion`, for the same reason: GitHub mode only. A local goal's own "blocked
 by #N" reference is a file path, never a bare issue number the same regex can match, so there is
 nothing for local-goals mode to ever sweep.
 
-Config: `discovery.auto_unpark.mode` (`off` default | `on`) is the only key this feature reads.
+Config: `discovery.auto_unpark.mode` (`on` default | `off`) is the only key this feature reads.
 
 ### Label reconciliation (optional, off by default)
 
@@ -1310,8 +1296,8 @@ by the ledger — the two mechanisms can't leak into each other even if both are
 Read it with the `agrim-log` skill (or directly):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" goal   .sdlc 0007-cache.md  # one goal's full trace
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" status .sdlc        # every ACTIVE goal, latest event
+python3 <installed-sigma>/skills/agrim-log/scripts/log.py goal   .sdlc 0007-cache.md  # one goal's full trace
+python3 <installed-sigma>/skills/agrim-log/scripts/log.py status .sdlc        # every ACTIVE goal, latest event
 ```
 
 `goal <id>` works for any goal that has ever written an entry, including one an agent has only ever
@@ -1385,9 +1371,9 @@ the ledger off, only the same-instant, same-machine case is covered.
 Read it:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" summary .sdlc  # counts + open hand-offs
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" mine    .sdlc  # addressed to me
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" render  .sdlc --write
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py summary .sdlc  # counts + open hand-offs
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py mine    .sdlc  # addressed to me
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py render  .sdlc --write
 ```
 
 Write anything else explicitly — kinds are
@@ -1515,7 +1501,7 @@ retries rather than forcing — and because nobody shares a file, that replay ca
 ### The watcher — so a mention actually reaches you
 
 ```bash
-python3 watch_daemon.py .sdlc &        # stop it with: touch .sdlc/state/watch.stop
+python3 <installed-sigma>/skills/agrim-loop/scripts/watch_daemon.py .sdlc &   # stop: touch .sdlc/state/watch.stop
 ```
 
 Each tick pulls the ops branch, works out what is addressed to you and hasn't been surfaced yet,
@@ -2132,7 +2118,7 @@ gate fires reliably in production use on this very repo.
 The kit's "output" is agent *behavior*, so quality is guarded in two tiers, re-run on every change to
 catch drift (see [`evals/README.md`](evals/README.md)):
 
-- **Tier 1 — deterministic behavioral gate (free, in CI):** `python3 evals/run.py` runs the intent hook
+- **Tier 1 — deterministic behavioral gate (free, in CI):** `python3 <installed-sigma>/evals/run.py` runs the intent hook
   over a behavioral corpus (`evals/fixtures.json`) — a deterministic proxy for *"the agent got the right
   discipline signal"* — scores it, and **fails the build if the score drops below `evals/baseline.json`.**
   That drop is the drift signal.

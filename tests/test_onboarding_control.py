@@ -70,8 +70,9 @@ INIT_FLOW = pathlib.Path("skills") / "agrim-init" / "scripts" / "init_flow.py"
 
 
 def _scratch_copy(dest):
-    """The plugin surface the control runs (skills, hooks, manifest, README, the fake's source)."""
-    for rel in ("skills", "hooks", ".claude-plugin"):
+    """The plugin surface the control runs (skills, hooks, evals, manifest, README, the fake's
+    source) -- evals/ because the README's `python3 <installed-sigma>/evals/run.py` is usage-checked."""
+    for rel in ("skills", "hooks", "evals", ".claude-plugin"):
         shutil.copytree(ROOT / rel, dest / rel, ignore=shutil.ignore_patterns("__pycache__"))
     (dest / "tests").mkdir()
     shutil.copy2(ROOT / oc.FAKE_GH_SOURCE, dest / oc.FAKE_GH_SOURCE)
@@ -211,6 +212,8 @@ def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
     assert len(checked) >= 20, checked                  # the whole README, not just the init sections
     assert any("backlog_check.py dismiss-text" in g for g in checked), checked
     assert any("loop.py note .sdlc <goal>" in g for g in checked), checked
+    for script in ("log.py", "ledger.py", "watch_daemon.py", "evals/run.py", "init_flow.py"):
+        assert any(script in g for g in checked), (script, checked)   # every spelling is reached
 
 
 @pytest.mark.parametrize("old,new,why", [
@@ -226,12 +229,32 @@ def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
     ("migrate.py .sdlc            #", "migrate.py .sdlc extra      #", "fit no usage alternative"),
     ("loop.py session-end .sdlc", "loop.py session-over .sdlc", "fit no usage alternative"),
     ("scripts/reconcile.py census", "scripts/reconcile_gone.py census", "is not shipped"),
+    # #277 review block 2: every spelling of a script path is matched, and only one is copyable
+    ("python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py summary",
+     'python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" summary', "not copyable"),
+    ("python3 <installed-sigma>/skills/agrim-log/scripts/log.py status",
+     "python3 $CLAUDE_PLUGIN_ROOT/skills/agrim-log/scripts/log.py status", "not copyable"),
+    ("python3 <installed-sigma>/skills/agrim-loop/scripts/watch_daemon.py .sdlc",
+     "python3 watch_daemon.py .sdlc", "not copyable"),
+    ("python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --cursor",
+     "python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor", "not copyable"),
+    ("python3 <installed-sigma>/evals/run.py", "python3 evals/run.py", "not copyable"),
 ])
 def test_control_a_readme_gesture_its_script_would_refuse_is_red(old, new, why, tmp_path):
     assert old in README_TEXT, old
     out = oc.check_readme_usage(README_TEXT.replace(old, new, 1), ROOT, tmp_path)
     assert out["ok"] is False and out["failed_step"] == "README usage", out
     assert any(why in p for d in out["detail"] for p in d["problems"]), out["detail"]
+
+
+@pytest.mark.parametrize("args,ok", [([".sdlc"], True), ([".sdlc", "--apply"], True),
+                                     ([".sdlc", "--apply", "--replace-old-plugin"], True),
+                                     ([], True), ([".sdlc", "extra"], False)])
+def test_a_nested_optional_group_in_a_usage_line_is_one_optional_flag(args, ok):
+    """`[--apply [--replace-old-plugin]]` (migrate.py since #326) is ONE optional flag group, not a
+    `[--apply [--replace-old-plugin]` group followed by a required literal `]`."""
+    usage = "usage: migrate.py [<sdlc_dir>] [--apply [--replace-old-plugin]]"
+    assert (oc.usage_problems(args, usage) == []) is ok, oc.usage_problems(args, usage)
 
 
 def test_control_the_usage_mode_goes_red_through_the_cli(tmp_path):

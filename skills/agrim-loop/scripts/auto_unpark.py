@@ -1,5 +1,7 @@
-"""#1129: opt-in, off-by-default reconciliation sweep for `sdlc:parked` GitHub issues whose
-recorded `blocked by #N` target has since closed.
+"""#1129/#1394: the reconciliation sweep for `sdlc:blocked` GitHub issues whose recorded
+`blocked by #N` targets have all closed. ON by default since #1394 (`sources.DEFAULT_AUTO_UNPARK_MODE`),
+which is also when it stopped resuming `sdlc:parked` issues -- a park is a human's (see
+`compute_unpark_actions`). The history below describes the #1129 design it grew from.
 
 The bug this fixes: `next()`/`next-batch` only ever pick issues carrying `sdlc:goal`. Parking on a
 `blocked-by` finding (`backlog_check.decide()` -> `loop.py`'s `precheck`) removes `sdlc:goal` and
@@ -38,7 +40,7 @@ actually true, not just not-yet-proven-false. This is a SEPARATE filter from `_i
 `KEEP_PARKED_MARKER` below: that one is an opt-out a human deliberately posts; this one is
 structural, unconditional, and needs no opt-in or human action at all.
 
-Config: `discovery.auto_unpark.mode` -- 'off' (default) | 'on'. See `sources._auto_unpark`. GitHub
+Config: `discovery.auto_unpark.mode` -- 'on' (default since #1394) | 'off'. See `sources._auto_unpark`. GitHub
 mode only, the identical reach `discovery.blocker_promotion` (#900) already has, and for the
 identical reason: a local goal's own "blocked by #N" reference is a file path, never a bare issue
 number `_BLOCK_RE` can match, so `LocalSource` has nothing to ever sweep.

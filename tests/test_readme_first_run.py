@@ -225,19 +225,25 @@ def _subsection(text, heading_start):
 INIT_SUBSECTIONS = ("What `/agrim-init` will ask you", "If `/agrim-init` says you lack access")
 
 
+_PY_GESTURE = re.compile(r"python3?\s+([\"']?)([^\s\"']+?\.py)\1(?![\w.])")
+
+
 def uncopyable_gestures(text):
-    """A `python3 <script>` gesture the user runs against THEIR repository must be copyable from its
-    root: the script is `<installed-sigma>/skills/...` (or hooks/), never plugin-relative and never
-    another placeholder. (`tools/` and `evals/` gestures are Sigma-development commands, run from a
-    Sigma checkout.)"""
+    """A `python3 <script>` gesture the README shows must be copyable from the root of the user's
+    repository, wherever the user's Sigma lives: the script path is `<installed-sigma>/...`, or an
+    absolute path, or a `$VAR` / `${VAR}` path whose VAR the SAME code span assigns. Anything else is
+    a gesture that exits 2 when copied -- `~/sigma/...`, `"${CLAUDE_PLUGIN_ROOT}/..."` (set only
+    inside a host's skill/hook context, never in the user's shell), a repository-relative
+    `skills/...` or `evals/...`, a bare `watch_daemon.py`, another placeholder like `<sigma>/`."""
     bad = []
     for span in _code(text):
-        for line in span.splitlines():
-            for m in re.finditer(r"python3?\s+(\S+\.py)", line):
-                script = m.group(1)
-                if re.match(r"(?:<[\w-]+>/)?(?:skills|hooks)/", script) and \
-                        not script.startswith("<installed-sigma>/"):
-                    bad.append(script)
+        for m in _PY_GESTURE.finditer(span):
+            script = m.group(2)
+            var = re.match(r"\$\{?(\w+)\}?/", script)
+            if script.startswith(("<installed-sigma>/", "/")) or (
+                    var and re.search(r"(?m)(?:^|[\s;])(?:export\s+)?" + var.group(1) + "=", span)):
+                continue
+            bad.append(script)
     return sorted(set(bad))
 
 
@@ -290,12 +296,35 @@ def test_installed_sigma_is_defined_once_and_every_user_gesture_uses_it():
         assert "from the root of your repository" in _subsection(text, heading), heading
 
 
-def test_control_a_plugin_relative_gesture_is_caught():
-    text = README.read_text(encoding="utf-8") + (
-        "\n```\npython3 skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc\n```\n"
-        "and `python3 <sigma>/skills/agrim-loop/scripts/loop.py next .sdlc`\n")
-    assert uncopyable_gestures(text) == ["<sigma>/skills/agrim-loop/scripts/loop.py",
-                                         "skills/agrim-init/scripts/preflight.py"]
+@pytest.mark.parametrize("gesture,script", [
+    ("python3 skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc",
+     "skills/agrim-init/scripts/preflight.py"),
+    ("python3 <sigma>/skills/agrim-loop/scripts/loop.py next .sdlc",
+     "<sigma>/skills/agrim-loop/scripts/loop.py"),
+    ("python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo",
+     "~/sigma/skills/agrim-init/scripts/init_flow.py"),
+    ('python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" status .sdlc',
+     "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py"),
+    ("python3 $CLAUDE_PLUGIN_ROOT/skills/agrim-loop/scripts/ledger.py mine .sdlc",
+     "$CLAUDE_PLUGIN_ROOT/skills/agrim-loop/scripts/ledger.py"),
+    ("python3 watch_daemon.py .sdlc &", "watch_daemon.py"),
+    ("python3 evals/run.py", "evals/run.py"),
+])
+def test_control_an_uncopyable_gesture_is_caught_in_every_spelling(gesture, script):
+    text = README.read_text(encoding="utf-8")
+    assert uncopyable_gestures(text + "\n```\n" + gesture + "\n```\n") == [script]
+    assert uncopyable_gestures(text + "\nrun `" + gesture + "`\n") == [script]
+
+
+@pytest.mark.parametrize("block", [
+    "python3 /opt/sigma/skills/agrim-loop/scripts/loop.py next .sdlc",
+    'SIGMA=/opt/sigma\npython3 "$SIGMA/skills/agrim-loop/scripts/loop.py" next .sdlc',
+    "export SIGMA=/opt/sigma; python3 ${SIGMA}/skills/agrim-loop/scripts/loop.py next .sdlc",
+    'python3 "<installed-sigma>/skills/agrim-loop/scripts/loop.py" next .sdlc',
+])
+def test_an_absolute_or_block_defined_script_path_is_copyable(block):
+    text = README.read_text(encoding="utf-8")
+    assert uncopyable_gestures(text + "\n```\n" + block + "\n```\n") == []
 
 
 # ---------------------------------------------------------------- the access table = preflight's output
@@ -458,6 +487,8 @@ _OTHER_PROGRAM = re.compile(r"(?i)(?:python|darwin|macos|codex-cli|bun|node|gh|g
 VERSION_ALLOW = {
     ("README.md", "1.4.x"): "the previous name's release line, named as such where an upgrade needs it",
     ("docs/upgrading.md", "1.4.x"): "the previous name's release line, named as such (upgrade guide)",
+    ("docs/upgrading.md", "1.4.25"): "the previous name's release whose behaviour on a converted "
+                                     "repository the upgrade guide describes (#326)",
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
     ("contract/README.md", "1.2.0"): "the event contract's own semver (contract/VERSION)",
     ("contract/README.md", "1.1.0"): "the event contract's own semver history",
@@ -630,3 +661,59 @@ def test_control_a_stale_example_sample_is_caught(tmp_path):
     stale = live.replace(_example_status_lines(live), _PRE_277_SAMPLE)
     assert stale != live
     assert sample_is_current(live, after) and not sample_is_current(stale, after)
+
+
+
+# ---------------------------------------------------------------- auto-unpark: the README = the code
+
+def _auto_unpark_section(text):
+    a = text.index("Config: `discovery.blocker_promotion.mode`")
+    b = text.index("Config: `discovery.auto_unpark.mode`", a)
+    return text[a:text.index("\n", b)]
+
+
+def auto_unpark_drift(readme, template_mode, code_default):
+    """What the README's auto-unpark section says that the template and `sources.py` do not: its
+    default (both statements of it), an opt-in/off-by-default claim, or a claim that the sweep
+    resumes an `sdlc:parked` issue (#1394: it never does). Pure."""
+    sec, bad = _auto_unpark_section(readme), []
+    if template_mode != code_default:
+        bad.append(f"template ships {template_mode!r} but sources.py defaults to {code_default!r}")
+    stated = re.findall(r"is \*\*`\"(\w+)\"` by default\*\*", sec)
+    config = re.findall(r"`discovery\.auto_unpark\.mode` \(`(\w+)` default", sec)
+    if stated != [template_mode] or config != [template_mode]:
+        bad.append(f"default stated as {stated} / {config}, template ships {template_mode!r}")
+    for claim in re.findall(r"(?i)opt-in,\s+mirroring|off\s+by\s+default|off\s+default"
+                            r"|before\s+you\s+opt\s+in", sec):
+        bad.append(f"says {claim!r}")
+    if re.search(r"`sdlc:parked`\s+dropped|re-examines each\s+`sdlc:parked`", sec) or \
+            "never resumes an `sdlc:parked`" not in sec:
+        bad.append("claims the sweep resumes an sdlc:parked issue")
+    return bad
+
+
+def _auto_unpark_truth():
+    tmpl = json.loads((ROOT / "skills/agrim-init/templates/config.json.tmpl").read_text("utf-8"))
+    src = (ROOT / "skills/agrim-loop/scripts/sources.py").read_text(encoding="utf-8")
+    code = re.search(r'(?m)^DEFAULT_AUTO_UNPARK_MODE = "(\w+)"', src).group(1)
+    return tmpl["discovery"]["auto_unpark"]["mode"], code
+
+
+def test_the_readme_states_the_auto_unpark_default_the_template_ships():
+    template_mode, code_default = _auto_unpark_truth()
+    assert auto_unpark_drift(README.read_text(encoding="utf-8"), template_mode, code_default) == []
+
+
+@pytest.mark.parametrize("old,new", [
+    ('is **`"on"` by default**', 'is **`"off"` by default**'),
+    ("(`on` default | `off`)", "(`off` default | `on`)"),
+    ("That split is why this sweep ships on.", "Off by default on purpose."),
+    ("**It never resumes an `sdlc:parked` issue**", "**It resumes an `sdlc:parked` issue too**"),
+])
+def test_control_a_drifted_auto_unpark_section_is_caught(old, new):
+    text = README.read_text(encoding="utf-8")
+    assert old in text, old
+    template_mode, code_default = _auto_unpark_truth()
+    assert auto_unpark_drift(text.replace(old, new, 1), template_mode, code_default) != []
+    # ... and the check follows the TEMPLATE: flip what it ships and the unchanged README is red
+    assert auto_unpark_drift(text, "off", "off") != []

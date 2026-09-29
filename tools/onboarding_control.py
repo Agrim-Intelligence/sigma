@@ -28,8 +28,11 @@ is "unanswerable [ask]", red), the verify candidate number and id, and the `Next
 read from the repository root as a shell would (see _py_argv).
 
 EVERY OTHER README GESTURE IS USAGE-CHECKED (#277 review). The two init subsections are executed;
-every other `python3 <installed-sigma>/<script> ...` line ANYWHERE in the README (fenced, inline, in
-a table or a `$(...)`) cannot be -- most of them need a live board or a running loop -- so each is
+every other `python3 <script> ...` line ANYWHERE in the README (fenced, inline, in a table or a
+`$(...)`, the script path spelled any way: `<installed-sigma>/`, `"${VAR}/"`, `~/dir/`, absolute,
+repository-relative or a bare name) cannot be -- most of them need a live board or a running loop.
+A path that is not `<installed-sigma>/<shipped script>` is red at once (it exits 2 when copied
+from the user's repository); every other one is
 checked against the script's OWN usage instead: `<script> --help` runs (a pure print in every
 shipped script; exit 0 required), and the gesture's verb, positional count and `--flags` must match
 one of the usage alternatives it prints (see `usage_problems`). That is the decision, and its limit:
@@ -574,23 +577,44 @@ def run_readme_gestures(run, qs, sigma, repo, env):
     return ran
 
 
-#: A `python3 <installed-sigma>/<script>.py <args>` gesture anywhere in the README: the args run to
-#: the end of the code span / line, a `)` closing a `$(...)`, a table `|`, or a `#` comment.
-_README_GESTURE = re.compile(r"python3?\s+" + re.escape(INSTALLED_SIGMA)
-                             + r"/([\w./-]+?\.py)(?![\w.])([^`\n)|#]*)")
-_USAGE_TOKEN = re.compile(r"\[[^\]]*\]|\([^)]*\)|<[^>]*>|\S+")
+#: A `python3 <script>.py <args>` gesture anywhere in the README, in EVERY spelling of the script
+#: path (#277 review): `<installed-sigma>/...`, quoted or not, `${VAR}/...` / `$VAR/...`,
+#: `~/<dir>/...`, an absolute path, a repository-relative `skills/...`, or a bare `watch_daemon.py`.
+#: Group 1 is the quote, 2 the script path as written, 3 the args (to the end of the code span / line,
+#: a `)` closing a `$(...)`, a table `|`, a `#` comment, or a shell `;` / `&`).
+_README_GESTURE = re.compile(r"python3?\s+([\"']?)([^\s\"'`|()]+?\.py)\1(?![\w.])([^`\n)|#;&]*)")
+_SHIPPED_REL = re.compile(r"(?:^|/)((?:skills|hooks|evals|tools)/[\w./-]+\.py)$")
+#: `[...]` may nest one level (`[--apply [--replace-old-plugin]]`): one token, never a `[...` group
+#: followed by a stray required `]`.
+_USAGE_TOKEN = re.compile(r"\[(?:[^\[\]]|\[[^\]]*\])*\]|\([^)]*\)|<[^>]*>|\S+")
 
 
-def readme_script_gestures(text):
-    """[(script path under the Sigma dir, [args])] for every `python3 <installed-sigma>/...py`
-    gesture anywhere in the README, deduplicated, in README order. Pure."""
+def _shipped_rel(script, sigma):
+    """The shipped path (under the Sigma dir) a gesture's script path names, or None. A bare name
+    resolves only when exactly one shipped script (outside tests/ and .sdlc/) carries it."""
+    m = _SHIPPED_REL.search(script)
+    if m:
+        return m.group(1)
+    if "/" in script or sigma is None:
+        return None
+    hits = [q for q in pathlib.Path(sigma).rglob(script)
+            if not {"tests", ".sdlc", ".git"} & set(q.relative_to(sigma).parts)]
+    return hits[0].relative_to(sigma).as_posix() if len(hits) == 1 else None
+
+
+def readme_script_gestures(text, sigma=None):
+    """[(script path under the Sigma dir, [args], script path as written)] for every
+    `python3 <script>.py` gesture anywhere in the README, in any spelling (see `_README_GESTURE`),
+    deduplicated, in README order. The first item is the path as written when it names no shipped
+    script. Pure except for the bare-name lookup under `sigma`."""
     out = []
     for m in _README_GESTURE.finditer(text):
         try:
-            args = shlex.split(m.group(2), comments=True)
+            args = shlex.split(m.group(3), comments=True)
         except ValueError:
-            args = m.group(2).split()
-        item = (m.group(1), args)
+            args = m.group(3).split()
+        written = m.group(2)
+        item = (_shipped_rel(written, sigma) or written, args, written)
         if item not in out:
             out.append(item)
     return out
@@ -679,12 +703,17 @@ def check_readme_usage(text, sigma, cwd):
     """The `readme-usage` mode (#277 review): every README script gesture against its script's own
     `--help` usage. -> a mode result like run_local's. `--help` runs from `cwd` (a scratch dir)."""
     t0, checked, bad, helps = time.monotonic(), [], [], {}
-    gestures = readme_script_gestures(text)
-    for rel, args in gestures:
+    gestures = readme_script_gestures(text, sigma)
+    for rel, args, written in gestures:
         script = pathlib.Path(sigma) / rel
-        line = f"python3 {INSTALLED_SIGMA}/{rel} {' '.join(args)}".strip()
+        line = f"python3 {written} {' '.join(args)}".strip()
         if not script.is_file():
             bad.append({"gesture": line, "problems": [f"{rel} is not shipped"]})
+            continue
+        if not written.startswith(INSTALLED_SIGMA + "/"):
+            bad.append({"gesture": line, "problems": [
+                f"not copyable from the user's repository: `{written}` is not "
+                f"`{INSTALLED_SIGMA}/{rel}`"]})
             continue
         if rel not in helps:
             proc = subprocess.run([sys.executable, str(script), "--help"], cwd=str(cwd),

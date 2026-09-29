@@ -1070,10 +1070,10 @@ def reclaim_stale_claim_lock(sdlc_dir, goal, config):
 
 
 def _auto_unpark_sweep(sdlc_dir, config, run=None):
-    """#1129: opt-in (`discovery.auto_unpark.mode`, default 'off'), fail-open per-pick reconciliation
-    -- re-examines `sdlc:parked` GitHub issues whose recorded `blocked by #N` target has since
-    closed, and re-adds `sdlc:goal` so a LATER pick can pick one back up, not merely on some later
-    cycle. See `auto_unpark.py`'s module docstring for the full mechanism and why it's scoped as
+    """#1129/#1394: `discovery.auto_unpark.mode` (default 'on' since #1394), fail-open per-pick
+    reconciliation -- re-examines `sdlc:blocked` GitHub issues whose recorded `blocked by #N` targets
+    have all closed, and lifts the overlay so a LATER pick can pick one back up. An `sdlc:parked`
+    issue is never resumed (#1394). See `auto_unpark.py`'s module docstring for the full mechanism and why it's scoped as
     narrowly as it is.
 
     Gated FIRST on `sources._auto_unpark(config)` — mirrors `discovery.blocker_promotion`'s own
@@ -1105,9 +1105,9 @@ def _auto_unpark_sweep(sdlc_dir, config, run=None):
 
 
 def _reconcile_mode(config):
-    """`discovery.reconcile.mode` -> 'off' (default) | 'on'. Same defensive shape as
-    `sources._auto_unpark`: an unrecognised or missing value reads as off, because a typo must never
-    switch on a mechanism that WRITES."""
+    """`discovery.reconcile.mode` -> 'off' (default) | 'on'. An unrecognised or missing value reads
+    as off, because a typo must never switch on a mechanism that WRITES. (`sources._auto_unpark` is
+    the opposite: it defaults to 'on' since #1394.)"""
     block = ((config or {}).get("discovery") or {}).get("reconcile")
     value = block.get("mode") if isinstance(block, dict) else None
     return value if value in ("off", "on") else "off"

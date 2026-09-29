@@ -12,8 +12,8 @@ import re
 #: the gate's contract: the secret VALUE is group 1 when the rx has a group, else the whole match.
 #: `tools/leak_scan.py::_scrub_rules` IMPORTS this tuple (and Refuses when it is absent); it is never
 #: copied there, and `scrub()` applies it via `_SECRET_PATTERNS` below. The gate keeps its own
-#: post-filters (auth length / digit+letter, credential-assignment digit+letter,
-#: `SECRET_FIXTURE_VALUES`) — a gate's false-positive budget differs from a redactor's.
+#: post-filters (`_is_real_value`: a digit and a letter, not an identifier, not a placeholder) — a
+#: gate's false-positive budget differs from a redactor's.
 #:
 #: Two edits vs. the gate's original text (#2718 D2): `url-password`'s scheme is bounded
 #: `[a-z][a-z0-9+.-]{0,31}://` — unbounded it rescanned the hyphen run from every word boundary
@@ -25,11 +25,13 @@ import re
 #: Order: the specific `sk-` prefixes (anthropic, openai) before the generic `sk-key` so the label
 #: names the provider (they cannot overlap: `sk-[A-Za-z0-9]{20,}` stops at the hyphen).
 #:
-#: GATE-ONLY, deliberately not here: the KEY_WINDOW proximity key-body rule (a verdict over a
-#: window, not a span a redactor can replace; built for source-code spellings incl. concatenated
-#: bodies); secret-shaped FILENAMES (a path rule, meaningless on text); unreadable/opaque content
-#: (file-level; would redact legitimate base64 in transcripts); config-file unquoted credentials
-#: (keyed on the file's suffix, which runtime text has no notion of).
+#: GATE-ONLY, deliberately not here -- each is a rule `tools/leak_scan.py` implements and tests:
+#: `key-body` (3+ header-less base64 key lines; a redactor would eat legitimate base64 in
+#: transcripts); `secret-file` (`_SECRET_FILE`, a path rule, meaningless on text); `opaque-binary` /
+#: `oversize` / `unreadable` (a whole-file verdict: the gate names the file and fails); and
+#: `config-credential` (`_CONFIG_CRED`, keyed on the file's suffix, which runtime text has no notion
+#: of). Concatenated or split token spellings are covered by NEITHER file (out of scope, stated in
+#: the gate's docstring).
 #: DEFERRED (follow-up issue, filed at #2718's retro): SSH2 `---- BEGIN SSH2 ENCRYPTED PRIVATE KEY
 #: ----` (its unterminated form needs its own body walk — SSH2 bodies carry `Comment:` headers the
 #: closed header list halts on; half of it would be a silent half-guarantee), PuTTY

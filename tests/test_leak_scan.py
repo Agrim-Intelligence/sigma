@@ -16,6 +16,7 @@ GESTURE = ["tools/leak_scan.py"]
 OWNER = "acme-co"
 
 _SECRET = "gh" + "p_" + "Q7x" * 12
+_PEM_BODY = "MIIEow" + "Ab9+" * 16
 #: rule -> (file the plant goes in, the planted line). One entry per secret class the gate promises.
 _PLANTS = {
     "home-path": ("docs.md", "see /Us" + "ers/jdoe" + "smith/projects/app for the build"),
@@ -30,8 +31,8 @@ _PLANTS = {
     "sk-key": ("docs.md", "key " + "sk-" + "abcdEFGH1234ijklMNOP5678"),
     "google-key": ("docs.md", "key " + "AI" + "za" + "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"),
     "credential-assignment": ("docs.md", 'api_key = "' + "Zq81" * 5 + '"'),
-    "credential-unquoted": ("config.yml", "pass" + "word: " + "Hunter2Hunter2X9zz"),
-    "private-key": ("docs.md", "-----BEGIN RSA PRIV" + "ATE KEY-----\n" + "MIIEow" + "Ab9+" * 16
+    "config-credential": ("config.yml", "pass" + "word: " + "Hunter2Hunter2X9zz"),
+    "private-key": ("docs.md", "-----BEGIN RSA PRIV" + "ATE KEY-----\n" + _PEM_BODY
                     + "\n-----END RSA PRIV" + "ATE KEY-----"),
     "origin-owner-url": ("docs.md", "the private notes live at https://github.com/" + OWNER
                          + "/internal-ops/wiki"),
@@ -45,6 +46,9 @@ _OWNER_URLS = [
     "https://raw.githubusercontent.com/" + OWNER + "/internal-ops/main/notes.md",
     "https://api.github.com/repos/" + OWNER + "/internal-ops",
     "https://github.com/" + OWNER + "/demo-private",  # a PREFIX of this repo's name is another repo
+    "ssh://git@ssh." + "github.com:443/" + OWNER + "/internal-ops.git",  # SSH over the HTTPS port
+    "https://github.com:443/" + OWNER + "/internal-ops",
+    "https://www.github.com/" + OWNER + "/internal-ops",
 ]
 #: ... and the links that are the published surface (all must be green).
 _OWNER_URLS_OK = [
@@ -61,6 +65,10 @@ _HOME_FORMS = [
     "C:" + "\\Users\\" + "jdoesmith\\src",
     "at /ho" + "me/jdoesmith/src/",
     "at /ho" + "me/dev/src/",                            # `dev` is a real account, not a stand-in
+    "wsl sees /mnt/c/Us" + "ers/jdoesmith/src",          # WSL's view of a Windows profile
+    "/System/Volumes/Data/Us" + "ers/jdoesmith/src",     # macOS's firmlinked data volume
+    "c:" + "\\users\\" + "jdoesmith\\appdata",           # Windows paths are case-insensitive
+    "c:/" + "users/jdoesmith/src",
 ]
 
 
@@ -109,7 +117,7 @@ def test_the_gate_scans_every_tracked_file_including_sdlc_and_tests():
     tracked = [p for p in listed.stdout.splitlines() if (ROOT / p).is_file()]
     proc = _run(ROOT)
     summary = proc.stdout.strip().splitlines()[-1]
-    m = re.search(r"over (\d+) file\(s\) \((\d+) binary", summary)
+    m = re.search(r"over (\d+) file\(s\) \((\d+) unscannable", summary)
     scanned, skipped = int(m.group(1)), int(m.group(2))
     assert scanned + skipped == len(tracked), summary
 
@@ -126,7 +134,7 @@ def test_control_each_planted_leak_is_red_by_location_never_value(tmp_path, rule
     proc = _run(repo)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert f"{where}:2: {rule}" in proc.stdout, proc.stdout
-    value = "jdoesmith" if rule == "home-path" else plant.split()[-1]
+    value = {"home-path": "jdoesmith", "private-key": _PEM_BODY}.get(rule, plant.split()[-1])
     assert value not in proc.stdout + proc.stderr
     (repo / where).unlink()                                     # ... and green once removed
     _git(repo, "rm", "-q", "--cached", where)
@@ -219,12 +227,215 @@ def test_a_missing_redactor_table_refuses_too(tmp_path):
     assert proc.returncode == 2 and "REFUSED" in proc.stderr, proc.stdout + proc.stderr
 
 
-def test_a_large_file_is_skipped_by_name_never_silently(tmp_path, monkeypatch):
+def test_a_large_file_is_skipped_by_name_never_silently(tmp_path):
     repo = _scratch(tmp_path)
     src = (repo / "tools" / "leak_scan.py").read_text(encoding="utf-8")
     (repo / "tools" / "leak_scan.py").write_text(
-        src.replace("MAX_BYTES = 4 * 1024 * 1024", "MAX_BYTES = 64"), encoding="utf-8")
-    (repo / "big.md").write_text("x" * 100 + "\n", encoding="utf-8")
+        src.replace("MAX_BYTES = 4 * 1024 * 1024", "MAX_BYTES = 64 * 1024"), encoding="utf-8")
+    (repo / "big.md").write_text("x" * (65 * 1024) + "\n", encoding="utf-8")
     _git(repo, "add", "-A")
     proc = _run(repo)
-    assert "big.md: skipped (large" in proc.stderr, proc.stderr
+    assert proc.returncode == 1 and "big.md:0: oversize" in proc.stdout, proc.stdout + proc.stderr
+    assert "1 unscannable" in proc.stdout
+
+
+
+# ---------------------------------------------------------------- review block #2 (#277): the classes
+
+_VAL = "Zq81" + "Xw7Pk3Lm9Rt2"                                    # digit + letter, 16 chars
+_AWS_SECRET = "wJalrXUtnFEMI/" + "K7MDENG/bPxRfiCY" + "EXAMPLEKEY"
+#: A KEY that is a whole identifier ENDING in a credential word, in every config-like file form.
+_CONFIG_CREDENTIALS = [
+    (".env.example", "GITHUB_" + "TOKEN=" + _VAL),
+    (".env.example", "OPENAI_API_" + "KEY=" + _VAL),
+    (".env.example", "DB_PASS" + "WORD=" + _VAL),
+    (".env.example", "AWS_SECRET_ACCESS_" + "KEY=" + _AWS_SECRET),
+    (".env.example", "SLACK_BOT_" + "TOKEN=" + _VAL),
+    (".env.example", "export GITHUB_" + "TOKEN=" + _VAL),
+    ("config.yml", "github_" + "token: " + _VAL),
+    ("config.yml", "openai_api_" + "key: " + _VAL),
+    ("config.yaml", "  db_pass" + "word: '" + _VAL + "'"),
+    ("settings.ini", "aws_secret_access_" + "key = " + _AWS_SECRET),
+    ("app.cfg", "client_" + "secret=" + _VAL),
+    ("app.conf", "smtp_pass" + "wd " + "= " + _VAL),
+    ("pyproject.toml", 'db_pass' + 'word = "' + _VAL + '"'),
+    ("app.json", '{"openai_api_' + 'key": "' + _VAL + '"}'),
+    ("app.properties", "db.pass" + "word=" + _VAL),
+    ("Dockerfile", "ENV API_" + "KEY=" + _VAL),
+    ("Dockerfile", "ARG NPM_" + "TOKEN " + _VAL),
+    ("build/api.dockerfile", "ENV API_" + "KEY=" + _VAL),
+    ("ci/project.npmrc", "//registry.npmjs.org/:_auth" + "Token=" + _VAL),
+    ("deploy.sh", "export GITHUB_" + "TOKEN=" + _VAL),
+    (".npmrc", "//registry.npmjs.org/:_auth" + "Token=" + _VAL),
+]
+#: The same keys holding a placeholder, a reference, or nothing: never a finding.
+_CONFIG_PLACEHOLDERS = [
+    "GITHUB_" + "TOKEN=",
+    "GITHUB_" + "TOKEN=${GITHUB_TOKEN}",
+    "OPENAI_API_" + "KEY=<your key>",
+    "OPENAI_API_" + "KEY=your-openai-key-20240101",   # a stand-in, whatever digits it carries
+    "DB_PASS" + "WORD=changeme",
+    "api_" + "key: your-api-key-here",
+    "SLACK_BOT_" + "TOKEN='${SLACK_BOT_TOKEN}'",
+    "db_pass" + "word: example",
+    "max_" + "tokens: 4096",                         # a count, not a credential
+    "token_budget: " + _VAL,                         # the key does not END in a credential word
+    "TOKEN=$(gh auth token)",
+]
+
+
+@pytest.mark.parametrize("where,line", _CONFIG_CREDENTIALS,
+                         ids=[f"{w}:{l.split('=')[0].split(':')[0][:24]}" for w, l in _CONFIG_CREDENTIALS])
+def test_control_a_prefixed_credential_key_in_config_is_red(tmp_path, where, line):
+    proc = _run(_scratch(tmp_path, line, where))
+    assert proc.returncode == 1 and f"{where}:2: config-credential" in proc.stdout, proc.stdout
+    assert _VAL not in proc.stdout + proc.stderr and _AWS_SECRET not in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize("line", _CONFIG_PLACEHOLDERS)
+def test_a_credential_key_holding_a_placeholder_is_not_a_finding(tmp_path, line):
+    proc = _run(_scratch(tmp_path, line, ".env.example"))
+    assert proc.returncode == 0, line + "\n" + proc.stdout
+
+
+def _write(repo, rel, data):
+    target = repo / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    (target.write_bytes if isinstance(data, bytes) else
+     lambda d: target.write_text(d, encoding="utf-8"))(data)
+    _git(repo, "add", "-A")
+
+
+_KEY_BODY = "\n".join(["MIIEpAIBAAKCAQEAx9Kq2Lm8Rt4Vw6Yz1Ab3Cd5Ef7Gh9Ij0Kl2Mn4Op6Qr8St0U",
+                       "v2Wx4Yz6Ab8Cd0Ef2Gh4Ij6Kl8Mn0Op2Qr4St6Uv8Wx0Yz2Ab4Cd6Ef8Gh0Ij2K",
+                       "l4Mn6Op8Qr0St2Uv4Wx6Yz8Ab0Cd2Ef4Gh6Ij8Kl0Mn2Op4Qr6St8Uv0Wx2Yz4A"]) + "\n"
+
+
+@pytest.mark.parametrize("rel,data", [
+    ("certs/id_rsa", "x"),
+    ("keys/id_ed25519", "x"),
+    ("certs/server.pem", "x"),
+    ("certs/tls.key", "x"),
+    ("certs/deploy.p12", b"\x30\x82\x01\x00\x02\x01\x03\x00"),
+    ("certs/app.pfx", "x"),
+    ("certs/keystore.jks", "x"),
+    ("home/.netrc", "machine example.org login me"),
+    ("gcp/credentials.json", "{}"),
+    ("gcp/service-account-prod.json", "{}"),
+    (".env", "DEBUG=1"),
+    ("app/.env.production", "DEBUG=1"),
+])
+def test_control_a_secret_shaped_filename_is_red_whatever_it_holds(tmp_path, rel, data):
+    repo = _scratch(tmp_path)
+    _write(repo, rel, data)
+    proc = _run(repo)
+    assert proc.returncode == 1 and f"{rel}:0: secret-file" in proc.stdout, proc.stdout
+
+
+@pytest.mark.parametrize("rel", ["keys/id_rsa.pub", ".env.example", ".env.sample", "app/.env.template",
+                                 "docs/keys.md", "hooks/session_start.sh"])
+def test_a_public_or_example_filename_is_not_a_secret_file(tmp_path, rel):
+    repo = _scratch(tmp_path)
+    _write(repo, rel, "DEBUG=1\n")
+    proc = _run(repo)
+    assert proc.returncode == 0, proc.stdout
+
+
+def test_control_a_key_body_with_no_header_is_red_by_location_never_value(tmp_path):
+    proc = _run(_scratch(tmp_path, _KEY_BODY.rstrip("\n"), "certs/notes.txt"))
+    assert proc.returncode == 1 and "certs/notes.txt:2: key-body" in proc.stdout, proc.stdout
+    assert _KEY_BODY.splitlines()[0] not in proc.stdout + proc.stderr
+
+
+def test_a_public_certificate_body_and_hash_lists_are_not_key_bodies(tmp_path):
+    cert = "-----BEGIN CERTIFICATE-----\n" + _KEY_BODY + "-----END CERTIFICATE-----"
+    shas = "\n".join(["0123456789abcdef0123456789abcdef01234567"] * 4)
+    proc = _run(_scratch(tmp_path, cert + "\n" + shas))
+    assert proc.returncode == 0, proc.stdout
+
+
+def test_control_an_opaque_binary_is_named_and_red_unless_allowed_with_a_reason(tmp_path):
+    repo = _scratch(tmp_path)
+    _write(repo, "assets/blob.bin", b"\x00\x01\x02" + _SECRET.encode())
+    proc = _run(repo)
+    assert proc.returncode == 1 and "assets/blob.bin:0: opaque-binary" in proc.stdout, proc.stdout
+    gate = repo / "tools" / "leak_scan.py"
+    src = gate.read_text(encoding="utf-8")
+    gate.write_text(src.replace("ALLOW_PATHS = {}", 'ALLOW_PATHS = {"assets/blob.bin": ""}'),
+                    encoding="utf-8")
+    refused = _run(repo)
+    assert refused.returncode == 2 and "REFUSED" in refused.stderr, refused.stdout + refused.stderr
+    gate.write_text(src.replace("ALLOW_PATHS = {}",
+                                'ALLOW_PATHS = {"assets/blob.bin": "vendored test vector"}'),
+                    encoding="utf-8")
+    assert _run(repo).returncode == 0
+
+
+@pytest.mark.parametrize("encoding", ["latin-1", "utf-16", "utf-16-le", "utf-8-sig"])
+def test_control_non_utf8_text_is_decoded_and_scanned(tmp_path, encoding):
+    repo = _scratch(tmp_path)
+    _write(repo, "notes.md", ("café " + _SECRET + "\n").encode(encoding))
+    proc = _run(repo)
+    assert proc.returncode == 1 and "notes.md:1: gh-token" in proc.stdout, proc.stdout
+
+
+def test_control_a_symlink_is_scanned_as_the_path_git_ships_never_followed(tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x " + _SECRET + "\n", encoding="utf-8")   # the target is NOT shipped surface
+    repo = _scratch(tmp_path)
+    (repo / "to_outside").symlink_to(outside)
+    _git(repo, "add", "-A")
+    assert _run(repo).returncode == 0                                   # never read through the link
+    (repo / "dangling").symlink_to("/Us" + "ers/jdoesmith/private/notes")
+    _git(repo, "add", "-A")
+    proc = _run(repo)
+    assert proc.returncode == 1 and "dangling:1: home-path" in proc.stdout, proc.stdout
+
+
+def test_missing_git_refuses_with_exit_2_not_a_traceback(tmp_path):
+    repo = _scratch(tmp_path)
+    empty = tmp_path / "nobin"
+    empty.mkdir()
+    proc = subprocess.run([sys.executable, *GESTURE], cwd=str(repo), capture_output=True, text=True,
+                          env={**os.environ, "PATH": str(empty)})
+    assert proc.returncode == 2 and "REFUSED" in proc.stderr and "Traceback" not in proc.stderr, \
+        proc.stderr
+
+
+def _allow_count(proc):
+    return int(re.search(r"(\d+) allow-marked line\(s\)", proc.stdout).group(1))
+
+
+def test_the_summary_counts_allow_marked_lines(tmp_path):
+    marker = "  # leak-scan" + ": allow home-path planted fixture for the home rule"
+    base = _run(_scratch(tmp_path / "a"))
+    proc = _run(_scratch(tmp_path / "b", "/Us" + "ers/jdoesmith/app" + marker))
+    assert proc.returncode == 0 and _allow_count(proc) == _allow_count(base) + 1, proc.stdout
+
+
+def test_an_origin_spelled_over_ssh_port_443_still_names_the_owner(tmp_path):
+    repo = _scratch(tmp_path, "see https://github.com/" + OWNER + "/internal-ops")
+    _git(repo, "remote", "set-url", "origin", "ssh://git@ssh." + "github.com:443/" + OWNER + "/demo.git")
+    proc = _run(repo)
+    assert proc.returncode == 1 and "docs.md:2: origin-owner-url" in proc.stdout, proc.stdout
+
+
+def test_a_url_path_that_merely_contains_home_is_not_a_home_path(tmp_path):
+    proc = _run(_scratch(tmp_path, "see https://example.com/home/jdoesmith and /api/users/jdoesmith"))
+    assert proc.returncode == 0, proc.stdout
+
+
+
+def gate_only_claims_missing(scrub_text, gate_text):
+    """Every backticked name in scrub.py's GATE-ONLY paragraph must exist in the gate's source: the
+    paragraph once named `SECRET_FIXTURE_VALUES` and a `KEY_WINDOW` rule the gate never had."""
+    para = scrub_text.split("GATE-ONLY", 1)[1].split("DEFERRED", 1)[0]
+    return sorted({n for n in re.findall(r"`([\w./-]+)`", para) if n not in gate_text})
+
+
+def test_scrub_names_only_gate_rules_that_exist():
+    scrub = (ROOT / "skills/agrim-loop/scripts/scrub.py").read_text(encoding="utf-8")
+    gate = (ROOT / "tools/leak_scan.py").read_text(encoding="utf-8")
+    assert gate_only_claims_missing(scrub, gate) == []
+    planted = scrub.replace("GATE-ONLY, deliberately not here", "GATE-ONLY, `SECRET_FIXTURE_VALUES`")
+    assert gate_only_claims_missing(planted, gate) == ["SECRET_FIXTURE_VALUES"]
