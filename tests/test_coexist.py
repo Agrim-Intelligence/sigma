@@ -160,6 +160,123 @@ def test_codex_config_toml(tmp_path, cx, body, level):
     assert [s.level for s in report.signals] == [level]
 
 
+def _install_list(croot, entries):
+    (croot / "plugins").mkdir(parents=True, exist_ok=True)
+    (croot / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"version": 2, "plugins": entries}), encoding="utf-8")
+
+
+def test_enabled_but_not_installed_on_this_machine_is_a_note(tmp_path, cx):
+    """A stale (or teammate-committed) `enabledPlugins` entry for a plugin this machine does not
+    have installed runs nothing: a NOTE. Installed + enabled stays ACTIVE."""
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED)
+    croot = pathlib.Path(env["CLAUDE_CONFIG_DIR"])
+    _install_list(croot, {"other@x": [{"scope": "user"}]})
+    report = cx.assess(repo / ".sdlc", env=env)
+    assert report.active == [] and _kinds(report, cx.NOTE) == ["claude-enabled"]
+    assert "not installed" in report.notes[0].detail
+    _install_list(croot, {OLD_ID: [{"scope": "project", "projectPath": str(tmp_path / "elsewhere")}]})
+    assert cx.assess(repo / ".sdlc", env=env).active == []          # installed for ANOTHER repo only
+    _install_list(croot, {OLD_ID: [{"scope": "project", "projectPath": str(repo)}]})
+    assert _kinds(cx.assess(repo / ".sdlc", env=env), cx.ACTIVE) == ["claude-enabled"]
+
+
+@pytest.mark.parametrize("scope,expected", [("user", "active"), ("local", "active"),
+                                            ("project", "note")])
+def test_enabled_with_unknown_install_state(tmp_path, cx, scope, expected):
+    """No readable install list: refuse only when enabled in the user's OWN scope (user/local) --
+    a committed project entry alone is a teammate's choice, not proof this machine runs it."""
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED if scope == "user" else None)
+    if scope != "user":
+        (repo / ".claude").mkdir()
+        name = "settings.local.json" if scope == "local" else "settings.json"
+        (repo / ".claude" / name).write_text(json.dumps(ENABLED))
+    assert [s.level for s in cx.assess(repo / ".sdlc", env=env).signals] == [expected]
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("bash /opt/%s/hooks/session_start.sh" % OLD, ["hook"]),
+    ("python3 C:\\plugins\\%s\\hooks\\x.py" % OLD, ["hook"]),
+    ("bash ~/bin/%s-notes.sh" % OLD, []),                        # the user's own script
+    ("bash /home/u/%s_backup/run.sh" % OLD, []),
+    ("echo %s is great" % OLD, []),
+])
+def test_hook_match_is_a_path_segment_not_a_substring(tmp_path, cx, command, expected):
+    repo = _repo(tmp_path)
+    (repo / ".claude").mkdir()
+    (repo / ".claude" / "settings.json").write_text(json.dumps({"hooks": {"Stop": [
+        {"hooks": [{"type": "command", "command": command}]}]}}))
+    assert _kinds(cx.assess(repo / ".sdlc", env=_host(tmp_path)), cx.ACTIVE) == expected
+
+
+def test_hook_match_on_the_recorded_install_path(tmp_path, cx):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path)
+    croot = pathlib.Path(env["CLAUDE_CONFIG_DIR"])
+    root = tmp_path / "renamed-cache" / "v9"
+    _install_list(croot, {OLD_ID: [{"scope": "user", "installPath": str(root)}]})
+    (croot / "settings.json").write_text(json.dumps({"hooks": {"Stop": [
+        {"hooks": [{"type": "command", "command": "bash %s/hooks/stop.sh" % root}]}]}}))
+    assert "hook" in _kinds(cx.assess(repo / ".sdlc", env=env), cx.ACTIVE)
+
+
+CODEX_VARIANTS = [
+    ('[plugins."%s"]\nenabled = true\n' % OLD_ID, True),
+    ("[plugins.'%s']\nenabled = true\n" % OLD_ID, True),
+    ('[ plugins . "%s" ]  # c\nenabled=true # on\n' % OLD_ID, True),
+    ('plugins."%s".enabled = true\n' % OLD_ID, True),
+    ('[plugins]\n"%s".enabled = true\n' % OLD_ID, True),
+    ("[plugins]\n'%s'.enabled = false\n" % OLD_ID, False),
+    ('[plugins]\n"%s" = { enabled = true }\n' % OLD_ID, True),
+    ('[plugins."%s"]\nenabled = false\n' % OLD_ID, False),
+    ('[plugins."%s"]\nsource = "x"\n' % OLD_ID, None),
+    ('[plugins."other@x"]\nenabled = true\n[plugins."%s"]\n[x]\nenabled = true\n' % OLD_ID, None),
+]
+
+
+@pytest.mark.parametrize("body,expected", CODEX_VARIANTS)
+@pytest.mark.parametrize("parser", ["default", "fallback"])
+def test_codex_toml_variants(cx, body, expected, parser):
+    """Every spelling TOML allows, through tomllib (3.11+) AND the stdlib-only 3.10 fallback."""
+    if parser == "default" and cx._toml_loads is None:
+        pytest.skip("no tomllib on this Python; the fallback row covers it")
+    loads = cx._toml_loads if parser == "default" else None
+    assert cx.parse_codex_plugins(body, loads=loads).get(OLD_ID, "absent") == expected
+
+
+def test_jsonc_settings_are_read_not_treated_as_absent(tmp_path, cx):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path)
+    (pathlib.Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json").write_text(
+        '{\n  // mine\n  "enabledPlugins": {\n    "%s": true, /* on */\n  },\n'
+        '  "note": "a // not a comment, and /* nor this */",\n}\n' % OLD_ID)
+    assert _kinds(cx.assess(repo / ".sdlc", env=env), cx.ACTIVE) == ["claude-enabled"]
+
+
+def test_managed_settings_are_read_first(tmp_path, cx):
+    repo = _repo(tmp_path)
+    managed = tmp_path / "managed-settings.json"
+    managed.write_text(json.dumps(ENABLED))
+    report = cx.assess(repo / ".sdlc", env=_host(tmp_path), managed=managed)
+    assert _kinds(report, cx.ACTIVE) == ["claude-enabled"] and "managed" in report.active[0].detail
+    managed.write_text(json.dumps({"enabledPlugins": {OLD_ID: False}}))      # beats user true
+    assert cx.assess(repo / ".sdlc", env=_host(tmp_path / "u", claude=ENABLED),
+                     managed=managed).active == []
+
+
+@pytest.mark.parametrize("platform,env,expected", [
+    ("darwin", {}, "/Library/Application Support/ClaudeCode/managed-settings.json"),
+    ("linux", {}, "/etc/claude-code/managed-settings.json"),
+    ("win32", {"ProgramData": "D:\\PD"}, "D:\\PD/ClaudeCode/managed-settings.json"),
+    ("win32", {}, "C:\\ProgramData/ClaudeCode/managed-settings.json"),
+])
+def test_managed_settings_path(cx, platform, env, expected):
+    assert str(cx.managed_settings_path(platform, env)).replace("\\", "/") == \
+        expected.replace("\\", "/")
+
+
 def test_owner_marker_names_another_plugin(tmp_path, cx):
     repo = _repo(tmp_path)
     (repo / ".sdlc" / "state" / "owner.json").write_text(json.dumps({"plugin": "other"}))
@@ -201,14 +318,30 @@ def test_committed_adapters_are_notes(tmp_path, cx):
 # --------------------------------------------------------------------------- the live watcher
 
 
-@pytest.fixture()
-def live_pid():
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+def _spawn(*argv):
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)", *argv])
     try:
         yield proc.pid
     finally:
         proc.kill()
         proc.wait()
+
+
+@pytest.fixture()
+def live_pid():
+    """A live process whose command line is a plain python sleep -- names nothing."""
+    yield from _spawn()
+
+
+#: A command line that GENUINELY names the old plugin, the way its installed watcher's does
+#: (`python3 <plugin cache>/<old>/<version>/.../watch_daemon.py <sdlc>`).
+OLD_WATCHER_ARGV = ("/home/u/.claude/plugins/cache/%s/%s/1.4.24/scripts/watch_daemon.py"
+                    % (OLD, OLD),)
+
+
+@pytest.fixture()
+def old_watcher_pid():
+    yield from _spawn(*OLD_WATCHER_ARGV)
 
 
 def _fake_watcher(sdlc, pid):
@@ -217,22 +350,88 @@ def _fake_watcher(sdlc, pid):
     (state / "watch.heartbeat").write_text("")
 
 
-def test_live_unmarked_watcher_with_old_state_is_active(tmp_path, cx, live_pid):
+#: How `/proc/<pid>/cmdline` reads on each platform, for the deterministic seam tests: `None` is
+#: macOS and Windows (no /proc -- the read raises), bytes are a Linux read (NUL-separated argv).
+PROC = {
+    "no-proc": None,
+    "linux-plain": b"python3\0-c\0import time; time.sleep(120)\0",
+    "linux-old": ("python3\0" + OLD_WATCHER_ARGV[0] + "\0/r/.sdlc\0").encode(),
+}
+
+
+def _fake_proc(monkeypatch, cmdline):
+    """Make every `/proc/<pid>/cmdline` read behave like `cmdline` (see PROC), whatever this OS
+    really is -- so the Linux branch is proven on macOS and the no-/proc branch on Linux."""
+    real = pathlib.Path.read_bytes
+
+    def read_bytes(self):
+        text = str(self).replace("\\", "/")
+        if text.startswith("/proc/") and text.endswith("/cmdline"):
+            if cmdline is None:
+                raise FileNotFoundError(text)
+            return cmdline
+        return real(self)
+    monkeypatch.setattr(pathlib.Path, "read_bytes", read_bytes)
+
+
+def _old_index(repo):
+    (repo / ".sdlc" / "features").mkdir(exist_ok=True)
+    (repo / ".sdlc" / "features" / "index.json").write_text(json.dumps({"schema": OLD + "/features@1"}))
+
+
+def test_live_watcher_running_the_old_plugin_is_active_on_every_os(tmp_path, cx, old_watcher_pid):
+    """The real process, no seam: its argv names the old plugin (Linux reads that from /proc) and
+    the old plugin is enabled (macOS/Windows cannot read argv, so that is what they go on)."""
+    repo = _repo(tmp_path)
+    _fake_watcher(repo / ".sdlc", old_watcher_pid)
+    report = cx.assess(repo / ".sdlc", env=_host(tmp_path, claude=ENABLED))
+    assert _kinds(report, cx.ACTIVE) == ["claude-enabled", "watcher"]
+    [watcher] = [s for s in report.active if s.kind == "watcher"]
+    assert str(old_watcher_pid) in watcher.detail and "watch.stop" in watcher.fix
+
+
+@pytest.mark.parametrize("proc,claude,expected", [
+    ("linux-old", None, "active"),          # Linux: argv names the old plugin -> active alone
+    ("linux-plain", ENABLED, "note"),       # Linux: argv read and it is not the old plugin's
+    ("no-proc", ENABLED, "active"),         # macOS/Windows: unreadable, an ACTIVE signal decides
+    ("no-proc", None, "note"),              # macOS/Windows: unreadable, nothing active
+])
+def test_watcher_cmdline_seam(tmp_path, cx, live_pid, monkeypatch, proc, claude, expected):
     repo = _repo(tmp_path)
     _fake_watcher(repo / ".sdlc", live_pid)
-    (repo / ".sdlc" / "features").mkdir()
-    (repo / ".sdlc" / "features" / "index.json").write_text(json.dumps({"schema": OLD + "/features@1"}))
-    report = cx.assess(repo / ".sdlc", env=_host(tmp_path))
-    assert _kinds(report, cx.ACTIVE) == ["watcher"]
-    assert str(live_pid) in report.active[0].detail and "watch.stop" in report.active[0].fix
+    _fake_proc(monkeypatch, PROC[proc])
+    report = cx.assess(repo / ".sdlc", env=_host(tmp_path, claude=claude))
+    assert [s.level for s in report.signals if s.kind == "watcher"] == [expected]
+
+
+@pytest.mark.parametrize("proc", [None, "no-proc", "linux-plain"])
+def test_unmarked_watcher_with_only_notes_is_a_note_and_the_gate_admits(tmp_path, cx, live_pid,
+                                                                         monkeypatch, proc):
+    """Review block #2: a Sigma-only user upgrading -- legacy registry, a live watcher started
+    before this release (so unmarked), a fresh heartbeat, an old Cursor rule, the old plugin
+    installed but DISABLED -- must not be refused on any OS. Notes never escalate the watcher."""
+    repo = _repo(tmp_path)
+    _fake_watcher(repo / ".sdlc", live_pid)
+    _old_index(repo)
+    if proc is not None:
+        _fake_proc(monkeypatch, PROC[proc])
+    env = _host(tmp_path)
+    report = cx.assess(repo / ".sdlc", env=env)
+    assert report.active == [] and _kinds(report, cx.NOTE) == ["state", "watcher"]
+    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=io.StringIO()) is True
+    (repo / ".cursor" / "rules").mkdir(parents=True)
+    (repo / ".cursor" / "rules" / "sdlc.mdc").write_text("run the %s skills\n" % OLD)
+    env = _host(tmp_path / "h2", claude={"enabledPlugins": {OLD_ID: False}}, installed=True,
+                codex='[plugins."%s"]\nenabled = false\n' % OLD_ID)
+    report = cx.assess(repo / ".sdlc", env=env)
+    assert report.active == [], report.active
+    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=io.StringIO()) is True
 
 
 def test_live_unmarked_watcher_alone_is_a_note(tmp_path, cx, live_pid):
     repo = _repo(tmp_path)
     _fake_watcher(repo / ".sdlc", live_pid)
     report = cx.assess(repo / ".sdlc", env=_host(tmp_path))
-    if sys.platform.startswith("linux"):
-        pytest.skip("Linux reads the pid's command line, which here is a plain python sleep")
     assert _kinds(report, cx.NOTE) == ["watcher"] and report.active == []
 
 

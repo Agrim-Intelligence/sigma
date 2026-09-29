@@ -80,21 +80,37 @@ python3 skills/agrim-loop/scripts/coexist.py check .sdlc    # exit 0: clear; exi
 ```
 
 It counts the old plugin as **active** on this repository when any of these holds:
-- Claude Code has `<old>@…` enabled in `enabledPlugins`. The local, project and user settings
-  files are read in that order of precedence, and `CLAUDE_CONFIG_DIR` is honoured.
-- Codex's `config.toml` has `[plugins."<old>@…"]` with `enabled = true`. `CODEX_HOME` is honoured.
-- A hook whose command runs the old plugin is registered by hand in one of those settings files.
+- Claude Code has `<old>@…` enabled in `enabledPlugins` and the plugin is installed for this
+  repository on this machine (`plugins/installed_plugins.json`). The managed, local, project and
+  user settings files are read in that order of precedence; `CLAUDE_CONFIG_DIR` is honoured, and
+  comments and trailing commas in them are accepted. The managed file is
+  `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS,
+  `/etc/claude-code/managed-settings.json` on Linux and
+  `%ProgramData%\ClaudeCode\managed-settings.json` on Windows. When the install list cannot be
+  read, an entry in the managed, local or user settings still counts as active (Sigma refuses when
+  it cannot tell), while an entry only in the committed project settings is a note.
+- Codex's `config.toml` sets `enabled = true` for `plugins."<old>@…"`, in any TOML spelling:
+  `[plugins."…"]` or `[plugins.'…']` tables, dotted keys, or `"…" = { enabled = true }` under
+  `[plugins]`. `CODEX_HOME` is honoured. Python 3.11+ reads the file with `tomllib`; Python 3.10
+  uses a small built-in reader for these shapes.
+- A hook whose command runs the old plugin is registered by hand in one of those settings files:
+  a path in the command has a directory named exactly the old name, or contains the old plugin's
+  recorded install path. A script of your own whose file name merely contains the name does not
+  count.
 - A live watcher holds this `.sdlc`'s watcher lock and Sigma did not start it. Sigma records its
   own watcher in `.sdlc/state/watch.owner`, and the old plugin never wrote that file. This counts as
-  active when the watcher's command line names the old plugin (read on Linux only), or when any
-  other old-plugin signal below is also present.
+  active when the watcher's command line names the old plugin (read from `/proc` on Linux), or,
+  where the command line cannot be read (macOS, Windows), when another signal in this list is also
+  present. The notes below never make it active.
 - `.sdlc/state/owner.json` names a plugin other than Sigma. Sigma writes this file on init and
   on loop start.
 
 These are reported as notes and never refused: the old plugin installed but not enabled here,
-old schema ids in `.sdlc/` (at most 200 files are read), an old-name Cursor rule or Codex
+the old plugin enabled in settings but not installed for this repository on this machine, old
+schema ids in `.sdlc/` (at most 200 files are read), an old-name Cursor rule or Codex
 `AGENTS.md` block (committed text, not running code), and a watcher Sigma did not start with no
-other signal. A Sigma watcher started before this release looks exactly like that last case.
+active signal beside it. A Sigma watcher started before this release looks exactly like that last
+case, so upgrading a repository that only ever ran Sigma is never refused.
 
 What each surface does:
 

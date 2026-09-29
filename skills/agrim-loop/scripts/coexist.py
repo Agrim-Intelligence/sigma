@@ -12,16 +12,25 @@ reads as empty. This module is the ONE detector every surface asks. The previous
 only through `legacy.RETIRED` (a guarded private name, #2729/#239).
 
 SIGNALS, two levels. ACTIVE means the other plugin can act on this repository right now:
-  - Claude Code: `enabledPlugins` resolves an `<old>@*` id to true (local > project > user settings);
-  - Codex: `config.toml` has `[plugins."<old>@*"]` with `enabled = true`;
-  - a hook registered by hand in one of those settings files whose command names the old plugin;
+  - Claude Code: `enabledPlugins` resolves an `<old>@*` id to true (managed > local > project >
+    user settings; JSONC comments and trailing commas tolerated) AND the plugin is installed for
+    this repository per `plugins/installed_plugins.json`. When that list cannot be read, an entry
+    in the user's OWN scope (managed/local/user) still counts -- fail toward refusing only where
+    we cannot tell -- while a committed project entry alone is a NOTE;
+  - Codex: `config.toml` resolves `plugins."<old>@*".enabled` to true (any TOML spelling:
+    tomllib on 3.11+, a small stdlib fallback parser on 3.10);
+  - a hook registered by hand in one of those settings files whose command runs the old plugin:
+    a path in it has a DIRECTORY named exactly the old name, or it contains the old plugin's
+    recorded `installPath` -- never a mere substring (a user's `~/bin/<old>-notes.sh` is theirs);
   - a live watcher on this `.sdlc` (live pid AND fresh heartbeat -- the watcher's own rule) that
     Sigma did not start (`state/watch.owner` does not name that pid), when its command line names
-    the old plugin (Linux `/proc`) or any other old-plugin signal is present;
+    the old plugin (Linux `/proc`), or -- where the command line cannot be read (macOS, Windows)
+    -- when another ACTIVE signal is present. Notes never escalate it;
   - `state/owner.json` naming a plugin other than Sigma.
-NOTE means evidence without a live actor: installed but not enabled; old schema ids in state (a
-bounded scan); an old-name Cursor rule or Codex block (committed text); an unmarked live watcher
-with nothing else to go on (a Sigma watcher started before this release looks exactly like that).
+NOTE means evidence without a live actor: installed but not enabled; enabled but not installed on
+this machine; old schema ids in state (a bounded scan); an old-name Cursor rule or Codex block
+(committed text); an unmarked live watcher with nothing ACTIVE beside it (a Sigma watcher started
+before this release looks exactly like that, so a Sigma-only upgrade is never refused).
 
 THE DECISION PER SURFACE (docs/upgrading.md, "Running both plugins on one repository"): every
 surface that WRITES shared state or starts a watcher -- `sdlc_init.py`, `loop.py start`,
@@ -38,7 +47,7 @@ OWNER MARKERS (Sigma writes them; the old plugin never did, which is why the oth
 `state/owner.json` (`{"schema": "sigma/owner@1", "plugin": "sigma"}`, written by init and loop
 start) and `state/watch.owner` (`sigma <pid>`, written by the watcher inside its decision mutex).
 
-COST: at most three settings files, one install list, one TOML file, one pid probe and at most
+COST: at most four settings files, one install list, one TOML file, one pid probe and at most
 `STATE_SCAN_CAP` state-file reads per call -- constant beyond that cap. No network, no
 subprocess, nothing started. Stdlib only.
 """
@@ -51,6 +60,12 @@ import sys
 import tempfile
 import time
 from typing import NamedTuple
+
+try:                                  # 3.11+; Python 3.10 uses the fallback parser below
+    import tomllib
+    _toml_loads = tomllib.loads
+except ImportError:                   # pragma: no cover - exercised on 3.10
+    _toml_loads = None
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -138,12 +153,62 @@ def _names_old(text):
     return isinstance(text, str) and OLD in text.lower()
 
 
+def _strip_jsonc(text):
+    """JSON-with-comments -> JSON: drop `//` and `/* */` comments and trailing commas, never
+    touching the inside of a string. Claude Code settings files are hand-edited."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        elif c == ",":
+            j = i + 1
+            while j < n:                                 # skip whitespace AND comments
+                if text[j] in " \t\r\n":
+                    j += 1
+                elif text.startswith("//", j):
+                    k = text.find("\n", j)
+                    j = n if k < 0 else k
+                elif text.startswith("/*", j):
+                    k = text.find("*/", j + 2)
+                    j = n if k < 0 else k + 2
+                else:
+                    break
+            if j < n and text[j] in "}]":
+                i += 1                                   # a trailing comma: drop it
+                continue
+            out.append(c)
+            i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def _read_json(path):
+    """Missing/unreadable/malformed reads as absent; JSONC (comments, trailing commas) is read."""
     try:
-        data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
-    except Exception:            # noqa: BLE001 - missing/unreadable/malformed reads as absent
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+    except Exception:            # noqa: BLE001
         return None
-    return data
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    try:
+        return json.loads(_strip_jsonc(text))
+    except ValueError:
+        return None
 
 
 def _realpath(path):
@@ -156,12 +221,33 @@ def _realpath(path):
 # --------------------------------------------------------------------------- Claude Code
 
 
-def _settings_files(croot, repo_root):
+def managed_settings_path(platform=None, env=None):
+    """Claude Code's machine-wide managed settings file (highest precedence). The seam: `assess`
+    takes `managed=` so tests never read the real one."""
+    platform = sys.platform if platform is None else platform
+    env = os.environ if env is None else env
+    if platform == "darwin":
+        return pathlib.Path("/Library/Application Support/ClaudeCode/managed-settings.json")
+    if platform.startswith("win"):
+        return pathlib.Path(env.get("ProgramData") or "C:\\ProgramData") / "ClaudeCode" / \
+            "managed-settings.json"
+    return pathlib.Path("/etc/claude-code/managed-settings.json")
+
+
+def _settings_files(croot, repo_root, managed=None):
     """Highest precedence first, as Claude Code resolves `enabledPlugins`."""
     repo = pathlib.Path(repo_root)
-    return (("local", repo / ".claude" / "settings.local.json"),
-            ("project", repo / ".claude" / "settings.json"),
-            ("user", pathlib.Path(croot) / "settings.json"))
+    files = [("local", repo / ".claude" / "settings.local.json"),
+             ("project", repo / ".claude" / "settings.json"),
+             ("user", pathlib.Path(croot) / "settings.json")]
+    if managed is not None:
+        files.insert(0, ("managed", pathlib.Path(managed)))
+    return tuple(files)
+
+
+#: Scopes the USER controls on this machine: enabled there with an unreadable install list still
+#: refuses. A committed project entry alone does not (a teammate's choice, not proof it runs here).
+_OWN_SCOPES = ("managed", "local", "user")
 
 
 def _hook_commands(hooks):
@@ -177,10 +263,48 @@ def _hook_commands(hooks):
                     yield str(event), command
 
 
-def claude_signals(croot, repo_root):
+def _runs_old(command, roots=()):
+    """Does this hook command run the old plugin? Only when it contains the plugin's recorded
+    install path, or a path whose DIRECTORY segment is exactly the old name -- so
+    `/opt/<old>/hooks/x.sh` matches and a user's own `~/bin/<old>-notes.sh` does not."""
+    low = command.lower()
+    if any(len(r) > 3 and r.lower() in low for r in roots):
+        return True
+    for token in re.split(r"[\s\"'=;&|()<>`]+", command):
+        parts = re.split(r"[\\/]+", token)
+        if len(parts) > 1 and any(part.lower() == OLD for part in parts[:-1]):
+            return True
+    return False
+
+
+def _install_entries(plugins, pid):
+    entries = plugins.get(pid)
+    if isinstance(entries, dict):                    # installed_plugins.json version 1
+        entries = [entries]
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+def claude_signals(croot, repo_root, managed=None):
     out = []
+    installed = _read_json(pathlib.Path(croot) / "plugins" / "installed_plugins.json")
+    plugins = installed.get("plugins") if isinstance(installed, dict) else None
+    known = isinstance(plugins, dict)                # can we tell what is installed here?
+    plugins = plugins if known else {}
+    here = _realpath(repo_root)
+    old_ids = [pid for pid in plugins if _is_old_id(pid)]
+    roots = [e["installPath"] for pid in old_ids for e in _install_entries(plugins, pid)
+             if isinstance(e.get("installPath"), str)]
+
+    def installed_here(pid):
+        for entry in _install_entries(plugins, pid):
+            path = entry.get("projectPath")
+            if entry.get("scope", "user") == "user" or (
+                    isinstance(path, str) and _realpath(path) == here):
+                return True
+        return False
+
     decided = {}                                  # old plugin id -> (enabled, scope, file)
-    for scope, path in _settings_files(croot, repo_root):
+    for scope, path in _settings_files(croot, repo_root, managed):
         data = _read_json(path)
         if not isinstance(data, dict):
             continue
@@ -190,69 +314,145 @@ def claude_signals(croot, repo_root):
                 if _is_old_id(pid) and pid not in decided:
                     decided[pid] = (value is True, scope, path)
         for event, command in _hook_commands(data.get("hooks")):
-            if _names_old(command):
+            if _runs_old(command, roots):
                 out.append(Signal("hook", ACTIVE,
                                   "a %s hook registered by hand in %s runs the old plugin"
                                   % (event, path),
                                   "remove that hook entry from %s" % path))
+    local = pathlib.Path(repo_root) / ".claude" / "settings.local.json"
     for pid, (on, scope, path) in sorted(decided.items()):
-        if on:
+        if not on:
+            continue
+        if known and not installed_here(pid):
+            out.append(Signal("claude-enabled", NOTE,
+                              "Claude Code settings enable %s (%s settings, %s) but it is not "
+                              "installed for this repository on this machine, so nothing runs"
+                              % (pid, scope, path),
+                              "remove the stale \"%s\" entry from %s" % (pid, path)))
+        elif not known and scope not in _OWN_SCOPES:
+            out.append(Signal("claude-enabled", NOTE,
+                              "the committed %s settings enable %s (%s); this machine's install "
+                              "list is unreadable, so whether it runs here is unknown"
+                              % (scope, pid, path),
+                              "if it is installed here, set \"%s\": false under enabledPlugins "
+                              "in %s" % (pid, local)))
+        else:
             out.append(Signal("claude-enabled", ACTIVE,
                               "Claude Code has %s enabled (%s settings, %s); its hooks and "
                               "watcher run in every session here" % (pid, scope, path),
                               "for this repository only, set \"%s\": false under enabledPlugins "
                               "in %s; or everywhere: claude plugin disable %s"
-                              % (pid, pathlib.Path(repo_root) / ".claude" / "settings.local.json",
-                                 pid)))
-    if not any(on for on, _s, _p in decided.values()):
-        installed = _read_json(pathlib.Path(croot) / "plugins" / "installed_plugins.json")
-        plugins = installed.get("plugins") if isinstance(installed, dict) else None
-        here = _realpath(repo_root)
-        for pid, entries in (plugins.items() if isinstance(plugins, dict) else ()):
-            if not _is_old_id(pid) or not isinstance(entries, list):
-                continue
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                path = entry.get("projectPath")
-                if entry.get("scope", "user") == "user" or (
-                        isinstance(path, str) and _realpath(path) == here):
-                    out.append(Signal("installed", NOTE,
-                                      "%s is installed for Claude Code but not enabled here" % pid,
-                                      "claude plugin uninstall %s   (when nobody on this machine "
-                                      "still needs it)" % pid))
-                    break
+                              % (pid, local, pid)))
+    for pid in sorted(old_ids):
+        if installed_here(pid) and not decided.get(pid, (False,))[0]:
+            out.append(Signal("installed", NOTE,
+                              "%s is installed for Claude Code but not enabled here" % pid,
+                              "claude plugin uninstall %s   (when nobody on this machine "
+                              "still needs it)" % pid))
     return out
 
 
 # --------------------------------------------------------------------------- Codex
 
-_TOML_TABLE = re.compile(r'^\s*\[\s*plugins\s*\.\s*"([^"]+)"\s*\]\s*(?:#.*)?$')
-_TOML_ANY_TABLE = re.compile(r"^\s*\[")
-_TOML_ENABLED = re.compile(r"^\s*enabled\s*=\s*(true|false)\b")
+_TOML_KEY = re.compile(r"""\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*""")
+_TOML_BOOL = re.compile(r"(true|false)\s*(?:#.*)?$")
+_TOML_INLINE_ENABLED = re.compile(r"[{,]\s*enabled\s*=\s*(true|false)\b")
+_DEFAULT = object()
+
+
+def _toml_dotted_key(text, pos):
+    """-> (keys, end) for a dotted TOML key at `pos` (bare, "basic" or 'literal' parts)."""
+    keys = []
+    while True:
+        m = _TOML_KEY.match(text, pos)
+        if not m or m.end() == pos:
+            return None, pos
+        basic, literal, bare = m.groups()
+        if basic is not None:
+            try:
+                basic = json.loads('"%s"' % basic)
+            except ValueError:
+                return None, pos
+        keys.append(basic if basic is not None else literal if literal is not None else bare)
+        pos = m.end()
+        if pos < len(text) and text[pos] == ".":
+            pos += 1
+            continue
+        return keys, pos
+
+
+def _fallback_plugins(text):
+    """Python 3.10 has no tomllib and Sigma adds no dependency: a line reader for exactly the
+    shapes that can set `plugins.<id>.enabled` -- `[plugins."<id>"]` / `[plugins.'<id>']` tables,
+    dotted keys at any level, and `"<id>" = { enabled = ... }` inline tables. Best effort: a
+    multi-line string that happens to look like a table header can mislead it."""
+    out, current = {}, []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("[["):
+            current = None                           # an array of tables: nothing we read
+            continue
+        if stripped.startswith("["):
+            keys, pos = _toml_dotted_key(stripped, 1)
+            rest = stripped[pos:]
+            if keys and rest.startswith("]") and (not rest[1:].strip()
+                                                   or rest[1:].strip().startswith("#")):
+                current = keys
+                if keys[0] == "plugins" and len(keys) == 2:
+                    out.setdefault(keys[1], None)
+            else:
+                current = None
+            continue
+        if current is None:
+            continue
+        keys, pos = _toml_dotted_key(stripped, 0)
+        rest = stripped[pos:]
+        if not keys or not rest.startswith("="):
+            continue
+        value, full = rest[1:].strip(), current + keys
+        if full[0] != "plugins" or len(full) < 2:
+            continue
+        pid = full[1]
+        out.setdefault(pid, None)
+        if full[2:] == ["enabled"]:
+            b = _TOML_BOOL.match(value)
+            if b:
+                out[pid] = b.group(1) == "true"
+        elif len(full) == 2 and value.startswith("{"):
+            b = _TOML_INLINE_ENABLED.search(value)
+            if b:
+                out[pid] = b.group(1) == "true"
+    return out
+
+
+def parse_codex_plugins(text, loads=_DEFAULT):
+    """-> {plugin id: True | False | None (no `enabled` recorded)} from Codex's `config.toml`.
+    `loads` is tomllib's (3.11+) by default; None, or a file tomllib rejects, uses the fallback."""
+    loads = _toml_loads if loads is _DEFAULT else loads
+    if loads is not None:
+        try:
+            data = loads(text)
+        except Exception:        # noqa: BLE001 - malformed TOML: best effort below
+            data = None
+        if isinstance(data, dict):
+            plugins = data.get("plugins")
+            return {pid: (v.get("enabled") if isinstance(v.get("enabled"), bool) else None)
+                    for pid, v in (plugins.items() if isinstance(plugins, dict) else ())
+                    if isinstance(v, dict)}
+    return _fallback_plugins(text)
 
 
 def codex_signals(xroot):
-    """`[plugins."<id>"]` tables in Codex's `config.toml`, read line by line (Python 3.10 has no
-    tomllib). A table with no `enabled` line is a NOTE: this reader will not guess Codex's default."""
+    """`plugins."<id>".enabled` in Codex's `config.toml`. An entry with no `enabled` is a NOTE:
+    this reader will not guess Codex's default."""
     path = pathlib.Path(xroot) / "config.toml"
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        text = path.read_text(encoding="utf-8")
     except Exception:            # noqa: BLE001 - no Codex here
         return []
-    tables, current = {}, None
-    for line in lines:
-        m = _TOML_TABLE.match(line)
-        if m:
-            current = m.group(1)
-            tables.setdefault(current, None)
-            continue
-        if _TOML_ANY_TABLE.match(line):
-            current = None
-            continue
-        e = _TOML_ENABLED.match(line)
-        if e and current is not None:
-            tables[current] = e.group(1) == "true"
+    tables = parse_codex_plugins(text)
     out = []
     for pid, on in sorted(tables.items()):
         if not _is_old_id(pid):
@@ -411,7 +611,11 @@ def _cmdline_names_old(pid):
     return _names_old(raw.decode("utf-8", "replace"))
 
 
-def watcher_signal(sdlc_dir, other_signals, now=None, env=None):
+def watcher_signal(sdlc_dir, active_elsewhere, now=None, env=None):
+    """An unmarked live watcher is ACTIVE when its command line names the old plugin, or when the
+    command line cannot be read AND another ACTIVE signal stands (`active_elsewhere`). NOTE-level
+    evidence (old schema ids, committed adapter text, installed-but-disabled) never escalates it:
+    every Sigma watcher started before this release is unmarked too."""
     try:
         pid = live_watcher_pid(sdlc_dir, now=now, env=env)
     except Exception:            # noqa: BLE001 - a probe that cannot run sees no watcher
@@ -422,7 +626,7 @@ def watcher_signal(sdlc_dir, other_signals, now=None, env=None):
     fix = ("stop it: disable the old plugin first (or its triggers restart it), then create %s "
            "and wait one tick" % stop)
     named = _cmdline_names_old(pid)
-    if named or (named is None and other_signals):
+    if named or (named is None and active_elsewhere):
         return [Signal("watcher", ACTIVE,
                        "a live watcher (pid %s) holds this .sdlc's watcher lock and was not "
                        "started by Sigma (no matching state/%s)" % (pid, WATCH_OWNER_FILE), fix)]
@@ -435,13 +639,15 @@ def watcher_signal(sdlc_dir, other_signals, now=None, env=None):
 # --------------------------------------------------------------------------- assessment
 
 
-def assess(sdlc_dir, env=None, home=None, repo_root=None, now=None):
-    """-> Report. Never raises: a source that cannot be read contributes nothing."""
+def assess(sdlc_dir, env=None, home=None, repo_root=None, now=None, managed=_DEFAULT):
+    """-> Report. Never raises: a source that cannot be read contributes nothing. `managed` is the
+    Claude Code managed-settings path (default: this platform's; None skips it)."""
     env = os.environ if env is None else env
+    managed = managed_settings_path() if managed is _DEFAULT else managed
     sdlc = pathlib.Path(sdlc_dir)
     repo = pathlib.Path(repo_root) if repo_root is not None else sdlc.resolve().parent
     signals = []
-    for source in (lambda: claude_signals(claude_root(env, home), repo),
+    for source in (lambda: claude_signals(claude_root(env, home), repo, managed),
                    lambda: codex_signals(codex_root(env, home)),
                    lambda: adapter_signals(repo),
                    lambda: state_signals(sdlc)):
@@ -449,7 +655,8 @@ def assess(sdlc_dir, env=None, home=None, repo_root=None, now=None):
             signals.extend(source())
         except Exception:        # noqa: BLE001 - see the docstring
             pass
-    signals.extend(watcher_signal(sdlc, bool(signals), now=now, env=env))
+    signals.extend(watcher_signal(sdlc, any(s.level == ACTIVE for s in signals),
+                                  now=now, env=env))
     return Report(str(sdlc_dir), tuple(signals))
 
 

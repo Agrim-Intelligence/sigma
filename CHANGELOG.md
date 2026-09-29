@@ -14,8 +14,12 @@ All notable changes to Sigma are recorded here, newest first.
   session-start hook repeats the message. `SIGMA_ALLOW_COEXIST=1` lets the write surfaces continue
   with a warning. Two watchers were already impossible, because both plugins use the same lock
   files. Sigma now also names a watcher it did not start instead of only reporting "already
-  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. See
-  `docs/upgrading.md`.
+  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. Only an
+  active signal can make an unmarked watcher active, so a Sigma-only upgrade with old state and a
+  running pre-upgrade watcher is not refused. The detector also reads Claude Code's managed
+  settings, accepts comments in settings files, treats a plugin enabled but not installed on this
+  machine as a note, matches hooks by path rather than by substring, and reads every TOML spelling
+  of a Codex plugin entry. See `docs/upgrading.md`.
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a
