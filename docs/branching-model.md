@@ -1710,7 +1710,7 @@ step 3 is a human's too, once per repository; and
 **step 4 comes last for the reason above**. After that, every goal that declares the unit is cut
 from its branch, recorded against it, and passes it down to whatever it files.
 
-**Step 3 is the one this section used to omit, and omitting it was silent.** Measured on 1.4.1: with
+**Step 3 is the one this section used to omit, and omitting it was silent.** Measured before the fix: with
 no `.sdlc/features/`, steps 1, 2 and 4 all work — the label is attached, the base resolves, the
 worktree is cut from `feature/<name>` — and the registry sync returns `not-adopted` and records
 nothing, so the sentence above was false for the whole repository with nothing anywhere saying so.
@@ -1728,7 +1728,7 @@ Two things about it that are easy to get wrong:
 - **Creating it is what makes the registry half live**, and the registry half is not yet ready for
   first adoption — the composition defects tracked in **#1564** are inert only for as long as this
   directory is absent, which is why nothing in the kit creates it and why **#1576** is deliberately
-  the last item in that epic. On 1.4.x, run step 3 on a repository you are prepared to be the first
+  the last item in that epic. Until then, run step 3 on a repository you are prepared to be the first
   adopter of, and not otherwise.
 
 ### The one-line summary

@@ -2,7 +2,7 @@
 
 **Audience:** anyone adopting Sigma who wants a place to put an idea that is not yet a goal. No
 internals knowledge assumed.
-**Status:** shipped in 1.4.5. Every behaviour below was read out of the code that implements it, not
+**Status:** shipped. Every behaviour below was read out of the code that implements it, not
 out of the proposal it came from — where the two disagreed, the code won, and §12 says where.
 
 **This is a contract, not a tour.** What each stage takes in, what it writes, which combinations are

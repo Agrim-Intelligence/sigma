@@ -25,10 +25,12 @@ Pulls the backlog and runs each pending goal unattended, parking anything that n
 /agrim-status
 ```
 ```
-backlog: 0 pending, 0 in-progress, 1 done, 0 parked | iteration 1 | review-queue: empty
+backlog: 0 proposed, 0 pending, 0 in-progress, 1 done, 0 parked, 0 failed | iteration 1 | review-queue: empty
 ```
+(Recorded from `status.py` on a fresh copy of this directory after its one goal was recorded `done`.
+Before the run the same line reads `0 proposed, 1 pending, ... 0 done ... | iteration 0`.)
 
 ## Note on state in git
 This example **commits** `.sdlc/state/` so it's self-contained and runnable as a reference. In your
-own repo, add `.sdlc/state/` to `.gitignore` (per the tip `/agrim-init` prints) — that state is
-machine-written loop progress, not source.
+own repo there is nothing to do: `/agrim-init` git-ignores Sigma's runtime directories itself
+(`.sdlc/state/` among them) -- that state is machine-written loop progress, not source.

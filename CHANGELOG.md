@@ -121,6 +121,36 @@ All notable changes to Sigma are recorded here, newest first.
   `tests/test_coexist.py` cover the reviewer's race on the stand-in and on the real previous plugin,
   the symlink case, a record created during the run, a clean run, and repair. Each guard was broken
   once and its test went red on 3.10 and 3.12.
+- **The README is checked against what ships, and its init gestures are run** (#277, the review
+  notes on #231). (1) Every `python3` gesture a user copies now reads `python3
+  <installed-sigma>/...`, the placeholder is defined once in the Quickstart, and the init
+  subsections say to run them from the repository root. `tools/onboarding_control.py` reads a
+  gesture's script path from the repository root, as a shell would, and runs every gesture under
+  "What `/agrim-init` will ask you" and "If `/agrim-init` says you lack access". Run against the
+  previous README, both confirm variants went RED at `verify confirm (README gesture)`. (2) The
+  fine-grained token row shows `-s <required scopes>` and states the rule `preflight.py` applies
+  (`repo`; `workflow` when work is on; `read:org` for an organization; `project` with a board). A
+  test drives `preflight()` over every combination to derive that rule. (3) The `work.auto_merge` row
+  no longer says a fork or read-only repository records `done`. It records `review`, and the goal
+  is `done` once the PR merges. A test keeps any README or docs sentence from pairing a no-merge path
+  with "records `done`". Also corrected: the `"auto_merge": false` example (now `"off"`), and the
+  claim in the README and config template that a merge arms `--auto`. It lands with a direct
+  `gh pr merge`. (4) Version numbers from the plugin's previous name are gone from shipped prose
+  (`Since 1.0.9`, `pre-0.6`, `1.3.7`, `1.3.8`, `1.4.1`, `1.4.2`, `1.4.5`, `1.1.2`). The version
+  control now covers any release-shaped version above `plugin.json`, and any lower one introduced
+  by a release phrase. Exceptions need a stated reason in `VERSION_ALLOW`. (5) Only verified host
+  claims remain. `codex-cli 0.154.0-alpha.6.2` installed `sigma@sigma` from
+  `.claude-plugin/marketplace.json` into an isolated profile. Cursor plugin support is marked
+  unverified. (6) `examples/hello-sdlc/README.md` shows the real `status.py` line, and a test
+  checks it. The stale `.gitignore` tip is gone because init ignores runtime directories itself.
+  (7) `tests/test_readme_first_run.py` also checks `/agrim-*` names in plain prose, and checks
+  `claude plugin` / `codex plugin` syntax against the CLIs' help. (8) The `loop.py start` nag after
+  `--local-only` was already fixed by #236 and has its own control, so nothing changed. (9) New
+  `tools/leak_scan.py` is the leak gate that #231's acceptance and `scrub.py` name. It checks
+  tracked files for home paths, `SHAPE_RULES` secret shapes, and links into the origin owner's
+  other repositories. It reports locations only, never values: 0 findings here, and each plant is
+  red (`tests/test_leak_scan.py`).
+
 - **A Status option spelled differently from `project.columns` no longer makes a card move a
   silent no-op** (#280). This was confirmed on the fake with GitHub's default options. A read-only
   read on 2026-09-29 found both `In progress` and `In Progress` on real default-shaped boards,

@@ -111,7 +111,7 @@ The other row worth naming: **`sigma install scopes`**. `~/.claude/plugins/insta
 records one entry **per scope**. A `user` entry applies everywhere; a `project` (or `local`) entry
 carries a `projectPath` and **shadows user scope for that path alone**. So `claude plugin update
 --scope user` can report success while one directory sits on an old version indefinitely — measured
-on a real machine as a main checkout pinned to 1.1.2 while twelve other paths were current.
+on a real machine as a main checkout pinned to an older release while twelve other paths were current.
 
 This row enumerates every scope sigma is installed under and judges each against the version
 floor `AGENTS.md` states (parsed from that file, never a second copy of the number). Two things it

@@ -13,14 +13,19 @@ script path (the Codex/Cursor script-form line), the `/agrim-init` flags (the Cl
 the `verify_detect.py confirm .sdlc <n> <id>` gesture, and the `claude plugin ...` / `codex plugin
 ...` install lines. A README that drifts from the shipped scripts (a renamed script, a renamed
 verb, a dropped line) therefore turns this control red; a README the control does not read could
-drift silently. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
+drift silently. Since #277 every `python3` gesture under "What /agrim-init will ask you" and "If
+/agrim-init says you lack access" is also EXECUTED (github mode, confirm variant, after the goal is
+done), from the repository root, `<installed-sigma>` standing for the Sigma directory -- so a
+gesture a user could not copy from their repository (a path relative to the plugin directory), a
+renamed verb, or a placeholder nothing fills is red. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
 `.claude-plugin/marketplace.json` declares, and every init flag the Quickstart shows must be one
 init_flow.py's parser accepts. Everything else comes from what /agrim-init PRINTS: the `[ask]`
 lines (parsed in init_flow.ask_line's shape, `[ask] <id>: <prose> -> --flag VALUE|VALUE ; ...`,
 and answered through ASK_POLICY, keyed by the flag NAME the line offers -- a renamed or new flag
 is "unanswerable [ask]", red), the verify candidate number and id, and the `Next:` line's
 `loop.py next` command. A README or printed command runs only in the pinned shape
-`python3 <existing script under skills/ or tools/> <args without shell syntax>` (see _py_argv).
+`python3 <existing script under skills/ or tools/> <args without shell syntax>`, the script path
+read from the repository root as a shell would (see _py_argv).
 
 TWO VARIANTS per mode. `confirm`: a Makefile test target, confirmed by the README gesture
 (enforce ON). `no-command`: a repository with nothing to confirm, the verify question left open,
@@ -92,6 +97,15 @@ DEMO_FILE = "sigma-demo.md"
 #: SCAFFOLD writes is what `record done` sees. The confirm variant overwrites whatever default
 #: init scaffolded, so only this variant sees a bad default (review of PR #306).
 VARIANTS = ("confirm", "no-command")
+#: The README's one placeholder for the directory Sigma's scripts live in (#277): defined once in the
+#: Quickstart, and every `python3` gesture a user copies starts with it.
+INSTALLED_SIGMA = "<installed-sigma>"
+#: The README subsections whose `python3` gestures the control EXECUTES from the repository root.
+GESTURE_SECTIONS = ("### What `/agrim-init` will ask you", "### If `/agrim-init` says you lack access")
+#: Exit codes a README gesture may return: `preflight.py check` exits 1 on a blocking failure (the
+#: fake world has no real token), which is its documented report, not a broken gesture. Everything
+#: else must exit 0; a usage error is 2.
+GESTURE_OK_RC = {("preflight.py", "check"): (0, 1)}
 
 
 class Red(Exception):
@@ -223,8 +237,30 @@ def parse_quickstart(text, sigma=ROOT):
                   "\"What /agrim-init will ask you\"")
     out["verify_confirm"] = confirm[0]
     for rel in [out["init_script"]] + [t for t in shlex.split(confirm[0]) if t.endswith(".py")]:
-        if not (pathlib.Path(sigma) / rel).is_file():
+        if not (pathlib.Path(sigma) / rel.replace(INSTALLED_SIGMA + "/", "")).is_file():
             raise Red("readme", f"the README names {rel}, which {sigma} does not ship")
+    out["gestures"] = readme_gestures(text)
+    if not out["gestures"]:
+        raise Red("readme", f"no `python3` gesture under {GESTURE_SECTIONS}")
+    return out
+
+
+def readme_gestures(text):
+    """Every `python3 ...` gesture in the two init subsections (fenced lines and inline code, e.g.
+    the access table's), in README order -- the commands the README tells a user to copy. Pure."""
+    out = []
+    for heading in GESTURE_SECTIONS:
+        start = text.find(heading)
+        if start < 0:
+            raise Red("readme", f"no {heading!r} subsection")
+        body = text[start + len(heading):]
+        end = re.search(r"(?m)^##+ ", body)
+        body = body[:end.start()] if end else body
+        spans = _FENCE.findall(body) + re.findall(r"`([^`\n]+)`", _FENCE.sub("", body))
+        for span in spans:
+            for line in _lines(span):
+                if re.match(r"python3?\s", line) and line not in out:
+                    out.append(line)
     return out
 
 
@@ -292,16 +328,19 @@ def _git(args, cwd, env):
 _ARG_UNSAFE = re.compile(r"[`$;&|<>(){}*?!\\\x00-\x1f\x7f]")
 
 
-def _py_argv(line, sigma, subs, step="readme gesture"):
+def _py_argv(line, sigma, subs, step="readme gesture", *, cwd):
     """A README/printed `python3 <script> ...` line -> argv, or Red(step) naming what was refused.
 
     PINNED SHAPE, because the text comes from a document and a program's output, not from code:
     the first token must be `python3` / `python` / `py` (what `verify_detect.python_command()`
     prints) and becomes THIS interpreter (so a 3.10 CI leg tests 3.10); the second must be a
-    `.py` script that EXISTS under the Sigma directory's `skills/` or `tools/` (relative, resolved
-    against it -- "Paths above are relative to the Sigma plugin directory" -- or absolute inside
-    it); every remaining argument, after each `<placeholder>` in `subs` is replaced, must be free
-    of shell syntax. Anything else is refused before anything runs. Nothing goes through a shell."""
+    `.py` script that EXISTS under the Sigma directory's `skills/` or `tools/`. The script path is
+    read the way a shell reads it from `cwd` -- the user's repository root, where the README says
+    to run every gesture (#277): `<installed-sigma>` becomes the Sigma directory, and any other
+    relative path resolves against `cwd`, so a README path relative to the plugin directory (which
+    a user could not copy from their repository) is refused as "not a script under ...". Every
+    remaining argument, after each `<placeholder>` in `subs` is replaced, must be free of shell
+    syntax. Anything else is refused before anything runs. Nothing goes through a shell."""
     try:
         toks = shlex.split(line)
     except ValueError as exc:
@@ -309,11 +348,12 @@ def _py_argv(line, sigma, subs, step="readme gesture"):
     if len(toks) < 2 or not re.fullmatch(r"python3?|py", toks[0]):
         raise Red(step, f"refused {line!r}: not `python3 <sigma script> ...`")
     sigma = pathlib.Path(sigma).resolve()
-    script = pathlib.Path(toks[1])
-    script = (script if script.is_absolute() else sigma / script).resolve()
+    script = pathlib.Path(toks[1].replace(INSTALLED_SIGMA, str(sigma)))
+    script = (script if script.is_absolute() else pathlib.Path(cwd).resolve() / script).resolve()
     inside = any(sigma / d in script.parents for d in ("skills", "tools"))
     if script.suffix != ".py" or not inside or not script.is_file():
-        raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or /tools")
+        raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or "
+                  f"/tools, read from the repository root {cwd}")
     out = [sys.executable, str(script)]
     for t in toks[2:]:
         for k, v in subs.items():
@@ -450,13 +490,45 @@ def _init_and_verify(run, qs, sigma, repo, env, mode, variant):
         return out.stdout, scaffolded
     n, ident = _candidate(out.stdout)
     argv = _py_argv(qs["verify_confirm"], sigma, {"<n>": n, "<id>": ident},
-                    step="verify confirm (README gesture)")
+                    step="verify confirm (README gesture)", cwd=repo)
     run.step("verify confirm (README gesture)", argv, repo, env)
     cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
     run.assertions.append(_check("verify confirmed: enforce ON with a command",
                                  bool(cfg["verify"].get("enforce")) and bool(cfg["verify"].get("command")),
                                  cfg["verify"]))
     return out.stdout, scaffolded
+
+
+#: What the README's own placeholders stand for when the control runs a gesture (#277). `<n>`/`<id>`
+#: belong to the confirm gesture, which `verify confirm (README gesture)` runs with init's printed
+#: candidate; the file holds the Makefile target that variant confirms.
+GESTURE_FILE = "verify-command.txt"
+GESTURE_SUBS = {"<file>": GESTURE_FILE, "<remote>": "origin"}
+
+
+def run_readme_gestures(run, qs, sigma, repo, env):
+    """Every README `python3` gesture from the two init subsections, run as the README says: from
+    the repository root, `<installed-sigma>` = the Sigma directory. -> [(gesture, rc)]. A gesture
+    whose script path is not copyable from the repository root is refused by `_py_argv` (red at
+    this step); one exiting outside GESTURE_OK_RC is red; a placeholder the control cannot fill is
+    red. Runs last in github mode (confirm variant): `decline` and `local-only` change config."""
+    (repo / GESTURE_FILE).write_text("make test\n", encoding="utf-8")
+    ran = []
+    for line in qs["gestures"]:
+        if line == qs["verify_confirm"]:
+            continue                                   # already run, with init's printed <n> <id>
+        filled = line
+        for k, v in GESTURE_SUBS.items():
+            filled = filled.replace(k, v)
+        left = [t for t in re.findall(r"<[\w -]+>", filled) if t != INSTALLED_SIGMA]
+        if left:
+            raise Red("README gesture", f"{line!r}: the control cannot fill {left}")
+        argv = _py_argv(filled, sigma, {}, step="README gesture", cwd=repo)
+        toks = shlex.split(filled)
+        ok = GESTURE_OK_RC.get((pathlib.Path(toks[1]).name, toks[2] if len(toks) > 2 else ""), (0,))
+        proc = run.step("README gesture: " + line, argv, repo, env, ok_rc=ok)
+        ran.append((line, proc.returncode))
+    return ran
 
 
 def _check(name, ok, detail=None):
@@ -525,6 +597,14 @@ def check_github(obs):
         _check("every gh call was one the fake models", obs.get("unhandled") == "",
                obs.get("unhandled")),
     ]
+
+
+def check_gestures(obs, qs):
+    """#277: every README gesture of the two init subsections ran from the repository root."""
+    want = [g for g in qs["gestures"] if g != qs["verify_confirm"]]
+    ran = [g for g, _rc in obs.get("readme_gestures") or []]
+    return _check("every README init gesture ran from the repository root", want and ran == want,
+                  {"want": want, "ran": ran})
 
 
 def check_github_no_command(obs):
@@ -624,7 +704,8 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         run.step("loop start", [sys.executable, loop / "loop.py", "start", ".sdlc", "--session-pid", pid],
                  repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
+            ["--session-pid", pid]
         for _ in range(5):
             goal = run.step("loop next", nxt, repo, env).stdout.strip()
             if not goal or goal == "DONE":
@@ -758,7 +839,8 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         py = sys.executable
         run.step("loop start", [py, loop / "loop.py", "start", ".sdlc", "--session-pid", pid], repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
+            ["--session-pid", pid]
         goal = run.step("loop next", nxt, repo, env).stdout.strip()
         if goal != "1":
             raise Red("loop next", f"expected issue 1, got {goal!r}")
@@ -811,12 +893,16 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         shown = subprocess.run(["git", "--git-dir", str(remote), "show", f"main:{WORK_FILE}"],
                                capture_output=True, text=True)
         obs["remote_file"] = shown.stdout if shown.returncode == 0 else None
+        if variant == "confirm":
+            obs["readme_gestures"] = run_readme_gestures(run, qs, sigma, repo, env)
     except Red as red:
         run.failed = red.step
         run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
     obs["unhandled"] = unhandled.read_text(encoding="utf-8") if unhandled.is_file() else ""
     if run.failed is None:
         run.assertions += (check_github_no_command if variant == "no-command" else check_github)(obs)
+        if variant == "confirm":
+            run.assertions.append(check_gestures(obs, qs))
     calls = _gh_calls(log_path)
     ev = obs.get("evidence") or {}
     obs["evidence"] = {k: ev.get(k) for k in ("command", "exit", "verify_state")} if ev else None

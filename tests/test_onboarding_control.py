@@ -126,6 +126,10 @@ def test_readme_quickstart_parses_into_the_gestures_the_control_runs():
     assert qs["session_install"] == ["/plugin marketplace add <SIGMA_REPO>", "/plugin install sigma@sigma"]
     assert {"--mode", "--verify", "--board", "--ledger", "--local-only"} <= set(qs["init_readme_flags"])
     assert set(qs["init_readme_flags"]) <= oc.init_flow_flags(ROOT)
+    # #277: the init subsections' gestures, every one copyable from the user's repository root
+    assert len(qs["gestures"]) == 6 and qs["verify_confirm"] in qs["gestures"], qs["gestures"]
+    assert all(g.startswith("python3 <installed-sigma>/skills/") for g in qs["gestures"]), qs["gestures"]
+    assert any("use-remote .sdlc <remote>" in g for g in qs["gestures"])       # the table's, too
 
 
 def test_local_goals_mode_reaches_done_from_the_readme(local_run):
@@ -153,6 +157,49 @@ def test_github_mode_is_done_only_after_the_pr_merged(github_run):
 def test_github_bootstrap_does_not_recreate_lifecycle_labels(github_run):
     """#304: blind hot-path creates make 34 calls; init alone needs the 14 bootstrap writes."""
     assert github_run["gh_calls"]["label create"] == 14
+
+
+def test_every_readme_init_gesture_ran_from_the_repository_root(github_run):
+    ran = github_run["observations"]["readme_gestures"]
+    assert [rc for _g, rc in ran] == [0] * 5, ran
+    assert any("preflight.py check" in g for g, _rc in ran)
+    steps = [s for s in github_run["steps"] if s["step"].startswith("README gesture: ")]
+    assert len(steps) == 5 and all(s["argv"][1].startswith(str(ROOT)) for s in steps), steps
+
+
+@pytest.mark.parametrize("old,new", [
+    # the pre-#277 README: a path relative to the PLUGIN directory, which a user in their own
+    # repository cannot copy -- the control used to resolve it against the plugin dir and pass
+    ("python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py use-remote",
+     "python3 skills/agrim-init/scripts/preflight.py use-remote"),
+    ("python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py decline",
+     "python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py refuse"),
+    ("python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc",
+     "python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc <token>"),
+])
+def test_control_an_uncopyable_or_drifted_init_gesture_goes_red(old, new, tmp_path):
+    """Through the documented gesture (github mode drives the fake gh by path, so as a subprocess)."""
+    assert README_TEXT.count(old) == 1, old
+    drifted = tmp_path / "README.md"
+    drifted.write_text(README_TEXT.replace(old, new), encoding="utf-8")
+    rc, lines, blob, proc = _cli("--mode", "github", "--variant", "confirm", "--readme", str(drifted),
+                                 workdir=tmp_path)
+    assert rc == 1 and lines["github"].startswith("RED at README gesture"), proc.stdout[-2000:]
+
+
+def test_control_a_plugin_relative_confirm_gesture_goes_red_at_that_gesture(tmp_path):
+    old = "python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py confirm"
+    run = oc.run_local(ROOT, README_TEXT.replace(old, old.replace("<installed-sigma>/", "")), tmp_path)
+    assert run["ok"] is False and run["failed_step"] == "verify confirm (README gesture)"
+    assert "read from the repository root" in run["steps"][-1]["detail"], run["steps"][-1]
+
+
+def test_the_gesture_assertion_is_seen_red_once(github_run):
+    qs = oc.parse_quickstart(README_TEXT)
+    obs = github_run["observations"]
+    assert oc.check_gestures(obs, qs)["ok"]
+    assert not oc.check_gestures(dict(obs, readme_gestures=obs["readme_gestures"][:-1]), qs)["ok"]
+    assert not oc.check_gestures(dict(obs, readme_gestures=[]), dict(qs, gestures=[]))["ok"]
 
 
 def test_no_command_variants_reach_done_with_enforce_off(cli_run):
@@ -327,14 +374,15 @@ def test_control_an_init_flag_init_flow_dropped_fails_the_parse(tmp_path):
 def test_control_a_readme_command_off_the_pinned_shape_is_refused(line, tmp_path):
     marker = tmp_path / "EXECUTED"
     with pytest.raises(oc.Red) as exc:
-        oc._py_argv(line.format(m=marker), ROOT, {}, step="verify confirm (README gesture)")
+        oc._py_argv(line.format(m=marker), ROOT, {}, step="verify confirm (README gesture)", cwd=ROOT)
     assert "refused" in exc.value.detail and exc.value.step == "verify confirm (README gesture)"
     assert not marker.exists()
 
 
 def test_control_a_shell_readme_gesture_is_refused_before_it_runs(tmp_path):
     marker = tmp_path / "EXECUTED"
-    drifted = README_TEXT.replace("python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>",
+    drifted = README_TEXT.replace("python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py "
+                                  "confirm .sdlc <n> <id>",
                                   f"sh -c 'touch {marker}' skills/agrim-init/scripts/verify_detect.py "
                                   "confirm .sdlc <n> <id>")
     assert drifted != README_TEXT

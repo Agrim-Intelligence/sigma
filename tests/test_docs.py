@@ -1551,7 +1551,8 @@ def test_the_dossier_contract_declares_itself_shipped_not_proposed():
     header = DOSSIER[:DOSSIER.index("## 1.")]
     assert "**Audience:**" in header
     assert "**Status:**" in header
-    assert "shipped in 1.4.5" in header
+    # (#277: the previous name's release number is gone; the claim is that it ships, in this plugin)
+    assert "**Status:** shipped." in header
     assert "PROPOSAL" not in header
     assert "**This is a contract, not a tour.**" in header
 
