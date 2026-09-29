@@ -4,9 +4,14 @@ in-memory GitHub shared with the loop's own `sources.GitHubSource`, so the accep
 the REAL pick-time status write against the board this script created. No network, no mutation of
 real GitHub."""
 import importlib.util
+import errno
+import io
 import json
+import os
 import pathlib
 import shlex
+import subprocess
+import sys
 
 import pytest
 
@@ -705,6 +710,104 @@ def test_a_resume_with_the_old_bare_marker_drops_it_and_the_board_stays_a_humans
     assert rc == 0, text
     assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
     assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
+
+
+def _documented_marker_recovery_commands():
+    doc = (ROOT / "docs" / "board-fields.md").read_text(encoding="utf-8")
+    return doc.split("<!-- setup-created-recovery -->", 1)[1].split("```sh", 1)[1].split("```", 1)[0]
+
+
+def _documented_marker_recovery():
+    first, rest = _documented_marker_recovery_commands().strip().split("\n", 1)
+    assert first.startswith("python3 - <<'PY'")
+    python, command = rest.split("\nPY\n", 1)
+    return python, shlex.split(command)
+
+
+def test_documented_marker_recovery_stops_before_board_setup_if_config_edit_fails(tmp_path):
+    """The pasted runbook must not adopt/mutate the old pinned board after its edit fails."""
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    python = tools / "python3"
+    python.write_text('#!/bin/sh\nif [ "$1" = "-" ]; then exit 97; fi\n'
+                      ': > "${0%/*}/board-setup-called"\n')
+    python.chmod(0o755)
+    result = subprocess.run(["/bin/sh", "-c", _documented_marker_recovery_commands()],
+                            cwd=tmp_path, env={"PATH": str(tools), "SIGMA_PLUGIN_ROOT": str(ROOT)},
+                            capture_output=True, text=True, timeout=10)
+    assert not (tools / "board-setup-called").exists()
+    assert result.returncode == 97, result.stderr
+
+
+def test_documented_marker_recovery_creates_a_separate_owned_board(tmp_path):
+    """#317: execute the runbook, including its config edit, against the real CLI parser.
+    Dropping the unpin command makes create reuse #4; dropping the unique title refuses the
+    duplicate. Neither outcome is the new owned board the documentation promises."""
+    gh = boardfake.GitHub(boards=[{"title": "widget — SDLC", "number": 4}])
+    old = gh.board(number=4)
+    gh.add_item(old, 11, Status="Todo")
+    before = json.loads(json.dumps(old))
+    sdlc = _sdlc(tmp_path, project={"number": 4, "owner": "acme", "setup_created": 4})
+    code, argv = _documented_marker_recovery()
+    subprocess.run([sys.executable, "-"], input=code, cwd=tmp_path, check=True,
+                   capture_output=True, text=True, timeout=10)
+    assert argv[0] == "python3"
+    script = pathlib.Path(argv[1].replace("$SIGMA_PLUGIN_ROOT", str(ROOT)))
+    assert script == SCRIPTS / "board_setup.py"
+    # Same arguments as the docs; only substitute the fixture's project root.
+    assert argv[2:4] == ["create", ".sdlc"]
+    lines = []
+    rc = bs.main([str(script), *argv[2:3], str(sdlc), *argv[4:]],
+                 runner=gh.gh, out=lines.append)
+    assert rc == 0, "\n".join(lines)
+
+    proj = _cfg(sdlc)["discovery"]["github"]["project"]
+    assert proj["number"] != 4
+    assert proj["setup_created"] == {"number": proj["number"], "owner": "acme"}
+    assert "Ready" in gh.option_names(gh.board(number=proj["number"]), "Status")
+    assert len(gh.boards) == 2
+    assert old == before, "the previous board and its cards must be untouched"
+
+
+@pytest.mark.parametrize("failure", ["write", "replace"])
+def test_documented_marker_recovery_preserves_config_when_write_fails(tmp_path, monkeypatch, failure):
+    """#317 independent review: failed writes or replaces leave the entire config recoverable."""
+    sdlc = _sdlc(tmp_path, project={"number": 4, "owner": "acme", "setup_created": 4})
+    config_path = sdlc / "config.json"
+    before = config_path.read_bytes()
+    code, _argv = _documented_marker_recovery()
+    real_open = io.open
+
+    class DiskFull:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def write(self, text):
+            self.stream.write(text[:1])
+            raise OSError(errno.ENOSPC, "injected disk full")
+
+    def failing_open(file, mode="r", *args, **kwargs):
+        stream = real_open(file, mode, *args, **kwargs)
+        return DiskFull(stream) if "w" in mode else stream
+
+    def failed_replace(*args):
+        raise OSError(errno.ENOSPC, "injected disk full")
+
+    monkeypatch.chdir(tmp_path)
+    if failure == "write":
+        monkeypatch.setattr(io, "open", failing_open)
+    else:
+        monkeypatch.setattr(os, "replace", failed_replace)
+    with pytest.raises(OSError, match="injected disk full"):
+        exec(code, {})
+    assert config_path.read_bytes() == before
+    assert list(sdlc.iterdir()) == [config_path]
 
 
 def test_the_reviewers_sequence_a_bare_marker_left_by_an_owner_change_is_not_ours(tmp_path):
