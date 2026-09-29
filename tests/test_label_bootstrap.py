@@ -109,6 +109,10 @@ if argv[:2] == ["label", "create"]:
     save(s); sys.exit(0)
 if argv and argv[0] == "api":
     endpoint = argv[1].replace("{owner}/{repo}", repo)
+    if endpoint == "users/" + repo.split("/")[0] and flag(argv, "--jq") == ".type":
+        # #229: the preflight's read-only owner lookup (a fresh `git init` now gets its remote
+        # checked, so its owner is known); an organization, as the fake token carries read:org.
+        print("Organization"); sys.exit(0)
     if endpoint == "graphql":
         unhandled(argv, "graphql is not allowed for label bootstrap")
     method = (flag(argv, "--method") or "GET").upper()
@@ -129,6 +133,11 @@ if argv and argv[0] == "api":
     else:
         unhandled(argv, "unmodeled endpoint")
     print(json.dumps(items[(page - 1) * per_page: page * per_page])); sys.exit(0)
+if argv[:2] == ["auth", "status"]:
+    # #229: /agrim-init's preflight reads `gh auth status`; a logged-in classic token.
+    print("github.com\n  Logged in to github.com account fake (keyring)\n  - Active account: true\n"
+          "  - Token: gho_****\n  - Token scopes: 'read:org', 'repo', 'workflow'")
+    sys.exit(0)
 unhandled(argv, "unmodeled verb")
 '''
 
@@ -152,8 +161,9 @@ def _world(tmp_path, cfg=None, labels=None, issues=None, refuse=False, git_remot
            "HOME": str(tmp_path), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
            "PYTHONDONTWRITEBYTECODE": "1", "FAKE_GH_STATE": str(state), "FAKE_GH_LOG": str(log),
            "FAKE_GH_UNHANDLED": str(unh)}
+    # #229: /agrim-init refuses a directory that is not a git repository, so every world is one.
+    subprocess.run(["git", "init", "-q", str(repo_dir)], env=env, check=True)
     if git_remote:
-        subprocess.run(["git", "init", "-q", str(repo_dir)], env=env, check=True)
         subprocess.run(["git", "-C", str(repo_dir), "remote", "add", "origin", git_remote], env=env,
                        check=True)
     return {"repo_dir": repo_dir, "sdlc": sdlc, "env": env, "state": state, "log": log, "unhandled": unh}
@@ -299,7 +309,8 @@ def test_init_github_without_a_github_remote_says_so_and_writes_nothing(tmp_path
     p = _run(w, [SDLC_INIT, w["repo_dir"], "--github"])
     assert p.returncode == 0, p.stdout + p.stderr
     assert "labels not created" in p.stdout + p.stderr
-    assert _calls(w) == []
+    # #229: the only gh call is the preflight's read-only `gh auth status`; nothing is written.
+    assert [c for c in _calls(w) if c[:2] != ["auth", "status"]] == []
 
 
 # ---------------------------------------------------------------------------- in-process

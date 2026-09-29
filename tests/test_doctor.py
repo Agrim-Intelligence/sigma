@@ -1,7 +1,7 @@
 """agrim-doctor: a setup check-up. doctor.check() audits only what THIS project's config makes relevant
 (github board -> gh auth+scope; KG -> builder; vision-first -> north-star) and returns each check with
 the exact one-line fix. The command runner is injectable so these are hermetic (no real gh/graphify)."""
-import base64, json, os, pathlib, importlib.util, stat, sys, tempfile, time
+import base64, json, os, pathlib, importlib.util, shutil, stat, subprocess, sys, tempfile, time
 
 import pytest
 
@@ -103,7 +103,9 @@ def test_gh_auth_check_default_failure_keeps_the_pre_existing_fix():
         base = _sdlc(t, {"discovery": {"source": "github"}})
         c = _by_name(d.check(base, run=_runner()))              # default gh_auth=""
         assert c["gh auth"]["ok"] is False
-        assert c["gh auth"]["fix"] == "run: gh auth login"
+        # #229: the login now names the host and the scopes the loop needs, then what Sigma does
+        # meanwhile; still `gh auth login` because gh IS installed here (the fake `which`).
+        assert c["gh auth"]["fix"].startswith("run: gh auth login -h github.com -s repo")
 
 
 def test_gh_auth_check_diagnoses_a_claude_code_remote_session_proxy_block():
@@ -124,8 +126,8 @@ def test_gh_auth_check_diagnoses_a_claude_code_remote_session_proxy_block():
         base = _sdlc(t, {"discovery": {"source": "github"}})
         c = _by_name(d.check(base, run=run))
         assert c["gh auth"]["ok"] is False
-        assert c["gh auth"]["fix"] == gh_session.REMEDIATION
-        assert c["gh auth"]["fix"] != "run: gh auth login"
+        assert c["gh auth"]["fix"].startswith(gh_session.REMEDIATION)
+        assert "gh auth login" not in c["gh auth"]["fix"].replace("`gh auth login` will not", "")
         assert "claude github app" in c["gh auth"]["fix"].lower()
 
 
@@ -6578,3 +6580,207 @@ def test_an_empty_goal_verify_command_does_not_satisfy_the_verify_trap_row():
                 f"---\nstatus: pending\n{empty}\n---\nx\n")
             row = _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]
             assert row["ok"] is False, empty
+
+
+# --- #229: the init preflight's checks, as doctor rows; the fix depends on the FAILING check ---
+
+
+def _pf_fake(remotes="origin\n", auth="Logged in. Token: gho_x\nToken scopes: 'repo', 'read:org'"):
+    def run(args):
+        table = {
+            ("git", "rev-parse", "--is-inside-work-tree"): "true",
+            ("git", "rev-parse", "--verify"): "abc",
+            ("git", "rev-parse", "--abbrev-ref"): "main",
+            ("git", "remote", "get-url"): "git@github.com:alice/app.git",
+            ("git", "remote"): remotes,
+            ("git", "ls-remote"): "abc\trefs/heads/main",
+            ("gh", "auth", "status"): auth,
+            ("gh", "api"): "User",
+        }
+        for prefix, answer in table.items():
+            if tuple(args[:len(prefix)]) == prefix:
+                return answer
+        return ""
+    return run
+
+
+def test_control_gh_absent_doctor_never_says_gh_auth_login(tmp_path):
+    """THE CONTROL the issue names: with `gh` absent, the old text said `gh auth login` (there is no
+    gh to log in with). Now the gh row says install it, and no row anywhere says `gh auth login`."""
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True},
+                            "discovery": {"source": "github", "github": {"project": {"enabled": True}}}})
+    checks = d.check(base, run=_pf_fake(), which=lambda n: None if n == "gh" else n)
+    c = _by_name(checks)
+    assert c["gh installed"]["ok"] is False
+    assert "cli.github.com" in c["gh installed"]["fix"]
+    assert not any(n.startswith("gh auth") for n in c), c     # skipped: its prerequisite failed
+    assert c["gh project scope"]["ok"] is False
+    assert not [x["name"] for x in checks if "gh auth login" in x["fix"]], checks
+
+
+def test_preflight_rows_all_green_but_missing_workflow(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    c = _by_name(d.check(base, run=_pf_fake()))
+    assert c["git repository"]["ok"] and c["git remote 'origin'"]["ok"] and c["gh auth"]["ok"]
+    assert c["base branch 'main' on 'origin'"]["ok"] is True
+    assert c["gh token scopes"]["ok"] is False
+    assert c["gh token scopes"]["fix"].startswith("run: gh auth refresh -s workflow -h github.com")
+
+
+def test_preflight_rows_no_remote_names_the_fallback(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    c = _by_name(d.check(base, run=_pf_fake(remotes="")))
+    assert c["git remote 'origin'"]["ok"] is False
+    assert "git remote add origin" in c["git remote 'origin'"]["fix"]
+    assert not any(n.startswith("base branch") for n in c)     # skipped behind the remote
+
+
+def test_preflight_rows_absent_when_neither_work_nor_github(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": False}})
+    names = _by_name(d.check(base, run=_pf_fake()))
+    assert not any(n.startswith(("git ", "gh ")) for n in names), names
+
+
+def test_cheap_only_runs_no_network_preflight_call_without_github(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    calls = []
+    fake = _pf_fake()
+
+    def run(args):
+        calls.append(args)
+        return fake(args)
+    d.check(base, run=run, cheap_only=True)
+    assert not any(a[:2] in (["git", "ls-remote"], ["gh", "auth"], ["gh", "api"]) for a in calls), calls
+
+
+def test_cheap_only_never_runs_ls_remote_or_owner_lookup_even_under_github(tmp_path):
+    """Review block #1 (BLOCKING 2): the SessionStart wizard runs doctor with cheap_only=True in every
+    repo. github discovery opting into `gh auth status` is NOT consent to `git ls-remote` (ssh, can
+    stall for the whole call bound) or `gh api users/<owner>`: those are /agrim-doctor's."""
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}, "discovery": {"source": "github"}})
+    calls = []
+    fake = _pf_fake()
+
+    def run(args):
+        calls.append(args)
+        return fake(args)
+    names = _by_name(d.check(base, run=run, cheap_only=True))
+    assert not any(a[:2] == ["git", "ls-remote"]
+                   or (a[:2] == ["gh", "api"] and any(str(x).startswith("users/") for x in a))
+                   for a in calls), calls
+    assert not any(n.startswith("base branch") for n in names)   # not checked here -> no row, no pass
+
+
+def _hanging_ls_remote_repo(tmp_path, monkeypatch, cfg):
+    """A real repo with an unreachable `origin`, and a `git` on PATH that delegates to the real git
+    except `ls-remote`, which hangs (sleeps 60s) -- the dead-ssh-host shape the review measured."""
+    real_git = shutil.which("git")
+    repo = tmp_path / "repo"
+    subprocess.run([real_git, "-c", "init.defaultBranch=main", "init", "-q", str(repo)], check=True)
+    subprocess.run([real_git, "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a",
+                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    subprocess.run([real_git, "-C", str(repo), "remote", "add", "origin",
+                    "ssh://git@unreachable.invalid/a/b.git"], check=True)
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    git = stub / "git"
+    git.write_text(f"#!{sys.executable}\nimport os, sys, time\n"
+                   "if sys.argv[1:2] == ['ls-remote']:\n    time.sleep(60)\n"
+                   f"os.execv({real_git!r}, [{real_git!r}] + sys.argv[1:])\n", encoding="utf-8")
+    git.chmod(0o755)
+    monkeypatch.setenv("PATH", str(stub))                 # no gh on PATH: gh rows stop at "installed"
+    return _sdlc(repo, cfg)
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("git"), reason="POSIX stub on PATH")
+def test_wizard_status_is_fast_with_a_hanging_ls_remote(tmp_path, monkeypatch):
+    base = _hanging_ls_remote_repo(tmp_path, monkeypatch,
+                                   {"work": {"enabled": True}, "discovery": {"source": "github"}})
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_229", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+    wiz = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wiz)
+    start = time.monotonic()
+    wiz.wizard_status(base, dismissed=set(), allow_cache=False)
+    assert time.monotonic() - start < 2
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("git"), reason="POSIX stub on PATH")
+def test_full_doctor_degrades_a_hanging_ls_remote_to_cannot_verify_within_the_bound(tmp_path,
+                                                                                    monkeypatch):
+    base = _hanging_ls_remote_repo(tmp_path, monkeypatch, {"work": {"enabled": True}})
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    d = _doc()
+    pf = d._load_init_script("preflight")
+    assert pf.network_timeout({}) == 15                   # the default bound is small, not 120s
+    start = time.monotonic()
+    rows = d._preflight_rows(pathlib.Path(base), json.loads(
+        (pathlib.Path(base) / "config.json").read_text()), None, shutil.which, False, False)
+    assert time.monotonic() - start < 10
+    c = _by_name(rows)
+    row = c["base branch 'main' on 'origin' (cannot verify)"]
+    assert row["ok"] is False and "timed out" in row["fix"]
+
+
+def _alias_run(ssh_answer):
+    """Review block #2: origin is `git@github-work:alice/app.git` (an ~/.ssh/config alias). gh is
+    logged in to github.com and -- exactly like real gh 2.98 -- to nothing named github-work."""
+    base_fake = _pf_fake()
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        if args[:2] == ["ssh", "-G"]:
+            return ssh_answer
+        if args[:3] == ["git", "remote", "get-url"]:
+            return "git@github-work:alice/app.git"
+        if args[:3] == ["gh", "auth", "status"]:
+            host = args[args.index("--hostname") + 1] if "--hostname" in args else "github.com"
+            return ("Logged in to github.com\n- Token: gho_x\n- Token scopes: 'repo', 'workflow', "
+                    "'read:org', 'project'") if host == "github.com" else ""
+        return base_fake(args)
+    return run, calls
+
+
+def _wizard():
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_229b", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+    wiz = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wiz)
+    return wiz
+
+
+_ALIAS_CFG = {"work": {"enabled": True},
+              "discovery": {"source": "github", "github": {"project": {"enabled": True}}}}
+
+
+def test_wizard_never_demands_a_login_to_an_unresolvable_ssh_alias(tmp_path):
+    """BLOCKING 1 of review block #2: the SessionStart wizard must not turn an ssh alias into a
+    `gh auth login -h github-work` step (gh cannot log in to an alias). Unresolvable -> CANNOT
+    VERIFY rows only, and a CANNOT VERIFY is never a wizard step."""
+    base = _sdlc(tmp_path, _ALIAS_CFG)
+    run, calls = _alias_run("")                     # ssh -G failed / unavailable
+    status = _wizard().wizard_status(base, run=run, dismissed=set(), allow_cache=False)
+    assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status
+    assert "github-work" not in json.dumps(status)
+    assert not any("github-work" in x for a in calls if a[0] == "gh" for x in a), calls
+    c = _by_name(_doc().check(base, run=_alias_run("")[0]))
+    assert "gh auth (cannot verify)" in c and "gh project scope (cannot verify)" in c, list(c)
+    assert not any("gh auth login" in r["fix"] for r in c.values())
+
+
+def test_doctor_resolves_an_ssh_alias_to_its_real_host(tmp_path):
+    base = _sdlc(tmp_path, _ALIAS_CFG)
+    run, calls = _alias_run("user git\nhostname github.com\n")
+    c = _by_name(_doc().check(base, run=run))
+    assert c["gh auth"]["ok"] is True and c["gh project scope"]["ok"] is True
+    assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
+    status = _wizard().wizard_status(base, run=_alias_run("hostname github.com")[0], dismissed=set(),
+                                     allow_cache=False)
+    assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status

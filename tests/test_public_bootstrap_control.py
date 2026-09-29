@@ -630,6 +630,11 @@ def main():
         cmd_project(state, argv, pos, flags)
     elif verb == "api":
         cmd_api(state, [verb, *argv[1:]], pos, flags, multi)
+    elif verb == "auth" and pos[:1] == ["status"]:
+        # #229: /agrim-init's preflight reads `gh auth status`; a logged-in classic token.
+        print("github.com\n  Logged in to github.com account fake (keyring)\n"
+              "  - Active account: true\n  - Token: gho_****\n"
+              "  - Token scopes: 'read:org', 'repo', 'workflow'")
     else:
         unhandled(argv, "unmodeled verb")
 

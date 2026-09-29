@@ -46,6 +46,11 @@ def cx():
     return _load(LOOP / "coexist.py", "coexist")
 
 
+def _git_init(repo):
+    """#229: init refuses a directory that is not a git work tree, so the fixtures are one."""
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True)
+
+
 def _repo(tmp_path):
     repo = tmp_path / "repo"
     (repo / ".sdlc" / "state").mkdir(parents=True)
@@ -556,15 +561,17 @@ def _run(argv, env, cwd=None):
 def test_init_refuses_before_writing_anything(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
+    _git_init(repo)
     p = _run([INIT, repo], _env(**_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 2, p.stdout + p.stderr
     assert "agrim-init refused" in p.stderr and "claude plugin disable" in p.stderr
-    assert _tree(repo) == {}
+    assert not (repo / ".sdlc").exists() and not (repo / ".gitignore").exists()
 
 
 def test_init_proceeds_and_records_the_owner_when_clear(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
+    _git_init(repo)
     p = _run([INIT, repo], _env(**_host(tmp_path)))
     assert p.returncode == 0, p.stderr
     assert json.loads((repo / ".sdlc" / "state" / "owner.json").read_text())["plugin"] == "sigma"
@@ -573,6 +580,7 @@ def test_init_proceeds_and_records_the_owner_when_clear(tmp_path):
 def test_init_override_proceeds(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
+    _git_init(repo)
     p = _run([INIT, repo], _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 0 and "warning" in p.stderr
 
@@ -580,6 +588,7 @@ def test_init_override_proceeds(tmp_path):
 def _scaffolded(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
+    _git_init(repo)
     assert _run([INIT, repo], _env(**_host(tmp_path / "clear"))).returncode == 0
     return repo
 

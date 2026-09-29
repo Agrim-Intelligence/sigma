@@ -106,6 +106,37 @@ def _no_live_gh(request, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", _guarded_run)
 
+    # #229: preflight.py's runner uses `Popen` directly (it must kill a whole process group on a
+    # timeout, which `subprocess.run` cannot), so the one-seam claim above no longer holds on its
+    # own. Guard `Popen` for `gh` too -- a subclass, so `subprocess.run`'s own internal `Popen` and
+    # every isinstance check keep working.
+    real_popen = subprocess.Popen
+
+    class _GuardedPopen(real_popen):
+        def __init__(self, args, *a, **kw):
+            if _is_gh_argv(args):
+                raise RuntimeError(
+                    "un-injected live `gh` call from %s: subprocess.Popen(%r, ...) would reach "
+                    "the real GitHub CLI (#1495, #229). Inject a fake runner, or mark the test "
+                    "@pytest.mark.live_gh." % (nodeid, args))
+            super().__init__(args, *a, **kw)
+
+    monkeypatch.setattr(subprocess, "Popen", _GuardedPopen)
+
+
+@pytest.fixture(autouse=True)
+def _offline_gh_for_child_processes(request, monkeypatch, tmp_path_factory):
+    """#229: the guard above sees only THIS process. A test that runs a script as a child process
+    (`/agrim-init`'s CLI now runs `gh auth status` in its preflight) would reach the developer's real,
+    logged-in `gh` -- network, and an outcome that depends on whose machine it is. Every child
+    therefore gets an empty gh config and no token: `gh auth status` answers "not logged in" locally
+    (measured: 0.02s, no network), exactly like an unconfigured CI runner. `live_gh` tests opt out."""
+    if request.node.get_closest_marker("live_gh") is not None:
+        return
+    monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("gh-config")))
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+
 
 #: #239: the plugin's previous env prefix, from fragments (a guarded private name in this tree).
 _RETIRED_ENV_PREFIX = ("LOOP" "SMITH") + "_"

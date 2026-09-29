@@ -80,6 +80,12 @@ _MODES = {
         "Without GitHub login, the loop cannot read your real issue backlog, create PRs, or "
         "update anything on GitHub. It can still run entirely on local goal files, which is a "
         "genuinely different, usually much smaller set of work -- not a full substitute."),
+    # #229: with gh absent, doctor no longer emits a "gh auth" row (its prerequisite failed) --
+    # this row is that same first-run gap, named correctly: install gh, not `gh auth login`.
+    "gh installed": ("human_command",
+        "Without the GitHub CLI, the loop cannot read your real issue backlog, create PRs, or "
+        "update anything on GitHub. It can still run entirely on local goal files -- install gh, "
+        "then log in, to get the rest."),
     "gh project scope": ("human_command",
         "Without this specific permission, the loop can still create and manage issues -- it "
         "just cannot move cards on your visual board. Issue tracking keeps working; only the "

@@ -38,6 +38,49 @@ All notable changes to Sigma are recorded here, newest first.
   wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
   `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
   was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
+- `/agrim-init` now checks what the loop needs from git and `gh` before the first goal does
+  (#229). The new `skills/agrim-init/scripts/preflight.py` (stdlib only) checks: a git repository,
+  the `work.remote` remote (default `origin`, or which remotes exist), the base branch pushed
+  there, `gh` installed, `gh auth status`, and the token's scopes: `repo`, `workflow`, `read:org`
+  when the owner is an organization, `project` when a board is on. It parses both `gh` scope
+  formats. A fine-grained or app token reports no scopes, so that case prints `CANNOT VERIFY`,
+  never a pass. A directory that is not a git repository is refused before anything is written.
+  Every other failure prints one line for each host (Claude Code, Codex, Cursor) with the exact
+  command, plus what Sigma does meanwhile. When `work.enabled` is on but there is no remote (or no
+  `gh`), init prints a decision: fix the cause, or turn `work.enabled` off. Two gestures act on
+  it: `preflight.py local-only <sdlc>` and `use-remote <sdlc> <name>`. Nothing is switched off
+  silently. `work.py start` now raises the same message in place of git's raw `fatal: 'origin'
+  does not appear to be a git repository`. It asks only after the fetch has failed, so the
+  measured call count on the success path is unchanged. `/agrim-doctor` runs the same checks as
+  rows. Each fix comes from the check that failed, so with `gh` absent the fix is to install
+  `gh`, where it used to say `gh auth login`. Every local git call is time-limited by
+  `SIGMA_WATCH_CALL_TIMEOUT` (default 120s); the three network calls (`git ls-remote`,
+  `gh auth status`, `gh api users/<owner>`) by the smaller of that and 15s, so a dead host reads
+  `CANNOT VERIFY (timed out)` quickly. A call that runs over has its whole process tree killed
+  (the Windows `taskkill` and the drain after it are bounded too). The SessionStart wizard
+  (`cheap_only`) never runs `git ls-remote` or the owner lookup: with an unreachable ssh remote it
+  used to stall about 75s in review; the test with a hanging `ls-remote` stub now measures 0.41s.
+  Those two rows say "not checked here; run /agrim-doctor" and are never shown as a pass. A fresh
+  `git init` with no commit still gets its remote checked and the DECISION printed. `gh auth
+  status` reads the active account only (`--active`, with a fallback for older gh), so a stale
+  second account no longer fails a valid one. A GitLab or Bitbucket remote gets "gh only supports
+  GitHub hosts" and the local-only option, not `gh auth login -h gitlab.com`; a remote URL
+  that cannot be parsed is not assumed to be github.com. Credentials in a remote URL
+  (`user:token@`) are removed from any text shown. The SSO link names the real host (GitHub
+  Enterprise too). `brew install` is suggested only when `brew` is on PATH. The wording now says
+  that only opening a PR needs `gh`, and pushing works without it. Nothing prompts. The test suite now also guards `subprocess.Popen` against live `gh`
+  calls, and child processes get an empty gh config. An ssh remote whose host is an
+  `~/.ssh/config` alias (`git@github-work:o/r.git` with `Host github-work` -> `HostName
+  github.com`, the common multi-account setup) is resolved through `ssh -G <host>` (local, no
+  connection, at most 5s) and gh is asked about the real host; `ssh.github.com` (ssh over 443)
+  reads as github.com. An alias nothing can resolve is `CANNOT VERIFY`, never a FAIL and never
+  `gh auth login -h <alias>` (gh cannot log in to an alias), and a `(cannot verify)` row is never a
+  SessionStart wizard step. A `ghu_` (GitHub App user) token is `CANNOT VERIFY` like other
+  non-classic tokens, not "no scopes". A remote URL with more than two path segments (Bitbucket
+  Server `/scm/o/r.git`, a GitLab subgroup, Azure DevOps) is treated as not GitHub and gets the
+  DECISION. With `gh` absent and no `brew`/`winget`, the DECISION points at
+  https://cli.github.com instead of "the commands above".
+
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a

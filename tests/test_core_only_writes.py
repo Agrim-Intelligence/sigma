@@ -108,7 +108,9 @@ def _run(argv, cwd=None, stdin=""):
 
 
 def _scaffold(tmp_path):
-    """A real `/agrim-init`, plus the one constructed precondition the gate leg needs."""
+    """A real `/agrim-init`, plus the one constructed precondition the gate leg needs. (#229: init
+    refuses a non-git directory, so the fixture is a fresh `git init` -- the normal first run.)"""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _run([INIT, tmp_path])
     sdlc = tmp_path / ".sdlc"
     assert (sdlc / "config.json").exists(), "sdlc_init.py wrote no config"
