@@ -14,6 +14,7 @@ Surface tests run each surface on the gesture its docs give (`sdlc_init.py <repo
 `loop.py start <sdlc>`, `watch_daemon.py <sdlc>`, `migrate.py <sdlc> --apply`, `status.py <sdlc>`,
 `bash hooks/session_start.sh`).
 """
+import contextlib
 import importlib.util
 import io
 import json
@@ -931,13 +932,14 @@ def _predecessor_tree(tmp_path, kind):
     `real`: that plugin's own scripts at `PREDECESSOR_REV`, extracted with `git archive` from the
     clone at `SIGMA_TEST_PREDECESSOR_GIT` (skipped when unset)."""
     root = tmp_path / ("predecessor-" + kind) / "skills"
-    if kind == "real":
+    if kind.startswith("real"):
         if not PREDECESSOR_GIT:
             pytest.skip("SIGMA_TEST_PREDECESSOR_GIT is not set (a local clone of the previous "
                         "plugin); the stand-in covers the same sequences")
         root.mkdir(parents=True)
+        rev = kind.partition("@")[2] or PREDECESSOR_REV        # `real@<rev>` pins one release
         dirs = ["skills/%s/scripts" % (OLD_SKILL % d) for d in ("loop", "define")]
-        tar = subprocess.run(["git", "-C", PREDECESSOR_GIT, "archive", PREDECESSOR_REV, *dirs],
+        tar = subprocess.run(["git", "-C", PREDECESSOR_GIT, "archive", rev, *dirs],
                              capture_output=True, check=True).stdout
         subprocess.run(["tar", "-x", "-C", str(root.parent)], input=tar, check=True)
         return root, OLD_SKILL % "loop", OLD_SKILL % "define"
@@ -965,7 +967,7 @@ class _Predecessor:
 
     def __init__(self, tmp_path, kind="stand-in"):
         root, loop, define = _predecessor_tree(tmp_path, kind)
-        tag = "predecessor_%s_" % kind.replace("-", "_")
+        tag = "predecessor_%s_" % "".join(c if c.isalnum() else "_" for c in kind)
         self.fs = _load(root / loop / "scripts" / "feature_sync.py", tag + "feature_sync")
         self.fo = _load(root / loop / "scripts" / "feature_owner.py", tag + "feature_owner")
         self.define = _load(root / define / "scripts" / "define.py", tag + "define")
@@ -1395,8 +1397,10 @@ def test_a_symlinked_unit_keeps_the_index_legacy_and_says_so(tmp_path):
 def test_repair_says_what_it_discards_and_refuses_a_record_newer_than_the_index(tmp_path):
     """`repair` rewrites a delta as the index entry plus what the record ADDS -- so a non-empty
     record value that differs from the index is discarded. It says so, value by value, and when the
-    record is newer than the index (it may be the complete record, not a delta) it refuses that
-    unit, rewrites nothing, and names both ways forward instead of claiming nothing is lost."""
+    record is newer than the index (an edit the old plugin made after the conversion, which Sigma
+    does not apply) it refuses that unit, rewrites nothing, and names both ways forward instead of
+    claiming nothing is lost. #327 review: it never sends the user to `migrate.py --apply`, which
+    cannot convert such a record (it refuses to)."""
     repo = _converted(tmp_path)
     sdlc = repo / ".sdlc"
     units = sdlc / "features" / "units"
@@ -1413,14 +1417,379 @@ def test_repair_says_what_it_discards_and_refuses_a_record_newer_than_the_index(
     assert p.returncode == 2, p.stdout + p.stderr
     assert record.read_bytes() == before
     assert "refused alpha" in p.stderr and "owner 'carol'" in p.stderr, p.stderr
-    assert "migrate.py" in p.stderr and "index.json" in p.stderr
+    assert not _sends_to_migrate(p.stderr) and "index.json" in p.stderr
     show = _run([LOOP / "feature_sync.py", "show", sdlc], env)
     assert "nothing is lost" not in show.stderr and "DISCARDS" in show.stderr
-    os.utime(record, (now - 120, now - 120))                   # older: a post-conversion delta
+    assert not _sends_to_migrate(show.stderr), show.stderr
+    os.utime(record, (now - 120, now - 120))    # older than the index: e.g. a fold ran since
     p = _run([LOOP / "feature_sync.py", "repair", sdlc], env)
     assert p.returncode == 0 and "repaired alpha" in p.stdout, p.stdout + p.stderr
     assert "discarded alpha: owner 'carol'" in p.stdout, p.stdout
     assert json.loads(record.read_text())["features"]["alpha"]["owner"] == "alice"
+
+
+def _sends_to_migrate(text):
+    """#327: a message telling the user to (re)run migrate over a delta -- which cannot help."""
+    import re
+    return re.search(r"rerun (it first|`?migrate)", text, re.IGNORECASE) is not None
+
+
+def test_repair_treats_an_equal_file_time_as_newer(tmp_path):
+    """`_newer_than_index` is `>=`: a record and an index with the SAME mtime (a coarse filesystem
+    clock, or both written by one `git checkout`) cannot be ordered, so the record is treated as
+    the newer one and repair refuses rather than discards."""
+    repo = _converted(tmp_path)
+    sdlc = repo / ".sdlc"
+    (sdlc / "features" / "units").mkdir()
+    record = sdlc / "features" / "units" / "alpha.json"
+    record.write_text(json.dumps({"schema": OLD + "/features@1", "features": {"alpha": NEWER}}))
+    same = time.time() - 30
+    for path in (record, sdlc / "features" / "index.json"):
+        os.utime(path, (same, same))
+    p = _run([LOOP / "feature_sync.py", "repair", sdlc], _env(**_host(tmp_path / "clear")))
+    assert p.returncode == 2 and "refused alpha" in p.stderr, p.stdout + p.stderr
+
+
+# ------------------------------------------------------------ #327 review block #1: a second migrate
+#
+# After the conversion, the previous plugin's `pick alpha 5` (or `set-priority`) writes a near-empty
+# record in ITS schema; Sigma serves it as a delta onto the index entry. A second
+# `migrate.py --apply` -- which Sigma's own messages told users to run -- then rewrote that record's
+# schema id with nothing else: a Sigma-schema record, which REPLACES the entry (shard-wins), so
+# Sigma served `{title: '', owner: None, priority: None, repos: {o/r: {goals: [5]}}}`, exit 0.
+
+REAL_KINDS = ["stand-in", "real@6f41743a", "real@9d2f40fd"]
+
+
+def _home_env(tmp_path):
+    """A clear host AND a fake HOME: `migrate.py` also looks for the previous install under
+    `~/.claude/plugins` -- never the developer's own."""
+    (tmp_path / "fake-home").mkdir(exist_ok=True)
+    return _env(HOME=str(tmp_path / "fake-home"), **_host(tmp_path / "clear"))
+
+
+def _kept(entry, goals):
+    """Everything the standard fixture's `alpha` had, plus `goals` (any order)."""
+    assert _alpha(entry)[:6] == KEPT, entry
+    assert sorted(entry["repos"]["o/r"]["goals"]) == sorted(goals), entry
+
+
+@pytest.mark.parametrize("edit", ["pick", "set-priority"])
+@pytest.mark.parametrize("kind", REAL_KINDS)
+def test_a_second_migrate_never_bare_converts_a_post_conversion_delta(tmp_path, kind, edit):
+    pred = _Predecessor(tmp_path, kind)
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    env = _home_env(tmp_path)
+    first = _run([MIGRATE, sdlc, "--apply"], env)
+    assert first.returncode == 0, first.stdout + first.stderr
+    if edit == "pick":
+        assert pred.pick(repo, 5)["recorded"] is True
+        goals = [201, 202, 5]
+    else:
+        assert pred.set_priority(repo, "P0")["ok"] is True
+        goals = [201, 202]
+    record = sdlc / "features" / "units" / "alpha.json"
+    assert json.loads(record.read_text())["schema"] == OLD + "/features@1"
+    _kept(_served(repo), goals)
+    before = record.read_bytes()
+    for argv in ([MIGRATE, sdlc], [MIGRATE, sdlc, "--apply"]):
+        again = _run(argv, env)
+        assert again.returncode == 2, again.stdout + again.stderr
+        assert record.read_bytes() == before
+        [line] = [ln for ln in again.stdout.splitlines()
+                  if ln.startswith("  refused .sdlc/features/units/alpha.json")]
+        assert "feature_sync.py repair" in line and "delta" in line.lower(), line
+        _kept(_served(repo), goals)
+    fixed = _run([LOOP / "feature_sync.py", "repair", sdlc], env)
+    if edit == "pick":                          # nothing to discard: repair converts it
+        assert fixed.returncode == 0 and "repaired alpha" in fixed.stdout, fixed.stdout + fixed.stderr
+        assert json.loads(record.read_text())["schema"] == "sigma/features@1"
+        last = _run([MIGRATE, sdlc, "--apply"], env)
+        assert last.returncode == 0 and "nothing to migrate" in last.stdout, last.stdout
+    else:                                       # P0 was never applied; repair will not discard it
+        assert fixed.returncode == 2 and "priority 'P0'" in fixed.stderr, fixed.stdout + fixed.stderr
+        assert not _sends_to_migrate(fixed.stderr) and record.read_bytes() == before
+    _kept(_served(repo), goals)
+
+
+def test_a_record_that_became_a_delta_after_the_plan_is_refused_at_write_time(tmp_path):
+    """The plan saw an index in the previous schema (the record converts), then the index turned
+    Sigma's with an OLDER entry before `apply` (a `git pull` of a teammate's converted index): the
+    unchanged record is now a delta, and a bare rewrite would serve it alone. `apply` re-checks under
+    the unit's lock and refuses it with the same reason."""
+    repo = _adopted_with_newer_record(tmp_path)
+    sdlc = repo / ".sdlc"
+    record = sdlc / "features" / "units" / "alpha.json"
+    before = record.read_bytes()
+    migrate = _load(MIGRATE, "migrate_became_delta")
+    planned = migrate.plan(sdlc)
+    assert {c.path.name for c in planned.changes} == {"index.json", "alpha.json"}
+    (sdlc / "features" / "index.json").write_text(json.dumps(
+        {"schema": "sigma/features@1", "features": {"alpha": ALPHA}}) + "\n", encoding="utf-8")
+    outcome = {c.path.name: why for c, why in migrate.apply(planned)}
+    assert outcome["alpha.json"] and "feature_sync.py repair" in outcome["alpha.json"], outcome
+    assert record.read_bytes() == before
+    assert outcome["index.json"], outcome                      # changed after it was read
+    got = _served(repo)
+    assert got["owner"] == "alice" and 203 in got["repos"]["o/r"]["goals"], got   # still merged
+
+
+def test_a_legacy_record_the_merge_would_not_change_still_converts(tmp_path):
+    """The refusal is exactly "a bare rewrite would serve something else": a legacy record beside a
+    Sigma index whose delta merge IS the record (a fold already baked it in) converts as before."""
+    pred = _Predecessor(tmp_path)
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    env = _home_env(tmp_path)
+    assert pred.set_priority(repo, "P0")["ok"] is True       # its own whole record, P0
+    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], env)  # Sigma's index now says the same
+    assert fold.returncode == 0, fold.stdout + fold.stderr
+    p = _run([MIGRATE, sdlc, "--apply"], env)
+    assert p.returncode == 0 and "changed .sdlc/features/units/alpha.json" in p.stdout, p.stdout
+    assert _alpha(_served(repo)) == ("Alpha unit", "alice", "P0", "#200", "feature/alpha", True,
+                                     [201, 202])
+
+
+@pytest.mark.parametrize("kind", REAL_KINDS)
+def test_a_sigma_pick_never_silently_drops_a_legacy_delta_value(tmp_path, kind):
+    """#327 review (4): Sigma's own pick rewrote a legacy delta record in its schema from the merged
+    view, so the previous plugin's P0 became P1 on disk with nothing said. A record NEWER than the
+    index is now refused (nothing written, a divergence and one stderr line naming each value);
+    an older one is merged, written, and every value it drops is printed."""
+    pred = _Predecessor(tmp_path, kind)
+    repo = _converted(tmp_path)
+    sdlc = repo / ".sdlc"
+    assert pred.set_priority(repo, "P0")["ok"] is True
+    record = sdlc / "features" / "units" / "alpha.json"
+    index = sdlc / "features" / "index.json"
+    now = time.time()
+    os.utime(index, (now - 60, now - 60))
+    os.utime(record, (now, now))
+    before = record.read_bytes()
+    fs = _load(LOOP / "feature_sync.py", "fs_delta_guard_" + "".join(
+        c if c.isalnum() else "_" for c in kind))
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        report = fs.sync_at_pick(str(sdlc), {}, "7", "alpha", run=_Predecessor._git)
+    assert record.read_bytes() == before, err.getvalue()
+    assert report["recorded"] is False, report
+    assert [d for d in report["divergences"] if d["kind"] == fs.LEGACY_DELTA_CONFLICT], report
+    assert "priority 'P0'" in err.getvalue() and not _sends_to_migrate(err.getvalue())
+    _kept(_served(repo), [201, 202])
+    os.utime(record, (now - 120, now - 120))
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        report = fs.sync_at_pick(str(sdlc), {}, "7", "alpha", run=_Predecessor._git)
+    assert report["recorded"] is True, (report, err.getvalue())
+    assert "discarded" in err.getvalue() and "priority 'P0'" in err.getvalue(), err.getvalue()
+    assert json.loads(record.read_text())["schema"] == "sigma/features@1"
+    _kept(_served(repo), [201, 202, 7])
+
+
+def test_a_record_written_just_before_the_index_replace_puts_the_index_back(tmp_path):
+    """#327 review (5), the race `apply`'s last check cannot see: the previous plugin writes its
+    whole record (it read ITS index) after that check and before the replace. The re-scan after
+    the replace finds it and restores the index's previous bytes, so the record is read whole
+    (shard-wins) instead of as a delta under an older entry; a rerun converts both."""
+    pred = _Predecessor(tmp_path)
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    index = sdlc / "features" / "index.json"
+    original = index.read_bytes()
+    migrate = _load(MIGRATE, "migrate_late_record")
+    real = migrate._write
+    raced = []
+
+    def late(change):
+        if change.path.name == "index.json" and not raced:
+            raced.append(pred.set_priority(repo, "P0")["ok"])
+        return real(change)
+
+    migrate._write = late
+    outcome = {c.path.name: why for c, why in migrate.apply(migrate.plan(sdlc))}
+    assert raced == [True]
+    assert outcome["index.json"] and "features/units/alpha.json" in outcome["index.json"], outcome
+    assert index.read_bytes() == original
+    assert _alpha(_served(repo)) == ("Alpha unit", "alice", "P0", "#200", "feature/alpha", True,
+                                     [201, 202])
+    p = _run([MIGRATE, sdlc, "--apply"], _home_env(tmp_path))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _alpha(_served(repo)) == ("Alpha unit", "alice", "P0", "#200", "feature/alpha", True,
+                                     [201, 202])
+
+
+def test_no_message_sends_a_user_to_migrate_over_a_delta():
+    """#327 review (2)/(3): the texts that told users to rerun migrate over a delta."""
+    reg = (LOOP / "feature_registry.py").read_text(encoding="utf-8")
+    sync = (LOOP / "feature_sync.py").read_text(encoding="utf-8")
+    doc = (ROOT / "docs" / "upgrading.md").read_text(encoding="utf-8")
+    assert "rerun migrate first" not in reg
+    assert "rerun it first" not in sync and "(it converts the record)" not in sync
+    assert "Rerun `migrate.py --apply` if it" not in doc
+    assert "It is safe to run again. A second" not in doc
+
+
+# --------------------------------------------------------------------------- the model (#327)
+#
+# The CLASS behind review block #1: a sequence of ordinary steps, each fine on its own, that ends
+# with Sigma serving less than it served before. Every sequence of up to five steps from the
+# standard fixture is run, and after EVERY step what Sigma serves for `alpha` is checked against
+# everything it served at any earlier step.
+#
+# EXHAUSTIVE, DEDUPLICATED EXACTLY. Each step is a deterministic function of the files under
+# `.sdlc/features/` and, for `repair` and a pick, of whether each unit record's mtime is >= the
+# index's. The search therefore explores each distinct (files, mtime order, floor) once, at the
+# smallest depth it is reached, which covers every sequence of length <= 5 without re-running
+# the 9^5 of them one by one.
+
+MODEL_DEPTH = 5
+MODEL_OPS = ("migrate --apply", "migrate dry-run", "predecessor pick", "predecessor set-priority",
+             "predecessor claim", "sigma pick", "sigma show", "sigma fold", "sigma repair")
+#: The ONLY value an op may change a field to. Everything else it must keep. After conversion the
+#: two predecessor edits are documented not-applied edges: they may fail to apply, never remove.
+MODEL_EXPLICIT = {"predecessor set-priority": {"priority": "p0"},
+                  "predecessor claim": {"owner": "bob", "o/r.owner": "bob"}}
+_SCALARS = ("title", "owner", "priority", "tracking_issue", "o/r.branch", "o/r.owner")
+
+
+def _facts(entry):
+    one = (entry.get("repos") or {}).get("o/r") or {}
+    scalars = {"title": entry.get("title"), "owner": entry.get("owner"),
+               "priority": entry.get("priority"), "tracking_issue": entry.get("tracking_issue"),
+               "o/r.branch": one.get("branch"), "o/r.owner": one.get("owner")}
+    scalars = {k: (v.lower() if isinstance(v, str) else v) for k, v in scalars.items()}
+    goals = frozenset(g for r in (entry.get("repos") or {}).values() for g in r.get("goals") or ())
+    grants = frozenset(k for k, r in (entry.get("repos") or {}).items() if r.get("authorized"))
+    return scalars, goals, grants
+
+
+class _Model:
+    def __init__(self, tmp_path, kind):
+        self.pred = _Predecessor(tmp_path, kind)
+        self.repo = _adopted(tmp_path)
+        self.sdlc = self.repo / ".sdlc"
+        self.features = self.sdlc / "features"
+        self.home = tmp_path / "no-home"
+        self.home.mkdir()
+        tag = "model_" + "".join(c if c.isalnum() else "_" for c in kind)
+        self.fs = _load(LOOP / "feature_sync.py", tag + "_feature_sync")
+        self.migrate = _load(MIGRATE, tag + "_migrate")
+
+    def snapshot(self):
+        return {p.relative_to(self.features).as_posix(): (p.read_bytes(), p.stat().st_mtime_ns)
+                for p in sorted(self.features.rglob("*")) if p.is_file()}
+
+    def restore(self, snap):
+        shutil.rmtree(self.features)
+        for rel, (data, mtime) in snap.items():
+            path = self.features / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            os.utime(path, ns=(mtime, mtime))
+
+    @staticmethod
+    def key(snap):
+        index = snap.get("index.json", (b"", 0))[1]
+        return tuple((rel, data, mtime >= index) for rel, (data, mtime) in snap.items())
+
+    def served(self):
+        return self.fs.registry.read(self.features).get("alpha")
+
+    def run(self, op):
+        sdlc, out = str(self.sdlc), io.StringIO()
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(out):
+            if op == "migrate --apply":
+                self.migrate.main(["migrate.py", sdlc, "--apply"], environ=dict(os.environ),
+                                  home=self.home, stdout=out)
+            elif op == "migrate dry-run":
+                self.migrate.main(["migrate.py", sdlc], environ=dict(os.environ), home=self.home,
+                                  stdout=out)
+            elif op == "predecessor pick":
+                self.pred.pick(self.repo, 5)
+            elif op == "predecessor set-priority":
+                self.pred.set_priority(self.repo, "P0")
+            elif op == "predecessor claim":
+                self.pred.claim(self.repo, 5, "bob")
+            elif op == "sigma pick":
+                self.fs.sync_at_pick(sdlc, {}, "7", "alpha", run=_Predecessor._git)
+            elif op == "sigma show":
+                self.fs.main(["feature_sync.py", "show", sdlc])
+            elif op == "sigma fold":
+                self.fs.main(["feature_sync.py", "fold", sdlc])
+            elif op == "sigma repair":
+                self.fs.main(["feature_sync.py", "repair", sdlc])
+            else:
+                raise AssertionError(op)
+        return out.getvalue()
+
+
+def _violations(op, floor, entry):
+    if entry is None:
+        return ["alpha is no longer served at all"]
+    scalars, goals, grants = _facts(entry)
+    f_scalars, f_goals, f_grants = floor
+    allowed = MODEL_EXPLICIT.get(op, {})
+    lost = ["%s %r -> %r" % (k, v, scalars[k]) for k, v in sorted(f_scalars.items())
+            if v and scalars[k] != v and scalars[k] != allowed.get(k)]
+    lost += ["goal #%s" % g for g in sorted(f_goals - goals)]
+    lost += ["grant on %s" % r for r in sorted(f_grants - grants)]
+    return lost
+
+
+def _raise_floor(floor, entry):
+    scalars, goals, grants = _facts(entry)
+    f_scalars, f_goals, f_grants = floor
+    merged = dict(f_scalars)
+    merged.update({k: v for k, v in scalars.items() if v})
+    return merged, f_goals | goals, f_grants | grants
+
+
+def _explore(model, depth=MODEL_DEPTH):
+    """-> (failures [(sequence, loss)], sequences-equivalent explored, distinct states)."""
+    start = model.snapshot()
+    first = _facts(model.served())
+    frontier = [((), start, first)]
+    seen = {}
+    failures = []
+    for level in range(depth):
+        nxt = []
+        for seq, snap, floor in frontier:
+            for op in MODEL_OPS:
+                model.restore(snap)
+                model.run(op)
+                after = model.snapshot()
+                if op in ("migrate dry-run", "sigma show"):
+                    assert model.key(after) == model.key(snap), (seq + (op,), "a read wrote")
+                entry = model.served()
+                lost = _violations(op, floor, entry)
+                if lost:
+                    failures.append((seq + (op,), lost))
+                    continue
+                new_floor = _raise_floor(floor, entry)
+                frozen = (model.key(after), tuple(sorted(new_floor[0].items())),
+                          new_floor[1], new_floor[2])
+                if frozen in seen:
+                    continue
+                seen[frozen] = level + 1
+                nxt.append((seq + (op,), after, new_floor))
+        frontier = nxt
+    return failures, len(seen)
+
+
+@pytest.mark.parametrize("kind", REAL_KINDS)
+def test_model_no_sequence_of_five_steps_loses_what_sigma_served(tmp_path, kind):
+    """#327 review: the invariant, over every sequence of <= 5 steps from `MODEL_OPS` (Sigma's
+    migrate/dry-run/pick/show/fold/repair and the previous plugin's own pick/set-priority/claim, its
+    REAL code when `SIGMA_TEST_PREDECESSOR_GIT` is set, else skipped -- the stand-in always runs):
+    what Sigma serves for `alpha` never loses a title, owner, priority, tracking issue, branch,
+    goal or grant it served before, unless the step is one that explicitly sets that field (and
+    then only to the value it sets)."""
+    model = _Model(tmp_path, kind)
+    failures, states = _explore(model)
+    assert states > 20, states                  # the search reached past the trivial states
+    assert not failures, "\n".join("%s: %s" % (" -> ".join(s), "; ".join(l))
+                                   for s, l in failures[:10])
 
 
 def test_migrate_apply_still_refuses_while_a_watcher_is_live(tmp_path, live_pid):

@@ -305,7 +305,9 @@ See the **[worked walkthrough](examples/hello-sdlc/)** for a runnable end-to-end
 
 Install Sigma and carry on. Sigma reads the schema ids, markers, environment variables and config
 key that the previous name's 1.4.x releases wrote. When you want the files themselves renamed, run
-the one-shot migration. It is a dry run by default, `--apply` writes, and it is safe to re-run:
+the one-shot migration. It is a dry run by default, `--apply` writes, and it is safe to re-run (a
+unit record the old plugin wrote after the conversion is refused and left for
+`feature_sync.py repair`; see docs/upgrading.md):
 
 ```
 python3 skills/agrim-doctor/scripts/migrate.py .sdlc            # lists every change

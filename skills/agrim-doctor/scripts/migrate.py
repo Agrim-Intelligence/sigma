@@ -32,7 +32,10 @@ or written by the previous plugin during the run keeps the index back (listed as
 because beside a Sigma index such a record is read as a partial delta, and it may be the newer
 complete one. A rerun converts it.
 
-SAFE TO RE-RUN. A second `--apply` finds nothing and says so. Each write is atomic (temp file in the
+RE-RUNNABLE, WITH ONE STATE NAMED (#327). A second `--apply` with nothing changed since finds
+nothing and says so. After the previous plugin wrote a unit record beside the converted index (a
+legacy DELTA), that record is REFUSED here, not converted -- a bare schema-id rewrite would make it
+replace the index entry -- and the refusal names `feature_sync.py repair`, which merges it. Each write is atomic (temp file in the
 same directory, then `os.replace`), taken under the unit's `feature_sync` lock for feature files, and
 refused if the file changed after it was read. A symlinked target (an `AGENTS.md` linked to
 `CLAUDE.md`, a linked feature file) is REFUSED, never followed: replacing it would destroy the link. `--apply` refuses outright while this SDLC dir's
@@ -66,7 +69,8 @@ import time
 
 USAGE = ("usage: migrate.py [<sdlc_dir>] [--apply [--replace-old-plugin]]\n"
          "  Rewrites state written under the plugin's previous name to Sigma's names.\n"
-         "  Dry run (writes nothing) unless --apply is given. Safe to re-run.\n"
+         "  Dry run (writes nothing) unless --apply is given. Re-runnable: a unit record the\n"
+         "  old plugin wrote after conversion is refused, naming `feature_sync.py repair`.\n"
          "  While the old plugin can still run on this repository, --apply needs\n"
          "  --replace-old-plugin: disable it here first instead (docs/upgrading.md).")
 
@@ -139,8 +143,30 @@ def _candidate_json(sdlc_dir):
                 yield here / name
 
 
+def _delta_reason(sdlc_dir, name):
+    """#327: why a legacy-schema unit record beside a Sigma index entry is NOT converted here."""
+    return ("not converted: it is in the previous plugin's schema next to a features/index.json "
+            "already in Sigma's schema with an entry for unit %r, so Sigma reads it as a DELTA onto "
+            "that entry (the previous plugin wrote it after the conversion, without seeing the "
+            "entry). Rewriting only its schema id would make it REPLACE the entry, and Sigma would "
+            "serve the record alone. Run `python3 %s repair %s` instead: it rewrites the record as "
+            "the entry plus what the record adds, and lists anything it discards"
+            % (name, _LOOP / "feature_sync.py", sdlc_dir))
+
+
+def _live_deltas(sdlc_dir):
+    """-> {record path: unit name} for each legacy delta record a bare schema-id rewrite would
+    change what Sigma serves for (`feature_registry.bare_rewrite_changes_it`). Read NOW."""
+    reg = _load(_LOOP, "feature_registry")
+    features = pathlib.Path(sdlc_dir) / "features"
+    return {os.path.abspath(path): name
+            for name, path, base, record in reg.legacy_delta_records(features)
+            if reg.bare_rewrite_changes_it(base, record)}
+
+
 def _plan_schemas(plan, legacy):
     needle = (legacy.RETIRED + "/").encode("ascii")
+    deltas = _live_deltas(plan.sdlc_dir)
     for path in _candidate_json(plan.sdlc_dir):
         if path.name == "config.json" and path.parent == plan.sdlc_dir:
             continue                                   # config has no schema id; see _plan_config
@@ -175,6 +201,10 @@ def _plan_schemas(plan, legacy):
                                  "(its text also appears elsewhere, or is spelled with escapes)"))
             continue
         unit = path.stem if path.parent.name == "units" else None
+        if os.path.abspath(path) in deltas:
+            plan.refused.append((plan.rel_link(path),
+                                 _delta_reason(plan.sdlc_dir, deltas[os.path.abspath(path)])))
+            continue
         _add_change(plan, Change(path, data, new, "schema id %s -> %s" % (old_id, new_id), unit))
 
 
@@ -465,10 +495,6 @@ def _is_index(result, path):
     return pathlib.Path(path) == result.sdlc_dir / "features" / "index.json"
 
 
-def _under_units(result, rel):
-    return rel.startswith(result.rel(result.sdlc_dir / "features" / "units") + "/")
-
-
 def _index_reason(names):
     return ("not converted: %s still in the previous plugin's schema (listed as refused here, "
             "or written after this run read it). Converting the index without it would make Sigma "
@@ -509,9 +535,20 @@ def apply(result):
     index only on demand, so a record it holds is the newer statement of its unit; beside a Sigma
     index, `feature_registry.read` would merge it as a DELTA under the older entry (#314), and
     `repair` would make that permanent. Left in the previous schema, the index keeps shard-wins
-    reading -- the rule that plugin itself reads by -- and a rerun converts it. The last check and
-    the replace are not atomic (milliseconds apart); a record written in that gap is the one residue,
-    and `repair` refuses a record newer than the index for exactly that reason."""
+    reading -- the rule that plugin itself reads by -- and a rerun converts it.
+
+    THE WINDOW, NARROWED AND NAMED (#327). The last check and the replace are not atomic, so after a
+    successful index write `units/` is scanned AGAIN, and if a previous-schema record appeared the
+    index's previous bytes are put back (only if the index still holds exactly what this run wrote)
+    and it is listed as refused -- the record is read whole again and a rerun converts both.
+    Measured by the #327 reviewer: such a record ends up ~4 ms OLDER than the index, so `repair`'s
+    newer-than-index refusal never protected this case; the re-scan does. What remains is a record
+    written after the re-scan by a writer that read the index before the replace -- microseconds,
+    not closed: Sigma then reads it as a delta, prints the recovery notice on every read, and every
+    rewrite of it (`repair`, a pick) lists each value it would drop.
+
+    A UNIT RECORD THAT IS NOW A LEGACY DELTA (the index turned Sigma's since the plan, e.g. a fold)
+    is re-checked under its lock and refused exactly as `plan` refuses it (#327)."""
     fsync = _load(_LOOP, "feature_sync")
     done = []
     ordered = ([c for c in result.changes if not _is_index(result, c.path)]
@@ -529,10 +566,29 @@ def apply(result):
             except Exception:                 # noqa: BLE001 - an unlockable name is written unlocked
                 fd = None                     # (fail-open, exactly as feature_sync itself is)
         try:
-            done.append((change, _write(change)))
+            why = None
+            if change.unit and change.path.parent.name == "units":
+                name = _live_deltas(result.sdlc_dir).get(os.path.abspath(change.path))
+                if name is not None:
+                    why = _delta_reason(result.sdlc_dir, name)
+            done.append((change, why or _write(change)))
         finally:
             fsync._release(fd)
+        if _is_index(result, change.path) and done[-1][1] is None:
+            left = _legacy_units(result)
+            if left:
+                done[-1] = (change, _put_back(change, left))
     return done
+
+
+def _put_back(change, left):
+    """The index write landed but a previous-schema unit record appeared meanwhile: restore the
+    index's planned-from bytes (refused if the index moved on again) -> the refusal to report."""
+    undone = _write(Change(change.path, change.new, change.old, "restore"))
+    if undone is None:
+        return _index_reason(left) + " (it was converted, then put back when the record appeared)"
+    return (_index_reason(left) + ". It was converted before the record appeared and could NOT be "
+            "put back (%s): run `feature_sync.py repair`, which lists what it discards" % undone)
 
 
 # --------------------------------------------------------------------------- CLI

@@ -4,6 +4,31 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A second migrate, or a Sigma pick, can no longer erase a unit the old plugin touched after the
+  conversion** (#326, review block #1 on PR #327). After the conversion the old plugin's `pick` or
+  `set-priority` writes a near-empty unit record in its own schema, which Sigma serves as a delta
+  onto the `index.json` entry. A second `migrate.py --apply` (which Sigma's own notice, `repair`'s
+  refusal and `docs/upgrading.md` told users to run) rewrote only that record's schema id, so it
+  replaced the entry: Sigma served a title-less, owner-less unit with one goal and no grant, exit 0.
+  Now: (1) `migrate.py` refuses to convert a unit record in the old schema when `index.json` is
+  already Sigma's with an entry for that unit and the merge would serve something else (listed as
+  refused, exit 2), naming `feature_sync.py repair`; the check is repeated under the unit's lock at
+  write time. (2) The notice, `repair`'s refusal and the docs no longer send anyone to rerun migrate:
+  a partial migrate keeps `index.json` in the old schema, so it leaves no delta. (3) A Sigma write to
+  such a unit (`feature_sync.amend`: a pick, a claim, `set-priority`) applies `repair`'s rule: it
+  prints each record value it drops, and when there is one and the record is at least as new as
+  `index.json` it refuses (a `legacy-delta-conflict` divergence) instead of turning the old plugin's
+  P0 into P1 in silence. The newer-than check is now `>=`, and its `git checkout` mtime caveat is
+  documented. (4) After replacing `index.json`, `migrate.py` scans `units/` again and puts the
+  index's previous bytes back if a record in the old schema appeared meanwhile. (5) A model-based
+  test in `tests/test_coexist.py` runs every sequence of up to five steps (Sigma's migrate, dry run,
+  pick, show, fold and repair; the old plugin's pick, set-priority and claim) from a fixture unit and
+  checks after each step that nothing Sigma served is lost; it runs on a stand-in always and on the
+  old plugin's real 1.4.24 and 1.4.25 code when `SIGMA_TEST_PREDECESSOR_GIT` is set. Before the fix
+  it found 31 distinct failing sequences (after deduplicating equal states; the reviewer's is the
+  shortest) on each of the three; after it, none, over 128 (stand-in) and 205 (real) distinct states. Dead
+  `migrate._under_units` removed.
+
 - **A partial migrate can no longer lose a unit record** (#326, the last blocking finding on #314's
   PR #319). `migrate.py --apply` wrote in path order, so `features/index.json` took Sigma's schema
   before `features/units/*.json`. A unit record refused in the same run (changed after it was read,
@@ -19,8 +44,8 @@ All notable changes to Sigma are recorded here, newest first.
   the delta merge does not keep, one line each. When there is something to discard and the record
   is newer than `index.json` (file time), it refuses that unit (exit 2, nothing written) and names
   the ways forward. The recovery text no longer says "nothing is lost". (4) The reader comment, its
-  notice and `docs/upgrading.md` now say a legacy-id record next to a Sigma index is normally a
-  delta and, after a partial migrate, can be the complete record. The docs also warn against
+  notice and `docs/upgrading.md` now say a legacy-id record next to a Sigma index is a delta
+  (#327 corrected an earlier wording that sent users to rerun migrate over one). The docs also warn against
   running the old plugin's own `feature_sync.py fold` after the conversion: its 1.4.25 release
   wrote an empty `index.json` on a converted repository (measured on a scratch repository). Tests in
   `tests/test_coexist.py` cover the reviewer's race on the stand-in and on the real previous plugin,

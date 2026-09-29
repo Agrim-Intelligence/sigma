@@ -63,7 +63,8 @@ the ledger or hand work off.
 A repo adopted under the plugin's previous name keeps working, because Sigma reads the old spellings.
 The explicit cutover is a dry run by default, `--apply` writes, and it is safe to re-run:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/migrate.py" .sdlc [--apply]`. It prints every file it changes,
-refuses anything it cannot rewrite with certainty (exit 2), and never runs on the user's behalf
+refuses anything it cannot rewrite with certainty (exit 2) -- including a unit record the old plugin
+wrote after the conversion, which it leaves for `feature_sync.py repair` -- and never runs on the user's behalf
 without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
 
 The `coexistence` row reports whether the old plugin is also active on this repository. When it is,

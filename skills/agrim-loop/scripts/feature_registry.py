@@ -663,14 +663,23 @@ def read(features_dir):
 # as one -- never served in place of the entry, whatever fields it happens to carry. No field
 # presence, no timestamp and no content shape is consulted here: only the two schema ids.
 #
-# NOT ALWAYS (#326): after a PARTIAL conversion it can be the complete, NEWER record -- that plugin
-# writes its record first and rebuilds its index only on demand -- and a delta merge then serves
-# the older entry's owner/priority/branch/grants over it. `migrate.py --apply` therefore refuses to
-# convert the index unless every unit record converted (it writes units first); what remains is a
-# record written in the milliseconds between its last check and the index replace, or an index
-# Sigma itself rewrote while such a record existed. The merge still loses nothing on disk -- the
-# record stays as it is -- and `feature_sync.py repair`, the one step that rewrites it, names every
-# value it would discard and refuses a record newer than the index (`delta_discards`).
+# NOT ALWAYS (#326): a record the previous plugin wrote with sight of ITS index (the complete,
+# newer record -- it writes its record first and rebuilds its index only on demand) is served
+# under the older entry if the index turns Sigma's beside it. `migrate.py --apply` therefore
+# converts the index only once no unit record is left in the previous schema, re-scans after the
+# replace and puts the index's previous bytes back if one appeared (#327) -- so after a partial
+# migrate the index is still in the previous schema and NO delta exists. What remains is a record
+# written between that re-scan and the plugin's next read, and an index Sigma rewrote (a fold)
+# while such a record existed -- where the fold wrote the record's own values, so nothing differs.
+#
+# A DELTA IS CONVERTED ONLY THROUGH THE MERGE (#327). A bare schema-id rewrite would turn it into a
+# Sigma record that REPLACES the entry -- a second `migrate.py --apply` did exactly that, serving a
+# one-goal stub -- so migrate refuses such a record unless the merge equals it, and names `repair`.
+# Every Sigma rewrite of such a record -- `feature_sync.py repair`, and `feature_sync.amend` (a
+# pick, a claim, `set-priority`) -- goes through ONE rule (`feature_sync._delta_verdict`): each
+# record value the rewrite would drop is listed, and when there is one and the record is at least
+# as new as `index.json`, the unit is REFUSED and nothing is written. The merge itself loses nothing
+# on disk: the record stays as it is until one of those runs.
 #
 # KNOWN EDGE, DOCUMENTED NOT FIXED: an ownership (or title/priority) change that the previous
 # plugin makes AFTER conversion is not applied while the index entry has a value for that field --
@@ -818,6 +827,32 @@ def delta_discards(index_entry, record):
     return lost
 
 
+def legacy_delta_record(features_dir, name):
+    """-> `(record path, index entry, record entry)` when `name`'s OWN file is a legacy delta, else
+    None. One file and the index read -- the per-write check `feature_sync.amend` makes. Never
+    raises (an illegal name is simply not a delta)."""
+    try:
+        path = unit_path(features_dir, name)
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    got = _read_unit_doc(path)
+    if got is None:
+        return None
+    index, sigma_index = _index_and_kind(features_dir)
+    base = _delta_base(index, sigma_index, got[0], got[2])
+    return None if base is None else (path, base, got[1])
+
+
+def bare_rewrite_changes_it(index_entry, record):
+    """Would rewriting a legacy delta's schema id ALONE change what `read` serves for its unit?
+    As a delta it serves `merge_legacy_delta(entry, record)`; in Sigma's schema it would serve the
+    record itself (shard-wins). Equal only when the entry adds nothing the record lacks -- e.g. a
+    fold already wrote the record's own values into the index."""
+    return normalise_entry(record) != merge_legacy_delta(index_entry, record)
+
+
 def legacy_delta_records(features_dir):
     """-> [(name, record path, index entry, record entry)] for each legacy delta (`legacy_deltas`,
     with both sides `repair` needs to say what it discards). Never raises."""
@@ -852,9 +887,11 @@ def delta_recovery(features_dir):
             "upgrading.md), then run `%s` (rewrites each such record in Sigma's schema as the %s "
             "entry plus what the record adds -- goals and blanks. It DISCARDS any other non-empty "
             "record value that differs from the entry (owner, priority, branch, a grant) and lists "
-            "each; it refuses a record newer than %s, which may be the complete record left by a "
-            "partial migrate: rerun `migrate.py --apply` if one reported refusals, or copy the "
-            "record's values into %s first). Restore %s over %s ONLY if a unit is still missing "
+            "each; while there is one and the record is at least as new as %s -- an edit that "
+            "plugin made after the conversion, which Sigma does not apply -- it refuses that unit: "
+            "copy the values you want into %s, or delete them from the record, then rerun it. "
+            "`migrate.py --apply` does not convert such a record: it refuses and names this "
+            "command). Restore %s over %s ONLY if a unit is still missing "
             "data and ONLY within the cut-over window -- it predates every later write, and "
             "restoring it discards them"
             % (repair, INDEX_NAME, INDEX_NAME, INDEX_NAME, where, features_dir))
@@ -865,9 +902,11 @@ def _note_delta(features_dir, name, path):
         return
     _DELTA_NOTED.add(str(path))
     _note("sigma: features: %s still declares the schema id of the plugin under Sigma's previous "
-          "name, next to a Sigma %s entry for unit %r -- normally that plugin wrote it after the "
-          "conversion, without seeing the entry (after a partial migrate it can instead be the "
-          "complete, newer record: rerun migrate first). Sigma reads it as a DELTA: the %s entry wins on "
+          "name, next to a Sigma %s entry for unit %r -- that plugin wrote it after the index "
+          "became Sigma's, without seeing the entry (not a partial migrate: `migrate.py --apply` keeps the index in "
+          "the previous schema until every record has converted, and puts it back if one appears "
+          "while it runs). "
+          "Sigma reads it as a DELTA: the %s entry wins on "
           "every field it has (a grant is never taken from the record), the record only fills "
           "blanks and adds goals. An ownership or priority change made there is NOT applied while "
           "%s has a value. Recover: %s.\n"

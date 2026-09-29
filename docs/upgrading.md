@@ -40,8 +40,17 @@ is checked by reading it back: JSON must parse to the original with only the lis
 and a feature doc must keep the same body and digest. A file that fails that check, or that the
 migration does not understand, is refused: it is left untouched and listed, and the command exits 2.
 
-It is safe to run again. A second `--apply` prints `nothing to migrate`. Each write is atomic. A file
-that changed after it was read is refused, so rerun the command. `--apply` refuses to run while this
+Running it again is safe in these states, and does exactly this:
+- **nothing changed since the last `--apply`**: it prints `nothing to migrate`;
+- **a file was refused as changed after it was read** (or a unit record kept `index.json` back):
+  rerun it; it converts what is left, unit records first and `index.json` last;
+- **the old plugin wrote a unit record after the conversion** (a goal it started, an owner claim,
+  `set-priority`): that record is **refused, not converted**, and the refusal names
+  `feature_sync.py repair`. Rewriting only its schema id would make it replace the `index.json`
+  entry, so Sigma would serve the old plugin's near-empty record instead of the unit (see below).
+  Run `repair`, not `migrate`, for it.
+
+Each write is atomic. `--apply` refuses to run while this
 `.sdlc`'s watcher is running, because that watcher may belong to the old plugin and be writing the
 old spellings. Stop it first. It also waits while the old plugin can still run on this repository:
 see [Switching over from the previous plugin](#switching-over-from-the-previous-plugin).
@@ -79,14 +88,14 @@ cut-over window, and prefer the repair below.
 And Sigma's registry reader never lets a record the old plugin wrote replace an entry it could not
 see. The rule is structural, keyed on the two schema ids and nothing else: a unit record that still
 carries the old plugin's schema id, next to an `index.json` in Sigma's schema that has an entry for
-the same unit, is normally a post-conversion delta: the old plugin wrote it after the conversion,
-starting from nothing (a goal it started, the owner claim its next pick makes, `define.py
-set-priority`). After a partial migrate it could instead be the complete, newer record -- the old
-plugin writes its unit record first and rebuilds its index only on demand -- so `migrate.py
---apply` converts every unit record before `index.json` and refuses to convert the index unless
-every unit converted (a refused or symlinked record, or one the old plugin wrote during the run,
-keeps the index in the old schema, where the record is read whole; rerun once the refusal is
-fixed). Sigma reads such a record as a delta onto the `index.json` entry. The entry wins on every field it has a value for
+the same unit, is a post-conversion delta: the old plugin wrote it after `index.json` became
+Sigma's, starting from nothing (a goal it started, the owner claim its next pick makes, `define.py
+set-priority`). A partial migrate does not leave one: the old plugin writes its unit record first
+and rebuilds its index only on demand, so `migrate.py --apply` converts every unit record before
+`index.json`, converts the index only once none is left in the old schema (a refused or symlinked
+record, or one the old plugin wrote during the run, keeps the index in the old schema, where the
+record is read whole; rerun once the refusal is fixed), and puts the index back if such a record
+appears just after it replaced it. Sigma reads such a record as a delta onto the `index.json` entry. The entry wins on every field it has a value for
 (title, owner, parent, tracking issue, priority, `open`, each repository's branch and owner). The
 record only fills blanks, its goals are added to the entry's, and a repository only it names is
 added without a grant. `authorized` is never taken from that record. The reader prints the
@@ -99,12 +108,20 @@ loss and the repair:
 python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record in Sigma's schema: the index entry plus what the record adds
 ```
 
-`repair` is the one step that rewrites the record, and it is not lossless: a non-empty record value
-that differs from the entry (an owner, a priority, a branch, a grant) is discarded, and it prints
-each one it discards. When there is something to discard and the record is newer than `index.json`
-(file time; the registry carries no timestamp of its own), it refuses that unit and writes nothing:
-the record may be the complete one a partial migrate left. Rerun `migrate.py --apply` if it
-reported refusals, or copy the record's values into `index.json`, then rerun `repair`.
+`migrate.py --apply` does not convert such a record: it refuses it and names `repair`, because
+rewriting only the schema id would make the record replace the entry. Two Sigma steps rewrite it,
+by one rule: `repair`, and a Sigma write to that unit (a pick recording a goal, an owner claim,
+`set-priority`). Neither is lossless: a non-empty record value that differs from the entry (an
+owner, a priority, a branch, a grant) is dropped, and each one is printed. When there is such a
+value and the record is at least as new as `index.json`, both refuse that unit and write nothing
+(a pick reports a `legacy-delta-conflict` divergence): the value is most likely an edit the old
+plugin made after the conversion, which Sigma never applied and you may still want. Copy the values
+you want into `index.json`, or delete them from the record, then rerun `repair`.
+
+"At least as new" is file time: the registry carries no timestamp of its own, equal times count as
+newer, and a `git checkout`, `clone` or `pull` stamps every file it writes with the checkout's time,
+not the edit's. After one, the order only says which file git wrote last. Either answer stays safe:
+a refusal writes nothing, and a rewrite prints what it drops.
 
 After converting, do not run the old plugin's own `feature_sync.py fold` (the copy under its
 loop skill's `scripts/`, run by hand) on the repository: it cannot read Sigma's `index.json` and
@@ -200,7 +217,7 @@ found and the cut-over steps, and exits 0.
 | `watch_daemon.py` | Proceeds to the shared lock; the notice goes to `.sdlc/state/watch.log`. |
 | `migrate.py` | The dry run proceeds with the notice. `--apply` waits for the old plugin to be stopped on this repository (exit 2, dry run shown, the exact disable step) unless `--replace-old-plugin` is given, which takes the `.sdlc/features` backup first. `--apply` still refuses while a watcher is live. This is the only step that waits: it is the one that converts the registry the old plugin cannot read. |
 | Registry writes (`.sdlc/features`) | Proceed. The first one saves the one-time copy to `.sdlc/state/backup/features-<time>/`. |
-| Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` rewrites such records in Sigma's schema, lists each record value it discards, and refuses a record newer than `index.json`. `migrate.py --apply` converts `index.json` only once every unit record has converted. |
+| Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` (and a Sigma pick on that unit) rewrites such records in Sigma's schema, lists each record value it discards, and refuses when there is one and the record is at least as new as `index.json`. `migrate.py --apply` converts `index.json` only once every unit record has converted (and puts it back if one appears during the run), and refuses to convert such a delta record, naming `repair`. |
 | `/agrim-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |
