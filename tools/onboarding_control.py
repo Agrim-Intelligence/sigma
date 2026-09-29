@@ -13,9 +13,22 @@ script path (the Codex/Cursor script-form line), the `/agrim-init` flags (the Cl
 the `verify_detect.py confirm .sdlc <n> <id>` gesture, and the `claude plugin ...` / `codex plugin
 ...` install lines. A README that drifts from the shipped scripts (a renamed script, a renamed
 verb, a dropped line) therefore turns this control red; a README the control does not read could
-drift silently. Everything else comes from what /agrim-init PRINTS: the `[ask]` lines (answered
-with the flag each names), the verify candidate number and id, and the `Next:` line's
-`loop.py next` command.
+drift silently. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
+`.claude-plugin/marketplace.json` declares, and every init flag the Quickstart shows must be one
+init_flow.py's parser accepts. Everything else comes from what /agrim-init PRINTS: the `[ask]`
+lines (parsed in init_flow.ask_line's shape, `[ask] <id>: <prose> -> --flag VALUE|VALUE ; ...`,
+and answered through ASK_POLICY, keyed by the flag NAME the line offers -- a renamed or new flag
+is "unanswerable [ask]", red), the verify candidate number and id, and the `Next:` line's
+`loop.py next` command. A README or printed command runs only in the pinned shape
+`python3 <existing script under skills/ or tools/> <args without shell syntax>` (see _py_argv).
+
+TWO VARIANTS per mode. `confirm`: a Makefile test target, confirmed by the README gesture
+(enforce ON). `no-command`: a repository with nothing to confirm, the verify question left open,
+so the default init SCAFFOLDS is what `record done` sees -- the only variant that can see the
+original bug, because a confirm overwrites whatever default was scaffolded. In github mode the
+no-command variant also passes `--local-only`: with work ON, `work.py merge` refuses without
+passing verify evidence whether or not enforce is set, so the enforce default is invisible there.
+github mode passes `--repo` itself: no `[ask]` names it and the control's origin is a local path.
 
 WHAT IT DOES NOT DO (see docs/onboarding-control.md for the owner runbook of each):
   * no model session. `/agrim-loop` is a model turn; this control drives the SAME scripts the
@@ -32,13 +45,14 @@ WHAT IT DOES NOT DO (see docs/onboarding-control.md for the owner runbook of eac
     profile's plugin surface before and after, so "untouched" is measured, not assumed.
 
 USAGE
-    python3 tools/onboarding_control.py [--mode local|github|both] [--sigma DIR] [--readme FILE]
+    python3 tools/onboarding_control.py [--mode local|github|both] [--variant confirm|no-command|all]
+                                        [--sigma DIR] [--readme FILE]
                                         [--install none|claude|codex|all] [--from-install]
                                         [--json FILE] [--workdir DIR] [--keep]
 
-EXIT: 0 = every requested mode reached `done` and every assertion held; 1 = a step or an
-assertion failed (the JSON names the first failing step); 2 = bad arguments or a missing
-precondition (`git` / `make` not found) -- a precondition gap is never reported as green.
+EXIT: 0 = every requested mode and variant reached `done` and every assertion held; 1 = a step or
+an assertion failed (the JSON names the first failing step); 2 = bad arguments or a missing
+precondition (`git` / `make` not found, the README unreadable) -- never reported as green.
 
 Stdlib only. POSIX only (a `make` test target and a `#!python` fake gh); on Windows it exits 2.
 """
@@ -68,6 +82,15 @@ MAKEFILE = "test:\n\ttest -s hello.txt\n"
 #: The work each known goal takes. Local mode with --demo queues the demo goal too (its own
 #: frontmatter verify_command); a goal the control does not know is a red, never guessed at.
 DEMO_FILE = "sigma-demo.md"
+#: confirm: the Makefile target, confirmed through the README's own gesture (enforce ON).
+#: no-command: nothing verify_detect can propose, the verify question left open -- so what the
+#: SCAFFOLD writes is what `record done` sees. The confirm variant overwrites whatever default
+#: init scaffolded, so only this variant sees a bad default (review of PR #306).
+VARIANTS = ("confirm", "no-command")
+
+
+class _Finished(Exception):
+    """A mode's flow ended early by design (the github no-command variant stops at `record done`)."""
 
 
 class Red(Exception):
@@ -101,6 +124,52 @@ def _lines(block):
     return out
 
 
+def _plugin_id(sigma):
+    """`<plugin>@<marketplace>` as `.claude-plugin/marketplace.json` declares it (Claude Code and
+    Codex both read that file), so the README's install id is checked against what ships."""
+    path = pathlib.Path(sigma) / ".claude-plugin" / "marketplace.json"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        return f"{doc['plugins'][0]['name']}@{doc['name']}"
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        raise Red("readme", f"cannot read the plugin id from {path}: {exc}")
+
+
+def readme_init_flags(quickstart):
+    """Every `--flag` the Quickstart shows for init: on a fenced `/agrim-init ...` or
+    `python3 .../init_flow.py ...` line, and in inline code in the prose of the `###` subsections
+    about `/agrim-init` (e.g. the `[ask]` flag list). Sorted, de-duplicated."""
+    flags = set()
+    for block in _FENCE.findall(quickstart):
+        for line in _lines(block):
+            toks = line.split()
+            if toks[0] in ("/agrim-init", "/agrim-setup") or \
+                    (len(toks) > 1 and toks[1].endswith("init_flow.py")):
+                flags.update(t for t in toks if re.fullmatch(r"--[a-z][a-z-]*", t))
+    for sub in re.split(r"(?m)^### ", _FENCE.sub("", quickstart)):
+        if "/agrim-init" in sub.split("\n", 1)[0]:
+            flags.update(re.findall(r"`(--[a-z][a-z-]*)(?:[ =][^`]*)?`", sub))
+    return sorted(flags)
+
+
+def init_flow_flags(sigma):
+    """The flags init_flow.py's own `parse()` accepts: its `_VALUE | _BOOL` sets, read by `ast`
+    (never imported: importing it loads siblings and is not what a reader of the README runs)."""
+    path = pathlib.Path(sigma) / "skills" / "agrim-init" / "scripts" / "init_flow.py"
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as exc:
+        raise Red("readme", f"cannot read init_flow.py's flags from {path}: {exc}")
+    found = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") in ("_VALUE", "_BOOL")
+                                                for t in node.targets):
+            found |= set(ast.literal_eval(node.value))
+    if not found:
+        raise Red("readme", f"no _VALUE/_BOOL flag sets in {path}")
+    return found
+
+
 def parse_quickstart(text, sigma=ROOT):
     """-> dict of the gestures the control runs, or raises Red("readme", ...) naming what is
     missing. Pure over README text (plus existence checks against `sigma`), so a drift control can
@@ -127,11 +196,23 @@ def parse_quickstart(text, sigma=ROOT):
     if not scripts:
         raise Red("readme", "the Quickstart names no skills/agrim-init/scripts/*.py init script")
     out["init_script"] = scripts[0]
-    for key in ("claude_install",):
-        if not any("marketplace add <SIGMA_REPO>" in l for l in out[key]) or \
-                not any(re.search(r"\binstall sigma@sigma\b", l) for l in out[key]):
-            raise Red("readme", "the Quickstart's `claude plugin` lines are not "
-                      "`marketplace add <SIGMA_REPO>` + `install sigma@sigma`")
+    out["session_install"] = [l for l in first if l.startswith("/plugin ")]
+    plugin_id = _plugin_id(sigma)
+    # Every install form the Quickstart shows, checked the same way: its marketplace-add line and
+    # its install line, the id matching what .claude-plugin/marketplace.json actually declares.
+    for key, prefix, verb in (("claude_install", "claude plugin", "install"),
+                              ("session_install", "/plugin", "install"),
+                              ("codex_install", "codex plugin", "add")):
+        want = [f"{prefix} marketplace add <SIGMA_REPO>", f"{prefix} {verb} {plugin_id}"]
+        if [" ".join(l.split()) for l in out[key]] != want:
+            raise Red("readme", f"the Quickstart's `{prefix}` lines are {out[key]}, not {want} "
+                      "(the id must be what .claude-plugin/marketplace.json declares)")
+    out["init_readme_flags"] = readme_init_flags(qs)
+    accepted = init_flow_flags(sigma)
+    unknown = sorted(set(out["init_readme_flags"]) - accepted)
+    if unknown:
+        raise Red("readme", f"the README shows init flag(s) {unknown}, which "
+                  f"{out['init_script']} does not accept")
     asks = text[text.find("### What `/agrim-init` will ask you"):] if \
         "### What `/agrim-init` will ask you" in text else ""
     confirm = [l for block in _FENCE.findall(asks) for l in _lines(block)
@@ -205,20 +286,39 @@ def _git(args, cwd, env):
     return proc
 
 
-def _py_argv(line, sigma, subs):
-    """A README/printed `python3 <script> ...` line -> argv: the interpreter is THIS one (so a
-    3.10 CI leg tests 3.10), a relative skills/ path is resolved against the Sigma directory
-    ("Paths above are relative to the Sigma plugin directory"), and each `<placeholder>` in
-    `subs` is replaced. Nothing is passed through a shell."""
-    toks = shlex.split(line)
-    if toks and re.fullmatch(r"python3?|py", toks[0]):
-        toks[0] = sys.executable
-    out = []
-    for t in toks:
+#: Characters a README/printed argument may not carry: each one only means something to a shell
+#: (substitution, chaining, pipes, redirection, globbing, quoting escapes) or is not visible text.
+_ARG_UNSAFE = re.compile(r"[`$;&|<>(){}*?!\\\x00-\x1f\x7f]")
+
+
+def _py_argv(line, sigma, subs, step="readme gesture"):
+    """A README/printed `python3 <script> ...` line -> argv, or Red(step) naming what was refused.
+
+    PINNED SHAPE, because the text comes from a document and a program's output, not from code:
+    the first token must be `python3` / `python` / `py` (what `verify_detect.python_command()`
+    prints) and becomes THIS interpreter (so a 3.10 CI leg tests 3.10); the second must be a
+    `.py` script that EXISTS under the Sigma directory's `skills/` or `tools/` (relative, resolved
+    against it -- "Paths above are relative to the Sigma plugin directory" -- or absolute inside
+    it); every remaining argument, after each `<placeholder>` in `subs` is replaced, must be free
+    of shell syntax. Anything else is refused before anything runs. Nothing goes through a shell."""
+    try:
+        toks = shlex.split(line)
+    except ValueError as exc:
+        raise Red(step, f"refused {line!r}: {exc}")
+    if len(toks) < 2 or not re.fullmatch(r"python3?|py", toks[0]):
+        raise Red(step, f"refused {line!r}: not `python3 <sigma script> ...`")
+    sigma = pathlib.Path(sigma).resolve()
+    script = pathlib.Path(toks[1])
+    script = (script if script.is_absolute() else sigma / script).resolve()
+    inside = any(sigma / d in script.parents for d in ("skills", "tools"))
+    if script.suffix != ".py" or not inside or not script.is_file():
+        raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or /tools")
+    out = [sys.executable, str(script)]
+    for t in toks[2:]:
         for k, v in subs.items():
             t = t.replace(k, v)
-        if t.startswith("skills/") and t.endswith(".py"):
-            t = str(pathlib.Path(sigma) / t)
+        if _ARG_UNSAFE.search(t):
+            raise Red(step, f"refused {line!r}: argument {t!r} carries shell syntax")
         out.append(t)
     return out
 
@@ -229,21 +329,67 @@ def _frontmatter(path):
     return dict(re.findall(r"(?m)^(\w+):\s*\"?(.*?)\"?\s*$", head))
 
 
-def _asks(output):
-    return sorted(set(re.findall(r"\[ask\] (\w+):", output)))
+_ASK = re.compile(r"(?m)^\s*\[ask\] ([\w-]+): (.*)$")
+_ALT = re.compile(r"(--[a-z][a-z-]*)(?: (\S+))?")
 
 
-def _answer_flags(asks, mode):
-    """Each `[ask]` line names the flag that answers it; the control's answers."""
-    table = {"mode": ["--mode", "github" if mode == "github" else "local-goals"],
-             "work": ["--local-only"] if mode == "local" else [],
-             "ledger": ["--ledger", "no"], "board": ["--board", "no"]}
+def parse_asks(output):
+    """Every `[ask]` line init printed -> {question id: [(flag, value spec or None), ...]}.
+
+    The shape is init_flow.ask_line's: `[ask] <id>: <prose> -> <alt> ; <alt> ...`, each alt a bare
+    `--flag` or `--flag VALUE|VALUE` / `--flag PLACEHOLDER`. A line without that machine part is a
+    red ("unanswerable [ask]"), never a guess read out of the prose."""
+    asks = {}
+    for qid, rest in _ASK.findall(output):
+        machine = rest.rsplit(" -> ", 1)[1] if " -> " in rest else ""
+        alts = [_ALT.fullmatch(a.strip()) for a in machine.split(" ; ")] if machine else [None]
+        if not all(alts):
+            raise Red("init", f"unanswerable [ask] {qid}: no machine-readable "
+                      f"`-> --flag VALUE|VALUE` part in {rest!r}")
+        asks[qid] = [(m.group(1), m.group(2)) for m in alts]
+    return asks
+
+
+#: The answer a READER of the README gives, by question id: (flag NAME, value). The flag must be one
+#: the `[ask]` line offers -- a question whose line does not offer it (a renamed flag), or a question
+#: id not in this table (a new question), has no policy and the control is red. VERIFY_BY_README:
+#: answered after init by the README's own confirm gesture (or, in the no-command variant, left
+#: open, as a user with no test command to confirm does) -- never by an init flag.
+VERIFY_BY_README = "<the README's verify_detect.py confirm gesture>"
+ASK_POLICY = {
+    "mode": ("--mode", lambda mode: "github" if mode == "github" else "local-goals"),
+    "work": ("--local-only", None),
+    "board": ("--board", "no"),
+    "ledger": ("--ledger", "no"),
+    "verify": ("--verify", VERIFY_BY_README),
+}
+
+
+def answer_asks(asks, mode):
+    """{qid: alts} -> the init flags that answer them (verify excluded: see VERIFY_BY_README)."""
     flags = []
-    for a in asks:
-        if a in table:
-            flags += table[a]
-    if mode == "github" and "mode" in asks:
-        flags += ["--repo", FAKE_REPO]
+    for qid, alts in asks.items():
+        if qid not in ASK_POLICY:
+            raise Red("init", f"unanswerable [ask] {qid}: the control has no policy for this "
+                      f"question (it offers {[a for a, _ in alts]})")
+        flag, value = ASK_POLICY[qid]
+        spec = dict(alts)
+        if flag not in spec:
+            raise Red("init", f"unanswerable [ask] {qid}: it offers {sorted(spec)}, not the "
+                      f"{flag} a reader of the README answers with")
+        if value == VERIFY_BY_README:
+            continue
+        value = value(mode) if callable(value) else value
+        if value is None:
+            if spec[flag] is not None:
+                raise Red("init", f"unanswerable [ask] {qid}: {flag} now takes a value ({spec[flag]})")
+            flags.append(flag)
+            continue
+        choices = spec[flag]
+        if choices is None or (choices.lower() == choices and value not in choices.split("|")):
+            raise Red("init", f"unanswerable [ask] {qid}: {flag} offers {choices!r}, "
+                      f"not {value!r}")
+        flags += [flag, value]
     return flags
 
 
@@ -264,37 +410,52 @@ def _loop_next_line(init_out):
 
 # ------------------------------------------------------------------------------ the flow
 
-def _init_and_verify(run, qs, sigma, repo, env, mode):
-    """README flags, then the [ask] answers, then the README's confirm gesture."""
+def _init_and_verify(run, qs, sigma, repo, env, mode, variant, extra=()):
+    """README flags, then the [ask] answers, then (confirm variant) the README's confirm gesture.
+    -> (init's last stdout, config.json's `verify` as init left it, before any confirm)."""
     init = [sys.executable, pathlib.Path(sigma) / qs["init_script"], "."] + qs["init_flags"]
     out = run.step("init (README flags)", init, repo, env, ok_rc=(0, 1))
     answered, flags = set(), []
     # Each run can open questions the last one could not reach (github mode's board/ledger appear
-    # once the mode is answered): answer every open one with the flag it names, re-run, repeat.
-    for _ in range(3):
-        asks = [a for a in _asks(out.stdout) if a != "verify"]
-        new = [a for a in asks if a not in answered]
+    # once the mode is answered): answer every open one with the flag its [ask] line offers,
+    # re-run, repeat. verify stays open here by design (VERIFY_BY_README).
+    for _ in range(4):
+        asks = parse_asks(out.stdout)
+        answer_asks(asks, mode)                        # every open question must have a policy
+        asks = {q: a for q, a in asks.items() if q != "verify"}
+        new = {q: a for q, a in asks.items() if q not in answered}
         if not asks and out.returncode == 0:
             break
         if not new:
-            raise Red("init", f"questions still open after answering them: {asks} "
+            raise Red("init", f"questions still open after answering them: {sorted(asks)} "
                       f"(exit {out.returncode})")
         answered.update(new)
-        flags += _answer_flags(new, mode)
+        flags += answer_asks(new, mode)
+        if mode == "github" and "mode" in new:
+            # No [ask] names --repo: the control's origin is a local path (or absent), not a GitHub
+            # owner/name, so github mode needs the repository given -- as the SKILL table says.
+            flags += ["--repo", FAKE_REPO] + list(extra)
         out = run.step("init (answers: " + ",".join(new) + ")", init + flags, repo, env, ok_rc=(0, 1))
     else:
-        raise Red("init", "init still asking after three rounds of answers")
+        raise Red("init", "init still asking after four rounds of answers")
     if out.returncode != 0:
         raise Red("init", f"exit {out.returncode}: {out.stdout.strip()[-300:]}")
-    second = out
-    n, ident = _candidate(second.stdout)
-    argv = _py_argv(qs["verify_confirm"], sigma, {"<n>": n, "<id>": ident})
+    cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+    scaffolded = {k: cfg["verify"].get(k) for k in ("command", "enforce")}
+    if variant == "no-command":
+        run.assertions.append(_check("no verify candidate was detected (the variant's premise)",
+                                     not re.search(r"verify_detect\.py\S*\s+confirm\s", out.stdout),
+                                     out.stdout[-300:]))
+        return out.stdout, scaffolded
+    n, ident = _candidate(out.stdout)
+    argv = _py_argv(qs["verify_confirm"], sigma, {"<n>": n, "<id>": ident},
+                    step="verify confirm (README gesture)")
     run.step("verify confirm (README gesture)", argv, repo, env)
     cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
     run.assertions.append(_check("verify confirmed: enforce ON with a command",
                                  bool(cfg["verify"].get("enforce")) and bool(cfg["verify"].get("command")),
                                  cfg["verify"]))
-    return second.stdout
+    return out.stdout, scaffolded
 
 
 def _check(name, ok, detail=None):
@@ -313,6 +474,33 @@ def check_local(obs):
         _check("the loop made no gh call in local-goals mode", obs.get("gh_calls") == [],
                obs.get("gh_calls")),
     ]
+
+
+def check_no_command(obs):
+    """The no-command variant's own goal (#228's trap, at the default init scaffolds): with no
+    confirmable candidate and the verify question left open, init must leave enforce OFF, so
+    `loop.py verify` says NO-COMMAND (exit 3) and `record done` still succeeds. The shipped bug
+    (enforce ON + command "" persisted by the scaffold) is exit 4 here. Pure, like check_local."""
+    cfg = obs.get("scaffolded_verify") or {}
+    out = [
+        _check("init left verify.enforce OFF with no command confirmed",
+               not cfg.get("enforce") and not cfg.get("command"), cfg),
+        _check("loop verify said NO-COMMAND (exit 3)", obs.get("verify_rc") == 3, obs.get("verify_rc")),
+        _check("record done exited 0 (nothing to enforce)", obs.get("record_rc") == 0,
+               obs.get("record_rc")),
+    ]
+    if "status" in obs:
+        out.append(_check("goal frontmatter status is done", obs.get("status") == "done",
+                          obs.get("status")))
+    if "gh_calls" in obs:
+        out.append(_check("the loop made no gh call in local-goals mode", obs.get("gh_calls") == [],
+                          obs.get("gh_calls")))
+    if "issue_final" in obs:
+        out.append(_check("issue closed after done", obs.get("issue_final") == "closed",
+                          obs.get("issue_final")))
+        out.append(_check("every gh call was one the fake models", obs.get("unhandled") == "",
+                          obs.get("unhandled")))
+    return out
 
 
 def check_github(obs):
@@ -388,22 +576,32 @@ def _local_goal_work(goal_path, repo):
     raise Red("work", f"the loop picked a goal the control does not know: {goal_path}")
 
 
-def run_local(sigma, readme_text, root, qs=None):
-    run = Run("local-goals")
+def _fresh_files(repo, variant):
+    """The fresh repository's one commit: a Makefile test target (confirm variant), or only a
+    README (no-command variant: nothing verify_detect can propose)."""
+    if variant == "no-command":
+        (repo / "README.txt").write_text("A repository with no test command.\n", encoding="utf-8")
+    else:
+        (repo / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+
+
+def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
+    run = Run("local-goals" + ("" if variant == "confirm" else "/" + variant))
     goals = []
+    base = root / ("local" if variant == "confirm" else "local-" + variant)
     try:
         qs = qs or run.timed("readme parse", lambda: parse_quickstart(readme_text, sigma))
-        repo, bin_dir = root / "local" / "repo", root / "local" / "bin"
+        repo, bin_dir = base / "repo", base / "bin"
         repo.mkdir(parents=True)
         bin_dir.mkdir()
-        gh_log = root / "local" / "gh_calls.jsonl"
+        gh_log = base / "gh_calls.jsonl"
         _stub_gh(bin_dir, gh_log)
-        env = _env(root / "local", bin_dir)
+        env = _env(base, bin_dir)
         _git(["init", "-q", "-b", "main"], repo, env)
-        (repo / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+        _fresh_files(repo, variant)
         _git(["add", "-A"], repo, env)
         _git(["commit", "-qm", "fresh repository"], repo, env)
-        init_out = _init_and_verify(run, qs, sigma, repo, env, "local")
+        init_out, scaffolded = _init_and_verify(run, qs, sigma, repo, env, "local", variant)
         (repo / ".sdlc" / "goals" / "0002-onboarding-hello.md").write_text(
             f'---\nid: "0002"\ntitle: {GOAL_TITLE}\nstatus: pending\n---\n\n'
             f"Create {WORK_FILE} with one line. Filed by the onboarding control.\n", encoding="utf-8")
@@ -413,7 +611,7 @@ def run_local(sigma, readme_text, root, qs=None):
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         run.step("loop start", [sys.executable, loop / "loop.py", "start", ".sdlc", "--session-pid", pid],
                  repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}) + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
         for _ in range(5):
             goal = run.step("loop next", nxt, repo, env).stdout.strip()
             if not goal or goal == "DONE":
@@ -423,8 +621,11 @@ def run_local(sigma, readme_text, root, qs=None):
             obs = _drive_local_goal(run, loop, repo, env, goal, pid)
             goal = obs["goal"]
             obs["gh_calls"] = _gh_calls(gh_log)[init_gh:]
+            obs["scaffolded_verify"] = scaffolded
             goals.append(obs)
-            for a in check_local(obs):
+            check = check_no_command if variant == "no-command" and obs["work"] == WORK_FILE \
+                else check_local
+            for a in check(obs):
                 a["name"] = f"{goal}: {a['name']}"
                 run.assertions.append(a)
             if obs["record_rc"] != 0:
@@ -435,18 +636,25 @@ def run_local(sigma, readme_text, root, qs=None):
     except Red as red:
         run.failed = red.step
         run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
-    return run.result({"goals": goals, "gh_calls": _summarise_gh(_gh_calls(root / "local" / "gh_calls.jsonl"))})
+    return run.result({"variant": variant, "goals": goals,
+                       "gh_calls": _summarise_gh(_gh_calls(base / "gh_calls.jsonl"))})
 
 
 def _drive_local_goal(run, loop, repo, env, goal, pid):
-    """The agrim-loop skill's per-goal gestures with work.enabled off (--local-only)."""
+    """The agrim-loop skill's per-goal gestures with work.enabled off (--local-only). `goal` is a
+    goal file (local-goals mode) or an issue number (github mode, the no-command variant)."""
+    is_file = (repo / goal).is_file()
     py = sys.executable
     name = pathlib.Path(goal).name
     run.step(f"agent-start {name}", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid],
              repo, env)
     run.step(f"phase_report start {name}", [py, loop / "phase_report.py", "start", ".sdlc", goal,
                                             "implement", "--model", "haiku", "--pid", pid], repo, env)
-    work = _local_goal_work(repo / goal, repo)
+    if is_file:
+        work = _local_goal_work(repo / goal, repo)
+    else:
+        (repo / WORK_FILE).write_text("hi\n", encoding="utf-8")
+        work = WORK_FILE
     end = run.step(f"phase_report end {name}", [py, loop / "phase_report.py", "end", ".sdlc", goal,
                                                 "implement", "--pid", pid], repo, env)
     # loop.py verify's exit is recorded, not fatal: `record done` is the gate that decides, and the
@@ -458,7 +666,7 @@ def _drive_local_goal(run, loop, repo, env, goal, pid):
     ev_path = repo / ".sdlc" / "state" / "verify" / (pathlib.Path(goal).stem + ".json")
     evidence = json.loads(ev_path.read_text(encoding="utf-8")) if ev_path.is_file() else None
     return {"goal": pathlib.Path(goal).name, "work": work, "verify_rc": ver.returncode, "record_rc": rec.returncode,
-            "record_err": rec.stderr + rec.stdout, "status": _frontmatter(repo / goal).get("status"),
+            "record_err": rec.stderr + rec.stdout, "status": _frontmatter(repo / goal).get("status") if is_file else None,
             "evidence": {k: (evidence or {}).get(k) for k in ("command", "exit", "verify_state")}
             if evidence else None,
             "cost_line": next((l for l in end.stdout.splitlines() if "cost" in l), "")}
@@ -479,10 +687,10 @@ def _fake_gh_body(sigma):
     raise Red("setup", f"no _FAKE_GH_BODY in {src}")
 
 
-def run_github(sigma, readme_text, root, qs=None):
-    run = Run("github")
+def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
+    run = Run("github" + ("" if variant == "confirm" else "/" + variant))
     obs = {}
-    base = root / "github"
+    base = root / ("github" if variant == "confirm" else "github-" + variant)
     state_path, log_path, unhandled = base / "gh_state.json", base / "gh_log.jsonl", base / "gh_unhandled.jsonl"
     try:
         qs = qs or run.timed("readme parse", lambda: parse_quickstart(readme_text, sigma))
@@ -502,16 +710,17 @@ def run_github(sigma, readme_text, root, qs=None):
                                    "FAKE_GH_UNHANDLED": str(unhandled)})
         _git(["init", "-q", "--bare", "-b", "main", str(remote)], base, env)
         _git(["clone", "-q", str(remote), str(repo)], base, env)
-        (repo / "Makefile").write_text(MAKEFILE, encoding="utf-8")
+        _fresh_files(repo, variant)
         _git(["add", "-A"], repo, env)
         _git(["commit", "-qm", "fresh repository"], repo, env)
         _git(["push", "-q", "-u", "origin", "main"], repo, env)
-        init_out = _init_and_verify(run, qs, sigma, repo, env, "github")
-        # init git-ignores its runtime dirs and scaffolds .sdlc/: commit + push, so the goal's
-        # worktree (cut from origin/main) has the config and Makefile -- what an adopter does.
-        _git(["add", "-A"], repo, env)
-        _git(["commit", "-qm", "adopt sigma"], repo, env)
-        _git(["push", "-q", "origin", "main"], repo, env)
+        # The no-command variant also passes --local-only (no [ask] names it here: the remote is
+        # fine). With work ON, `work.py merge` refuses without passing verify evidence WHETHER OR
+        # NOT enforce is set, so a no-command goal parks there either way and the enforce default
+        # is invisible; `record done`'s enforce gate is reachable in github mode only with work off.
+        extra = ["--local-only"] if variant == "no-command" else []
+        init_out, obs["scaffolded_verify"] = _init_and_verify(run, qs, sigma, repo, env, "github",
+                                                              variant, extra)
 
         def gh_(args, name):
             return run.step(name, [gh] + args, repo, env)
@@ -519,17 +728,24 @@ def run_github(sigma, readme_text, root, qs=None):
         def state():
             return json.loads(state_path.read_text(encoding="utf-8"))
 
-        gh_(["issue", "create", "--repo", FAKE_REPO, "--label", "sdlc:goal,priority:P2", "--assignee",
+        gh_(["issue", "create", "--repo", FAKE_REPO, "--label", "sdlc:goal", "--assignee",
              "@me", "--title", GOAL_TITLE, "--body", f"Create {WORK_FILE} with one line."],
             "file goal (gh issue create, labelled sdlc:goal, assigned @me)")
         pid = str(os.getpid())
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         py = sys.executable
         run.step("loop start", [py, loop / "loop.py", "start", ".sdlc", "--session-pid", pid], repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}) + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
         goal = run.step("loop next", nxt, repo, env).stdout.strip()
         if goal != "1":
             raise Red("loop next", f"expected issue 1, got {goal!r}")
+        if variant == "no-command":
+            obs.update(_drive_local_goal(run, loop, repo, env, goal, pid))
+            obs.pop("status")
+            obs["issue_final"] = state()["issues"][goal]["state"]
+            if obs["record_rc"] != 0:
+                raise Red("record done", f"{goal}: {obs['record_err'].strip()[-300:]}")
+            raise _Finished()
         run.step("agent-start", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid], repo, env)
         run.step("work start", [py, loop / "work.py", "start", ".sdlc", goal, "--session-pid", pid], repo, env)
         run.step("phase_report start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement",
@@ -568,16 +784,19 @@ def run_github(sigma, readme_text, root, qs=None):
         shown = subprocess.run(["git", "--git-dir", str(remote), "show", f"main:{WORK_FILE}"],
                                capture_output=True, text=True)
         obs["remote_file"] = shown.stdout if shown.returncode == 0 else None
+    except _Finished:
+        pass
     except Red as red:
         run.failed = red.step
         run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
     obs["unhandled"] = unhandled.read_text(encoding="utf-8") if unhandled.is_file() else ""
     if run.failed is None:
-        run.assertions += check_github(obs)
+        run.assertions += (check_no_command if variant == "no-command" else check_github)(obs)
     calls = _gh_calls(log_path)
     ev = obs.get("evidence") or {}
     obs["evidence"] = {k: ev.get(k) for k in ("command", "exit", "verify_state")} if ev else None
-    return run.result({"observations": obs, "gh_calls": _summarise_gh(calls), "gh_call_count": len(calls)})
+    return run.result({"variant": variant, "observations": obs, "gh_calls": _summarise_gh(calls),
+                       "gh_call_count": len(calls)})
 
 
 # ------------------------------------------------------------------------------ host install
@@ -648,6 +867,9 @@ def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--mode", choices=("local", "github", "both"), default="both")
+    ap.add_argument("--variant", choices=VARIANTS + ("all",), default="all",
+                    help="confirm: a Makefile test target, confirmed by the README gesture; "
+                         "no-command: nothing to confirm, the question left open (default: all)")
     ap.add_argument("--sigma", default=str(ROOT), help="the Sigma checkout to run (default: this one)")
     ap.add_argument("--readme", help="the README to follow (default: <sigma>/README.md)")
     ap.add_argument("--install", choices=("none", "claude", "codex", "all"), default="none")
@@ -666,7 +888,12 @@ def main(argv):
             return 2
     sigma = pathlib.Path(args.sigma).resolve()
     readme = pathlib.Path(args.readme or sigma / "README.md")
-    text = readme.read_text(encoding="utf-8")
+    try:
+        text = readme.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"onboarding_control: precondition missing: cannot read the README to follow "
+              f"({readme}): {exc.__class__.__name__}: {exc}", file=sys.stderr)
+        return 2
     root = pathlib.Path(tempfile.mkdtemp(prefix="sigma-onboarding-", dir=args.workdir))
     result = {"schema": SCHEMA, "sigma": str(sigma), "readme": str(readme),
               "python": sys.version.split()[0], "platform": sys.platform,
@@ -693,10 +920,12 @@ def main(argv):
                     run_from = pathlib.Path(inst)
         result["scripts_from"] = str(run_from)
         if qs:
-            if args.mode in ("local", "both"):
-                result["modes"]["local"] = run_local(run_from, text, root, qs)
-            if args.mode in ("github", "both"):
-                result["modes"]["github"] = run_github(run_from, text, root, qs)
+            for variant in VARIANTS if args.variant == "all" else (args.variant,):
+                tag = "" if variant == "confirm" else "/" + variant
+                if args.mode in ("local", "both"):
+                    result["modes"]["local" + tag] = run_local(run_from, text, root, qs, variant)
+                if args.mode in ("github", "both"):
+                    result["modes"]["github" + tag] = run_github(run_from, text, root, qs, variant)
     finally:
         result["seconds"] = round(time.monotonic() - t0, 3)
         if not args.keep:

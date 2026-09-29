@@ -5,13 +5,15 @@ Quickstart, followed literally on a fresh repository, get one goal to `done`? It
 epic #227 (plugin install -> `/agrim-init` -> one goal to done), built in #237.
 
 It runs in CI on every push (`tests/test_onboarding_control.py`, Linux, Python 3.10 and 3.12), with
-no secrets, no network and no model session.
+no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
+are not on CI runners, so the install lines are parsed and checked there, and run only by hand.
 
 ## Run it
 
 ```
-python3 tools/onboarding_control.py                         # both modes, from this checkout
-python3 tools/onboarding_control.py --mode local            # local-goals mode only
+python3 tools/onboarding_control.py                         # both modes x both variants, from this checkout
+python3 tools/onboarding_control.py --mode local            # local-goals mode only (both variants)
+python3 tools/onboarding_control.py --variant no-command    # only the no-command variant
 python3 tools/onboarding_control.py --install all --from-install --json run.json
 ```
 
@@ -23,8 +25,10 @@ that is not installed is reported `skipped`, never green. `--from-install` runs 
 the installed Claude Code copy instead of the checkout. `--sigma DIR` runs another Sigma tree (a
 scratch copy for a control); `--readme FILE` follows another README (a drift control).
 
-Exit 0: every mode reached `done` and every assertion held. Exit 1: red; the JSON names the first
-failing step. Exit 2: a precondition is missing (`git` or `make` not on PATH, or Windows).
+Exit 0: every mode and variant reached `done` and every assertion held. Exit 1: red; the JSON names
+the first failing step, and one line per run says `GREEN` or `RED at <step>` (`local`, `github`,
+`local/no-command`, `github/no-command`). Exit 2: a precondition is missing (`git` or `make` not on
+PATH, Windows, or the README cannot be read -- a message, not a traceback) or a bad argument.
 
 ## What it follows, step by step
 
@@ -33,19 +37,45 @@ scripts turns the control red:
 
 | From the README | What the control does with it |
 |---|---|
-| `claude plugin marketplace add <SIGMA_REPO>` / `claude plugin install sigma@sigma` | `--install`: runs them into the isolated profile, `<SIGMA_REPO>` = the checkout |
-| `codex plugin marketplace add <SIGMA_REPO>` / `codex plugin add sigma@sigma` | `--install`: the same, into an isolated `CODEX_HOME` |
+| `claude plugin marketplace add <SIGMA_REPO>` / `claude plugin install sigma@sigma` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile, `<SIGMA_REPO>` = the checkout |
+| `codex plugin marketplace add <SIGMA_REPO>` / `codex plugin add sigma@sigma` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
+| `/plugin marketplace add <SIGMA_REPO>` / `/plugin install sigma@sigma` (in-session) | checked the same way (a model turn; not run) |
+| every init flag the Quickstart shows (`/agrim-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/agrim-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
 | `/agrim-init --demo` (the `### Claude Code` block) | its flags |
 | `python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . ...` | the script `/agrim-init` runs |
 | `/agrim-loop` (the `### Claude Code` block) | must be present; the loop is then driven by the scripts the agrim-loop skill names |
-| `python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate |
+| `python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate (confirm variant) |
 
-Everything else comes from what `/agrim-init` prints: every `[ask]` line is answered with the flag
-it names and init is re-run (github mode's board and ledger questions only appear once the mode is
-answered, so this takes up to three rounds), and the `Next:` line's `loop.py next` command is the
-one the loop runs.
+A README or printed command runs only in one pinned shape: first token `python3` (or the `python` /
+`py` that init itself prints), run as the control's own interpreter; second token a `.py` script
+that exists under the Sigma directory's `skills/` or `tools/`; no argument carrying shell syntax
+(`` ` `` `$` `;` `&` `|` `<` `>` parentheses, braces, globs, control characters). Anything else is
+refused before it runs. Nothing goes through a shell.
 
-**Local-goals mode.** A fresh `git init` repository with no remote and a `Makefile` whose `test`
+Everything else comes from what `/agrim-init` prints. Every `[ask]` line ends in one
+machine-readable shape, `[ask] <id>: <prose> -> <answer> ; <answer>`, each answer `--flag`,
+`--flag VALUE|VALUE` or `--flag PLACEHOLDER` (`init_flow.ask_line`). The control parses it and
+answers from a small policy keyed by question id and flag NAME: mode `--mode local-goals|github`,
+work `--local-only`, board `--board no`, ledger `--ledger no`, verify by the README's confirm
+gesture (never an init flag). A question with no policy, a line that no longer offers the policy's
+flag (renamed), a value outside the offered set, or a line without the machine part is **red,
+"unanswerable [ask]"** -- a real user relaying such a line would get exit 2. Init is re-run until
+nothing is open (github mode's board and ledger questions only appear once the mode is answered).
+Two answers the control supplies itself, because no `[ask]` names them: `--repo
+acme/onboarding-demo` in github mode (the origin is a local path, not a GitHub owner/name, so
+github mode needs the repository given), and `--local-only` in the github no-command variant
+(below). The `Next:` line's `loop.py next` command is the one the loop runs.
+
+**Two variants per mode.** `confirm`: the repository has a Makefile test target and the README
+gesture confirms it (enforce ON). `no-command`: the repository has only a README.txt, so nothing is
+detected; the verify question is left open, as a user with no test command leaves it, and the
+default init SCAFFOLDS is exactly what `record done` sees. The confirm variant can never see a bad
+default -- the confirm overwrites it -- which is why the no-command variant exists (review of PR
+#306). Asserted for the control's goal there: init left `verify.enforce` OFF with no command;
+`loop.py verify` said NO-COMMAND (exit 3); `record done` exited 0; the goal is done (local: status
+`done`, no gh call; github: issue closed, every gh call modelled).
+
+**Local-goals mode, confirm variant.** A fresh `git init` repository with no remote and a `Makefile` whose `test`
 target checks `hello.txt` (so the confirmed verify command fails before the work and passes after
 it). A `gh` stub on PATH logs every call. Init answers: `--mode local-goals`, `--local-only`. Then:
 confirm `make test` -> file `.sdlc/goals/0002-onboarding-hello.md` (no frontmatter
@@ -57,10 +87,12 @@ Asserted per goal: `record done` exit 0; frontmatter `status: done`; verify evid
 (`.sdlc/state/verify/<goal>.json`) `verify_state: pass`, `exit: 0`, a non-empty command; the loop
 made no `gh` call. And the control's own goal is among those done.
 
-**github mode.** A local bare `origin`, a clone with the same Makefile, and the stateful fake `gh`
+**github mode, confirm variant.** A local bare `origin`, a clone with the same Makefile, and the stateful fake `gh`
 from `tests/test_public_bootstrap_control.py` (extracted by `ast`, so the control and that test
 share one fake). Init answers `--mode github --repo acme/onboarding-demo`, then `--board no
---ledger no`; the adopted `.sdlc/` is committed and pushed. Then: `gh issue create` labelled
+--ledger no`. Nothing is committed after init: the goal's worktree needs nothing from it (an
+earlier draft committed and pushed `.sdlc/` and labelled the issue `priority:P2`; the PR #306 review
+showed removing either stays green, so both are gone). Then: `gh issue create` labelled
 `sdlc:goal`, assigned `@me` -> `loop.py start/next` -> `agent-start` -> `work.py start` ->
 `phase_report.py` -> the work in the goal worktree -> `loop.py verify` -> `work.py commit`, `pr` ->
 a reviewer's `sigma:block` comment -> `work.py merge` (must park) -> `sigma:approve` ->
@@ -73,7 +105,22 @@ while the PR was open; issue open and PR open before the merge; reconcile printe
 `<n> done (PR #<pr> merged)`; issue closed; PR merged; `hello.txt` on `origin/main`; verify evidence
 passed; and every gh call was one the fake models. The gh calls themselves are recorded by kind.
 
+**github mode, no-command variant.** The same origin and fake, a repository with nothing to
+confirm, init answered as above plus `--local-only`. Why work off: with work ON, `work.py merge`
+refuses without passing verify evidence whether or not `verify.enforce` is set, so a no-command
+goal parks there either way and the enforce default is invisible; `record done`'s enforce gate is
+reachable in github mode only with work off. Then `gh issue create` -> `loop.py start/next` -> the
+per-goal gestures of local mode on issue `1` -> `record done` (must exit 0 and close the issue).
+
 ## Recorded runs
+
+2026-09-29, macOS (Darwin 25.6), Python 3.12.13, from the checkout, the documented gesture
+`python3 tools/onboarding_control.py`: exit 0, whole run 18.6s. `local` GREEN 2.46s, `github`
+GREEN 8.22s, `local/no-command` GREEN 1.98s (`loop verify` exit 3 NO-COMMAND, `record done` exit 0),
+`github/no-command` GREEN 5.94s (`loop verify` exit 3, `record done` exit 0, issue closed).
+
+The run below predates the variants and the `[ask]` parsing; its install and per-step numbers are
+still the only measured `--install` run.
 
 2026-09-29, macOS (Darwin 25.6), Python 3.12.13, from the INSTALLED Claude Code copy
 (`--install all --from-install`; the marketplace install takes the checkout's committed HEAD, not
@@ -140,8 +187,9 @@ end` did run at every phase boundary and printed its honest line, recorded as-is
 `cost: unavailable on this host (phase ran inline within a nested session; no top-level transcript
 to window ...)`.
 
-CI shape: `tests/test_onboarding_control.py`, 12 tests, 23.4s on Python 3.12 and 18.0s on 3.10
-(this Mac, from the checkout).
+CI shape: `tests/test_onboarding_control.py`, 40 tests (the green runs come from ONE subprocess
+run of the documented gesture), 55.5s on Python 3.12 and 47.0s on 3.10 (this Mac, from the
+checkout); the PR #306 repro through the CLI is ~20s of that.
 
 ## The controls, seen red
 
@@ -150,11 +198,22 @@ Each was run through the CLI gesture above, not only through pytest, and each is
 | Control | Gesture | Result |
 |---|---|---|
 | The empty-verify-command default reintroduced: in a scratch copy, `verify_detect.write_verify` writes `enforce: true, command: ""` again, its guard removed | `--mode local --sigma <scratch>` | exit 1, **RED at `record done`** (5.8s): the demo goal (its own `verify_command`) is done; the control's goal gets `loop.py verify` NO-COMMAND exit 3, then `record done` REFUSED exit 4 |
-| The same default reintroduced in the TEMPLATE only (`config.json.tmpl` `enforce: true`) | `--mode local --sigma <scratch>` | GREEN: init rewrites `verify` to enforce OFF on scaffold, and the confirm sets the command. The trap now needs `write_verify` itself to regress |
+| The ORIGINAL bug, as the PR #306 review reproduced it: `config.json.tmpl` back to `"enforce": true` with an empty command, and both scaffold rewrites removed (`init_flow.py`'s and `sdlc_init.py`'s `write_verify(sdlc, None, ...)`), `write_verify` itself intact | `--mode both --sigma <scratch>` | exit 1 (27.5s): `local` and `github` GREEN (the confirm overwrites the default -- before the no-command variant this was the whole run, and it was wrongly green); `local/no-command` and `github/no-command` **RED at `record done`**: `loop verify` exit 3, `record done` REFUSED exit 4, issue still open |
+| Every `[ask]` flag renamed in `init_flow.py` (`--board`, `--verify`, `--local-only`, `--mode`, `--ledger` to names nothing accepts) | pytest (`run_local` on a scratch copy) | RED at `init`: "unanswerable [ask] mode: it offers ['--backlog'] ..." |
+| An `[ask]` with an unknown id, without the ` -> ` part, a renamed flag, or a value outside its set | pytest (parser) | RED, "unanswerable [ask]" |
+| An init flag the README shows renamed (`--local-only` -> `--offline`), or dropped from init_flow.py's parser | pytest (parse) | RED at `readme` |
+| A drifted install line (claude, codex or in-session `/plugin`; the id not the manifest's) | pytest (parse) | RED at `readme` |
+| A README gesture that is not the pinned shape (`sh -c 'touch <marker>' ...`, `bash`/`node` first, `$(...)`, `;`, a backtick, `|`, a script that does not exist or lies outside `skills/`/`tools/`) | pytest | refused before running; the marker file is never created |
+| `--readme` pointing at a missing file | CLI | exit 2, `precondition missing: cannot read the README`, no traceback |
 | README drift: `verify_detect.py confirm` renamed `accept` | `--mode local --readme <copy>` | exit 1, RED at `verify confirm (README gesture)` |
 | README drift: `init_flow.py` renamed `init.py` | `--mode local --readme <copy>` | exit 1, RED at `readme` (the README names a script that does not ship) |
 | README drift: `/agrim-loop`, `/agrim-init` or `claude plugin install` renamed | pytest (parse) | RED at `readme` |
-| Every assertion in `check_local` (5) and `check_github` (11) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
+| Every assertion in `check_local` (5), `check_github` (11) and `check_no_command` (7) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
+
+Each guard the controls above rely on was itself broken once (the variant removed, the offered-flag
+check skipped, an unknown question tolerated, the shell-syntax / interpreter / script pins removed,
+the README-flag and install checks skipped, the README read unguarded, a no-command assertion
+forced true) and the matching test was seen red, on Python 3.10 and 3.12.
 
 The `/agrim-init` drift case caught the control's own first draft: it took the first `/agrim-init`
 line anywhere in the Quickstart, so with the first-run line renamed it silently used the "Adopting

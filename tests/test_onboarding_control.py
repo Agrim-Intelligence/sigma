@@ -1,27 +1,46 @@
-"""#237: the end-to-end onboarding control runs in CI, in both modes, and is seen red.
+"""#237: the end-to-end onboarding control runs in CI, in both modes and both variants, and is seen red.
 
 `tools/onboarding_control.py` follows the README Quickstart TEXT (parsed, not restated) through
 `/agrim-init` to one goal `done`: local-goals mode against a fresh repository with no remote, and
 github mode against the stateful fake `gh` from tests/test_public_bootstrap_control.py and a local
-bare origin. Secretless, no model session, no network.
+bare origin; each in the `confirm` variant (a Makefile target, confirmed by the README gesture) and
+the `no-command` variant (nothing to confirm, the verify question left open -- so the default init
+SCAFFOLDS is what `record done` sees). Secretless, no model session, no network.
+
+The green runs come from the DOCUMENTED gesture, `python3 tools/onboarding_control.py`, run as a
+subprocess and parsed from its own stdout (AGENTS.md: run the control on the gesture the docs give).
 
 THE CONTROLS (AGENTS.md: a test never seen red proves nothing), each run here on every CI leg:
-  * the empty-verify-command default reintroduced in a SCRATCH COPY of the plugin
-    (`verify_detect.write_verify` writing enforce ON + command "" again, its guard removed) turns
-    the control red AT `record done` -- the demo goal, which carries its own verify_command, still
-    reaches done; the control's own goal does not.
-  * a drifted README turns it red: a renamed verb in the confirm gesture fails the run at that
-    gesture; a renamed init script or a dropped `/agrim-loop` line fails the README parse.
-  * every assertion in `check_local` / `check_github` is broken once, alone, against the
-    observations of a real green run, and seen false.
+  * the ORIGINAL bug, exactly as the PR #306 review reproduced it -- `config.json.tmpl` back to
+    `"enforce": true` with an empty command and BOTH scaffold rewrites (init_flow.py, sdlc_init.py)
+    removed, `verify_detect.write_verify` intact -- through the CLI gesture `--mode both --sigma
+    <scratch>`: exit 1, both no-command variants RED at `record done` (exit 4). The confirm
+    variants stay green: their confirm overwrites the default, which is why the variant exists.
+  * `verify_detect.write_verify` itself regressed (enforce ON + "" again, its guard removed) turns
+    the confirm variant red AT `record done`.
+  * every `[ask]` flag renamed in init_flow.py turns the control red at init ("unanswerable
+    [ask]"); an unknown question id, a line without the machine-readable part, and a renamed flag
+    are each red in the pure parser too.
+  * README drift turns it red: a renamed verb in the confirm gesture fails the run at that gesture;
+    a renamed init script, a dropped `/agrim-loop` line, a drifted install line (claude, codex,
+    in-session `/plugin`), or an init flag the README shows that init_flow.py does not accept,
+    fails the README parse.
+  * a README command that is not `python3 <sigma script> ...`, or carries shell syntax, is refused
+    before anything runs (a marker file proves nothing was executed).
+  * every assertion in `check_local` / `check_github` / `check_no_command` is broken once, alone,
+    against the observations of a real green run, and seen false.
+  * main(): exit 0 green, 1 red, 2 for a missing README (a message, not a traceback).
 POSIX only: the tool refuses on Windows (a make target, a #! fake gh), so this module skips there.
 """
 import copy
 import importlib.util
+import json
 import os
 import pathlib
 import re
 import shutil
+import subprocess
+import sys
 
 import pytest
 
@@ -42,6 +61,7 @@ def _tool():
 
 oc = _tool()
 README_TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
+INIT_FLOW = pathlib.Path("skills") / "agrim-init" / "scripts" / "init_flow.py"
 
 
 def _scratch_copy(dest):
@@ -54,14 +74,38 @@ def _scratch_copy(dest):
     return dest
 
 
-@pytest.fixture(scope="module")
-def local_run(tmp_path_factory):
-    return oc.run_local(ROOT, README_TEXT, tmp_path_factory.mktemp("local"))
+def _mutate(path, old, new):
+    src = path.read_text(encoding="utf-8")
+    assert src.count(old) == 1, (path, old)
+    path.write_text(src.replace(old, new), encoding="utf-8")
+
+
+def _cli(*args, workdir=None):
+    """The documented gesture, as a subprocess: -> (rc, {name: 'GREEN' | 'RED at <step>'}, JSON)."""
+    argv = [sys.executable, str(TOOL), *args] + (["--workdir", str(workdir)] if workdir else [])
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
+    lines = dict(re.findall(r"(?m)^onboarding-control: (\S+): (GREEN|RED at [^(]+?) \(", proc.stdout))
+    blob = json.loads(proc.stdout[proc.stdout.index("\n{") + 1:]) if "\n{" in proc.stdout else None
+    return proc.returncode, lines, blob, proc
 
 
 @pytest.fixture(scope="module")
-def github_run(tmp_path_factory):
-    return oc.run_github(ROOT, README_TEXT, tmp_path_factory.mktemp("github"))
+def cli_run(tmp_path_factory):
+    rc, lines, blob, proc = _cli(workdir=tmp_path_factory.mktemp("cli"))
+    assert rc == 0, proc.stdout[-3000:] + proc.stderr[-2000:]
+    assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "GREEN",
+                     "github/no-command": "GREEN"}, lines
+    return blob
+
+
+@pytest.fixture(scope="module")
+def local_run(cli_run):
+    return cli_run["modes"]["local"]
+
+
+@pytest.fixture(scope="module")
+def github_run(cli_run):
+    return cli_run["modes"]["github"]
 
 
 # ------------------------------------------------------------------------------ green runs
@@ -71,7 +115,12 @@ def test_readme_quickstart_parses_into_the_gestures_the_control_runs():
     assert qs["init_script"] == "skills/agrim-init/scripts/init_flow.py"
     assert "--demo" in qs["init_flags"]
     assert "confirm .sdlc <n> <id>" in qs["verify_confirm"]
-    assert any("marketplace add <SIGMA_REPO>" in l for l in qs["claude_install"])
+    assert qs["claude_install"] == ["claude plugin marketplace add <SIGMA_REPO>",
+                                    "claude plugin install sigma@sigma"]
+    assert qs["codex_install"] == ["codex plugin marketplace add <SIGMA_REPO>", "codex plugin add sigma@sigma"]
+    assert qs["session_install"] == ["/plugin marketplace add <SIGMA_REPO>", "/plugin install sigma@sigma"]
+    assert {"--mode", "--verify", "--board", "--ledger", "--local-only"} <= set(qs["init_readme_flags"])
+    assert set(qs["init_readme_flags"]) <= oc.init_flow_flags(ROOT)
 
 
 def test_local_goals_mode_reaches_done_from_the_readme(local_run):
@@ -95,17 +144,44 @@ def test_github_mode_is_done_only_after_the_pr_merged(github_run):
     assert obs["unhandled"] == ""
 
 
+def test_no_command_variants_reach_done_with_enforce_off(cli_run):
+    local = next(g for g in cli_run["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
+    github = cli_run["modes"]["github/no-command"]["observations"]
+    for obs in (local, github):
+        assert obs["scaffolded_verify"] == {"command": "", "enforce": False}, obs
+        assert obs["verify_rc"] == 3 and obs["record_rc"] == 0, obs
+    assert local["status"] == "done" and github["issue_final"] == "closed"
+
+
 # ------------------------------------------------------------------------------ controls
 
-def test_control_empty_verify_default_goes_red_at_record_done(tmp_path):
+def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
+    """The PR #306 reviewer's exact repro: template default back, both scaffold rewrites gone."""
+    sigma = _scratch_copy(tmp_path / "sigma")
+    init_dir = sigma / "skills" / "agrim-init"
+    _mutate(init_dir / "templates" / "config.json.tmpl",
+            '"verify": { "command": "", "enforce": false }', '"verify": { "command": "", "enforce": true }')
+    _mutate(init_dir / "scripts" / "init_flow.py",
+            "        _vd.write_verify(sdlc, None, _vd.unconfirmed_why(_vd.detect(target)))\n", "        pass\n")
+    _mutate(init_dir / "scripts" / "sdlc_init.py",
+            "        vd.write_verify(sdlc, None, vd.unconfirmed_why(vd.detect(target)))\n", "        pass\n")
+    rc, lines, blob, proc = _cli("--mode", "both", "--sigma", str(sigma), workdir=tmp_path)
+    assert rc == 1, proc.stdout[-3000:]
+    assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "RED at record done",
+                     "github/no-command": "RED at record done"}, lines
+    mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
+    assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
+    assert mine["scaffolded_verify"] == {"command": "", "enforce": True}
+    gh_obs = blob["modes"]["github/no-command"]["observations"]
+    assert gh_obs["record_rc"] == 4 and gh_obs["issue_final"] == "open"
+
+
+def test_control_write_verify_regression_goes_red_at_record_done(tmp_path):
     sigma = _scratch_copy(tmp_path / "sigma")
     vd = sigma / "skills" / "agrim-init" / "scripts" / "verify_detect.py"
-    src = vd.read_text(encoding="utf-8")
-    good = ('    verify["command"] = command\n    verify["enforce"] = bool(command)\n')
-    assert good in src
-    src = src.replace(good, '    verify["command"] = ""\n    verify["enforce"] = True\n')
-    src = src.replace('    if verify["enforce"] and not verify["command"]:', '    if False:')
-    vd.write_text(src, encoding="utf-8")
+    _mutate(vd, '    verify["command"] = command\n    verify["enforce"] = bool(command)\n',
+            '    verify["command"] = ""\n    verify["enforce"] = True\n')
+    _mutate(vd, '    if verify["enforce"] and not verify["command"]:', '    if False:')
     run = oc.run_local(sigma, README_TEXT, tmp_path / "w")
     assert run["ok"] is False
     assert run["failed_step"] == "record done", run["failed_step"]
@@ -113,6 +189,55 @@ def test_control_empty_verify_default_goes_red_at_record_done(tmp_path):
     assert demo["work"] == oc.DEMO_FILE and demo["status"] == "done"
     assert mine["work"] == oc.WORK_FILE and mine["record_rc"] == 4 and mine["verify_rc"] == 3
     assert "REFUSED" in mine["record_err"] and mine["status"] != "done"
+
+
+RENAMED_ASK_FLAGS = [('["--board yes|no"]', '["--pin-board yes|no"]'),
+                     ('["--verify N:ID",', '["--check N:ID",'),
+                     ('["--local-only"]', '["--offline"]'),
+                     ('["--mode local-goals|github"]', '["--backlog local-goals|github"]'),
+                     ('["--ledger yes|no"]', '["--team-ledger yes|no"]')]
+
+
+def test_control_renamed_ask_flags_go_red_at_init(tmp_path):
+    """The reviewer's second repro: every [ask] flag renamed in init_flow.py. A user relaying those
+    lines gets exit 2; the control must not stay green."""
+    sigma = _scratch_copy(tmp_path / "sigma")
+    for old, new in RENAMED_ASK_FLAGS:
+        _mutate(sigma / INIT_FLOW, old, new)
+    run = oc.run_local(sigma, README_TEXT, tmp_path / "w")
+    assert run["ok"] is False and run["failed_step"] == "init", run["failed_step"]
+    assert "unanswerable [ask]" in run["steps"][-1]["detail"], run["steps"][-1]
+
+
+ASK_OUT = """
+  [ask] mode: local-goals (goal files) or github (issues)? default: github (x). -> --mode local-goals|github
+  [ask] verify: re-run with ... -> --verify N:ID ; --verify-command-file FILE ; --no-verify
+  [ask] board: re-run with --board yes ... -> --board yes|no
+  [ask] ledger: the team ledger? -> --ledger yes|no
+  [ask] work: fix the remote above, or re-run with --local-only -> --local-only
+"""
+
+
+def test_ask_lines_are_parsed_and_answered_by_the_flag_they_offer():
+    asks = oc.parse_asks(ASK_OUT)
+    assert asks["verify"] == [("--verify", "N:ID"), ("--verify-command-file", "FILE"), ("--no-verify", None)]
+    assert oc.answer_asks(asks, "github") == ["--mode", "github", "--board", "no", "--ledger", "no",
+                                              "--local-only"]
+
+
+@pytest.mark.parametrize("old,new,why", [
+    ("-> --board yes|no", "-> --pin-board yes|no", "offers ['--pin-board']"),
+    ("-> --local-only", "-> --offline", "offers ['--offline']"),
+    ("-> --ledger yes|no", "-> --ledger on|off", "offers 'on|off'"),
+    ("[ask] board:", "[ask] runner:", "no policy for this question"),
+    ("-> --mode local-goals|github", "", "no machine-readable"),
+])
+def test_control_an_unanswerable_ask_is_red(old, new, why):
+    assert old in ASK_OUT
+    with pytest.raises(oc.Red) as exc:
+        oc.answer_asks(oc.parse_asks(ASK_OUT.replace(old, new)), "github")
+    assert exc.value.step == "init" and "unanswerable [ask]" in exc.value.detail
+    assert why in exc.value.detail, exc.value.detail
 
 
 def test_control_readme_drift_in_the_confirm_verb_goes_red_at_that_gesture(tmp_path):
@@ -127,13 +252,59 @@ def test_control_readme_drift_in_the_confirm_verb_goes_red_at_that_gesture(tmp_p
     ("skills/agrim-init/scripts/init_flow.py", "skills/agrim-init/scripts/init.py", "does not ship"),
     ("/agrim-loop            #", "/agrim-run             #", "no `/agrim-loop` line"),
     ("/agrim-init --demo     #", "/agrim-start --demo    #", "no `/agrim-init` line"),
-    ("claude plugin install sigma@sigma", "claude plugin add sigma@sigma", "claude plugin"),
+    ("claude plugin install sigma@sigma", "claude plugin add sigma@sigma", "`claude plugin` lines"),
+    ("codex plugin add sigma@sigma", "codex plugin install sigma@sigma", "`codex plugin` lines"),
+    ("codex plugin marketplace add <SIGMA_REPO>", "codex marketplace add <SIGMA_REPO>",
+     "`codex plugin` lines"),
+    ("/plugin install sigma@sigma", "/plugin install sigma@sigma-market", "`/plugin` lines"),
+    ("(`--mode`, `--verify`, `--board`, `--ledger`, `--local-only`)",
+     "(`--mode`, `--verify`, `--board`, `--ledger`, `--offline`)", "['--offline']"),
 ])
 def test_control_readme_drift_fails_the_parse(old, new, why):
     assert old in README_TEXT, old
     with pytest.raises(oc.Red) as exc:
         oc.parse_quickstart(README_TEXT.replace(old, new))
-    assert exc.value.step == "readme" and why in exc.value.detail
+    assert exc.value.step == "readme" and why in exc.value.detail, exc.value.detail
+
+
+def test_control_an_init_flag_init_flow_dropped_fails_the_parse(tmp_path):
+    sigma = _scratch_copy(tmp_path / "sigma")
+    _mutate(sigma / INIT_FLOW, '_BOOL = {"--local-only", ', '_BOOL = {')
+    with pytest.raises(oc.Red) as exc:
+        oc.parse_quickstart(README_TEXT, sigma)
+    assert "['--local-only']" in exc.value.detail, exc.value.detail
+
+
+@pytest.mark.parametrize("line", [
+    "sh -c 'touch {m}'",
+    "bash skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x",
+    "node skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x",
+    "python3 -c 'open(\"{m}\", \"w\")'",
+    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc $(touch {m}) 1",
+    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x; touch {m}",
+    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc `touch {m}` 1",
+    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x | tee {m}",
+    "python3 skills/agrim-init/scripts/nope.py confirm .sdlc 1 x",
+    "python3 /usr/bin/env.py x",
+    "python3 skills/../../../../tmp/x.py",
+])
+def test_control_a_readme_command_off_the_pinned_shape_is_refused(line, tmp_path):
+    marker = tmp_path / "EXECUTED"
+    with pytest.raises(oc.Red) as exc:
+        oc._py_argv(line.format(m=marker), ROOT, {}, step="verify confirm (README gesture)")
+    assert "refused" in exc.value.detail and exc.value.step == "verify confirm (README gesture)"
+    assert not marker.exists()
+
+
+def test_control_a_shell_readme_gesture_is_refused_before_it_runs(tmp_path):
+    marker = tmp_path / "EXECUTED"
+    drifted = README_TEXT.replace("python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>",
+                                  f"sh -c 'touch {marker}' skills/agrim-init/scripts/verify_detect.py "
+                                  "confirm .sdlc <n> <id>")
+    assert drifted != README_TEXT
+    run = oc.run_local(ROOT, drifted, tmp_path / "w")
+    assert run["ok"] is False and run["failed_step"] == "verify confirm (README gesture)"
+    assert "refused" in run["steps"][-1]["detail"] and not marker.exists()
 
 
 def _broken(check, obs, name, mutate):
@@ -166,6 +337,17 @@ GITHUB_BREAKS = {
     "every gh call was one the fake models": lambda o: o.update(unhandled='{"argv": ["x"]}\n'),
 }
 
+NO_COMMAND_BREAKS = {
+    "init left verify.enforce OFF with no command confirmed":
+        lambda o: o.update(scaffolded_verify={"command": "", "enforce": True}),
+    "loop verify said NO-COMMAND (exit 3)": lambda o: o.update(verify_rc=0),
+    "record done exited 0 (nothing to enforce)": lambda o: o.update(record_rc=4),
+    "goal frontmatter status is done": lambda o: o.update(status="in-progress"),
+    "the loop made no gh call in local-goals mode": lambda o: o.update(gh_calls=[["issue", "list"]]),
+    "issue closed after done": lambda o: o.update(issue_final="open"),
+    "every gh call was one the fake models": lambda o: o.update(unhandled='{"argv": ["x"]}\n'),
+}
+
 
 def test_every_local_assertion_is_seen_red_once(local_run):
     obs = next(g for g in local_run["goals"] if g["work"] == oc.WORK_FILE)
@@ -182,6 +364,36 @@ def test_every_github_assertion_is_seen_red_once(github_run):
     assert set(GITHUB_BREAKS) == {a["name"] for a in oc.check_github(obs)}
     for name, mutate in GITHUB_BREAKS.items():
         _broken(oc.check_github, obs, name, mutate)
+
+
+def test_every_no_command_assertion_is_seen_red_once(cli_run):
+    local = next(g for g in cli_run["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
+    local = dict(local, gh_calls=[])
+    github = cli_run["modes"]["github/no-command"]["observations"]
+    seen = set()
+    for obs in (local, github):
+        names = {a["name"] for a in oc.check_no_command(obs)}
+        assert all(a["ok"] for a in oc.check_no_command(obs))
+        for name in names:
+            _broken(oc.check_no_command, obs, name, NO_COMMAND_BREAKS[name])
+        seen |= names
+    assert seen == set(NO_COMMAND_BREAKS)
+
+
+def test_main_exit_codes_for_red_and_a_missing_readme(tmp_path):
+    rc, lines, blob, proc = _cli("--mode", "local", "--variant", "confirm", "--readme",
+                                 str(tmp_path / "missing.md"), workdir=tmp_path)
+    assert rc == 2 and "Traceback" not in proc.stderr, proc.stderr
+    assert "precondition missing" in proc.stderr and "missing.md" in proc.stderr
+    drifted = tmp_path / "README.md"
+    drifted.write_text(README_TEXT.replace("/agrim-loop            #", "/agrim-run             #"),
+                       encoding="utf-8")
+    rc, lines, blob, proc = _cli("--mode", "local", "--readme", str(drifted), workdir=tmp_path)
+    assert rc == 1 and lines == {"readme": "RED at readme"}, proc.stdout[-2000:]
+    assert oc.main(["onboarding_control.py", "--mode", "local", "--variant", "no-command",
+                    "--workdir", str(tmp_path), "--json", str(tmp_path / "r.json")]) == 0
+    result = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
+    assert list(result["modes"]) == ["local/no-command"] and result["ok"] is True
 
 
 def test_the_gh_summary_folds_numbers_and_flags(tmp_path):
