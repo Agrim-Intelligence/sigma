@@ -48,14 +48,15 @@ session-start hook repeats the line, read-only, and carries on to its other tier
 hooks, so the hook is an accelerator and decides nothing.
 
 THE ONE STEP THAT WAITS (#314, review of PR #319): the old plugin reads a `sigma/features@1`
-registry as EMPTY, so once the registry is converted a goal it starts writes a near-empty unit
-record over a unit that exists only in `index.json`. So `migrate.py --apply` -- the conversion --
-refuses while the old plugin can still RUN here (`RUNS_KINDS`) unless `REPLACE_FLAG` is given,
+registry as EMPTY, so once the registry is converted a goal it starts (or an owner claim, or
+`set-priority`) writes a unit record in ITS schema id for a unit that exists only in `index.json`.
+So `migrate.py --apply` -- the conversion -- refuses while the old plugin can still RUN here (`RUNS_KINDS`) unless `REPLACE_FLAG` is given,
 naming `disable_steps()` (`claude plugin disable <id> --scope local`). Every other surface stays a
 notice. In depth: `protect_features()` takes ONE copy of `.sdlc/features` under `state/backup/`
 before Sigma's first registry write beside a runnable old plugin (called from
-`feature_registry`'s writers), and `feature_registry.is_shadow` keeps the reader and `fold` from
-ever serving or baking the near-empty record over the fuller entry.
+`feature_registry`'s writers), and `feature_registry.merge_legacy_delta` -- keyed on the two
+schema ids, not on what the record contains -- makes the reader and `fold` treat such a record as a
+delta onto the index entry, never a replacement.
 
 WHAT STAYS IMPOSSIBLE is not this module's job and never depended on it: two watchers on one
 `.sdlc` (both plugins' watchers take the SAME lock files; a Sigma watcher that meets a foreign
@@ -125,7 +126,7 @@ REPLACE_FLAG = "--replace-old-plugin"
 #: Why the conversion step (and only it) waits for that acknowledgement -- one fixed sentence, said
 #: by migrate's refusal, the notice, the takeover line and docs/upgrading.md alike.
 REGISTRY_CAVEAT = ("the old plugin cannot read Sigma's registry; if it starts a goal in this repo "
-                   "afterwards it will overwrite unit records")
+                   "afterwards it writes unit records Sigma can only merge as partial deltas")
 #: Signals meaning the old plugin can RUN here. The conversion gate and the one-time registry
 #: backup key on these; a foreign `owner.json` alone is a stale marker Sigma rewrites, not a runner.
 RUNS_KINDS = ("claude-enabled", "codex-enabled", "hook", "watcher")
@@ -933,8 +934,8 @@ def protect_features(sdlc_dir, env=None, home=None, stream=None, managed=_DEFAUL
     """Before Sigma writes `.sdlc/features` (#314): when the old plugin can run on this repository
     and no copy exists yet, take the one-time backup and say where. -> the new copy's path, else
     None. Fail-open and never raises: a backup that cannot be taken is SAID, and the write goes on
-    (the reader-side shadow guard in `feature_registry.read` still stands). Cost once a copy exists,
-    or with no `features/`: one glob and one stat."""
+    (the reader-side legacy-delta merge in `feature_registry.read` still stands). Cost once a copy
+    exists, or with no `features/`: one glob and one stat."""
     try:
         stream = sys.stderr if stream is None else stream
         if existing_backup(sdlc_dir) is not None:
@@ -946,10 +947,12 @@ def protect_features(sdlc_dir, env=None, home=None, stream=None, managed=_DEFAUL
         path, error = backup_features(sdlc_dir)
         if path is not None:
             print("%s: backup: the plugin previously published as %r can still run here and %s; "
-                  "before Sigma's first registry write a copy of %s was saved to %s (restore it "
-                  "over .sdlc/features if unit records are lost; %s)"
+                  "before Sigma's first registry write a copy of %s was saved to %s at %s. It is "
+                  "taken ONCE: restoring it later discards every write since, so restore it only "
+                  "within the cut-over window, and prefer `feature_sync.py repair` (%s)"
                   % (BRAND, OLD, REGISTRY_CAVEAT.split("; ")[0],
-                     pathlib.Path(sdlc_dir) / "features", path, DOC), file=stream)
+                     pathlib.Path(sdlc_dir) / "features", path,
+                     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), DOC), file=stream)
         elif error:
             print("%s: backup: NOT taken -- %s; the registry write goes on (%s)"
                   % (BRAND, error, DOC), file=stream)

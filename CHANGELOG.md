@@ -473,10 +473,10 @@ All notable changes to Sigma are recorded here, newest first.
   previous plugin".
   The one step that converts the registry now waits for the old plugin to stop. The old plugin
   reads a registry carrying Sigma's schema id as empty. So a goal it starts afterwards in a unit
-  that exists only in `index.json` writes a nearly empty record for that unit, and Sigma's
-  `feature_sync.py show` and `fold` then served and saved that record in place of the full entry
-  (title, owner, priority, tracking issue, branch and goals lost; `authorized` flipped to false).
-  Four changes (#314, review of PR #319):
+  that exists only in `index.json` writes a record for that unit in its own schema, starting from
+  nothing, and Sigma's `feature_sync.py show` and `fold` then served and saved that record in place
+  of the full entry (title, owner, priority, tracking issue, branch and goals lost; `authorized`
+  flipped to false). Five changes (#314, reviews of PR #319):
   - `migrate.py --apply` refuses (exit 2, nothing written, dry run shown) while the old plugin can
     still run on the repository. It prints the reason and the exact step:
     `claude plugin disable <id> --scope local` (checked against Claude Code's CLI in a fake home),
@@ -485,10 +485,26 @@ All notable changes to Sigma are recorded here, newest first.
   - Before Sigma's first registry write on a repository where the old plugin can still run, it
     saves one copy of `.sdlc/features` to `.sdlc/state/backup/features-<time>/`. That directory is
     machine-local and git-ignored, and the copy is capped at 5,000 files or 64 MB. `migrate.py`
-    never rewrites the copy. The check costs 0.08 ms per registry write (measured, macOS).
-  - The registry reader recognises the near-empty record and never lets it hide a fuller
-    `index.json` entry. It reads the index entry plus the record's goals and prints the recovery.
-    `feature_sync.py fold` refuses until the new `feature_sync.py repair` rewrites the record.
+    never rewrites the copy. The check costs 0.08 ms per registry write (measured, macOS). The
+    message gives the time it was taken and says to restore it only within the cut-over window
+    (it predates every later write) and to prefer `feature_sync.py repair`.
+  - The registry reader treats a unit record that still carries the old plugin's schema id, next to
+    an `index.json` in Sigma's schema with an entry for that unit, as a DELTA onto that entry,
+    never a replacement. The rule is keyed on the two schema ids only. A first version keyed on
+    the record having no title/owner/tracking issue/priority/parent. That failed on the old
+    plugin's very next pick, whose owner claim fills `owner`, and on its `define.py set-priority`:
+    the record was served and folded again. The index entry now wins every field it has, the
+    record only fills blanks, goals are unioned, a repository only the record names is added
+    without a grant, and `authorized` is never taken from the record. `feature_sync.py fold`
+    writes that merged view, and it refuses (exit 2, nothing written, loss and repair named) any
+    result that loses a goal of any unit, or a field, repository or grant of a merged unit. The new
+    `feature_sync.py repair` rewrites such records in Sigma's schema. Known edge: an ownership or
+    priority change the old plugin makes after conversion is not applied while the entry has a
+    value. Tested against the old plugin's real 1.4.25 pick, owner claim and `set-priority` code
+    (opt-in: `SIGMA_TEST_PREDECESSOR_GIT`) and a stand-in that always runs.
+  - `docs/upgrading.md` now also says what else the old plugin overwrites on a shared repository:
+    Sigma-format withheld-findings indexes (dedup history and the upstream cap erased) and landing
+    and propagation records (duplicates, not loss). These are why the old plugin is stopped first.
   - The docs, the notice, the takeover line and `coexist.py check` now give the order: stop the
     old plugin on the repository, migrate, then uninstall it. `coexist.py check` prints
     `claude plugin marketplace remove` with the marketplace from the plugin id. Every printed

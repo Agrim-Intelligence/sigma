@@ -75,8 +75,9 @@ the user), migrate dry run, `--apply` only on the user's explicit yes, then unin
 plugin. The old plugin cannot read Sigma's registry, so while it can still run here `--apply`
 refuses (exit 2, dry run shown) unless `--replace-old-plugin` is added: never add that flag, disable,
 uninstall, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice) on the user's behalf. A
-`near-empty record` line from the registry means the old plugin already wrote over a unit: relay
-the `feature_sync.py repair` command it prints.
+registry line saying a record `still declares the schema id` of the old plugin means it already
+wrote a unit record after the conversion (Sigma merges it as a delta, losing nothing): relay the
+`feature_sync.py repair` command it prints.
 
 ## Secret-file coverage
 

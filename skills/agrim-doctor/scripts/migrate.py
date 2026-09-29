@@ -33,8 +33,9 @@ refused if the file changed after it was read. A symlinked target (an `AGENTS.md
 watcher is running (it may be the old plugin's, still writing old spellings), and -- #314 -- while
 the old plugin can still RUN on this repository, unless `--replace-old-plugin` is given (then a
 one-time copy of `features/` is saved under `state/backup/` first, and that copy is never scanned
-here): the old plugin cannot read Sigma's registry, and a goal it starts afterwards would write a
-near-empty unit record over the converted one. The refusal prints the exact disable step.
+here): the old plugin cannot read Sigma's registry, and a goal it starts afterwards writes a unit
+record in its own schema that Sigma can only merge as a partial delta. The refusal prints the exact
+disable step.
 
 WHAT IT CANNOT DO FOR YOU. The plugin under its previous name cannot read Sigma's spellings. Every
 file this changes is one that plugin also reads, and committed ones (`config.json`, `features/`)
@@ -503,9 +504,10 @@ def main(argv, environ=None, home=None, stdout=None):
     if result.changes and do_apply:
         # #240/#314: the old plugin still enabled is a NOTICE everywhere else in Sigma. THIS step
         # alone -- the conversion -- waits for an acknowledgement while that plugin can still run
-        # here: it cannot read Sigma's registry, so a goal it starts afterwards writes a
-        # near-empty unit record that hides the converted one (the reviewer's sequence on PR
-        # #319). A LIVE watcher stays a refusal (it may be writing the old spellings).
+        # here: it cannot read Sigma's registry, so a goal it starts afterwards writes a unit
+        # record in its own schema (`feature_registry.merge_legacy_delta` merges it as a delta; the
+        # reviewer's sequences on PR #319). A LIVE watcher stays a refusal (it may be writing the
+        # old spellings).
         coexist = _load(_LOOP, "coexist")
         coexist.gate(sdlc_dir, "migrate.py --apply", env=environ, home=home, stream=out)
         pid = _running_watcher(sdlc_dir)

@@ -856,7 +856,7 @@ def _old_schema_repo(tmp_path):
 
 REPLACE = "--replace-old-plugin"
 CAVEAT = ("the old plugin cannot read Sigma's registry; if it starts a goal in this repo "
-          "afterwards it will overwrite unit records")
+          "afterwards it writes unit records Sigma can only merge as partial deltas")
 DISABLE_LOCAL = "claude plugin disable %s --scope local" % OLD_ID
 
 
@@ -910,21 +910,82 @@ def test_replace_flag_is_spelled_once(cx):
 # --------------------------------------------------------------------------- the reviewer's sequence
 
 
-def _predecessor(tmp_path):
-    """A faithful stand-in for the plugin under the previous name's registry code: Sigma's own
-    scripts, copied, with that plugin's schema id and its STRICT schema check (it never learned
-    to read Sigma's id) -- the two lines in which its 1.4.x `feature_registry.py` differs for this
-    purpose (checked against a scratch copy of the real 1.4.24 install, #314 evidence). Sigma's
-    coexist module is left out, so the copy takes no Sigma backup (its hook fails open)."""
-    dest = tmp_path / "predecessor"
-    shutil.copytree(LOOP, dest, ignore=shutil.ignore_patterns("__pycache__", "coexist.py"))
-    reg = dest / "feature_registry.py"
+#: The previous plugin's skill directories, from fragments like `OLD` (guarded private names).
+OLD_SKILL = "sdlc" + "-%s"
+#: Opt-in: a local clone of the previous plugin's repository (read-only; `git archive` only) and
+#: the release to run, so the reviewer's sequences also run against its REAL code, not only the
+#: stand-in. Unset -- as in CI -- the `real` parameter skips and the stand-in still runs.
+PREDECESSOR_GIT = os.environ.get("SIGMA_TEST_PREDECESSOR_GIT")
+PREDECESSOR_REV = os.environ.get("SIGMA_TEST_PREDECESSOR_REV") or "9d2f40fd"   # its 1.4.25
+
+
+def _predecessor_tree(tmp_path, kind):
+    """-> the `skills/` root of a runnable copy of the previous plugin's registry code.
+
+    `stand-in`: Sigma's own `agrim-loop` + `agrim-define` scripts, copied, with that plugin's
+    schema id and its STRICT schema check (it never learned to read Sigma's id) -- the two lines in
+    which its 1.4.x `feature_registry.py` differs for this purpose. Its pick, owner claim and
+    `set-priority` are Sigma's ports of the same code, so they run unchanged. Sigma's coexist
+    module is left out, so the copy takes no Sigma backup (its hook fails open).
+
+    `real`: that plugin's own scripts at `PREDECESSOR_REV`, extracted with `git archive` from the
+    clone at `SIGMA_TEST_PREDECESSOR_GIT` (skipped when unset)."""
+    root = tmp_path / ("predecessor-" + kind) / "skills"
+    if kind == "real":
+        if not PREDECESSOR_GIT:
+            pytest.skip("SIGMA_TEST_PREDECESSOR_GIT is not set (a local clone of the previous "
+                        "plugin); the stand-in covers the same sequences")
+        root.mkdir(parents=True)
+        dirs = ["skills/%s/scripts" % (OLD_SKILL % d) for d in ("loop", "define")]
+        tar = subprocess.run(["git", "-C", PREDECESSOR_GIT, "archive", PREDECESSOR_REV, *dirs],
+                             capture_output=True, check=True).stdout
+        subprocess.run(["tar", "-x", "-C", str(root.parent)], input=tar, check=True)
+        return root, OLD_SKILL % "loop", OLD_SKILL % "define"
+    loop = root / "agrim-loop" / "scripts"
+    shutil.copytree(LOOP, loop, ignore=shutil.ignore_patterns("__pycache__", "coexist.py"))
+    shutil.copytree(ROOT / "skills" / "agrim-define" / "scripts", root / "agrim-define" / "scripts",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    reg = loop / "feature_registry.py"
     text = reg.read_text(encoding="utf-8")
     schema, check = 'SCHEMA = "sigma/features@1"', 'if not legacy.schema_is(doc.get("schema"), SCHEMA):'
     assert text.count(schema) == 1 and text.count(check) == 1
     reg.write_text(text.replace(schema, 'SCHEMA = "%s/features@1"' % OLD)
                    .replace(check, 'if doc.get("schema") != SCHEMA:'), encoding="utf-8")
-    return _load(dest / "feature_sync.py", "predecessor_feature_sync")
+    return root, "agrim-loop", "agrim-define"
+
+
+class _Predecessor:
+    """The previous plugin's own entry points, loaded from a copy: a pick (`sync_at_pick`, with a
+    fake git answering `ls-remote`/`get-url`), the owner claim a pick makes (`claim_at_pick`, the
+    call `gate_at_pick -> _claim_here` reaches), and `define.py set-priority`."""
+
+    def __init__(self, tmp_path, kind="stand-in"):
+        root, loop, define = _predecessor_tree(tmp_path, kind)
+        tag = "predecessor_%s_" % kind.replace("-", "_")
+        self.fs = _load(root / loop / "scripts" / "feature_sync.py", tag + "feature_sync")
+        self.fo = _load(root / loop / "scripts" / "feature_owner.py", tag + "feature_owner")
+        self.define = _load(root / define / "scripts" / "define.py", tag + "define")
+
+    @staticmethod
+    def _git(cwd, argv):
+        if argv[:2] == ["git", "ls-remote"]:
+            return "0" * 40 + "\trefs/heads/feature/alpha\n"
+        if argv[:3] == ["git", "remote", "get-url"]:
+            return "https://github.com/o/r.git\n"
+        raise RuntimeError("unexpected git call %r" % (argv,))
+
+    def pick(self, repo, goal):
+        return self.fs.sync_at_pick(str(repo / ".sdlc"), {}, str(goal), "alpha", run=self._git)
+
+    def claim(self, repo, goal, actor):
+        return self.fo.claim_at_pick(str(repo / ".sdlc"), str(goal), "alpha", "o/r", actor)
+
+    def set_priority(self, repo, priority):
+        return self.define.set_priority(str(repo / ".sdlc"), "alpha", priority)
+
+
+def _predecessor(tmp_path):
+    return _Predecessor(tmp_path)
 
 
 ALPHA = {"title": "Alpha unit", "owner": "alice", "open": True, "tracking_issue": "#200",
@@ -943,10 +1004,18 @@ def _adopted(tmp_path):
     return repo
 
 
+def _converted(tmp_path):
+    """The same repository after conversion: `alpha` only in an index in Sigma's schema."""
+    repo = _adopted(tmp_path)
+    index = repo / ".sdlc" / "features" / "index.json"
+    index.write_text(index.read_text().replace(OLD + "/features@1", "sigma/features@1"))
+    return repo
+
+
 def _predecessor_starts_a_goal(pred, repo, goal):
-    def mutate(entry):
-        entry["repos"].setdefault("o/r", {"goals": []})["goals"].append(goal)
-    return pred.amend(str(repo / ".sdlc"), "alpha", mutate)
+    report = pred.pick(repo, goal)
+    assert report["recorded"] is True, report
+    return report
 
 
 def _alpha(entry):
@@ -955,12 +1024,15 @@ def _alpha(entry):
             entry["repos"]["o/r"]["goals"])
 
 
+KEPT = ("Alpha unit", "alice", "p1", "#200", "feature/alpha", True)
+
+
 def test_the_documented_cut_over_with_the_old_plugin_still_enabled_loses_nothing(tmp_path):
     """#314 review block #1, the reviewer's sequence end to end: migrate with the old plugin still
     enabled; the old plugin starts a goal in a unit that exists only in the index (it reads Sigma's
-    index as EMPTY and writes a near-empty record); Sigma's `show` and `fold` must not serve or bake
-    that record over the richer entry. Every layer is on the path: the flag gate, the backup, the
-    reader's shadow guard, fold's refusal, and the repair."""
+    index as EMPTY and writes a record in ITS schema); Sigma's `show` and `fold` serve and bake the
+    index entry with that record merged as a delta. Every layer is on the path: the flag gate, the
+    backup, the reader's legacy-delta merge, fold's monotonic check, and the repair."""
     repo = _adopted(tmp_path)
     sdlc = repo / ".sdlc"
     index = sdlc / "features" / "index.json"
@@ -973,35 +1045,31 @@ def test_the_documented_cut_over_with_the_old_plugin_still_enabled_loses_nothing
     [backup] = list((sdlc / "state" / "backup").glob("features-*"))
     assert (backup / "index.json").read_bytes() == original
     assert json.loads(index.read_text())["schema"] == "sigma/features@1"
-    pred = _predecessor(tmp_path)                             # 3. the old plugin starts a goal
-    report = _predecessor_starts_a_goal(pred, repo, 203)
-    assert report["existed"] is False                         # it could not read Sigma's index
+    report = _predecessor_starts_a_goal(_predecessor(tmp_path), repo, 203)  # 3. the old plugin
+    assert report["created"] is True                          # it could not read Sigma's index
     record = json.loads((sdlc / "features" / "units" / "alpha.json").read_text())
     assert record["schema"] == OLD + "/features@1" and record["features"]["alpha"]["title"] == ""
-    folded = index.read_bytes()
     show = _run([LOOP / "feature_sync.py", "show", sdlc], env)  # 4. Sigma's reader: nothing lost
     assert show.returncode == 0, show.stderr
-    assert _alpha(json.loads(show.stdout)["alpha"]) == (
-        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True, [201, 202, 203])
-    assert "near-empty record" in show.stderr and "feature_sync.py repair" in show.stderr
-    assert str(backup) in show.stderr
-    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], env)  # 5. fold refuses, writes nothing
-    assert fold.returncode == 2 and index.read_bytes() == folded, fold.stdout + fold.stderr
-    assert "fold refused" in fold.stderr and "repair" in fold.stderr
+    assert _alpha(json.loads(show.stdout)["alpha"]) == KEPT + ([201, 202, 203],)
+    assert "DELTA" in show.stderr and "feature_sync.py repair" in show.stderr
+    assert str(backup) in show.stderr and "cut-over window" in show.stderr
+    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], env)  # 5. fold bakes the merge
+    assert fold.returncode == 0, fold.stdout + fold.stderr
+    assert _alpha(json.loads(index.read_text())["features"]["alpha"]) == KEPT + ([201, 202, 203],)
     fixed = _run([LOOP / "feature_sync.py", "repair", sdlc], env)  # 6. the documented recovery
     assert fixed.returncode == 0 and "repaired alpha" in fixed.stdout, fixed.stdout + fixed.stderr
-    assert _run([LOOP / "feature_sync.py", "fold", sdlc], env).returncode == 0
-    doc = json.loads(index.read_text())
-    assert _alpha(doc["features"]["alpha"]) == (
-        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True, [201, 202, 203])
+    record = json.loads((sdlc / "features" / "units" / "alpha.json").read_text())
+    assert record["schema"] == "sigma/features@1"
+    assert _alpha(record["features"]["alpha"]) == KEPT + ([201, 202, 203],)
     again = _run([LOOP / "feature_sync.py", "repair", sdlc], env)
     assert "nothing to repair" in again.stdout
 
 
-def test_without_migrating_sigma_writes_are_backed_up_and_the_shadow_guard_holds(tmp_path):
+def test_without_migrating_sigma_writes_are_backed_up_and_the_delta_merge_holds(tmp_path):
     """The same exposure with no migrate at all: Sigma's own registry write (here a fold) turns
     index.json into Sigma's schema. The one-time backup is taken BEFORE that first write, and the
-    old plugin's near-empty record is still never served nor folded over the index."""
+    old plugin's record is still only ever merged onto the index entry as a delta."""
     repo = _adopted(tmp_path)
     sdlc = repo / ".sdlc"
     original = (sdlc / "features" / "index.json").read_bytes()
@@ -1012,9 +1080,8 @@ def test_without_migrating_sigma_writes_are_backed_up_and_the_shadow_guard_holds
     assert (backup / "index.json").read_bytes() == original and "sigma: backup:" in p.stderr
     _predecessor_starts_a_goal(_predecessor(tmp_path), repo, 203)
     show = _run([LOOP / "feature_sync.py", "show", sdlc], env)
-    assert _alpha(json.loads(show.stdout)["alpha"])[:6] == (
-        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True)
-    assert _run([LOOP / "feature_sync.py", "fold", sdlc], env).returncode == 2
+    assert _alpha(json.loads(show.stdout)["alpha"]) == KEPT + ([201, 202, 203],)
+    assert _run([LOOP / "feature_sync.py", "fold", sdlc], env).returncode == 0
     p = _run([LOOP / "feature_sync.py", "repair", sdlc], env)          # a second Sigma write
     assert p.returncode == 0 and "repaired alpha" in p.stdout, p.stdout + p.stderr
     assert list((sdlc / "state" / "backup").glob("features-*")) == [backup]   # one-time
@@ -1033,6 +1100,7 @@ def test_the_backup_is_taken_once_only_beside_a_runnable_old_plugin_and_migrate_
     first = cx.protect_features(sdlc, env=env, stream=out, managed=None)
     assert first is not None and (first / "index.json").is_file()
     assert str(first) in out.getvalue() and CAVEAT.split(";")[0] in out.getvalue()
+    assert "cut-over window" in out.getvalue() and "feature_sync.py repair" in out.getvalue()
     assert cx.protect_features(sdlc, env=env, stream=out, managed=None) is None
     assert cx.existing_backup(sdlc) == first
     p = _run([MIGRATE, sdlc], _env(**_host(tmp_path / "clear")))   # the copy is never rewritten
@@ -1047,25 +1115,138 @@ def test_the_backup_is_bounded(tmp_path, cx, monkeypatch):
     assert cx.existing_backup(repo / ".sdlc") is None
 
 
-def test_the_shadow_shape_is_only_the_old_plugins(tmp_path):
-    """`is_shadow` flags a record with no kept field while the index says more; it never flags a
-    Sigma record that legitimately narrowed a branch or closed the unit, nor a record that carries
-    its own title."""
-    reg = _load(LOOP / "feature_registry.py", "registry_shadow")
-    index = reg.normalise_entry(ALPHA)
-    near_empty = reg.normalise_entry({"repos": {"o/r": {"goals": [203]}}})
-    assert reg.is_shadow(near_empty, index) is True
-    untitled = reg.normalise_entry({"repos": {"o/r": {"branch": "feature/alpha", "goals": [201]}}})
-    narrowed = reg.normalise_entry({"open": False, "repos": {"o/r": {"branch": None,
-                                                                     "goals": [201]}}})
-    assert reg.is_shadow(narrowed, untitled) is False            # reconcile's own narrowing
-    grant = reg.normalise_entry({"repos": {"o/r": {"authorized": True, "goals": [201]}}})
-    assert reg.is_shadow(untitled, grant) is True                # a grant would flip to false
-    titled = reg.normalise_entry(dict(ALPHA, title="Renamed", owner=None))
-    assert reg.is_shadow(titled, index) is False
-    assert reg.is_shadow(near_empty, None) is False              # a new unit is not a shadow
-    merged = reg.merge_shadow(index, near_empty)
-    assert merged["title"] == "Alpha unit" and merged["repos"]["o/r"]["goals"] == [201, 202, 203]
+def _sigma_after(repo, env):
+    """Sigma's show, fold and read after the old plugin has run: -> (show, index after fold)."""
+    sdlc = repo / ".sdlc"
+    show = _run([LOOP / "feature_sync.py", "show", sdlc], env)
+    assert show.returncode == 0, show.stderr
+    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], env)
+    assert fold.returncode == 0, fold.stdout + fold.stderr
+    folded = json.loads((sdlc / "features" / "index.json").read_text())
+    assert folded["schema"] == "sigma/features@1"
+    return json.loads(show.stdout)["alpha"], folded["features"]["alpha"]
+
+
+@pytest.mark.parametrize("kind", ["stand-in", "real"])
+def test_review_block_2_pick_claim_pick_loses_nothing(tmp_path, kind):
+    """#314 review block #2, the reviewer's first sequence on the previous plugin's own code: after
+    conversion it picks a goal in an index-only unit (a record in ITS schema, starting from
+    nothing), its pick-time owner claim fills `owner` on that record (`claim_at_pick`), and it picks
+    again. The record now carries an owner -- the field-presence heuristic flipped here and Sigma
+    served and folded the record, losing title, owner alice, priority, tracking issue, goals
+    201-202, branch and the grant. Keyed on the schema ids instead, nothing is lost and goals
+    are unioned."""
+    pred = _Predecessor(tmp_path, kind)
+    repo = _converted(tmp_path)
+    assert pred.pick(repo, 203)["recorded"] is True
+    claim = pred.claim(repo, 203, "mallory")
+    assert "owner" in claim["claimed"], claim                  # the record now HAS an owner
+    assert pred.pick(repo, 204)["recorded"] is True
+    record = json.loads((repo / ".sdlc" / "features" / "units" / "alpha.json").read_text())
+    assert record["schema"] == OLD + "/features@1"
+    assert record["features"]["alpha"]["owner"] == "mallory"
+    env = _env(**_host(tmp_path / "clear"))
+    for entry in _sigma_after(repo, env):
+        assert _alpha(entry) == KEPT + ([201, 202, 203, 204],)
+    reg = _load(LOOP / "feature_registry.py", "registry_block2_" + kind.replace("-", "_"))
+    assert _alpha(reg.read(repo / ".sdlc" / "features")["alpha"]) == KEPT + ([201, 202, 203, 204],)
+
+
+@pytest.mark.parametrize("kind", ["stand-in", "real"])
+def test_review_block_2_set_priority_on_an_index_only_unit_loses_nothing(tmp_path, kind):
+    """#314 review block #2, the second path: the previous plugin's `define.py set-priority` on a
+    unit that exists only in Sigma's index writes `{priority: P2, repos: {}}` in its schema. The
+    index entry stands whole: its own priority wins, nothing else is touched."""
+    pred = _Predecessor(tmp_path, kind)
+    repo = _converted(tmp_path)
+    report = pred.set_priority(repo, "P2")
+    assert report["ok"] is True, report
+    record = json.loads((repo / ".sdlc" / "features" / "units" / "alpha.json").read_text())
+    assert record["features"]["alpha"]["priority"] == "P2"
+    assert record["features"]["alpha"]["repos"] == {}
+    env = _env(**_host(tmp_path / "clear"))
+    for entry in _sigma_after(repo, env):
+        assert _alpha(entry) == KEPT + ([201, 202],)
+
+
+def test_the_delta_merge_rule(tmp_path):
+    """Property-style: over every combination of blank/filled fields on each side, the index entry
+    wins every field it has, the legacy record only fills blanks, goals are unioned (index order
+    first), a repo only the record names is added WITHOUT a grant, and a grant is never taken from
+    the record -- in either direction."""
+    import itertools
+    reg = _load(LOOP / "feature_registry.py", "registry_delta_rule")
+    fields = reg.DELTA_FIELDS
+    for mask_i, mask_r in itertools.product(itertools.product((0, 1), repeat=len(fields)),
+                                            repeat=2):
+        idx = {f: ("i-" + f if on else None) for f, on in zip(fields, mask_i)}
+        rec = {f: ("r-" + f if on else None) for f, on in zip(fields, mask_r)}
+        merged = reg.merge_legacy_delta(dict(idx, repos={}), dict(rec, repos={}))
+        for f in fields:
+            assert merged[f] == (idx[f] or rec[f] or ("" if f == "title" else None)), (f, idx, rec)
+    for grant_i, grant_r in itertools.product((True, False), repeat=2):
+        for branch_i, branch_r in itertools.product(("feature/i", None), ("feature/r", None)):
+            idx = {"open": True, "repos": {"o/r": {"branch": branch_i, "owner": None,
+                                                   "authorized": grant_i, "goals": [1, 2]}}}
+            rec = {"open": False, "repos": {"O/R": {"branch": branch_r, "owner": "bob",
+                                                    "authorized": grant_r, "goals": [3, 1]},
+                                            "o/new": {"authorized": True, "goals": [9]}}}
+            merged = reg.merge_legacy_delta(idx, rec)
+            one = merged["repos"]["o/r"]
+            assert one["authorized"] is grant_i                  # never from the record
+            assert one["goals"] == [1, 2, 3] and one["owner"] == "bob"
+            assert one["branch"] == (branch_i or branch_r)
+            assert merged["open"] is True and "O/R" not in merged["repos"]
+            assert merged["repos"]["o/new"] == {"branch": None, "owner": None,
+                                                "authorized": False, "goals": [9]}
+
+
+def test_a_delta_needs_both_schema_ids(tmp_path):
+    """Structural, not a content heuristic: a record in Sigma's schema still replaces (Sigma's own
+    pick may narrow a branch or close a unit), a legacy-id record beside a legacy-id index is the
+    previous plugin's own state (shard-wins, as it always read), and a legacy-id record for a unit
+    the index does not name is simply that unit."""
+    reg = _load(LOOP / "feature_registry.py", "registry_delta_ids")
+    features = _converted(tmp_path) / ".sdlc" / "features"
+    units = features / "units"
+    units.mkdir()
+    narrowed = dict(ALPHA, title="Renamed", owner=None, open=False,
+                    repos={"o/r": {"branch": None, "goals": [201, 202]}})
+    (units / "alpha.json").write_text(json.dumps(
+        {"schema": "sigma/features@1", "features": {"alpha": narrowed}}))
+    got = reg.read(features)["alpha"]
+    assert (got["title"], got["owner"], got["open"]) == ("Renamed", None, False)
+    assert reg.legacy_deltas(features) == []
+    (units / "alpha.json").write_text(json.dumps(
+        {"schema": OLD + "/features@1", "features": {"alpha": narrowed}}))
+    got = reg.read(features)["alpha"]
+    assert (got["title"], got["owner"], got["open"]) == ("Alpha unit", "alice", True)
+    assert [n for n, _p in reg.legacy_deltas(features)] == ["alpha"]
+    index = features / "index.json"
+    index.write_text(index.read_text().replace("sigma/features@1", OLD + "/features@1"))
+    assert reg.read(features)["alpha"]["title"] == "Renamed" and reg.legacy_deltas(features) == []
+    index.write_text(index.read_text().replace(OLD + "/features@1", "sigma/features@1"))
+    (units / "beta.json").write_text(json.dumps(
+        {"schema": OLD + "/features@1", "features": {"beta": {"title": "Beta", "repos": {
+            "o/r": {"authorized": True, "goals": [7]}}}}}))
+    assert reg.read(features)["beta"]["repos"]["o/r"]["authorized"] is True
+
+
+def test_fold_refuses_a_shrinking_index_with_the_repair_command(tmp_path):
+    """The cross-check is independent of the merge: a record in Sigma's schema that dropped a goal
+    the index records makes `fold` refuse, write nothing, and name the loss and the recovery."""
+    repo = _converted(tmp_path)
+    sdlc = repo / ".sdlc"
+    units = sdlc / "features" / "units"
+    units.mkdir()
+    (units / "alpha.json").write_text(json.dumps({"schema": "sigma/features@1", "features": {
+        "alpha": dict(ALPHA, repos={"o/r": dict(ALPHA["repos"]["o/r"], goals=[201])})}}))
+    index = sdlc / "features" / "index.json"
+    before = index.read_bytes()
+    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], _env(**_host(tmp_path / "clear")))
+    assert fold.returncode == 2 and index.read_bytes() == before, fold.stdout + fold.stderr
+    assert "fold refused" in fold.stderr and "alpha: goal(s) #202" in fold.stderr
+    assert "feature_sync.py repair" in fold.stderr
 
 
 def test_migrate_apply_still_refuses_while_a_watcher_is_live(tmp_path, live_pid):

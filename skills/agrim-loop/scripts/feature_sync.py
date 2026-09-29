@@ -1118,9 +1118,9 @@ def _clause(report):
 # --------------------------------------------------------------------------- the fold
 
 
-class ShadowRefused(Exception):
-    """`fold` will not bake a near-empty record over a fuller index entry (#314). The message is
-    the exact recovery."""
+class FoldRefused(Exception):
+    """`fold` will not write an `index.json` that loses anything the current one records (#314).
+    The message names each loss and the exact recovery."""
 
 
 def fold(sdlc_dir):
@@ -1131,34 +1131,37 @@ def fold(sdlc_dir):
     with both present, so this changes what a fresh clone carries and nothing about what this
     checkout answers.
 
-    REFUSED (#314, `ShadowRefused`, nothing written) while any unit record is a near-empty record
-    shadowing a fuller index entry (`feature_registry.is_shadow`) -- the shape the plugin under the
-    previous name writes when it cannot read Sigma's registry. `read` already serves the index
-    entry for such a unit, but the index is what a fresh clone carries, so a human sees the repair
-    (`repair`) before anything synthesised is baked into it."""
+    It writes `read`'s view, which already merges a legacy-id record as a DELTA onto the index
+    entry (`feature_registry.merge_legacy_delta`, #314) -- so a record the plugin under the previous
+    name wrote cannot shrink the entry by construction. And it CHECKS that rather than trusting it:
+    `feature_registry.monotonic_violations` compares the result with the current index, and any
+    loss (a goal, or a field/grant of a merged unit) refuses the fold (`FoldRefused`, nothing
+    written) with the repair command."""
     features_dir = registry.registry_dir(sdlc_dir)
-    found = registry.shadows(features_dir)
-    if found:
-        raise ShadowRefused(
-            "feature_sync: fold refused, nothing written: %d unit record(s) are near-empty records "
-            "hiding a fuller %s entry (%s). Recover: %s."
-            % (len(found), registry.INDEX_NAME, ", ".join(str(p) for _n, p in found),
-               registry.shadow_recovery(features_dir)))
-    return registry.write_index(features_dir, registry.read(features_dir))
+    merged = registry.read(features_dir)
+    lost = registry.monotonic_violations(features_dir, merged)
+    if lost:
+        raise FoldRefused(
+            "feature_sync: fold refused, nothing written: it would lose what %s records -- %s. "
+            "Recover: %s. If a record in Sigma's schema dropped these on purpose, edit %s to match."
+            % (registry.INDEX_NAME, "; ".join(lost), registry.delta_recovery(features_dir),
+               registry.index_path(features_dir)))
+    return registry.write_index(features_dir, merged)
 
 
 def repair(sdlc_dir, timeout=LOCK_TIMEOUT):
-    """Rewrite each shadowing record (`feature_registry.is_shadow`) as what `read` already serves
-    for it -- the index entry plus the goals the record adds -- under the unit's own lock, re-checked
-    inside it. -> [(name, path written)]. After it, `fold` proceeds. Idempotent: a second run finds
-    nothing. The old plugin cannot read the rewritten record (Sigma's schema id) and its own
-    #1565 guard then refuses that unit rather than replacing it -- so stop it here first anyway."""
+    """Rewrite each legacy-id record `read` merges as a delta (`feature_registry.legacy_deltas`)
+    in Sigma's schema, as exactly what `read` serves for it -- the index entry plus what the record
+    adds -- under the unit's own lock, re-checked inside it. -> [(name, path written)]. Idempotent:
+    a second run finds nothing. The plugin under the previous name cannot read the rewritten record
+    (Sigma's schema id) and its own #1565 guard then refuses that unit rather than replacing it --
+    so disable it first anyway."""
     features_dir = registry.registry_dir(sdlc_dir)
     done = []
-    for name, _path in registry.shadows(features_dir):
+    for name, _path in registry.legacy_deltas(features_dir):
         fd = _acquire(lock_path(sdlc_dir, name), timeout)
         try:
-            if name not in [n for n, _p in registry.shadows(features_dir)]:
+            if name not in [n for n, _p in registry.legacy_deltas(features_dir)]:
                 continue
             entry = registry.read(features_dir).get(name)
             if entry is not None:
@@ -1181,14 +1184,15 @@ def main(argv):
     THERE IS NO `sync` VERB, and the omission is the same one `cross_repo.main` makes for the same
     reason: the sync belongs to the pick, and a second way to run it is a second answer. `fold` is
     here because it is explicitly NOT part of a pick, and `show` because a record nobody can read is
-    not much of a record. `repair` (#314) is the recovery `fold`'s shadow refusal names."""
+    not much of a record. `repair` (#314) rewrites a legacy-id record merged as a delta in Sigma's
+    schema."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "fold":
         try:
             print(fold(argv[2]))
-        except ShadowRefused as exc:
+        except FoldRefused as exc:
             print(str(exc), file=sys.stderr)
             return 2
         return 0

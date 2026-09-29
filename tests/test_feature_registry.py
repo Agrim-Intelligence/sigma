@@ -1433,9 +1433,9 @@ _NO_UNIT_NAME = {
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),
-    # #314: the recovery TEXT for a shadowing record -- joins this module's own directory with
-    # `feature_sync.py` and prints the features dir it was handed; no unit name reaches a path.
-    ("feature_registry", "shadow_recovery"),
+    # #314: the recovery TEXT for a legacy-id delta record -- joins this module's own directory
+    # with `feature_sync.py` and prints the features dir it was handed; no unit name reaches a path.
+    ("feature_registry", "delta_recovery"),
     # #2265: `feature_frontier._config(sdlc_dir)` joins `sdlc_dir / "config.json"` -- the same
     # "directories: no name reaches them at all" shape as the three `feature_registry` entries
     # directly above. It takes only an `.sdlc` root, never a unit name, and is not a unit-scoped

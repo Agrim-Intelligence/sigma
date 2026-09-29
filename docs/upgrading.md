@@ -63,22 +63,40 @@ also reads. Committed files (`config.json` and `.sdlc/features/`) reach every te
 Not migrating does not keep a mixed team safe. Sigma reads the old spellings, but on normal use it
 rewrites registry files (`.sdlc/features/index.json` and the unit records under `units/`) with its
 own schema id, printing a one-line `migrated legacy ... on use` notice when it does. The old plugin
-reads those files as empty. So either switch every machine to Sigma and migrate together, or keep
-the old plugin off the branches Sigma writes to until you do.
+cannot read those files: it reads an `index.json` in Sigma's schema as empty, and its own guard
+refuses to touch a unit record in Sigma's schema (that unit is then stuck for it, not overwritten).
+So either switch every machine to Sigma and migrate together, or keep the old plugin off the
+branches Sigma writes to until you do.
 
 Two things protect the registry meanwhile. Before Sigma's first write to `.sdlc/features` on a
 machine where the old plugin can still run on the repository, it saves one copy of `.sdlc/features`
 to `.sdlc/state/backup/features-<UTC time>/` and says so on stderr (once per repository; `state/` is
 machine-local and ignored by git; a registry over 5,000 files or 64 MB is not copied, and that is
-said instead). And Sigma's registry reader recognises the record the old plugin writes when it
-cannot read Sigma's registry -- a unit record with no title, owner, tracking issue, priority or
-parent while `index.json` holds more for that unit -- and never lets it hide the fuller entry: it
-reads the `index.json` entry plus the goals that record adds, prints the recovery, and
-`feature_sync.py fold` refuses (exit 2, nothing written) until you run the repair it names:
+said instead). That copy is taken ONCE, ever, per repository: it is the state before Sigma's
+first write, so restoring it later discards every write made since. Restore it only within the
+cut-over window, and prefer the repair below.
+
+And Sigma's registry reader never lets a record the old plugin wrote replace an entry it could not
+see. The rule is structural, keyed on the two schema ids and nothing else: a unit record that still
+carries the old plugin's schema id, next to an `index.json` in Sigma's schema that has an entry for
+the same unit, can only have been written by the old plugin after the conversion, starting from
+nothing (a goal it started, the owner claim its next pick makes, `define.py set-priority`). Sigma
+reads it as a delta onto the `index.json` entry. The entry wins on every field it has a value for
+(title, owner, parent, tracking issue, priority, `open`, each repository's branch and owner). The
+record only fills blanks, its goals are added to the entry's, and a repository only it names is
+added without a grant. `authorized` is never taken from that record. The reader prints the
+recovery once. `feature_sync.py fold` writes the merged view, and first checks that the result
+loses nothing the current `index.json` records (no goal of any unit; no field, repository or grant
+of a merged unit). If anything would be lost, it refuses (exit 2, nothing written) and names the
+loss and the repair:
 
 ```
-python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record from index.json plus its goals
+python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record in Sigma's schema: the index entry plus what the record adds
 ```
+
+**Known edge.** Because the `index.json` entry wins, an ownership, title or priority change the old
+plugin makes after the conversion is not applied while the entry already has a value for that
+field. Disable the old plugin, then make the change with Sigma (or edit `index.json`).
 
 Cross-repository propagation follows the same rule. Sigma will not overwrite a sibling repository's
 registry file while that file still carries the old schema id. Run the migration in that repository
@@ -93,9 +111,20 @@ uninstall the old plugin -- in that order.
 
 **Why the order matters.** The old plugin cannot read Sigma's registry: it reads a
 `.sdlc/features/index.json` carrying Sigma's schema id as empty. So if it starts a goal in a unit
-that exists only in that index, it writes a new, nearly empty record for the unit (no title, owner,
-priority or tracking issue, `authorized` false, only its own goal), which would otherwise hide
-everything the index knew. Stop it on the repository **before** converting the registry.
+that exists only in that index, it writes a new record for the unit in its own schema, starting
+from nothing (no title, priority or tracking issue, `authorized` false, only its own goal; its next
+pick then claims an owner on it). Sigma merges that record only as a delta onto the index entry
+(above), so nothing the index knew is lost, but whatever the old plugin changes on such a unit
+reaches Sigma only where the entry is blank. It also writes other state Sigma owns:
+
+- **Withheld-findings indexes** (`.sdlc/state/withheld/`). Its `upstream._remember` treats an index
+  in Sigma's schema as unreadable and then writes a fresh one over it, erasing that goal's dedup
+  history and its count toward the per-goal cap of upstream issues (read in its 1.4.25 code; not
+  run here).
+- **Landing and propagation records.** It cannot read Sigma's, so it writes its own again:
+  duplicate work and duplicate records, not loss (#319 review finding; not re-measured here).
+
+These are why the order is: stop the old plugin on the repository **before** converting anything.
 
 The cut-over, per machine:
 
@@ -153,7 +182,7 @@ found and the cut-over steps, and exits 0.
 | `watch_daemon.py` | Proceeds to the shared lock; the notice goes to `.sdlc/state/watch.log`. |
 | `migrate.py` | The dry run proceeds with the notice. `--apply` waits for the old plugin to be stopped on this repository (exit 2, dry run shown, the exact disable step) unless `--replace-old-plugin` is given, which takes the `.sdlc/features` backup first. `--apply` still refuses while a watcher is live. This is the only step that waits: it is the one that converts the registry the old plugin cannot read. |
 | Registry writes (`.sdlc/features`) | Proceed. The first one saves the one-time copy to `.sdlc/state/backup/features-<time>/`. |
-| Registry reads, `feature_sync.py show` / `fold` | A near-empty record the old plugin wrote never hides a fuller `index.json` entry; `fold` refuses until `feature_sync.py repair`. |
+| Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` rewrites such records in Sigma's schema. |
 | `/agrim-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |
