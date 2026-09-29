@@ -19,7 +19,8 @@ WHAT. One flow, in this order, integrating the sibling goals rather than re-impl
   5. a one-screen summary and the next command
 
 QUESTIONS ARE FLAGS, SO EVERY HOST RUNS THE SAME FLOW. Claude Code asks the user and re-runs with the
-answers; Codex and Cursor relay the printed `[ask]` lines, each carrying the exact flag.
+answers; Codex and Cursor relay the printed `[ask]` lines, each carrying the exact flag (the shape,
+`[ask] <id>: <prose> -> --flag VALUE|VALUE ; --flag ...`, is `ask_line`'s).
 
 CONFIG.JSON IS THE ONE SOURCE OF TRUTH FOR CURRENT STATE (review of PR #286). `.sdlc/state/init.json`
 (runtime, git-ignored) records only THAT a question was answered -- so a re-run does not ask it again
@@ -412,7 +413,21 @@ def board_step(target, sdlc, answer, repo, how="flag"):
         offer = [f"  OFFER: create a GitHub Project board for {repo} and pin it. Preview: "
                  + " ".join(_vd._q(c) for c in cmd)]
     return (["  " + l for l in offer]
-            + ["  [ask] board: re-run with --board yes to create it now, or --board no to decline"]), True
+            + [ask_line("board", "re-run with --board yes to create it now, or --board no to decline",
+                        ["--board yes|no"])]), True
+
+
+def ask_line(qid, prose, answers):
+    """One open question, in the ONE machine-readable shape every host relays (#237):
+
+        [ask] <id>: <prose> -> <answer> ; <answer> ...
+
+    Each `<answer>` is an alternative: a bare `--flag`, or `--flag VALUE|VALUE` (a closed set), or
+    `--flag PLACEHOLDER` (upper case: the user supplies it, e.g. `N:ID`, `FILE`). Everything after
+    the LAST ` -> ` is the machine part; the prose before it is for people and may change freely.
+    tools/onboarding_control.py parses this shape and answers only flags it has a policy for, so a
+    flag renamed here without the control knowing turns the control red, not silently green."""
+    return f"  [ask] {qid}: {prose} -> {' ; '.join(answers)}"
 
 
 def _run_board(argv):
@@ -450,8 +465,9 @@ def verify_step(target, sdlc, opts):
     if str(verify.get("_why") or "").startswith("enforce OFF: the user declined"):
         return ["  [ok] verify: declined earlier - enforce OFF (the reason is in verify._why)"], True, False
     lines = ["  " + l for l in _si.verify_report(target)]
-    return lines + ["  [ask] verify: re-run with --verify N:ID (a candidate above), "
-                    "--verify-command-file FILE (your own), or --no-verify"], True, True
+    return lines + [ask_line("verify", "re-run with --verify N:ID (a candidate above), "
+                             "--verify-command-file FILE (your own), or --no-verify",
+                             ["--verify N:ID", "--verify-command-file FILE", "--no-verify"])], True, True
 
 
 def labels_step(sdlc):
@@ -618,7 +634,7 @@ def main(argv):
     remote = next((c for c in checks if c["id"] == "remote"), {})
     if work_on and remote.get("ok") is False and res["work"][1] != "flag" and "work" not in answered:
         asked.append("work")
-        print("  [ask] work: fix the remote above, or re-run with --local-only")
+        print(ask_line("work", "fix the remote above, or re-run with --local-only", ["--local-only"]))
     # A missing remote while that very choice is still open is a question (the DECISION above),
     # not a failure; every other blocking check fails the run.
     if [c for c in _pf.blocking(checks) if not (c["id"] == "remote" and "work" in asked)]:
@@ -630,7 +646,8 @@ def main(argv):
         asked.append("mode")
         default = "github" if detected else "local-goals"
         why = f"origin is {detected}" if detected else "origin is not a GitHub repository"
-        print(f"  [ask] mode: local-goals (goal files) or github (issues)? default: {default} ({why}).")
+        print(ask_line("mode", f"local-goals (goal files) or github (issues)? default: {default} ({why}).",
+                       ["--mode local-goals|github"]))
         print("        Re-run with --mode github or --mode local-goals (--yes takes the default).")
     for line in mode_lines + kept_notes:
         print(line)
@@ -679,8 +696,8 @@ def main(argv):
             print("  [ok] ledger: off" + suffix)
         else:
             asked.append("ledger")
-            print("  [ask] ledger: the team ledger (claims + hand-offs on an ops branch)? "
-                  "re-run with --ledger yes or --ledger no (--yes: no)")
+            print(ask_line("ledger", "the team ledger (claims + hand-offs on an ops branch)? "
+                           "re-run with --ledger yes or --ledger no (--yes: no)", ["--ledger yes|no"]))
 
     # LAST write to config.json of this run is above: record its fingerprint, so a later run knows
     # the template values are still open only if nothing else has written config.json since.

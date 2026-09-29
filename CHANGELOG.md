@@ -4,6 +4,28 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The README Quickstart is now a control that runs on every push** (#237). `python3
+  tools/onboarding_control.py` follows the README text -- the init script, the `/agrim-init`
+  flags, the `verify_detect.py confirm .sdlc <n> <id>` gesture and the plugin install lines are
+  parsed from README.md, not restated -- on a fresh repository to one goal `done`: local-goals
+  mode with no remote, and github mode against a fake `gh` and a local bare origin, where the goal
+  is `done` only after its PR merged (the review gate parks on `sigma:block`; `record done` is
+  refused while the PR is open). Each mode runs twice: a `confirm` variant (a Makefile target,
+  confirmed through the README gesture) and a `no-command` variant (nothing to confirm, the verify
+  question left open) -- the only one that sees the default init scaffolds, since a confirm
+  overwrites it. `/agrim-init`'s `[ask]` lines now end in one machine-readable shape, `-> --flag
+  VALUE|VALUE ; ...`, which the control parses and answers by flag name, so a renamed flag is red;
+  every init flag the README shows is checked against init_flow.py's parser, and every README
+  command runs only as `python3 <existing Sigma script> <args without shell syntax>`. It writes a
+  per-step timing log and a result JSON that records every gh call by kind. `--install` runs the
+  README's `claude plugin` / `codex plugin` lines into an isolated profile and hashes the real one
+  before and after (CI runs without it). Seen red: the original bug (template `enforce: true` with
+  the scaffold's rewrites removed: both no-command variants red at `record done`),
+  `write_verify` regressed, every `[ask]` flag renamed, README drift in any gesture, install line
+  or init flag, a shell command in the README, and each assertion broken once. Recorded run, what it does not cover (a live model turn, real GitHub, live Codex and Cursor
+  sessions, Windows -- #300-#303, #305) and an owner runbook for real GitHub:
+  [docs/onboarding-control.md](docs/onboarding-control.md). Its gh call log found the loop's
+  label self-heal making 20 needless `label create` calls per goal cycle (#304).
 - **The board card shows each goal's Phase and Priority** (#233). Before this, only Status reached
   the board. Now every `phase_report.py start` writes the phase the loop is entering (`P1 GOAL` ..
   `P7 RETRO`, imported from `PHASE_TOKENS`) to a `Phase` field on the goal's card, and mirrors its
