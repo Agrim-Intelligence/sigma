@@ -908,6 +908,21 @@ RENDER_SCRIPT = _HERE / "render.py"
 #: sick host, and the fallback banner is better than a stalled phase boundary.
 RENDER_TIMEOUT_S = 20
 
+#: #233: the board colour each phase's option gets when the loop CREATES the Phase field -- the
+#: nearest GitHub single-select colour to its `PHASE_BADGES` square. Never RED (a badge is not
+#: `🔴`), so 🟫 plan-review, which GitHub has no brown for, is PINK. Keyed like `PHASE_TOKENS`.
+PHASE_BOARD_COLORS = {"goal": "GRAY", "research": "YELLOW", "plan": "ORANGE",
+                      "plan_review": "PINK", "implement": "BLUE", "review": "PURPLE",
+                      "retro": "GREEN"}
+
+#: #233: the board write at a phase start is bounded so a sick `gh` can never hang a phase: each
+#: call times out, and the whole write stops issuing calls past its budget (fail-open either way).
+BOARD_CALL_TIMEOUT_S = 20
+BOARD_BUDGET_S = 45
+BOARD_RETRY_BASE = 0.5
+#: The `gh` runner for the board write; None -> the bounded real one. Tests put a fake here.
+_BOARD_RUN = None
+
 
 def phase_token(phase):
     """`research` -> `P2 RESEARCH`. An unknown phase returns itself rather than raising: the CLI
@@ -1708,7 +1723,61 @@ def cmd_start(argv):
     for line in start_lines(goal_ref(goal), phase, model, title,
                             host_model or requested_model):
         print(line)
+    sys.stdout.flush()
+    # #233: AFTER the marker, the ledger event and the banner, so no board outcome can change what
+    # this boundary records, prints or returns.
+    mirror_phase_to_board(sdlc_dir, goal, phase)
     return 0
+
+
+def _bounded_gh(budget_s=None, call_timeout_s=None):
+    """A `gh` runner for `sources.GitHubSource` that cannot hang a boundary: every call has a
+    timeout, and once the budget is spent every further call raises at once."""
+    import subprocess
+    import time
+    deadline = time.monotonic() + (BOARD_BUDGET_S if budget_s is None else budget_s)
+    timeout = BOARD_CALL_TIMEOUT_S if call_timeout_s is None else call_timeout_s
+
+    def run(args):
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise RuntimeError("board write budget (%ss) spent" % BOARD_BUDGET_S)
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True,
+                              timeout=min(timeout, left))
+        if proc.returncode != 0:
+            exc = RuntimeError("gh %s failed: %s" % (" ".join(map(str, args[:2])),
+                                                     proc.stderr.strip()[:300]))
+            exc.hint = proc.stderr.strip()[:300]
+            raise exc
+        return proc.stdout
+    return run
+
+
+def mirror_phase_to_board(sdlc_dir, goal, phase, run=None):
+    """#233: write the phase the loop is ENTERING onto the goal's board card (and mirror its
+    Priority). One write per boundary, from Sigma's own Python on every host. A no-op unless the
+    config is github mode with `project.enabled` and a pinned `project.number`; fail-open always
+    -- returns True/False, never raises, and at most one stderr line (`GitHubSource._warn_field`)."""
+    try:
+        cfg = _load("state").load_config(sdlc_dir)
+        disc = cfg.get("discovery") or {}
+        project = ((disc.get("github") or {}).get("project")) or {}
+        if disc.get("source") != "github" or not project.get("enabled") \
+                or not project.get("number") or not str(_load("work").stem(goal)).isdigit():
+            return False
+        sources = _load("sources")
+        source = sources.GitHubSource(cfg, run=run or _BOARD_RUN or _bounded_gh(),
+                                      sdlc_dir=str(sdlc_dir))
+        source._RETRY_BASE = BOARD_RETRY_BASE
+        vocabulary = [(token, PHASE_BOARD_COLORS.get(kind, "GRAY")) for kind, token in PHASE_TOKENS]
+        return bool(source.set_board_phase(_load("work").stem(goal), phase_token(phase), vocabulary))
+    except Exception as exc:                                  # the board is a mirror, never a gate
+        try:
+            print("sigma: board Phase/Priority not written - %s. The goal continues unaffected."
+                  % str(exc)[:300], file=sys.stderr)
+        except Exception:
+            pass
+        return False
 
 
 def _recorded_attempt_kinds(ledger, sdlc_dir, attempt_id):

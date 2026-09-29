@@ -1863,7 +1863,19 @@ def test_phase_report_loads_no_network_capable_sibling_module():
     # reads no config, opens no socket and spawns no subprocess — its whole surface is one
     # appended line per completed interval. The exact-set assertion is the point of this guard,
     # so it is updated deliberately rather than loosened to a subset check.
-    assert loaded == {"state", "work", "ledger", "frontmatter", "timing_store"}, loaded
+    #
+    # `sources` joined it with #233 (the board's Phase column), DELIBERATELY and fenced: it may be
+    # loaded from `mirror_phase_to_board` ONLY, which returns before loading it unless the config is
+    # github mode with `project.enabled` AND a pinned `project.number` -- so a repo without a board
+    # still loads nothing network-capable here (executed, not asserted, in tests/test_board_phase.py
+    # `test_a_repo_without_a_pinned_board_spawns_nothing_at_a_phase_start`).
+    assert loaded == {"state", "work", "ledger", "frontmatter", "timing_store", "sources"}, loaded
+    sources_callers = {fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+                       for call in ast.walk(fn)
+                       if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                       and call.func.id == "_load" and call.args
+                       and isinstance(call.args[0], ast.Constant) and call.args[0].value == "sources"}
+    assert sources_callers == {"mirror_phase_to_board"}, sources_callers
 
     imported = {n.name.split(".")[0] for node in ast.walk(tree)
                 if isinstance(node, ast.Import) for n in node.names}
@@ -1877,9 +1889,14 @@ def test_phase_report_loads_no_network_capable_sibling_module():
               for call in ast.walk(fn)
               if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
               and isinstance(call.func.value, ast.Name) and call.func.value.id == "subprocess"]
-    assert [name for name, _ in spawns] == ["render_block"], spawns
-    argv = ast.unparse(spawns[0][1].args[0])
+    # #233: the one other spawn is the bounded `gh` runner the board write uses (`_bounded_gh`
+    # and the `run` closure inside it are the same call, seen from both function scopes).
+    assert sorted({name for name, _ in spawns}) == ["_bounded_gh", "render_block", "run"], spawns
+    by_name = {name: ast.unparse(call.args[0]) for name, call in spawns}
+    argv = by_name["render_block"]
     assert "sys.executable" in argv and "RENDER_SCRIPT" in argv, argv
+    assert by_name["run"].startswith("['gh'"), by_name["run"]
+    assert any(k.arg == "timeout" for _n, c in spawns if _n == "run" for k in c.keywords)
 
 
 # --- elapsed wall time ---------------------------------------------------------------------

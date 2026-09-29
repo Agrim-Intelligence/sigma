@@ -4,6 +4,22 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The board card shows each goal's Phase and Priority** (#233). Before this, only Status reached
+  the board. Now every `phase_report.py start` writes the phase the loop is entering (`P1 GOAL` ..
+  `P7 RETRO`, imported from `PHASE_TOKENS`) to a `Phase` field on the goal's card, and mirrors its
+  Priority from the `priority:*` label. Every status write also mirrors the moved goal's Priority,
+  using labels the run has already read. On a pinned board (`project.enabled` + `project.number`),
+  a missing field is created once as a single-select with fixed options. A hand-made board's fields
+  are adopted by case-insensitive name, and their extra options are kept. Nothing is renamed,
+  recoloured or dropped, and a missing option is reported, never appended. The write is fail-open:
+  it never changes a pick's or a start's exit code or banner, prints at most one warning per run,
+  and has a time bound. A repeated start for the same phase writes nothing. In steady state a
+  boundary costs 3 reads and at most 2 writes. New config: `project.phase_field` (default
+  `"Phase"`, `false` disables it). **Decision:** an unlabelled goal's Priority stays blank, not P3.
+  "No priority" sorts after P4, and writing P3 would reorder the queue and add labels. Acceptance
+  ran on the in-memory board fake only. The live run on board #17 was not executed; it is an owner
+  runbook in [docs/board-fields.md](docs/board-fields.md).
+
 - **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
   an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as
   a "Merge pull request #N" commit was flattened by the next upkeep pass: a plain `git rebase`

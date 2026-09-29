@@ -1037,6 +1037,12 @@ class GitHubSource:
         # recognised field value wins and the label is rewritten to match; a blank field is filled
         # from a recognised label; an unrecognised field value is left alone. Falsy disables it.
         self.priority_field = self._project_cfg.get("priority_field", "Priority")
+        # #233: the board's Phase column, written ONLY at a phase boundary (`set_board_phase`, called
+        # by `phase_report.py start`). Falsy disables it; Priority is unaffected by that switch.
+        self.phase_field = self._project_cfg.get("phase_field", "Phase")
+        self._issue_labels = {}          # {issue number -> labels}, from `_sync_backlog`'s one read
+        self._item_rows = {}             # {issue number -> raw item-list row}, from `_load_items`
+        self._field_warned = False       # #233: printed the ONE Phase/Priority warning this run?
         self._priority_options = {}      # {P0..P4 -> option id}, filled by _ensure_status_field
         self._priority_field_id = None
         self._ro_attempted = False       # resolved the read-only board queue this run?
@@ -3560,6 +3566,15 @@ class GitHubSource:
             if item_id and opt and self._field_id:
                 self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
                            "--field-id", self._field_id, "--single-select-option-id", opt])
+                # #233: the same card update carries its Priority. `_sync_backlog` skips the goal
+                # being moved (`exclude`), so without this the moved card's Priority waited for the
+                # NEXT process's sync. Labels come from that sync's own read -- zero extra calls --
+                # and a goal it never read (not goal-labelled) is left alone. `_mirror_priority`
+                # never raises, so the Status write above is reported as landed whatever happens.
+                self._item_status[int(goal)] = status_name
+                labels = self._issue_labels.get(int(goal))
+                if labels is not None:
+                    self._mirror_priority(int(goal), labels, item_id)
                 return True
             return False
         except Exception as exc:
@@ -3963,6 +3978,8 @@ class GitHubSource:
         on_board = set(self._items or {})            # numbers already carded
         for it in issues:
             n = it.get("number")
+            if n is not None:
+                self._issue_labels[int(n)] = it.get("labels")   # #233: `_set_board_status` reads it
             if n is None or str(n) == str(exclude):
                 continue
             was_new = int(n) not in on_board
@@ -4328,7 +4345,7 @@ class GitHubSource:
                     return opt_id
         return None
 
-    def _mirror_priority(self, n, labels, item_id):
+    def _mirror_priority(self, n, labels, item_id, on_error=None):
         """Keep a card's Priority column and its `priority:P*` label in agreement. The FIELD wins.
 
         Three cases, and only the first two write anything — a board already in agreement costs
@@ -4384,7 +4401,7 @@ class GitHubSource:
             elif not field_value and label_rank < discovery.UNPRIORITISED:
                 self._write_priority_field(n, label_rank, item_id)
         except Exception as exc:
-            self._note_scope(exc)
+            (on_error or self._note_scope)(exc)   # #233's boundary path passes its one-warning sink
 
     def _write_priority_label(self, n, canon, labels):
         """Set issue `n`'s priority label to the canonical `priority:P<n>` spelling for `canon` —
@@ -4494,6 +4511,7 @@ class GitHubSource:
             n = (it.get("content") or {}).get("number")
             if n is not None:
                 self._items[int(n)] = it.get("id")
+                self._item_rows[int(n)] = it        # #233: labels + every flattened field value
                 self._item_status[int(n)] = it.get("status")
                 # `gh project item-list` flattens a custom single-select onto the item under the
                 # lowercased field name — verified live on project #6: {'status': 'Backlog',
@@ -4509,6 +4527,154 @@ class GitHubSource:
     @staticmethod
     def _find_field(fields, name):
         return next((f for f in fields if f.get("name") == name), None)
+
+    # ----- #233: Phase (and Priority) at a phase boundary -----------------------------------------
+
+    def _pinned_number(self):
+        try:
+            value = int(self._project_cfg.get("number"))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    @classmethod
+    def _find_field_ci(cls, fields, name):
+        """`_find_field`, then a case-only match: a hand-made board's `phase` or `PRIORITY` column
+        is ADOPTED under its own spelling -- never renamed, and never shadowed by a duplicate."""
+        hit = cls._find_field(fields, name)
+        if hit is None and name:
+            hit = next((f for f in fields if str(f.get("name") or "").casefold() == name.casefold()),
+                       None)
+        return hit
+
+    @staticmethod
+    def _single_select(field):
+        return field is not None and (field.get("options") is not None
+                                      or field.get("type") == "ProjectV2SingleSelectField")
+
+    @staticmethod
+    def _create_field_mutation(project_id, name, options):
+        """`createProjectV2Field` for a single-select with fixed `options` [(name, colour)], every
+        literal JSON-quoted exactly as `_options_mutation` quotes them (#235's escaping)."""
+        q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
+        opts = ", ".join("{name: %s, color: %s, description: %s}" % (q(n), c, q(""))
+                         for n, c in options)
+        return ("query=mutation { createProjectV2Field(input: {projectId: %s, dataType: SINGLE_SELECT, "
+                "name: %s, singleSelectOptions: [%s]}) { projectV2Field { ... on "
+                "ProjectV2SingleSelectField { id } } } }" % (q(project_id), q(name), opts))
+
+    def _warn_field(self, what):
+        """THE one warning a run prints about Phase/Priority (#233), whatever else goes wrong after
+        it: the board is a mirror, so one line saying it is behind is the whole useful signal."""
+        if self._field_warned:
+            return
+        self._field_warned = True
+        hint = (" Run: gh auth refresh -s project." if "scope" in what.lower() else "")
+        try:
+            sys.stderr.write("sigma: board Phase/Priority not written - %s. The goal continues "
+                             "unaffected; issue labels remain the source of truth.%s\n" % (what, hint))
+        except Exception:
+            pass
+
+    def set_board_phase(self, goal, token, vocabulary):
+        """#233: set issue `goal`'s card Phase to `token`, and mirror its Priority from the card's
+        own labels. Called once per phase boundary by `phase_report.py start`; returns True only
+        when the Phase value on the card is now `token`.
+
+        `vocabulary` is [(token, colour)] from `phase_report.PHASE_TOKENS` -- passed in, never copied
+        here, so the board's options and the output contract cannot say different things.
+
+        Gated: a no-op with ZERO gh calls unless `project.enabled` and a `project.number` is pinned
+        (the operator's explicit choice of board), and `goal` is an issue number. Light on purpose:
+        no repo link, no backlog sync, no board creation -- 3 reads (project list, field list, item
+        list) and at most one write per field, and a card whose Phase already reads `token` costs no
+        write at all. A field the board lacks is created ONCE (single-select, fixed options); one it
+        has under another case is adopted; its options are matched exactly, then by case, and a
+        missing one is NEVER appended (the loop cannot read option colours, and #235's rule is to
+        refuse rather than reset them). Nothing is renamed, recoloured, reordered or dropped. Status
+        is never written and an uncarded goal is never carded here. Fail-open: never raises, and at
+        most ONE stderr line per run (`_warn_field`)."""
+        number = self._pinned_number()
+        if not (self.project_enabled and number) or not str(goal).isdigit():
+            return False
+        n = int(goal)
+        try:
+            owner = self._proj_owner()
+            found, pid, _ = self._find_project(owner, self._proj_title())
+            if found != number or not pid:
+                self._warn_field("pinned board #%s was not found under %s" % (number, owner))
+                return False
+            self._project_number, self._project_id = number, pid
+            fields = self._list_fields(owner, number)
+            wanted = []
+            if self.priority_field:
+                wanted.append((self.priority_field, [(p, "GRAY") for p in discovery.PRIORITIES]))
+            if self.phase_field:
+                wanted.append((self.phase_field, list(vocabulary)))
+            created = False
+            for name, options in wanted:
+                if self._find_field_ci(fields, name) is None:
+                    try:
+                        self._run(["api", "graphql", "-f",
+                                   self._create_field_mutation(pid, name, options)])
+                        created = True
+                    except Exception as exc:
+                        self._warn_field("could not create the %r field (%s)"
+                                         % (name, getattr(exc, "hint", None) or exc))
+            if created:
+                fields = self._list_fields(owner, number)
+            self._load_items(owner, number)
+            item_id = self._items.get(n)
+            if not item_id:
+                self._warn_field("issue #%d has no card on board #%d yet" % (n, number))
+                return False
+            row = self._item_rows.get(n) or {}
+            self._mirror_board_priority(n, fields, row, item_id)
+            return self._write_board_phase(n, fields, row, item_id, token) if self.phase_field \
+                else False
+        except Exception as exc:
+            self._warn_field(str(getattr(exc, "hint", None) or exc))
+            return False
+
+    def _mirror_board_priority(self, n, fields, row, item_id):
+        if not self.priority_field:
+            return
+        fld = self._find_field_ci(fields, self.priority_field)
+        if fld is None:
+            return                                   # its create already warned
+        if not self._single_select(fld):
+            self._warn_field("the board's %r field is not single-select" % fld.get("name"))
+            return
+        self._priority_field_id = fld.get("id")
+        self._priority_options = {o.get("name"): o.get("id") for o in (fld.get("options") or [])}
+        self._item_priority[n] = row.get(str(fld.get("name") or "").lower())
+        self._mirror_priority(n, row.get("labels"), item_id,
+                              on_error=lambda exc: self._warn_field(
+                                  "the Priority write failed (%s)" % (getattr(exc, "hint", None) or exc)))
+
+    def _write_board_phase(self, n, fields, row, item_id, token):
+        fld = self._find_field_ci(fields, self.phase_field)
+        if fld is None:
+            return False                             # its create already warned
+        if not self._single_select(fld):
+            self._warn_field("the board's %r field is not single-select" % fld.get("name"))
+            return False
+        opts = [o for o in (fld.get("options") or []) if isinstance(o, dict)]
+        opt = next((o for o in opts if o.get("name") == token), None) or next(
+            (o for o in opts if str(o.get("name") or "").casefold() == token.casefold()), None)
+        if opt is None:
+            self._warn_field("the %r field has no %r option (add it on the board by hand; the "
+                             "loop never edits a field's options)" % (fld.get("name"), token))
+            return False
+        if row.get(str(fld.get("name") or "").lower()) == opt.get("name"):
+            return True                              # already there: dedupe, zero writes
+        try:
+            self._run(["project", "item-edit", "--project-id", self._project_id, "--id", item_id,
+                       "--field-id", fld.get("id"), "--single-select-option-id", opt.get("id")])
+        except Exception as exc:
+            self._warn_field("the Phase write failed (%s)" % (getattr(exc, "hint", None) or exc))
+            return False
+        return True
 
     def _issue_url(self, n):
         repo = self.repo
