@@ -4,6 +4,21 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The README Quickstart is now a control that runs on every push** (#237). `python3
+  tools/onboarding_control.py` follows the README text -- the init script, the `/agrim-init`
+  flags, the `verify_detect.py confirm .sdlc <n> <id>` gesture and the plugin install lines are
+  parsed from README.md, not restated -- on a fresh repository to one goal `done`: local-goals
+  mode with no remote, and github mode against a fake `gh` and a local bare origin, where the goal
+  is `done` only after its PR merged (the review gate parks on `sigma:block`; `record done` is
+  refused while the PR is open). It writes a per-step timing log and a result JSON that records
+  every gh call by kind. `--install` runs the README's `claude plugin` / `codex plugin` lines into
+  an isolated profile and hashes the real one before and after. Seen red: the empty-verify-command
+  default reintroduced (red at `record done`), a renamed README gesture, and each assertion broken
+  once. Recorded run, what it does not cover (a live model turn, real GitHub, live Codex and Cursor
+  sessions, Windows -- #300-#303, #305) and an owner runbook for real GitHub:
+  [docs/onboarding-control.md](docs/onboarding-control.md). Its gh call log found the loop's
+  label self-heal making 20 needless `label create` calls per goal cycle (#304).
+
 - **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
   an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as
   a "Merge pull request #N" commit was flattened by the next upkeep pass: a plain `git rebase`
