@@ -1730,26 +1730,83 @@ def cmd_start(argv):
     return 0
 
 
+#: #233 review: how long a KILLED `gh` may take to release its pipes before the runner gives up on
+#: it. Bounded on every platform: a grandchild that escaped the kill (or a Windows tree `taskkill`
+#: could not reach) can hold stdout open, and an unbounded reap would hang the boundary anyway.
+BOARD_REAP_S = 5
+#: The `gh` executable the bounded runner spawns (tests point it at a local stub).
+BOARD_GH = "gh"
+
+
+class BoardCallTimeout(RuntimeError):
+    """A board `gh` call overran its timeout and was killed. `no_retry`: `sources.GitHubSource._run`
+    must not retry it as transient -- the boundary skips its board write instead (one warning)."""
+    no_retry = True
+
+
+def _on_windows():
+    return os.name == "nt"
+
+
+def _kill_tree(proc):
+    """Kill a hung `gh` AND everything it spawned: its whole process group on POSIX (it was started
+    in a session of its own), `taskkill /T /F` on Windows -- the same split `run_with_timeout.py`
+    makes. Never raises; the tree may already be gone."""
+    try:
+        if _on_windows():
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
+                           timeout=BOARD_REAP_S)
+        else:
+            import signal
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _bounded_gh(budget_s=None, call_timeout_s=None):
     """A `gh` runner for `sources.GitHubSource` that cannot hang a boundary: every call has a
-    timeout, and once the budget is spent every further call raises at once."""
-    import subprocess
-    import time
-    deadline = time.monotonic() + (BOARD_BUDGET_S if budget_s is None else budget_s)
+    timeout, a call that overruns is killed with its whole process tree and ends the write (every
+    later call raises at once, `BoardCallTimeout`, never retried), and once the budget is spent every
+    further call raises at once too."""
+    budget = BOARD_BUDGET_S if budget_s is None else budget_s
+    deadline = time.monotonic() + budget
     timeout = BOARD_CALL_TIMEOUT_S if call_timeout_s is None else call_timeout_s
+    killed = []
 
     def run(args):
+        if killed:
+            raise BoardCallTimeout("an earlier board call was killed after %ss; no further calls "
+                                   "this boundary" % killed[0])
         left = deadline - time.monotonic()
         if left <= 0:
-            raise RuntimeError("board write budget (%ss) spent" % BOARD_BUDGET_S)
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True,
-                              timeout=min(timeout, left))
+            raise RuntimeError("board write budget (%ss) spent" % budget)
+        wait = min(timeout, left)
+        spawn = ({"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)}
+                 if _on_windows() else {"start_new_session": True})
+        env = dict(os.environ, GH_PROMPT_DISABLED="1", GH_NO_UPDATE_NOTIFIER="1")
+        proc = subprocess.Popen([BOARD_GH, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                errors="replace", env=env, **spawn)
+        try:
+            out, err = proc.communicate(timeout=wait)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            try:
+                proc.communicate(timeout=BOARD_REAP_S)
+            except Exception:
+                pass                              # a pipe still held open: abandon it, never hang
+            killed.append("%g" % wait)
+            raise BoardCallTimeout("gh %s gave no answer within %gs and was killed"
+                                   % (" ".join(map(str, args[:2])), wait))
         if proc.returncode != 0:
             exc = RuntimeError("gh %s failed: %s" % (" ".join(map(str, args[:2])),
-                                                     proc.stderr.strip()[:300]))
-            exc.hint = proc.stderr.strip()[:300]
+                                                     (err or "").strip()[:300]))
+            exc.hint = (err or "").strip()[:300]
             raise exc
-        return proc.stdout
+        return out
     return run
 
 

@@ -92,8 +92,9 @@ def _field_writes(gh, name):
 
 def test_one_goal_through_p2_to_p7_advances_phase_and_priority_matches_label(
         tmp_path, monkeypatch, capsys):
+    """On the board Sigma created (`project.setup_created` names it), both fields are Sigma's."""
     gh, board = _world()
-    sdlc = _sdlc(tmp_path)
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
     seen = []
     for phase in PHASES[1:]:                                     # P2 RESEARCH .. P7 RETRO
         assert _start(sdlc, phase, monkeypatch, gh) == 0
@@ -112,25 +113,26 @@ def test_one_goal_through_p2_to_p7_advances_phase_and_priority_matches_label(
 
 def test_a_repeated_start_for_the_same_phase_writes_nothing(tmp_path, monkeypatch):
     gh, board = _world()
-    sdlc = _sdlc(tmp_path)
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
     _start(sdlc, "research", monkeypatch, gh)
-    before = len(gh.calls)
+    before, made = len(gh.calls), len(gh.mutations())
     _start(sdlc, "research", monkeypatch, gh)
     again = gh.calls[before:]
     assert not [c for c in again if c[:2] == ["project", "item-edit"]], again
-    assert not gh.mutations()[2:]                                 # no further creates either
+    assert len(gh.mutations()) == made                            # no further creates either
 
 
 def test_calls_per_boundary_are_bounded(tmp_path, monkeypatch):
-    """Steady state: 3 reads + 1 Phase write. Stated in the plan and docs; measured here."""
+    """Steady state: ONE read (this issue's card, over GraphQL) + 1 Phase write -- never the
+    whole-board `item-list` (6.5s on board #17's 246 cards), never `project list`/`field-list`."""
     gh, board = _world()
     sdlc = _sdlc(tmp_path)
     _start(sdlc, "research", monkeypatch, gh)
     before = len(gh.calls)
     _start(sdlc, "plan", monkeypatch, gh)
     verbs = [" ".join(c[:2]) for c in gh.calls[before:]]
-    assert sorted(verbs) == sorted(["project list", "project field-list", "project item-list",
-                                    "project item-edit"]), verbs
+    assert verbs == ["api graphql", "project item-edit"], verbs
+    assert "projectItems(" in " ".join(map(str, gh.calls[before])), gh.calls[before]
 
 
 def test_unlabelled_goal_leaves_priority_blank_not_p3(tmp_path, monkeypatch):
@@ -185,7 +187,7 @@ def test_a_missing_option_on_a_hand_made_field_warns_once_and_is_never_appended(
 def test_a_same_named_field_that_is_not_single_select_is_skipped_with_one_warning(
         tmp_path, monkeypatch, capsys):
     text_phase = {"id": "PVTF_text_phase", "name": "Phase", "options": None, "data_type": "text"}
-    gh, board = _world(extra_fields=(text_phase,))
+    gh, board = _world(extra_fields=(text_phase, HAND_PRIO))
     assert _start(_sdlc(tmp_path), "research", monkeypatch, gh) == 0
     assert [f["name"] for f in board["fields"]].count("Phase") == 1
     lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
@@ -238,7 +240,9 @@ def test_a_phase_write_failure_never_changes_the_start_outcome(tmp_path, monkeyp
     clean = capsys.readouterr().out
     gh.fail["item-edit"] = "HTTP 502: Bad Gateway"
     assert _start(sdlc, "research", monkeypatch, gh) == 0       # same phase: dedupe, no write
-    gh.boards[0]["items"][0].pop("phase")                       # force a write that will fail
+    card = gh.boards[0]["items"][0]                             # force a write that will fail
+    card.pop("phase")
+    card["values"].pop(gh.field(board, "Phase")["id"])
     rc = _start(sdlc, "research", monkeypatch, gh)
     out, err = capsys.readouterr()
     assert rc == 0
@@ -278,7 +282,7 @@ def test_disabled_when_no_number_is_pinned(tmp_path, monkeypatch):
 
 def test_phase_field_false_disables_phase_but_not_priority(tmp_path, monkeypatch):
     gh, board = _world()
-    _start(_sdlc(tmp_path, _cfg(phase_field=False)), "research", monkeypatch, gh)
+    _start(_sdlc(tmp_path, _cfg(phase_field=False, setup_created=17)), "research", monkeypatch, gh)
     assert gh.field(board, "Phase") is None
     assert _card(board).get("priority") == "P1"
 
@@ -332,7 +336,8 @@ def test_several_failures_in_one_run_still_print_exactly_one_warning(tmp_path, m
     """Neither field exists and GitHub refuses both creates: two failures, ONE line."""
     gh, board = _world()
     gh.fail["createProjectV2Field"] = "GraphQL: Resource not accessible by integration"
-    assert _start(_sdlc(tmp_path), "research", monkeypatch, gh) == 0
+    assert _start(_sdlc(tmp_path, _cfg(setup_created=17)), "research", monkeypatch, gh) == 0
+    assert len(gh.mutations()) == 2                             # both creates were tried
     lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
     assert len(lines) == 1, lines
     assert gh.field(board, "Phase") is None and gh.field(board, "Priority") is None
@@ -369,10 +374,351 @@ def test_the_bounded_runner_stops_calling_gh_once_its_budget_is_spent(monkeypatc
         raise AssertionError("spawned past the budget")
 
     monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
     run = pr._bounded_gh(budget_s=0)
     try:
         run(["project", "list"])
     except RuntimeError as exc:
-        assert "budget" in str(exc)
+        assert "budget (0s)" in str(exc), exc                   # the budget actually passed
     else:
         raise AssertionError("a spent budget must raise")
+
+
+# ---------------------------------------------------------------- review block #1 (PR #296)
+
+
+def test_a_label_edit_on_an_adopted_board_is_never_reverted_at_the_next_boundary(
+        tmp_path, monkeypatch, capsys):
+    """The reviewer's flip repro: a HAND-MADE board with no Priority field. The loop must not
+    create one (it is their board), so the source of truth never silently moves from the label to
+    a field, and a person's `priority:P1` -> `priority:P0` edit is never reverted."""
+    gh, board = _world()
+    sdlc = _sdlc(tmp_path)
+    _start(sdlc, "research", monkeypatch, gh)
+    assert gh.field(board, "Priority") is None                  # never created on their board
+    gh.issues[0]["labels"] = [{"name": "sdlc:goal"}, {"name": "priority:P0"}]
+    _card(board)["labels"] = ["sdlc:goal", "priority:P0"]
+    _start(sdlc, "plan", monkeypatch, gh)
+    assert not [c for c in gh.calls if c[:2] == ["issue", "edit"]]
+    assert _card(board).get("phase") == "P3 PLAN"
+
+
+def test_a_card_moved_to_done_prints_no_false_stuck_at_done_warning(tmp_path, capsys):
+    """The reviewer's t_done repro: the Status write to Done is not a stranded card."""
+    prio = {"id": "PVTSSF_prio", "name": "Priority", "options": [
+        {"id": "h", "name": "High", "color": "GRAY", "description": ""}]}
+    gh, _board = _world(extra_fields=(prio,))
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_in_progress("11")
+    capsys.readouterr()
+    src.mark_qc("11")
+    src._set_board_status("11", src.col["done"])
+    err = capsys.readouterr().err
+    assert "stuck at" not in err, err
+
+
+P_ALL = {"id": "PVTSSF_prio", "name": "Priority", "options": [
+    {"id": "p_%d" % i, "name": "P%d" % i, "color": "GRAY", "description": ""} for i in range(5)]}
+
+
+def _relabel(gh, board, *labels):
+    gh.issues[0]["labels"] = [{"name": n} for n in labels]
+    _card(board)["labels"] = list(labels)
+
+
+def test_on_the_board_sigma_created_the_field_still_wins_as_before(tmp_path, monkeypatch, capsys):
+    """Unchanged where #719's rule always applied: Sigma's own board (`setup_created`)."""
+    gh, board = _world()
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
+    _start(sdlc, "research", monkeypatch, gh)
+    assert _card(board).get("priority") == "P1"                 # created, filled from the label
+    _relabel(gh, board, "sdlc:goal", "priority:P0")
+    _start(sdlc, "plan", monkeypatch, gh)
+    edits = [c for c in gh.calls if c[:2] == ["issue", "edit"]]
+    assert edits and "priority:P1" in edits[-1], edits           # field wins, label corrected
+    assert "the field wins" in capsys.readouterr().err
+
+
+def test_an_adopted_boards_own_priority_field_is_mirrored_label_to_field_only(
+        tmp_path, monkeypatch):
+    gh, board = _world(extra_fields=(P_ALL,))
+    sdlc = _sdlc(tmp_path)
+    _start(sdlc, "research", monkeypatch, gh)
+    assert _card(board).get("priority") == "P1"                 # a BLANK field is filled
+    assert [f["name"] for f in board["fields"]].count("Priority") == 1
+    _relabel(gh, board, "sdlc:goal", "priority:P0")             # a person re-prioritises
+    before = len(gh.calls)
+    _start(sdlc, "plan", monkeypatch, gh)
+    assert not [c for c in gh.calls if c[:2] == ["issue", "edit"]]   # never a label rewrite
+    assert _card(board).get("priority") == "P1"                 # nor a recognised field overwritten
+    writes = [c for c in gh.calls[before:] if c[:2] == ["project", "item-edit"]]
+    assert len(writes) == 1 and "PVTSSF_prio" not in writes[0]   # the Phase write only
+
+
+def test_mirror_priority_opt_in_creates_the_field_on_an_adopted_board(tmp_path, monkeypatch):
+    gh, board = _world()
+    _start(_sdlc(tmp_path, _cfg(mirror_priority=True)), "research", monkeypatch, gh)
+    assert gh.option_names(board, "Priority") == ["P0", "P1", "P2", "P3", "P4"]
+    assert _card(board).get("priority") == "P1"
+
+
+def test_an_uncarded_goal_gets_no_field_write_at_all(tmp_path, monkeypatch, capsys):
+    """Survived mutation: without the no-card guard the write went out as `--id None`."""
+    gh, board = _world(carded=False)
+    assert _start(_sdlc(tmp_path), "research", monkeypatch, gh) == 0
+    assert not [c for c in gh.calls if c[:2] == ["project", "item-edit"]], gh.calls
+    assert not gh.mutations()                                   # nor a field created for nothing
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+    assert len(lines) == 1 and "no card" in lines[0], lines
+
+
+def test_a_title_matching_board_never_stands_in_for_an_unreadable_pin(
+        tmp_path, monkeypatch, capsys):
+    """Survived mutation: the pin check loosened to `not pid` let the owner's board titled
+    `widget — SDLC` win when pinned #17 could not be read. The pin is the operator's choice."""
+    gh = boardfake.GitHub(owner="acme", repo="widget")
+    gh.add_board("widget — SDLC", number=3,
+                 fields=[_status_field("3"), dict(P_ALL, id="PVTSSF_prio_3")])
+    other = gh.board(number=3)
+    gh.add_item(other, 11, Status="In Progress")
+    gh.issues = [{"number": 11, "labels": [{"name": "sdlc:goal"}, {"name": "priority:P1"}],
+                  "title": "t", "body": ""}]
+    assert _start(_sdlc(tmp_path), "research", monkeypatch, gh) == 0     # pinned #17: not there
+    assert not [c for c in gh.calls if c[:2] == ["project", "item-edit"]]
+    assert not gh.mutations()
+    assert gh.field(other, "Phase") is None
+    assert len([ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]) == 1
+
+
+def test_a_same_numbered_board_of_another_owner_is_never_written(tmp_path, monkeypatch):
+    gh, board = _world(carded=False)
+    theirs = gh.add_board("theirs", number=17, owner="octo", fields=[_status_field("o17")])
+    gh.add_item(theirs, 11, Status="In Progress")
+    _start(_sdlc(tmp_path), "research", monkeypatch, gh)
+    assert not [c for c in gh.calls if c[:2] == ["project", "item-edit"]]
+    assert gh.field(theirs, "Phase") is None
+
+
+def test_a_multi_repo_board_never_writes_another_repos_same_numbered_card(tmp_path, monkeypatch):
+    gh, board = _world(extra_fields=(P_ALL,))
+    stranger = gh.add_item(board, 11, repo="acme/other", Status="Backlog")
+    stranger["labels"] = ["priority:P4"]
+    ours = _card(board)
+    sdlc = _sdlc(tmp_path)
+    _start(sdlc, "research", monkeypatch, gh)
+    assert ours.get("phase") == "P2 RESEARCH" and stranger.get("phase") is None
+    # the status path too: `_load_items` must key the card by (repository, number)
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(sdlc))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")
+    assert ours.get("status") == "QC", ours
+    assert stranger.get("status") == "Backlog" and stranger.get("priority") is None, stranger
+
+
+def test_a_killed_call_is_never_retried_as_transient(tmp_path, monkeypatch, capsys):
+    """`TimeoutExpired`'s text says "timed out", which `_TRANSIENT` matches: without `no_retry` a
+    hung item-edit would be re-run 4x and spend the whole boundary budget on one card."""
+    gh, board = _world()
+    sdlc = _sdlc(tmp_path)
+    edits = []
+
+    def run(args):
+        if args[:2] == ["project", "item-edit"]:
+            edits.append(args)
+            raise pr.BoardCallTimeout("Command '['gh', 'project', 'item-edit']' timed out after 20 "
+                                      "seconds")
+        return gh.loop_run(args)
+
+    monkeypatch.setattr(pr, "_BOARD_RUN", run)
+    monkeypatch.setattr(pr, "BOARD_RETRY_BASE", 0)
+    assert pr.cmd_start([str(sdlc), "11", "research", "--model", "sonnet"]) == 0
+    assert len(edits) == 1, edits
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+    assert len(lines) == 1 and "Phase write failed" in lines[0], lines
+
+
+def test_duplicate_case_variants_of_phase_are_detected_and_warned_once(
+        tmp_path, monkeypatch, capsys):
+    ours = {"id": "PVTSSF_ours", "name": "Phase", "options": [
+        {"id": "ph_%d" % i, "name": t, "color": "GRAY", "description": ""}
+        for i, t in enumerate(TOKENS)]}
+    gh, board = _world(extra_fields=(ours, dict(HAND_PHASE)))
+    _start(_sdlc(tmp_path), "research", monkeypatch, gh)
+    assert _card(board).get("phase") == "P2 RESEARCH"
+    assert _card(board)["values"].get("PVTSSF_ours") == "ph_1"             # the EXACT field
+    assert "PVTSSF_hand_phase" not in _card(board)["values"]
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+    assert len(lines) == 1 and "'phase'" in lines[0] and "'Phase'" in lines[0], lines
+
+
+def test_ambiguous_case_variants_with_no_exact_name_are_never_guessed(
+        tmp_path, monkeypatch, capsys):
+    upper = dict(HAND_PHASE, id="PVTSSF_upper", name="PHASE")
+    gh, board = _world(extra_fields=(dict(HAND_PHASE), upper))
+    _start(_sdlc(tmp_path), "research", monkeypatch, gh)
+    assert not [c for c in gh.calls if c[:2] == ["project", "item-edit"]]
+    assert not gh.mutations()                                   # nor a third one created
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+    assert len(lines) == 1 and "PHASE" in lines[0], lines
+
+
+def test_the_sync_adopts_a_case_variant_priority_by_the_same_rule_label_to_field_only(tmp_path):
+    """One helper for both paths: the sync's `_ensure_priority_field` adopts `PRIORITY` exactly as
+    the phase path does -- and, not being an exact-name field the sync ever read before, it is
+    mirrored label -> field only: a disagreeing field never rewrites a label."""
+    prio = dict(P_ALL, id="PVTSSF_upper_prio", name="PRIORITY")
+    gh, board = _world(extra_fields=(prio,))
+    gh.add_item(board, 12, Status="In Progress", PRIORITY="P3")
+    gh.issues.append({"number": 12, "labels": [{"name": "sdlc:goal"}, {"name": "priority:P0"}],
+                      "title": "u", "body": ""})
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")                                           # a board touch: the backlog sync
+    assert _card(board).get("priority") == "P1"                 # blank -> filled from the label
+    assert _card(board, 12).get("priority") == "P3"
+    assert not [c for c in gh.calls if c[:2] == ["issue", "edit"] and "12" in c]
+
+
+def test_the_sync_mirrors_nothing_when_priority_case_variants_collide(tmp_path, capsys):
+    """`item-list` flattens both columns under `priority`: one value overwrites the other, so
+    whatever the sync reads may be the wrong field's. It writes nothing and says so once."""
+    gh, board = _world(extra_fields=(P_ALL, dict(P_ALL, id="PVTSSF_lower", name="priority")))
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")
+    assert _card(board).get("status") == "QC"
+    assert not [c for c in gh.calls if c[:2] == ["project", "item-edit"]
+                and "PVTSSF_prio" in c or "PVTSSF_lower" in c]
+    assert "differing only in case" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- the bounded runner, for real
+
+
+def _hanging_gh(tmp_path, grandchild_pidfile, sleep=15):
+    """A stand-in `gh` (a local stub, never the real CLI) that spawns a grandchild, recording its
+    pid, then hangs."""
+    gh = tmp_path / "hanging-gh"
+    gh.write_text("#!/bin/sh\nsleep %d &\necho $! > %s\nsleep %d\n"
+                  % (sleep, grandchild_pidfile, sleep), encoding="utf-8")
+    gh.chmod(0o755)
+    return str(gh)
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    # a zombie still answers kill(0); `ps` tells a reaped/defunct one apart
+    import subprocess
+    stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    return bool(stat.stdout.strip()) and not stat.stdout.strip().startswith("Z")
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX; Windows uses taskkill /T")
+def test_a_hung_gh_is_killed_with_its_whole_process_group(tmp_path, monkeypatch):
+    import time
+    pidfile = tmp_path / "grandchild.pid"
+    monkeypatch.setattr(pr, "BOARD_GH", _hanging_gh(tmp_path, pidfile))
+    run = pr._bounded_gh(budget_s=30, call_timeout_s=1)
+    t0 = time.monotonic()
+    with pytest.raises(pr.BoardCallTimeout):
+        run(["project", "item-edit"])
+    assert time.monotonic() - t0 < 8
+    grandchild = int(pidfile.read_text().strip())
+    deadline = time.monotonic() + 3
+    while _alive(grandchild) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _alive(grandchild), "the hung gh's own child outlived the kill"
+    t1 = time.monotonic()
+    with pytest.raises(pr.BoardCallTimeout, match="earlier"):  # nothing else runs this boundary
+        run(["project", "item-edit"])
+    assert time.monotonic() - t1 < 0.5
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exercised through the POSIX spawn")
+def test_the_reap_after_a_kill_is_bounded_even_when_the_kill_misses(tmp_path, monkeypatch):
+    """A tree the kill could not reach (Windows' `taskkill` failing, a grandchild that left the
+    group) keeps the pipe open: the reap must give up after BOARD_REAP_S, never hang the start."""
+    import time
+    import signal
+    pidfile = tmp_path / "p"
+    monkeypatch.setattr(pr, "BOARD_GH", _hanging_gh(tmp_path, pidfile, sleep=12))
+    monkeypatch.setattr(pr, "_kill_tree", lambda proc: None)
+    monkeypatch.setattr(pr, "BOARD_REAP_S", 1)
+    run = pr._bounded_gh(budget_s=30, call_timeout_s=1)
+    t0 = time.monotonic()
+    try:
+        with pytest.raises(pr.BoardCallTimeout):
+            run(["project", "item-edit"])
+        assert time.monotonic() - t0 < 6
+    finally:                                                    # the tree this test left alive
+        try:
+            os.killpg(os.getpgid(int(pidfile.read_text().strip())), signal.SIGKILL)
+        except (OSError, ValueError):
+            pass
+
+
+def test_windows_kill_is_a_bounded_tree_kill(monkeypatch):
+    """Windows has no process group to signal: `taskkill /T /F` walks the tree, itself bounded."""
+    import subprocess
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"], seen["timeout"] = argv, kw.get("timeout")
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+    class Proc:
+        pid = 4242
+        killed = False
+
+        def kill(self):
+            Proc.killed = True
+
+    monkeypatch.setattr(pr, "_on_windows", lambda: True)
+    monkeypatch.setattr(pr.subprocess, "run", fake_run)
+    pr._kill_tree(Proc())
+    assert seen["argv"][:3] == ["taskkill", "/T", "/F"] and seen["timeout"] == pr.BOARD_REAP_S
+    assert Proc.killed                                          # and the direct child, at least
+
+
+def test_a_card_moved_to_done_with_a_matching_option_prints_no_stuck_warning(tmp_path, capsys):
+    """Its Priority field is still blank, so a mirror WOULD write -- and #1206 would call our own
+    Done write a stranded card."""
+    gh, board = _world(extra_fields=(P_ALL,))
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    assert src._set_board_status("11", src.col["done"]) is True
+    assert _card(board).get("status") == "Done"
+    assert "stuck at" not in capsys.readouterr().err
+
+
+def test_a_stranded_card_with_no_matching_option_is_not_reported_as_skipped(tmp_path, capsys):
+    """#1206's warning names a write it skipped; with no P<n> option there was no write to skip."""
+    high = {"id": "PVTSSF_prio", "name": "Priority", "options": [
+        {"id": "h", "name": "High", "color": "GRAY", "description": ""}]}
+    gh, board = _world(extra_fields=(high,), carded=False)
+    gh.add_item(board, 11, Status="Done")
+    gh.issues.append({"number": 12, "labels": [{"name": "sdlc:goal"}], "title": "u", "body": ""})
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_in_progress("12")                                  # the sync visits #11
+    assert "stuck at" not in capsys.readouterr().err
+
+
+def test_a_status_write_on_an_adopted_board_never_rewrites_the_label_from_its_field(tmp_path):
+    gh, board = _world(extra_fields=(P_ALL,), carded=False)
+    gh.add_item(board, 11, Status="Ready", Priority="P3")       # label says P1
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_in_progress("11")
+    assert _card(board).get("status") == "In Progress"
+    assert not [c for c in gh.calls if c[:2] == ["issue", "edit"] and "11" in c
+                and any("priority:" in str(a) for a in c)]

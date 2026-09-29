@@ -1889,14 +1889,25 @@ def test_phase_report_loads_no_network_capable_sibling_module():
               for call in ast.walk(fn)
               if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
               and isinstance(call.func.value, ast.Name) and call.func.value.id == "subprocess"]
-    # #233: the one other spawn is the bounded `gh` runner the board write uses (`_bounded_gh`
-    # and the `run` closure inside it are the same call, seen from both function scopes).
-    assert sorted({name for name, _ in spawns}) == ["_bounded_gh", "render_block", "run"], spawns
+    # #233: the other spawns are the bounded `gh` runner the board write uses (`_bounded_gh` and
+    # the `run` closure inside it are the same call, seen from both function scopes) and the
+    # Windows tree-kill of a hung one (`_kill_tree`, bounded by its own timeout).
+    assert sorted({name for name, _ in spawns}) == ["_bounded_gh", "_kill_tree", "render_block",
+                                                   "run"], spawns
     by_name = {name: ast.unparse(call.args[0]) for name, call in spawns}
     argv = by_name["render_block"]
     assert "sys.executable" in argv and "RENDER_SCRIPT" in argv, argv
-    assert by_name["run"].startswith("['gh'"), by_name["run"]
-    assert any(k.arg == "timeout" for _n, c in spawns if _n == "run" for k in c.keywords)
+    assert by_name["run"].startswith("[BOARD_GH"), by_name["run"]
+    assert by_name["_kill_tree"].startswith("['taskkill'"), by_name["_kill_tree"]
+    assert any(k.arg == "timeout" for _n, c in spawns if _n == "_kill_tree" for k in c.keywords)
+    # the gh call itself is bounded where it is WAITED on: every `communicate` in the runner
+    # carries a timeout (the call's own, and the post-kill reap's)
+    runner = next(fn for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+                  and fn.name == "_bounded_gh")
+    waits = [c for c in ast.walk(runner) if isinstance(c, ast.Call)
+             and isinstance(c.func, ast.Attribute) and c.func.attr in ("communicate", "wait")]
+    assert len(waits) == 2 and all(any(k.arg == "timeout" for k in c.keywords) for c in waits), \
+        [ast.unparse(c) for c in waits]
 
 
 # --- elapsed wall time ---------------------------------------------------------------------
