@@ -1095,6 +1095,7 @@ class GitHubSource:
         # #280: the columns already reported as having no matching Status option this run (one
         # warning each, never a silent no-op).
         self._unmatched_warned = set()
+        self._ready_variant_noticed = False   # #280: `_notice_ready_variant`, once per instance
         # #905: was the MOST RECENT `_fetch_pending` call a genuine empty read, or a give-up after
         # exhausting retries? See `read_degraded()`.
         self._last_read_degraded = False
@@ -1726,6 +1727,12 @@ class GitHubSource:
         to the historical label queue, byte for byte. Nothing here ever ADDS the option — migrating
         an existing board is an explicit, human-invoked command (#696), never a loop tick.
 
+        #280 (review of PR #325): `Ready` is matched EXACTLY, never by #280's case/whitespace rule.
+        A board lane spelled `READY` / `ready` / `Ready ` would otherwise switch the queue mode
+        without anyone choosing it. Such a lane keeps the label queue and prints ONE notice per
+        instance naming it; setting `project.columns.ready` to the board's spelling (or running
+        board_migrate.py) is the explicit opt-in, and an exact configured name wins as before.
+
         Strictly READ-ONLY, deliberately: this runs on the pick path, and a queue read that quietly
         created a GitHub Project (which `_ensure_board` would) is exactly the kind of surprise an
         adopter should never meet. Provisioning stays where it was — on the first status WRITE.
@@ -1746,9 +1753,11 @@ class GitHubSource:
             fields = self._list_fields(owner, self._project_number)
             fld = self._find_field(fields, self._project_cfg.get("status_field") or "Status")
             names = {o.get("name") for o in ((fld or {}).get("options") or [])}
-            self._adopt_column_spellings(names)          # #280: `ready` vs a board's `READY`
+            self._adopt_column_spellings(names)   # #280: never `ready` -- see the docstring
             if self.col["ready"] in names:
                 self._ro_ready = self.col["ready"]
+            else:
+                self._notice_ready_variant(names)
         except Exception as exc:
             self._note_scope(exc)
             self._ro_ready = None
@@ -3735,7 +3744,10 @@ class GitHubSource:
         The exact name wins; else the ONE option equal to `want` ignoring case and whitespace
         (GitHub's default `In progress` for our `In Progress`); several such variants and no exact
         one is ambiguous and matches nothing -- never a guess between two lanes."""
-        names = [n for n in (names or ()) if isinstance(n, str)]
+        # Deduplicated: a board with two lanes of one name (seen on a real board, research #280) is
+        # one name to the loop's option dict, so it is one name here too -- doctor and the loop
+        # resolve through this same function and must agree.
+        names = list(dict.fromkeys(n for n in (names or ()) if isinstance(n, str)))
         if not want:
             return None, []
         if want in names:
@@ -3744,7 +3756,11 @@ class GitHubSource:
         return (variants[0], []) if len(variants) == 1 else (None, variants)
 
     def _status_option(self, name):
-        """(the board's spelling, option id) for column `name`, or (None, None)."""
+        """(the board's spelling, option id) for column `name`, or (None, None). The Ready column
+        is matched exactly (see `_ready_lane`): a write never lands in a lane the queue ignores."""
+        if name == self.col["ready"]:
+            opt = self._status_options.get(name)
+            return (name, opt) if opt else (None, None)
         hit, _ = self._match_option(list(self._status_options), name)
         return (hit, self._status_options.get(hit)) if hit else (None, None)
 
@@ -3757,9 +3773,33 @@ class GitHubSource:
         `_warn_unmatched_column` when a write needs it."""
         names = list(option_names or ())
         for key, want in list(self.col.items()):
+            if key == "ready":
+                continue      # queue-mode selection is never spelling-adopted (`_ready_lane`)
             hit, _ = self._match_option(names, want)
             if hit:
                 self.col[key] = hit
+
+    def _notice_ready_variant(self, option_names):
+        """#280 (review of PR #325): ONE informational line when the board has a lane that differs
+        from the Ready column only in case/whitespace. The label queue stays in force (never a
+        silent switch); the line names the explicit opt-ins. Never raises."""
+        if self._ready_variant_noticed:
+            return
+        hit, variants = self._match_option(option_names, self.col["ready"])
+        lanes = [hit] if hit else variants
+        if not lanes:
+            return
+        self._ready_variant_noticed = True
+        try:
+            sys.stderr.write(
+                "sigma: board #%s has a %s lane that differs from the Ready column %r only in case "
+                "or spacing, so the loop stays on the label queue (the queue mode is never switched "
+                "by spelling). To make that lane the queue, set "
+                "discovery.github.project.columns.ready to %r, or run board_migrate.py.\n"
+                % (self._project_number, " / ".join(repr(v) for v in lanes), self.col["ready"],
+                   lanes[0]))
+        except Exception:
+            pass
 
     def _warn_unmatched_column(self, status_name):
         """#280: a card move whose column has NO matching Status option on the board. It used to

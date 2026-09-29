@@ -12,12 +12,17 @@ All notable changes to Sigma are recorded here, newest first.
   and printed nothing. (1) That fresh-board path now renames `In progress` in the same id-preserving
   update that renames `Todo` to `Backlog`, so the built-in workflows stay on. (2) Status options are
   matched exact-first. Failing that, the one option that differs only in case or whitespace is used
-  under the board's own spelling, in memory. Adopted boards are never renamed. (3) A column with no
-  matching option prints one warning per run that names the column, its config key and the board's
-  options. `Ready` is exempt, because a board without it is the label queue. So is a park that
-  falls back to `Blocked`. (4) `/agrim-doctor` has a read-only row, **board Status options match
-  the loop's columns**. It is off under `cheap_only`. Details: `docs/board-fields.md`. Tests:
-  `tests/test_board_status_spelling.py`.
+  under the board's own spelling, in memory. Adopted boards are never renamed. `Ready` is the
+  exception: it is matched exactly, because it decides the queue mode. A lane spelled `READY`,
+  `ready` or `Ready ` keeps the label queue and prints one notice per run that names the lane and
+  the two opt-ins (`project.columns.ready` set to that spelling, or `board_migrate.py`). (3) A
+  column with no matching option prints one warning per run that names the column, its config key
+  and the board's options. `Ready` is exempt, because a board without it is the label queue. So is
+  a park that falls back to `Blocked`. (4) `/agrim-doctor` has a read-only row, **board Status
+  options match the loop's columns**. It uses the loop's own resolver, so two lanes with one name
+  count once, as they do in the loop. It shares one `gh project field-list` with the custom-fields
+  row and is off under `cheap_only`. The init template's column map is pinned to the loop's
+  defaults by a test. Details: `docs/board-fields.md`. Tests: `tests/test_board_status_spelling.py`.
 
 - **Done-means-merged hardening** (#255, the review findings on #232). (1) The documented cost is
   now true. A merge-reconcile pass that closed a goal used to read its PR twice over REST and then

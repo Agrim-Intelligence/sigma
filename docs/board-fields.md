@@ -97,6 +97,12 @@ options are matched with the same rule as the fields above, and whitespace is ig
   the current run. The board is never renamed and config is never written. `board_setup.py` is
   the place that maps an adopted board's spelling into `project.columns` (#235).
 - **Several such options and no exact one** match nothing. The loop does not guess between two lanes.
+  Two lanes with the *same* name count as one, as they do in the loop's option map.
+- **`Ready` is matched exactly, always.** It decides whether the board or the label queue is used,
+  and that is never switched by spelling. A board with a `READY`, `ready` or `Ready ` lane keeps
+  the label queue. The run prints **one** notice naming that lane. To use it as the queue, set
+  `project.columns.ready` to its exact spelling (an explicit choice, which then wins) or run
+  `board_migrate.py`. The loop also never writes a card into such a lane.
 - **No match** means the card is not moved. The run prints **one** warning for each column. It
   names the column, its `project.columns.<key>`, and the options the board actually has. Before
   #280 this was a silent no-op. There are two exceptions. A board without `Ready` gets no warning,
@@ -119,8 +125,9 @@ GitHub.
 
 `/agrim-doctor` has a row, **board Status options match the loop's columns**. It lists every loop
 column that has no matching option on the pinned board. `ready` is never listed. `parked` is not
-listed while `blocked` matches. The row makes one read-only `gh project field-list`. It runs only
-when the pinned board is reachable, and it is never run under `cheap_only`.
+listed while `blocked` matches. The row uses the loop's own matching function, so the two never
+disagree. It shares one read-only `gh project field-list` with the **board custom fields mapped**
+row. It runs only when the pinned board is reachable, and it is never run under `cheap_only`.
 
 ## Which card
 
