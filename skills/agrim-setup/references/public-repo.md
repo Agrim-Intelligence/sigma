@@ -73,8 +73,11 @@ Re-running `/agrim-setup` later keeps these values: a deliberate `false`/`"off"`
 
 `labels` creates the ten lifecycle labels (`sdlc:goal`, `sdlc:in-progress`, `sdlc:parked`,
 `sdlc:blocked`, `sdlc:blocking`, `sdlc:needs-confirmation`, `sdlc:needs-label`, `sdlc:designed`,
-`sdlc:needs-unit`, `sdlc:needs-triage`). They must exist before anyone can file a goal, because
-GitHub refuses to apply a label that does not exist.
+`sdlc:needs-unit`, `sdlc:needs-triage`) and `priority:P0`–`priority:P3`. They must exist before
+anyone can file a goal, because GitHub refuses to apply a label that does not exist. It prints one
+line per label (`created`, `existed`, or `FAILED: <reason>`) and `labels ensured on <repo>` only
+when every one was measured present; if any failed it exits non-zero naming them, and `loop.py
+start` refuses to start for the same reason. An existing label is read back, never rewritten.
 
 The loop recreates any of the ten labels' EXISTENCE on its next claim, park or offboard — but only
 that. Deleting `sdlc:in-progress` strips it from EVERY issue that currently carries it; the label
@@ -82,8 +85,9 @@ comes back globally on the next claim/park/offboard, but an already-claimed goal
 until it finishes, and until then a SECOND CLONE of this repository (same login, its own `init` plus
 this adoption plus `start`/`next`) can silently double-pick that same goal — no error, no warning,
 just the same issue number twice (measured). Deleting `sdlc:goal` is worse: `loop.py next` then
-prints `DONE` as if the backlog were empty, and nothing recreates it, because there is no claim to
-trigger the self-heal (measured). Deleting `sdlc:parked` is worse the same way, by code, not
+prints `DONE` as if the backlog were empty, and no claim or park recreates it, because there is no
+claim to trigger the self-heal (measured); the next `loop.py start` does, and `next` says on stderr
+that 0 issues carry it. Deleting `sdlc:parked` is worse the same way, by code, not
 measured: a parked issue's own label never comes back on its own, and it drops out of every queue
 that filters on it.
 
@@ -92,9 +96,9 @@ is gone, then `gh issue edit <N> --add-label sdlc:<name> --repo <owner/name>` fo
 issue(s) — and for a double-picked goal, agreeing with whoever else is running it before either side
 calls it done.
 
-`priority:P0`–`P4` are created on first use by `/agrim-triage` and `handoff.py`. To file with a
-priority by hand, create the label first. Unprioritised goals are still picked, after prioritised
-ones.
+`priority:P4` is created on first use by `/agrim-triage` and `handoff.py`; P0–P3 already exist.
+Unprioritised goals are still picked, after prioritised ones. When no open issue carries `sdlc:goal`
+at all, `loop.py next` still prints `DONE`, and says on stderr that 0 issues carry the label.
 
 `area:*` labels are yours. `feature:*` labels come only through `/agrim-define` — see
 `docs/label-model.md` §12.
@@ -105,7 +109,6 @@ If this account cannot create labels, the claim still happens but prints
 ## Filing and landing a goal
 
 ```bash
-gh label create "priority:P1" --repo <owner/name>
 gh issue create --repo <owner/name> --label "sdlc:goal,priority:P1" --assignee @me \
   --title "<goal title>" --body "<...>"
 ```

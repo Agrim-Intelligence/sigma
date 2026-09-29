@@ -2055,6 +2055,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
             # own diagnostic probe, so reading first keeps this call's own verdict authoritative
             # rather than depending on that save/restore happening to run first).
             degraded = getattr(source, "read_degraded", lambda: False)()
+            if not degraded and not held:
+                _note_unlabelled_backlog(source)          # #230: stderr; stdout stays bare DONE
             # #1661: and WHICH kind of empty, when this run was confined to one unit. Before
             # `_emit_run_stop_once` only because `pending_outside_feature` puts the degraded-read
             # flag back where it found it; see its docstring.
@@ -5279,6 +5281,46 @@ def main(argv):
         return 2
 
 
+def _note_unlabelled_backlog(source):
+    """#230: a bare `DONE` on a repo where NO open issue carries the goal label reads as "the loop
+    finished"; it means "nothing was ever queued". Say so, on stderr (stdout's bare `DONE` line is
+    a contract with `supervise_classify.py`). Only a source that can count (`goal_label_census`,
+    GitHub) is asked, only on the genuinely-empty path, and only a MEASURED zero is reported: one
+    REST read of one item, spent once per drained run -- never per pick."""
+    census = getattr(source, "goal_label_census", None)
+    if census is None:
+        return
+    try:
+        count = census()
+    except Exception:
+        return
+    if count == 0:
+        label = getattr(source, "goal_label", "sdlc:goal")
+        print("loop.py: DONE — 0 issues carry %s — label one to start" % label, file=sys.stderr)
+
+
+def _bootstrap_github_labels(sdlc_dir, config):
+    """#230: in github mode, make sure every label the pick query and the claim depend on exists
+    BEFORE the first pick -- `sources.py` picks by a REST query on `sdlc:goal`, so a missing label
+    reads as an empty backlog and the loop would report `DONE` forever. Defensive: `/agrim-init
+    --github` and `setup.py labels` normally did this already, and then it costs one REST read and
+    zero writes (`GitHubSource.ensure_labels_report`). Per-label outcome goes to stderr (stdout of
+    `start` stays empty); returns False -- `start` exits 1 -- when any label could not be created,
+    so a token without label-write permission is refused loudly instead of starting a loop that
+    can never pick. Local mode: no-op, no `gh` call."""
+    if ((config.get("discovery") or {}).get("source")) != "github":
+        return True
+    source = sources.get_source(sdlc_dir, config)
+    results = source.ensure_labels_report()
+    lines, failed = sources.render_label_report(source.repo, results)
+    for line in lines:
+        print("loop: " + line.strip(), file=sys.stderr)
+    if failed:
+        print("loop.py start: refusing to start -- required label(s) missing; see above",
+              file=sys.stderr)
+    return not failed
+
+
 def _dispatch(argv):
     if len(argv) >= 2 and argv[1] in ("start", "next", "next-batch", "claim", "session-end"):
         try:
@@ -5301,6 +5343,8 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         for warning in _config_warnings(config):
             print("loop: " + warning, file=sys.stderr)       # surface the trap up front, not 40 goals in
+        if not _bootstrap_github_labels(argv[2], config):     # #230: before any session is registered
+            return 1
         # #1199: registers a session by DEFAULT now, not only when a caller remembers `--session-
         # pid` (F10.5-4/#377's original opt-in) — so a caller that forgets the flag still gets SOME
         # registration rather than none. #1239 review (finding 1/2): `os.getppid()` here is THIS

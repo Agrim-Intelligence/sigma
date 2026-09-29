@@ -45,6 +45,16 @@ All notable changes to Sigma are recorded here, newest first.
   while a watcher is live. See `docs/upgrading.md`.
 - Cross-repository propagation no longer overwrites a sibling repository's registry file that
   still carries the old schema id.
+- Labels exist before the first pick (#230). `/agrim-init --github` (when `origin` is on GitHub),
+  `setup.py labels` and `loop.py start` in github mode now create the ten `sdlc:*` labels and
+  `priority:P0`–`P3`. Each run reads the repository's labels once over REST and creates only the
+  missing ones, so an existing label is never recoloured and a bootstrapped repo costs one read,
+  no writes. Every label is reported as `created`, `existed` or `FAILED: <reason>`; "ensured" is
+  printed only when all were measured present, and any failure exits non-zero naming the label
+  (`loop.py start` refuses to start). Previously `setup.py labels` printed "ensured" even when
+  every create had been refused. When no open issue carries `sdlc:goal`, `loop.py next` still
+  prints a bare `DONE` on stdout and now says `0 issues carry sdlc:goal — label one to start` on
+  stderr.
 
 ## 1.0.0 — the first public release
 

@@ -529,6 +529,15 @@ def cmd_api(state, argv, pos, flags, multi):
     if endpoint == "user":
         emit({"login": state["login"]}, flags.get("jq"), argv); return
     repo = state["repo"]
+    if endpoint == "repos/%s/labels" % repo and method in ("", "GET"):
+        # #230: `ensure_labels_report`'s REST read of the repo's labels (paginated, 100 per page).
+        fields = {}
+        for item in multi.get("f", []):
+            k, _, v = item.partition("="); fields[k] = v
+        per_page, page = int(fields.get("per_page", "30")), int(fields.get("page", "1"))
+        names = sorted(state["labels"])
+        emit([{"name": n, "color": state["labels"][n].get("color", "")}
+              for n in names[(page - 1) * per_page: page * per_page]], flags.get("jq"), argv); return
     if endpoint == "repos/%s" % repo:
         obj = {"default_branch": state["default_branch"],
                "allow_auto_merge": state.get("allow_auto_merge", True)}
@@ -923,7 +932,7 @@ def primary_world(tmp_path_factory):
     root = tmp_path_factory.mktemp("primary")
     world = _make_repo_world(root)
     _adopt(world)
-    _create_label(world, "priority:P1")
+    assert _label_exists(world, "priority:P1")   # #230: the adoption block's `labels` created it
     _file_goal(world, title="Test goal 1")
     world["obs"] = _run_sequence(world, run_probe=True)
     return world
@@ -935,7 +944,7 @@ def on_case_world(tmp_path_factory):
     world = _make_repo_world(root)
     _adopt(world)
     _turn_both_stores_on(world["clone_dir"])
-    _create_label(world, "priority:P1")
+    assert _label_exists(world, "priority:P1")   # #230: the adoption block's `labels` created it
     _file_goal(world, title="Test goal 1")
     world["obs"] = _run_sequence(world, run_probe=False)
     return world
@@ -1033,7 +1042,7 @@ def test_the_census_sees_both_stores_when_ledger_and_journal_are_on(on_case_worl
 def test_a_refused_label_create_is_loud_not_silent(tmp_path):
     world = _make_repo_world(tmp_path)
     _adopt(world)
-    _create_label(world, "priority:P1")
+    assert _label_exists(world, "priority:P1")   # #230: the adoption block's `labels` created it
     _delete_label(world, "sdlc:in-progress")
     state = _read_state(world["state_path"])
     state["refuse_label_create"] = True

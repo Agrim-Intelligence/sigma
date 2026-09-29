@@ -80,12 +80,16 @@ Defaults `configure` sets: **github discovery scoped to `assignee: @me`**, **led
 turns on the verify trap.
 
 `labels` creates the core lifecycle labels (`sdlc:goal`, `sdlc:in-progress`, `sdlc:parked`,
-`sdlc:blocked`, `sdlc:blocking`, plus the promotion/design overlays) on the target repo — the same
-idempotent, colour-preserving mechanism the loop already calls before every claim/park, so a fresh
-adoption doesn't finish fully configured with nothing pickable. It never creates `priority:P<n>`
-labels and never applies any label to an issue — those stay a deliberate, separate, human decision
-(which issues become pickable is a real triage call, not a mechanical setup step). No-op in
-`local-goals` mode or before `discovery.github.repo` is set.
+`sdlc:blocked`, `sdlc:blocking`, plus the promotion/design overlays) and the `priority:P0`-`P3`
+tiers on the target repo, so a fresh adoption doesn't finish fully configured with nothing pickable.
+It reads the repo's labels once (REST) and creates only the missing ones, never recolouring an
+existing label. It prints one line per label — `created`, `existed`, or `FAILED: <reason>` — and
+`labels ensured on <repo>` only when every label was measured present; any failure exits non-zero
+and names the label (typically a token without label-write permission). It never applies a label
+to an issue — which issues become pickable stays a human's triage call. No-op in `local-goals`
+mode or before `discovery.github.repo` is set; `--repo O/N` bootstraps a named repo anyway (what
+`/agrim-init --github` uses). `loop.py start` repeats the same check in github mode and refuses to
+start when a required label cannot be created.
 
 **Public repository?** If you are adopting Sigma's own public repository, or you choose the
 public-repository profile for any other public repo, apply it after these three calls. It replaces

@@ -257,24 +257,39 @@ def _github_cfg(repo="acme/app"):
     return {"discovery": {"source": "github", "github": {"repo": repo}}}
 
 
-def test_ensure_core_labels_creates_exactly_the_core_lifecycle_set(tmp_path):
-    calls = []
-    result = setup.ensure_core_labels(_sdlc(tmp_path), config=_github_cfg(),
-                                      run=lambda args: calls.append(list(args)) or "")
-    created = {c[2] for c in calls if c[:2] == ["label", "create"]}
-    assert created == _CORE_LABELS
-    assert result == {"outcome": "ensured", "repo": "acme/app", "labels": sorted(_CORE_LABELS)}
+#: #230: the priority tiers bootstrapped alongside the lifecycle set.
+_PRIORITY_LABELS = {"priority:P0", "priority:P1", "priority:P2", "priority:P3"}
 
 
-def test_ensure_core_labels_never_creates_a_priority_label_or_touches_any_issue(tmp_path):
-    """The exact promise made to the user and in #2254's own issue body: this bootstraps label
-    DEFINITIONS only, never `priority:P<n>` labels, and never applies a label to an issue (no
-    `issue edit` / `label add` call of any kind -- only `label create`)."""
+def _creating_run(calls):
+    """A `gh` that has no labels yet: the REST label read returns an empty page, every create lands."""
+    def run(args):
+        calls.append(list(args))
+        return "[]" if args[0] == "api" else ""
+    return run
+
+
+def _creates(calls):
+    return {c[2] for c in calls if c[:2] == ["label", "create"]}
+
+
+def test_ensure_core_labels_creates_the_lifecycle_and_priority_sets(tmp_path):
     calls = []
-    setup.ensure_core_labels(_sdlc(tmp_path), config=_github_cfg(),
-                             run=lambda args: calls.append(list(args)) or "")
-    assert not any("priority" in str(a).lower() for c in calls for a in c)
-    assert all(c[0] == "label" and c[1] == "create" for c in calls)
+    result = setup.ensure_core_labels(_sdlc(tmp_path), config=_github_cfg(), run=_creating_run(calls))
+    assert _creates(calls) == _CORE_LABELS | _PRIORITY_LABELS
+    assert result["outcome"] == "ensured" and result["repo"] == "acme/app"
+    assert result["labels"] == sorted(_CORE_LABELS | _PRIORITY_LABELS)
+    assert all(r["outcome"] == "created" for r in result["results"])
+
+
+def test_ensure_core_labels_never_touches_any_issue_and_never_uses_graphql(tmp_path):
+    """Label DEFINITIONS only: no `issue edit` / `label add` of any kind, and (#230) the one read is
+    the REST labels endpoint, never `api graphql`."""
+    calls = []
+    setup.ensure_core_labels(_sdlc(tmp_path), config=_github_cfg(), run=_creating_run(calls))
+    assert all((c[:2] == ["label", "create"]) or (c[0] == "api" and c[1].endswith("/labels")
+                                                 and "GET" in c) for c in calls)
+    assert not any("graphql" in str(a) for c in calls for a in c)
 
 
 def test_ensure_core_labels_skips_in_local_goals_mode(tmp_path):
@@ -297,34 +312,59 @@ def test_ensure_core_labels_skips_without_a_repo_configured(tmp_path):
 def test_ensure_core_labels_reads_config_from_disk_when_none_is_passed(tmp_path):
     d = _sdlc(tmp_path, _github_cfg("disk/repo"))
     calls = []
-    result = setup.ensure_core_labels(d, run=lambda args: calls.append(list(args)) or "")
+    result = setup.ensure_core_labels(d, run=_creating_run(calls))
     assert result["outcome"] == "ensured" and result["repo"] == "disk/repo"
-    assert len(calls) == len(_CORE_LABELS)
+    assert len(_creates(calls)) == len(_CORE_LABELS | _PRIORITY_LABELS)
 
 
-def test_ensure_core_labels_never_raises_on_a_gh_failure(tmp_path):
-    """Mirrors `_ensure_labels`'s own fail-open contract (an existing label without `--force`
-    refuses, #1917): a `run` that raises on every call must not propagate -- `_ensure_labels`'s own
-    per-label `except Exception: pass` is unchanged by this wrapper."""
-    def _always_raises(args):
-        raise RuntimeError("label with name %r already exists" % (args[2] if len(args) > 2 else ""))
+def test_ensure_core_labels_never_raises_and_reports_every_failure(tmp_path):
+    """#230 reverses the old silent contract: a `gh` that refuses every call must not propagate,
+    AND must not be reported as "ensured" -- each label carries the reason `gh` gave."""
+    def _always_refuses(args):
+        raise RuntimeError("HTTP 403: Resource not accessible by integration")
     d = _sdlc(tmp_path, _github_cfg())
-    result = setup.ensure_core_labels(d, run=_always_raises)       # must not raise
+    result = setup.ensure_core_labels(d, run=_always_refuses)       # must not raise
+    assert result["outcome"] == "failed"
+    assert all(r["outcome"] == "failed" and "403" in r["reason"] for r in result["results"])
+    assert not any(l.startswith("labels ensured") for l in result["lines"])
+
+
+def test_ensure_core_labels_already_exists_refusal_counts_as_existed(tmp_path):
+    """When the label read fails, create is attempted; `gh`'s "already exists" refusal (#1917: no
+    `--force`) is classified `existed`, not failed."""
+    def _run(args):
+        if args[0] == "api":
+            raise RuntimeError("HTTP 502")
+        raise RuntimeError('label with name "%s" already exists; use `--force`' % args[2])
+    result = setup.ensure_core_labels(_sdlc(tmp_path, _github_cfg()), run=_run)
     assert result["outcome"] == "ensured"
+    assert all(r["outcome"] == "existed" for r in result["results"])
 
 
 def test_ensure_core_labels_safe_to_call_repeatedly(tmp_path):
-    """Calling it twice (e.g. a re-run of `/agrim-setup`) reissues the same idempotent, colour-
-    preserving `gh label create` calls -- each call builds a fresh `GitHubSource`, so this is
-    call-level idempotence (safe to repeat, no cumulative effect), not a skip on the second call;
-    `_labels_ready` only short-circuits repeat calls WITHIN one `GitHubSource`'s own lifetime."""
+    """A re-run of `/agrim-setup` against a repo that already has every label reads them back and
+    writes nothing -- idempotent by measurement, not by swallowing a refusal."""
     d = _sdlc(tmp_path, _github_cfg())
-    calls = []
-    run = lambda args: calls.append(list(args)) or ""
+    have = set()
+
+    def run(args):
+        if args[0] == "api":
+            return json.dumps([{"name": n} for n in sorted(have)])
+        have.add(args[2]); return ""
     r1 = setup.ensure_core_labels(d, run=run)
     r2 = setup.ensure_core_labels(d, run=run)
-    assert r1 == r2 == {"outcome": "ensured", "repo": "acme/app", "labels": sorted(_CORE_LABELS)}
-    assert len(calls) == 2 * len(_CORE_LABELS)
+    assert r1["outcome"] == r2["outcome"] == "ensured"
+    assert all(r["outcome"] == "created" for r in r1["results"])
+    assert all(r["outcome"] == "existed" for r in r2["results"])
+
+
+def test_ensure_core_labels_repo_flag_forces_github_mode(tmp_path):
+    """`sdlc_init.py --github` runs before `discovery.source` is set; `--repo` bootstraps anyway."""
+    calls = []
+    result = setup.ensure_core_labels(_sdlc(tmp_path, {"discovery": {"source": "local-goals"}}),
+                                      run=_creating_run(calls), repo="acme/app")
+    assert result["outcome"] == "ensured" and result["repo"] == "acme/app"
+    assert all("--repo" in c and "acme/app" in c for c in calls if c[0] == "label")
 
 
 # ------------------------------------------------------------------ #541: flag parser
