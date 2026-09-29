@@ -230,10 +230,9 @@ Then repeat until the helper says stop:
    timeout before running it, not after it times out**: the safe minimum is the full worst case,
    **~1,350,000ms (22.5 minutes)**. **Read its first word and record accordingly — never merge past
    it by hand:** `PARK: …` → `record parked` (but a **failing required check** is a fix → `record
-   failed`); `PR #N opened`, `PR #N merged`, `auto-merge armed …` and `clean and safe …` → **`record
-   done`**. Every ending, the `feature/<unit>` base where `record done` REFUSES instead, and why
-   **`record done` releases the checkout itself — do not run `work.py finish`**:
-   `references/landing.md`. **Read it before the first merge of a run.**
+   failed`); `PR #N merged …` → **`record done`**; any other line → **`record review`** (done
+   means merged; `record done` is REFUSED until then). Every ending, and why **`record done`
+   releases the checkout itself — do not run `work.py finish`**: `references/landing.md`. **Read it before the first merge of a run.**
 
    Declared a pipeline (`.sdlc/pipeline.json`)? Run the bidirectional report card between goals —
    `pipeline.py card .sdlc` — and treat its findings as inputs, not gates. `pipeline.py propose

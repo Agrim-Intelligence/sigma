@@ -288,7 +288,7 @@ MARKER_BY_KIND = {"claimed": "queued", "merge_armed": "merging", "merged": "merg
 #: `recorded` carries the outcome the loop itself wrote, so it is the one row that can honestly
 #: close a slot. Anything other than these two — `failed`, or a result this table has not seen — is
 #: `blocked`, §2's "failed, or needs a human decision", never silently `running`.
-MARKER_BY_RESULT = {"done": "done", "parked": "parked"}
+MARKER_BY_RESULT = {"done": "done", "parked": "parked", "review": "review"}   # #232: PR awaits merge
 MARKER_RECORDED_OTHER = "blocked"
 
 #: What a goal gets when no code-written row says more: work is in flight. Also the answer when
