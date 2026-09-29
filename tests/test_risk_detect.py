@@ -7,13 +7,19 @@ import json, os, re, subprocess, pathlib
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "risk-detect.sh"
 
 
-# #2751 / sigma#145: a full-suite run of this file went red once under 4-way load and left no cause
-# behind. The script is FAIL-OPEN (every git call `2>/dev/null`, always `exit 0`), so "git failed",
-# "fixture never landed" and "nothing detected" all look like `matched == []` -- and the old `_run`
-# printed stderr only on rc != 0, which never happens. It has not reproduced since (0/128 in-pytest
-# runs, 0/720 direct runs at research time), so nothing here claims to FIX it; every helper below
-# exists so the NEXT red names the layer that failed: the fixture (`_git`, `_assert_untracked`), the
-# script (`_Out.why`), or the classifier (`_classify`, which needs no git at all).
+# #2751 / sigma#145 / sigma#244: `test_detects_each_category` and the untracked header-leak test went
+# red intermittently (6/40 and 5/30 stressed `-n 8` whole-file runs on macOS, sigma#244) with the
+# CONTENT scan empty while the NAME scan was intact. Root cause (sigma#244): Homebrew bash 5.x links
+# libintl, whose setlocale() calls into CoreFoundation, which is not fork-safe. The per-command
+# `LC_ALL=C grep` inside the process-substitution subshell made that forked, never-exec'd bash call
+# setlocale() twice per untracked file (set, then restore in dispose_temporary_env); under load it
+# SIGSEGV'd (26 macOS crash reports, one stack) and, the script being FAIL-OPEN, the dead subshell
+# read as "nothing detected". The fix pins the locale ONCE in the unforked main shell. The
+# deterministic control is `test_locale_is_pinned_once_and_never_changed_in_a_forked_shell` below;
+# the git-backed category tests stay integration tests and are NOT the system of record for this
+# race (they only catch it probabilistically). The helpers below still name the failing layer on a
+# red: the fixture (`_git`, `_assert_untracked`), the script (`_Out.why`, which now carries the
+# script's own "content scan incomplete" stderr line), or the classifier (`_classify`, no git).
 
 
 def _git(repo, *args):
@@ -67,6 +73,64 @@ def _run(project_dir):
         raise AssertionError("script stdout is not JSON (%s)\n%s" % (exc, why))
     out.why = why
     return out
+
+
+# --- sigma#244: the forked-shell locale crash, pinned deterministically ----------------------------
+
+_LOCALE_ASSIGN = re.compile(r"^(\++) (export )?(LC_[A-Z]+|LANG|LANGUAGE)=")
+
+
+def _header_leak_fixture(tmp_path):
+    # the untracked fixture whose ONLY sensitive signal comes from the content scan (the name
+    # "notes.txt" matches no glob), so a dead content-scan subshell is visible as a missing category
+    repo = _repo(tmp_path)
+    (repo / "notes.txt").write_text('++ aws_key = "AKIALEAK0000000000FAKE"\napi_key = "TRIGGER9SECRETVALUE"\n')
+    _assert_untracked(repo, "notes.txt")
+    return repo
+
+
+def test_locale_is_pinned_once_and_never_changed_in_a_forked_shell(tmp_path):
+    """Deterministic seam control for sigma#244 (the probabilistic reproduction lives outside the
+    suite: a stressed `-n 8` loop, 11/70 red before the fix). Any locale-variable assignment that bash
+    executes in a forked, not-exec'd process -- a per-command `LC_ALL=C cmd` in a process
+    substitution, command substitution or pipeline -- calls setlocale() there, which on macOS with a
+    libintl-linked bash reaches CoreFoundation after fork and can SIGSEGV. xtrace prints every such
+    assignment as its own line, at `+` depth > 1 inside a subshell, so this fails on ANY spelling of
+    one (LC_ALL/LC_CTYPE/LANG, temporary or exported), on every run, on every OS."""
+    repo = _header_leak_fixture(tmp_path)
+    p = subprocess.run(["bash", "-x", str(SCRIPT)], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo)})
+    assert p.returncode == 0, p.stderr
+    trace = p.stderr.splitlines()
+    locale = [(i, l) for i, l in enumerate(trace) if _LOCALE_ASSIGN.match(l)]
+    # exactly one pin: the unforked main shell's own `export LC_ALL=C` (which bash traces as two
+    # lines, the builtin and its assignment), all at depth 1 and before the first forked line
+    assert [l for _, l in locale] == ["+ export LC_ALL=C", "+ LC_ALL=C"], locale
+    first_fork = next(i for i, l in enumerate(trace) if l.startswith("++"))
+    assert all(i < first_fork for i, _ in locale), (locale, trace[first_fork])
+    # non-vacuity: the trace reached the exact seam the crash reports name (the untracked-file loop,
+    # inside the content-scan process substitution) and the content hit landed
+    assert any(l.startswith("++") and "grep -Iq" in l for l in trace), "untracked loop never traced"
+    assert "sensitive" in json.loads(p.stdout)["matched"], p.stdout
+
+
+def test_a_dead_content_scan_is_reported_not_silent(tmp_path):
+    """sigma#244: a content-scan subshell that dies mid-stream used to be indistinguishable from
+    "nothing detected". The script stays FAIL-OPEN (exit 0, valid JSON) but must now say so on
+    stderr. The mutant kills that subshell exactly where the observed SIGSEGV did."""
+    repo = _header_leak_fixture(tmp_path)
+    text = SCRIPT.read_text(encoding="utf-8")
+    anchor = '    [ -f "$PROJECT_DIR/$f" ] || continue\n'
+    assert text.count(anchor) == 1, "the untracked-loop anchor moved; retarget this mutant"
+    mutant = tmp_path / "mutant.sh"
+    mutant.write_text(text.replace(anchor, "    sh -c 'kill -KILL $PPID'\n" + anchor), encoding="utf-8")
+    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(repo)}
+    dead = subprocess.run(["bash", str(mutant)], capture_output=True, text=True, env=env)
+    assert dead.returncode == 0 and "sensitive" not in json.loads(dead.stdout)["matched"], \
+        "the mutant did not reproduce the silent-empty symptom: %r" % (dead.stdout,)
+    assert "content scan incomplete" in dead.stderr, dead.stderr
+    live = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env)
+    assert live.stderr == "" and "sensitive" in json.loads(live.stdout)["matched"], (live.stdout, live.stderr)
 
 
 def test_schema_and_empty_on_clean_repo(tmp_path):

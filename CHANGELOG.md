@@ -4,6 +4,19 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- `tests/test_risk_detect.py` is no longer flaky on macOS (#244, #145). The root cause was in
+  `skills/agrim-loop/scripts/risk-detect.sh`. It ran a per-command `LC_ALL=C grep` inside a
+  process-substitution subshell. With Homebrew bash (linked to libintl), every locale assignment
+  calls `setlocale()`, which calls into CoreFoundation, and CoreFoundation is not fork-safe. Under
+  load, the forked subshell sometimes crashed with SIGSEGV, and because the script is fail-open,
+  the crash looked like "no content hits". The script now sets `LC_ALL=C` once in the main shell
+  and never assigns a locale variable again. It also prints `risk-detect: content scan incomplete`
+  on stderr when the content scan dies before it finishes; it still exits 0 with valid JSON.
+  Measured with the whole file at `-n 8` plus 12 busy loops: 17 of 110 runs failed before the fix
+  and 0 of 160 after. Two new tests guard the fix, and both fail on the old script. One runs the
+  script under xtrace and checks that the only locale assignment is the top-level pin. The other
+  runs a copy of the script whose scan is killed partway through, and checks that it prints the
+  stderr warning.
 - Sigma now detects the plugin under its previous name on the same repository, and refuses rather
   than writing alongside it (#240). `skills/agrim-loop/scripts/coexist.py` reads the Claude Code
   settings (`enabledPlugins` and hand-registered hooks, with local over project over user
