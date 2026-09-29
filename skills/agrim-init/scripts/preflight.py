@@ -14,7 +14,9 @@ THE CHECKS, in order; a check whose prerequisite failed is SKIPPED and says so, 
     remote       `work.remote` (default origin) exists -- or which remotes do
     base         `work.base` (else the current branch) exists locally AND on the remote
     gh-installed `gh` on PATH
-    gh-auth      `gh auth status --hostname <host>` succeeds
+    gh-auth      `gh auth status --active --hostname <host>` succeeds (the ACTIVE account only: a
+                 stale second account must not fail a valid active one); a non-GitHub host (gitlab,
+                 bitbucket, ...) fails with "gh only supports GitHub hosts", never `gh auth login`
     scopes       repo + workflow (work on), read:org (owner is an organization), project (board on)
 Each result is {"id", "name", "ok", "detail", "commands", "interactive", "meanwhile", "note"}.
 `ok` is True, False, or None -- None is CANNOT VERIFY (a fine-grained or app token reports no
@@ -28,8 +30,12 @@ BOUNDED. Every call goes through one runner, `runner(argv, cwd, timeout) -> (rc,
 for tests (no network in tests). The real runner starts each call in its own process group and
 kills the WHOLE group on overrun (POSIX killpg, Windows `taskkill /T /F`): `git ls-remote` over ssh
 can leave a grandchild holding the pipe, which is the hang `agrim-loop/scripts/run_with_timeout.py`
-measured. The bound is not a new constant: it is the fleet's existing per-call bound
-`SIGMA_WATCH_CALL_TIMEOUT` (watch_daemon.py), else that bound's own default (120s). Git and gh run with
+measured. The LOCAL bound is not a new constant: it is the fleet's existing per-call bound
+`SIGMA_WATCH_CALL_TIMEOUT` (watch_daemon.py), else that bound's own default (120s). The three NETWORK
+calls get `network_timeout()` = min(that bound, 15s): a dead ssh host must degrade to CANNOT VERIFY
+(timed out) in seconds, not stall a doctor run for minutes (review of PR #249 measured 75s against an
+unreachable ssh remote). `deep=False` (doctor's `cheap_only`, i.e. the SessionStart wizard) never runs
+`ls-remote` or the owner lookup at all -- they read "not checked here; run /agrim-doctor". Git and gh run with
 `GIT_TERMINAL_PROMPT=0` / `GH_PROMPT_DISABLED=1` and stdin closed, so nothing waits on a prompt. Cost:
 at most 9 subprocess calls, 3 of them network (`ls-remote`, `gh auth status`, `gh api users/<o>`);
 constant per repository, independent of repository size.
@@ -57,6 +63,17 @@ SCRIPT = "<sigma>/skills/agrim-init/scripts/preflight.py"
 #: The default of `SIGMA_WATCH_CALL_TIMEOUT` (watch_daemon.py): the bound this codebase already
 #: applies to one hung git/gh call. Reused, not re-chosen.
 DEFAULT_TIMEOUT = 120.0
+
+#: The ceiling on one NETWORK call (ls-remote, gh auth status, gh api). A preflight answer is a
+#: diagnosis, not a transfer: a reachable GitHub answers these in well under a second, so 15s is
+#: generous for a slow link and short enough that a dead host costs one short wait, not two minutes.
+#: A lower SIGMA_WATCH_CALL_TIMEOUT wins (min), so an operator's tighter fleet bound still applies.
+NETWORK_CAP = 15.0
+
+#: Hosts gh cannot talk to (gh supports github.com and GitHub Enterprise Server only). A host is
+#: judged non-GitHub by these names; anything else is assumed to be a GitHub Enterprise host.
+_NON_GITHUB = ("gitlab", "bitbucket", "dev.azure.com", "visualstudio.com", "codeberg.org",
+               "gitea", "sr.ht", "sourceforge", "gitee.com")
 
 HOSTS = ("Claude Code", "Codex", "Cursor")
 
@@ -99,14 +116,37 @@ def call_timeout(env=None):
     return value if value > 0 else DEFAULT_TIMEOUT
 
 
+def network_timeout(env=None):
+    """Seconds one NETWORK call may take: min(call_timeout(), NETWORK_CAP)."""
+    return min(call_timeout(env), NETWORK_CAP)
+
+
+#: How long the kill itself, and the drain after it, may take (a wedged taskkill or a pipe some
+#: unkilled grandchild still holds must not turn a bounded call back into an unbounded one).
+_KILL_GRACE = 5.0
+
+
 def _kill_tree(proc):
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
+                           timeout=_KILL_GRACE)
         else:
             os.killpg(proc.pid, signal.SIGKILL)
-    except (OSError, ProcessLookupError):
-        proc.kill()
+    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s'\"]+@")
+
+
+def redact(text):
+    """Drop the userinfo (`user:token@`) from every URL in `text` -- a remote URL can carry a
+    credential, and git echoes the URL in its errors. Printed text only; never the URL we call."""
+    return _USERINFO.sub(r"\1***@", str(text or ""))
 
 
 def real_runner(argv, cwd=None, timeout=None):
@@ -129,7 +169,10 @@ def real_runner(argv, cwd=None, timeout=None):
         out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(proc)
-        proc.communicate()
+        try:
+            proc.communicate(timeout=_KILL_GRACE)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass                    # a pipe still held open: give up on the drain, not the bound
         return 124, f"{argv[0]} {argv[1] if len(argv) > 1 else ''}: timed out after {timeout:g}s"
     return proc.returncode, out or ""
 
@@ -221,11 +264,12 @@ def _skipped(cid, name, because):
     return _chk(cid, name, None, f"skipped: {because}", note="skipped")
 
 
-def _install_hint(tool):
+def _install_hint(tool, which=shutil.which):
+    """The install command only where its package manager is actually on PATH; else just the URL."""
     url = {"gh": "https://cli.github.com", "git": "https://git-scm.com/downloads"}[tool]
-    if sys.platform == "darwin":
+    if sys.platform == "darwin" and which("brew"):
         return [f"brew install {tool}"], url
-    if os.name == "nt":
+    if os.name == "nt" and which("winget"):
         return [f"winget install --id {'GitHub.cli' if tool == 'gh' else 'Git.Git'}"], url
     return [], url
 
@@ -233,7 +277,7 @@ def _install_hint(tool):
 def check_git(repo, runner, which, timeout):
     name = "git repository"
     if not which("git"):
-        cmds, url = _install_hint("git")
+        cmds, url = _install_hint("git", which)
         return _chk("git", name, False, f"git is not installed (not on PATH); see {url}", cmds,
                     meanwhile="Sigma cannot cut worktrees, commit, or read a base without git.")
     rc, out = runner(["git", "rev-parse", "--is-inside-work-tree"], repo, timeout)
@@ -258,7 +302,7 @@ def check_remote(repo, want, runner, timeout):
     remotes = sorted({r.strip() for r in out.splitlines() if r.strip()}) if rc == 0 else []
     if want in remotes:
         rc, url = runner(["git", "remote", "get-url", want], repo, timeout)
-        return _chk("remote", name, True, printable(url.strip()) if rc == 0 else ""), remotes, \
+        return _chk("remote", name, True, printable(redact(url.strip())) if rc == 0 else ""), remotes, \
             (url.strip() if rc == 0 else "")
     others = ("other remotes here: " + ", ".join(printable(r) for r in remotes)) if remotes \
         else "this repository has no remote at all"
@@ -294,7 +338,7 @@ def check_base(repo, remote, base, runner, timeout):
                     + ("" if local else " and does not exist locally either"), cmds,
                     meanwhile=f"`work.py start` fetches {remote}/{base} and refuses each goal until "
                               "it exists there.")
-    first = printable((out.strip().splitlines() or ["no output"])[0])
+    first = printable(redact((out.strip().splitlines() or ["no output"])[0]))
     return _chk("base", name, None, f"cannot verify: `git ls-remote` failed ({first})",
                 ["git ls-remote --heads " + f"{remote} {base}"],
                 meanwhile="Sigma assumes nothing: the first `work.py start` will show git's own error.")
@@ -303,12 +347,12 @@ def check_base(repo, remote, base, runner, timeout):
 def check_gh_installed(which):
     if which("gh"):
         return _chk("gh-installed", "gh installed", True, "gh is on PATH")
-    cmds, url = _install_hint("gh")
+    cmds, url = _install_hint("gh", which)
     return _chk("gh-installed", "gh installed", False, f"the GitHub CLI `gh` is not on PATH; "
                 f"install it from {url}, then re-run this check (it names the next step)", cmds,
-                meanwhile="Sigma runs nothing that needs gh: `work.py pr` cannot open a pull request and "
-                          "github discovery cannot read issues; local goals still plan, edit and "
-                          "verify in their worktree.")
+                meanwhile="only pull-request creation and github discovery need gh (pushing works "
+                          "without it): `work.py pr` cannot open a pull request and github discovery "
+                          "cannot read issues; local goals still plan, edit, verify and push.")
 
 
 def _proxy_block(raw):
@@ -323,9 +367,31 @@ def _proxy_block(raw):
         return None
 
 
+def is_non_github(host):
+    h = (host or "").lower()
+    return any(tag in h for tag in _NON_GITHUB)
+
+
+def _active_logged_in(text):
+    """True when gh's ACTIVE account block says it is logged in (an older gh without `--active`
+    exits 1 if ANY account on the host is stale, even when the active one is fine)."""
+    lines = (text or "").splitlines()
+    starts = [i for i, ln in enumerate(lines) if re.search(r"(?i)\b(logged in to|failed to log in)", ln)]
+    blocks = [lines[s:e] for s, e in zip(starts, starts[1:] + [len(lines)])]
+    active = [b for b in blocks if any(re.search(r"(?i)active account:\s*true", ln) for ln in b)]
+    return bool(active) and not re.search(r"(?i)failed to log in", active[0][0]) \
+        and bool(re.search(r"(?i)logged in to", active[0][0]))
+
+
 def check_gh_auth(host, runner, timeout):
-    """-> (check, parsed-status or None)."""
-    rc, out = runner(["gh", "auth", "status", "--hostname", host], None, timeout)
+    """-> (check, parsed-status or None). Asks for the ACTIVE account only (`--active`, gh >= 2.40);
+    an older gh that rejects the flag is asked again without it, and then only its active block is
+    read, so a stale second account never fails a valid active one."""
+    rc, out = runner(["gh", "auth", "status", "--active", "--hostname", host], None, timeout)
+    if rc != 0 and re.search(r"(?i)unknown flag.*--active", out or ""):
+        rc, out = runner(["gh", "auth", "status", "--hostname", host], None, timeout)
+        if rc != 0 and _active_logged_in(out):
+            rc = 0
     if rc == 0:
         return _chk("gh-auth", "gh auth", True, f"logged in to {printable(host)}"), \
             parse_auth_status(out)
@@ -338,7 +404,26 @@ def check_gh_auth(host, runner, timeout):
     return _chk("gh-auth", "gh auth", False, f"gh is not logged in to {printable(host)} (or its "
                 "token is invalid)", [f"gh auth login -h {host} -s repo,workflow,read:org"],
                 interactive=True,
-                meanwhile="Sigma runs nothing that needs gh: no pull request, no issue discovery."), None
+                meanwhile="Sigma runs nothing that needs gh: no pull request, no issue discovery "
+                          "(pushing works without gh)."), None
+
+
+def _gh_unsupported_host(host):
+    return _chk("gh-auth", "gh auth", False,
+                f"the remote's host {printable(host)} is not GitHub: gh only supports GitHub hosts "
+                "(github.com and GitHub Enterprise Server), so no gh login can open a pull request "
+                "there",
+                meanwhile="pushing works without gh, but `work.py pr` cannot open a pull request "
+                          "there: go local-only (`preflight.py local-only <sdlc>`), or point "
+                          "work.remote at a GitHub remote.",
+                note="non-github")
+
+
+def _gh_unknown_host(url):
+    return _chk("gh-auth", "gh auth", None,
+                f"cannot verify: could not tell the host from the remote URL "
+                f"'{printable(redact(url))}', so it is not assumed to be github.com",
+                meanwhile="Sigma assumes nothing: the first gh call shows gh's own error.")
 
 
 def check_owner_type(owner, host, runner, timeout):
@@ -357,7 +442,7 @@ def check_scopes(status, need, host, org, owner):
     name = "gh token scopes"
     have, kind = status["scopes"], status["token_kind"]
     sso = (f"if {printable(owner)} enforces SAML SSO, also authorize the token for it: "
-           "https://github.com/settings/tokens -> Configure SSO -> Authorize"
+           f"https://{printable(host)}/settings/tokens -> Configure SSO -> Authorize"
            if org == "Organization" else "")
     if have is None and kind != "classic":
         return _chk("scopes", name, None,
@@ -365,8 +450,8 @@ def check_scopes(status, need, host, org, owner):
                     "no scopes. Sigma needs it to grant Contents: write, Pull requests: write and "
                     "Workflows: write" + (", Projects: write" if "project" in need else "")
                     + (", and access to the organization" if org == "Organization" else "")
-                    + " on this repository -- check at https://github.com/settings/personal-access-"
-                      "tokens" + (f"; {sso}" if sso else ""),
+                    + f" on this repository -- check at https://{printable(host)}/settings/"
+                      "personal-access-tokens" + (f"; {sso}" if sso else ""),
                     [f"gh auth login -h {host} -s {','.join(need)}"], interactive=True,
                     meanwhile="Sigma runs, and the first call the token cannot make fails with "
                               "GitHub's own error.")
@@ -378,6 +463,9 @@ def check_scopes(status, need, host, org, owner):
                     [f"gh auth refresh -s {','.join(missing)} -h {host}"], interactive=True,
                     meanwhile=_scope_meanwhile(missing),
                     note=sso)
+    if org == "not-checked":
+        return _chk("scopes", name, True, "has " + ", ".join(need) + "; whether the owner also needs "
+                    "read:org is " + _NOT_HERE)
     if org is None and missing_scopes(have or set(), ["read:org"]):
         who = f"'{printable(owner)}'" if owner else "the repository owner"
         return _chk("scopes", name, None,
@@ -401,27 +489,38 @@ def _scope_meanwhile(missing):
     return "; ".join(f"without {s}, {_SCOPE_EFFECT[s]}" for s in missing if s in _SCOPE_EFFECT) + "."
 
 
-def preflight(repo, config=None, runner=None, which=None, timeout=None, network=True):
+_NOT_HERE = "not checked here (a network call); run /agrim-doctor"
+
+
+def preflight(repo, config=None, runner=None, which=None, timeout=None, network=True, deep=True):
     """All checks this config makes relevant, in order, for the repository at `repo`. `network=False`
     runs only the local checks (git, remote, gh installed) and marks the rest skipped -- for a
-    caller that has not been asked to spend a network round-trip (doctor's `cheap_only`)."""
+    caller that has not been asked to spend a network round-trip (doctor's `cheap_only`).
+    `deep=False` keeps `gh auth status` but never runs `git ls-remote` or the owner lookup (`gh api
+    users/<owner>`): the SessionStart wizard's github-mode path. Network calls are bounded by
+    `network_timeout()`, local ones by `timeout` (default `call_timeout()`)."""
     runner = runner or real_runner
     which = which or shutil.which
     timeout = call_timeout() if timeout is None else timeout
+    net = min(timeout, network_timeout())
     req = requirements(config or {})
     repo = str(repo)
     out = [check_git(repo, runner, which, timeout)]
     if not (req["work"] or req["github"]):
         return out
-    git_ok = out[0]["ok"] is True
+    # a fresh `git init` (no commit yet) IS a work tree: its remote is checked like any other --
+    # plan D4 calls it the normal first run, and the DECISION must still reach it (review of #249)
+    work_tree = out[0]["ok"] is True or out[0].get("note") == "no-commit"
     remote_name = req["remote"]
     url = ""
-    if git_ok:
+    if work_tree:
         remote, _remotes, url = check_remote(repo, remote_name, runner, timeout)
         out.append(remote)
         out.append(_skipped("base", "base branch", f"no remote '{remote_name}'") if not remote["ok"]
-                   else check_base(repo, remote_name, req["base"], runner, timeout) if network
-                   else _skipped("base", "base branch", "network checks not run here"))
+                   else _skipped("base", "base branch", "no commit yet, so no branch exists to push")
+                   if out[0]["ok"] is not True
+                   else check_base(repo, remote_name, req["base"], runner, net)
+                   if network and deep else _skipped("base", "base branch", _NOT_HERE))
     else:
         out.append(_skipped("remote", f"git remote '{remote_name}'", "not a git repository"))
         out.append(_skipped("base", "base branch", "not a git repository"))
@@ -437,13 +536,18 @@ def preflight(repo, config=None, runner=None, which=None, timeout=None, network=
     host, owner, _repo = parse_remote_url(url)
     if req["repo"] and "/" in req["repo"]:
         owner = req["repo"].split("/", 1)[0]
-    host = host or "github.com"
-    auth, status = check_gh_auth(host, runner, timeout)
+    if url and not host:
+        auth, status = _gh_unknown_host(url), None       # never silently assume github.com
+    elif host and is_non_github(host):
+        auth, status = _gh_unsupported_host(host), None
+    else:
+        host = host or "github.com"                        # no remote URL at all: github discovery
+        auth, status = check_gh_auth(host, runner, net)
     out.append(auth)
     if auth["ok"] is not True:
         out.append(_skipped("scopes", "gh token scopes", "gh auth did not pass"))
         return out
-    org = check_owner_type(owner, host, runner, timeout)
+    org = check_owner_type(owner, host, runner, net) if deep else "not-checked"
     need = ["repo"] + (["workflow"] if req["work"] else []) \
         + (["read:org"] if org == "Organization" else []) + (["project"] if req["board"] else [])
     scopes = check_scopes(status, need, host, org, owner)
@@ -479,7 +583,7 @@ def failure_lines(check, indent="  "):
         for host in HOSTS:
             where = _WHERE[host][0 if check["interactive"] else 1]
             lines.append(f"{indent}  {host + ':':<12} {where}: {_commands_text(check)}")
-    if check.get("note") and check["note"] not in ("skipped", "no-remote", "no-commit"):
+    if check.get("note") and check["note"] not in ("skipped", "no-remote", "no-commit", "non-github"):
         lines.append(f"{indent}  {'Also:':<12} {check['note']}")
     if check["meanwhile"]:
         lines.append(f"{indent}  {'Meanwhile:':<12} {check['meanwhile']}")
@@ -496,10 +600,16 @@ def decision_lines(sdlc_dir, remotes=(), why="no-remote"):
     SKILL.md asks the user. Nothing here flips the setting -- only the gesture does."""
     where = printable(_vd._q(os.path.abspath(str(sdlc_dir))))
     cfg = printable(os.path.join(os.path.abspath(str(sdlc_dir)), "config.json"))
-    cause = "this repository has no usable remote" if why == "no-remote" else "gh is not installed"
-    lines = [f"  DECISION: work.enabled is ON, but {cause}, so no goal can be pushed or opened as a PR.",
-             "    Keep ON  = one worktree + branch + PR per goal (needs a pushed remote and gh);",
-             "               fix the cause with the commands above.",
+    if why == "no-remote":
+        head = "this repository has no usable remote, so no goal can be pushed or opened as a PR."
+    elif why == "non-github":
+        head = ("the remote is not a GitHub host, so no goal can be opened as a PR (pushing works "
+                "without gh).")
+    else:
+        head = "gh is not installed, so no goal can be opened as a PR (pushing works without gh)."
+    lines = [f"  DECISION: work.enabled is ON, but {head}",
+             "    Keep ON  = one worktree + branch + PR per goal (needs a pushed remote; gh is needed",
+             "               only to open the PR); fix the cause with the commands above.",
              "    Turn OFF = the loop edits this checkout directly: no worktree, no branch, no push,",
              "               no PR; committing is yours, and your checkout is where goals run.",
              "    Turn it off with: " + printable(gesture(f"local-only {where}")),

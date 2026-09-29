@@ -140,6 +140,13 @@ def test_git_repo_without_a_commit():
     runner = fake([(("git", "rev-parse", "--is-inside-work-tree"), (0, "true\n"))])
     c = by_id(pf.preflight("/r", WORK_ON, runner=runner, which=has({"git", "gh"})))
     assert c["git"]["ok"] is False and "no commit" in c["git"]["detail"]
+    assert c["remote"]["note"] != "skipped"       # review block #1: still a work tree
+
+
+def test_gh_auth_line_mentions_pushing_still_works():
+    answers = [(("gh", "auth", "status"), (1, "You are not logged into any GitHub hosts."))] + healthy()
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
+    assert "pushing works without" in c["gh-auth"]["meanwhile"]
 
 
 def test_b_no_remote_names_the_other_remotes():
@@ -233,7 +240,7 @@ def test_gh_auth_status_targets_the_remotes_host():
     calls = []
     pf.preflight("/r", WORK_ON, runner=fake(healthy(url="git@ghe.acme.io:x/y.git"), calls),
                  which=has({"git", "gh"}))
-    assert ["gh", "auth", "status", "--hostname", "ghe.acme.io"] in calls
+    assert ["gh", "auth", "status", "--active", "--hostname", "ghe.acme.io"] in calls
 
 
 def test_local_only_config_checks_git_alone():
@@ -247,7 +254,9 @@ def test_local_only_config_checks_git_alone():
 def test_every_failure_has_one_line_per_host_and_a_meanwhile():
     checks = pf.preflight("/r", WORK_ON, runner=fake(healthy(remotes="")), which=has({"git"}))
     for c in checks:
-        if c["ok"] is False:
+        # a check with no command to run (gh absent with no package manager on PATH: install from
+        # the URL in its detail) prints no per-host line -- there is nothing to run anywhere
+        if c["ok"] is False and c["commands"]:
             lines = pf.failure_lines(c)
             for host in pf.HOSTS:
                 assert sum(l.strip().startswith(host + ":") for l in lines) == 1, (host, lines)
@@ -424,6 +433,177 @@ def test_init_in_a_repo_without_remote_prints_the_decision(tmp_path):
     assert "[FAIL] git remote 'origin'" in r.stdout
     assert "DECISION: work.enabled is ON" in r.stdout
     assert json.loads((tmp_path / ".sdlc" / "config.json").read_text())["work"]["enabled"] is True
+
+
+@pytest.mark.skipif(not shutil.which("git"), reason="git not installed")
+def test_init_in_a_fresh_git_init_with_no_commit_prints_the_decision(tmp_path):
+    """Review block #1: plan D4 calls a fresh `git init` the normal first run. The documented gesture
+    (`sdlc_init.py .`) must still check the remote there and print the DECISION -- never skip it as
+    'not a git repository'."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    r = subprocess.run([sys.executable, str(INIT), "."], cwd=str(tmp_path), capture_output=True,
+                       text=True)
+    assert r.returncode == 0, r.stderr
+    assert "not a git repository" not in r.stdout
+    assert "[FAIL] git remote 'origin'" in r.stdout
+    assert "DECISION: work.enabled is ON" in r.stdout
+
+
+def test_no_commit_still_checks_the_remote_and_says_no_commit_for_base():
+    runner = fake([(("git", "rev-parse", "--is-inside-work-tree"), (0, "true\n")),
+                   (("git", "remote", "get-url"), (0, "git@github.com:a/b.git\n")),
+                   (("git", "remote"), (0, "origin\n"))])
+    c = by_id(pf.preflight("/r", WORK_ON, runner=runner, which=has({"git", "gh"}), network=False))
+    assert c["remote"]["ok"] is True
+    assert c["base"]["note"] == "skipped" and "no commit yet" in c["base"]["detail"]
+    runner = fake([(("git", "rev-parse", "--is-inside-work-tree"), (0, "true\n")),
+                   (("git", "remote"), (0, ""))])
+    c = by_id(pf.preflight("/r", WORK_ON, runner=runner, which=has({"git", "gh"})))
+    assert c["remote"]["ok"] is False and c["remote"]["note"] == "no-remote"
+
+
+# ------------------------------------------------------------------ review block #1 non-blockers
+
+def test_network_calls_get_the_small_derived_bound():
+    assert pf.network_timeout({}) == 15
+    assert pf.network_timeout({"SIGMA_WATCH_CALL_TIMEOUT": "4"}) == 4
+    seen = {}
+
+    def runner(argv, cwd=None, timeout=None):
+        seen[tuple(argv[:2])] = timeout
+        return fake(healthy())(argv, cwd, timeout)
+    pf.preflight("/r", WORK_ON, runner=runner, which=has({"git", "gh"}), timeout=120)
+    assert seen[("git", "ls-remote")] <= 15 and seen[("gh", "auth")] <= 15 and seen[("gh", "api")] <= 15
+    assert seen[("git", "remote")] == 120                       # local calls keep the fleet bound
+
+
+def test_deep_false_never_runs_ls_remote_or_owner_lookup():
+    calls = []
+    checks = pf.preflight("/r", WORK_ON, runner=fake(healthy(), calls), which=has({"git", "gh"}),
+                          deep=False)
+    assert not any(a[:2] in (["git", "ls-remote"], ["gh", "api"]) for a in calls), calls
+    c = by_id(checks)
+    assert c["base"]["note"] == "skipped" and "/agrim-doctor" in c["base"]["detail"]
+    assert c["base"]["ok"] is None
+
+
+def test_gh_auth_status_asks_for_the_active_account_only():
+    calls = []
+    pf.preflight("/r", WORK_ON, runner=fake(healthy(), calls), which=has({"git", "gh"}))
+    assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
+
+
+def test_gh_auth_older_gh_without_active_falls_back():
+    answers = [(("gh", "auth", "status", "--active"), (1, "unknown flag: --active\n"))] + healthy()
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
+    assert c["gh-auth"]["ok"] is True
+
+
+def test_a_stale_inactive_account_does_not_fail_a_valid_active_one():
+    text = ("github.com\n  X Failed to log in to github.com account old (keyring)\n"
+            "  - Active account: false\n  - The token in keyring is invalid.\n"
+            "  ✓ Logged in to github.com account new (keyring)\n  - Active account: true\n"
+            "  - Token: gho_***\n  - Token scopes: 'repo', 'workflow', 'read:org'\n")
+    answers = [(("gh", "auth", "status", "--active"), (1, "unknown flag: --active")),
+               (("gh", "auth", "status"), (1, text))] + healthy()
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
+    assert c["gh-auth"]["ok"] is True, c["gh-auth"]
+
+
+def test_non_github_remote_gets_no_gh_login_advice():
+    calls = []
+    checks = pf.preflight("/r", WORK_ON, runner=fake(healthy(url="git@gitlab.com:a/b.git"), calls),
+                          which=has({"git", "gh"}))
+    c = by_id(checks)
+    assert c["gh-auth"]["ok"] is False
+    assert "GitHub" in c["gh-auth"]["detail"] and "gitlab.com" in c["gh-auth"]["detail"]
+    assert not any("gh auth login" in x for x in c["gh-auth"]["commands"])
+    assert "local-only" in c["gh-auth"]["meanwhile"]
+    assert not any(a[:3] == ["gh", "auth", "status"] for a in calls)
+
+
+def test_unparseable_remote_url_does_not_default_to_github_com():
+    calls = []
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(healthy(url="/srv/git/app.git"), calls),
+                           which=has({"git", "gh"})))
+    assert not any("github.com" in x for a in calls for x in a), calls
+    assert c["gh-auth"]["ok"] is None and "host" in c["gh-auth"]["detail"]
+
+
+def test_url_userinfo_is_redacted_from_echoed_text():
+    answers = [(("git", "ls-remote"), (128, "fatal: unable to access "
+                                            "'https://bob:s3cret@github.com/a/b.git/': 403"))]
+    answers += healthy(url="https://bob:s3cret@github.com/a/b.git")
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
+    assert "s3cret" not in c["remote"]["detail"] and "s3cret" not in c["base"]["detail"]
+    assert "github.com" in c["base"]["detail"]
+
+
+def test_sso_link_names_the_actual_host():
+    auth = CLASSIC_OK.replace("github.com", "ghe.acme.io").replace("'read:org', ", "")
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(healthy(auth=auth, owner_type="Organization",
+                                                              url="git@ghe.acme.io:x/y.git")),
+                           which=has({"git", "gh"})))
+    assert "https://ghe.acme.io/settings/tokens" in c["scopes"]["note"]
+    assert "https://github.com/" not in c["scopes"]["note"]
+
+
+def test_brew_is_suggested_only_when_brew_exists(monkeypatch):
+    monkeypatch.setattr(pf.sys, "platform", "darwin")
+    monkeypatch.setattr(pf.os, "name", "posix")
+    no_brew = pf.check_gh_installed(has({"git"}))
+    assert not any("brew" in x for x in no_brew["commands"])
+    assert "cli.github.com" in no_brew["detail"]
+    with_brew = pf.check_gh_installed(has({"git", "brew"}))
+    assert with_brew["commands"] == ["brew install gh"]
+
+
+def test_decision_does_not_claim_gh_is_needed_to_push():
+    text = "\n".join(pf.decision_lines("/r/.sdlc", why="no-gh"))
+    assert "pushed or opened" not in text
+    assert "pushing works without" in text
+    gh = pf.check_gh_installed(has({"git"}))
+    assert "pushing works without" in gh["meanwhile"]
+
+
+def test_kill_tree_on_windows_bounds_taskkill(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen.update(kw)
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"))
+
+    class Proc:
+        pid = 4242
+        killed = False
+
+        def kill(self):
+            Proc.killed = True
+    monkeypatch.setattr(pf.os, "name", "nt")
+    monkeypatch.setattr(pf.subprocess, "run", fake_run)
+    pf._kill_tree(Proc())
+    assert seen.get("timeout") and Proc.killed
+
+
+def test_real_runner_bounds_the_post_kill_drain(monkeypatch):
+    class Stuck:
+        pid = 4242
+        returncode = None
+
+        def __init__(self, *a, **kw):
+            pass
+
+        def communicate(self, timeout=None):
+            if timeout is None:
+                raise AssertionError("post-kill communicate() must be bounded")
+            raise subprocess.TimeoutExpired("x", timeout)
+
+        def kill(self):
+            pass
+    monkeypatch.setattr(pf.subprocess, "Popen", Stuck)
+    monkeypatch.setattr(pf, "_kill_tree", lambda proc: None)
+    rc, out = pf.real_runner([sys.executable, "-c", "pass"], timeout=0.01)
+    assert rc == 124 and "timed out" in out
 
 
 def test_the_suite_guards_popen_against_live_gh():

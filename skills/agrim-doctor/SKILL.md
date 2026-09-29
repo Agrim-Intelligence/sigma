@@ -33,7 +33,10 @@ With `work.enabled` on or github discovery, it also runs `/agrim-init`'s preflig
 own: `gh` absent says install it (never `gh auth login`); a missing scope names
 `gh auth refresh -s <scope> -h <host>`. A row ending `(cannot verify)` -- a fine-grained token
 reports no scopes -- is not a pass. A row whose prerequisite failed is not shown; fix the one above
-it first.
+it first. The network checks (`git ls-remote`, `gh auth status`, the owner lookup) are each limited
+to the smaller of `SIGMA_WATCH_CALL_TIMEOUT` and 15s, so a dead host shows as `(cannot verify)`
+with "timed out". The session-start setup check never runs `ls-remote` or the owner lookup; only
+this full run does.
 
 Present the checklist plainly. Offer to run a fix that's safe to run for the user, but **never run an
 interactive login (`gh auth …`) or a package install on their behalf** — hand them the command.

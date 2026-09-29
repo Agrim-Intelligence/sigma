@@ -886,7 +886,7 @@ def _preflight_fix(check):
     head = f"run: {cmds}" if cmds else check.get("detail", "")
     extra = check.get("detail", "") if cmds else ""
     tail = " -- ".join(x for x in (extra, check.get("note") if check.get("note") not in
-                                   ("skipped", "no-remote", "no-commit") else "",
+                                   ("skipped", "no-remote", "no-commit", "non-github") else "",
                                    ("meanwhile: " + check["meanwhile"]) if check.get("meanwhile")
                                    else "") if x)
     return head + (f" ({tail})" if tail else "")
@@ -895,8 +895,11 @@ def _preflight_fix(check):
 def _preflight_rows(base, cfg, run, which, injected, cheap_only):
     """#229: the init preflight's checks as doctor rows -- git repository, git remote, base branch,
     gh installed, gh auth, gh token scopes, and (board on) gh project scope. Skipped checks (their
-    prerequisite failed) are not rows; the failing prerequisite is. `cheap_only` runs the network
-    checks only where github discovery already opted into gh calls."""
+    prerequisite failed, or not run here) are not rows -- never a pass. `cheap_only` (the
+    unconditional SessionStart wizard) runs `gh auth status` only where github discovery already
+    opted into gh calls, and NEVER `git ls-remote` or the owner lookup (`gh api users/<owner>`):
+    an ssh remote to a dead host stalled that hook 75s (review of PR #249); those two are
+    /agrim-doctor's. Every network call is bounded by preflight's `network_timeout()` (<= 15s)."""
     pf = _load_init_script("preflight")
     if injected:
         def runner(argv, cwd=None, timeout=None):
@@ -906,7 +909,8 @@ def _preflight_rows(base, cfg, run, which, injected, cheap_only):
         runner = None
     req = pf.requirements(cfg)
     network = (not cheap_only) or req["github"]
-    checks = pf.preflight(str(base.parent), cfg, runner=runner, which=which, network=network)
+    checks = pf.preflight(str(base.parent), cfg, runner=runner, which=which, network=network,
+                          deep=not cheap_only)
     rows, by_id = [], {c["id"]: c for c in checks}
     names = {"gh-installed": "gh installed", "gh-auth": "gh auth", "scopes": "gh token scopes"}
     for c in checks:

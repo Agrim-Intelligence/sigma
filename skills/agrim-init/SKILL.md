@@ -54,7 +54,10 @@ Scaffold the `.sdlc/` project layer, then report what happened.
     fine-grained token reports no scopes -- never read that as a pass), with one line per host
     (Claude Code / Codex / Cursor) carrying the exact command, and a `Meanwhile:` line. The same
     check runs any time: `python3 "${CLAUDE_SKILL_DIR}/scripts/preflight.py" check . --sdlc .sdlc`.
-    When `work.enabled` is on but there is no usable remote (or no `gh`), it prints a **DECISION**:
+    A fresh `git init` with no commit yet is not refused: the missing commit and the remote are
+    both reported. A GitLab/Bitbucket remote is reported as "gh only supports GitHub hosts"
+    (pushing still works; only opening a PR needs `gh`).
+    When `work.enabled` is on but there is no usable remote (or no `gh`, or a non-GitHub host), it prints a **DECISION**:
     keep work on and fix the cause, or run local-only (`work.enabled: false`: the loop edits this
     checkout directly, no worktree, branch, push or PR). Nothing flips it silently.
     - **Claude Code:** ask the user with a real question: add the remote (they give the URL; run

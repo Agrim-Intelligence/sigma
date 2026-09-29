@@ -1,7 +1,7 @@
 """agrim-doctor: a setup check-up. doctor.check() audits only what THIS project's config makes relevant
 (github board -> gh auth+scope; KG -> builder; vision-first -> north-star) and returns each check with
 the exact one-line fix. The command runner is injectable so these are hermetic (no real gh/graphify)."""
-import base64, json, os, pathlib, importlib.util, stat, sys, tempfile, time
+import base64, json, os, pathlib, importlib.util, shutil, stat, subprocess, sys, tempfile, time
 
 import pytest
 
@@ -6656,3 +6656,73 @@ def test_cheap_only_runs_no_network_preflight_call_without_github(tmp_path):
         return fake(args)
     d.check(base, run=run, cheap_only=True)
     assert not any(a[:2] in (["git", "ls-remote"], ["gh", "auth"], ["gh", "api"]) for a in calls), calls
+
+
+def test_cheap_only_never_runs_ls_remote_or_owner_lookup_even_under_github(tmp_path):
+    """Review block #1 (BLOCKING 2): the SessionStart wizard runs doctor with cheap_only=True in every
+    repo. github discovery opting into `gh auth status` is NOT consent to `git ls-remote` (ssh, can
+    stall for the whole call bound) or `gh api users/<owner>`: those are /agrim-doctor's."""
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}, "discovery": {"source": "github"}})
+    calls = []
+    fake = _pf_fake()
+
+    def run(args):
+        calls.append(args)
+        return fake(args)
+    names = _by_name(d.check(base, run=run, cheap_only=True))
+    assert not any(a[:2] == ["git", "ls-remote"]
+                   or (a[:2] == ["gh", "api"] and any(str(x).startswith("users/") for x in a))
+                   for a in calls), calls
+    assert not any(n.startswith("base branch") for n in names)   # not checked here -> no row, no pass
+
+
+def _hanging_ls_remote_repo(tmp_path, monkeypatch, cfg):
+    """A real repo with an unreachable `origin`, and a `git` on PATH that delegates to the real git
+    except `ls-remote`, which hangs (sleeps 60s) -- the dead-ssh-host shape the review measured."""
+    real_git = shutil.which("git")
+    repo = tmp_path / "repo"
+    subprocess.run([real_git, "-c", "init.defaultBranch=main", "init", "-q", str(repo)], check=True)
+    subprocess.run([real_git, "-C", str(repo), "-c", "user.email=a@b", "-c", "user.name=a",
+                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    subprocess.run([real_git, "-C", str(repo), "remote", "add", "origin",
+                    "ssh://git@unreachable.invalid/a/b.git"], check=True)
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    git = stub / "git"
+    git.write_text(f"#!{sys.executable}\nimport os, sys, time\n"
+                   "if sys.argv[1:2] == ['ls-remote']:\n    time.sleep(60)\n"
+                   f"os.execv({real_git!r}, [{real_git!r}] + sys.argv[1:])\n", encoding="utf-8")
+    git.chmod(0o755)
+    monkeypatch.setenv("PATH", str(stub))                 # no gh on PATH: gh rows stop at "installed"
+    return _sdlc(repo, cfg)
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("git"), reason="POSIX stub on PATH")
+def test_wizard_status_is_fast_with_a_hanging_ls_remote(tmp_path, monkeypatch):
+    base = _hanging_ls_remote_repo(tmp_path, monkeypatch,
+                                   {"work": {"enabled": True}, "discovery": {"source": "github"}})
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_229", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+    wiz = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wiz)
+    start = time.monotonic()
+    wiz.wizard_status(base, dismissed=set(), allow_cache=False)
+    assert time.monotonic() - start < 2
+
+
+@pytest.mark.skipif(os.name == "nt" or not shutil.which("git"), reason="POSIX stub on PATH")
+def test_full_doctor_degrades_a_hanging_ls_remote_to_cannot_verify_within_the_bound(tmp_path,
+                                                                                    monkeypatch):
+    base = _hanging_ls_remote_repo(tmp_path, monkeypatch, {"work": {"enabled": True}})
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    d = _doc()
+    pf = d._load_init_script("preflight")
+    assert pf.network_timeout({}) == 15                   # the default bound is small, not 120s
+    start = time.monotonic()
+    rows = d._preflight_rows(pathlib.Path(base), json.loads(
+        (pathlib.Path(base) / "config.json").read_text()), None, shutil.which, False, False)
+    assert time.monotonic() - start < 10
+    c = _by_name(rows)
+    row = c["base branch 'main' on 'origin' (cannot verify)"]
+    assert row["ok"] is False and "timed out" in row["fix"]

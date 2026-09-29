@@ -53,9 +53,22 @@ All notable changes to Sigma are recorded here, newest first.
   does not appear to be a git repository`. It asks only after the fetch has failed, so the
   measured call count on the success path is unchanged. `/agrim-doctor` runs the same checks as
   rows. Each fix comes from the check that failed, so with `gh` absent the fix is to install
-  `gh`, where it used to say `gh auth login`. Every git and `gh` call is time-limited by
-  `SIGMA_WATCH_CALL_TIMEOUT` (default 120s), and a call that runs over has its whole process tree
-  killed. Nothing prompts. The test suite now also guards `subprocess.Popen` against live `gh`
+  `gh`, where it used to say `gh auth login`. Every local git call is time-limited by
+  `SIGMA_WATCH_CALL_TIMEOUT` (default 120s); the three network calls (`git ls-remote`,
+  `gh auth status`, `gh api users/<owner>`) by the smaller of that and 15s, so a dead host reads
+  `CANNOT VERIFY (timed out)` quickly. A call that runs over has its whole process tree killed
+  (the Windows `taskkill` and the drain after it are bounded too). The SessionStart wizard
+  (`cheap_only`) never runs `git ls-remote` or the owner lookup: with an unreachable ssh remote it
+  used to stall about 75s in review; the test with a hanging `ls-remote` stub now measures 0.41s.
+  Those two rows say "not checked here; run /agrim-doctor" and are never shown as a pass. A fresh
+  `git init` with no commit still gets its remote checked and the DECISION printed. `gh auth
+  status` reads the active account only (`--active`, with a fallback for older gh), so a stale
+  second account no longer fails a valid one. A GitLab or Bitbucket remote gets "gh only supports
+  GitHub hosts" and the local-only option, not `gh auth login -h gitlab.com`; a remote URL
+  that cannot be parsed is not assumed to be github.com. Credentials in a remote URL
+  (`user:token@`) are removed from any text shown. The SSO link names the real host (GitHub
+  Enterprise too). `brew install` is suggested only when `brew` is on PATH. The wording now says
+  that only opening a PR needs `gh`, and pushing works without it. Nothing prompts. The test suite now also guards `subprocess.Popen` against live `gh`
   calls, and child processes get an empty gh config.
 
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an

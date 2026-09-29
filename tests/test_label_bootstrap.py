@@ -109,6 +109,10 @@ if argv[:2] == ["label", "create"]:
     save(s); sys.exit(0)
 if argv and argv[0] == "api":
     endpoint = argv[1].replace("{owner}/{repo}", repo)
+    if endpoint == "users/" + repo.split("/")[0] and flag(argv, "--jq") == ".type":
+        # #229: the preflight's read-only owner lookup (a fresh `git init` now gets its remote
+        # checked, so its owner is known); an organization, as the fake token carries read:org.
+        print("Organization"); sys.exit(0)
     if endpoint == "graphql":
         unhandled(argv, "graphql is not allowed for label bootstrap")
     method = (flag(argv, "--method") or "GET").upper()
