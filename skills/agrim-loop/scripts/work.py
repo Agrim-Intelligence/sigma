@@ -3746,10 +3746,12 @@ def _stale_resume_refusal(sdlc_dir, config, goal, run=None):
     action-log entries are fail-open (`safe_append` prints "entry skipped (non-fatal)" and returns
     `None`); the goal-file status and review-queue entry are written only in local-goals mode, where
     they raise rather than skip; and the label/comment/board writes are best-effort -- every `gh`
-    call on both paths sits under its own `except Exception: pass`. `source.release()`'s bool is NOT
-    an answer either: its own docstring concedes "a nonexistent/deleted issue and a genuine release
-    both return True here". So the string names what was attempted and how to finish it by hand, and
-    asserts nothing about a remote write having landed.
+    call on both paths is caught on its own and cannot raise into this function (`release()`'s
+    label removal and audit comment also write one stderr line and are recorded in
+    `source.release_warnings()`, which nothing here reads). `source.release()`'s bool is NOT an
+    answer either: its own docstring concedes "a nonexistent/deleted issue and a genuine release
+    both return True here". So the string names what was attempted and how to finish it by hand,
+    and asserts nothing about a remote write having landed.
 
     WRAPPED, deliberately. `state.park`/`state.release` read the goal file and `advance_cursor` can
     raise on a read-only `.sdlc`; uncaught, that propagates out of `start()` and `main()` reports it

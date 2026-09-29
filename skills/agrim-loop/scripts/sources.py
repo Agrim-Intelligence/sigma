@@ -715,6 +715,19 @@ def _run_gh(args, binary="gh"):
     return proc.stdout
 
 
+#: Longest reason a `release()` warning quotes from a failed `gh` call (work.py's `_READ_NOTE_CHARS`).
+_RELEASE_WARNING_CHARS = 200
+
+
+def _release_warning_reason(exc):
+    """`exc` as ONE short line for a `release()` warning: gh's own stderr (`.hint`, as
+    `_warn_field` reads it) when the error carries one, else `str(exc)`; whitespace collapsed,
+    capped. `str(exc)` holds the whole argv, and for the audit comment that is `--body`: the
+    caller's free-text reason must not be echoed whole into stderr or a getter."""
+    text = " ".join(str(getattr(exc, "hint", None) or exc).split())
+    return text if len(text) <= _RELEASE_WARNING_CHARS else text[:_RELEASE_WARNING_CHARS - 1] + "…"
+
+
 DEFAULT_COMMENT_LIMIT = 20   # most-recent comments considered; see the cost note in the docstring below
 
 
@@ -1079,6 +1092,11 @@ class GitHubSource:
         # #905: was the MOST RECENT `_fetch_pending` call a genuine empty read, or a give-up after
         # exhausting retries? See `read_degraded()`.
         self._last_read_degraded = False
+        # gh failures from the MOST RECENT release() call that were swallowed as best-effort --
+        # see release_warnings(). Seen live in the predecessor 2026-09-28: releasing a stale claim
+        # reported success (`released is True`) while the label removal and audit comment both
+        # silently failed, only caught by checking GitHub directly afterward.
+        self._last_release_warnings = []
         # #1661: the ONE unit of work this run is confined to (`--feature <name>`), or None for the
         # unscoped default. Set once, at the top of a run, through `scope_to_feature` -- never read
         # from config, because it is a property of THIS INVOCATION, not of the project. Both stay
@@ -2743,7 +2761,18 @@ class GitHubSource:
         caller (a wider, cross-cutting change touching every method in this class, not a local
         one) for a distinction whose only consumer today would be a caller that wants to log
         "released" vs "was already gone" — no such caller exists. Left as a smaller, separately-
-        scoped follow-up if a real caller ever needs that distinction, not forced here."""
+        scoped follow-up if a real caller ever needs that distinction, not forced here.
+
+        Seen live in the predecessor 2026-09-28 (its observation, not one taken on Sigma): the
+        label-removal and comment `gh` calls below used to be a bare `try/except: pass` each -- a
+        transient failure on EITHER was truly invisible, and `release()` still returned `True`.
+        Releasing a stale claim during a migration there hit exactly that: reported success, but the
+        in-progress label was still attached and no audit comment existed, only caught by checking
+        GitHub directly afterward and fixing it by hand. The fail-open POSTURE is unchanged (a
+        transient `gh` error here must still not raise into the caller or block the release), but a
+        failure is no longer silent: it writes one stderr line (mirrors
+        `_swap_labels_best_effort`'s own loud-but-non-raising shape) and is recorded in
+        `release_warnings()` so a caller that wants to know can."""
         terminal = False
         try:
             raw = self._run(["issue", "view", goal, *self._repo_args(), "--json", "state,labels"])
@@ -2758,14 +2787,23 @@ class GitHubSource:
                    # (fire-anyway) release behavior, never block a legitimate one on a read that
                    # could not actually determine the issue's state -- mirrors complete()'s own
                    # state-probe fail-open posture (#505) exactly.
+        self._last_release_warnings = []
         if terminal:
             return False   # already done or parked/failed -- release is only meaningful for a
                             # goal that is still claimed/in-progress; leave the issue untouched
         self._ensure_labels()
         try:
             self._run(["issue", "edit", goal, *self._repo_args(), "--remove-label", self.in_progress_label])
-        except Exception:
-            pass   # best-effort visibility label; a transient gh error must not block the release
+        except Exception as exc:
+            # best-effort visibility label; a transient gh error must not block the release -- but
+            # it must not vanish either (2026-09-28, see docstring).
+            detail = _release_warning_reason(exc)
+            self._last_release_warnings.append("label removal failed: %s" % detail)
+            try:
+                sys.stderr.write("sigma: release label removal failed for #%s (%s) — continuing; "
+                                 "the in-progress label may still be attached\n" % (goal, detail))
+            except Exception:
+                pass
         # #2009: `note` OVERRIDES the default framing, and defaults to it byte-for-byte. The
         # hard-coded line says "claimed but not started", which is FALSE for a stale-resume release
         # -- that goal has a worktree, a branch and a work record; it was unambiguously started, and
@@ -2775,10 +2813,29 @@ class GitHubSource:
             body += ": " + reason
         try:
             self._run(["issue", "comment", goal, *self._repo_args(), "--body", body])
-        except Exception:
-            pass   # best-effort audit trail; a transient gh error must not block the release
+        except Exception as exc:
+            # best-effort audit trail; a transient gh error must not block the release -- but it
+            # must not vanish either (2026-09-28, see docstring).
+            detail = _release_warning_reason(exc)
+            self._last_release_warnings.append("audit comment failed: %s" % detail)
+            try:
+                sys.stderr.write("sigma: release audit comment failed for #%s (%s) — continuing; "
+                                 "no audit-trail comment was posted\n" % (goal, detail))
+            except Exception:
+                pass
         self._set_board_status(goal, self.col["ready"])   # back where next_pending's board queue offers it
         return True
+
+    def release_warnings(self):
+        """gh failures from the MOST RECENT release() call that were swallowed as best-effort (label
+        removal, audit comment) -- empty list means either a clean release or a release() call
+        never happened. Mirrors read_degraded()'s pattern (it returns a copy, where that returns a
+        bool): reflects only the last call, not a sticky latch, and exists so a caller that wants
+        to know a release only PARTIALLY landed (the claim label may still be attached, or the
+        audit trail may be missing) can, without release() itself having to raise or change its
+        True/False/no-op return contract that `_release()` (loop.py), the CLI `release` verb, and
+        every existing test double already key on (see release()'s own docstring, 2026-09-28)."""
+        return list(self._last_release_warnings)
 
     def mark_qc(self, goal):
         self._set_board_status(goal, self.col["qc"])     # board-only: the Review / QC quality stage
