@@ -191,12 +191,31 @@ def sigma_scaffold_interrupted(sdlc_dir):
         return False
 
 
-_INTERRUPTED_STEP = {
-    "name": "project layer",
-    "fix": "re-run /agrim-init (Codex/Cursor: python3 "
-           + str(pathlib.Path(__file__).resolve().parent / "init_flow.py") + " .): .sdlc/ is Sigma's but has no config.json -- an interrupted scaffold. It is skip-if-exists, "
-           "so re-running it keeps every file already there.",
-}
+#: The flow the interrupted-scaffold fix names; a module attribute so a test can point it at a path
+#: with a space in it and see the printed gesture quoted.
+INIT_FLOW = pathlib.Path(__file__).resolve().parent / "init_flow.py"
+
+
+def _init_gesture():
+    """`<python> <init_flow.py> .`, built by the SAME helpers every other printed gesture uses
+    (`verify_detect.python_command` / `_q`): `python3`, else `python`, else `py` (Windows), and the
+    path quoted for the host's shell (so a path with a space, or a Windows one, runs as pasted).
+    Loaded lazily, and only on this rare branch -- verify_detect is stdlib-only."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_verify_detect", str(pathlib.Path(__file__).resolve().parent / "verify_detect.py"))
+    vd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vd)
+    return f"{vd.python_command()} {vd._q(str(INIT_FLOW))} ."
+
+
+def _interrupted_step():
+    return {
+        "name": "project layer",
+        "fix": f"re-run /agrim-init (Codex/Cursor: {_init_gesture()}): .sdlc/ is Sigma's but has no "
+               "config.json -- an interrupted scaffold. It is skip-if-exists, so re-running it keeps "
+               "every file already there.",
+    }
 
 
 def write_dismissed(sdlc_dir, names):
@@ -280,7 +299,7 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
         if sigma_scaffold_interrupted(sdlc_dir) and "project layer" not in (
                 read_dismissed(sdlc_dir) if dismissed is None else dismissed):
             mode, degraded = _classify("project layer")
-            return {"needs_wizard": True, "steps": [dict(_INTERRUPTED_STEP, mode=mode, degraded=degraded)]}
+            return {"needs_wizard": True, "steps": [dict(_interrupted_step(), mode=mode, degraded=degraded)]}
         return {"needs_wizard": False, "steps": []}      # #186: not adopted -> say nothing
     if allow_cache:
         cached = _read_cache(sdlc_dir)

@@ -32,7 +32,8 @@ A remembered repository is never used: `--repo`, else config.json's, else the cu
 `--yes` ANSWERS ONLY WHAT IS SAFE TO DEFAULT AND STILL OPEN: the mode (the detected one) and the ledger
 (no), and only where neither a flag nor config.json already answers it -- on a repository configured
 before this flow existed it changes nothing and says "kept". A key is open when config.json does not
-carry it, or still carries the template value this flow scaffolded (recorded in init.json). `--yes`
+carry it, or still carries the template value this flow scaffolded AND config.json is byte-for-byte,
+mtime-for-mtime what this flow last wrote (the fingerprint in init.json -- see `load_memory`). `--yes`
 never answers the board (creates external state -- #235 "never unasked"), the verify command (only the
 user knows what proves their repo -- #228), or a `work.enabled` flip (#229 "nothing flips it silently").
 
@@ -44,6 +45,7 @@ Stdlib only. Siblings are loaded by path (the `sdlc_init._preflight` idiom); the
 board CLIs are shelled out to, as `sdlc_init.py` already does.
 """
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -96,6 +98,10 @@ _VALUE = {"--mode", "--repo", "--work", "--verify", "--verify-command-file", "--
 _BOOL = {"--local-only", "--no-verify", "--yes", "--demo", "--vision", "--codex", "--cursor",
          "--github-templates", "--github"}
 
+#: The start of board_setup.py's success-path note that mirroring is off (`create`); dropped from
+#: this flow's output when `--board yes` turns mirroring on right after it.
+BOARD_NOT_ENABLED_NOTE = "note: discovery.github.project.enabled is not true"
+
 #: Test seam: `board_step`'s runner, `(argv) -> (rc, output)`. None = a real subprocess.
 BOARD_RUNNER = None
 
@@ -141,8 +147,10 @@ def parse(argv):
         if key in opts and opts[key] not in allowed:
             return opts, None, f"--{key} takes one of: {' | '.join(allowed)}"
     if "repo" in opts and (not _REPO_RE.fullmatch(opts["repo"])
-                           or opts["repo"].split("/")[1] in (".", "..")):
-        return opts, None, "--repo takes OWNER/NAME (e.g. acme/app), not a URL or a path"
+                           or opts["repo"].split("/")[1] in (".", "..")
+                           or opts["repo"].lower().endswith(".git")):
+        return opts, None, ("--repo takes OWNER/NAME (e.g. acme/app), not a URL, a path, or a name "
+                            "ending .git")
     if "verify" in opts and ":" not in opts["verify"]:
         return opts, None, "--verify takes N:ID, exactly as printed beside a candidate"
     if sum(k in opts for k in ("verify", "verify-command-file", "no-verify")) > 1:
@@ -182,18 +190,44 @@ def config_answers(cfg):
     return out
 
 
+def config_fingerprint(path):
+    """{"sha256": <hex of config.json's exact bytes>, "mtime_ns": <its mtime>}, or None when it
+    cannot be read. The mtime is part of it so that a write leaving the very same bytes (a revert,
+    `setup.py configure` re-saving an identical file) still counts as a write: a re-save is a
+    decision, and nothing here may read it as "untouched"."""
+    try:
+        path = pathlib.Path(path)
+        data, st = path.read_bytes(), path.stat()
+    except OSError:
+        return None
+    return {"sha256": hashlib.sha256(data).hexdigest(), "mtime_ns": st.st_mtime_ns}
+
+
 def load_memory(sdlc):
     """-> (answered, scaffolded) from init.json: which questions were answered (and what was said,
     for the "config.json wins" note only), and the template values this flow scaffolded for keys no
     one has answered yet. Values outside `ANSWER_VALUES` are dropped; a remembered repo is ignored.
-    Reads the pre-review flat format ({"mode": ..., "board": ...}) as `answered`."""
+    Reads the pre-review flat format ({"mode": ..., "board": ...}) as `answered`.
+
+    Review of PR #286, block #2: a value equal to the template's is NOT evidence nobody chose it
+    (`setup.py configure --source local-goals`, a hand edit, `preflight.py local-only`, board_setup
+    pinning -- all can leave exactly the template value). So `scaffolded` is returned ONLY while
+    config.json still fingerprints to exactly what init.json recorded when this flow last wrote it;
+    ANY other write to config.json, by any tool or hand, makes every key it carries explicit.
+    No init.json, an unreadable/invalid one, one with no fingerprint, or no config.json: nothing is
+    open (never guessed). A key config.json does not carry (absent or null) is still unanswered."""
     raw = _read_json(pathlib.Path(sdlc) / ANSWERS)
     if isinstance(raw.get("answered"), dict) or isinstance(raw.get("scaffolded"), dict):
         answered, scaffolded = raw.get("answered") or {}, raw.get("scaffolded") or {}
     else:
         answered, scaffolded = raw, {}
+    recorded = raw.get("config")
+    if not isinstance(recorded, dict) or recorded != config_fingerprint(pathlib.Path(sdlc) / "config.json"):
+        scaffolded = {}
 
     def valid(d):
+        if not isinstance(d, dict):
+            return {}
         return {k: v for k, v in d.items() if k in ANSWER_VALUES and v in ANSWER_VALUES[k]}
     return valid(answered), valid(scaffolded)
 
@@ -340,20 +374,24 @@ def board_step(target, sdlc, answer, repo, how="flag"):
     """#235, github mode only. -> (lines, ok). Only a `--board yes` FLAG on this run runs
     `board_setup.py create <sdlc> --yes` -- the one path that creates (or, for a pinned board,
     verifies: it refuses a pinned number the owner does not have) a board -- and only its success
-    turns `project.enabled` on. A failure restores `project.enabled` to what it was. A remembered
-    answer never runs anything: it only stops the OFFER being printed again."""
+    turns `project.enabled` on. Nothing here writes `enabled` before or on a failure (and
+    board_setup.py never writes it -- only number/owner/columns), so a failure leaves it exactly as
+    it was, with nothing to restore. A remembered answer never runs anything: it only stops the
+    OFFER being printed again."""
     proj = _project(_read_json(pathlib.Path(sdlc) / "config.json"))
     number = proj.get("number")
     cmd = [_vd.python_command(), str(BOARD_SETUP), "create", os.path.abspath(str(sdlc))]
     if how == "flag" and answer == "yes":
-        prev_enabled, prev_why = proj.get("enabled"), proj.get("_enabled_why")
+        prev_enabled = proj.get("enabled")
         rc, out = (BOARD_RUNNER or _run_board)(cmd + ["--yes"])
         lines = ["  " + l for l in (out or "").splitlines()]
         pinned = _project(_read_json(pathlib.Path(sdlc) / "config.json")).get("number")
         if rc == 0 and pinned:
             _set_project(sdlc, enabled=True, _enabled_why=None)
+            # board_setup's own "enabled is not true" note is true when it prints and false one line
+            # later, when this turns it on: not shown in this flow.
+            lines = [l for l in lines if BOARD_NOT_ENABLED_NOTE not in l]
             return lines + [f"  [ok] board: project #{pinned} pinned and reachable - mirroring on"], True
-        _set_project(sdlc, enabled=prev_enabled, _enabled_why=prev_why)
         why = (f"board_setup.py exited {rc} (its resume command is above)" if rc
                else "board_setup.py pinned no board")
         return lines + [f"  [FAIL] board: {why}; project.enabled left as it was ({prev_enabled})"], False
@@ -644,8 +682,11 @@ def main(argv):
             print("  [ask] ledger: the team ledger (claims + hand-offs on an ops branch)? "
                   "re-run with --ledger yes or --ledger no (--yes: no)")
 
+    # LAST write to config.json of this run is above: record its fingerprint, so a later run knows
+    # the template values are still open only if nothing else has written config.json since.
     memory = {"answered": now_answered,
-              "scaffolded": {k: v for k, v in scaffolded.items() if k not in now_answered}}
+              "scaffolded": {k: v for k, v in scaffolded.items() if k not in now_answered},
+              "config": config_fingerprint(cfg_path)}
     if memory != _read_json(pathlib.Path(sdlc) / ANSWERS):
         _write_json(pathlib.Path(sdlc) / ANSWERS, memory)
 

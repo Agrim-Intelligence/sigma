@@ -259,10 +259,17 @@ def _cmd_file(w, command):
 # ---------------------------------------------------------------- the example goal (no scaffold)
 
 
-def test_the_scaffolded_example_goal_is_never_picked():
-    text = (SCRIPTS.parent / "templates" / "goals" / "0001-example.md.tmpl").read_text(encoding="utf-8")
-    front = text.split("\n---", 1)[0]
-    assert "\nstatus: proposed" in front and "status: pending" not in front
+def test_the_scaffolded_example_goal_is_never_picked(tmp_path):
+    """Pins the SCAFFOLDED file's front-matter `status` field itself (the review's M22: a substring
+    search also matched the body's own mention of `status: proposed`, so a mutant flipping the
+    front matter to pending was never caught). Exactly one `status:` key, and it is `proposed`."""
+    si = _load_flow()._si
+    si.scaffold(str(tmp_path))
+    text = (tmp_path / ".sdlc" / "goals" / "0001-example.md").read_text(encoding="utf-8")
+    assert text.startswith("---\n"), text[:40]
+    front = text[4:].split("\n---\n", 1)[0].splitlines()
+    status = [l.split(":", 1)[1].strip() for l in front if l.split(":", 1)[0].strip() == "status"]
+    assert status == ["proposed"], front
 
 
 @posix_only
@@ -762,7 +769,10 @@ def _pinning_runner(w, calls, number=7):
         cfg = _cfg(w)
         cfg["discovery"]["github"]["project"].update(number=number, owner="acme")
         _write_cfg(w, cfg)
-        return 0, "board_setup: done -- board #%d is pinned\n" % number
+        # board_setup.py's real success tail when enabled is off (its `create`): the note, then done
+        return 0, ("  note: discovery.github.project.enabled is not true, so the loop will not "
+                   "mirror onto this board until it is.\nboard_setup: done -- board #%d is pinned\n"
+                   % number)
     return run
 
 
@@ -784,6 +794,8 @@ def test_board_yes_turns_on_a_board_pinned_after_declining(tmp_path, monkeypatch
     proj = _proj(_cfg(w))
     assert proj["number"] == 7 and proj["enabled"] is True
     assert not str(proj.get("_enabled_why") or "").startswith("off")
+    # board_setup's "enabled is not true" note is false by the next line: this flow does not show it
+    assert "is not true" not in out and "mirroring on" in out, out
     # an unreachable pinned board (board_setup refuses) leaves mirroring exactly as it was
     cfg = _cfg(w)
     cfg["discovery"]["github"]["project"]["enabled"] = False
@@ -795,7 +807,10 @@ def test_board_yes_turns_on_a_board_pinned_after_declining(tmp_path, monkeypatch
 
 
 @posix_only
-def test_a_failed_board_yes_restores_project_enabled(tmp_path, monkeypatch):
+def test_a_failed_board_yes_never_turns_project_enabled_on(tmp_path, monkeypatch):
+    """Nothing turns mirroring on before board_setup succeeds, or after it fails -- including a
+    partial failure that already pinned the board it created (INCOMPLETE, exit 1). (There is no
+    restore: board_setup.py never writes `enabled`, so a failure has nothing to undo.)"""
     w = _world(tmp_path)
     assert _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--no-verify"]).returncode == 0
     assert _proj(_cfg(w))["enabled"] is False                      # the offer is open
@@ -809,6 +824,25 @@ def test_a_failed_board_yes_restores_project_enabled(tmp_path, monkeypatch):
     proj = _proj(_cfg(w))
     assert proj["enabled"] is False and not proj.get("number")
     assert seen == [False]                                         # never True with no number
+    calls = []
+    pin_then_fail = _pinning_runner(w, calls)
+
+    def incomplete(argv):
+        pin_then_fail(argv)                                        # pinned #7, then a step failed
+        seen.append(_proj(_cfg(w)).get("enabled"))
+        return 1, "board_setup: INCOMPLETE -- see [FAIL] above.\n"
+    rc, out = _main_inproc(w, [".", "--board", "yes"], monkeypatch, incomplete)
+    assert rc == 1 and "project.enabled left as it was (False)" in out, out
+    proj = _proj(_cfg(w))
+    assert proj["number"] == 7 and proj["enabled"] is False
+    assert seen == [False, False]
+
+
+def test_the_suppressed_board_note_is_board_setups_own_text():
+    """The flow drops board_setup's "enabled is not true" note by its text: pin that text to the
+    source, so a reworded note cannot slip back into the flow's success output unnoticed."""
+    src = (SCRIPTS / "board_setup.py").read_text(encoding="utf-8")
+    assert _load_flow().BOARD_NOT_ENABLED_NOTE in src
 
 
 # ---------------------------------------------------------------- flags + the resume line
@@ -817,7 +851,7 @@ def test_a_failed_board_yes_restores_project_enabled(tmp_path, monkeypatch):
 def test_repo_flag_must_be_owner_slash_name():
     flow = _load_flow()
     for bad in ("acme", "acme/app/extra", "https://github.com/acme/app", "acme/", "/app", "a b/c",
-                "acme/..", "-x/app"):
+                "acme/..", "-x/app", "acme/app.git", "acme/app.GIT"):
         assert flow.parse(["--repo", bad])[2], bad
     assert flow.parse(["--repo", "acme-co/app.name_2"])[2] is None
 
@@ -884,3 +918,113 @@ def test_the_next_line_demo_rerun_keeps_answers_and_queues_the_demo(tmp_path):
     assert _run(w, [LOOP, "next", ".sdlc"]).stdout.strip().endswith("0000-demo.md")
     memory = json.loads((w["sdlc"] / "state" / "init.json").read_text())
     assert memory["answered"] == {"mode": "local-goals", "work": "off"}
+
+
+# ---------------------------------------------------------------- review block #2: a scaffolded
+# template value is OPEN only while config.json is exactly what the flow last wrote
+
+
+def _fresh_scaffold(tmp_path):
+    """A bare `/agrim-init` on a GitHub-origin repo: config.json scaffolded, mode/ledger still open."""
+    w = _world(tmp_path)
+    p = _run(w, [FLOW, "."])
+    assert p.returncode == 0 and "[ask] mode" in p.stdout, p.stdout + p.stderr
+    assert _cfg(w)["discovery"]["source"] == "local-goals"      # the template's value
+    w["log"].write_text("")
+    return w
+
+
+def _assert_yes_changed_nothing(w, before, p):
+    assert p.returncode == 0, p.stdout + p.stderr
+    after = _cfg(w)
+    assert after["discovery"]["source"] == before["discovery"]["source"] == "local-goals", p.stdout
+    assert after["work"] == before["work"]
+    was = before["ledger"].get("enabled")
+    # a null ledger is "not yet decided" (the template says so), not a value: --yes may answer it
+    # off -- never on. Any value config.json carries is kept.
+    assert after["ledger"]["enabled"] == (False if was is None else was)
+    assert not any(c[:2] == ["label", "create"] for c in _calls(w)), _calls(w)
+
+
+@posix_only
+def test_yes_after_setup_configure_local_goals_keeps_it(tmp_path):
+    """Review block #2 (atkC2.py): `setup.py configure --source local-goals` leaves the template's
+    own value, and `--yes` then switched the source to github and created 14 labels."""
+    w = _fresh_scaffold(tmp_path)
+    assert _run(w, [SETUP, "configure", ".sdlc", "--source", "local-goals"]).returncode == 0
+    before = _cfg(w)
+    _assert_yes_changed_nothing(w, before, _run(w, [FLOW, ".", "--yes", "--no-verify"]))
+
+
+@posix_only
+def test_yes_after_a_hand_edit_to_the_template_value_keeps_it(tmp_path):
+    """Review block #2 (atk286.py case C): the user re-writes source local-goals by hand."""
+    w = _fresh_scaffold(tmp_path)
+    cfg = _cfg(w)
+    cfg["discovery"]["source"] = "local-goals"
+    (w["sdlc"] / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    before = _cfg(w)
+    _assert_yes_changed_nothing(w, before, _run(w, [FLOW, ".", "--yes", "--no-verify"]))
+
+
+@posix_only
+def test_yes_after_a_byte_identical_rewrite_keeps_it(tmp_path):
+    """A write that leaves the very same bytes (a revert, or a tool re-saving the file) is still a
+    write: the fingerprint carries the mtime too, so this is explicit, not re-opened."""
+    w = _fresh_scaffold(tmp_path)
+    path = w["sdlc"] / "config.json"
+    original = path.read_bytes()
+    path.write_text("{}", encoding="utf-8")
+    path.write_bytes(original)
+    st = path.stat()
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))   # coarse-clock safe
+    assert path.read_bytes() == original
+    before = _cfg(w)
+    _assert_yes_changed_nothing(w, before, _run(w, [FLOW, ".", "--yes", "--no-verify"]))
+
+
+@posix_only
+def test_yes_with_a_corrupt_init_json_keeps_everything(tmp_path):
+    w = _fresh_scaffold(tmp_path)
+    (w["sdlc"] / "state" / "init.json").write_text("{not json", encoding="utf-8")
+    before = _cfg(w)
+    _assert_yes_changed_nothing(w, before, _run(w, [FLOW, ".", "--yes", "--no-verify"]))
+
+
+@posix_only
+def test_yes_on_an_untouched_scaffold_still_fills_the_open_questions(tmp_path):
+    """The control for the four above: nothing touched config.json since the flow wrote it, so the
+    template values are still open and `--yes` takes the detected mode (github) and ledger no."""
+    w = _fresh_scaffold(tmp_path)
+    p = _run(w, [FLOW, ".", "--yes", "--no-verify"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    cfg = _cfg(w)
+    assert cfg["discovery"]["source"] == "github" and cfg["ledger"]["enabled"] is False
+    assert sum(1 for c in _calls(w) if c[:2] == ["label", "create"]) == len(LABELS)
+
+
+def test_scaffolded_values_are_open_only_while_config_matches_the_recorded_fingerprint(tmp_path):
+    """The seam itself, in-process (runs on every OS): `load_memory` returns the scaffolded
+    template values only when config.json still fingerprints to what init.json recorded."""
+    flow = _load_flow()
+    sdlc = tmp_path
+    (sdlc / "state").mkdir()
+    cfg = sdlc / "config.json"
+    cfg.write_text(json.dumps({"discovery": {"source": "local-goals"}}), encoding="utf-8")
+    memory = {"answered": {}, "scaffolded": {"mode": "local-goals"},
+              "config": flow.config_fingerprint(cfg)}
+    (sdlc / "state" / "init.json").write_text(json.dumps(memory), encoding="utf-8")
+    assert flow.load_memory(str(sdlc)) == ({}, {"mode": "local-goals"})
+    st = cfg.stat()
+    os.utime(cfg, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))       # touched, same bytes
+    assert flow.load_memory(str(sdlc)) == ({}, {})
+    memory["config"] = flow.config_fingerprint(cfg)
+    (sdlc / "state" / "init.json").write_text(json.dumps(memory), encoding="utf-8")
+    assert flow.load_memory(str(sdlc)) == ({}, {"mode": "local-goals"})
+    del memory["config"]                                                     # no fingerprint
+    (sdlc / "state" / "init.json").write_text(json.dumps(memory), encoding="utf-8")
+    assert flow.load_memory(str(sdlc)) == ({}, {})
+    memory["config"] = flow.config_fingerprint(cfg)
+    (sdlc / "state" / "init.json").write_text(json.dumps(memory), encoding="utf-8")
+    cfg.unlink()                                                             # no config.json
+    assert flow.load_memory(str(sdlc)) == ({}, {})

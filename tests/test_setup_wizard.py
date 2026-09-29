@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import sys
 
@@ -400,3 +401,21 @@ def test_236_an_interrupted_sigma_scaffold_still_nudges_init(monkeypatch, tmp_pa
     assert "/agrim-init" in status["steps"][0]["fix"] and status["steps"][0]["degraded"]
     (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "another-plugin"}')
     assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False
+
+
+def test_236_the_interrupted_scaffold_fix_uses_the_shared_python_and_quoting(monkeypatch, tmp_path):
+    """Review of PR #286: the fix text hardcoded `python3` and an unquoted path. It is built by
+    verify_detect's python_command()/_q: a path with a space is quoted, and a host with only
+    `python` (or Windows' `py`) gets that interpreter."""
+    import shlex
+    import shutil
+    spaced = tmp_path / "my plugins" / "init_flow.py"
+    monkeypatch.setattr(setup_wizard, "INIT_FLOW", spaced)
+    fix = setup_wizard._interrupted_step()["fix"]
+    if os.name != "nt":
+        assert shlex.quote(str(spaced)) + " ." in fix, fix
+        assert shlex.split(fix.split("Codex/Cursor: ", 1)[1].split(")", 1)[0])[1] == str(spaced)
+    else:
+        assert f'"{spaced}" .' in fix, fix
+    monkeypatch.setattr(shutil, "which", lambda name: "/x/python" if name == "python" else None)
+    assert "Codex/Cursor: python " in setup_wizard._interrupted_step()["fix"]

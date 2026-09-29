@@ -110,7 +110,12 @@ All notable changes to Sigma are recorded here, newest first.
     `tests/test_init_flow.py` on a fake `gh`: a bare re-run makes zero label writes and leaves
     config unchanged; `--yes` on a repository configured before the flow (local-goals, ledger on)
     makes zero label writes and changes no key (it made 14 label writes and switched the source
-    before this review). Exit 1
+    before this review). A scaffolded template value is open only while config.json still matches
+    the SHA-256 + mtime init.json recorded when the flow last wrote it; `setup.py configure
+    --source local-goals` or a hand edit that leaves the template's own value is therefore kept
+    (review block #2: `--yes` had switched it to github with 14 label writes). Measured the same
+    way: zero label writes, source kept, after configure, a hand edit, a byte-identical re-save,
+    and a corrupt init.json; an untouched scaffold still takes the detected mode. Exit 1
     on a failed step or a blocking preflight problem, with a `Resume:` line; exit 2 when refused
     before any write.
   - When the flow switches a repository to github mode, `discovery.github.project.enabled` is
@@ -118,7 +123,10 @@ All notable changes to Sigma are recorded here, newest first.
     so "no board without a yes" held for init and broke at the first `loop.py next`. `--board yes`
     turns it on only after `board_setup.py create --yes` succeeds and a board is pinned (also for a
     board pinned by hand after declining); a failure leaves it as it was.
-  - `--repo` must be `OWNER/NAME`. The `Resume:` line prints `--verify-command-file` absolute, and
+  - `--repo` must be `OWNER/NAME` (a name ending `.git` is refused). After a successful
+    `--board yes` the flow no longer relays board_setup's "project.enabled is not true" note that
+    it makes false one line later. The session wizard's interrupted-scaffold fix prints the
+    interpreter and quoted path through the shared helpers (was `python3` and an unquoted path). The `Resume:` line prints `--verify-command-file` absolute, and
     on Windows is withheld (as `board_setup.py` does) when a value carries `"`, `%`, `$`, a
     backtick or `!`. The demo's github hint no longer says the loop creates a board when mirroring
     is off.

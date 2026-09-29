@@ -51,7 +51,13 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    `--repo`, else config.json's, else the current `origin` (never a remembered one).
    **`--yes` takes only the safe defaults** (mode = detected, ledger = off), and only for a question
    config.json does not already answer: on an already-configured repository it changes nothing and
-   says "kept". It never answers the board, the verify command, or a work flip.
+   says "kept". It never answers the board, the verify command, or a work flip. A template value the
+   flow scaffolded counts as unanswered ONLY while config.json is exactly what the flow last wrote:
+   init.json records config.json's SHA-256 and mtime at that moment, and any other write -- `setup.py
+   configure`, `preflight.py local-only`, `board_setup.py` pinning, a hand edit, even a revert to
+   the same bytes -- makes every key it carries explicit, so `--yes` leaves it. A missing,
+   unreadable or fingerprint-less init.json means nothing is open. Only a key config.json does not
+   carry (absent or `null`, e.g. the template's undecided `ledger.enabled`) stays open.
    - **Claude Code:** ask the user each `[ask]` as a real question, then re-run the same command
      with the answers as flags. Never pass `--board yes`, `--verify`, `--local-only` or
      `--ledger yes` on the user's behalf.
@@ -105,7 +111,9 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
     until you answer, the flow keeps `project.enabled` OFF (with the reason in `_enabled_why`),
     because the loop would otherwise create a board on its first github pick. `--board yes` runs
     the gesture below with `--yes` and turns `project.enabled` on only when it succeeded and a board
-    is pinned; a failure leaves `project.enabled` as it was. On an already-pinned board (say one
+    is pinned; a failure leaves `project.enabled` as it was (nothing writes it before success, and
+    board_setup never writes it). On success board_setup's "enabled is not true" note is dropped
+    from the flow's output, since the flow turns it on on the next line. On an already-pinned board (say one
     pinned by hand after declining), `--board yes` runs the same gesture, which refuses a pinned
     number the owner does not have, then turns mirroring on. `--board no` turns mirroring off and
     records the decline. A remembered answer never runs the gesture. The gesture is
