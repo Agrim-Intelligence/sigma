@@ -1056,6 +1056,7 @@ class GitHubSource:
         self._item_status = {}           # {issue number -> current Status name}, filled by _load_items
         self._repo_resolved = None       # #308: `repo`'s current name, casefolded ("" unreadable)
         self._repo_current = ""          # #308: ... as GitHub spells it, for issue URLs
+        self._repo_failed_at = None      # #308: monotonic time of the last FAILED resolve
         self._item_priority = {}         # {issue number -> current Priority value}, same source
         # Static values for the adopter's CUSTOM single-select board fields (name -> option name),
         # applied to issues the loop itself creates so a loop-made card isn't blank on a field like
@@ -4520,6 +4521,10 @@ class GitHubSource:
             self._load_items(self._proj_owner(), self._project_number)
         if n in self._items:
             return self._items[n]
+        if self.repo:
+            # #308 review: resolve the configured name before an add even when no card on the board
+            # named the repo yet (cached), so a stale config still adds under the CURRENT name.
+            self._resolved_repo()
         data = self._gh_json(["project", "item-add", str(self._project_number), "--owner", self._proj_owner(),
                               "--url", self._issue_url(n), "--format", "json"])
         iid = data.get("id")
@@ -4570,15 +4575,24 @@ class GitHubSource:
                 # already in agreement costs zero writes.
                 self._item_priority[int(n)] = it.get((self.priority_field or "").lower())
 
+    #: #308 review: how long a FAILED resolve of the repo's current name is trusted before the next
+    #: need reads again. A long-lived source (the watch daemon's) must not keep one blip forever;
+    #: within the window a failure is cached, so an outage costs one read per window, not per card.
+    _REPO_RETRY_S = 300
+
     def _resolved_repo(self):
         """#308: `discovery.github.repo` as GitHub resolves it NOW (casefolded `full_name`) -- the
         same repository under its current name after a rename or transfer, which GitHub redirects
         (REST `repos/<old>` answers with the new `full_name`; measured read-only in
-        `.sdlc/evidence/308/`). ONE read per run, and only when a card names a repository other
-        than the configured one; cached, failure included. Unreadable -> "" (matches no card):
-        the strict #233 rule, so another repo's card is still never written."""
+        `.sdlc/evidence/308/`). One `gh api repos/<repo>` read, made when a card names a repository
+        other than the configured one, or before the first `item-add`. A success is cached for the
+        instance; a failure only for `_REPO_RETRY_S`. Unreadable -> "" (matches no card): the strict
+        #233 rule, so another repo's card is still never written."""
+        if self._repo_resolved == "" and self._repo_failed_at is not None and \
+                time.monotonic() - self._repo_failed_at >= self._REPO_RETRY_S:
+            self._repo_resolved = None
         if self._repo_resolved is None:
-            self._repo_resolved = ""
+            self._repo_resolved, self._repo_failed_at = "", None
             try:
                 data = self._gh_json(["api", "repos/%s" % self.repo])
                 full = data.get("full_name") if isinstance(data, dict) else None
@@ -4587,6 +4601,8 @@ class GitHubSource:
                     self._repo_current = full
             except Exception:
                 pass
+            if not self._repo_resolved:
+                self._repo_failed_at = time.monotonic()
         return self._repo_resolved
 
     def _list_fields(self, owner, number):
@@ -4635,8 +4651,8 @@ class GitHubSource:
         this code can vouch for. THE one parse, shared with `board_setup.py` (its writer). Only the
         `{"number": N, "owner": "<login>"}` form counts; the older bare-number form (number only,
         so it cannot tell two owners' boards apart) reads as NOT ours -- the safe direction: the
-        label stays the one Priority writer until `board_setup.py create` re-pins it (which
-        upgrades it when the owner pinned beside it is unchanged, #308)."""
+        label stays the one Priority writer. A re-pin drops it, never upgrades it: the owner beside
+        it cannot vouch for it (#308 review); `mirror_priority: true` is the lever."""
         if not isinstance(value, dict):
             return None
         owner = value.get("owner")

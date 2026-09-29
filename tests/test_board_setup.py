@@ -694,24 +694,40 @@ def test_an_adopted_empty_board_still_does_not_get_ready(tmp_path):
     assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
 
 
-def test_a_resume_with_the_old_bare_marker_upgrades_it_and_finishes_our_board(tmp_path):
-    """#308 (2), through the documented gesture (`board_setup.py create --number N --yes`): a
-    pre-#233 config says `setup_created: 4` beside `owner: acme`. The re-pin upgrades the marker,
-    and the same run finishes board #4 as ours (the Ready lane lands on an empty board)."""
+def test_a_resume_with_the_old_bare_marker_drops_it_and_the_board_stays_a_humans(tmp_path):
+    """#308 review block #1, through the documented gesture (`board_setup.py create --number N
+    --yes`): a pre-#233 config says `setup_created: 4` beside `owner: acme`. A bare number cannot
+    vouch for its owner (the pre-#233 pin() kept it when only the owner changed), so the re-pin
+    DROPS it and the run treats board #4 as a human's: no Ready lane."""
     gh = boardfake.GitHub(boards=[{"title": "widget — SDLC", "number": 4}])
     sdlc = _sdlc(tmp_path, project={"number": 4, "owner": "acme", "setup_created": 4})
     rc, text = _run(sdlc, gh, "--number", "4", "--yes")
     assert rc == 0, text
-    assert _cfg(sdlc)["discovery"]["github"]["project"]["setup_created"] == {
-        "number": 4, "owner": "acme"}
-    assert "Ready" in gh.option_names(gh.board(number=4), "Status")
+    assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
+    assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
+
+
+def test_the_reviewers_sequence_a_bare_marker_left_by_an_owner_change_is_not_ours(tmp_path):
+    """#308 review block #1, the reviewer's exact sequence. The pre-#233 pin() created alice's #4
+    (`setup_created: 4`), then re-pinned `--owner acme-org --number 4` -- a HAND-MADE board reusing
+    the number -- and, dropping only on a number change, rewrote `owner` and KEPT the bare marker.
+    `create --owner acme-org --number 4` must now drop it: not ours (so the loop neither mirrors
+    Priority onto it nor stops writing the label), and no Ready lane."""
+    gh = boardfake.GitHub(owner="acme-org",
+                          boards=[{"title": "Hand-made board", "number": 4}])
+    sdlc = _sdlc(tmp_path, project={"number": 4, "owner": "acme-org", "setup_created": 4})
+    rc, text = _run(sdlc, gh, "--owner", "acme-org", "--number", "4", "--yes")
+    assert rc == 0, text
+    proj = _cfg(sdlc)["discovery"]["github"]["project"]
+    assert "setup_created" not in proj
+    assert not bs._ours(proj.get("setup_created"), 4, "acme-org")
+    assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
 
 
 def test_pin_keeps_the_marker_only_for_the_same_board_of_the_same_owner(tmp_path):
     """#233 review block #2: `setup_created` names a board by number AND owner. Re-pinning the
     same number under another owner (a hand-made board reusing it) drops the marker; the older
-    bare-number form is dropped when it names another board (#308 upgrades it for the same one);
-    the same board keeps it."""
+    bare-number form cannot be vouched for and is dropped too; the same board keeps it."""
     sdlc = _sdlc(tmp_path)
     proj = lambda: _cfg(sdlc)["discovery"]["github"]["project"]            # noqa: E731
     bs.pin(sdlc, "acme", 7, created=True)
@@ -727,34 +743,31 @@ def test_pin_keeps_the_marker_only_for_the_same_board_of_the_same_owner(tmp_path
     cfg = _cfg(sdlc)
     cfg["discovery"]["github"]["project"]["setup_created"] = 7                # the pre-#233 form
     path.write_text(json.dumps(cfg), encoding="utf-8")
-    bs.pin(sdlc, "acme", 8)                                                   # another number
+    bs.pin(sdlc, "acme", 7)
     assert "setup_created" not in proj()
 
 
-@pytest.mark.parametrize("prior_owner,owner,number,upgraded", [
-    ("acme", "acme", 7, True),           # same board, same owner: the old marker is upgraded
-    ("acme", "ACME", 7, True),           # owners compare case-insensitively
-    ("acme", "octo", 7, False),          # owner changed: cannot vouch for it, dropped
-    ("acme", "acme", 8, False),          # number changed: dropped
-    (None, "acme", 7, False),            # no owner was pinned: cannot vouch for it, dropped
-    ("@me", "@me", 7, False),            # `@me` names no login
+@pytest.mark.parametrize("prior_owner,owner,number", [
+    ("acme", "acme", 7),                 # same number, same owner: still cannot vouch for it
+    ("acme", "ACME", 7),
+    ("alice", "acme-org", 7),            # the pre-#233 owner-only change (marker was kept)
+    ("acme-org", "acme-org", 7),         # a hand-edited `project.owner` beside the bare marker
+    ("acme", "acme", 8),                 # another number
+    (None, "acme", 7),                   # no owner pinned
+    ("@me", "@me", 7),
 ])
-def test_pin_upgrades_the_old_bare_number_marker_only_for_the_same_board(
-        tmp_path, prior_owner, owner, number, upgraded):
-    """#308 (2): docs/board-fields.md promises the pre-#233 bare-number `setup_created` counts
-    again once `board_setup.py create` re-pins it. pin() upgrades it to {number, owner} when it
-    names the number being pinned and the owner pinned beside it is unchanged; otherwise it drops."""
+def test_pin_always_drops_the_old_bare_number_marker(tmp_path, prior_owner, owner, number):
+    """#308 review block #1: the pre-#233 bare-number `setup_created` has no reliable owner -- the
+    old pin() kept it across an owner-only re-pin, and a hand edit of `project.owner` keeps it too
+    -- so pin() drops it on every re-pin, exactly as #233 did, and it never reads as ours."""
     project = {"number": 7, "setup_created": 7}
     if prior_owner is not None:
         project["owner"] = prior_owner
     sdlc = _sdlc(tmp_path, project=project)
-    marker = bs.pin(sdlc, owner, number)
+    bs.pin(sdlc, owner, number)
     proj = _cfg(sdlc)["discovery"]["github"]["project"]
-    if upgraded:
-        assert proj["setup_created"] == {"number": 7, "owner": owner} == marker
-        assert bs._ours(proj["setup_created"], 7, "acme")
-    else:
-        assert "setup_created" not in proj and marker is None
+    assert "setup_created" not in proj
+    assert not bs._ours(proj.get("setup_created"), number, owner)
 
 
 def test_a_resume_with_another_owners_marker_is_not_our_board(tmp_path):
