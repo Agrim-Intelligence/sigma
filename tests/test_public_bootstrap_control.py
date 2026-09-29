@@ -5,8 +5,9 @@ carries none of this project's own vocabulary.
 WHAT THIS DRIVES. A real `/agrim-init`, the public-repository adoption block from
 `skills/agrim-setup/references/public-repo.md` (Task 2) run EXACTLY as the doc prints it, and then
 the documented `agrim-loop` cycle (`loop.py start` -> `next` -> `agent-start` -> `work.py start` ->
-`phase_report.py` -> `work.py commit/pr/merge` -> `loop.py record done` -> the human's `pr merge` ->
-`work.py finish`) against a stateful, PATH-installed fake `gh` and a real bare git remote. Every gh
+`phase_report.py` -> `work.py commit/pr/merge` -> `loop.py record done` (REFUSED while the PR is
+open, #232) -> `loop.py record review` -> the human's `pr merge` -> `loop.py reconcile-merges`,
+which records `done`, closes the issue and releases the checkout) against a stateful, PATH-installed fake `gh` and a real bare git remote. Every gh
 CLI call the shipped scripts make is modelled by the fake; a call the fake does not recognise exits
 1, is written to `FAKE_GH_UNHANDLED`, and every test that runs the fixture asserts that log is
 empty (M9 below is exactly why: a call the product's own fail-open code swallows can leave the
@@ -233,6 +234,10 @@ def pr_obj(state, number):
         "mergeStateStatus": "CLEAN", "statusCheckRollup": [], "headRefOid": head_sha,
         "isCrossRepository": False, "autoMergeRequest": None,
         "nameWithOwner": state["repo"],
+        # #232: the review gate's own reads -- `comments,author` for `sigma:` directives and
+        # `reviewDecision,latestReviews` for formal reviews. Comments are what `pr comment` stored.
+        "comments": [{"body": c, "author": {"login": state["login"]}} for c in pr.get("comments", [])],
+        "author": {"login": state["login"]}, "reviewDecision": None, "latestReviews": [],
     }
 
 
@@ -254,6 +259,7 @@ def pr_rest_obj(state, number):
     owner, name = state["repo"].split("/", 1)
     return {
         "number": int(number), "node_id": "PR_%s" % number, "state": pr["state"],
+        "merged": pr["state"] == "MERGED",
         "created_at": "2026-01-01T00:00:00Z",
         "merged_at": "2026-01-02T00:00:00Z" if pr["state"] == "MERGED" else None,
         "merge_commit_sha": head_sha if pr["state"] == "MERGED" else None,
@@ -415,6 +421,9 @@ def cmd_pr(state, argv, pos, flags):
         print("Merged pull request #%s" % number)
         return
     if sub == "comment":
+        pr = state["prs"].get(pos[1])
+        if pr is not None:
+            pr.setdefault("comments", []).append(flags.get("body", ""))
         save_state(state); return
     unhandled(argv, "unmodeled pr subcommand")
 
@@ -523,6 +532,9 @@ def cmd_api(state, argv, pos, flags, multi):
             _graphql_label_lookup(state, doc, argv)
         elif "issue(number:" in doc:
             _graphql_issue_id(state, doc, argv)
+        elif "reviewThreads" in doc:
+            # #232: the review gate's unresolved-thread count; this fake models no threads.
+            print(json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}}))
         else:
             unhandled(argv, "unmodeled graphql document shape")
         return
@@ -892,30 +904,58 @@ def _run_sequence(world, run_probe):
     _cli([LOOP, "verify", sdlc, "1"], clone_dir, env)
     _cli([WORK, "commit", sdlc, "1", "--message", "sdlc: test goal 1"], clone_dir, env)
     _cli([WORK, "pr", sdlc, "1"], clone_dir, env)
-    merge = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
-    obs["merge_stdout"] = merge.stdout.strip()
-
     pr_number = _only_pr_number(world)
     obs["pr_number"] = pr_number
 
-    record = _cli([LOOP, "record", sdlc, "1", "done"], clone_dir, env)
-    obs["record_stderr"] = record.stderr
+    # #232 (3): on the shipped defaults (`auto_merge: off`, `require_review: changes`) the review
+    # gate must RUN before the PR is left for a human -- a reviewer's `sigma:block` parks the merge.
+    _fakegh(world, ["pr", "comment", pr_number, "--repo", world["repo"],
+                    "--body", "sigma:block the change has no test"], cwd=clone_dir)
+    blocked = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
+    obs["blocked_merge_stdout"] = blocked.stdout.strip()
+    _fakegh(world, ["pr", "comment", pr_number, "--repo", world["repo"],
+                    "--body", "sigma:approve"], cwd=clone_dir)
+    merge = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
+    obs["merge_stdout"] = merge.stdout.strip()
 
+    # #232 (1): the documented gesture for that line is `record review`; `record done` is REFUSED
+    # while the PR is open -- the control that a PR nobody merged never yields a closed issue.
+    refused = _cli([LOOP, "record", sdlc, "1", "done"], clone_dir, env, check=False)
+    obs["record_done_rc"] = refused.returncode
+    obs["record_done_stderr"] = refused.stderr
+    obs["issue1_state_after_refused_done"] = _issue_state(world, "1")
+
+    review = _cli([LOOP, "record", sdlc, "1", "review"], clone_dir, env)
+    obs["record_stderr"] = review.stderr
     obs["issue1_state_before_merge"] = _issue_state(world, "1")
+    obs["issue1_labels_awaiting_merge"] = _issue_labels(world, "1")
     obs["pr_state_before_merge"] = _pr_state(world, pr_number)
     obs["remote_has_feature_before_merge"] = _remote_show(world, "main:feature.txt").returncode == 0
-    obs["worktree_exists_before_finish"] = worktree.exists()
+    obs["worktree_exists_before_merge"] = worktree.exists()
+
+    # A goal awaiting merge is not pickable: `next` must not serve goal 1 again.
+    repick = _cli([LOOP, "next", sdlc, "--session-pid", pid], clone_dir, env)
+    obs["repick_stdout"] = repick.stdout.strip()
+
+    # #232 (2): a reconcile pass while the PR is still open changes nothing.
+    early = _cli([LOOP, "reconcile-merges", sdlc], clone_dir, env)
+    obs["early_reconcile_stdout"] = early.stdout.strip()
+    obs["issue1_state_after_early_reconcile"] = _issue_state(world, "1")
 
     _fakegh(world, ["pr", "merge", pr_number, "--repo", world["repo"], "--squash"], cwd=clone_dir)
+    obs["issue1_state_after_human_merge"] = _issue_state(world, "1")
 
-    finish = _cli([WORK, "finish", sdlc, "1"], clone_dir, env)
-    obs["finish_stdout"] = finish.stdout.strip()
+    late = _cli([LOOP, "reconcile-merges", sdlc], clone_dir, env)
+    obs["late_reconcile_stdout"] = late.stdout.strip()
+    again = _cli([LOOP, "reconcile-merges", sdlc], clone_dir, env)
+    obs["again_reconcile_stdout"] = again.stdout.strip()
 
+    obs["issue1_state_final"] = _issue_state(world, "1")
     obs["pr_state_after_merge"] = _pr_state(world, pr_number)
     remote_feature = _remote_show(world, "main:feature.txt")
     assert remote_feature.returncode == 0, remote_feature.stderr
     obs["remote_feature_txt"] = remote_feature.stdout
-    obs["worktree_exists_after_finish"] = worktree.exists()
+    obs["worktree_exists_after_merge"] = worktree.exists()
     obs["issue1_labels_final"] = _issue_labels(world, "1")
     obs["unhandled_log"] = world["unhandled_path"].read_text(encoding="utf-8")
     return obs
@@ -968,22 +1008,44 @@ def test_the_documented_adoption_block_is_what_the_control_runs():
 
 
 def test_a_goal_goes_from_filed_to_merged_on_the_public_profile(primary_world):
+    """#232 acceptance, on the shipped defaults: the issue's final state and the PR's final state
+    agree with the documented flow (done means merged). RED against the pre-#232 code, which
+    closed the issue at `record done` while the PR was still OPEN (and never ran the review gate
+    under `auto_merge: off`, so the `sigma:block` below did not park)."""
     obs = primary_world["obs"]
     assert "sdlc:goal" in obs["issue1_labels_after_claim"]
     assert "sdlc:in-progress" in obs["issue1_labels_after_claim"]
+    # The review gate ran on defaults: a block parks, an approve lets the PR be left for a human.
+    assert obs["blocked_merge_stdout"].startswith("PARK:"), obs["blocked_merge_stdout"]
+    assert "sigma:block" in obs["blocked_merge_stdout"]
     assert obs["merge_stdout"].startswith("clean and safe")
+    assert "review gate passed" in obs["merge_stdout"]
     assert obs["merge_stdout"].endswith("leaving PR #%s for a human" % obs["pr_number"])
-    # Pinned before the human merge -- the in-run control: this is where the merged assertions
-    # below would be red under the M1 no-merge variant, while "issue closed" is already green.
-    assert obs["issue1_state_before_merge"] == "closed"
+    # `record done` is refused while the PR is open, and the issue stays open.
+    assert obs["record_done_rc"] == 4
+    assert "PR #%s" % obs["pr_number"] in obs["record_done_stderr"]
+    assert "record" in obs["record_done_stderr"] and "review" in obs["record_done_stderr"]
+    assert obs["issue1_state_after_refused_done"] == "open"
+    # `record review`: open issue, still a goal, still claimed; PR open; nothing on main yet.
+    assert obs["issue1_state_before_merge"] == "open"
+    assert "sdlc:goal" in obs["issue1_labels_awaiting_merge"]
+    # The claim's overlay stays (the goal is still in flight); `next` does not serve goal 1 again.
+    assert "sdlc:in-progress" in obs["issue1_labels_awaiting_merge"]
+    assert obs["repick_stdout"] != "1", obs["repick_stdout"]
     assert obs["pr_state_before_merge"] == "OPEN"
     assert obs["remote_has_feature_before_merge"] is False
-    assert obs["worktree_exists_before_finish"] is True
-    assert "loop: kept" in obs["record_stderr"]
-    # After the merge and finish.
+    assert obs["worktree_exists_before_merge"] is True
+    assert obs["issue1_state_after_early_reconcile"] == "open"
+    assert obs["early_reconcile_stdout"] == ""
+    # The human merge alone does not close it in this fixture (no closing keyword processing);
+    # the reconcile pass observes the merge and closes it, exactly once.
+    assert obs["issue1_state_after_human_merge"] == "open"
+    assert obs["late_reconcile_stdout"] == "1 done (PR #%s merged)" % obs["pr_number"]
+    assert obs["again_reconcile_stdout"] == ""
+    assert obs["issue1_state_final"] == "closed"
     assert obs["pr_state_after_merge"] == "MERGED"
     assert obs["remote_feature_txt"] == "hello\n"
-    assert obs["worktree_exists_after_finish"] is False
+    assert obs["worktree_exists_after_merge"] is False
     assert not any(l.startswith("sdlc:") for l in obs["issue1_labels_final"])
     assert obs["unhandled_log"] == ""
 

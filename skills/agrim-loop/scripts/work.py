@@ -112,15 +112,15 @@ ENFORCEMENT_GATES = (
      "settings": (),
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
                   "`mergeStateStatus CLEAN` (a still-pending required check is armed, not merged)",
-     "condition": "the clean-and-safe verdict is computed and reported even with "
-                  "`work.auto_merge: \"off\"` -- `gate()` runs before `merge()` returns on off -- "
-                  "only the merge itself is skipped",
+     "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
+                  "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
+                  "returns on off -- only the merge itself is skipped",
      "readme": "Clean-AND-safe auto-merge (opt-in)"},
     {"control": "Never merge a fork PR or without write rights", "function": "merge_rights",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "never attempts a merge on a fork PR or a repository without write access, and "
-                  "fails closed when rights cannot be determined; the PR stays open and `done` is "
-                  "recorded",
+                  "fails closed when rights cannot be determined; the PR stays open and the goal is "
+                  "recorded `review` (awaiting merge), not `done`",
      "readme": "Open-source safe by default"},
     {"control": "Post-PR review gate", "function": "review_gate", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled", "work.require_review"), "settings": (),
@@ -133,12 +133,15 @@ ENFORCEMENT_GATES = (
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": ("work.max_review_cycles",),
      "mechanism": "parks the goal once its review-to-fix cycles reach `work.max_review_cycles` "
                   "(a value below 1 falls back to 3), so a review loop cannot run away"},
-    {"control": "`record done` refused while the PR is open, unmerged, unarmed",
+    {"control": "`record done` refused until the PR is merged",
      "function": "done_refusal", "kind": "python-gate", "hosts": "all",
-     "enabled_by": ("work.enabled", "work.auto_merge"), "settings": (),
-     "mechanism": "refuses `loop.py record done` while the goal's PR is open, unmerged and not "
-                  "armed to merge under a policy that would have armed it; under `off` it cannot "
-                  "tell a leave-for-a-human PR from a skipped merge and lets `done` through"},
+     "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `loop.py record done` (exit 4) unless the goal's PR is confirmed merged "
+                  "by one REST read, whatever `work.auto_merge` says; an open or unreadable PR is "
+                  "recorded `review` instead (issue stays open, board QC) and `loop.py "
+                  "reconcile-merges` records `done` and closes the issue once the PR merges; a goal "
+                  "with no PR is unaffected",
+     "readme": "Done means merged"},
     {"control": "Secret-shaped filename refused at commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
      "settings": ("work.allow_secret_paths",),
@@ -2917,61 +2920,66 @@ def protection(sdlc_dir, config, goal, run=None):
     return True, f"`{base}` enforces " + " + ".join(bits)
 
 
+#: #232: the merge-reconcile pass's per-pass REST bound and per-record re-check interval. A pass reads
+#: at most this many awaiting PRs (oldest-checked first), so its cost is flat however many goals are
+#: waiting on a human merge; the price of a larger backlog is close LATENCY, never more calls.
+MERGE_RECONCILE_MAX_PER_PASS = 10
+MERGE_RECHECK_SECONDS = 120
+
+MERGED, OPEN_PR, CLOSED_PR, UNKNOWN = "merged", "open", "closed", "unknown"
+
+
+def pr_landing_state(sdlc_dir, rec, run=None):
+    """(state, detail) for the goal's PR -- `merged` | `open` | `closed` (unmerged) | `unknown` --
+    from ONE REST read (`gh api repos/{owner}/{repo}/pulls/<n>`), never `gh pr view`: the `gh pr`
+    subcommands are GraphQL, whose separate hourly budget has blocked this loop before (#1209), and
+    the merge-reconcile pass calls this for many goals. `merged` is claimed ONLY on the REST body's
+    own `merged: true` or a non-empty `merged_at`; anything unreadable is `unknown`, never a guess.
+
+    Runs from the goal's worktree while it exists, else the project root (`_open_pr_refusal`'s
+    #1218 fallback, same reason: `{owner}/{repo}` resolves from either, and a deleted worktree must
+    not read as "unknown" forever)."""
+    run = run or _run
+    path = pathlib.Path(rec.get("worktree", "") or "")
+    cwd = str(path) if str(path) and path.is_dir() else project_root(sdlc_dir)
+    try:
+        data = json.loads(run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{rec['pr']}"]))
+    except Exception as exc:                 # noqa: BLE001 - unreadable is "unknown", never "merged"
+        return UNKNOWN, str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+    if not isinstance(data, dict):
+        return UNKNOWN, "the PR read was not a JSON object"
+    if data.get("merged") is True or data.get("merged_at"):
+        return MERGED, ""
+    state_now = str(data.get("state") or "").lower()
+    if state_now == "open":
+        return OPEN_PR, ""
+    if state_now == "closed":
+        return CLOSED_PR, ""
+    return UNKNOWN, f"unrecognised PR state {data.get('state')!r}"
+
+
 def done_refusal(sdlc_dir, config, goal, run=None):
-    """None iff it is safe to record `done` for `goal`, else the reason to refuse — the
-    `work.enabled` sibling of `state.done_refusal` (the verify-evidence gate), same shape, called
-    from loop.py's `record` dispatch BEFORE `_record()` ever runs (#254): a PR that is open,
-    unmerged, and not armed to merge must never be recorded done just because an agent skipped
-    reading `merge()`'s own output — SKILL.md's "read work.py merge's first word" rule is prose,
-    and #254 is exactly a case of that prose not being followed. This is the code-level backstop.
+    """None iff `done` may be recorded for `goal`, else the reason to refuse -- #232: DONE MEANS
+    MERGED. Called from loop.py's `record` dispatch before `_record()` runs, and by the
+    merge-reconcile pass before it records the `done` a later merge earns.
 
-    Gated on `enabled(config)` — nothing to verify when `work` isn't managing this goal's git
-    lifecycle at all. No PR on record (`rec.get("pr")` falsy) — also None: a docs-only / no-diff
-    goal legitimately never opens one, and refusing here would strand that entire legitimate class
-    of goal, not just the reported bug's class.
+    OWNER DECISION (issue #232, 2026-09-29): "done only after merge. `record done` and issue close
+    require the PR merged; an unmerged PR leaves the goal in review/QC." So, with `work.enabled` and a
+    PR on record, the ONLY pass is a positively confirmed merged PR. That replaces #254's policy-aware
+    fail-open (armed / `auto_merge: off` / fork / read-only / protected-but-unguarded / unreadable all
+    used to allow `done`), which on the shipped defaults closed issues whose PRs never merged and
+    whose review gate never ran. The fail-open existed because a false refusal used to WEDGE an
+    unattended run; it no longer can: every refusal below names `record review` (or `parked`), a
+    non-terminal outcome that is always available, and the merge-reconcile pass finishes the goal
+    when the PR lands. Refusing on an unreadable read is therefore safe in both directions -- the
+    issue stays open (never falsely closed), and nothing is stranded.
 
-    At most ONE non-retrying `gh pr view` round trip for the common (healthy) case — deliberately
-    NOT gate()'s multi-minute UNKNOWN/PENDING retry budget: record-time answers in about one round
-    trip or not at all. FAILS OPEN on any raised exception from ANY read here — no `gh` installed,
-    no network, an expired token, a deleted PR, anything — because the alternative (refusing) would
-    silently and PERMANENTLY wedge every goal in an environment this check cannot inspect, which is
-    a worse failure than #254 itself (a false refusal stalls an entire unattended run; #254's bug
-    merely stranded one PR a human could still find and merge).
+    Unchanged: `work.enabled` off (no PR is ever opened -- nothing to confirm) and no PR on record (a
+    docs-only / no-diff goal legitimately never opens one) both return None without a read.
 
-    MERGED -> None and replays the per-sink merge-delivery receipt.  A direct merge and the next
-    `record done` therefore converge on the same ownership/merge-SHA-derived keys; a completed
-    entries write is never allowed to suppress retrying an unfinished journal write. An externally
-    merged PR gets the same recovery path on its first observed MERGED read. `autoMergeRequest`
-    truthy -> None (armed; matches merge()'s own "auto-merge armed" contract). Neither -> `merge_rights()`
-    (unmodified, its own existing fail-closed-to-`False` contract is exactly the boolean this needs:
-    fork, insufficient permission, OR gh raising all collapse to "don't refuse" here, on purpose —
-    see the plan's rejected-alternative 1).
-
-    PLAN-REVIEW CRITICAL FIX: even with rights confirmed, an unarmed PR is not evidence of anything
-    wrong unless THIS repo's own `work.auto_merge` policy would actually have armed it — `merge()`
-    itself never attempts to arm under `policy == OFF` (`"clean and safe — auto_merge is off,
-    leaving PR #N for a human"`, SKILL.md instructs `record done` for exactly that message) or under
-    `policy == PROTECTED` against a genuinely-unprotected branch ("...— merging it is yours to
-    make"). Both are `merge()`'s OWN legitimate no-arm terminal-done paths, reached only after its
-    OWN prior `gate()` call already found the PR clean and safe (a not-clean PR parks before policy
-    is ever consulted) — so this mirrors that exact branching, via the same `policy()`/`protection()`
-    functions `merge()` itself calls, rather than re-deriving it. `policy == ALWAYS`, `policy ==
-    PROTECTED` against an ACTUALLY-protected branch, and (#1689) `policy == PROTECTED` against an
-    UNPROTECTED **unit** branch all reach the refusal below — the first two because `merge()` would
-    itself have attempted the arm, the third because a unit branch (`feature/<name>`) is NEVER
-    protected BY DESIGN (docs/branching-model.md §13), so "unguarded" there is not evidence the repo
-    doesn't gate merges — it is guaranteed on every goal that ever lands in a unit, and `merge()`
-    will never arm or merge this PR on any call, this one or a later retry. Failing open here would
-    not strand one PR a human can still find; it would silently close the goal's issue and release
-    every dependent declaring `Blocked by: #N` against work that never landed — measured live,
-    2026-08-24, stopped only by an agent's own judgement, not by this function.
-
-    Accepted scope boundary: under `policy == OFF`, this cannot independently re-confirm the PR is
-    actually mergeable (that would mean re-deriving gate()'s own mergeable/mergeStateStatus/
-    statusCheckRollup computation a second time here) — it only confirms arming was never attempted
-    BECAUSE policy says so. An agent that ignores merge()'s own `PARK:` output and calls `record
-    done` anyway under a no-arm policy is a different, not-yet-observed failure this is not scoped
-    to catch."""
+    MERGED replays the per-sink merge-delivery receipt, exactly as before: a direct merge, a later
+    `record done`, and the reconcile pass all converge on the same ownership/merge-SHA-derived keys,
+    so a crash between the two sinks is retried rather than lost."""
     if not enabled(config):
         return None
     run = run or _run
@@ -2979,21 +2987,8 @@ def done_refusal(sdlc_dir, config, goal, run=None):
     if not rec or not rec.get("pr"):
         return None
     pr = rec["pr"]
-    try:
-        data = json.loads(run(rec["worktree"], ["gh", "pr", "view", pr,
-                                                 "--json", "state,autoMergeRequest"]))
-    except Exception:                # noqa: BLE001 - can't read live state -- fail OPEN, never wedge a goal
-        return None
-    if not isinstance(data, dict):
-        # json.loads() SUCCEEDS on valid JSON that isn't an object too -- `null`, `[]`, `42`,
-        # `"OPEN"`, `true` all parse fine and then make `.get()` below raise AttributeError, OUTSIDE
-        # the try/except above. Fail open here as well, so "FAILS OPEN on ANY raised exception from
-        # ANY read here" (this docstring's own promise) is actually unconditional, not true for
-        # exceptions and false for five kinds of valid-but-wrong-shaped JSON.
-        return None
-    if data.get("state") == "MERGED":
-        # Always replay the independent delivery receipt.  The old "already has a merged entry"
-        # check permanently stranded a journal write when the process stopped between the sinks.
+    landing, detail = pr_landing_state(sdlc_dir, rec, run)
+    if landing == MERGED:
         rec_for_receipt = dict(rec, pr=pr)
         _record_confirmed_merge(sdlc_dir, config, goal, rec_for_receipt, run, f"PR #{pr} merged")
         if _receipt_sharing_enabled(config):
@@ -3002,40 +2997,68 @@ def done_refusal(sdlc_dir, config, goal, run=None):
             except Exception as exc:
                 print("merge receipt publication pending: %s" % exc, file=sys.stderr)
         return None
-    if data.get("autoMergeRequest"):
-        return None
-    may, _ = merge_rights(sdlc_dir, config, goal, run=run)
-    if not may:
-        return None            # fork / insufficient permission / unreadable -- all fail toward "don't wedge"
-    chosen = policy(config)
-    if chosen == OFF:
-        return None             # merge() never attempts to arm under this policy -- not evidence of anything wrong
-    if chosen == PROTECTED:
-        guarded, _ = protection(sdlc_dir, config, goal, run=run)
-        if not guarded:
-            # #1689: a UNIT branch (`feature/<name>`) is a different case from the general one this
-            # carve-out was written for. There, "protected policy but this branch happens to carry
-            # no protection" is a legitimate, static fact about the repo -- a human is expected to
-            # be the one merging into it anyway, so failing open costs nothing #254 didn't already
-            # accept. A unit branch is NEVER protected, by DESIGN (docs/branching-model.md SS13:
-            # protecting it would turn off rebase upkeep's own force-push), so "unguarded" here is
-            # not evidence the repo doesn't gate merges -- it is guaranteed on every single goal that
-            # ever lands in a unit. Reaching this branch under `protected` therefore means merge()
-            # will NEVER arm or merge this PR, on this call or any later retry (its own "yours to
-            # make" no-arm path is unconditional for an unguarded base), so failing open here does
-            # not strand one PR a human can still find -- it silently closes the goal's issue,
-            # releasing every dependent declaring `Blocked by: #N` against work that never landed.
-            # Measured live, 2026-08-24: this state was reached and only an agent's own judgement
-            # (not this guard) stopped a false `done`.
-            if rec["base"].startswith(features.BRANCH_PREFIX):
-                return (f"PR #{pr} targets the unit branch `{rec['base']}`, which is never "
-                        f"protected by design -- under `auto_merge: protected` this PR can never be "
-                        f"armed or merged by the loop, on this call or a later retry. A human must "
-                        f"merge PR #{pr} (or close it), or this repo should use "
-                        f"`auto_merge: always` while it runs goals inside units")
-            return None         # merge() never arms here either -- "yours to make" is legitimate too
-    return (f"PR #{pr} is open (state={data.get('state') or 'OPEN'}), not merged, and auto-merge "
-            f"is not armed")
+    ref = stem(goal)
+    if landing == CLOSED_PR:
+        return (f"PR #{pr} was closed without merging, so goal {ref} is not done (done means "
+                f"merged). Record `parked \"<why>\"` (or `failed`) instead")
+    why = ("is open and not merged" if landing == OPEN_PR
+           else f"could not be confirmed merged ({detail})")
+    return (f"PR #{pr} {why}, so goal {ref} is not done (done means merged). Record `review` "
+            f"instead -- `loop.py record <dir> {ref} review` -- which keeps the issue open in QC; "
+            f"it is closed when the PR merges (`loop.py reconcile-merges <dir>`)")
+
+
+def mark_awaiting_merge(sdlc_dir, goal, now=None):
+    """#232: flag the goal's work record as awaiting a human merge. -> (pr, first) where `first` is
+    False when it was already flagged (the caller posts its audit comment once, not per call).
+    Raises ValueError when there is no PR on record -- nothing to await."""
+    rec = _record(sdlc_dir, goal)
+    if not rec or not rec.get("pr"):
+        raise ValueError(f"no PR on record for {goal} -- `review` means a PR is awaiting merge")
+    first = not rec.get("awaiting_merge")
+    if first:
+        rec["awaiting_merge"] = {"pr": str(rec["pr"]), "goal": str(goal),
+                                 "since": int(now if now is not None else time.time())}
+        _save(sdlc_dir, goal, rec)
+    return str(rec["pr"]), first
+
+
+def clear_awaiting_merge(sdlc_dir, goal):
+    """Drop the flag, if the record still exists (a recorded `done` may already have unlinked it)."""
+    rec = _record(sdlc_dir, goal)
+    if rec and rec.pop("awaiting_merge", None) is not None:
+        _save(sdlc_dir, goal, rec)
+
+
+def stamp_merge_check(sdlc_dir, goal, now=None):
+    rec = _record(sdlc_dir, goal)
+    if rec and isinstance(rec.get("awaiting_merge"), dict):
+        rec["awaiting_merge"]["checked_at"] = int(now if now is not None else time.time())
+        _save(sdlc_dir, goal, rec)
+
+
+def awaiting_merge_goals(sdlc_dir, now=None, min_interval=0):
+    """Goal refs (as `record review` received them) whose work record is flagged `awaiting_merge`, oldest-checked first (never-checked
+    first of all), skipping any checked within `min_interval` seconds. A local directory listing --
+    no `gh` -- so a repo with nothing awaiting pays one `iterdir`."""
+    wdir = pathlib.Path(sdlc_dir) / "state" / "work"
+    if not wdir.is_dir():
+        return []
+    now = int(now if now is not None else time.time())
+    found = []
+    for path in wdir.glob("*.json"):
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        flag = rec.get("awaiting_merge") if isinstance(rec, dict) else None
+        if not isinstance(flag, dict) or not rec.get("pr"):
+            continue
+        checked = int(flag.get("checked_at") or 0)
+        if min_interval and checked and now - checked < min_interval:
+            continue
+        found.append((checked, int(flag.get("since") or 0), str(flag.get("goal") or path.stem)))
+    return [goal for _, _, goal in sorted(found)]
 
 
 _CHANGELOG = "CHANGELOG.md"
@@ -4678,10 +4701,12 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     """Three questions in the order that matters: may we merge, should we, and is anything actually
     enforcing the answer.
 
-    A line beginning `PARK:` means a human is needed and the caller records that reason. A line
-    beginning `PR #` is a TERMINAL SUCCESS — the loop did everything it could and the PR is the
-    deliverable, or it landed one just now — so it records `done`, not a park; nothing about it
-    wants attention.
+    A line beginning `PARK:` means a human is needed and the caller records that reason. `PR #N
+    merged (...)` is the one line after which the caller records `done` (#232: done means merged).
+    Every other non-PARK line (`PR #N opened`, `auto-merge armed`, `... leaving PR #N for a human`,
+    `... merging it is yours to make`) means the loop did everything it could and the PR awaits a
+    merge it does not perform now: the caller records `review`, and the merge-reconcile pass records
+    `done` once the PR is observed merged.
 
     #1212: THE LANDING ITSELF prefers a direct `gh pr merge` over arming `--auto`, reserving the
     arm for the one case it exists for — a required check that has not answered yet, where GitHub
@@ -4755,8 +4780,10 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         return f"PARK: {verdict}"
 
     chosen = policy(config)
-    if chosen == OFF:
-        return f"{verdict} — auto_merge is off, leaving PR #{rec['pr']} for a human"
+    # #232: `auto_merge: off` used to return HERE, before the review gate below was ever consulted --
+    # so on the shipped defaults (`off` + `require_review: changes`) a `sigma:block` or a human's
+    # Request-changes was invisible and the PR was "left for a human" as if reviewed. The review gate
+    # now runs on every policy; only the merge itself is skipped under `off` (see below).
     # #1774: THE GATED ACTION. One bounded check of `work.require_review` against org policy,
     # immediately before the review gate that key controls and before GitHub's own
     # auto-merge could be armed below — separate from, and in addition to, the `load_config` read
@@ -4783,6 +4810,12 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                               verdict=("pass" if rok else "block"), why=None if rok else rverdict)
     if not rok:
         return f"PARK: {rverdict}"
+    if chosen == OFF:
+        # The ENDING stays `leaving PR #N for a human` (SKILL.md routes on it -> `record review`);
+        # the middle clause makes the review gate's run visible on the line itself.
+        reviewed = (f"review gate passed (require_review: {effective_mode})"
+                    if effective_mode != REVIEW_OFF else "review gate off (require_review: off)")
+        return f"{verdict} — {reviewed} — auto_merge is off, leaving PR #{rec['pr']} for a human"
     # #1474's both-green check is DELIBERATELY NOT CALLED HERE. See `sibling_gate`'s own docstring
     # for the full reasoning; the short form is that every merge this function can perform is a
     # `sdlc/<n>` -> `feature/<unit>` merge inside one repo, which cannot land half of a cross-repo

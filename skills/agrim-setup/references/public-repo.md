@@ -116,13 +116,15 @@ gh issue create --repo <owner/name> --label "sdlc:goal,priority:P1" --assignee @
 The default `discovery.github.assignee: "@me"` picks only goals assigned to the account running the
 loop.
 
-Then the sequence a goal follows once landed: `work.py merge` ends `… — auto_merge is off, leaving
-PR #N for a human`; `loop.py record <goal> done` closes the goal's issue while the PR is still open,
-and keeps the worktree; a human merges the PR; `work.py finish .sdlc <goal>` releases the worktree
-(or merging before `record done` releases it automatically).
+Then the sequence a goal follows once landed: `work.py merge` runs the post-PR review gate and ends
+`… — review gate passed (require_review: changes) — auto_merge is off, leaving PR #N for a human`;
+`loop.py record .sdlc <goal> review` keeps the goal's issue open (card in QC) and the worktree kept —
+`record done` is refused while the PR is unmerged, because done means merged; a human merges the PR;
+the next `loop.py next`, the watch tick, or `loop.py reconcile-merges .sdlc` observes the merge,
+records `done`, closes the issue and releases the worktree.
 
-**A closed issue is not proof the change landed; the merged pull request is.** Every unmerged goal
-leaves one kept worktree until `finish` runs — the doc's own per-goal growth to watch.
+**A goal's issue closes only after its pull request merged.** Every goal awaiting a merge keeps one
+worktree until the merge is observed — the doc's own per-goal growth to watch.
 
 ## The board
 

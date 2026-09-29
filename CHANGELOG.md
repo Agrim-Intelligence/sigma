@@ -4,6 +4,35 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Done now means merged** (#232, owner decision). On the shipped defaults (`work.auto_merge:
+  "off"`, `work.require_review: "changes"`) a goal used to be recorded `done` and its issue closed
+  while its PR was still open, and the review gate never ran. Now:
+  - `loop.py record <dir> <goal> done` exits 4 (`REFUSED: PR #N …`) unless the goal's PR is merged,
+    whatever `auto_merge` says. It reads the PR once, over REST. An open PR, or one it cannot read,
+    points you to `record review`. A PR closed without merging points you to `record parked`.
+    Goals with no PR, including local goals, are unchanged.
+  - New non-terminal outcome, `record review` (awaiting merge). The issue stays open and keeps
+    `sdlc:goal` and the claim's `sdlc:in-progress`. Its card moves to QC and it gets one note. The
+    ledger claim ends, the checkout is kept, and `next` never serves the goal again.
+  - New `loop.py reconcile-merges <dir>`. It also runs on every `next`/`next-batch` (inside the
+    budget gate) and on the watch daemon's `reconcile_tick.py`. When a waiting goal's PR has merged,
+    it replays the existing merge observation and records `done`, which closes the issue and
+    releases the checkout. A PR closed without merging parks the goal. It is idempotent, and a
+    close that fails is retried on the next pass.
+  - Cost is bounded. Each pass reads at most 10 PRs, oldest-checked first. The automatic triggers
+    skip a PR they re-read in the last 120 s. With nothing waiting, a pass makes no `gh` call.
+    Measured with a fake runner: 10 PR reads per pass at both 50 and 500 waiting goals, with 3 ms
+    and 14 ms of local overhead. At 100x the call count stays flat and close latency grows to
+    ceil(N/10) passes.
+  - `work.py merge` now runs the post-PR review gate under `auto_merge: "off"` too. A `sigma:block`
+    parks the merge, and a clean line reads `… — review gate passed (require_review: changes) —
+    auto_merge is off, leaving PR #N for a human`.
+  - The `/agrim-loop` routing, `references/landing.md`, the README table, the public-repo guide
+    and the generated `docs/enforcement.md` now describe this flow.
+  - `tests/test_public_bootstrap_control.py` runs one goal end to end on the defaults, against a
+    fake `gh` and a bare origin. It was red on the old code, and each guard was broken once and
+    seen red.
+
 - `tests/test_risk_detect.py` is no longer flaky on macOS (#244, #145). The root cause was in
   `skills/agrim-loop/scripts/risk-detect.sh`. It ran a per-command `LC_ALL=C grep` inside a
   process-substitution subshell. With Homebrew bash (linked to libintl), every locale assignment

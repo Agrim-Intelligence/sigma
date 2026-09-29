@@ -1272,8 +1272,8 @@ Two consequences worth knowing:
 - **and `work.auto_merge: "protected"` cannot land a goal's PR into a unit branch, ever** (#1689).
   That policy merges only where the base genuinely enforces something, and a `feature/<name>` branch
   never does — by the point above, on purpose. `merge()` correctly declines to arm ("… merging it is
-  yours to make"), and `record done`'s own safety check now refuses too, rather than closing the
-  issue over a PR nothing will ever land. A repo running goals inside units needs
+  yours to make"), and `record done` refuses too — since #232 it refuses on every unmerged PR, so
+  the goal is recorded `review` and its issue stays open until the PR is observed merged. A repo running goals inside units needs
   `auto_merge: "always"` for those goals to merge autonomously; `"protected"` still gates a goal
   based directly on the integration branch exactly as before.
 

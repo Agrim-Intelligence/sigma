@@ -530,6 +530,13 @@ class LocalSource:
     def mark_qc(self, goal):
         pass            # QC is a board-only stage; the local source has no QC column
 
+    def await_merge(self, goal, note=None):
+        """#232: local counterpart -- the goal stays `in_progress` (never re-offered by
+        `next_pending`, never `done`) until the merge-reconcile pass observes its PR merged; the
+        journey log records why."""
+        if note:
+            self.note(goal, note)
+
     def _resolve_ref(self, goal):
         """Resolve `goal` to a real goal-file Path. Every LONG-STANDING LocalSource caller already
         passes a real path (what `next_pending()`/`discovery.next_pending` hands back), and that
@@ -2720,6 +2727,26 @@ class GitHubSource:
 
     def mark_qc(self, goal):
         self._set_board_status(goal, self.col["qc"])     # board-only: the Review / QC quality stage
+
+    def await_merge(self, goal, note=None):
+        """#232: the goal's PR is open and awaiting a merge the loop does not perform now -- the
+        goal is NOT done (done means merged), so the issue stays OPEN. Existing vocabulary only (no
+        new label, no new column): NOTHING is removed -- `sdlc:goal` membership and the claim's own
+        `sdlc:in-progress` overlay stay exactly as the claim left them (`_fetch_pending` excludes an
+        issue carrying the overlay, so another machine never re-picks it) -- and the board card
+        moves to QC, the existing review stage. The overlay is deliberately NOT re-added here:
+        `mark_in_progress` stays its single writer (tests/test_docs.py pins that); on THIS machine
+        `_next` also skips every goal whose work record is awaiting merge, whatever its labels say.
+        `note` (first `record review` only) goes on the issue timeline so a human reading the issue
+        sees why it is still open. Every write is best-effort: the local work-record flag is what
+        the merge-reconcile pass reads, so a transient gh error here costs visibility, never the
+        eventual close."""
+        self._set_board_status(goal, self.col["qc"])
+        if note:
+            try:
+                self.note(goal, note)
+            except Exception:                   # noqa: BLE001 - audit trail is best-effort here
+                pass
 
     def complete(self, goal):
         # #505: when this issue is ALREADY CLOSED by the time this call runs, `gh issue close

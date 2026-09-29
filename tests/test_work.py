@@ -2030,16 +2030,23 @@ def test_a_no_rights_outcome_is_not_a_park(tmp_path):
     assert not work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP).startswith("PARK:")
 
 
-# --- done_refusal (#254): the record-time backstop for a PR nothing ever merged or armed ----------
+# --- done_refusal (#254 -> #232): DONE MEANS MERGED ---------------------------------------------
 #
-# `work.enabled` sibling of `state.done_refusal` (the verify-evidence gate) -- called from loop.py's
-# `record` dispatch BEFORE `_record()` runs. At most ONE non-retrying `gh pr view` round trip (plus,
-# only when neither merged nor armed, `merge_rights`'s own two calls, and -- only under `protected`
-# policy -- `protection`'s own two) -- deliberately nothing resembling gate()'s multi-minute budget.
-# Fails OPEN on any exception: a false refusal permanently wedges a goal in an unattended run, which
-# plan-review (#254) treats as WORSE than the bug being fixed, so every uncertain path must allow
-# `done`, and ONLY a positively-confirmed "open, unmerged, unarmed, rights exist, policy would have
-# armed it" state may refuse.
+# Owner decision on #232: `record done` requires the PR merged. With `work.enabled` and a PR on
+# record, the only pass is a positively confirmed merge from ONE REST read of `pulls/<n>`; open
+# (armed or not, under ANY `auto_merge` policy, fork, read-only), closed-unmerged and unreadable all
+# refuse, and the refusal names the next step (`record review` / `record parked`). Refusing no longer
+# wedges a run: `review` is always available and the merge-reconcile pass finishes the goal later.
+# Unchanged: work disabled, or no PR on record -> None without any read.
+
+PULLS_7 = "api repos/{owner}/{repo}/pulls/7"
+
+
+def _rest_pr(state="open", merged=False):
+    """The REST `pulls/<n>` body `pr_landing_state` reads: lowercase `state`, a `merged` bool."""
+    return json.dumps({"number": 7, "state": state, "merged": merged,
+                       "merged_at": "2026-01-02T00:00:00Z" if merged else None})
+
 
 def test_done_refusal_is_none_when_work_is_disabled(tmp_path):
     d = _sdlc(tmp_path, {"work": {"enabled": False}})
@@ -2049,8 +2056,7 @@ def test_done_refusal_is_none_when_work_is_disabled(tmp_path):
 
 
 def test_done_refusal_is_none_when_no_pr_is_on_record(tmp_path):
-    """A docs-only / no-diff goal legitimately never opens a PR -- refusing here would strand that
-    entire legitimate class of goal, not just #254's reported bug."""
+    """A docs-only / no-diff goal legitimately never opens a PR -- nothing to confirm merged."""
     d = _sdlc(tmp_path)
     goal = _started(d, pr="")
     run = _runner([])
@@ -2059,152 +2065,86 @@ def test_done_refusal_is_none_when_no_pr_is_on_record(tmp_path):
 
 
 def test_done_refusal_is_none_when_the_pr_is_merged(tmp_path):
-    """MERGED is the clean pass -- and the first HONEST write site the ledger's long-declared
-    `merged` kind has ever had (F26/#344 removed the old, WRONG one: an arm mislabelled as a
-    landing). `ledger.safe_append` is already fail-open, so this can never turn a real merge into a
-    refusal even if the ledger write itself fails."""
+    """MERGED is the one pass -- and it still replays the merge receipt (the `merged` ledger kind)."""
     ledger = _load("ledger")
     cfg = {"work": {"enabled": True, "auto_merge": "always"}, "ledger": {"enabled": True, "actor": "rae"}}
     d = _sdlc(tmp_path, cfg)
     goal = _started(d)
     ledger.reset_actor_cache()
-    run = _runner([("state,autoMergeRequest", _pr_state(state="MERGED")),
-                   ("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+    run = _runner([(PULLS_7, _merged_pr())])
     assert work.done_refusal(d, cfg, goal, run=run) is None
     entries = [(e["kind"], e.get("pr")) for e in ledger.read_all(d)]
     assert ("merged", "7") in entries
 
 
-def test_done_refusal_is_none_when_auto_merge_is_armed(tmp_path):
+def test_done_refusal_reads_rest_never_graphql(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN", auto_merge=True))])
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is None
+    run = _runner([(PULLS_7, _rest_pr(merged=True, state="closed"))])
+    assert work.done_refusal(d, ON, goal, run=run) is None
+    assert run.calls and all("pr view" not in c and "graphql" not in c for c in run.calls), run.calls
 
 
-def test_done_refusal_is_none_for_a_fork_pr(tmp_path):
-    """Same open-source path merge_rights()/merge() already know: the PR IS the deliverable."""
+@pytest.mark.parametrize("cfg", [ON, ALWAYS, GUARDED], ids=["off", "always", "protected"])
+def test_done_refusal_refuses_an_open_pr_under_every_auto_merge_policy(tmp_path, cfg):
+    """#232's core: `auto_merge: off` (the shipped default) used to let `done` through here, so the
+    issue closed with the PR still open. Now no policy does."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state())] + _rights(cross=True))
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is None
-
-
-def test_done_refusal_is_none_when_merge_rights_are_insufficient(tmp_path):
-    d = _sdlc(tmp_path)
-    goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state())] + _rights(perm="READ"))
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is None
-
-
-def test_done_refusal_is_none_when_gh_is_unavailable(tmp_path):
-    """The false-refusal stress case: no `gh` installed / no network / an expired token / anything
-    else that makes the read raise. Fails OPEN -- refusing here would permanently wedge a goal in
-    an environment this check cannot inspect, which is worse than #254's own bug."""
-    d = _sdlc(tmp_path)
-    goal = _started(d)
-    run = _runner([("state,autoMergeRequest", RuntimeError("gh: command not found"))])
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is None
-
-
-def test_done_refusal_refuses_when_the_pr_is_open_unmerged_unarmed_and_rights_exist(tmp_path):
-    """THE positive case and the mutation proof: #144/#252's exact shape -- open, not merged, no
-    auto-merge request, and merge rights genuinely exist under a policy that would have armed it."""
-    d = _sdlc(tmp_path)
-    goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN"))] + _rights())
-    refusal = work.done_refusal(d, ALWAYS, goal, run=run)
+    run = _runner([(PULLS_7, _rest_pr("open"))])
+    refusal = work.done_refusal(d, cfg, goal, run=run)
     assert refusal is not None and "PR #7" in refusal and "not merged" in refusal
+    assert "record" in refusal and "review" in refusal       # names the next step
 
 
-def test_done_refusal_refuses_a_closed_unmerged_pr_too(tmp_path):
-    """A PR closed WITHOUT merging is stranded work too, not a pass-through case."""
+def test_done_refusal_refuses_an_armed_but_unlanded_pr(tmp_path):
+    """Armed is a promise, not a merge: `record review`, and the reconcile pass records `done` once
+    GitHub actually lands it."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="CLOSED"))] + _rights())
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is not None
+    run = _runner([(PULLS_7, json.dumps({"number": 7, "state": "open", "merged": False,
+                                         "auto_merge": {"merge_method": "squash"}}))])
+    assert "not merged" in work.done_refusal(d, ALWAYS, goal, run=run)
 
 
-def test_done_refusal_is_none_when_auto_merge_policy_is_off(tmp_path):
-    """CRITICAL plan-review fix: `auto_merge: off` is this plugin's OWN default (and
-    `/agrim-setup`'s) -- merge() itself never even attempts to arm under this policy
-    (`"clean and safe — auto_merge is off, leaving PR #N for a human"`, work.py:653-655), and
-    SKILL.md instructs `record done` for exactly that message. Without this bypass, EVERY
-    out-of-the-box repo's first successful goal would have refused."""
+def test_done_refusal_refuses_a_closed_unmerged_pr_and_names_park(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN"))] + _rights())
-    assert work.done_refusal(d, ON, goal, run=run) is None       # ON: auto_merge unset -> DEFAULTS' "off"
+    run = _runner([(PULLS_7, _rest_pr("closed"))])
+    refusal = work.done_refusal(d, ALWAYS, goal, run=run)
+    assert refusal is not None and "closed without merging" in refusal and "parked" in refusal
 
 
-def test_done_refusal_is_none_when_policy_is_protected_but_the_branch_is_not(tmp_path):
-    """Second half of the same fix: `protected` policy against a genuinely-unprotected branch is
-    ALSO a legitimate no-arm terminal `done` (`work.py:670-673`, "...— merging it is yours to
-    make")."""
+def test_done_refusal_fails_closed_when_gh_is_unavailable(tmp_path):
+    """Reversed by #232: an unreadable PR is never assumed merged. Safe because the refusal routes to
+    `record review` (non-terminal) -- the issue stays open, nothing is wedged."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN"))] + _rights() + UNPROTECTED)
-    assert work.done_refusal(d, GUARDED, goal, run=run) is None
+    run = _runner([(PULLS_7, RuntimeError("gh: command not found"))])
+    refusal = work.done_refusal(d, ALWAYS, goal, run=run)
+    assert refusal is not None and "could not be confirmed merged" in refusal and "review" in refusal
 
 
-def test_done_refusal_refuses_a_unit_branch_pr_under_protected_policy_even_when_unguarded(tmp_path):
-    """#1689: the carve-out two tests above is for a NON-unit base -- `main` happening to carry no
-    protection is a fact about the repo, and a human is expected to be the one merging there anyway.
-    A UNIT branch (`feature/<name>`) is never protected BY DESIGN (docs/branching-model.md SS13:
-    protecting it disables rebase upkeep's own force-push), so reaching this same "unguarded" state
-    on a unit base is not a fact about the repo -- it is guaranteed on every goal a unit ever runs,
-    and merge() will never arm or merge this PR, on this call or a later retry. Recording `done`
-    here would close the goal's issue over a PR nothing will ever land, releasing every dependent
-    declaring `Blocked by: #N` against work that never landed -- reached live, 2026-08-24, and
-    stopped only by an agent's own judgement, not by this function."""
-    d = _sdlc(tmp_path)
-    goal = _started(d, base="feature/x")
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN"))] + _rights() +
-                  [("branches/feature/x/protection", RuntimeError("HTTP 404: Branch not protected"))])
-    refusal = work.done_refusal(d, GUARDED, goal, run=run)
-    assert refusal is not None and "PR #7" in refusal and "feature/x" in refusal
-
-
-def test_done_refusal_still_refuses_when_the_branch_is_actually_protected(tmp_path):
-    """Proves the policy fix did not overcorrect into an unconditional bypass: `protected` policy
-    against an ACTUALLY-protected branch is exactly the shape `merge()` itself would arm under, so
-    an unarmed PR here is still refused."""
+def test_done_refusal_fails_closed_on_valid_json_that_is_not_an_object(tmp_path):
+    """`json.loads` succeeds on `null`, `[]`, `42`, a bare string and `true`; none of them is a merge,
+    and none may raise out of the function."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN"))] + _rights() + _protected())
-    refusal = work.done_refusal(d, GUARDED, goal, run=run)
-    assert refusal is not None and "PR #7" in refusal
+    for shape in ("null", "[]", "42", '"MERGED"', "true"):
+        run = _runner([(PULLS_7, shape)])
+        assert work.done_refusal(d, ALWAYS, goal, run=run) is not None, shape
 
 
-# --- done_refusal / protection: json.loads() succeeds on non-object JSON too (code review finding) -
-#
-# `json.loads()` only guarantees VALID JSON -- it does not guarantee an object. `null`, `[]`, `42`,
-# a bare string, and `true` are all valid JSON a flaky `gh` (or a future schema change) could hand
-# back, and every one of them made a bare `.get()` call raise AttributeError OUTSIDE the try/except
-# that was supposed to catch exactly this -- so the docstring's "FAILS OPEN on ANY raised exception"
-# promise was true for five kinds of failure and silently false for these. Nothing up the chain
-# catches it either: loop.py's `main()` only catches `state.ConfigMissing`, so this crashed the
-# entire `record done` with a raw traceback -- worse than either refusing or allowing.
-
-def test_done_refusal_fails_open_when_gh_returns_valid_json_that_is_not_an_object(tmp_path):
-    """The five non-exception, non-object shapes `json.loads` will happily parse. Each must return
-    None WITHOUT raising, same as the existing gh-unavailable/exception test above -- a non-object
-    reply is just as unreadable as a raised exception, and must fail open the same way."""
+def test_done_refusal_falls_back_to_the_project_root_when_the_worktree_is_gone(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    for shape in ("null", "[]", "42", '"OPEN"', "true"):
-        run = _runner([("state,autoMergeRequest", shape)])
-        assert work.done_refusal(d, ALWAYS, goal, run=run) is None, f"raised or refused for {shape!r}"
-
-
-def test_done_refusal_is_none_for_a_proper_json_object_too(tmp_path):
-    """The control, paired with the guard above on purpose: a WELL-formed object must still reach
-    the ordinary MERGED check and return None on those merits -- proves the new non-object guard is
-    a narrow shape filter, not a swallow-every-dict short-circuit."""
-    d = _sdlc(tmp_path)
-    goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="MERGED"))])
-    assert work.done_refusal(d, ALWAYS, goal, run=run) is None
+    shutil.rmtree(pathlib.Path(d).parent / ".sdlc" / "work" / "0001-x")
+    cwds = []
+    def run(cwd, argv):
+        cwds.append(str(cwd))
+        return _rest_pr(merged=True)
+    assert work.done_refusal(d, ON, goal, run=run) is None
+    assert cwds == [str(work.project_root(d))]
 
 
 # --- merge: the ordering is the safety -----------------------------------------------------------

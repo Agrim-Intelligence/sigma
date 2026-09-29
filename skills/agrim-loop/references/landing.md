@@ -203,74 +203,73 @@ So if the host cuts the call short anyway, nothing was recorded as merged or arm
 read `gh pr view <PR> --json mergeable,mergeStateStatus,statusCheckRollup` yourself first if you
 want to see exactly where GitHub's own read stood before deciding.
 
-The gate is clean **and** safe: it needs THIS run's passing verify
-evidence *and* GitHub's `mergeable` + `mergeStateStatus CLEAN`, **plus — with `require_review` on — the
-review verdict you just posted** (it will not merge a PR that isn't `sigma:approve`d, or that has a
-`sigma:block` / an unresolved thread). It rebases once if the PR is `BEHIND`. It then **lands the PR
-directly** with `gh pr merge` — arming GitHub's own `--auto` is reserved for the one case a direct merge
-would be refused right now (a required check that hasn't answered yet, and only when the repo's own
-`allow_auto_merge` setting actually permits arming); every other clean-and-safe or arm-worthy case merges
-directly instead of waiting on an async arm, which is what makes landing possible at all on a repo with
-`allow_auto_merge` disabled outright.
-**Read its first word and record accordingly — never merge past it by hand:**
-- `PARK: …` → `record parked "<that reason>"` (a conflict, a stale read, no evidence, or a direct merge
-  GitHub genuinely refused — e.g. a check that flipped between gate() and the merge attempt). A
-  **failing required check** is a fix, not a decision → `record failed "<the check>"` instead — a check
-  that is merely still `pending` (not yet answered) is a different case, covered below, never this one.
-- `PR #N opened — …` → **`record done`**. This is the open-source path: a fork PR, or a repo you
-  only have read access to, can never be merged by you, so the PR *is* the deliverable and the loop
-  has done everything it can. It is not a park — nothing about it wants a human here.
-- `PR #N merged (<method>) — …` → **`record done`**. The common terminal-success shape now: a
-  clean-and-safe (or arm-worthy-but-not-required-to-wait) PR landed directly, right here, in this call
-  — not merely armed for later. This is what most successful merges return.
-  This line also sometimes ends `… — #N was still open after the merge; sent a close request, which
-  succeeded`: right after the landing, the kit reads the ISSUE's own state directly (#2615) — never a
-  base, recorded or live — and sends a close request whenever GitHub's own keyword did not get there
-  first. The common trigger is a goal cut onto `feature/<unit>` (GitHub auto-closes a linked issue only
-  from a merge into the DEFAULT branch, so that PR body deliberately never claims one — it says `Refs
-  #N` and names what will close it instead), but the check itself is the same either way: whatever the
-  base, if the issue is still open after the merge, Sigma sends a close request — which is what lets
-  a dependent goal declaring `Blocked by: #N` become pickable. The line never says the request is what
-  closed the issue: GitHub's own keyword processing, or a person, could still close the issue in the
-  narrow window between the read and the request, in which case the request above is a harmless no-op
-  the line cannot tell apart from a real close — so it reports only what it observed and did. Nothing
-  for you to do; `record done` as usual, and `source.complete()` finds it already closed. If instead it
-  ends `… — but could not close #N (…)`, the merge still LANDED, and `record done` remains the right
-  next step: `source.complete()` retries this exact close whenever the issue is still open, and parks
-  the goal instead of silently losing the record if that retry fails too. Only if it keeps failing does
-  the issue need closing by hand — until then, the goals blocked by it stay blocked.
-- `auto-merge armed …` / `clean and safe …` → `record done`. A PR still `PENDING` on required
-  checks no longer blocks the arm — arming exists for exactly this one case now, not as the general
-  path — and `--auto` re-checks atomically at GitHub's own merge time, so the message reads
-  `auto-merge armed … — checks still pending, trusting GitHub's own re-check …`.
-  Under `auto_merge: off` (the shipped default) or `protected` against a branch that turns out
-  unguarded, `merge()` never merges or arms at all, so that same still-pending case instead OPENS with
-  `required checks still pending …` — the same words the failing-check case above uses — but always
-  ENDS `… auto_merge is off, leaving PR #N for a human` or `… merging it is yours to make …`. Trust
-  the ending, not the opening, when the two collide: both endings are `record done` too —
-  **except (#1689) `… merging it is yours to make` on a goal whose base is a `feature/<unit>`
-  branch.** There `record done` REFUSES: a unit branch is never protected by design (§13), so
-  that ending is not the general "a human merges main by hand" case this bullet otherwise means —
-  it is guaranteed on every goal a unit ever runs. Park the goal instead; see the refusal's own
-  text below for why retrying `work.py merge` will not help.
+The gate is clean **and** safe: it needs THIS run's passing verify evidence *and* GitHub's
+`mergeable` + `mergeStateStatus CLEAN`, **plus — with `require_review` on — the review verdict you
+just posted** (it will not merge a PR that isn't `sigma:approve`d, or that has a `sigma:block` / an
+unresolved thread). **The review gate runs on every `auto_merge` policy, `off` included** (#232):
+under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge
+instead of being invisible, and a clean PR's line says `review gate passed (require_review: …)`
+before it is left for a human. It rebases once if the PR is `BEHIND`. It then **lands the PR
+directly** with `gh pr merge` — arming GitHub's own `--auto` is reserved for the one case a direct
+merge would be refused right now (a required check that hasn't answered yet, and only when the
+repo's own `allow_auto_merge` setting actually permits arming); every other clean-and-safe or
+arm-worthy case merges directly instead of waiting on an async arm, which is what makes landing
+possible at all on a repo with `allow_auto_merge` disabled outright.
 
-**`record done` itself now refuses, in code, when it isn't true** (#254): with `config.work.enabled`
-on, a goal whose PR is open, unmerged, not armed, and whose repo genuinely has merge rights AND a
-policy that would have armed it, cannot be recorded `done` — `loop.py record` checks this the same
-way `verify.enforce` is checked above, REFUSED with exit 4 if it fails. This exists because the
-rule just above is prose an agent reads, and #144/PR #252 is exactly a case of that prose not
-being followed: `done` was recorded while checks were still pending and nothing was armed, and 605
-lines sat stranded on a branch while the board read done. The refusal fails OPEN on anything it
-cannot verify (no `gh`, no network, a fork, read-only access, no PR on record, `auto_merge: off`,
-or `protected` against an unprotected NON-unit branch all still allow `done`) — only a
-*positively confirmed* open/unmerged/unarmed/mergeable PR refuses. **One exception, #1689:**
-`protected` against an unprotected **unit** branch (`feature/<name>`) does NOT allow `done` — a
-unit branch is never protected by design (§13), so `merge()` will never arm or merge that PR on
-this call or a later retry, and closing the issue anyway would release every dependent declaring
-`Blocked by: #N` against work that never landed. **If you hit this refusal, do not retry
-`work.py merge` expecting a different outcome — it will repeat the same non-arming result.**
-`record parked "<the refusal's own text>"` instead; the goal genuinely needs a human to merge
-PR #N, or the repo should run `auto_merge: always` while it uses units.
+**Done means merged.** A goal is `done` only once its PR has merged; until then it is `review`
+(awaiting merge): the issue stays **open**, keeps `sdlc:goal` and the claim's `sdlc:in-progress`, and
+its board card sits in **QC**. `loop.py record … review` records that state, and the merge-reconcile
+pass records the `done` later — see below.
+
+**Read its first word and record accordingly — never merge past it by hand:**
+- `PARK: …` → `record parked "<that reason>"` (a conflict, a stale read, no evidence, a review
+  verdict that blocks — `sigma:block`, Request-changes, an unresolved thread — or a direct merge
+  GitHub genuinely refused, e.g. a check that flipped between gate() and the merge attempt). A
+  **failing required check** is a fix, not a decision → `record failed "<the check>"` instead — a
+  check that is merely still `pending` (not yet answered) is a different case, covered below.
+- `PR #N merged (<method>) — …` → **`record done`**. The PR landed right here, in this call. The line
+  sometimes ends `… — #N was still open after the merge; sent a close request, which succeeded`:
+  right after the landing, the kit reads the ISSUE's own state (#2615) — never a base — and sends a
+  close request whenever GitHub's own keyword did not get there first (the common trigger is a goal
+  cut onto `feature/<unit>`, whose PR body deliberately says `Refs #N`, never a closing keyword). The
+  line never claims the request is what closed the issue. If it instead ends `… — but could not
+  close #N (…)`, the merge still LANDED and `record done` remains right: `source.complete()` retries
+  the close, and parks the goal instead of silently losing the record if that retry fails too.
+- `PR #N opened — …` → **`record review`**. The open-source path: a fork PR, or a repo you only have
+  read access to, can never be merged by you. The loop has done everything it can, and nothing here
+  wants a human's decision — but the goal is not done until the upstream merge lands.
+- `auto-merge armed …` → **`record review`**. GitHub will land it on its own re-check; an arm is a
+  promise, not a merge (a later-failing check or a cancelled arm means it never lands).
+- `… auto_merge is off, leaving PR #N for a human` (the shipped default) and `… merging it is yours
+  to make (auto_merge: "protected")` → **`record review`**. A still-pending required check under
+  these policies OPENS with `required checks still pending …` (the failing-check wording) but ENDS
+  with one of these two; trust the ending.
+
+**`record done` refuses, in code, whenever it isn't true** (#254, tightened by #232): with
+`config.work.enabled` on and a PR on record, `loop.py record … done` reads the PR once (REST
+`pulls/<n>`, never GraphQL) and exits `4` with `REFUSED: PR #N …` unless it is **merged** — whatever
+`work.auto_merge` says. An open PR (armed or not, fork, read-only, any policy) and one whose state
+could not be read both name `record review` as the next step; a PR **closed without merging** names
+`record parked "<why>"`. The issue is never closed on an unmerged PR. A goal with **no** PR on record
+(a docs-only / no-diff goal, or `work.enabled` off) records `done` exactly as before.
+
+**`record review`** (exit `2` if `work.enabled` is off or no PR is on record — there is nothing to
+await) flags the goal's work record `awaiting_merge`, moves the card to QC, leaves one note on the
+issue saying why it is still open, ends the claim in the ledger (so the lease sweep never hands the
+goal back to Ready) and **keeps the checkout** — the later `done` releases it. `loop.py next` never
+serves a goal awaiting merge.
+
+**The merge-reconcile pass closes it** — `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py"
+reconcile-merges .sdlc`, also run automatically by every `loop.py next` / `next-batch` (inside the
+budget gate) and by the watch daemon's `reconcile_tick.py`. For each goal awaiting merge it reads the
+PR once (REST): **merged** → it records `done` for you (closes the issue, strips the lifecycle labels,
+moves the card to Done, replays the merge observation, releases the checkout) and prints `<goal> done
+(PR #N merged)`; **closed without merging** → `parked` (a human closed it, so a human decides);
+**still open or unreadable** → nothing. It is idempotent (a recorded goal is never recorded twice; a
+close that failed is retried next pass) and bounded: at most **10** PR reads per pass, oldest-checked
+first, and the automatic triggers skip a PR re-read within the last 120 s — a larger backlog costs
+close latency, never more calls. With nothing awaiting it makes no `gh` call at all. Do not close an
+awaiting issue by hand: merge (or close) the PR, and the next pass does the rest.
 
 `work.auto_merge` is `off` | `protected` | `always`, default **off**. `protected` merges only where
 the base branch genuinely REQUIRES checks or reviews — autonomy proportional to the guardrails that
@@ -280,14 +279,10 @@ bookkeeping has landed; a failure there is reported and never costs the goal its
 used to be your job, and that was the bug: a turn that ended between `record done` and the
 command leaked the checkout permanently, because nothing ever revisited a closed goal.
 The release deliberately KEEPS a worktree that still holds uncommitted work, so a parked goal
-stays intact for whoever picks it up. It also refuses (#1202), separately, when the goal's PR is
-still open, unmerged, AND not armed to merge — exactly the state `auto_merge: off` leaves a
-`done` goal in — naming the PR, because `state/work/<goal>.json` is the ONLY place that PR
-number lives and every later `merge` / `rebase` / `post-review` needs the checkout it also
-points at. An `auto-merge armed …` PR (above) releases normally — `--auto` is GitHub's own
-commitment to land it, so there is nothing left to sever. **A `loop: kept …` line on stderr is
-that refusal, and it is not yours to override:** merge the unarmed PR first and the next
-`finish` clears it, or, only once you are certain the PR pointer is expendable, run
+stays intact for whoever picks it up. Since `done` now always means merged, `finish`'s own
+open-PR refusal (#1202, a `loop: kept …` line on stderr) is reachable only through a hand-run
+`work.py finish` on a goal still awaiting merge; it is not yours to override — merge the PR and
+the reconcile pass clears it, or, only once you are certain the PR pointer is expendable, run
 `work.py finish .sdlc "$goal" --force` by hand.
 **If `record done` prints a `sigma: unit-completion:` line, read it and do nothing about it.**
 It means every issue carrying one `feature:<name>` label is now closed, so that **unit** of work

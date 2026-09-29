@@ -59,10 +59,19 @@ def tick(sdlc_dir, config=None, run=None, now=None):
     watch-tick script in this kit."""
     config = config if config is not None else ledger._config(sdlc_dir)
     swept = loop._reconcile_sweep(sdlc_dir, config, run=run, now=now)
-    if not swept:
-        return ""
-    return "%d issue(s) reconciled — %s" % (
-        len(swept), ", ".join("#%s" % issue for issue in sorted(swept)))
+    # #232: the second, UNGATED duty of this tick -- close goals `record review` left waiting whose
+    # PR has since merged. Not behind `discovery.reconcile.mode` (default off): done-means-merged is
+    # the shipped behaviour, so its close must not depend on an opt-in. Bounded and throttled inside
+    # `_reconcile_awaiting_merges` itself; zero `gh` calls when nothing is awaiting.
+    merged = loop._reconcile_awaiting_merges(sdlc_dir, config, run=run, now=now)
+    parts = []
+    if swept:
+        parts.append("%d issue(s) reconciled — %s" % (
+            len(swept), ", ".join("#%s" % issue for issue in sorted(swept))))
+    if merged:
+        parts.append("%d awaiting-merge goal(s) recorded — %s" % (
+            len(merged), ", ".join("%s %s" % (goal, outcome) for goal, outcome, _pr in merged)))
+    return "; ".join(parts)
 
 
 USAGE = "usage: reconcile_tick.py [sdlc_dir]"
