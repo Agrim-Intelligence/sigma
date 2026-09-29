@@ -332,16 +332,46 @@ def test_real_git_repo_without_remote(tmp_path):
 
 
 def test_real_runner_kills_the_whole_tree_on_timeout(tmp_path):
-    """A child that spawns a grandchild holding the pipe: without the group kill, communicate()
-    would wait for the grandchild (30s). With it, the call returns at the bound."""
+    """A child that spawns a grandchild holding the pipe. The GRANDCHILD must be dead afterwards and
+    the call must return well inside the post-kill drain grace: with only the direct child killed
+    (`proc.kill()` in place of the group kill -- review block #2's mutation) the grandchild lives on
+    and the drain waits out `_KILL_GRACE`, so both assertions go red. Elapsed alone could not tell:
+    the bounded drain returns before any loose ceiling either way."""
     script = tmp_path / "spawn.py"
+    pidfile = tmp_path / "grandchild.pid"
     script.write_text("import subprocess, sys, time\n"
-                      "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                      "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+                      f"open({str(pidfile)!r}, 'w').write(str(p.pid))\n"
                       "time.sleep(30)\n", encoding="utf-8")
     start = time.monotonic()
-    rc, out = pf.real_runner([sys.executable, str(script)], timeout=1)
-    assert rc == 124 and "timed out" in out
-    assert time.monotonic() - start < 15
+    rc, out = pf.real_runner([sys.executable, str(script)], timeout=2)
+    elapsed = time.monotonic() - start
+    grandchild = int(pidfile.read_text())
+
+    def alive(pid):
+        if os.name == "nt":
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True)
+            return str(pid) in r.stdout
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    try:
+        deadline = time.monotonic() + 3              # reparented to init, which reaps it
+        while alive(grandchild) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert rc == 124 and "timed out" in out
+        assert not alive(grandchild), "the grandchild survived: only the direct child was killed"
+        assert elapsed < 2 + pf._KILL_GRACE, elapsed
+    finally:
+        if alive(grandchild):
+            try:
+                os.kill(grandchild, 9)
+            except OSError:
+                pass
 
 
 def test_real_runner_reports_a_missing_binary():
@@ -615,3 +645,167 @@ def test_the_suite_guards_popen_against_live_gh():
 def test_child_processes_get_an_offline_gh():
     assert os.environ.get("GH_CONFIG_DIR")
     assert not os.environ.get("GH_TOKEN") and not os.environ.get("GITHUB_TOKEN")
+
+
+# ------------------------------------------------------------------ review block #2 (PR #249)
+
+def _alias_repo(tmp_path, monkeypatch, ssh_body, url="git@github-work:o/r.git"):
+    """A real repo whose origin is an ssh ALIAS, with a stub `ssh` first on PATH (its body is the
+    script's behaviour) and the real git behind it. gh is never real: the returned runner sends git
+    and ssh to the REAL runner (so the stub is what answers `ssh -G`) and gh to `gh_answers`."""
+    real_git = shutil.which("git")
+    subprocess.run([real_git, "-c", "init.defaultBranch=main", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run([real_git, "-C", str(tmp_path), "-c", "user.email=a@b", "-c", "user.name=a",
+                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    subprocess.run([real_git, "-C", str(tmp_path), "remote", "add", "origin", url], check=True)
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    if ssh_body is not None:
+        ssh = stub / "ssh"
+        ssh.write_text(f"#!{sys.executable}\nimport sys\n{ssh_body}\n", encoding="utf-8")
+        ssh.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(stub), os.path.dirname(real_git)]))
+    calls = []
+
+    def runner(argv, cwd=None, timeout=None):
+        calls.append(list(argv))
+        if argv[0] == "ssh" and ssh_body is None:     # no ssh at all (the real one may sit
+            return 127, "ssh: not found on PATH"      # beside git, so PATH alone cannot hide it)
+        if argv[0] in ("git", "ssh"):
+            if argv[:2] == ["git", "ls-remote"]:
+                return 0, "abc\trefs/heads/main\n"
+            return pf.real_runner(argv, cwd, timeout)
+        host = argv[argv.index("--hostname") + 1] if "--hostname" in argv else "github.com"
+        if argv[:3] == ["gh", "auth", "status"]:
+            if host == "github.com":
+                return 0, CLASSIC_OK
+            return 1, f"You are not logged into any accounts on {host}\n"
+        return (0, "User\n") if argv[:2] == ["gh", "api"] else (1, "")
+    return runner, calls
+
+
+_POSIX_GIT = pytest.mark.skipif(os.name == "nt" or not shutil.which("git"),
+                                reason="POSIX stub ssh on PATH; needs git")
+
+
+@_POSIX_GIT
+def test_ssh_alias_remote_is_resolved_through_ssh_G(tmp_path, monkeypatch):
+    """BLOCKING 1: `Host github-work` -> `HostName github.com`. gh is asked about github.com -- never
+    about the alias, which gh cannot log in to."""
+    runner, calls = _alias_repo(tmp_path, monkeypatch,
+                                "if sys.argv[1:] == ['-G', 'github-work']:\n"
+                                "    print('user git\\nhostname github.com\\nport 22')\n"
+                                "else:\n    sys.exit(255)")
+    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    c = by_id(checks)
+    assert ["ssh", "-G", "github-work"] in calls
+    assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
+    assert not any("github-work" in x for a in calls if a[0] == "gh" for x in a), calls
+    assert c["gh-auth"]["ok"] is True and "github-work" in c["gh-auth"]["detail"]
+    assert c["scopes"]["ok"] is True and c["scopes"]["host"] == "github.com"
+    assert pf.blocking(checks) == []
+
+
+@_POSIX_GIT
+@pytest.mark.parametrize("ssh_body", ["sys.exit(255)", None], ids=["ssh-G-fails", "no-ssh"])
+def test_unresolvable_ssh_alias_is_cannot_verify_never_a_login(tmp_path, monkeypatch, ssh_body):
+    """No resolution (ssh -G fails, or no ssh at all) and the host is not a hostname: CANNOT VERIFY,
+    no command, no `gh auth login -h <alias>`, not blocking, and gh is never asked about the alias."""
+    runner, calls = _alias_repo(tmp_path, monkeypatch, ssh_body)
+    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    c = by_id(checks)
+    assert c["gh-auth"]["ok"] is None and "github-work" in c["gh-auth"]["detail"]
+    assert c["gh-auth"]["commands"] == []
+    assert not any(a[0] == "gh" for a in calls), calls
+    text = "\n".join(pf.report_lines(checks))
+    assert "CANNOT VERIFY" in text and "gh auth login" not in text
+    assert "Sigma runs nothing that needs gh" not in text
+    assert pf.blocking(checks) == []
+
+
+@_POSIX_GIT
+def test_ghe_fqdn_is_still_checked_as_itself(tmp_path, monkeypatch):
+    runner, calls = _alias_repo(tmp_path, monkeypatch,
+                                "print('hostname ghe.acme.io')", url="git@ghe.acme.io:x/y.git")
+    pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    assert ["gh", "auth", "status", "--active", "--hostname", "ghe.acme.io"] in calls
+
+
+def test_ghe_fqdn_without_ssh_resolution_is_still_checked():
+    calls = []
+    pf.preflight("/r", WORK_ON, runner=fake(healthy(url="git@ghe.acme.io:x/y.git"), calls),
+                 which=has({"git", "gh"}))
+    assert ["ssh", "-G", "ghe.acme.io"] in calls                       # asked, failed (fake rc 1)
+    assert ["gh", "auth", "status", "--active", "--hostname", "ghe.acme.io"] in calls
+
+
+def test_ssh_over_443_hostname_reads_as_github_com():
+    calls = []
+    answers = [(("ssh", "-G"), (0, "hostname ssh.github.com\nport 443\n"))] + healthy(
+        url="git@gh443:alice/app.git")
+    pf.preflight("/r", WORK_ON, runner=fake(answers, calls), which=has({"git", "gh"}))
+    assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
+
+
+def test_alias_resolving_to_gitlab_is_non_github():
+    answers = [(("ssh", "-G"), (0, "hostname gitlab.com\n"))] + healthy(url="git@work:a/b.git")
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
+    assert c["gh-auth"]["note"] == "non-github" and "gitlab.com" in c["gh-auth"]["detail"]
+
+
+@pytest.mark.parametrize("host,fqdn", [("github.com", True), ("ghe.acme.io", True),
+                                       ("10.0.0.5", True), ("github-work", False),
+                                       ("github.com-work", False), ("work", False)])
+def test_looks_like_fqdn(host, fqdn):
+    assert pf.looks_like_fqdn(host) is fqdn
+
+
+def test_ghu_token_is_cannot_verify_not_no_scopes():
+    auth = ("✓ Logged in to github.com account c (GH_TOKEN)\n- Active account: true\n"
+            "- Token: ghu_****\n")
+    c = by_id(pf.preflight("/r", WORK_ON, runner=fake(healthy(auth=auth)), which=has({"git", "gh"})))
+    assert c["scopes"]["ok"] is None
+    assert "GitHub App user token" in c["scopes"]["detail"]
+    assert "no scopes)" not in c["scopes"]["detail"]
+
+
+def test_gh_absent_decision_without_a_package_manager_names_the_url():
+    text = "\n".join(pf.decision_lines("/r/.sdlc", why="no-gh", commands_printed=False))
+    assert "commands above" not in text and "https://cli.github.com" in text
+    assert "commands above" in "\n".join(pf.decision_lines("/r/.sdlc", why="no-gh"))
+    assert "commands above" not in "\n".join(pf.decision_lines("/r/.sdlc", why="non-github"))
+
+
+def test_init_report_gh_absent_without_brew_never_says_commands_above(monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location("sdlc_init_229b", INIT)
+    init = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(init)
+    monkeypatch.setattr(pf.sys, "platform", "linux")
+    _sdlc(tmp_path, WORK_ON)
+    lines = init.preflight_report(str(tmp_path), runner=fake(healthy()), which=has({"git"}))
+    text = "\n".join(lines)
+    assert "DECISION" in text and "commands above" not in text and "cli.github.com" in text
+
+
+@pytest.mark.parametrize("url", ["https://bitbucket.acme.com/scm/o/r.git",
+                                 "ssh://git@code.acme.com:7999/scm/o/r.git",
+                                 "git@gitlab.acme.io:grp/sub/r.git",
+                                 "https://acme.visualstudio.example/org/proj/_git/repo"])
+def test_more_than_two_path_segments_is_the_non_github_decision(url):
+    calls = []
+    checks = pf.preflight("/r", WORK_ON, runner=fake(healthy(url=url), calls),
+                          which=has({"git", "gh"}))
+    c = by_id(checks)
+    assert c["gh-auth"]["ok"] is False and c["gh-auth"]["note"] == "non-github", c["gh-auth"]
+    assert "owner/repo" in c["gh-auth"]["detail"]
+    assert not any(a[:3] == ["gh", "auth", "status"] for a in calls)
+
+
+def test_init_report_prints_the_decision_for_a_bitbucket_server_remote(tmp_path):
+    spec = importlib.util.spec_from_file_location("sdlc_init_229c", INIT)
+    init = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(init)
+    _sdlc(tmp_path, WORK_ON)
+    lines = init.preflight_report(str(tmp_path), runner=fake(
+        healthy(url="https://bitbucket.acme.com/scm/o/r.git")), which=has({"git", "gh"}))
+    assert any("DECISION: work.enabled is ON" in l for l in lines), lines

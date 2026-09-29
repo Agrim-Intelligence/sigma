@@ -924,6 +924,7 @@ def _preflight_rows(base, cfg, run, which, injected, cheap_only):
     if req["board"]:
         sc = by_id.get("scopes") or {}
         have = sc.get("have")
+        name = "gh project scope"
         if sc.get("note") != "skipped" and have is not None:
             ok = "project" in have
             fix = f"run: gh auth refresh -s project -h {sc.get('host') or 'github.com'}"
@@ -933,8 +934,14 @@ def _preflight_rows(base, cfg, run, which, injected, cheap_only):
             ok = False
             fix = (("first: " + _preflight_fix(blocker)) if blocker else
                    ("cannot verify (the token reports no scopes); make sure it grants Projects: "
-                    "write -- or run: gh auth refresh -s project -h github.com"))
-        rows.append(_chk("gh project scope", ok, fix))
+                    "write -- or run: gh auth refresh -s project -h "
+                    f"{sc.get('host') or 'github.com'}"))
+            # review block #2: a CANNOT VERIFY upstream (an unresolvable ssh alias, a token that
+            # reports no scopes) is a cannot-verify row here too -- never the wizard-keyed name,
+            # so it never becomes a first-run step demanding a command nobody can complete
+            if (blocker is None and have is None) or (blocker is not None and blocker["ok"] is None):
+                name += " (cannot verify)"
+        rows.append(_chk(name, ok, fix))
     return rows
 
 

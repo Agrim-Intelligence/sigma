@@ -16,7 +16,10 @@ THE CHECKS, in order; a check whose prerequisite failed is SKIPPED and says so, 
     gh-installed `gh` on PATH
     gh-auth      `gh auth status --active --hostname <host>` succeeds (the ACTIVE account only: a
                  stale second account must not fail a valid active one); a non-GitHub host (gitlab,
-                 bitbucket, ...) fails with "gh only supports GitHub hosts", never `gh auth login`
+                 bitbucket, ..., or a URL path that is not exactly owner/repo) fails with "gh only
+                 supports GitHub hosts", never `gh auth login`. An ssh remote's host is resolved
+                 first with `ssh -G <host>` (local; an ~/.ssh/config alias such as `github-work`
+                 -> github.com); an alias that cannot be resolved is CANNOT VERIFY, never a login
     scopes       repo + workflow (work on), read:org (owner is an organization), project (board on)
 Each result is {"id", "name", "ok", "detail", "commands", "interactive", "meanwhile", "note"}.
 `ok` is True, False, or None -- None is CANNOT VERIFY (a fine-grained or app token reports no
@@ -37,8 +40,9 @@ calls get `network_timeout()` = min(that bound, 15s): a dead ssh host must degra
 unreachable ssh remote). `deep=False` (doctor's `cheap_only`, i.e. the SessionStart wizard) never runs
 `ls-remote` or the owner lookup at all -- they read "not checked here; run /agrim-doctor". Git and gh run with
 `GIT_TERMINAL_PROMPT=0` / `GH_PROMPT_DISABLED=1` and stdin closed, so nothing waits on a prompt. Cost:
-at most 9 subprocess calls, 3 of them network (`ls-remote`, `gh auth status`, `gh api users/<o>`);
-constant per repository, independent of repository size.
+at most 10 subprocess calls, 3 of them network (`ls-remote`, `gh auth status`, `gh api users/<o>`)
+and one a local `ssh -G` (ssh remotes only, bounded by SSH_RESOLVE_TIMEOUT); constant per repository,
+independent of repository size.
 
 CLI (the gestures /agrim-init, /agrim-doctor and work.py print):
     preflight.py check      [repo_root] [--sdlc <dir>]   # report; exit 1 on a blocking failure
@@ -179,25 +183,88 @@ def real_runner(argv, cwd=None, timeout=None):
 
 # ---------------------------------------------------------------- parsing (pure)
 
-def parse_remote_url(url):
-    """-> (host, owner, repo) from an ssh/scp/https remote URL, or (None, None, None)."""
+def remote_parts(url):
+    """-> (host, path segments, is_ssh) from a remote URL, or (None, [], False) when no host can be
+    read (a local path, a file:// URL). scp-like `[user@]host:path` and ssh:// URLs are ssh; the
+    host of an ssh URL may be an ~/.ssh/config ALIAS, not a hostname (see `resolve_ssh_host`)."""
     url = (url or "").strip()
-    m = (re.match(r"^[\w.+-]+@([^:/]+):(?:\d+/)?([^/]+)/([^/]+?)(?:\.git)?/?$", url)
-         or re.match(r"^(?:ssh|https?|git)://(?:[^@/]+@)?([^:/]+)(?::\d+)?/([^/]+)/([^/]+?)(?:\.git)?/?$",
-                     url))
-    return (m.group(1).lower(), m.group(2), m.group(3)) if m else (None, None, None)
+    m = re.match(r"^(?:[\w.+-]+@)?([^:/@\s]{2,}):(?!//)(.*)$", url)          # scp-like
+    if m:
+        host, path, ssh = m.group(1), m.group(2), True
+    else:
+        m = re.match(r"^(ssh|git\+ssh|ssh\+git|https?|git)://(?:[^@/]+@)?([^:/]+)(?::\d+)?(/.*)?$",
+                     url, re.I)
+        if not m:
+            return None, [], False
+        host, path, ssh = m.group(2), m.group(3) or "", "ssh" in m.group(1).lower()
+    segs = [s for s in path.split("/") if s]
+    if segs and segs[-1].endswith(".git"):
+        segs[-1] = segs[-1][:-4]
+    return host.lower(), [s for s in segs if s], ssh
+
+
+def parse_remote_url(url):
+    """-> (host, owner, repo) from an ssh/scp/https remote URL, or (None, None, None). A GitHub
+    repository URL has exactly two path segments (owner/repo); any other shape has no owner/repo
+    here (`remote_parts` still reads its host)."""
+    host, segs, _ssh = remote_parts(url)
+    if host and len(segs) == 3 and segs[0].isdigit():     # legacy scp form `host:22/owner/repo`
+        segs = segs[1:]
+    return (host, segs[0], segs[1]) if host and len(segs) == 2 else (None, None, None)
+
+
+#: How long `ssh -G` may take. It only evaluates the local ssh config (no connection, no network);
+#: a machine answers in milliseconds, so 5s is a hang guard, not an expected cost.
+SSH_RESOLVE_TIMEOUT = 5.0
+
+#: `HostName` values that ARE github.com under another name (ssh over port 443).
+_GITHUB_SSH_ALIASES = {"ssh.github.com": "github.com"}
+
+
+def looks_like_fqdn(host):
+    """A dotted name ending in an alphabetic TLD, or an IP literal -- i.e. something that can be a
+    real hostname, as opposed to an ssh alias such as `github-work` or `github.com-work`."""
+    h = (host or "").strip().lower().rstrip(".")
+    if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", h) or h.startswith("["):
+        return True
+    labels = h.split(".")
+    return len(labels) >= 2 and all(labels) and bool(re.fullmatch(r"[a-z]{2,63}", labels[-1]))
+
+
+def resolve_ssh_host(host, runner, timeout=SSH_RESOLVE_TIMEOUT):
+    """The real hostname behind an ssh host as the user's ssh config resolves it, via
+    `ssh -G <host>` (argv only, local, no connection), or None when ssh is unavailable, fails or
+    prints no `hostname` line. `ssh -G` with no matching `Host` block prints the host itself."""
+    rc, out = runner(["ssh", "-G", host], None, min(timeout, SSH_RESOLVE_TIMEOUT))
+    if rc != 0:
+        return None
+    for line in (out or "").splitlines():
+        key, _, value = line.strip().partition(" ")
+        if key.lower() == "hostname" and value.strip():
+            value = value.strip().lower()
+            return _GITHUB_SSH_ALIASES.get(value, value)
+    return None
 
 
 def token_kind(prefix_text):
-    """The kind of a (masked) token from its public prefix: classic | fine-grained | app | unknown."""
+    """The kind of a (masked) token from its public prefix: classic | fine-grained | app | app-user |
+    unknown. `ghu_` is a GitHub App USER-to-server token: like an installation token (`ghs_`) its
+    permissions come from the app, not OAuth scopes, so it reports none -- never read as classic."""
     t = (prefix_text or "").strip()
     if t.startswith("github_pat_"):
         return "fine-grained"
     if t.startswith("ghs_"):
         return "app"
-    if t.startswith(("ghp_", "gho_", "ghu_")):
+    if t.startswith("ghu_"):
+        return "app-user"
+    if t.startswith(("ghp_", "gho_")):
         return "classic"
     return "unknown"
+
+
+#: How a token kind reads in a sentence ("a fine-grained token", "a GitHub App user token").
+_KIND_TEXT = {"fine-grained": "fine-grained", "app": "GitHub App installation",
+              "app-user": "GitHub App user", "unknown": "non-classic"}
 
 
 def parse_auth_status(text):
@@ -408,15 +475,39 @@ def check_gh_auth(host, runner, timeout):
                           "(pushing works without gh)."), None
 
 
-def _gh_unsupported_host(host):
+def _github_shaped(segs, url):
+    """A GitHub (or GHES) repository URL has exactly `owner/repo` for a path. Three or more
+    segments -- Bitbucket Server `/scm/o/r.git`, a GitLab subgroup, Azure DevOps `/_git/` -- is a
+    host gh cannot open a pull request on, whatever its name. No URL at all is not a shape."""
+    return not url or parse_remote_url(url)[0] is not None
+
+
+def _gh_unsupported_host(host, shape_url=None, nsegs=0):
+    why = (f"the remote URL '{printable(redact(shape_url))}' has {nsegs} path segment(s) where a "
+           "GitHub repository URL has exactly owner/repo (this shape is Bitbucket Server, a GitLab "
+           "subgroup, Azure DevOps or similar), so it is not a GitHub remote"
+           if shape_url else f"the remote's host {printable(host)} is not GitHub")
     return _chk("gh-auth", "gh auth", False,
-                f"the remote's host {printable(host)} is not GitHub: gh only supports GitHub hosts "
+                f"{why}: gh only supports GitHub hosts "
                 "(github.com and GitHub Enterprise Server), so no gh login can open a pull request "
                 "there",
                 meanwhile="pushing works without gh, but `work.py pr` cannot open a pull request "
                           "there: go local-only (`preflight.py local-only <sdlc>`), or point "
                           "work.remote at a GitHub remote.",
                 note="non-github")
+
+
+def _gh_unresolved_alias(alias):
+    """An ssh host that is not a hostname and that `ssh -G` could not resolve: CANNOT VERIFY. Never
+    a FAIL and never `gh auth login -h <alias>` -- gh cannot log in to an alias, so that command
+    could not work, and printing it would be a step nobody can complete."""
+    a = printable(alias)
+    return _chk("gh-auth", "gh auth", None,
+                f"cannot verify: the remote's ssh host '{a}' is not a hostname (an ~/.ssh/config "
+                f"alias?) and `ssh -G {a}` did not resolve it, so which GitHub host gh should be "
+                f"logged in to is unknown; `ssh -G {a}` prints its `hostname` line -- then "
+                "`gh auth status --hostname <that host>` checks the login",
+                meanwhile="Sigma assumes nothing: the first gh call shows gh's own error.")
 
 
 def _gh_unknown_host(url):
@@ -446,7 +537,7 @@ def check_scopes(status, need, host, org, owner):
            if org == "Organization" else "")
     if have is None and kind != "classic":
         return _chk("scopes", name, None,
-                    f"cannot verify: a {kind if kind != 'unknown' else 'non-classic'} token reports "
+                    f"cannot verify: a {_KIND_TEXT.get(kind, kind)} token reports "
                     "no scopes. Sigma needs it to grant Contents: write, Pull requests: write and "
                     "Workflows: write" + (", Projects: write" if "project" in need else "")
                     + (", and access to the organization" if org == "Organization" else "")
@@ -533,16 +624,32 @@ def preflight(repo, config=None, runner=None, which=None, timeout=None, network=
         out.append(_skipped("gh-auth", "gh auth", "network checks not run here"))
         out.append(_skipped("scopes", "gh token scopes", "network checks not run here"))
         return out
-    host, owner, _repo = parse_remote_url(url)
+    host, segs, ssh = remote_parts(url)
+    _h, owner, _repo = parse_remote_url(url)
     if req["repo"] and "/" in req["repo"]:
         owner = req["repo"].split("/", 1)[0]
-    if url and not host:
+    alias = None
+    if host and ssh:
+        # an ssh remote's "host" may be an ~/.ssh/config alias (`Host github-work` -> `HostName
+        # github.com`, the common multi-account setup): gh knows hostnames, not aliases, so ask ssh
+        # what it resolves to (local, bounded, no connection) before judging or checking it
+        real = resolve_ssh_host(host, runner, timeout)
+        if real and real != host:
+            alias, host = host, real
+        elif not looks_like_fqdn(host):
+            alias, host = host, None                       # an alias nothing could resolve
+    if url and not host and alias:
+        auth, status = _gh_unresolved_alias(alias), None   # CANNOT VERIFY, never a login to run
+    elif url and not host:
         auth, status = _gh_unknown_host(url), None       # never silently assume github.com
-    elif host and is_non_github(host):
-        auth, status = _gh_unsupported_host(host), None
+    elif host and (is_non_github(host) or not _github_shaped(segs, url)):
+        auth, status = _gh_unsupported_host(host, url if not _github_shaped(segs, url) else None,
+                                            len(segs)), None
     else:
         host = host or "github.com"                        # no remote URL at all: github discovery
         auth, status = check_gh_auth(host, runner, net)
+        if alias:
+            auth["detail"] += f" (the remote's ssh host '{printable(alias)}' resolves to it)"
     out.append(auth)
     if auth["ok"] is not True:
         out.append(_skipped("scopes", "gh token scopes", "gh auth did not pass"))
@@ -594,22 +701,28 @@ def gesture(verb_args):
     return f"{_vd.python_command()} {_vd._q(HERE)} {verb_args}"
 
 
-def decision_lines(sdlc_dir, remotes=(), why="no-remote"):
+def decision_lines(sdlc_dir, remotes=(), why="no-remote", commands_printed=True):
     """The printed DECISION for 'work is on but it cannot push': keep it on and fix the cause, or run
     local-only. Codex/Cursor relay this verbatim (no interactive question there); Claude Code's
-    SKILL.md asks the user. Nothing here flips the setting -- only the gesture does."""
+    SKILL.md asks the user. Nothing here flips the setting -- only the gesture does.
+    `commands_printed` False (gh absent with no brew/winget on PATH) points at the install URL
+    instead of at "the commands above", which then do not exist."""
     where = printable(_vd._q(os.path.abspath(str(sdlc_dir))))
     cfg = printable(os.path.join(os.path.abspath(str(sdlc_dir)), "config.json"))
     if why == "no-remote":
         head = "this repository has no usable remote, so no goal can be pushed or opened as a PR."
+        fix = "fix the cause with the commands above."
     elif why == "non-github":
         head = ("the remote is not a GitHub host, so no goal can be opened as a PR (pushing works "
                 "without gh).")
+        fix = "point work.remote at a GitHub remote."
     else:
         head = "gh is not installed, so no goal can be opened as a PR (pushing works without gh)."
+        fix = ("fix the cause with the commands above." if commands_printed else
+               "install gh from https://cli.github.com, then re-run this check.")
     lines = [f"  DECISION: work.enabled is ON, but {head}",
              "    Keep ON  = one worktree + branch + PR per goal (needs a pushed remote; gh is needed",
-             "               only to open the PR); fix the cause with the commands above.",
+             f"               only to open the PR); {fix}",
              "    Turn OFF = the loop edits this checkout directly: no worktree, no branch, no push,",
              "               no PR; committing is yours, and your checkout is where goals run.",
              "    Turn it off with: " + printable(gesture(f"local-only {where}")),

@@ -69,7 +69,17 @@ All notable changes to Sigma are recorded here, newest first.
   (`user:token@`) are removed from any text shown. The SSO link names the real host (GitHub
   Enterprise too). `brew install` is suggested only when `brew` is on PATH. The wording now says
   that only opening a PR needs `gh`, and pushing works without it. Nothing prompts. The test suite now also guards `subprocess.Popen` against live `gh`
-  calls, and child processes get an empty gh config.
+  calls, and child processes get an empty gh config. An ssh remote whose host is an
+  `~/.ssh/config` alias (`git@github-work:o/r.git` with `Host github-work` -> `HostName
+  github.com`, the common multi-account setup) is resolved through `ssh -G <host>` (local, no
+  connection, at most 5s) and gh is asked about the real host; `ssh.github.com` (ssh over 443)
+  reads as github.com. An alias nothing can resolve is `CANNOT VERIFY`, never a FAIL and never
+  `gh auth login -h <alias>` (gh cannot log in to an alias), and a `(cannot verify)` row is never a
+  SessionStart wizard step. A `ghu_` (GitHub App user) token is `CANNOT VERIFY` like other
+  non-classic tokens, not "no scopes". A remote URL with more than two path segments (Bitbucket
+  Server `/scm/o/r.git`, a GitLab subgroup, Azure DevOps) is treated as not GitHub and gets the
+  DECISION. With `gh` absent and no `brew`/`winget`, the DECISION points at
+  https://cli.github.com instead of "the commands above".
 
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,

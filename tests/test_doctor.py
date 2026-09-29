@@ -6726,3 +6726,61 @@ def test_full_doctor_degrades_a_hanging_ls_remote_to_cannot_verify_within_the_bo
     c = _by_name(rows)
     row = c["base branch 'main' on 'origin' (cannot verify)"]
     assert row["ok"] is False and "timed out" in row["fix"]
+
+
+def _alias_run(ssh_answer):
+    """Review block #2: origin is `git@github-work:alice/app.git` (an ~/.ssh/config alias). gh is
+    logged in to github.com and -- exactly like real gh 2.98 -- to nothing named github-work."""
+    base_fake = _pf_fake()
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        if args[:2] == ["ssh", "-G"]:
+            return ssh_answer
+        if args[:3] == ["git", "remote", "get-url"]:
+            return "git@github-work:alice/app.git"
+        if args[:3] == ["gh", "auth", "status"]:
+            host = args[args.index("--hostname") + 1] if "--hostname" in args else "github.com"
+            return ("Logged in to github.com\n- Token: gho_x\n- Token scopes: 'repo', 'workflow', "
+                    "'read:org', 'project'") if host == "github.com" else ""
+        return base_fake(args)
+    return run, calls
+
+
+def _wizard():
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_229b", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+    wiz = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wiz)
+    return wiz
+
+
+_ALIAS_CFG = {"work": {"enabled": True},
+              "discovery": {"source": "github", "github": {"project": {"enabled": True}}}}
+
+
+def test_wizard_never_demands_a_login_to_an_unresolvable_ssh_alias(tmp_path):
+    """BLOCKING 1 of review block #2: the SessionStart wizard must not turn an ssh alias into a
+    `gh auth login -h github-work` step (gh cannot log in to an alias). Unresolvable -> CANNOT
+    VERIFY rows only, and a CANNOT VERIFY is never a wizard step."""
+    base = _sdlc(tmp_path, _ALIAS_CFG)
+    run, calls = _alias_run("")                     # ssh -G failed / unavailable
+    status = _wizard().wizard_status(base, run=run, dismissed=set(), allow_cache=False)
+    assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status
+    assert "github-work" not in json.dumps(status)
+    assert not any("github-work" in x for a in calls if a[0] == "gh" for x in a), calls
+    c = _by_name(_doc().check(base, run=_alias_run("")[0]))
+    assert "gh auth (cannot verify)" in c and "gh project scope (cannot verify)" in c, list(c)
+    assert not any("gh auth login" in r["fix"] for r in c.values())
+
+
+def test_doctor_resolves_an_ssh_alias_to_its_real_host(tmp_path):
+    base = _sdlc(tmp_path, _ALIAS_CFG)
+    run, calls = _alias_run("user git\nhostname github.com\n")
+    c = _by_name(_doc().check(base, run=run))
+    assert c["gh auth"]["ok"] is True and c["gh project scope"]["ok"] is True
+    assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
+    status = _wizard().wizard_status(base, run=_alias_run("hostname github.com")[0], dismissed=set(),
+                                     allow_cache=False)
+    assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status

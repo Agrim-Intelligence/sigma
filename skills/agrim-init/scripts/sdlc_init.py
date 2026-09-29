@@ -162,7 +162,7 @@ def preflight_report(target_dir, runner=None, which=None):
     if remote.get("ok") is False:
         lines += pf.decision_lines(sdlc, remote.get("remotes") or ())
     elif gh.get("ok") is False:
-        lines += pf.decision_lines(sdlc, why="no-gh")
+        lines += pf.decision_lines(sdlc, why="no-gh", commands_printed=bool(gh.get("commands")))
     elif (by_id.get("gh-auth") or {}).get("note") == "non-github":
         lines += pf.decision_lines(sdlc, why="non-github")
     return lines
