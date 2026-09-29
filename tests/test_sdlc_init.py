@@ -4,11 +4,34 @@ SCAFFOLDER = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+def _offline_runner(argv, cwd=None, timeout=None):
+    """#229: real git (local, no remote in these fixtures), and a logged-out `gh` -- never the network."""
+    if argv[0] == "gh":
+        return 1, "You are not logged into any GitHub hosts."
+    return _PF.real_runner(argv, cwd, timeout)
+
+
 def _load():
     spec = importlib.util.spec_from_file_location("sdlc_init", SCAFFOLDER)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # safe: __name__ != "__main__", so main() does not run
+    mod.PREFLIGHT_RUNNER = _offline_runner
     return mod
+
+
+_PF = _load()._preflight()
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def _git_tmpdir():
+    """#229: /agrim-init REFUSES a directory that is not a git repository, so every scaffold here
+    runs in one (a fresh `git init`, no commit -- the normal first-run state, which init accepts)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init", "-q", tmp], check=True)
+        yield tmp
 
 
 def _load_setup():
@@ -161,7 +184,7 @@ def test_scaffold_failure_message_prints_no_runnable_command_with_the_target_pat
 
 def test_scaffold_creates_full_tree():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         created, skipped = mod.scaffold(tmp)
         base = pathlib.Path(tmp) / ".sdlc"
         for rel in ["project.md", "config.json", "goals/README.md",
@@ -173,7 +196,7 @@ def test_scaffold_creates_full_tree():
 
 def test_config_is_valid_json_with_expected_keys():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold(tmp)
         cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())
         for key in ["mode", "discovery", "budget", "gates", "verify"]:
@@ -184,7 +207,7 @@ def test_config_is_valid_json_with_expected_keys():
 
 def test_project_name_substituted():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         named = pathlib.Path(tmp) / "myrepo"; named.mkdir()
         mod.scaffold(str(named))
         assert "myrepo" in (named / ".sdlc" / "project.md").read_text()
@@ -192,7 +215,7 @@ def test_project_name_substituted():
 
 def test_idempotent_skip_preserves_edits():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold(tmp)
         state = pathlib.Path(tmp) / ".sdlc" / "state" / "STATE.md"
         state.write_text("LIVE PROGRESS — do not clobber")
@@ -204,7 +227,7 @@ def test_idempotent_skip_preserves_edits():
 
 def test_config_discovery_supports_local_and_github():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold(tmp)
         cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())
         assert cfg["discovery"]["source"] == "local-goals"      # default stays local (zero-dep)
@@ -213,7 +236,7 @@ def test_config_discovery_supports_local_and_github():
 
 def test_config_knowledge_graph_off_by_default():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold(tmp)
         kg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())["knowledge_graph"]
         assert kg["enabled"] is False                # opt-in only
@@ -222,7 +245,7 @@ def test_config_knowledge_graph_off_by_default():
 
 def test_scaffold_github_creates_pm_files():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         created, skipped = mod.scaffold_github(tmp)
         gh = pathlib.Path(tmp) / ".github"
         for rel in ["ISSUE_TEMPLATE/epic.md", "ISSUE_TEMPLATE/task.md", "ISSUE_TEMPLATE/bug.md",
@@ -234,7 +257,7 @@ def test_scaffold_github_creates_pm_files():
 
 def test_scaffold_github_idempotent_preserves_edits():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold_github(tmp)
         epic = pathlib.Path(tmp) / ".github" / "ISSUE_TEMPLATE" / "epic.md"
         epic.write_text("MY EDITS")
@@ -245,7 +268,7 @@ def test_scaffold_github_idempotent_preserves_edits():
 
 def test_issue_templates_wellformed():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold_github(tmp)
         it = pathlib.Path(tmp) / ".github" / "ISSUE_TEMPLATE"
         epic = (it / "epic.md").read_text()
@@ -255,7 +278,7 @@ def test_issue_templates_wellformed():
 
 def test_add_to_project_workflow_self_activates():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold_github(tmp)
         wf = (pathlib.Path(tmp) / ".github" / "workflows" / "add-to-project.yml").read_text()
         assert "add-to-project" in wf and "issues:" in wf
@@ -268,7 +291,7 @@ def test_add_to_project_workflow_comment_says_optional_not_required():
     # the comment must say so, while the workflow's own activation guard stays unchanged (the
     # assertion above still holds: SDLC_PROJECT_URL/ADD_TO_PROJECT_PAT are still there, gating it).
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.scaffold_github(tmp)
         wf = (pathlib.Path(tmp) / ".github" / "workflows" / "add-to-project.yml").read_text()
         assert "_sync_backlog" in wf or "already" in wf or "for free" in wf
@@ -276,7 +299,7 @@ def test_add_to_project_workflow_comment_says_optional_not_required():
 
 def test_main_github_flag_scaffolds_dotgithub_and_sdlc():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--github"]) == 0
         assert (pathlib.Path(tmp) / ".github" / "workflows" / "add-to-project.yml").exists()
         assert (pathlib.Path(tmp) / ".sdlc" / "config.json").exists()   # still scaffolds .sdlc too
@@ -288,7 +311,7 @@ def test_main_github_flag_prints_no_pat_instruction(capsys):
     # _sync_backlog already boards every sdlc:goal-labelled issue for free, with no PAT needed.
     # Nothing should tell the user to go set this up.
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--github"]) == 0
         out = capsys.readouterr().out
         assert "ADD_TO_PROJECT_PAT" not in out
@@ -298,7 +321,7 @@ def test_main_github_flag_prints_no_pat_instruction(capsys):
 
 def test_main_without_github_flag_skips_dotgithub():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.main(["sdlc_init.py", tmp])
         assert not (pathlib.Path(tmp) / ".github").exists()             # opt-in only
 
@@ -314,7 +337,7 @@ def test_readme_does_not_instruct_pat_setup_to_enable_auto_add():
 
 def test_demo_flag_queues_runnable_goal():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--demo"]) == 0
         demo = pathlib.Path(tmp) / ".sdlc" / "goals" / "0000-demo.md"
         assert demo.exists()
@@ -324,14 +347,14 @@ def test_demo_flag_queues_runnable_goal():
 
 def test_no_demo_flag_no_demo_goal():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.main(["sdlc_init.py", tmp])
         assert not (pathlib.Path(tmp) / ".sdlc" / "goals" / "0000-demo.md").exists()   # opt-in only
 
 
 def test_scaffold_demo_idempotent_preserves_edits():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.scaffold_demo(tmp) is True
         d = pathlib.Path(tmp) / ".sdlc" / "goals" / "0000-demo.md"; d.write_text("EDITED")
         assert mod.scaffold_demo(tmp) is False and d.read_text() == "EDITED"
@@ -340,7 +363,7 @@ def test_scaffold_demo_idempotent_preserves_edits():
 def test_scaffold_survives_non_utf8_locale():
     # templates + the demo goal contain non-ASCII (em-dashes); scaffolding must read/write them as
     # UTF-8, not the locale default, so it doesn't crash under a C/POSIX locale (bare CI/containers).
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
         r = subprocess.run([sys.executable, str(SCAFFOLDER), tmp, "--github", "--demo"],
                            capture_output=True, text=True, env=env)
@@ -351,7 +374,7 @@ def test_scaffold_survives_non_utf8_locale():
 
 def test_vision_flag_scaffolds_north_star():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--vision"]) == 0
         ns = pathlib.Path(tmp) / ".sdlc" / "context" / "north-star.md"
         assert ns.exists()
@@ -362,14 +385,14 @@ def test_vision_flag_scaffolds_north_star():
 
 def test_no_vision_flag_stays_drop_in():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.main(["sdlc_init.py", tmp])
         assert not (pathlib.Path(tmp) / ".sdlc" / "context").exists()   # opt-in only; drop-in default
 
 
 def test_scaffold_vision_idempotent_preserves_edits():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.scaffold_vision(tmp) is True
         ns = pathlib.Path(tmp) / ".sdlc" / "context" / "north-star.md"; ns.write_text("MY VISION")
         assert mod.scaffold_vision(tmp) is False and ns.read_text() == "MY VISION"
@@ -377,7 +400,7 @@ def test_scaffold_vision_idempotent_preserves_edits():
 
 def test_cursor_flag_scaffolds_always_apply_rule():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--cursor"]) == 0
         rule = pathlib.Path(tmp) / ".cursor" / "rules" / "sdlc.mdc"
         assert rule.exists()
@@ -393,7 +416,7 @@ def test_cursor_flag_scaffolds_always_apply_rule():
 
 def test_no_cursor_flag_stays_host_default():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         mod.main(["sdlc_init.py", tmp])
         assert not (pathlib.Path(tmp) / ".cursor").exists()   # opt-in only
         cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())
@@ -402,7 +425,7 @@ def test_no_cursor_flag_stays_host_default():
 
 def test_scaffold_cursor_idempotent_preserves_edits():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.scaffold_cursor(tmp) is True
         rule = pathlib.Path(tmp) / ".cursor" / "rules" / "sdlc.mdc"; rule.write_text("MY RULES")
         assert mod.scaffold_cursor(tmp) is False and rule.read_text() == "MY RULES"   # never clobbered
@@ -410,7 +433,7 @@ def test_scaffold_cursor_idempotent_preserves_edits():
 
 def test_codex_flag_scaffolds_standing_rules_without_changing_claude_defaults():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp, "--codex"]) == 0
         rules = (pathlib.Path(tmp) / "AGENTS.md").read_text()
         assert "<!-- sigma:codex:start -->" in rules
@@ -429,7 +452,7 @@ def test_codex_flag_scaffolds_standing_rules_without_changing_claude_defaults():
 
 def test_codex_scaffold_preserves_existing_agents_file_and_is_idempotent():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         dest = pathlib.Path(tmp) / "AGENTS.md"
         dest.write_text("# Team rules\n\nKeep this rule.\n")
         assert mod.scaffold_codex(tmp) is True
@@ -441,7 +464,7 @@ def test_codex_scaffold_preserves_existing_agents_file_and_is_idempotent():
 
 def test_codex_scaffold_refreshes_only_its_managed_block():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         dest = pathlib.Path(tmp) / "AGENTS.md"
         dest.write_text("# Team rules\n\n<!-- sigma:codex:start -->\nold adapter\n"
                         "<!-- sigma:codex:end -->\n\n## Team footer\nKeep this.\n")
@@ -456,7 +479,7 @@ def test_codex_scaffold_refreshes_only_its_managed_block():
 
 def test_codex_scaffold_repairs_an_incomplete_managed_block():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         dest = pathlib.Path(tmp) / "AGENTS.md"
         dest.write_text("# Team rules\n\n<!-- sigma:codex:start -->\npartial")
         assert mod.scaffold_codex(tmp) is True
@@ -469,7 +492,7 @@ def test_codex_scaffold_repairs_an_incomplete_managed_block():
 
 def test_codex_scaffold_refuses_reversed_managed_markers_without_changing_rules():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         dest = pathlib.Path(tmp) / "AGENTS.md"
         original = "# Team rules\n<!-- sigma:codex:end -->\n<!-- sigma:codex:start -->\n"
         dest.write_text(original)
@@ -500,7 +523,7 @@ def test_codex_scaffold_replacement_failure_keeps_existing_rules(monkeypatch):
 
 def test_plain_scaffold_does_not_write_codex_rules():
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         assert mod.main(["sdlc_init.py", tmp]) == 0
         assert not (pathlib.Path(tmp) / "AGENTS.md").exists()
 
@@ -545,7 +568,7 @@ def _assert_carries_the_rule(text):
 
 
 def test_scaffolded_project_md_carries_the_no_direct_commits_rule():
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         _generated(tmp)                                       # no flags: every adopter gets this file
         text = (pathlib.Path(tmp) / ".sdlc" / "project.md").read_text(encoding="utf-8")
         _assert_carries_the_rule(text)
@@ -553,7 +576,7 @@ def test_scaffolded_project_md_carries_the_no_direct_commits_rule():
 
 
 def test_scaffolded_cursor_rule_carries_the_no_direct_commits_rule():
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         _generated(tmp, "--cursor")
         text = (pathlib.Path(tmp) / ".cursor" / "rules" / "sdlc.mdc").read_text(encoding="utf-8")
         _assert_carries_the_rule(text)
@@ -569,7 +592,7 @@ def test_the_scaffolder_source_is_ascii_so_a_string_literal_cannot_smuggle_one_i
     only fails in COMBINATION with a missing explicit encoding, so it is a second line rather than
     the point."""
     SCAFFOLDER.read_text(encoding="ascii")                    # raises if a non-ASCII byte crept in
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
         r = subprocess.run([sys.executable, str(SCAFFOLDER), tmp, "--cursor"],
                            capture_output=True, text=True, env=env)
@@ -590,7 +613,7 @@ _OUTPUT_RULE_REL = pathlib.Path(".cursor") / "rules" / "output-contract.mdc"
 
 
 def test_cursor_flag_also_scaffolds_the_output_contract_rule(capsys):
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         _generated(tmp, "--cursor")
         assert "`.cursor/rules/output-contract.mdc`" in capsys.readouterr().out   # the message names it
         rule = pathlib.Path(tmp) / _OUTPUT_RULE_REL
@@ -632,7 +655,7 @@ def test_this_repos_own_agent_rules_carry_no_imitation_instruction():
 
 def test_scaffold_cursor_writes_each_rule_independently_and_clobbers_neither(capsys):
     mod = _load()
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         rules = pathlib.Path(tmp) / ".cursor" / "rules"; rules.mkdir(parents=True)
         (rules / "sdlc.mdc").write_text("MY RULES")
         assert mod.scaffold_cursor(tmp) is True                           # output-contract.mdc was missing
@@ -657,7 +680,7 @@ def test_this_repos_own_cursor_output_rule_is_what_the_scaffolder_writes_byte_fo
     are normalised on both sides first: `write_text` emits `os.linesep`, so on a Windows checkout
     with `autocrlf=false` the generated file is CRLF against an LF repo file -- the platform, not a
     defect (Plan-Review finding 9)."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with _git_tmpdir() as tmp:
         _generated(tmp, "--cursor")
         generated = (pathlib.Path(tmp) / _OUTPUT_RULE_REL).read_bytes()
     ours = (REPO_ROOT / _OUTPUT_RULE_REL).read_bytes()

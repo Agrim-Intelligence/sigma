@@ -103,7 +103,9 @@ def test_gh_auth_check_default_failure_keeps_the_pre_existing_fix():
         base = _sdlc(t, {"discovery": {"source": "github"}})
         c = _by_name(d.check(base, run=_runner()))              # default gh_auth=""
         assert c["gh auth"]["ok"] is False
-        assert c["gh auth"]["fix"] == "run: gh auth login"
+        # #229: the login now names the host and the scopes the loop needs, then what Sigma does
+        # meanwhile; still `gh auth login` because gh IS installed here (the fake `which`).
+        assert c["gh auth"]["fix"].startswith("run: gh auth login -h github.com -s repo")
 
 
 def test_gh_auth_check_diagnoses_a_claude_code_remote_session_proxy_block():
@@ -124,8 +126,8 @@ def test_gh_auth_check_diagnoses_a_claude_code_remote_session_proxy_block():
         base = _sdlc(t, {"discovery": {"source": "github"}})
         c = _by_name(d.check(base, run=run))
         assert c["gh auth"]["ok"] is False
-        assert c["gh auth"]["fix"] == gh_session.REMEDIATION
-        assert c["gh auth"]["fix"] != "run: gh auth login"
+        assert c["gh auth"]["fix"].startswith(gh_session.REMEDIATION)
+        assert "gh auth login" not in c["gh auth"]["fix"].replace("`gh auth login` will not", "")
         assert "claude github app" in c["gh auth"]["fix"].lower()
 
 
@@ -6578,3 +6580,79 @@ def test_an_empty_goal_verify_command_does_not_satisfy_the_verify_trap_row():
                 f"---\nstatus: pending\n{empty}\n---\nx\n")
             row = _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]
             assert row["ok"] is False, empty
+
+
+# --- #229: the init preflight's checks, as doctor rows; the fix depends on the FAILING check ---
+
+
+def _pf_fake(remotes="origin\n", auth="Logged in. Token: gho_x\nToken scopes: 'repo', 'read:org'"):
+    def run(args):
+        table = {
+            ("git", "rev-parse", "--is-inside-work-tree"): "true",
+            ("git", "rev-parse", "--verify"): "abc",
+            ("git", "rev-parse", "--abbrev-ref"): "main",
+            ("git", "remote", "get-url"): "git@github.com:alice/app.git",
+            ("git", "remote"): remotes,
+            ("git", "ls-remote"): "abc\trefs/heads/main",
+            ("gh", "auth", "status"): auth,
+            ("gh", "api"): "User",
+        }
+        for prefix, answer in table.items():
+            if tuple(args[:len(prefix)]) == prefix:
+                return answer
+        return ""
+    return run
+
+
+def test_control_gh_absent_doctor_never_says_gh_auth_login(tmp_path):
+    """THE CONTROL the issue names: with `gh` absent, the old text said `gh auth login` (there is no
+    gh to log in with). Now the gh row says install it, and no row anywhere says `gh auth login`."""
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True},
+                            "discovery": {"source": "github", "github": {"project": {"enabled": True}}}})
+    checks = d.check(base, run=_pf_fake(), which=lambda n: None if n == "gh" else n)
+    c = _by_name(checks)
+    assert c["gh installed"]["ok"] is False
+    assert "cli.github.com" in c["gh installed"]["fix"]
+    assert not any(n.startswith("gh auth") for n in c), c     # skipped: its prerequisite failed
+    assert c["gh project scope"]["ok"] is False
+    assert not [x["name"] for x in checks if "gh auth login" in x["fix"]], checks
+
+
+def test_preflight_rows_all_green_but_missing_workflow(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    c = _by_name(d.check(base, run=_pf_fake()))
+    assert c["git repository"]["ok"] and c["git remote 'origin'"]["ok"] and c["gh auth"]["ok"]
+    assert c["base branch 'main' on 'origin'"]["ok"] is True
+    assert c["gh token scopes"]["ok"] is False
+    assert c["gh token scopes"]["fix"].startswith("run: gh auth refresh -s workflow -h github.com")
+
+
+def test_preflight_rows_no_remote_names_the_fallback(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    c = _by_name(d.check(base, run=_pf_fake(remotes="")))
+    assert c["git remote 'origin'"]["ok"] is False
+    assert "git remote add origin" in c["git remote 'origin'"]["fix"]
+    assert not any(n.startswith("base branch") for n in c)     # skipped behind the remote
+
+
+def test_preflight_rows_absent_when_neither_work_nor_github(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": False}})
+    names = _by_name(d.check(base, run=_pf_fake()))
+    assert not any(n.startswith(("git ", "gh ")) for n in names), names
+
+
+def test_cheap_only_runs_no_network_preflight_call_without_github(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    calls = []
+    fake = _pf_fake()
+
+    def run(args):
+        calls.append(args)
+        return fake(args)
+    d.check(base, run=run, cheap_only=True)
+    assert not any(a[:2] in (["git", "ls-remote"], ["gh", "auth"], ["gh", "api"]) for a in calls), calls

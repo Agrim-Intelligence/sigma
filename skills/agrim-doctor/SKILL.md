@@ -27,6 +27,14 @@ It only checks what `.sdlc/config.json` makes relevant — a zero-dep local proj
 - **MISSING** → run the printed one-liner (e.g. `gh auth refresh -s project`, `pip install graphifyy`,
   `/agrim-init`, `/agrim-vision`).
 
+With `work.enabled` on or github discovery, it also runs `/agrim-init`'s preflight (#229): rows
+`git repository`, `git remote '<name>'`, `base branch '<b>' on '<remote>'`, `gh installed`,
+`gh auth`, `gh token scopes` and, with a board, `gh project scope`. Each fix is the failing check's
+own: `gh` absent says install it (never `gh auth login`); a missing scope names
+`gh auth refresh -s <scope> -h <host>`. A row ending `(cannot verify)` -- a fine-grained token
+reports no scopes -- is not a pass. A row whose prerequisite failed is not shown; fix the one above
+it first.
+
 Present the checklist plainly. Offer to run a fix that's safe to run for the user, but **never run an
 interactive login (`gh auth …`) or a package install on their behalf** — hand them the command.
 

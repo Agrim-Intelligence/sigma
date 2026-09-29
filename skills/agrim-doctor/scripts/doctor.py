@@ -3,7 +3,7 @@
 -> gh auth + project scope; KG enabled -> the builder; vision-first -> the north-star; always -> the
 .sdlc layer — and report each check with the exact one-line fix. The command runner is injectable so
 the logic is hermetically testable. Zero-dep."""
-import sys, json, os, pathlib, re, subprocess, importlib.util, importlib.metadata
+import sys, json, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")   # doesn't garble to '?' or
@@ -867,26 +867,71 @@ def _load_log_script(name):
     return m
 
 
-def _gh_auth_fix(raw):
-    """The "gh auth" check's remediation, corrected for #78: a Claude Code Remote session's proxy
-    blocks repo-scoped `gh` access independent of the token, and `gh auth login` fixes nothing in
-    that case — see `gh_session.py`'s module docstring for the two confirmed proxy shapes. `raw` is
-    best-effort: only the real `_real_run` (via `_RawFailure.raw`) ever carries the actual failed
-    call's text; every test fake's plain `""` — and a bare "not authenticated" failure with nothing
-    captured — does not, and both read as "can't classify", falling back to the pre-existing generic
-    message unchanged.
+def _load_init_script(name):
+    """Cross-load a script from the sibling agrim-init skill (#229's preflight), the same by-path
+    idiom as `_load_loop_script`: /agrim-init and this doctor must run the SAME checks, so a copy here
+    could drift from the one init prints. preflight.py itself cross-loads gh_session for #78's
+    proxy-block diagnosis, which is how that remediation still reaches the "gh auth" row."""
+    path = _HERE.parent.parent / "agrim-init" / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"doctor_{name}", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
 
-    Reuses `gh_session`'s one classifier via `_load_loop_script` rather than a doctor-local copy of
-    the same pattern — the identical, already-justified reasoning `_load_loop_script`'s own docstring
-    gives for `_dependency_marker_scan`'s reuse of `sources`/`backlog_check`: a local copy here could
-    silently drift from work.py's and sources.py's, and for a diagnosis-correctness fix, drift is the
-    exact failure mode being closed, not a cosmetic inconsistency. Never raises: a broken or missing
-    gh_session.py degrades to the old message, not a crashed doctor run."""
-    try:
-        block = _load_loop_script("gh_session").proxy_session_block(raw)
-    except Exception:                            # noqa: BLE001 - fail-open, see docstring
-        block = None
-    return block or "run: gh auth login"
+
+def _preflight_fix(check):
+    """A failing preflight check as doctor's one-line fix: the command(s) THAT check prints (so a
+    missing `gh` says install it, never `gh auth login`), then what Sigma does meanwhile."""
+    cmds = " then ".join(check.get("commands") or [])
+    head = f"run: {cmds}" if cmds else check.get("detail", "")
+    extra = check.get("detail", "") if cmds else ""
+    tail = " -- ".join(x for x in (extra, check.get("note") if check.get("note") not in
+                                   ("skipped", "no-remote", "no-commit") else "",
+                                   ("meanwhile: " + check["meanwhile"]) if check.get("meanwhile")
+                                   else "") if x)
+    return head + (f" ({tail})" if tail else "")
+
+
+def _preflight_rows(base, cfg, run, which, injected, cheap_only):
+    """#229: the init preflight's checks as doctor rows -- git repository, git remote, base branch,
+    gh installed, gh auth, gh token scopes, and (board on) gh project scope. Skipped checks (their
+    prerequisite failed) are not rows; the failing prerequisite is. `cheap_only` runs the network
+    checks only where github discovery already opted into gh calls."""
+    pf = _load_init_script("preflight")
+    if injected:
+        def runner(argv, cwd=None, timeout=None):
+            res = run(list(argv))
+            return (0, str(res)) if res else (1, getattr(res, "raw", "") or "")
+    else:
+        runner = None
+    req = pf.requirements(cfg)
+    network = (not cheap_only) or req["github"]
+    checks = pf.preflight(str(base.parent), cfg, runner=runner, which=which, network=network)
+    rows, by_id = [], {c["id"]: c for c in checks}
+    names = {"gh-installed": "gh installed", "gh-auth": "gh auth", "scopes": "gh token scopes"}
+    for c in checks:
+        if c.get("note") == "skipped":
+            continue
+        name = names.get(c["id"], c["name"])
+        if c["id"] == "scopes" and c["ok"] is False and c.get("missing") == ["project"]:
+            continue                      # the "gh project scope" row below names it
+        rows.append(_chk(name if c["ok"] is not None else f"{name} (cannot verify)",
+                         c["ok"] is True, _preflight_fix(c)))
+    if req["board"]:
+        sc = by_id.get("scopes") or {}
+        have = sc.get("have")
+        if sc.get("note") != "skipped" and have is not None:
+            ok = "project" in have
+            fix = f"run: gh auth refresh -s project -h {sc.get('host') or 'github.com'}"
+        else:
+            blocker = next((c for c in checks if c["id"] in ("gh-installed", "gh-auth")
+                            and c["ok"] is not True), None)
+            ok = False
+            fix = (("first: " + _preflight_fix(blocker)) if blocker else
+                   ("cannot verify (the token reports no scopes); make sure it grants Projects: "
+                    "write -- or run: gh auth refresh -s project -h github.com"))
+        rows.append(_chk("gh project scope", ok, fix))
+    return rows
 
 
 def _gh_runner(doctor_run):
@@ -1778,7 +1823,7 @@ def _kg_last_attempt(path):
 
 
 def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_dirs=None,
-          installed_plugins_path=None, agents_md=None, cheap_only=False):
+          installed_plugins_path=None, agents_md=None, cheap_only=False, which=None):
     """Return the setup checks relevant to this project's config; each is {name, ok, fix}.
 
     `site_packages_dirs` is DI for tests (mirrors `scheduled_tasks_dir`) — default `None` scans the
@@ -1804,6 +1849,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     own config asked for github discovery (opt-in already), and the wizard's own hour-long clean
     cache is what bounds their frequency. `cheap_only` is about cost nobody asked for, not about
     all cost."""
+    injected = run is not None
+    # #229 `which` seam: an injected `run` stands in for every binary (the existing tests' contract),
+    # so it defaults to "present" there; the real runner asks the real PATH.
+    which = which or ((lambda name: name) if injected else shutil.which)
     run = run or _real_run
     plugin_host = _plugin_host()
     codex_plugins = _codex_plugins(run) if plugin_host == "codex" and not cheap_only else None
@@ -1857,15 +1906,14 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         out.append(_chk("no stray local install shadows this worktree's own packages",
                         not shadows, fix))
 
+    # #229: git / remote / base / gh installed / gh auth / scopes (+ project scope with a board),
+    # wherever work.enabled or github discovery needs them -- the same checks /agrim-init runs, so a
+    # later regression is visible. Each fix comes from the FAILING check: gh absent says install it.
+    if _block(cfg, "work").get("enabled") or disc.get("source") == "github":
+        out.extend(_preflight_rows(base, cfg, run, which, injected, cheap_only))
     if disc.get("source") == "github":
-        auth = run(["gh", "auth", "status"])
-        auth_ok = bool(auth)
-        out.append(_chk("gh auth", auth_ok,
-                        "" if auth_ok else _gh_auth_fix(getattr(auth, "raw", ""))))
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):
-            out.append(_chk("gh project scope", bool(auth) and "project" in auth,
-                            "run: gh auth refresh -s project"))
             dup = _board_dup_risk(gh_disc, run)
             if dup:
                 out.append(_chk("project.number pinned (no duplicate-board risk)", False, dup))
@@ -3599,7 +3647,7 @@ def _managing_session_state(base, cfg):
 
     Loads `loop` through `_load_loop_script` (this file's one sanctioned cross-skill loader, see its
     own docstring) rather than duplicating `session_active`'s liveness logic (pid_alive + lease TTL)
-    locally — the same reasoning `_gh_auth_fix`/`_dependency_marker_scan` already give for reusing
+    locally — the same reasoning `_dependency_marker_scan` (and preflight's gh-auth check) give for reusing
     `gh_session`/`sources`/`backlog_check` verbatim: a local copy here could silently drift from
     loop.py's own, and for a liveness check, drift is the exact failure mode being avoided.
 

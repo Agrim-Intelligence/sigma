@@ -38,6 +38,26 @@ All notable changes to Sigma are recorded here, newest first.
   wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
   `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
   was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
+- `/agrim-init` now checks what the loop needs from git and `gh` before the first goal does
+  (#229). The new `skills/agrim-init/scripts/preflight.py` (stdlib only) checks: a git repository,
+  the `work.remote` remote (default `origin`, or which remotes exist), the base branch pushed
+  there, `gh` installed, `gh auth status`, and the token's scopes: `repo`, `workflow`, `read:org`
+  when the owner is an organization, `project` when a board is on. It parses both `gh` scope
+  formats. A fine-grained or app token reports no scopes, so that case prints `CANNOT VERIFY`,
+  never a pass. A directory that is not a git repository is refused before anything is written.
+  Every other failure prints one line for each host (Claude Code, Codex, Cursor) with the exact
+  command, plus what Sigma does meanwhile. When `work.enabled` is on but there is no remote (or no
+  `gh`), init prints a decision: fix the cause, or turn `work.enabled` off. Two gestures act on
+  it: `preflight.py local-only <sdlc>` and `use-remote <sdlc> <name>`. Nothing is switched off
+  silently. `work.py start` now raises the same message in place of git's raw `fatal: 'origin'
+  does not appear to be a git repository`. It asks only after the fetch has failed, so the
+  measured call count on the success path is unchanged. `/agrim-doctor` runs the same checks as
+  rows. Each fix comes from the check that failed, so with `gh` absent the fix is to install
+  `gh`, where it used to say `gh auth login`. Every git and `gh` call is time-limited by
+  `SIGMA_WATCH_CALL_TIMEOUT` (default 120s), and a call that runs over has its whole process tree
+  killed. Nothing prompts. The test suite now also guards `subprocess.Popen` against live `gh`
+  calls, and child processes get an empty gh config.
+
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a

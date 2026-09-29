@@ -34,6 +34,10 @@ def _cmds(root):
 
 
 def _run(*args, cwd):
+    if args and args[0] == INIT:                   # #229: init refuses a non-git directory
+        target = pathlib.Path(cwd) / str(args[1]) if len(args) > 1 else pathlib.Path(cwd)
+        if target.is_dir() and not (target / ".git").exists():
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
     return subprocess.run([sys.executable, *map(str, args)], cwd=cwd, capture_output=True, text=True)
 
 

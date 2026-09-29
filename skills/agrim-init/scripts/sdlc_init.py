@@ -110,6 +110,62 @@ def verify_report(target_dir):
     return vd.proposal_lines(vd.detect(target_dir, skipped), skipped, trap=bool(enforce), sdlc=sdlc)
 
 
+#: #229 test seams: the runner/which `main()`'s preflight uses (None = the real ones). Tests set them
+#: on the module they loaded; nothing in production assigns them.
+PREFLIGHT_RUNNER = None
+PREFLIGHT_WHICH = None
+
+
+def _preflight():
+    """The sibling preflight.py (#229), loaded by path like verify_detect above."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent / "preflight.py"
+    spec = importlib.util.spec_from_file_location("preflight", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def git_refusal(target_dir, runner=None, which=None):
+    """#229: None when `target_dir` is inside a git work tree (a fresh `git init` with no commit yet
+    passes here and is reported by `preflight_report`); else the lines /agrim-init
+    prints (stderr) before REFUSING -- nothing is written into a directory the loop cannot use."""
+    pf = _preflight()
+    import shutil
+    check = pf.check_git(str(pathlib.Path(target_dir).resolve()),
+                         runner or PREFLIGHT_RUNNER or pf.real_runner,
+                         which or PREFLIGHT_WHICH or shutil.which, pf.call_timeout())
+    if check["ok"] is True or check.get("note") == "no-commit":
+        return None           # a fresh `git init` is a normal start: reported after the scaffold
+    return (["agrim-init: REFUSED - nothing written. The loop needs a git repository (a worktree and "
+             "a branch per goal are cut from it)."]
+            + pf.failure_lines(check) + ["  Then re-run /agrim-init."])
+
+
+def preflight_report(target_dir, runner=None, which=None):
+    """#229: the preflight lines /agrim-init prints after scaffolding, on every host: each problem
+    with one remediation line per host and what Sigma does meanwhile, plus the work.enabled DECISION
+    when work is on but nothing can be pushed. Prints and flips nothing itself."""
+    pf = _preflight()
+    sdlc = os.path.abspath(os.path.join(str(target_dir), ".sdlc"))
+    try:
+        cfg = json.loads(pathlib.Path(sdlc, "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = {}
+    checks = pf.preflight(str(pathlib.Path(target_dir).resolve()), cfg if isinstance(cfg, dict) else {},
+                          runner=runner or PREFLIGHT_RUNNER, which=which or PREFLIGHT_WHICH)
+    lines = pf.report_lines(checks)
+    if not pf.requirements(cfg if isinstance(cfg, dict) else {})["work"]:
+        return lines
+    by_id = {c["id"]: c for c in checks}
+    remote, gh = by_id.get("remote") or {}, by_id.get("gh-installed") or {}
+    if remote.get("ok") is False:
+        lines += pf.decision_lines(sdlc, remote.get("remotes") or ())
+    elif gh.get("ok") is False:
+        lines += pf.decision_lines(sdlc, why="no-gh")
+    return lines
+
+
 _DEMO_GOAL = """---
 id: 0000
 title: "Demo - write a Sigma hello note"
@@ -492,6 +548,11 @@ def main(argv):
     if not pathlib.Path(target).is_dir():
         print(f"agrim-init: target directory does not exist: {target}", file=sys.stderr)
         return 1
+    refusal = git_refusal(target)                 # #229: before anything is written
+    if refusal:
+        for line in refusal:
+            print(line, file=sys.stderr)
+        return 2
     # #240: refuse BEFORE any write while the plugin under the previous name is active here. An
     # agrim-init copied without its agrim-loop sibling cannot check: said aloud, then it proceeds.
     try:
@@ -581,6 +642,10 @@ def main(argv):
     # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
     # prints are detected from the repository exactly as `confirm` will see it. The config's
     # `_why` is recomputed here for the same reason.
+    # #229: git / remote / base / gh / scopes, after every flag above has settled the config.
+    print()
+    for line in preflight_report(target):
+        print(line)
     if "config.json" in created:
         vd = _verify_detect()
         vd.write_verify(pathlib.Path(target) / ".sdlc", None, vd.unconfirmed_why(vd.detect(target)))

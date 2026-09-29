@@ -1840,6 +1840,30 @@ def _dirty_root_refusal(base_root, s, run):
             f"has been touched.")
 
 
+def _missing_remote_message(sdlc_dir, base_root, remote, run, error):
+    """#229: after `git fetch <remote>` failed with `error` -- the SAME preflight block /agrim-init
+    prints (the fix per host and the work.enabled decision) in place of git's raw `fatal: '<remote>'
+    does not appear to be a git repository`, but only on BOTH signals: git said exactly that, AND
+    `git remote` does not list the name (the same words also come from a remote whose URL is a
+    missing path, which is a different fix). Otherwise None, and git's own error stands. Costs no
+    call unless git said those words. Never raises: a preflight that cannot load changes nothing."""
+    if f"'{remote}' does not appear to be a git repository" not in (error or ""):
+        return None
+    def runner(argv, cwd=None, timeout=None):
+        try:
+            return 0, run(cwd or base_root, argv)
+        except Exception as exc:            # noqa: BLE001 - a failed `git remote` is data here
+            return 1, str(exc)
+    try:
+        path = _HERE.parent.parent / "agrim-init" / "scripts" / "preflight.py"
+        spec = importlib.util.spec_from_file_location("work_preflight", path)
+        preflight = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(preflight)
+        return preflight.no_remote_message(base_root, remote, sdlc_dir, runner=runner)
+    except Exception:                       # noqa: BLE001 - fall back to git's own message
+        return None
+
+
 def start(sdlc_dir, config, goal, run=None, session_pid=None):
     """Cut a fresh worktree + branch from the tip of THIS GOAL'S base. Idempotent, and
     resumable: the record lives in gitignored state, so a supervisor relaunch re-attaches instead of
@@ -1954,6 +1978,11 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     try:
         run(base_root, ["git", "fetch", s["remote"], base])
     except Exception as exc:                # noqa: BLE001 - re-raised with the one fact git cannot know
+        # #229: a missing remote is not a base problem. Asked ONLY here, on the failure path, so the
+        # happy path's measured call count (docs/branching-model.md §6e) is unchanged.
+        missing = _missing_remote_message(sdlc_dir, base_root, s["remote"], run, str(exc))
+        if missing:
+            raise RuntimeError(missing) from exc
         # Fail-closed is right — a base that does not exist must never become a worktree — but git's
         # own "couldn't find remote ref X" names the ref and not where it CAME from, so an operator
         # whose config says `base: main` has nothing pointing back at the issue body. One clause.

@@ -45,6 +45,25 @@ Scaffold the `.sdlc/` project layer, then report what happened.
     place, so rerunning it does not migrate the scope for you. A failed ignore-write now fails the
     command itself (nonzero exit from the CLI, or `ok: false` from the wizard path) instead of
     silently leaving the runtime dirs uncovered.
+1b. **Preflight (#229).** The scaffolder checks, up front, what the loop needs from git and `gh`:
+    a git repository, the `work.remote` remote (default `origin`), the base branch pushed there,
+    `gh` installed, `gh auth status`, and the token's scopes (`repo`, `workflow`, `read:org` when the
+    owner is an organization, `project` when a board is on). **A directory that is not a git
+    repository is REFUSED before anything is written** (exit 2; the printed fix is `git init`).
+    Every other problem is printed after the scaffold as `[FAIL]` or `[CANNOT VERIFY]` (a
+    fine-grained token reports no scopes -- never read that as a pass), with one line per host
+    (Claude Code / Codex / Cursor) carrying the exact command, and a `Meanwhile:` line. The same
+    check runs any time: `python3 "${CLAUDE_SKILL_DIR}/scripts/preflight.py" check . --sdlc .sdlc`.
+    When `work.enabled` is on but there is no usable remote (or no `gh`), it prints a **DECISION**:
+    keep work on and fix the cause, or run local-only (`work.enabled: false`: the loop edits this
+    checkout directly, no worktree, branch, push or PR). Nothing flips it silently.
+    - **Claude Code:** ask the user with a real question: add the remote (they give the URL; run
+      the printed `git remote add` / `git push -u` lines only on their yes), use another existing
+      remote (`preflight.py use-remote .sdlc <name>`), or go local-only
+      (`python3 "${CLAUDE_SKILL_DIR}/scripts/preflight.py" local-only .sdlc`). Never run
+      `gh auth login` / `gh auth refresh` for them -- they are interactive; hand them the line.
+    - **Codex / Cursor:** relay the printed preflight block and DECISION verbatim. It carries the
+      exact gesture and the exact config line; do not choose for the user.
 2. Read the printed `created / skipped` summary and the git tip. `/agrim-init` creates
    `.sdlc/ledger/` holding only a `README.md`; the ledger stays off (`ledger.enabled: null`) until
    you enable it and `/agrim-ledger` bootstraps it.
