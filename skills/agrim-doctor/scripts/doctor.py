@@ -2195,8 +2195,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         out.append(_chk("verify command present (enforce is on)",
                         bool(verify.get("command")) or _any_goal_verify_command(base),
                         "verify.enforce is on but no verify.command (and no goal sets verify_command) — "
-                        "every `done` is refused. Fix: python3 <sigma>/skills/agrim-init/scripts/"
-                        "verify_detect.py set .sdlc \"<command>\" (`... detect .` proposes one), or "
+                        "every `done` is refused. Fix: " + _python_command() + " <sigma>/skills/"
+                        "agrim-init/scripts/verify_detect.py detect . lists candidates, then "
+                        "`... confirm .sdlc <n>` sets candidate n (it re-reads the repo; nothing "
+                        "pasted reaches a shell), or put your command in verify.command; or "
                         "`... decline .sdlc` to turn enforce off."))
 
     # A backlog cross-check whose park_threshold sits BELOW its candidate threshold parks EVERYTHING it
@@ -2548,6 +2550,16 @@ def _count_jsonl_lines(directory):
             continue
         total += sum(1 for line in text.splitlines() if line.strip())
     return total
+
+
+def _python_command():
+    """`python3`, else `python`, else the Windows `py` launcher -- whichever is on PATH (a lookup,
+    not an execution), so the printed fix runs on an install without `python3` (#228)."""
+    import shutil
+    for name in ("python3", "python", "py"):
+        if shutil.which(name):
+            return name
+    return "python3"
 
 
 def _any_goal_verify_command(base):

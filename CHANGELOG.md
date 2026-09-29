@@ -8,10 +8,17 @@ All notable changes to Sigma are recorded here, newest first.
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a
   command by reading files only: pytest, `package.json` scripts.test, `go.mod`, `Cargo.toml`, a
-  `Makefile` test target or a CI test step. `verify_detect.py set .sdlc "<command>"` records the
-  confirmed command and turns enforce on. `decline` keeps enforce off and records the reason.
-  Claude Code asks the user to choose. Codex and Cursor print the candidate and the exact config
-  line. A fresh config now ships `verify.enforce: false`, with the reason in `verify._why`. The
+  `Makefile` test target or a CI test step. `verify_detect.py confirm .sdlc <n>` records candidate
+  `n` and turns enforce on. It re-reads the candidate from the repository, so no repository text is
+  ever pasted into a shell and the stored command is exactly the one shown. `set .sdlc
+  --command-file <file>` (or `-` for stdin) records your own command. `decline` keeps enforce off
+  and records the reason. A CI step containing a shell metacharacter (`` ` $ ; & | < > ``) or a
+  control character is never proposed: it is named by file only. Every printed line escapes
+  control characters, so an ESC sequence in a repository file cannot repaint the terminal.
+  Claude Code asks the user to choose. Codex and Cursor print the numbered candidates and the
+  exact config line. Printed gestures and the demo's `verify_command` use the interpreter that is
+  on PATH (`python3`, `python` or `py`). A goal's `verify_command: ''` now counts as empty in
+  `loop.py`, as it already did in `/agrim-doctor`. A fresh config now ships `verify.enforce: false`, with the reason in `verify._why`. The
   `--demo` goal carries its own `verify_command`, so the Quickstart reaches `done`. The false
   instruction to fill in `.sdlc/project.md` is gone; the command is read only from goal
   `verify_command` or config `verify.command`. `/agrim-doctor` and the setup wizard flag enforce

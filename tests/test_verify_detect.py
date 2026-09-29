@@ -4,9 +4,13 @@ Portable by construction: every command a test RUNS is built from `sys.executabl
 `python3`, absent on many Windows installs), and no test shells out to bash."""
 import importlib.util
 import json
+import os
 import pathlib
+import shlex
 import subprocess
 import sys
+
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "agrim-init" / "scripts"
@@ -53,6 +57,8 @@ def test_python_command_is_python3_when_on_path(monkeypatch):
     assert vd.python_command() == "python3"
     monkeypatch.setattr(vd.shutil, "which", lambda name: "/x/python" if name == "python" else None)
     assert vd.python_command() == "python"
+    monkeypatch.setattr(vd.shutil, "which", lambda name: "/x/py" if name == "py" else None)
+    assert vd.python_command() == "py"
 
 
 def test_pytest_config_markers_count_without_test_files(tmp_path):
@@ -170,6 +176,8 @@ def test_scaffold_never_rewrites_an_existing_config_but_warns_about_the_trap(tmp
     assert r.returncode == 0, r.stderr
     assert (sdlc / "config.json").read_text() == before
     assert "EMPTY verify.command" in r.stdout
+    # One coherent message: the trap is ON, so nothing may also claim enforce is OFF.
+    assert "stays OFF" not in r.stdout and "enforce is OFF" not in r.stdout, r.stdout
 
 
 def test_init_prints_the_candidate_and_exact_config_line(tmp_path):
@@ -180,7 +188,8 @@ def test_init_prints_the_candidate_and_exact_config_line(tmp_path):
     cmd = f"{vd.python_command()} -m pytest -q"
     assert f"detected `{cmd}`" in r.stdout
     assert json.dumps({"verify": {"command": cmd, "enforce": True}}) in r.stdout
-    assert f'set .sdlc "{cmd}"' in r.stdout
+    assert "confirm .sdlc 1" in r.stdout
+    assert f'"{cmd}"' not in r.stdout.replace(json.dumps(cmd), "")   # never inside a shell gesture
 
 
 def test_init_with_no_tests_says_enforce_is_off(tmp_path):
@@ -193,7 +202,9 @@ def test_skill_and_templates_no_longer_send_the_command_to_project_md():
     tmpl = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     assert "fill its **Verify command**" not in skill
     assert "fill in Verify command in project.md" not in tmpl
-    assert "verify_detect.py\" set .sdlc" in skill and "decline" in skill
+    assert "verify_detect.py\" confirm .sdlc <n>" in skill and "decline" in skill
+    # #228 review: the gesture that pasted repository text into a shell is gone from the docs.
+    assert 'set .sdlc "<command>"' not in skill
 
 
 # ---------------------------------------------------------------- end to end, no network
@@ -230,8 +241,9 @@ def _demo_repo(tmp_path):
     goal = sdlc / "goals" / "0000-demo.md"
     # Portability: the demo's `python3` may be absent on Windows; run the same check with ours.
     # Unquoted on purpose: the frontmatter parser strips a leading `"` (see research/228.md).
-    goal.write_text(goal.read_text().replace("verify_command: python3 ",
-                                             f"verify_command: {sys.executable} "))
+    demo_python = f"verify_command: {vd.python_command()} "
+    assert demo_python in goal.read_text()          # the interpreter on THIS machine's PATH
+    goal.write_text(goal.read_text().replace(demo_python, f"verify_command: {sys.executable} "))
     assert _loop(sdlc, "start", ".sdlc").returncode == 0
     return repo, sdlc
 
@@ -263,7 +275,7 @@ def test_record_done_names_the_missing_command_not_run_verify_first(tmp_path):
     assert _loop(sdlc, "verify", ".sdlc", ".sdlc/goals/0000-demo.md").returncode == 3
     d = _loop(sdlc, "record", ".sdlc", ".sdlc/goals/0000-demo.md", "done")
     assert d.returncode == 4 and "no verify command declared" in d.stderr
-    assert "verify_detect.py set .sdlc" in d.stderr
+    assert "confirm .sdlc <n>" in d.stderr and f"{vd.python_command()} <sigma>" in d.stderr
 
 
 def test_the_shipped_template_itself_never_holds_the_trap():
@@ -272,3 +284,150 @@ def test_the_shipped_template_itself_never_holds_the_trap():
     raw = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     v = json.loads(raw)["verify"]
     assert not (v.get("enforce") and not v.get("command")), v
+
+
+def test_goal_verify_command_single_quoted_empty_counts_as_empty(tmp_path):
+    """`verify_command: ''` declares nothing (doctor already says so). loop.py must agree: NO-COMMAND
+    (exit 3), not a shell run of the two-character command `''` (exit 1)."""
+    repo, sdlc = _demo_repo(tmp_path)
+    goal = sdlc / "goals" / "0000-demo.md"
+    lines = [("verify_command: ''\n" if l.startswith("verify_command:") else l)
+             for l in goal.read_text().splitlines(True)]
+    goal.write_text("".join(lines))
+    assert _loop(sdlc, "verify", ".sdlc", ".sdlc/goals/0000-demo.md").returncode == 3
+    d = _loop(sdlc, "record", ".sdlc", ".sdlc/goals/0000-demo.md", "done")
+    assert d.returncode == 4 and "no verify command declared" in d.stderr
+
+
+# ---------------------------------------------------------------- hostile repository text (#246 review)
+#
+# A CI `run:` line is written by whoever wrote the repo. The printed confirm gesture must never
+# carry it into a shell, and what is stored must be exactly what was shown.
+
+def _ci_repo(root, run_line, name="t.yml"):
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / name).write_text("jobs:\n  t:\n    steps:\n      - run: " + run_line + "\n")
+    return root
+
+
+def _hostile(mark):
+    m = str(mark)
+    return {
+        "substitution": f"pytest -q $(touch {m})",
+        "backticks": f"pytest -q `touch {m}`",
+        "quote-breakout": f'pytest -k x" ; touch {m} ; echo "y',
+        "chain": f"pytest ; touch {m}",
+        "pipe": f"pytest | tee {m}",
+        "redirect": f"pytest > {m}",
+        "param-expansion": "pytest ${HOME}",
+        "esc": "pytest \x1b[2K\r\x1b[1A",
+        "bidi": "pytest \u202e",
+    }
+
+
+@pytest.mark.parametrize("kind", sorted(_hostile("M")))
+def test_hostile_ci_step_is_never_proposed_and_never_printed(tmp_path, kind):
+    run_line = _hostile(tmp_path / "MARK")[kind]
+    root = _ci_repo(tmp_path / "r", run_line)
+    skipped = []
+    assert vd.detect(root, skipped) == [] and skipped == ["CI step in .github/workflows/t.yml"]
+    printed = "\n".join(vd.proposal_lines([], skipped))
+    assert run_line not in printed and "\x1b" not in printed and "not proposed" in printed
+
+
+def test_benign_quoted_ci_step_is_proposed_and_confirm_stores_it_byte_identical(tmp_path):
+    root = _ci_repo(tmp_path / "r", 'pytest -m "not slow"')
+    assert _cmds(root) == ['pytest -m "not slow"']
+    sdlc = _cfg(root, {"command": "", "enforce": False})
+    r = _run(DETECT, "confirm", sdlc, "1", cwd=root)
+    assert r.returncode == 0, r.stderr
+    v = json.loads((sdlc / "config.json").read_text())["verify"]
+    assert v["command"] == 'pytest -m "not slow"' and v["enforce"] is True
+    assert json.dumps('pytest -m "not slow"') in r.stdout
+
+
+def test_confirm_refuses_an_index_that_is_not_a_candidate(tmp_path):
+    root = _ci_repo(tmp_path / "r", "pytest -q")
+    sdlc = _cfg(root, {"command": "", "enforce": False})
+    for bad in ("0", "2", "x", "-1"):
+        r = _run(DETECT, "confirm", sdlc, bad, cwd=root)
+        assert r.returncode == 2 and "REFUSED" in r.stderr, bad
+    assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False
+
+
+def test_printable_escapes_control_and_format_characters():
+    assert vd.printable("a\x1b[2Kb\r\n\u202ec") == "a\\x1b[2Kb\\r\\n\\u202ec"
+    assert vd.printable('pytest -m "not slow"') == 'pytest -m "not slow"'
+
+
+def test_escape_sequence_in_a_workflow_file_name_is_escaped_when_printed(tmp_path):
+    root = _ci_repo(tmp_path / "r", "pytest -q", name="a\x1b[2Kb.yml")
+    printed = "\n".join(vd.proposal_lines(vd.detect(root)))
+    assert "\x1b" not in printed and "a\\x1b[2Kb.yml" in printed
+
+
+@pytest.mark.parametrize("how", ["file", "stdin", "argv"])
+def test_set_stores_the_users_own_command_verbatim_from_file_stdin_or_argv(tmp_path, how):
+    sdlc = _cfg(tmp_path, {"command": "", "enforce": False})
+    cmd = 'pytest -m "not slow" -k \'a or b\''
+    if how == "file":
+        f = tmp_path / "cmd.txt"
+        f.write_text(cmd + "\n")
+        r = _run(DETECT, "set", sdlc, "--command-file", f, cwd=tmp_path)
+    elif how == "stdin":
+        r = subprocess.run([sys.executable, str(DETECT), "set", str(sdlc), "-"], input=cmd + "\n",
+                           cwd=tmp_path, capture_output=True, text=True)
+    else:
+        r = _run(DETECT, "set", sdlc, cmd, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert json.loads((sdlc / "config.json").read_text())["verify"]["command"] == cmd
+    assert json.dumps(cmd) in r.stdout
+
+
+@pytest.mark.parametrize("bad", ["pytest\ntouch X", "pytest \x1b[2K", "pytest\rX"])
+def test_set_refuses_a_multiline_or_control_character_command(tmp_path, bad):
+    sdlc = _cfg(tmp_path, {"command": "", "enforce": False})
+    f = tmp_path / "cmd.txt"
+    f.write_text(bad)
+    r = _run(DETECT, "set", sdlc, "--command-file", f, cwd=tmp_path)
+    assert r.returncode == 2 and "REFUSED" in r.stderr
+    assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False
+
+
+def _confirm_lines(stdout):
+    """The printed lines a user would paste to record a detected candidate: every line that runs
+    verify_detect.py with `confirm` or `set` (the pre-fix gesture was `set .sdlc "<candidate>"`, so
+    a filter blind to `set` would let this test pass against the very bug it targets)."""
+    return [l.strip() for l in stdout.splitlines()
+            if "verify_detect.py" in l and (" confirm .sdlc " in l or " set .sdlc " in l)
+            and not l.strip().startswith(("agrim-init", "{", "other candidate", "or "))]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="executes the printed gesture through a POSIX shell")
+@pytest.mark.parametrize("kind", ["substitution", "backticks", "quote-breakout", "chain", "benign"])
+def test_pasting_the_printed_confirm_gesture_runs_nothing_and_stores_what_was_shown(tmp_path, kind):
+    """The review's reproduction, as a test: scaffold a repo whose only candidate is a CI step,
+    take the confirm line /agrim-init PRINTS, paste it into `sh -c` exactly as a user would, and
+    assert no side-effect file appears and the stored command equals the one shown."""
+    mark = tmp_path / "PWNED"
+    run_line = 'pytest -m "not slow"' if kind == "benign" else _hostile(mark)[kind]
+    repo = _ci_repo(_git_repo(tmp_path / "r"), run_line)
+    r = _run(INIT, repo, cwd=repo)
+    assert r.returncode == 0, r.stderr
+    shown = [json.loads(l.strip())["verify"]["command"] for l in r.stdout.splitlines()
+             if l.strip().startswith('{"verify"')]
+    confirm = _confirm_lines(r.stdout)
+    if kind == "benign":
+        assert shown == [run_line] and len(confirm) == 1, r.stdout
+    for line in confirm:
+        # Only the interpreter token is swapped (portability: `python3` may be another install).
+        pasted = shlex.quote(sys.executable) + line[line.index(" "):]
+        subprocess.run(["sh", "-c", pasted], cwd=repo, capture_output=True, text=True)
+    assert not mark.exists(), f"pasted gesture executed repository text: {confirm}"
+    stored = json.loads((repo / ".sdlc" / "config.json").read_text())["verify"]
+    if kind == "benign":
+        assert stored["command"] == shown[0] == run_line and stored["enforce"] is True
+    else:
+        assert shown == [] and confirm == [] and stored["enforce"] is False
+        assert "not proposed" in r.stdout and run_line not in r.stdout

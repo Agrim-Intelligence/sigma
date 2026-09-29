@@ -94,18 +94,17 @@ def verify_report(target_dir):
         verify = json.loads(cfgp.read_text(encoding="utf-8")).get("verify") or {}
     except (OSError, ValueError, AttributeError):
         return []
-    if verify.get("command"):
-        return [f"agrim-init: verify command - `{verify['command']}` "
-                f"(enforce {'ON' if verify.get('enforce') else 'OFF'})."]
     vd = _verify_detect()
-    lines = vd.proposal_lines(vd.detect(target_dir))
+    if verify.get("command"):
+        return [f"agrim-init: verify command - `{vd.printable(verify['command'])}` "
+                f"(enforce {'ON' if verify.get('enforce') else 'OFF'})."]
     enforce = verify.get("enforce")        # read generously, as loop.py's _enforce_enabled does
     if isinstance(enforce, str):
         enforce = enforce.strip().lower() not in ("", "false", "0", "no", "off")
-    if enforce:
-        lines.insert(0, "agrim-init: WARNING - existing .sdlc/config.json has verify.enforce ON with "
-                        "an EMPTY verify.command: EVERY `record done` is refused until you fix it.")
-    return lines
+    skipped = []
+    # One coherent message: on the trap, proposal_lines leads with the WARNING and describes
+    # confirm/decline against enforce ON -- it never also claims enforce is OFF.
+    return vd.proposal_lines(vd.detect(target_dir, skipped), skipped, trap=bool(enforce))
 
 
 _DEMO_GOAL = """---
@@ -115,7 +114,7 @@ lane: auto
 done_when: "sigma-demo.md exists with a one-line note"
 auto_ok: true
 status: pending
-verify_command: python3 -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text().strip() else 1)" sigma-demo.md
+verify_command: {python} -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text().strip() else 1)" sigma-demo.md
 ---
 
 A throwaway demo goal so you can watch the SDLC run end to end. Create
@@ -135,7 +134,9 @@ def scaffold_demo(target_dir):
     if dest.exists():
         return False
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(_DEMO_GOAL, encoding="utf-8")
+    # #228: the interpreter name is resolved on THIS machine (python3 / python / py), so the demo's
+    # verify_command runs on a Windows install that has no `python3` on PATH.
+    dest.write_text(_DEMO_GOAL.replace("{python}", _verify_detect().python_command()), encoding="utf-8")
     return True
 
 

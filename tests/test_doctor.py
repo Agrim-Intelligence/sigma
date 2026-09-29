@@ -6563,7 +6563,7 @@ def test_verify_trap_fix_names_the_one_line_gesture():
     with tempfile.TemporaryDirectory() as t:
         base = _sdlc(t, {"verify": {"enforce": True, "command": ""}})
         fix = _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]["fix"]
-        assert "verify_detect.py set .sdlc" in fix and "decline .sdlc" in fix
+        assert "confirm .sdlc <n>" in fix and "decline .sdlc" in fix
 
 
 def test_an_empty_goal_verify_command_does_not_satisfy_the_verify_trap_row():

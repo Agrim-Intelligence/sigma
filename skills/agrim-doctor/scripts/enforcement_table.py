@@ -481,7 +481,7 @@ def render(root):
         "-- so on a bare `/agrim-init` every `work.py` row below reads `on` unless its own second key",
         "says otherwise. `verify.enforce` ships `false` (#228): the template cannot know a command, and",
         "enforce on with an empty one refuses every `done`. `/agrim-init` turns it on once a verify",
-        "command is confirmed (`verify_detect.py set`). `/agrim-setup` still writes",
+        "command is confirmed (`verify_detect.py confirm`). `/agrim-setup` still writes",
         "`ledger.enabled: true` where it is `null` (unchanged, still off by default).",
         "",
         "**Hosts** names where the mechanism holds *by construction* -- a Python gate runs wherever",

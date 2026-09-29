@@ -48,8 +48,10 @@ continue.
 `verify.enforce: true` with an **empty** `verify.command` refuses *every* `done` forever. So find a
 real command: `python3 <sigma>/skills/agrim-init/scripts/verify_detect.py detect .` lists the
 candidates it finds by reading files (pytest, `package.json` scripts.test, `go.mod`, `Cargo.toml`, a
-`Makefile` test target, a CI test step). Confirm one with the user, or ask them for the exact
-command. If you genuinely can't get one yet, leave verify off and say so; never
+`Makefile` test target, a CI test step). Confirm one with the user, then record it with
+`... verify_detect.py confirm .sdlc <n>` -- never paste a detected command into a shell line, since
+its text comes from the repository -- or ask them for the exact command and record it with
+`... set .sdlc --command-file <file>`. If you genuinely can't get one yet, leave verify off and say so; never
 enable enforce without a command. `setup.py configure` guarantees this, but choose the command here.
 
 ## 4. Choose the ignore scope (respect an existing choice)

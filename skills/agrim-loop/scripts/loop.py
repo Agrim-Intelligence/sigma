@@ -4637,10 +4637,23 @@ def _verified_tree(sdlc_dir, goal, config=None):
     return (root, head, fell_back)
 
 
+def _python_command():
+    """`python3`, else `python`, else the Windows `py` launcher -- whichever is on PATH (a lookup,
+    not an execution), so a printed gesture runs on an install without `python3` (#228)."""
+    import shutil
+    for name in ("python3", "python", "py"):
+        if shutil.which(name):
+            return name
+    return "python3"
+
+
 #: The one gesture every "no verify command" message names (#228), so the loop, /agrim-init and
-#: /agrim-doctor all point at the same fix.
-_VERIFY_SET_HINT = ("set one: python3 <sigma>/skills/agrim-init/scripts/verify_detect.py set .sdlc "
-                    "\"<command>\", or turn verify.enforce off")
+#: /agrim-doctor all point at the same fix. `confirm .sdlc <n>` re-derives candidate n from the
+#: repo itself: no repository text is ever pasted into a shell.
+_VERIFY_SET_HINT = (f"set one: {_python_command()} <sigma>/skills/agrim-init/scripts/verify_detect.py "
+                    "detect . lists candidates, `... confirm .sdlc <n>` sets candidate n (enforce ON), "
+                    "or put your command in config verify.command; or `... decline .sdlc` to turn "
+                    "verify.enforce off")
 
 
 def _declared_verify_command(goal, config):
@@ -4651,6 +4664,11 @@ def _declared_verify_command(goal, config):
     goal_path = pathlib.Path(str(goal))
     if goal_path.suffix == ".md" and goal_path.exists():
         cmd = state.frontmatter.get(goal_path.read_text(), "verify_command")
+        # `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips
+        # only `"`, so `''` would otherwise reach the shell as a command. doctor's trap row reads
+        # it as empty too; the two must agree (#228).
+        if cmd is not None and not cmd.strip().strip("'\"").strip():
+            cmd = None
     return cmd or (config.get("verify") or {}).get("command") or None
 
 
