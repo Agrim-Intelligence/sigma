@@ -900,6 +900,72 @@ def reanchor_content(sdlc_dir, goal):
     return True
 
 
+def enforce_enabled(verify):
+    """`verify.enforce` as a bool, read generously (F17/#342): a real bool passes through; a string
+    is off only when it spells false/no/off/0/empty; anything else is plain truthiness. `enforce`
+    gates a refusal, so a truthy typo (`1`, `"true"`) must never silently leave the gate off.
+    Lives here since #312 so `loop.py record done` and `work.py merge` read ONE copy (loop.py's
+    `_enforce_enabled` is an alias; doctor.py keeps its standalone restatement, parity-tested)."""
+    value = (verify or {}).get("enforce")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "false", "0", "no", "off")
+    return bool(value)
+
+
+def declared_verify_command(goal, config):
+    """The proving command `loop.py verify` would run for this goal, or None: goal frontmatter
+    `verify_command` (local mode, goal given as a `.md` path), else config `verify.command`.
+    Shared by `verify_goal`, the `record done` refusal and the merge gate so none of them can
+    disagree about whether there is anything to run (#228, #312)."""
+    cmd = None
+    goal_path = pathlib.Path(str(goal))
+    if goal_path.suffix == ".md" and goal_path.exists():
+        cmd = frontmatter.get(goal_path.read_text(), "verify_command")
+        # `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips
+        # only `"`, so `''` would otherwise reach the shell as a command (#228).
+        if cmd is not None and not cmd.strip().strip("'\"").strip():
+            cmd = None
+    return cmd or ((config or {}).get("verify") or {}).get("command") or None
+
+
+def verify_required(config, goal):
+    """#312: THE one rule for "must this goal carry THIS run's passing verify evidence before it may
+    land?" -> the reason it must (a short phrase), or None when there is nothing to prove.
+
+    Required when `verify.enforce` is on (the operator asked for machine-checked done), OR when a
+    verify command is declared for the goal (there is something to run, so a merge without having
+    run it is a merge nobody verified -- the pre-#312 merge contract, unchanged). Neither -> None:
+    `loop.py verify` would exit 3 NO-COMMAND and write no evidence, so demanding evidence would
+    park every merge forever on a condition no gesture can satisfy -- the defect #312 found on the
+    documented "decline the verify command" path.
+
+    Readers: `work.merge` gates on this whole rule. `loop.py record done` gates on its `enforce`
+    half only (`enforce_enabled`), as it always has -- with `work.enabled` and a PR, `record done`
+    additionally requires the PR MERGED, and the merge already passed this rule, so the command
+    half reaches `done` through the merge. By construction the merge never requires LESS than
+    `record done` does."""
+    if enforce_enabled((config or {}).get("verify")):
+        return "verify.enforce is on"
+    if declared_verify_command(goal, config):
+        return "a verify command is declared"
+    return None
+
+
+def verify_set_hint():
+    """The one gesture every "no verify command" message names (#228), so the loop, the merge
+    gate, /agrim-init and /agrim-doctor all point at the same fix. `python3`, else `python`, else
+    `py` -- a PATH lookup, never an execution -- so the printed gesture runs where it is read."""
+    import shutil
+    py = next((n for n in ("python3", "python", "py") if shutil.which(n)), "python3")
+    return (f"set one: {py} <sigma>/skills/agrim-init/scripts/verify_detect.py "
+            "detect . lists candidates with ids, `... confirm .sdlc <n> <id>` sets candidate n if "
+            "its id still matches (enforce ON), "
+            "or put your command in config verify.command; or `... decline .sdlc` to turn "
+            "verify.enforce off")
+
+
 #: THE ENFORCEMENT REGISTRY (#2740). Every gate this module implements, one entry each, read (never
 #: imported) by skills/agrim-doctor/scripts/enforcement_table.py to render docs/enforcement.md.
 #: A module-level function whose name ends `_refusal`/`_gate`/`_hold`/`_guard`, is `gate`, or

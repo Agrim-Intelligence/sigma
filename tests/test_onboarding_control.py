@@ -14,8 +14,12 @@ THE CONTROLS (AGENTS.md: a test never seen red proves nothing), each run here on
   * the ORIGINAL bug, exactly as the PR #306 review reproduced it -- `config.json.tmpl` back to
     `"enforce": true` with an empty command and BOTH scaffold rewrites (init_flow.py, sdlc_init.py)
     removed, `verify_detect.write_verify` intact -- through the CLI gesture `--mode both --sigma
-    <scratch>`: exit 1, both no-command variants RED at `record done` (exit 4). The confirm
+    <scratch>`: exit 1, local/no-command RED at `record done` (exit 4) and github/no-command RED at
+    its enforce-off assertion, its merge parked naming the verify-command fix. The confirm
     variants stay green: their confirm overwrites the default, which is why the variant exists.
+  * #312: the merge gate's `verify_required` guard reverted in a scratch copy (every merge demands
+    evidence again) turns github/no-command -- which now runs the REAL work-ON path, no
+    `--local-only` -- red through the CLI gesture, while github (confirm) stays green.
   * `verify_detect.write_verify` itself regressed (enforce ON + "" again, its guard removed) turns
     the confirm variant red AT `record done`.
   * every `[ask]` flag renamed in init_flow.py turns the control red at init ("unanswerable
@@ -27,7 +31,8 @@ THE CONTROLS (AGENTS.md: a test never seen red proves nothing), each run here on
     fails the README parse.
   * a README command that is not `python3 <sigma script> ...`, or carries shell syntax, is refused
     before anything runs (a marker file proves nothing was executed).
-  * every assertion in `check_local` / `check_github` / `check_no_command` is broken once, alone,
+  * every assertion in `check_local` / `check_github` / `check_no_command` /
+    `check_github_no_command` is broken once, alone,
     against the observations of a real green run, and seen false.
   * main(): exit 0 green, 1 red, 2 for a missing README (a message, not a traceback).
 POSIX only: the tool refuses on Windows (a make target, a #! fake gh), so this module skips there.
@@ -149,8 +154,13 @@ def test_no_command_variants_reach_done_with_enforce_off(cli_run):
     github = cli_run["modes"]["github/no-command"]["observations"]
     for obs in (local, github):
         assert obs["scaffolded_verify"] == {"command": "", "enforce": False}, obs
-        assert obs["verify_rc"] == 3 and obs["record_rc"] == 0, obs
-    assert local["status"] == "done" and github["issue_final"] == "closed"
+        assert obs["verify_rc"] == 3, obs
+    assert local["record_rc"] == 0 and local["status"] == "done"
+    # #312: github runs the real work-ON path -- no evidence, yet the approved merge passes the
+    # review gate; done still means merged (refused while open, recorded by reconcile after).
+    assert github["evidence"] is None
+    assert "review gate passed" in github["merge"] and github["early_done_rc"] == 4
+    assert github["issue_final"] == "closed" and github["pr_final"] == "MERGED"
 
 
 # ------------------------------------------------------------------------------ controls
@@ -168,12 +178,34 @@ def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
     rc, lines, blob, proc = _cli("--mode", "both", "--sigma", str(sigma), workdir=tmp_path)
     assert rc == 1, proc.stdout[-3000:]
     assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "RED at record done",
-                     "github/no-command": "RED at record done"}, lines
+                     "github/no-command": "RED at assert:init left verify.enforce OFF with no "
+                                          "command confirmed"}, lines
     mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
     assert mine["scaffolded_verify"] == {"command": "", "enforce": True}
     gh_obs = blob["modes"]["github/no-command"]["observations"]
-    assert gh_obs["record_rc"] == 4 and gh_obs["issue_final"] == "open"
+    # enforce ON with nothing to run: the merge still demands evidence (the safety half of #312),
+    # and its park names the verify-command fix rather than "run verify".
+    assert gh_obs["merge"].startswith("PARK: no fresh verify evidence"), gh_obs["merge"]
+    assert "verify_detect.py" in gh_obs["merge"], gh_obs["merge"]
+
+
+def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
+    """#312's repro, through the documented gesture: revert the merge gate to demanding evidence
+    unconditionally and the github no-command variant -- the real work-ON path -- goes red, its
+    approved merge parked on "no fresh verify evidence"; the confirm variant is unaffected."""
+    sigma = _scratch_copy(tmp_path / "sigma")
+    _mutate(sigma / "skills" / "agrim-loop" / "scripts" / "work.py",
+            "refusal = state.done_refusal(sdlc_dir, goal) if required else None",
+            "refusal = state.done_refusal(sdlc_dir, goal)")
+    rc, lines, blob, proc = _cli("--mode", "github", "--sigma", str(sigma), workdir=tmp_path)
+    assert rc == 1, proc.stdout[-3000:]
+    # (the stdout line's name stops at " (", so the assertion name reads truncated here)
+    assert lines == {"github": "GREEN", "github/no-command": "RED at assert:the review gate ran"}, lines
+    assert blob["modes"]["github/no-command"]["failed_step"] == \
+        "assert:the review gate ran (a sigma:block parked the merge)"
+    gh_obs = blob["modes"]["github/no-command"]["observations"]
+    assert gh_obs["merge"].startswith("PARK: no fresh verify evidence"), gh_obs["merge"]
 
 
 def test_control_write_verify_regression_goes_red_at_record_done(tmp_path):
@@ -344,8 +376,15 @@ NO_COMMAND_BREAKS = {
     "record done exited 0 (nothing to enforce)": lambda o: o.update(record_rc=4),
     "goal frontmatter status is done": lambda o: o.update(status="in-progress"),
     "the loop made no gh call in local-goals mode": lambda o: o.update(gh_calls=[["issue", "list"]]),
-    "issue closed after done": lambda o: o.update(issue_final="open"),
-    "every gh call was one the fake models": lambda o: o.update(unhandled='{"argv": ["x"]}\n'),
+}
+
+GITHUB_NO_COMMAND_BREAKS = {
+    "init left verify.enforce OFF with no command confirmed":
+        NO_COMMAND_BREAKS["init left verify.enforce OFF with no command confirmed"],
+    "loop verify said NO-COMMAND (exit 3)": NO_COMMAND_BREAKS["loop verify said NO-COMMAND (exit 3)"],
+    "no verify evidence was written (nothing to run)":
+        lambda o: o.update(evidence={"verify_state": "pass"}),
+    **{k: v for k, v in GITHUB_BREAKS.items() if k != "verify evidence passed in the goal worktree"},
 }
 
 
@@ -369,15 +408,15 @@ def test_every_github_assertion_is_seen_red_once(github_run):
 def test_every_no_command_assertion_is_seen_red_once(cli_run):
     local = next(g for g in cli_run["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     local = dict(local, gh_calls=[])
+    assert all(a["ok"] for a in oc.check_no_command(local))
+    assert {a["name"] for a in oc.check_no_command(local)} == set(NO_COMMAND_BREAKS)
+    for name, mutate in NO_COMMAND_BREAKS.items():
+        _broken(oc.check_no_command, local, name, mutate)
     github = cli_run["modes"]["github/no-command"]["observations"]
-    seen = set()
-    for obs in (local, github):
-        names = {a["name"] for a in oc.check_no_command(obs)}
-        assert all(a["ok"] for a in oc.check_no_command(obs))
-        for name in names:
-            _broken(oc.check_no_command, obs, name, NO_COMMAND_BREAKS[name])
-        seen |= names
-    assert seen == set(NO_COMMAND_BREAKS)
+    assert all(a["ok"] for a in oc.check_github_no_command(github))
+    assert {a["name"] for a in oc.check_github_no_command(github)} == set(GITHUB_NO_COMMAND_BREAKS)
+    for name, mutate in GITHUB_NO_COMMAND_BREAKS.items():
+        _broken(oc.check_github_no_command, github, name, mutate)
 
 
 def test_main_exit_codes_for_red_and_a_missing_readme(tmp_path):

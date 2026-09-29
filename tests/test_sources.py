@@ -4274,3 +4274,59 @@ def test_the_shipped_template_states_both_defaults_explicitly():
     src = _mod("sources")
     assert src._auto_unpark(tmpl) == "on"                     # template and code agree
     assert src._blocking_priority_override(tmpl) is True
+
+
+# --- #312: an empty OVERLAY lane is an answer, not a blip -----------------------------------------
+
+def _blocking_empty_runner(calls, fail_blocking_times=0):
+    state = {"fails": fail_blocking_times}
+
+    def run(a):
+        calls.append(list(a))
+        if _issues_verb(a) != "list":
+            return ""
+        if "sdlc:blocking" in _rest_labels(a):
+            if state["fails"]:
+                state["fails"] -= 1
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")      # transient -> retried
+            return "[]"
+        return json.dumps([{"number": 5, "labels": [{"name": "sdlc:goal"}]}])
+    return run
+
+
+def test_312_an_empty_blocking_lane_is_read_once_and_never_slept_on(monkeypatch):
+    """Before #312 every github `loop next` re-read an empty `sdlc:blocking` lane 3 times with
+    1s + 2s backoff (~3s measured per pick). A successful read of a lane that legitimately has no
+    members is an answer: one read, no sleep. The backlog's own empty-read retry (#447) is kept."""
+    src = _mod("sources")
+    slept = []
+    monkeypatch.setattr(src.time, "sleep", lambda s: slept.append(s))
+    calls = []
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=_blocking_empty_runner(calls))
+    assert gh.next_pending() == "5"
+    assert sum("sdlc:blocking" in _rest_labels(c) for c in calls) == 1, calls
+    assert slept == [], slept
+
+
+def test_312_a_failing_blocking_lane_read_is_still_retried(monkeypatch):
+    """Empty-because-error is not empty-because-none: a transient failure keeps its retry."""
+    src = _mod("sources")
+    slept = []
+    monkeypatch.setattr(src.time, "sleep", lambda s: slept.append(s))
+    calls = []
+    gh = src.GitHubSource({"discovery": {"source": "github"}},
+                          run=_blocking_empty_runner(calls, fail_blocking_times=1))
+    assert gh.next_pending() == "5"
+    assert sum("sdlc:blocking" in _rest_labels(c) for c in calls) == 2, calls
+    assert len(slept) == 1, slept
+
+
+def test_312_the_backlog_itself_still_retries_an_empty_read(monkeypatch):
+    """The #447 insurance on the PRIMARY backlog read is unchanged by the overlay carve-out."""
+    src = _mod("sources")
+    monkeypatch.setattr(src.time, "sleep", lambda s: None)
+    run = _recording_runner({"list": "[]"})
+    gh = src.GitHubSource({"discovery": {"source": "github", "blocking_priority_override": False}},
+                          run=run)
+    assert gh.next_pending() is None
+    assert len(run.calls) == gh._BACKLOG_READ_RETRIES

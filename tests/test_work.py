@@ -2149,13 +2149,19 @@ def test_done_refusal_falls_back_to_the_project_root_when_the_worktree_is_gone(t
 
 # --- merge: the ordering is the safety -----------------------------------------------------------
 
+#: #312: the merge demands verify evidence only when verify is REQUIRED (`state.verify_required`):
+#: enforce on, or a command declared. These evidence-gate tests declare a command, so they pin the
+#: gate exactly as before; the no-command case is pinned by the #312 tests at the end of this file.
+ALWAYS_VERIFIED = {**ALWAYS, "verify": {"command": "pytest -q"}}
+
+
 def test_merge_refuses_without_fresh_local_evidence(tmp_path):
     """CI is not the only leg. No verify for THIS run means no merge, whatever GitHub says."""
     d = _sdlc(tmp_path)
     goal = _started(d)
     run = _runner(_rights() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr()),
                                                 ("pr view", _view())])
-    assert work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP).startswith("PARK: no fresh verify")
+    assert work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP).startswith("PARK: no fresh verify")
     assert not any("pr merge" in c for c in run.calls)
 
 
@@ -2164,7 +2170,7 @@ def test_merge_refuses_evidence_from_a_previous_run(tmp_path):
     goal = _started(d)
     _evidence(d, goal, age=10_000)
     run = _runner(_rights() + _protected() + [("pr view", _view())])
-    assert "predates this run" in work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert "predates this run" in work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP)
 
 
 def test_merge_refuses_a_failing_verify(tmp_path):
@@ -2172,7 +2178,7 @@ def test_merge_refuses_a_failing_verify(tmp_path):
     goal = _started(d)
     _evidence(d, goal, exit_code=1)
     run = _runner(_rights() + _protected() + [("pr view", _view())])
-    assert "last verify FAILED" in work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert "last verify FAILED" in work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP)
 
 
 def test_merge_lands_directly_when_clean_and_safe(tmp_path):
@@ -2510,7 +2516,8 @@ def test_a_park_before_the_merge_never_closes_its_issue(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, goal="1642.md", base="feature/autowatch-dryrun")
     run = _landed()
-    out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
+    out = work.merge(d, {**ALWAYS_GITHUB, "verify": {"command": "pytest -q"}}, goal, run=run,
+                     sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert _issue_calls(run, "1642") == [], run.calls
 
@@ -9072,3 +9079,94 @@ def test_finish_prunes_the_plan_review_record_and_only_its_own(tmp_path):
     work.finish(d, ON, goal, run=_runner([]))
     assert not _gate_record(d).exists()
     assert other.read_text() == '{"verdict":"pass"}'
+
+
+# --- #312: the merge gate demands verify evidence only when verify is REQUIRED -------------------
+#
+# A github-mode user who declines the verify command gets `verify.enforce: false` and no
+# `verify.command` from the scaffold. Before #312 every `work.py merge` then parked on "no fresh
+# verify evidence for this run" -- evidence that `loop.py verify` cannot produce at all (it exits 3,
+# NO-COMMAND) -- so the documented decline path could never land a PR. `state.verify_required` is
+# the one truth both gates read: enforce on OR a command declared -> evidence required, exactly as
+# before; neither -> nothing to prove, and the merge proceeds to its OTHER gates (review, CI, clean).
+
+GITHUB_NO_COMMAND = {"work": {"enabled": True, "auto_merge": "always", "require_review": "changes"},
+                     "discovery": {"source": "github"}, "verify": {"enforce": False, "command": ""}}
+
+
+def test_312_github_no_command_enforce_off_merges_without_verify_evidence(tmp_path):
+    """THE REPRO. Declined verify, github mode, no evidence file at all: the merge lands."""
+    d = _sdlc(tmp_path, GITHUB_NO_COMMAND)
+    goal = _started(d, goal="1642.md")
+    run = _landed(extra=_review(decision="APPROVED"))
+    out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged"), out
+    assert "no fresh verify evidence" not in out
+
+
+def test_312_github_no_command_still_parks_on_the_review_gate(tmp_path):
+    """Dropping the verify leg must not drop the review leg: a Request-changes still parks."""
+    d = _sdlc(tmp_path, GITHUB_NO_COMMAND)
+    goal = _started(d, goal="1642.md")
+    run = _runner(_rights() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"])
+                  + [("pr view", _view())])
+    out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: changes requested by bo"), out
+    assert not any("pr merge" in c for c in run.calls)
+
+
+def test_312_enforce_on_without_evidence_still_parks_and_names_the_fix(tmp_path):
+    """The safety property, half one: enforce ON with no command is still a demand -- and since
+    verify cannot run, the park names the command-setting fix instead of 'run verify'."""
+    cfg = {**GITHUB_NO_COMMAND, "verify": {"enforce": True, "command": ""}}
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d, goal="1642.md")
+    run = _landed(extra=_review(decision="APPROVED"))
+    out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: no fresh verify evidence for this run"), out
+    assert "verify_detect.py" in out and "verify.enforce is on" in out
+    assert not any("pr merge" in c for c in run.calls)
+
+
+def test_312_command_configured_with_stale_evidence_still_parks(tmp_path):
+    """The safety property, half two: a declared command is a demand even with enforce OFF -- the
+    pre-#312 merge contract ('whether or not verify.enforce is set') holds whenever there is
+    something to run. A green from before this run proves nothing."""
+    cfg = {**GITHUB_NO_COMMAND, "verify": {"enforce": False, "command": "pytest -q"}}
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d, goal="1642.md")
+    _evidence(d, goal, age=60)                                       # predates this run
+    run = _landed(extra=_review(decision="APPROVED"))
+    out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: no fresh verify evidence for this run"), out
+    assert "predates this run" in out and "loop.py verify" in out
+    assert not any("pr merge" in c for c in run.calls)
+
+
+def test_312_command_configured_with_fresh_evidence_merges(tmp_path):
+    cfg = {**GITHUB_NO_COMMAND, "verify": {"enforce": False, "command": "pytest -q"}}
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d, goal="1642.md")
+    _evidence(d, goal)
+    out = work.merge(d, cfg, goal, run=_landed(extra=_review(decision="APPROVED")), sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged"), out
+
+
+@pytest.mark.parametrize("verify,goal_cmd,want", [
+    ({}, None, None),
+    ({"enforce": False, "command": ""}, None, None),
+    ({"enforce": "off"}, None, None),
+    ({"enforce": True}, None, "verify.enforce is on"),
+    ({"enforce": "true"}, None, "verify.enforce is on"),          # F17/#342: generous read
+    ({"enforce": 1}, None, "verify.enforce is on"),
+    ({"command": "pytest"}, None, "a verify command is declared"),
+    ({}, "make test", "a verify command is declared"),            # local goal frontmatter counts
+])
+def test_312_verify_required_is_the_one_shared_rule(tmp_path, verify, goal_cmd, want):
+    goal = "0001-x"
+    if goal_cmd:
+        p = tmp_path / "0001-x.md"
+        p.write_text(f"---\nverify_command: {goal_cmd}\n---\n# x\n")
+        goal = str(p)
+    got = state.verify_required({"verify": verify}, goal)
+    assert (got is None) if want is None else (want in got), got
