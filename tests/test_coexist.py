@@ -428,6 +428,71 @@ def test_unmarked_watcher_with_only_notes_is_a_note_and_the_gate_admits(tmp_path
     assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=io.StringIO()) is True
 
 
+def _argv(*parts):
+    return ("\0".join(parts) + "\0").encode()
+
+
+SIGMA_SCRIPT = "/home/u/.claude/plugins/cache/sigma/sigma/1.0.0/skills/agrim-loop/scripts/watch_daemon.py"
+#: The old plugin's real install layout: `<cache>/<marketplace>/<plugin>/<version>/skills/...`.
+OLD_SKILL = "sdlc" + "-loop"
+OLD_SCRIPT = ("/home/u/.claude/plugins/cache/%s/%s/1.4.24/skills/%s/scripts/watch_daemon.py"
+              % (OLD, OLD, OLD_SKILL))
+
+
+@pytest.mark.parametrize("cmdline,expected", [
+    # review block #2, finding 1: the old name only in the .sdlc ARGUMENT (the user's repo dir)
+    (_argv("python3", SIGMA_SCRIPT, "/work/my-%s-migration/.sdlc" % OLD), False),
+    (_argv("python3", SIGMA_SCRIPT, "/work/%s/.sdlc" % OLD), False),        # exact dir, still the arg
+    (_argv("/opt/%s/bin/python3" % OLD, SIGMA_SCRIPT, "/r/.sdlc"), False),  # the interpreter path
+    (_argv("python3", "/work/my-%s-fork/scripts/watch_daemon.py" % OLD, "/r/.sdlc"), False),
+    (_argv("python3", "/r/.sdlc"), False),                                  # no watcher script at all
+    (_argv("python3", OLD_SCRIPT, "/r/.sdlc"), True),                       # the old plugin, installed
+    (_argv("python3", OLD_WATCHER_ARGV[0], "/r/.sdlc"), True),
+    (_argv("python.exe", "C:\\Users\\u\\.claude\\plugins\\cache\\%s\\%s\\1.4.24\\skills\\%s"
+           "\\scripts\\watch_daemon.py" % (OLD, OLD, OLD_SKILL), "C:\\r\\.sdlc"), True),
+])
+def test_cmdline_matches_only_a_directory_of_the_watcher_script(cx, monkeypatch, cmdline,
+                                                                  expected):
+    _fake_proc(monkeypatch, cmdline)
+    assert cx._cmdline_names_old(4242) is expected
+
+
+def test_sigma_watcher_in_a_repo_named_after_the_old_plugin_is_not_refused(tmp_path, cx, live_pid,
+                                                                           monkeypatch):
+    """Review block #2, finding 1, the repro: a Sigma watcher from before this release (no
+    watch.owner), fresh heartbeat, in `.../my-<old>-migration/`, argv carrying that path as its
+    .sdlc argument. It must be a NOTE and the gate must admit."""
+    repo = tmp_path / ("my-%s-migration" % OLD)
+    (repo / ".sdlc" / "state").mkdir(parents=True)
+    (repo / ".sdlc" / "config.json").write_text("{}\n")
+    _fake_watcher(repo / ".sdlc", live_pid)
+    _fake_proc(monkeypatch, _argv("python3", SIGMA_SCRIPT, str(repo / ".sdlc")))
+    env = _host(tmp_path)
+    report = cx.assess(repo / ".sdlc", env=env)
+    assert report.active == [] and _kinds(report, cx.NOTE) == ["watcher"]
+    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=io.StringIO()) is True
+
+
+def test_unreadable_cmdline_note_says_it_cannot_tell(tmp_path, cx, live_pid, monkeypatch):
+    repo = _repo(tmp_path)
+    _fake_watcher(repo / ".sdlc", live_pid)
+    _fake_proc(monkeypatch, None)
+    [note] = cx.assess(repo / ".sdlc", env=_host(tmp_path)).notes
+    assert "cannot tell who started the running watcher" in note.detail
+    _fake_proc(monkeypatch, PROC["linux-plain"])
+    [note] = cx.assess(repo / ".sdlc", env=_host(tmp_path)).notes
+    assert "cannot tell" not in note.detail
+
+
+def test_installed_here_compares_normalised_paths(tmp_path, cx, monkeypatch):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED)
+    _install_list(pathlib.Path(env["CLAUDE_CONFIG_DIR"]),
+                  {OLD_ID: [{"scope": "project", "projectPath": str(repo).upper()}]})
+    monkeypatch.setattr(cx.os.path, "normcase", lambda p: p.lower())      # a case-folding OS
+    assert _kinds(cx.assess(repo / ".sdlc", env=env), cx.ACTIVE) == ["claude-enabled"]
+
+
 def test_live_unmarked_watcher_alone_is_a_note(tmp_path, cx, live_pid):
     repo = _repo(tmp_path)
     _fake_watcher(repo / ".sdlc", live_pid)
@@ -648,8 +713,71 @@ def test_session_start_hook_tells_the_session(tmp_path):
     assert "refused" not in p.stdout
 
 
+BASH_HOOK = pytest.mark.skipif(shutil.which("bash") is None or sys.platform.startswith("win"),
+                               reason="the hook is a bash script (not run on Windows)")
+
+
+def _hook(repo, env):
+    """Run the hook the way hooks.json does. `kg.py`, the one helper it spawns, finds no
+    knowledge_graph block in these fixtures and says nothing; the wizard is quiet because
+    config.json exists. Returns the single additionalContext (one JSON document, or it raises)."""
+    p = subprocess.run(["bash", str(HOOK)], input="{}", capture_output=True, text=True,
+                       env={**env, "CLAUDE_PROJECT_DIR": str(repo)}, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+def _stale_ledger(repo):
+    (repo / ".sdlc" / "config.json").write_text(json.dumps(
+        {"ledger": {"enabled": True, "watch": {"interval_seconds": 900}}}))
+    hb = repo / ".sdlc" / "state" / "watch.heartbeat"
+    hb.write_text("")
+    old = time.time() - 3600
+    os.utime(hb, (old, old))
+
+
+@BASH_HOOK
+def test_session_start_refusal_still_reaches_the_watcher_staleness_check(tmp_path):
+    """Review block #2, finding 2: the coexist message is informational in a hook. It must not
+    stop the ledger-watcher staleness warning (AGENTS.md LIVENESS)."""
+    repo = _repo(tmp_path)
+    _stale_ledger(repo)
+    ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
+    assert "claude plugin disable %s" % OLD_ID in ctx
+    assert "looks stale" in ctx and "/agrim-doctor" in ctx
+
+
+@BASH_HOOK
+def test_session_start_override_is_one_line_and_falls_through(tmp_path):
+    repo = _repo(tmp_path)
+    _stale_ledger(repo)
+    ctx = _hook(repo, _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
+    assert "coexistence override in effect" in ctx
+    assert "refused" not in ctx and "claude plugin disable" not in ctx
+    assert "looks stale" in ctx
+    [line] = [ln for ln in ctx.splitlines() if "coexistence override" in ln]
+    assert "SIGMA_ALLOW_COEXIST=1" in line
+
+
+@BASH_HOOK
+def test_session_start_policy_brief_still_runs_beside_the_message(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / ".sdlc" / "config.json").write_text('{"session_start":{"enabled":true}}')
+    ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
+    assert "claude plugin disable" in ctx and "reviewer is never the author" in ctx
+
+
 def test_cli_exit_codes(tmp_path):
     repo = _repo(tmp_path)
     assert _run([LOOP / "coexist.py", "check", repo / ".sdlc"], _env(**_host(tmp_path))).returncode == 0
     p = _run([LOOP / "coexist.py", "check", repo / ".sdlc"], _env(**_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 2 and "claude plugin disable" in p.stdout
+
+
+def test_cli_check_under_the_override_is_informational(tmp_path):
+    repo = _repo(tmp_path)
+    p = _run([LOOP / "coexist.py", "check", repo / ".sdlc"],
+             _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "override in effect" in p.stdout and "refused" not in p.stdout
+    assert "Claude Code has %s enabled" % OLD_ID in p.stdout

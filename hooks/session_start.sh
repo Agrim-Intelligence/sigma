@@ -14,7 +14,14 @@
 # no config / not enabled / no .sdlc → emit nothing, exit 0 (a session with no Sigma is untouched).
 set -uo pipefail
 
-allow() { exit 0; }
+# allow(): the hook's quiet exit. When the coexistence tier (below) found something and no later
+# tier emitted, it emits that notice alone -- the one additionalContext of this invocation.
+allow() {
+    if [ -n "${HOOK_COEXIST_NOTICE:-}" ] && command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import json, os; print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": os.environ["HOOK_COEXIST_NOTICE"]}}))' 2>/dev/null
+    fi
+    exit 0
+}
 PROJECT="${CLAUDE_PROJECT_DIR:-$PWD}"
 CFG="$PROJECT/.sdlc/config.json"
 # The wizard below has to import ITS OWN plugin code (setup_wizard.py), which lives beside THIS hook
@@ -32,10 +39,16 @@ command -v python3 >/dev/null 2>&1 || allow
 # An ACCELERATOR only: it tells the session up front. The load-bearing refusals live in Sigma's own
 # Python on every write surface (init, loop start, the watcher and its spawn, migrate --apply) via
 # skills/agrim-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
-# First tier on purpose: only one additionalContext is emitted per invocation, and this one names
-# a data-integrity risk. Silent (falls through) when nothing is active or the check cannot run.
-if [ -d "$PROJECT/.sdlc" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
-import importlib.util, json, os, sys
+# NOT a tier: it never ends the hook. Its text is carried in HOOK_COEXIST_NOTICE and PREPENDED to
+# whichever tier below emits (only one additionalContext per invocation), or emitted alone by
+# allow() when none does -- so the watcher-staleness check, the wizard and the policy brief still
+# run while both plugins are enabled (AGENTS.md LIVENESS: a dead watcher is never hidden by this).
+# Under SIGMA_ALLOW_COEXIST=1 the notice is ONE line (the override is in effect), not the refusal.
+# Silent when nothing is active or the check cannot run.
+HOOK_COEXIST_NOTICE=""
+if [ -d "$PROJECT/.sdlc" ]; then
+HOOK_COEXIST_NOTICE="$(python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
+import importlib.util, os, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
 try:
     spec = importlib.util.spec_from_file_location(
@@ -43,20 +56,17 @@ try:
     coexist = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(coexist)
     report = coexist.assess(os.path.join(project, ".sdlc"))
+    if report.active and coexist.overridden():
+        print("Tell the user this: " + coexist.override_line(report))
+    elif report.active:
+        print("Tell the user this before anything else, verbatim:\n"
+              + coexist.message(report, coexist.WRITE_SURFACES))
 except Exception:
-    sys.exit(1)
-if not report.active:
-    sys.exit(1)
-print(json.dumps({"hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "Tell the user this before anything else, verbatim:\n"
-                         + coexist.message(report, coexist.WRITE_SURFACES),
-}}))
-sys.exit(0)
+    pass
 PY
-then
-    exit 0
+)" || HOOK_COEXIST_NOTICE=""
 fi
+export HOOK_COEXIST_NOTICE
 
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
 # Only ONE additionalContext can be emitted per hook invocation, so this block's own exit status
@@ -85,6 +95,7 @@ fi
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
 sys.path.insert(0, os.path.join(plugin_root, "skills", "agrim-init", "scripts"))
 try:
     import setup_wizard
@@ -106,7 +117,7 @@ for step in status["steps"]:
                  f"-- if skipped: {step['degraded']}")
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "\n".join(lines),
+    "additionalContext": _notice + "\n".join(lines),
 }}))
 sys.exit(0)
 PY
@@ -126,8 +137,9 @@ fi
 # a silent tier falls through to the next one below, and a firing tier exits the whole script
 # before any other tier can also print.
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" <<'PY' 2>/dev/null
-import json, sys, time, pathlib
+import json, os, sys, time, pathlib
 project = sys.argv[1]
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
 try:
     cfg = json.loads((pathlib.Path(project) / ".sdlc" / "config.json").read_text())
 except Exception:
@@ -165,7 +177,7 @@ if reason is None:
 
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": (
+    "additionalContext": _notice + (
         "Sigma's team ledger watcher %s. The shared ledger may not be staying pushed "
         "-- run /agrim-doctor for detail." % reason
     ),
@@ -186,6 +198,7 @@ fi
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, subprocess, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
 kg_py = os.path.join(plugin_root, "skills", "agrim-kg", "scripts", "kg.py")
 try:
     r = subprocess.run([sys.executable, kg_py, "warn", os.path.join(project, ".sdlc")],
@@ -197,7 +210,7 @@ if r.returncode != 0 or not text:
     sys.exit(1)                                    # nothing due -> silent, fall through
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": "Sigma " + text,
+    "additionalContext": _notice + "Sigma " + text,
 }}))
 sys.exit(0)
 PY
@@ -207,15 +220,17 @@ fi
 # --- existing opt-in policy brief (unchanged below) --------------------------------------------
 [ -f "$CFG" ] || allow
 
+# Exit 1 when silent, so allow() still emits the coexistence notice when there is one.
 python3 - "$PROJECT" <<'PY' 2>/dev/null || allow
 import json, os, sys
 project = sys.argv[1]
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
 try:
     cfg = json.load(open(os.path.join(project, ".sdlc", "config.json")))
 except Exception:
-    sys.exit(0)                                    # unreadable config -> silent
-if (cfg.get("session_start") or {}).get("enabled") is not True:
-    sys.exit(0)                                    # off by default -> silent
+    sys.exit(1)                                    # unreadable config -> silent
+if not isinstance(cfg, dict) or (cfg.get("session_start") or {}).get("enabled") is not True:
+    sys.exit(1)                                    # off by default -> silent
 
 # doctor-lite install self-check: warn (never block) on a half-set-up adoption.
 warnings = []
@@ -234,7 +249,7 @@ if warnings:
 
 print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "SessionStart",
-    "additionalContext": policy,
+    "additionalContext": _notice + policy,
 }}))
 PY
 exit 0

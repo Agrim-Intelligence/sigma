@@ -99,9 +99,12 @@ It counts the old plugin as **active** on this repository when any of these hold
   count.
 - A live watcher holds this `.sdlc`'s watcher lock and Sigma did not start it. Sigma records its
   own watcher in `.sdlc/state/watch.owner`, and the old plugin never wrote that file. This counts as
-  active when the watcher's command line names the old plugin (read from `/proc` on Linux), or,
-  where the command line cannot be read (macOS, Windows), when another signal in this list is also
-  present. The notes below never make it active.
+  active when the path of the watcher's script (`watch_daemon.py`) has a directory named exactly
+  the old name, as the old plugin's install location does (the command line is read from `/proc`
+  on Linux). Only that script path is checked, so a repository directory such as
+  `my-<old>-migration/` passed as the `.sdlc` argument does not count. Where the command line cannot
+  be read (macOS, Windows), the watcher counts as active only when another signal in this list is
+  also present. The notes below never make it active.
 - `.sdlc/state/owner.json` names a plugin other than Sigma. Sigma writes this file on init and
   on loop start.
 
@@ -123,7 +126,8 @@ What each surface does:
 | `migrate.py --apply` | Refuses (exit 2). Migrating while the old plugin still runs leaves it reading empty state. |
 | `/agrim-doctor` | A failing `coexistence` row. The check still completes. |
 | `status.py` | A warning on stderr. The status line still prints. |
-| Session-start hook (Claude Code) | Adds the same message to the session. The hook only speeds up detection. The refusals above are in Python and apply on every host, including Cursor, which has no hooks. |
+| Session-start hook (Claude Code) | Adds the same message to the session, then runs its other checks (the ledger-watcher staleness warning, the setup wizard, the policy brief) as usual. The hook only speeds up detection and refuses nothing. The refusals above are in Python and apply on every host, including Cursor, which has no hooks. |
+| `coexist.py check` | Prints the message and exits 2. |
 
 `log.py` has no coexistence check. It reads only the local action log and imports nothing from
 `agrim-loop`.
@@ -138,10 +142,22 @@ The refusal message lists what was found and the fix:
    repository and this machine only. To disable it everywhere, run
    `claude plugin disable <old>@<marketplace>`. For Codex, set `enabled = false` under its
    `[plugins."…"]` table in `config.toml`.
-2. If the old plugin's watcher is still running, stop it. Create `.sdlc/state/watch.stop` and wait
-   one tick. Disable the plugin first, or its triggers start the watcher again.
+2. If the old plugin's watcher is still running, stop it. Create `.sdlc/state/watch.stop`, wait
+   one tick, then delete the file, because no watcher starts while it exists. Disable the plugin
+   first, or its triggers start the watcher again.
 3. Run the migration above with `--apply`.
 
 **The override.** `SIGMA_ALLOW_COEXIST=1` (exactly `1`) lets the write surfaces continue, each with
 a warning, when you know both plugins will act on this repository. It is read under the Sigma name
-only, never the old prefix. It does not let a second watcher start.
+only, never the old prefix. It does not let a second watcher start. With it set, the session-start
+hook adds one line (`coexistence override in effect: ...`) instead of the refusal message, and
+`coexist.py check` says the override is in effect, lists what it found, and exits 0.
+
+**What is not detected.** The check runs when a surface starts, including when a watcher starts. A
+watcher that is already running is reported, but it is never stopped. The usual upgrade leaves one
+running: you disable the old plugin, and the watcher it started earlier keeps running in the
+background. Sigma can tell that watcher is the old plugin's only where the operating system exposes
+its command line, which is Linux. On macOS and Windows, once the old plugin is disabled nothing else
+is active, so that watcher is a note. The note says Sigma cannot tell who started the running
+watcher. To stop it, create `.sdlc/state/watch.stop`, wait one tick, then delete the file. Sigma's
+own watcher then starts on the next trigger and records itself in `state/watch.owner`.

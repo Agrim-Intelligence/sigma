@@ -19,7 +19,12 @@ All notable changes to Sigma are recorded here, newest first.
   running pre-upgrade watcher is not refused. The detector also reads Claude Code's managed
   settings, accepts comments in settings files, treats a plugin enabled but not installed on this
   machine as a note, matches hooks by path rather than by substring, and reads every TOML spelling
-  of a Codex plugin entry. See `docs/upgrading.md`.
+  of a Codex plugin entry. A running watcher is identified as the old plugin's only by a directory
+  named exactly the old name in its script path, never by the repository path it was given. The
+  session-start hook no longer stops after the message: the ledger-watcher staleness warning, the
+  wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
+  `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
+  was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a

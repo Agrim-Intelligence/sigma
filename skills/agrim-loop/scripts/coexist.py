@@ -2,6 +2,7 @@
 """Is the plugin under Sigma's PREVIOUS name also acting on this repository? (#240)
 
     python3 skills/agrim-loop/scripts/coexist.py check [<sdlc_dir>]   # report; exit 2 when active
+                                                                      # (0 under the override)
 
 Both plugins register hooks, spawn a ledger watcher and write `.sdlc/` state. Two watchers on one
 `.sdlc` were already impossible -- both plugins' `watch_daemon.py` take the SAME lock files
@@ -23,8 +24,8 @@ SIGNALS, two levels. ACTIVE means the other plugin can act on this repository ri
     a path in it has a DIRECTORY named exactly the old name, or it contains the old plugin's
     recorded `installPath` -- never a mere substring (a user's `~/bin/<old>-notes.sh` is theirs);
   - a live watcher on this `.sdlc` (live pid AND fresh heartbeat -- the watcher's own rule) that
-    Sigma did not start (`state/watch.owner` does not name that pid), when its command line names
-    the old plugin (Linux `/proc`), or -- where the command line cannot be read (macOS, Windows)
+    Sigma did not start (`state/watch.owner` does not name that pid), when its watcher SCRIPT path
+    has a directory named exactly the old name (Linux `/proc`; never the `.sdlc` argument), or -- where the command line cannot be read (macOS, Windows)
     -- when another ACTIVE signal is present. Notes never escalate it;
   - `state/owner.json` naming a plugin other than Sigma.
 NOTE means evidence without a live actor: installed but not enabled; enabled but not installed on
@@ -36,8 +37,10 @@ THE DECISION PER SURFACE (docs/upgrading.md, "Running both plugins on one reposi
 surface that WRITES shared state or starts a watcher -- `sdlc_init.py`, `loop.py start`,
 `watch_daemon.py`, `loop.py`'s watcher spawn, `migrate.py --apply` -- calls `gate()` and REFUSES
 on any ACTIVE signal, printing `message()`: what was found and the exact fix. Read-only surfaces
-(`doctor.py check`, `log.py`, `status.py`) proceed and WARN. The session-start hook only repeats
-the message as context: Cursor has no hooks, so the hook decides nothing.
+(`doctor.py check`, `status.py`) proceed and WARN. The session-start hook only repeats the message
+as context and then carries on to its other tiers (the watcher-staleness check among them): Cursor
+has no hooks, so the hook decides nothing. The watcher is gated at its START only -- one already
+running is reported, never stopped.
 
 THE ONE OVERRIDE is `SIGMA_ALLOW_COEXIST=1` -- exactly `1`, never derived, never read under the
 old prefix. It lets a write surface proceed with a warning. It never lets a second watcher start:
@@ -71,7 +74,9 @@ _HERE = pathlib.Path(__file__).resolve().parent
 
 USAGE = ("usage: coexist.py check [<sdlc_dir>]\n"
          "  Reports whether the plugin under Sigma's previous name is also active on this\n"
-         "  repository. Exit 0: not active (notes may be printed); 2: active (write surfaces refuse).")
+         "  repository. Exit 0: not active (notes may be printed), or active under\n"
+         "  SIGMA_ALLOW_COEXIST=1 (the facts are printed as information); 2: active (write\n"
+         "  surfaces refuse).")
 
 
 def _load(name):
@@ -263,6 +268,13 @@ def _hook_commands(hooks):
                     yield str(event), command
 
 
+def _dir_named_old(path):
+    """Is a DIRECTORY component of `path` exactly the old name? The file name is never one, and a
+    name that merely contains it (`my-<old>-migration`) is not it. Either separator."""
+    parts = re.split(r"[\\/]+", path)
+    return len(parts) > 1 and any(part.lower() == OLD for part in parts[:-1])
+
+
 def _runs_old(command, roots=()):
     """Does this hook command run the old plugin? Only when it contains the plugin's recorded
     install path, or a path whose DIRECTORY segment is exactly the old name -- so
@@ -270,11 +282,7 @@ def _runs_old(command, roots=()):
     low = command.lower()
     if any(len(r) > 3 and r.lower() in low for r in roots):
         return True
-    for token in re.split(r"[\s\"'=;&|()<>`]+", command):
-        parts = re.split(r"[\\/]+", token)
-        if len(parts) > 1 and any(part.lower() == OLD for part in parts[:-1]):
-            return True
-    return False
+    return any(_dir_named_old(token) for token in re.split(r"[\s\"'=;&|()<>`]+", command))
 
 
 def _install_entries(plugins, pid):
@@ -299,7 +307,8 @@ def claude_signals(croot, repo_root, managed=None):
         for entry in _install_entries(plugins, pid):
             path = entry.get("projectPath")
             if entry.get("scope", "user") == "user" or (
-                    isinstance(path, str) and _realpath(path) == here):
+                    isinstance(path, str)
+                    and os.path.normcase(_realpath(path)) == os.path.normcase(here)):
                 return True
         return False
 
@@ -602,13 +611,23 @@ def live_watcher_pid(sdlc_dir, now=None, env=None):
     return None
 
 
+WATCHER_SCRIPT = "watch_daemon.py"
+
+
 def _cmdline_names_old(pid):
-    """Linux only: does `/proc/<pid>/cmdline` name the old plugin? None where it cannot be read."""
+    """Linux only: is this process the old plugin's watcher? None where `/proc/<pid>/cmdline`
+    cannot be read. Only the watcher SCRIPT's path is looked at -- the argv element whose file
+    name is `watch_daemon.py` -- and only for a directory named exactly the old name (the rule
+    `_runs_old` uses): the plugin cache lays it out `<cache>/<marketplace>/<plugin>/<version>/...`.
+    Never the interpreter path, never the `.sdlc` argument (a user's `my-<old>-migration/` repo is
+    theirs), never a substring."""
     try:
         raw = pathlib.Path("/proc/%d/cmdline" % pid).read_bytes()
     except (OSError, ValueError, TypeError):
         return None
-    return _names_old(raw.decode("utf-8", "replace"))
+    argv = raw.decode("utf-8", "replace").split("\0")
+    return any(_dir_named_old(arg) for arg in argv
+               if re.split(r"[\\/]+", arg)[-1].lower() == WATCHER_SCRIPT)
 
 
 def watcher_signal(sdlc_dir, active_elsewhere, now=None, env=None):
@@ -623,16 +642,19 @@ def watcher_signal(sdlc_dir, active_elsewhere, now=None, env=None):
     if pid is None or watch_owner_pid(pathlib.Path(sdlc_dir) / "state") == pid:
         return []
     stop = pathlib.Path(sdlc_dir) / "state" / "watch.stop"
-    fix = ("stop it: disable the old plugin first (or its triggers restart it), then create %s "
-           "and wait one tick" % stop)
+    fix = ("stop it: disable the old plugin first (or its triggers restart it), then create %s, "
+           "wait one tick, and delete it again (a watcher never starts while it exists)" % stop)
     named = _cmdline_names_old(pid)
     if named or (named is None and active_elsewhere):
         return [Signal("watcher", ACTIVE,
                        "a live watcher (pid %s) holds this .sdlc's watcher lock and was not "
                        "started by Sigma (no matching state/%s)" % (pid, WATCH_OWNER_FILE), fix)]
+    unread = (" -- this OS does not expose its command line, so Sigma cannot tell who started "
+              "the running watcher" if named is None else "")
     return [Signal("watcher", NOTE,
                    "a live watcher (pid %s) was not started by this Sigma release (no state/%s): "
-                   "a Sigma watcher from before it, or the old plugin's" % (pid, WATCH_OWNER_FILE),
+                   "a Sigma watcher from before it, or the old plugin's%s"
+                   % (pid, WATCH_OWNER_FILE, unread),
                    "if it is not Sigma's, " + fix)]
 
 
@@ -681,6 +703,15 @@ def message(report, surface):
     lines.append("Or, knowing both will act here, set %s=1 (the shared watcher lock still allows "
                  "only one watcher). See %s." % (OVERRIDE_ENV, DOC))
     return "\n".join(lines)
+
+
+def override_line(report):
+    """One line: the override is set and the old plugin is active. For the session hook and the
+    CLI, which refuse nothing themselves; the facts are informational."""
+    return ("%s: coexistence override in effect: %s=1 is set and the plugin previously published "
+            "as %r is also active here (%d signal(s)); write surfaces proceed with a warning, and "
+            "the shared watcher lock still allows only one watcher"
+            % (BRAND, OVERRIDE_ENV, OLD, len(report.active)))
 
 
 def gate(sdlc_dir, surface, env=None, home=None, stream=None, repo_root=None):
@@ -736,13 +767,17 @@ def main(argv):
         return 2
     sdlc_dir = argv[2] if len(argv) > 2 else ".sdlc"
     report = assess(sdlc_dir)
-    if report.active:
+    if report.active and overridden():
+        print(override_line(report))
+        for s in report.active:
+            print("active: %s" % s.detail)
+    elif report.active:
         print(message(report, WRITE_SURFACES))
     for s in report.notes:
         print("note: %s%s" % (s.detail, ("\n      -> " + s.fix) if s.fix else ""))
     if not report.signals:
         print("%s: no second plugin found for %s" % (BRAND, sdlc_dir))
-    return 2 if report.active else 0
+    return 2 if report.active and not overridden() else 0
 
 
 if __name__ == "__main__":
