@@ -1,7 +1,7 @@
 # Sigma's label system — how it works, and what changed
 
 **Audience:** anyone using Sigma. No internals knowledge assumed.
-**Status:** shipped in **1.3.6**. Every number below was measured, not estimated, and re-verified
+**Status:** shipped in **1.0.0**, the first public release. Every number below was measured, not estimated, and re-verified
 against a live board on the day this was published.
 
 ---
@@ -1226,6 +1226,4 @@ model; that is `model_selection`'s job, and it reads the goal, not the board.
 
 ---
 
-*Per-change rationale for everything here is in the `## 1.3.6` section of
-[CHANGELOG.md](../CHANGELOG.md), and in the commit messages on the `sdlc/label-backbone-step1`
-branch, which is kept for that reason.*
+*Per-change rationale for everything here is in [CHANGELOG.md](../CHANGELOG.md).*

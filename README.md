@@ -13,19 +13,19 @@ remembers what it learns in a **self-improving knowledge graph**.
 
 > ### ⚠️ Running an older plugin? Update before you start the loop
 >
-> **1.3.6 changes what the `sdlc:*` labels mean and how they are written.** An install older than
-> 1.3.6, pointed at a board a 1.3.6 loop has touched, keeps writing the old non-atomic label shapes —
-> re-creating on a freshly-cleaned board exactly the drift 1.3.6 exists to remove. Mixed versions on
-> one board is the one configuration to avoid.
+> If the installed Sigma plugin is older than 1.0.0, **do not run the loop until you have updated.**
+> That floor is the one `AGENTS.md` states and `/agrim-doctor` enforces; it never sits above the
+> version `.claude-plugin/plugin.json` ships. Mixed versions writing `sdlc:*` labels on one board is
+> the one configuration to avoid.
 >
 > ```bash
-> claude plugin marketplace update sigma   # pulls the new version from source
-> claude plugin install sigma@sigma    # only if you do not have it yet
+> claude plugin update sigma@sigma   # upgrades an installed plugin (the full plugin@marketplace id)
 > # then RESTART the session — the version in use is resolved at session start
-> /agrim-doctor                                 # reports your installed version vs the marketplace's
+> /agrim-doctor                      # reports your installed version vs the marketplace's
 > ```
 >
-> If `/agrim-doctor` shows anything below 1.3.6, **do not run the loop until you have updated.**
+> `claude plugin marketplace update sigma` only refreshes the marketplace listing, and
+> `claude plugin install` on an installed plugin is a no-op; neither upgrades it.
 
 > **One promise: best-quality output, minimum effort.** Zero runtime deps (bash + python3 stdlib) and
 > **zero hard plugin dependencies** — it installs seamlessly with or without anything else. If the
@@ -138,27 +138,132 @@ Sigma's own; no companion ships it.
 
 ## Quickstart
 
+`<SIGMA_REPO>` is the one placeholder on this page: the git URL of the public Sigma repository once
+it is published, or the path to a local Sigma checkout until then. Every install line below uses it.
+The marketplace it adds is named `sigma`, so the plugin id is `sigma@sigma` on every host.
+
+### Claude Code
+
 Inside a Claude Code / Claude Desktop session:
 
 ```
-/plugin marketplace add <git-url-or-local-path>
-/plugin install sigma
-/agrim-init --demo     # scaffolds a small, safe, runnable demo goal (and proposes a verify command)
-/agrim-loop            # watch it run Goal → Research → … → Review end-to-end
+/plugin marketplace add <SIGMA_REPO>
+/plugin install sigma@sigma
 ```
 
-Or from a terminal (same result — `claude plugin` is the CLI form of the same commands, useful for a
-setup script or a non-interactive install):
+Or from a terminal (the same two commands in CLI form, useful for a setup script):
 
 ```
-claude plugin marketplace add <git-url-or-local-path>
-claude plugin install sigma
+claude plugin marketplace add <SIGMA_REPO>
+claude plugin install sigma@sigma
 ```
-then run `/agrim-init --demo` and `/agrim-loop` inside a session as above.
 
-### Adopting into an existing repo? One command.
+Restart the session, then, from the root of the repository you want Sigma to work on:
 
-For a real project (existing code, a GitHub board, a team), skip the manual `config.json` edits and run:
+```
+/agrim-init --demo     # scaffolds .sdlc/, checks access, proposes a verify command, queues a demo goal
+/agrim-loop            # runs the demo goal Goal → Research → … → Review
+```
+
+### Codex
+
+```
+codex plugin marketplace add <SIGMA_REPO>
+codex plugin add sigma@sigma
+```
+
+Codex reads the same `.claude-plugin/marketplace.json`. These two lines follow Codex's published
+plugin CLI; this README's own end-to-end run was on Claude Code, not Codex. Then run the `agrim-init`
+skill, or its scaffolder directly, with `--codex` so `AGENTS.md` carries the standing rules
+([details](#codex-partial-live-validation)):
+
+```
+python3 <installed-sigma>/skills/agrim-init/scripts/sdlc_init.py . --codex --demo
+```
+
+`<installed-sigma>` is the plugin directory Codex shows for the installed `agrim-init` skill.
+
+### Cursor
+
+Cursor has no plugin system, so Sigma runs from a checkout
+([details](#cursor-experimental)):
+
+```
+git clone <SIGMA_REPO> ~/sigma
+python3 ~/sigma/skills/agrim-init/scripts/sdlc_init.py . --cursor --demo
+```
+
+### The next step is `/agrim-init`
+
+Run **`/agrim-init`** first, in every repository, on every host. It is safe to re-run.
+
+- **`/agrim-init`** scaffolds `.sdlc/`, git-ignores its runtime directories, checks git and `gh`
+  access, and settles the verify command. This is the command to run.
+- **`/agrim-setup`** is the one-pass adoption for a team repository. It runs `/agrim-init` when
+  `.sdlc/` is missing, then writes team defaults (github discovery scoped to `@me`, the ledger on, a
+  PR per goal on) and creates the `sdlc:*` labels. Run it after `/agrim-init` only when you want
+  those defaults.
+
+### What `/agrim-init` will ask you
+
+- **Mode.** The backlog starts as local goal files in `.sdlc/goals/` (`discovery.source:
+  "local-goals"`); `/agrim-setup` switches it to GitHub issues. Flags add to that: `--github` for the
+  GitHub scaffolding below, `--vision` to start from a product vision, `--demo` to queue a demo
+  goal, `--codex` / `--cursor` for those hosts' standing rules. A PR per goal
+  (`work.enabled`) is on by default. If this repository has no usable remote, init prints a
+  DECISION: add the remote, use another existing remote, or go local-only (the loop then edits this
+  checkout directly, with no worktree, branch, push or PR). Nothing is flipped for you.
+- **Board.** `--github` copies issue templates, an auto-add-to-project workflow and a label guide
+  into `.github/`, and creates the `sdlc:*` and `priority:P0`–`P3` labels on a GitHub `origin`. It
+  does not create a Projects board. Point `project.number` at an existing board, or let the loop
+  create one ([Projects v2 board](#projects-v2-board)).
+- **Verify command.** Init lists the test commands it detects, each with a number and an id. Confirm
+  one, give your own, or decline. Confirming turns `verify.enforce` on; declining leaves it off and
+  records why. The gestures, with `<n>` and `<id>` copied from the printed list:
+
+  ```
+  python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>
+  python3 skills/agrim-init/scripts/verify_detect.py set .sdlc --command-file <file>
+  python3 skills/agrim-init/scripts/verify_detect.py decline .sdlc
+  ```
+
+- **Access.** Init checks, before the loop needs them: a git repository, the `origin` remote, the
+  base branch pushed there, `gh` installed, `gh auth status`, and the token's scopes (`repo`,
+  `workflow`, plus `read:org` for an organization and `project` when a board is on). A directory that
+  is not a git repository is refused before anything is written. Re-run the check any time:
+
+  ```
+  python3 skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc
+  ```
+
+Paths above are relative to the Sigma plugin directory; inside a Claude Code session the skill runs
+them for you.
+
+### If `/agrim-init` says you lack access
+
+Each `[FAIL]` or `[CANNOT VERIFY]` line prints its own fix. These are the commands it prints, with
+your host and base branch filled in. `gh auth login` and `gh auth refresh` are interactive, so run
+them yourself; Sigma never runs them for you.
+
+| Init reports | Run |
+|---|---|
+| not inside a git repository | `git init` then `git commit --allow-empty -m "initial commit"` |
+| no commit yet | `git commit --allow-empty -m "initial commit"` |
+| no remote named `origin` | `git remote add origin <url-of-your-repository>` |
+| base branch not on the remote | `git push -u origin <base>` |
+| `gh` not installed | install it from https://cli.github.com, then re-run the check |
+| gh not logged in | `gh auth login -h github.com -s repo,workflow,read:org` |
+| token missing scopes | `gh auth refresh -s <missing scopes> -h github.com` |
+| a fine-grained token (scopes cannot be read) | `gh auth login -h github.com -s repo,workflow` |
+| you want another remote | `python3 skills/agrim-init/scripts/preflight.py use-remote .sdlc <remote>` |
+| no GitHub remote at all, and you want to go on without one | `python3 skills/agrim-init/scripts/preflight.py local-only .sdlc` |
+
+If your organization enforces SAML SSO, the scopes line also names the token settings page where
+you authorize the token for it.
+
+### Adopting into an existing repo
+
+For a real project (existing code, a GitHub board, a team), run `/agrim-init`, then:
 
 ```
 /agrim-setup
@@ -176,17 +281,11 @@ issues become pickable stays a deliberate, separate, human triage call. If your 
 source edits behind its own `PreToolUse` hook, note that Sigma's Implement-phase edits go
 through it too — make sure whatever it expects is satisfied.
 
-That installs the plugin machine-wide, but the hook only speaks in repos that adopt the spine
-(scoped to `.sdlc/` presence); `/agrim-init` scaffolds
-each repo's `.sdlc/` layer and is safe to re-run. If the `superpowers` + `code-review` companions are
+The plugin installs machine-wide, but the hook only speaks in repos that adopt the spine
+(scoped to `.sdlc/` presence). If the `superpowers` + `code-review` companions are
 **already** in your plugin list, Sigma uses them automatically; if not, the portable `agrim-*`
 executors run the same phases ([details](#companions-optional-enhancement)) — **nothing to install
 either way**.
-
-- Add **`--github`** to `/agrim-init` to also set up the GitHub Projects board + issue templates and
-  run the demo on a real board ([Your backlog](#your-backlog-local-files-or-github-issues)).
-- Add **`--vision`** (or run **`/agrim-vision`**) to start from a product vision instead
-  ([Two ways to start](#two-ways-to-start-drop-in-or-vision-first)).
 
 See the **[worked walkthrough](examples/hello-sdlc/)** for a runnable end-to-end example.
 
@@ -226,7 +325,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Hard plan-gate (opt-in)** | With `gates.hard_plan_gate.enabled`, unplanned source is refused at two points. **On every host** (Claude Code, Cursor, Codex): `work.py pr` refuses to PUSH a branch whose goal has no plan under `.sdlc/plans/` — plain Python, and the only enforcement an org lock can rely on. The org-lock lookup behind it is memoised on the goal's work record, so it runs **at most once per goal** however many review cycles `pr` runs through. **On Claude Code additionally**: the `PreToolUse` hook denies the EDIT itself, earlier, when no plan is fresher than `plan_freshness_hours`. Both honour `touch .sdlc/.allow-direct-edits` **only when the key is not org-locked ON** — under an org lock (`.sdlc/managed-settings.json`) the sentinel does not apply at either point and neither refusal offers it — and both skip `.sdlc/`, `docs/` and non-source extensions. Since 1.0.9 a Jupyter notebook counts as source in **both** gates. **With `work.enabled` off** only the hook applies, so the lock is Claude-Code-only there — `/agrim-doctor` and `loop.py record done` say so | `skills/agrim-loop/scripts/work.py`, `hooks/plan_gate.sh` · [enforcement](docs/enforcement.md) |
 | **Stop gate (opt-in)** | On Claude Code, with `gates.stop_gate.enabled`, a session can't END with source changed but no fresh plan — the Stop-time counterpart to the plan-gate, so an interactive session doesn't quietly finish unplanned work | `hooks/completion_gate.sh` · [enforcement](docs/enforcement.md) |
 | **SessionStart brief (opt-in)** | With `session_start.enabled`, injects the SDLC policy + a doctor-lite install self-check at session start, so the conventions are in context before the first prompt | `hooks/session_start.sh` · [enforcement](docs/enforcement.md) |
-| **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On once `/agrim-init` records a confirmed command (#228); never on with an empty one | `loop.py verify` · [enforcement](docs/enforcement.md) |
+| **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On once `/agrim-init` records a confirmed command; never on with an empty one | `loop.py verify` · [enforcement](docs/enforcement.md) |
 | **Bidirectional report card** | Declare your pipeline's stages once; every stage gets a forward (nothing dropped) + reverse (nothing invented) lane — uninstrumented lanes read ABSENT, never green — with a recurrence delta across runs | `.sdlc/pipeline.json` + `pipeline.py card` |
 | **Model + effort auto-selection (opt-in)** | Per-goal ceiling AND per-step downgrade: mechanical steps run on a cheaper tier/effort (`model_selection: "auto"`, default off) | `predict.py resolve / resolve-step` |
 | **Findings become work** | The card's failing signals become `proposed` goals (proof-of-fix pre-wired); the loop never runs one until you promote it | `pipeline.py propose` |
@@ -235,17 +334,17 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Ledger watcher** | Pulls the ledger's own ops branch on an interval — never your working tree — and surfaces what needs you between goals, deduped | `watch_daemon.py`, `sync.py` |
 | **Slice parallelism (opt-in)** | Declare a goal's slices and the files each touches; independent ones run as concurrent subagents in **waves** (own worktree each), instead of burning one session's context in sequence | `slices.py plan`, `parallel.enabled` |
 | **Goal-level parallelism (opt-in)** | One level up from slices: run MULTIPLE backlog goals concurrently in one session — each its own subagent, worktree, and PR — for one person draining a stack of their own assigned issues | `loop.py next-batch`, `parallel.goals.enabled` |
-| **Per-goal worktree (opt-in)** | Each goal gets its own worktree + branch + PR, so the loop never moves your checkout and never rewrites `.sdlc/goals/` under itself; cutting fresh from the base **is** the goal-start rebase, so it can't conflict. On by default since #2741 | `work.py start`, `work.enabled` |
+| **Per-goal worktree (on by default)** | Each goal gets its own worktree + branch + PR, so the loop never moves your checkout and never rewrites `.sdlc/goals/` under itself; cutting fresh from the base **is** the goal-start rebase, so it can't conflict. On by default; `work.enabled: false` turns it off | `work.py start`, `work.enabled` |
 | **Rebase & merge, explained** | For a branch you're sitting at yourself: explains what the base did while you were away and why (from CHANGELOG.md, PR descriptions, design docs) before touching anything, flags likely-conflicting files, rebases cleanly — or, on a real conflict, walks you through it file by file with named options (recreate / follow the code's move / abandon / resolve by hand). Once clean, runs this repo's own proving command and, only if it passes and only if you say yes, lands the branch — merge is never automatic | `/agrim-rebase` |
 | **Clean-AND-safe auto-merge (opt-in)** | A PR merges only on THIS run's passing verify evidence **plus** GitHub's `mergeable` + `mergeStateStatus CLEAN`, and then lands **directly** with `gh pr merge` — GitHub's own `--auto` is armed only for a required check that has not answered yet; anything else parks with the reason. After landing, the merge reads the issue's own state and **closes it itself** whenever GitHub's own keyword has not already done so, never touching one already closed | `work.py merge`, `work.auto_merge` · [enforcement](docs/enforcement.md) |
 | **Done means merged** | A goal is `done` only once its PR has merged. On the shipped defaults (`auto_merge: "off"`) the loop leaves the reviewed PR for a human and records `review`: the issue stays open, still a goal, its card in QC. `record done` is refused while the PR is unmerged, and the merge-reconcile pass (every `next`, the watch tick, or `loop.py reconcile-merges`) records `done` and closes the issue once the PR merges — at most 10 REST reads per pass. Goals with no PR are unaffected | `loop.py record … review`, `loop.py reconcile-merges` · [enforcement](docs/enforcement.md) |
 | **Open-source safe by default** | A fork PR, or a repo you only have read access to, is never merge-attempted — the loop opens the PR, says why it stopped, and records `review` (the goal is done once the upstream merge lands). `auto_merge: "protected"` further limits merging to branches that genuinely require checks or reviews | `work.py merge_rights` / `protection` · [enforcement](docs/enforcement.md) |
-| **PR review gate (opt-in)** | A real review *after* the PR, independent of branch protection: parks on a Request-changes, an unresolved thread, or a `sigma:block` comment; `"approval"` also needs an approval (formal, or a `sigma:approve` comment — GitHub blocks self-approval). On by default (`"changes"`) since #2741, and it runs under every `auto_merge` policy — including the default `off`, where it gates the PR before it is left for a human | `work.require_review` · [enforcement](docs/enforcement.md) |
+| **PR review gate (on by default)** | A real review *after* the PR, independent of branch protection: parks on a Request-changes, an unresolved thread, or a `sigma:block` comment; `"approval"` also needs an approval (formal, or a `sigma:approve` comment — GitHub blocks self-approval). On by default (`"changes"`; `"off"` turns it off), and it runs under every `auto_merge` policy — including the default `off`, where it gates the PR before it is left for a human | `work.require_review` · [enforcement](docs/enforcement.md) |
 | **Independent review (advisory)** | Asks the agent to run every review — plan-review, code review, the post-PR review — as a *fresh, author-blind* subagent grounded in the project (north-star + conventions + whole repo), never the maker's context. An independent reviewer subagent is dispatched with an author-blind brief; the core binds the verdict to one PR, head and brief generation, and cannot prove the maker did not influence the reviewer. On by default | `review_context.py`, `review.independent` · [enforcement](docs/enforcement.md) |
 | **Pluggable backlog** | Local goal files, GitHub issues, or a GitHub **Projects v2 board** | `discovery.source` |
 | **Pre-work backlog cross-check (opt-in)** | Before a picked goal spends a token, retrieves likely DUPLICATE / OBSOLETE-by-completed-work / BLOCKED-BY items from the rest of the backlog + the team ledger (token-free TF-IDF); a confident hit is parked-with-proof, a weak one annotated; a marker left only as a comment (never the body) is still caught via a bounded, scrubbed fallback, and `/agrim-doctor` flags one that isn't; a decomposition child/meta-goal's own first-line marker exempts it from the confident duplicate/obsolete/in-flight-similarity signals (an explicit blocker or a recorded hand-off still fully applies); a human who rules a confident finding a false positive can dismiss that exact (kind, ref) match with a comment (`backlog_check.py dismiss-text`) so a retry doesn't re-park on it identically | `loop.py precheck`, `backlog_check.enabled` |
 | **Pre-work oversized-goal classifier (opt-in)** | Before a picked goal spends a token, a deterministic zero-LLM classifier (body word/line count, independent `##` sections, top-level checkboxes, explicit multi-phase structure — thresholds corpus-calibrated against this repo's own issue history) flags a goal that reads like an epic; the ladder is `log` (annotate only — recommended first, so a new adopter sees what it would have flagged before trusting it) → `park` (park for a human to split) → `file` (also files ONE idempotency-guarded "Decompose #N" meta-goal, `max_children`-capped) — the meta-goal then runs later as a normal goal, creating its children via `handoff.py track --body-file`; plan-review judges the split, and `backlog_check`'s own dedup exemption protects the children it creates; a decomposition child/meta-goal is exempt by construction | `loop.py decompose-check`, `goal_decompose.enabled` |
-| **Board + audit trail** | Cards flow Backlog → In Progress → QC → Done → Blocked (a PR awaiting merge waits in QC); every phase recorded on the issue | `/agrim-init --github` |
+| **Board + audit trail** | Cards flow Backlog → In Progress → QC → Done → Blocked (a PR awaiting merge waits in QC); every phase recorded on the issue. The loop finds or creates the board on its first github-mode run; `/agrim-init --github` adds the issue templates and labels | `discovery.github.project`, `/agrim-init --github` |
 | **Custom board fields on loop-made issues** | An issue the loop opens itself (a hand-off) gets your board's custom single-select fields (Priority, Section, …) stamped too — not just labels + Status — so it isn't silently blank next to human-made cards; `/agrim-doctor` flags any field you left unmapped | `project.custom_fields` |
 | **Self-improving knowledge graph** | Captures research + lessons, **tracks what it doesn't know**, prunes itself, and fills gaps | `/agrim-kg` |
 | **Context recall** | Pulls the relevant slice of project memory into context before each goal | `/agrim-context` |
@@ -301,29 +400,29 @@ What you don't get anywhere else, in one kit:
 
 ## Feature flags at a glance
 
-Defaults below are what `/agrim-init` scaffolds (`config.json.tmpl`). Not everything optional ships off — e.g. `discovery.dependency_gate`, `discovery.auto_unpark`, `review.independent`, `handoff`, `work.rebase_upkeep`, `work.enabled` and `work.require_review: "changes"` ship on (#2741; `verify.enforce` ships off and turns on when `/agrim-init` records a confirmed verify command, #228), and so do the iteration, minute and token budgets (`max_codex_raw_tokens` ships `0`, off). `/agrim-setup` still writes `ledger.enabled` as `true` where it is unset. What holds each control, and where: [docs/enforcement.md](docs/enforcement.md). `/agrim-doctor` prints this dashboard live (`doctor.py features`):
+Defaults below are what `/agrim-init` scaffolds (`config.json.tmpl`). Not everything optional ships off — e.g. `discovery.dependency_gate`, `discovery.auto_unpark`, `review.independent`, `handoff`, `work.rebase_upkeep`, `work.enabled` and `work.require_review: "changes"` ship on (`verify.enforce` ships off and turns on when `/agrim-init` records a confirmed verify command), and so do the iteration, minute and token budgets (`max_codex_raw_tokens` ships `0`, off). `/agrim-setup` still writes `ledger.enabled` as `true` where it is unset. What holds each control, and where: [docs/enforcement.md](docs/enforcement.md). `/agrim-doctor` prints this dashboard live (`doctor.py features`):
 
 | Flag | Default | What it turns on |
 |---|---|---|
 | `model_selection: "auto"` | off | per-goal model ceiling + per-step model/effort downgrade |
-| `verify: {"enforce": true}` | off until a command is confirmed (#228; was on with an empty command, which refused every `done`) | `record done` refused without fresh machine evidence (`loop.py verify`) |
+| `verify: {"enforce": true}` | off until a command is confirmed (an empty command would refuse every `done`) | `record done` refused without fresh machine evidence (`loop.py verify`) |
 | `gates.hard_plan_gate.enabled` | off | unplanned source refused: the PR push on every host (`work.py pr`, needs `work.enabled`), plus the edit itself on Claude Code (`hooks/plan_gate.sh`, `plan_freshness_hours` window) |
 | `decision_tier: "auto"` | off | classify a `needs_decision`/`irreversible`/`unknown` park's detail text into an L0/L1/L2 escalation tier (`escalate_l0`/`escalate_l1`/`autonomous`, `decision_tier.py`) and surface it in the ledger `park` event, `review-queue.md`, and the park comment — **advisory only**, it never changes what the loop does with the parked goal |
 | `.sdlc/pipeline.json` | absent | the bidirectional report card + `propose` (findings → groomable goals) |
 | `ledger: {"enabled": true}` | unset (`null`, reads as off; `/agrim-setup` writes `true`) | the committed team ledger — claims and outcomes recorded per author, plus cross-area hand-off |
 | `ledger.watch.interval_seconds` | 900 | how often `watch_daemon.py` pulls the ledger ops branch and refreshes the inbox |
 | `ledger.publish_on_write` | on | a ledger write you TYPE (`ledger.py append`, `handoff.py open`/`track`/`ack`) publishes itself, and says on stderr whether the team can see it — set `false` to keep the push local and leave it to the watcher |
-| `action_log: {"enabled": true}` | on (#2741) | a full local, gitignored trace of loop activity per goal (`.sdlc/state/log/<goal>.jsonl`) — read via the `agrim-log` skill; never touches the shared ledger either direction |
+| `action_log: {"enabled": true}` | on | a full local, gitignored trace of loop activity per goal (`.sdlc/state/log/<goal>.jsonl`) — read via the `agrim-log` skill; never touches the shared ledger either direction |
 | `agent_watch: {"enabled": true}` | off | background-agent-death watch — a claimed goal's registered pid confirmed dead notifies (email if `notify.email` is also configured, else always a ledger note); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check |
 | `comment_watch: {"enabled": true}` | off | in-flight comment watch — a new comment on a claimed issue notifies the claimant via a ledger note (self-comments suppressed); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check, and github discovery (comments aren't a concept for local goal files) |
-| `ledger.autowatch: {"enabled": true}` | off | ledger-triggered autonomous tick (#1318 epic, core in `autowatch.py`): on a NEW unacked ledger hit matching `scope` (mentions/assignments/blockers) addressed to you, drives `/agrim-loop` scoped to that ONE flagged issue — never an open-ended `next-batch` pick — after every `preconditions` check passes (`require_gh_auth`, `no_concurrent_session`, an optional `load_average_ceiling`, an optional `spend_ceiling_tokens_per_week` against a local heuristic estimate that can't see other surfaces' spend); `hop_limit` caps chained autowatch-triggered runs; needs `ledger.enabled` too, since `watch_daemon.py`'s own tick runs the check. `surface` ("desktop" default, or "cli") picks which of the two adapters this machine runs — a Desktop scheduled task, or a CLI/Channels plugin. Setup steps for both: `skills/agrim-loop/AUTOWATCH.md`. |
+| `ledger.autowatch: {"enabled": true}` | off | ledger-triggered autonomous tick (core in `autowatch.py`): on a NEW unacked ledger hit matching `scope` (mentions/assignments/blockers) addressed to you, drives `/agrim-loop` scoped to that ONE flagged issue — never an open-ended `next-batch` pick — after every `preconditions` check passes (`require_gh_auth`, `no_concurrent_session`, an optional `load_average_ceiling`, an optional `spend_ceiling_tokens_per_week` against a local heuristic estimate that can't see other surfaces' spend); `hop_limit` caps chained autowatch-triggered runs; needs `ledger.enabled` too, since `watch_daemon.py`'s own tick runs the check. `surface` ("desktop" default, or "cli") picks which of the two adapters this machine runs — a Desktop scheduled task, or a CLI/Channels plugin. Setup steps for both: `skills/agrim-loop/AUTOWATCH.md`. |
 | `parallel: {"enabled": true}` | off | a goal's independent slices run concurrently in waves (`max_concurrent`, default 3) from `.sdlc/plans/<goal>.slices.json` |
 | `parallel: {"goals": {"enabled": true}}` | off | `next-batch` returns up to `max_concurrent` (default 3) BACKLOG GOALS at once for one person's own concurrent subagents, one worktree+PR each — size `max_concurrent` to memory, not just to open-issue count: see [Memory & sizing](#memory--sizing-read-before-running-many-goals-in-parallel) |
 | `backlog_check: {"enabled": true}` | off | pre-work cross-check: parks a picked goal that duplicates / is obsoleted-by / is blocked-by other backlog items, before any token spend — includes a bounded comment-read fallback for a human-authored, comment-only dependency marker; a goal marked as a decomposition child/meta-goal (first-line `sigma:decomposed-from=`/`decompose-of=`) is exempt from the duplicate/obsolete/in-flight-similarity signals, never from an explicit blocker or a recorded hand-off; `/agrim-doctor` flags one that's still silently ignored |
 | `goal_decompose: {"enabled": true}` | off | pre-work oversized-goal classifier: a zero-LLM check flags (`mode: "log"`, default) or parks (`mode: "park"`) a picked goal whose body reads like an epic, before any token spend; `mode: "file"` additionally files one idempotency-guarded "Decompose #N" meta-issue before parking (`max_children` caps its own later split); thresholds are corpus-calibrated against this repo's own issue history (see `goal_size.py`); a decomposition child/meta-goal is exempt by construction |
-| `work: {"enabled": true}` | on (#2741; was unset/`null`, reads as off, until `/agrim-setup` wrote `true`) | one worktree + branch + PR per goal; your checkout never moves, and `verify_command` runs in the goal's own tree |
+| `work: {"enabled": true}` | on (older configs may still hold unset/`null`, which reads as off) | one worktree + branch + PR per goal; your checkout never moves, and `verify_command` runs in the goal's own tree |
 | `work.auto_merge` | `"off"` | `"protected"` merges only where the base *requires* checks/reviews; `"always"` merges any clean+safe PR. A fork or read-only repo never merges — it opens the PR and records `done` |
-| `work.require_review` | `"changes"` (#2741; was `"off"`) | a real PR-review gate, independent of branch protection: `"changes"` parks on a Request-changes / unresolved thread; `"approval"` also requires an APPROVED PR before merging |
+| `work.require_review` | `"changes"` | a real PR-review gate, independent of branch protection: `"changes"` parks on a Request-changes / unresolved thread; `"approval"` also requires an APPROVED PR before merging |
 | `budget.max_iterations` / `max_minutes` / `max_tokens` / `max_codex_raw_tokens` | 20 / 480 / 500,000 / 0 (off) | goals-per-session / wall-clock / priced Claude-equivalent / measured Codex raw phase-token admission ceilings; each enforces only when set to a positive number |
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
 | `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the pre-0.6 always-on prompt gate |
@@ -629,7 +728,7 @@ the label — see below). The labels (and `priority:P0`–`P3`) are created befo
 #### The label model, in one table
 
 > **Full walkthrough:** [`docs/label-model.md`](docs/label-model.md) — what each label means, why
-> it works this way, what was broken before 1.3.6, and **how to move an issue between states by hand
+> it works this way, what was broken before the label model was reworked, and **how to move an issue between states by hand
 > without creating drift**. Written for someone who has never read Sigma's internals.
 
 There are **three kinds** of `sdlc:*` label, and mixing them up is what makes the model look
@@ -844,7 +943,7 @@ to match an existing board).
   Progress`, `QC`, `Done`, `Blocked` — is *structurally* un-pickable, not merely unlikely.
   A `Ready` card that is skipped for ineligibility says so on stderr, naming the issue and the
   reason, so a silent no-pick never has to be diagnosed by guesswork.
-  > Before 1.3.6 this lane decided eligibility entirely on its own, which meant the label model was
+  > Before the label model was reworked (under the plugin's previous name), this lane decided eligibility entirely on its own, which meant the label model was
   > not merely bypassed on a board — it was *inverted*: a `Ready` card carrying `sdlc:parked`, or
   > `sdlc:needs-confirmation`, or **no labels at all**, was picked, while a correctly-labelled
   > `sdlc:goal` card sitting in `Blocked` was not. `sdlc:needs-confirmation` — the whole
@@ -856,10 +955,10 @@ to match an existing board).
   to `Blocked` looks exactly like a guard; it is not one. Only the label queue's own exclusions —
   `parked_label` (default `sdlc:parked`), `in_progress_label` (default `sdlc:in-progress`),
   `sdlc:blocked` (the always-on state `mark_blocked` writes — no config needed),
-  `sdlc:needs-confirmation` (the approval gate, excluded here since 1.3.6 so both queue paths
+  `sdlc:needs-confirmation` (the approval gate, excluded here so both queue paths
   agree), and the optional human-set `blocked_label` (unset by default — see
   `discovery.github.blocked_label`) — keep an issue out of this queue; a board column's name plays
-  no part in it. The `sdlc:blocked` entry is load-bearing since 1.3.6: a blocked goal now KEEPS
+  no part in it. The `sdlc:blocked` entry is load-bearing: a blocked goal KEEPS
   `sdlc:goal`, so that exclusion is the only thing making it unpickable here.
 
 `/agrim-doctor`'s features dashboard states which of the two is actually live for your config, under
@@ -1027,7 +1126,7 @@ blocking it closed. `discovery.auto_unpark` closes that gap automatically — op
 Every pick re-examines each
 `sdlc:parked` **or `sdlc:blocked`** issue: if its recorded `blocked by #N` reference (read from the issue's own body or its
 comments — including the automated park comment itself, minus Sigma's own fixed "Parked by
-Sigma — needs human review: " prefix text, which is never itself read as a reference — #1186) is
+Sigma — needs human review: " prefix text, which is never itself read as a reference) is
 now closed, `sdlc:goal` is re-added and
 `sdlc:parked` dropped, so a pick can pick it back up — never the SAME pick that just unparked it (see
 the cooldown paragraph below), only a later one. A parked issue referencing several blockers waits for
@@ -1131,7 +1230,7 @@ PRs the work produces.
 
 ---
 
-## Local action log (on by default since #2741)
+## Local action log (on by default)
 
 The ledger below is shared, git-tracked, and meant for team-visible coordination — the wrong place
 for a full local trace of what the loop is doing *right now*: every file touched, every model/effort
@@ -1512,7 +1611,7 @@ Turn it on:
 ```
 
 `loop.py next-batch` returns up to `max_concurrent` goals in one call instead of `next`'s one — with
-it off, or only one goal available, it's byte-identical to `next`. Since #2521, that one-goal case is
+it off, or only one goal available, it's byte-identical to `next`. That one-goal case is
 no longer run inline on hosts with subagents — every returned goal, batch of one included, is
 dispatched to its own subagent; `parallel.goals.enabled` controls only how many can run
 *concurrently* in one pass. Each returned goal is dispatched as
@@ -1592,7 +1691,7 @@ settling down, so raise the cap rather than let it thrash.
 
 ---
 
-## One worktree, one branch, one PR per goal (on by default since #2741)
+## One worktree, one branch, one PR per goal (on by default)
 
 `work: {"enabled": true}` — this is the only feature that lets the loop commit at all. Set it to
 `false` explicitly to keep the loop writing to git exactly as little as before this shipped.
@@ -1631,7 +1730,7 @@ reactive one in the merge gate further down, when GitHub itself reports the PR `
 `git rev-list --count`, cheap next to the suite it gates): if nothing has moved, this is a silent
 no-op, exactly as before. If the worktree has fallen behind, it auto-rebases via the same primitive
 the merge gate uses, and says so loudly on stderr — a worktree that predates a fix landed elsewhere
-used to run its whole suite against stale code and get misdiagnosed as broken (#1617, #1829) before
+used to run its whole suite against stale code and get misdiagnosed as broken before
 a human noticed and re-ran by hand. A rebase that cannot apply cleanly refuses instead: the suite
 never runs, `loop.py verify` exits `4`, and no evidence is written, so `record done` is refused the
 same way an absent verify always has been. `verify_command` itself still runs in the worktree — it
@@ -1678,7 +1777,7 @@ whether a check happened to run.
 Then it arms GitHub's own `--auto` rather than merging on what it just read, so the final decision is
 an atomic re-check at merge time.
 
-**A real review, after the PR — `work.require_review` (on by default since #2741).** Without it the
+**A real review, after the PR — `work.require_review` (on by default).** Without it the
 gate only respects a review your *base branch's protection* requires — so a human's ad-hoc **"Request
 changes" on an unprotected base** (the common shape for a `staging`/`dev` branch) is invisible to it,
 and an unattended `auto_merge` lands straight over it. Self-review before the PR is not enough on its
@@ -1687,7 +1786,7 @@ own. `work.require_review` adds a real review gate, **independent of branch prot
 | Value | Behavior |
 |---|---|
 | `"off"` | No review gate — auto-merge only respects reviews branch protection requires. |
-| `"changes"` | **Default (#2741).** **Parks** on a `CHANGES_REQUESTED` review or an unresolved review thread. |
+| `"changes"` | **Default.** **Parks** on a `CHANGES_REQUESTED` review or an unresolved review thread. |
 | `"approval"` | The above, **and** requires an approval before merging — parks until the PR is `sigma:approve`d (or formally `APPROVED`). |
 
 It reads the PR's real review state (`reviewDecision`, review threads, and `sigma:` comment markers)
@@ -1893,14 +1992,13 @@ timer). What Sigma needs to be is **safe under repeated, possibly-overlapping in
 routine can be configured once and left running without double-launching a redundant session or ever
 substituting ambient conversational memory for a real backlog pick.
 
-**The session registry** (`loop.py session-active` / `session-end`, `start --session-pid`,
-F10.5-4/#377, generalized to a real registry by #1199) is what makes the first half cheap. `loop.py
+**The session registry** (`loop.py session-active` / `session-end`, `start --session-pid`) is what makes the first half cheap. `loop.py
 start` records the CALLER's own long-lived process id under its own registry entry — **not** any
 individual `loop.py` call's own: each `loop.py` invocation is a short-lived subprocess that exits
 within moments of returning, so recording ITS pid would make the marker read as dead the instant it's
 written. `start`/`next`/`next-batch`/`session-end` all fall back to `os.getppid()` — THIS invocation's
-own immediate parent — when `--session-pid` isn't given, but as of independent review on #1239 that
-fallback is now documented for what it actually is: correct for a genuinely continuous caller (one
+own immediate parent — when `--session-pid` isn't given, but that
+fallback is documented for what it actually is: correct for a genuinely continuous caller (one
 live process across the whole session), and confirmed **incorrect** for a routine/agent that issues
 each `loop.py` call as its own separate command — each such call's immediate parent is a fresh
 per-call shell process, not any long-lived ancestor, so the fallback alone cannot be trusted to tell

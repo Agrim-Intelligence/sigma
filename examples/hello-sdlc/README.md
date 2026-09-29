@@ -4,10 +4,9 @@ A tiny project (`greeter.py` + `test_greeter.py`) with the SDLC kit already init
 (`.sdlc/`), and one real goal queued: **add a `!` to the greeting**
 ([`.sdlc/goals/0001-add-exclaim.md`](.sdlc/goals/0001-add-exclaim.md)).
 
-> The kit's SDLC phases lean on the **superpowers** companion plugin for phases 1/3/5/6/7
-> (brainstorm → plan → implement → review → retro); plan-review is the kit's own
-> `agrim-plan-review`. Install superpowers for the full engine; without it the phase names still
-> guide the work.
+> You install nothing extra to run this. If the optional `superpowers` + `code-review` companions
+> are already installed, Sigma uses them for the phases they cover; if not, Sigma's portable
+> `agrim-*` executors run the same phases. Plan-review is always Sigma's own `agrim-plan-review`.
 
 ## Run it (interactive mode)
 ```

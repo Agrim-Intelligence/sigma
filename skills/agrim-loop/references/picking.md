@@ -218,8 +218,7 @@ either:
   the finding's own internal identifier, hyphenated: `duplicate` | `obsoleted-by` | `blocked-by` |
   `in-flight-elsewhere`. This is NOT the human-phrased wording the park comment renders it as —
   e.g. the rendered text "blocked by #821" is kind `blocked-by`, ref `821` (a stray leading `#` on
-  `<ref>` is tolerated). THEN un-park it — restoring `sdlc:goal` on its own is **not** enough and has
-  not been since 1.3.6: the park added `sdlc:parked`, and that label is what keeps the issue out
+  `<ref>` is tolerated). THEN un-park it — restoring `sdlc:goal` on its own is **not** enough: the park added `sdlc:parked`, and that label is what keeps the issue out
   of the queue, so adding membership back beside it leaves two membership labels at once (drift
   `/agrim-doctor` reports) on an issue that is still unpickable. Run `/agrim-unpark` instead — it
   drops `sdlc:parked` and restores `sdlc:goal` in one atomic swap. **GitHub discovery mode only**: dismissal reads
