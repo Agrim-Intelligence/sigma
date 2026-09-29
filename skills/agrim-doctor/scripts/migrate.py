@@ -482,14 +482,16 @@ def main(argv, environ=None, home=None, stdout=None):
     refused = list(result.refused)
     changed = []
     if result.changes and do_apply:
-        # #240: migrating while the old plugin is still active leaves it reading empty state.
-        if not _load(_LOOP, "coexist").gate(sdlc_dir, "migrate.py --apply", env=environ,
-                                             home=home, stream=out):
-            return 2
+        # #240/#314: the old plugin still enabled is a NOTICE (it will read Sigma's spellings as
+        # empty from here on -- the cut-over's point); a LIVE watcher is still a refusal (data
+        # integrity: it may be writing the old spellings), with the polite lever.
+        coexist = _load(_LOOP, "coexist")
+        coexist.gate(sdlc_dir, "migrate.py --apply", env=environ, home=home, stream=out)
         pid = _running_watcher(sdlc_dir)
         if pid:
             say("refused all: a watcher (pid %s) is running for this .sdlc and may be writing the "
-                "old spellings -- stop it, then rerun" % pid)
+                "old spellings -- nothing was written, and Sigma never signals it. Stop it "
+                "politely: %s; then rerun" % (pid, coexist.stop_lever(sdlc_dir)))
             return 2
         for change, why in apply(result):
             if why:

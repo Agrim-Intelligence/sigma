@@ -67,9 +67,11 @@ refuses anything it cannot rewrite with certainty (exit 2), and never runs on th
 without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
 
 The `coexistence` row reports whether the old plugin is also active on this repository. When it is,
-init, loop start, the watcher and `migrate.py --apply` refuse until one plugin is disabled; relay
-the exact steps `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints, and never set
-`SIGMA_ALLOW_COEXIST=1` on the user's behalf.
+the row is a WARN, never a failure: Sigma runs normally beside it and is handling the repository
+(one notice line per run names the uninstall command). Relay the cut-over steps
+`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints -- migrate dry
+run, `--apply` only on the user's explicit yes, then uninstall the old plugin -- and never uninstall
+it, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice), on the user's behalf.
 
 ## Secret-file coverage
 

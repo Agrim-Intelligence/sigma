@@ -454,27 +454,35 @@ All notable changes to Sigma are recorded here, newest first.
   script under xtrace and checks that the only locale assignment is the top-level pin. The other
   runs a copy of the script whose scan is killed partway through, and checks that it prints the
   stderr warning.
-- Sigma now detects the plugin under its previous name on the same repository, and refuses rather
-  than writing alongside it (#240). `skills/agrim-loop/scripts/coexist.py` reads the Claude Code
-  settings (`enabledPlugins` and hand-registered hooks, with local over project over user
-  precedence), Codex's `config.toml`, the `.sdlc` owner markers, and the live watcher. While the
-  old plugin is active, `/agrim-init`, `loop.py start`, `watch_daemon.py` and `migrate.py --apply`
-  refuse (exit 2) and print what was found and the fix. The automatic watcher start stays off.
-  `/agrim-doctor` shows a failing `coexistence` row, `status.py` warns on stderr, and the
-  session-start hook repeats the message. `SIGMA_ALLOW_COEXIST=1` lets the write surfaces continue
-  with a warning. Two watchers were already impossible, because both plugins use the same lock
-  files. Sigma now also names a watcher it did not start instead of only reporting "already
-  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. Only an
-  active signal can make an unmarked watcher active, so a Sigma-only upgrade with old state and a
-  running pre-upgrade watcher is not refused. The detector also reads Claude Code's managed
-  settings, accepts comments in settings files, treats a plugin enabled but not installed on this
-  machine as a note, matches hooks by path rather than by substring, and reads every TOML spelling
-  of a Codex plugin entry. A running watcher is identified as the old plugin's only by a directory
-  named exactly the old name in its script path, never by the repository path it was given. The
-  session-start hook no longer stops after the message: the ledger-watcher staleness warning, the
-  wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
-  `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
-  was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
+- Sigma now runs fully next to the plugin under its previous name and replaces it (#314, which
+  reverses #240's refusal on the owner's direction; #251). With both installed and enabled, every
+  Sigma skill, the loop and the watcher work normally: `/agrim-init`, `loop.py start`,
+  `loop.py claim`/`record`, `watch_daemon.py` and its automatic start, and `migrate.py` proceed and
+  print ONE notice line naming the exact uninstall command (`claude plugin uninstall <id>`, with
+  `--scope` when the install has one; for Codex, the `config.toml` table to remove). Init, loop
+  start and migrate always say it; the per-verb surfaces say it at most once per run
+  (`.sdlc/state/coexist.notice`, 6 hours). `SIGMA_ALLOW_COEXIST=1` now only silences the notice.
+  `/agrim-doctor`'s `coexistence` row is a WARN, never a failure; `coexist.py check` prints the
+  cut-over steps and exits 0; the session-start hook adds one read-only line. In a repository the
+  old plugin adopted, init and `loop.py start` print one `sigma: takeover:` line with the exact
+  `migrate.py` dry-run command; `--apply` runs only when the user says yes. What stays impossible:
+  two watchers on one `.sdlc` (the shared lock; a Sigma watcher that meets the old plugin's names
+  it and the polite `watch.stop` lever, and never signals it), and `migrate.py --apply` while any
+  watcher is live (exit 2, naming the same lever). A foreign `owner.json` is a notice, not a lock:
+  init and loop start record Sigma as the owner. See `docs/upgrading.md`, "Switching over from the
+  previous plugin".
+- Sigma detects the plugin under its previous name on the same repository (#240).
+  `skills/agrim-loop/scripts/coexist.py` reads the Claude Code settings (`enabledPlugins` and
+  hand-registered hooks, with local over project over user precedence, plus the managed settings;
+  comments in settings files are accepted), Codex's `config.toml` (every TOML spelling of a plugin
+  entry), the `.sdlc` owner markers, and the live watcher. As first written it refused (exit 2) on
+  every write surface unless `SIGMA_ALLOW_COEXIST=1` was set; that never shipped in a release, and
+  #314 above replaced it with the notice. Kept from #240: a plugin enabled but not installed on this
+  machine is a note; hooks match by path, not by substring; a running watcher is identified as the
+  old plugin's only by a directory named exactly the old name in its script path, never by the
+  repository path it was given (on macOS and Windows, where the command line cannot be read, only
+  beside another active signal); Sigma names a watcher it did not start instead of only reporting
+  "already running"; new local state `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`.
 - `/agrim-init` now checks what the loop needs from git and `gh` before the first goal does
   (#229). The new `skills/agrim-init/scripts/preflight.py` (stdlib only) checks: a git repository,
   the `work.remote` remote (default `origin`, or which remotes exist), the base branch pushed

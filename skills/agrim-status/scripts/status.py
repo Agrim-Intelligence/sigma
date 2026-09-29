@@ -349,8 +349,9 @@ USAGE = "usage: status.py [sdlc_dir]"
 
 
 def _coexist_warning(sdlc_dir):
-    """#240: one stderr line when the plugin under the previous name is also active here (read-only
-    surface: WARN and proceed). Fail-open like every cross-load in this file."""
+    """#240/#314: the one notice line on stderr when the plugin under the previous name is also
+    active here (Sigma proceeds; `SIGMA_ALLOW_COEXIST=1` silences it). Fail-open like every
+    cross-load in this file."""
     try:
         spec = importlib.util.spec_from_file_location(
             "coexist", _HERE.parent.parent / "agrim-loop" / "scripts" / "coexist.py")

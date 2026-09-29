@@ -1,8 +1,11 @@
-"""#240: Sigma and the plugin under its previous name on one repository.
+"""#240/#314: Sigma and the plugin under its previous name on one repository.
 
-`skills/agrim-loop/scripts/coexist.py` is the one detector; every surface that writes shared state
-or starts a watcher refuses on an ACTIVE signal (naming the fix), read-only surfaces warn, and the
-override `SIGMA_ALLOW_COEXIST=1` lets a write surface proceed but never admits a second watcher.
+`skills/agrim-loop/scripts/coexist.py` is the one detector. Since #314 (owner direction: Sigma
+replaces that plugin in place) the other plugin's presence is a NOTICE, never a refusal: every
+surface proceeds and says ONE line naming the uninstall command, once per run; `SIGMA_ALLOW_COEXIST=1`
+silences it. What stays impossible is enforced elsewhere and tested here: the shared watcher lock
+admits one watcher (a foreign one is named with the polite `watch.stop` lever, never signalled),
+and `migrate.py --apply` refuses while a watcher is live.
 
 Every old-name spelling is built from fragments (`OLD`): the previous name is a guarded private
 name in this tree (`tests/test_no_private_names.py`). Fake host inventories live under tmp; the
@@ -26,6 +29,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
 INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+INIT_FLOW = ROOT / "skills" / "agrim-init" / "scripts" / "init_flow.py"
 MIGRATE = ROOT / "skills" / "agrim-doctor" / "scripts" / "migrate.py"
 DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
 STATUS = ROOT / "skills" / "agrim-status" / "scripts" / "status.py"
@@ -117,11 +121,11 @@ def test_claude_user_enabled_is_active_and_the_message_names_the_fix(tmp_path, c
     env = _host(tmp_path, claude=ENABLED)
     report = cx.assess(repo / ".sdlc", env=env)
     assert _kinds(report, cx.ACTIVE) == ["claude-enabled"]
-    text = cx.message(report, "loop.py start")
-    assert "loop.py start refused" in text
-    assert "claude plugin disable %s" % OLD_ID in text and "settings.local.json" in text
+    text = cx.message(report)
+    assert "refused" not in text and "Sigma is handling this repository" in text
+    assert "claude plugin uninstall %s" % OLD_ID in text
     assert "migrate.py %s --apply" % (repo / ".sdlc") in text
-    assert "SIGMA_ALLOW_COEXIST=1" in text
+    assert "SIGMA_ALLOW_COEXIST=1" in text                     # named as the way to silence it
 
 
 def test_claude_precedence_project_false_beats_user_true(tmp_path, cx):
@@ -323,8 +327,18 @@ def test_committed_adapters_are_notes(tmp_path, cx):
 # --------------------------------------------------------------------------- the live watcher
 
 
+#: pid -> Popen for the fake watchers, so a test can prove one was never signalled: `poll()` is
+#: None only while it runs (a signalled child lingers as a zombie a bare pid probe still finds).
+_PROCS = {}
+
+
+def _never_signalled(pid):
+    assert _PROCS[pid].poll() is None, "pid %d was signalled (exit %r)" % (pid, _PROCS[pid].poll())
+
+
 def _spawn(*argv):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)", *argv])
+    _PROCS[proc.pid] = proc
     try:
         yield proc.pid
     finally:
@@ -524,30 +538,105 @@ def test_stale_heartbeat_is_no_watcher(tmp_path, cx, live_pid):
     assert "watcher" not in _kinds(cx.assess(repo / ".sdlc", env=_host(tmp_path, claude=ENABLED)))
 
 
-# --------------------------------------------------------------------------- gate and override
+# --------------------------------------------------------------------------- gate: notice, not refusal (#314)
+
+#: The one notice's fixed phrase, and the uninstall command it names for a Claude Code install.
+HANDLING = "Sigma is handling this repository"
+UNINSTALL = "claude plugin uninstall %s" % OLD_ID
 
 
-def test_gate_refuses_then_the_override_admits_with_a_warning(tmp_path, cx):
+def _notices(text):
+    return [ln for ln in text.splitlines() if HANDLING in ln]
+
+
+def test_gate_admits_with_one_notice_naming_the_uninstall_command(tmp_path, cx):
     repo = _repo(tmp_path)
     env = _host(tmp_path, claude=ENABLED)
     out = io.StringIO()
-    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=out) is False
-    assert "refused" in out.getvalue()
-    for value in ("true", "yes", "0", ""):                    # exactly `1`, nothing derived
-        assert cx.gate(repo / ".sdlc", "s", env={**env, "SIGMA_ALLOW_COEXIST": value},
-                       stream=io.StringIO()) is False
-    assert cx.gate(repo / ".sdlc", "s", env={**env, OLD.upper() + "_ALLOW_COEXIST": "1"},
-                   stream=io.StringIO()) is False           # never read under the old prefix
+    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=out) is True
+    [line] = out.getvalue().splitlines()
+    assert HANDLING in line and UNINSTALL in line and "refused" not in line
+
+
+def test_project_scoped_install_names_its_scope_in_the_uninstall_command(tmp_path, cx):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED)
+    _install_list(pathlib.Path(env["CLAUDE_CONFIG_DIR"]),
+                  {OLD_ID: [{"scope": "project", "projectPath": str(repo)}]})
+    out = io.StringIO()
+    assert cx.gate(repo / ".sdlc", "s", env=env, stream=out) is True
+    assert UNINSTALL + " --scope project" in out.getvalue()
+
+
+def test_codex_notice_names_the_config_edit(tmp_path, cx):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID)
+    out = io.StringIO()
+    assert cx.gate(repo / ".sdlc", "s", env=env, stream=out) is True
+    [line] = out.getvalue().splitlines()
+    assert "config.toml" in line and OLD_ID in line
+
+
+def test_the_override_silences_the_notice_and_only_exactly_1_does(tmp_path, cx):
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED)
     out = io.StringIO()
     assert cx.gate(repo / ".sdlc", "s", env={**env, "SIGMA_ALLOW_COEXIST": "1"}, stream=out)
-    assert "warning" in out.getvalue() and "SIGMA_ALLOW_COEXIST=1" in out.getvalue()
+    assert out.getvalue() == ""
+    for value in ("true", "yes", "0", ""):                    # exactly `1`, nothing derived
+        out = io.StringIO()
+        assert cx.gate(repo / ".sdlc", "s", env={**env, "SIGMA_ALLOW_COEXIST": value}, stream=out)
+        assert len(_notices(out.getvalue())) == 1
+    out = io.StringIO()                                       # never read under the old prefix
+    assert cx.gate(repo / ".sdlc", "s", env={**env, OLD.upper() + "_ALLOW_COEXIST": "1"}, stream=out)
+    assert len(_notices(out.getvalue())) == 1
 
 
-def test_doctor_row(tmp_path, cx):
+def test_per_verb_surfaces_say_it_once_per_run(tmp_path, cx):
+    """A start surface always says it (and marks the run); a per-verb surface (`once=True`: the
+    watcher spawn, claim, record) stays quiet while that mark is fresh, and speaks again after it
+    ages out -- one notice per run, not one per verb (#251)."""
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, claude=ENABLED)
+    first, again, start = io.StringIO(), io.StringIO(), io.StringIO()
+    assert cx.gate(repo / ".sdlc", "loop.py claim", env=env, stream=first, once=True)
+    assert cx.gate(repo / ".sdlc", "loop.py record", env=env, stream=again, once=True)
+    assert len(_notices(first.getvalue())) == 1 and again.getvalue() == ""
+    assert cx.gate(repo / ".sdlc", "loop.py start", env=env, stream=start)
+    assert len(_notices(start.getvalue())) == 1               # a start surface always says it
+    marker = repo / ".sdlc" / "state" / cx.NOTICE_FILE
+    old = time.time() - cx.NOTICE_TTL_SECONDS - 60
+    os.utime(marker, (old, old))
+    later = io.StringIO()
+    assert cx.gate(repo / ".sdlc", "loop.py claim", env=env, stream=later, once=True)
+    assert len(_notices(later.getvalue())) == 1
+
+
+def test_no_notice_and_no_marker_when_nothing_is_active(tmp_path, cx):
+    repo = _repo(tmp_path)
+    out = io.StringIO()
+    assert cx.gate(repo / ".sdlc", "s", env=_host(tmp_path), stream=out, once=True)
+    assert out.getvalue() == ""
+    assert not (repo / ".sdlc" / "state" / cx.NOTICE_FILE).exists()
+
+
+def test_doctor_row_is_a_warning_naming_the_uninstall_command(tmp_path, cx):
     repo = _repo(tmp_path)
     assert cx.doctor_row(repo / ".sdlc", env=_host(tmp_path))["ok"] is True
     row = cx.doctor_row(repo / ".sdlc", env=_host(tmp_path, claude=ENABLED))
-    assert row["ok"] is False and row["name"].startswith("coexistence: the old plugin is ACTIVE")
+    assert row["ok"] is True and row["name"].startswith("coexistence: WARN")
+    assert UNINSTALL in row["fix"]
+
+
+def test_foreign_owner_marker_is_a_notice_and_sigma_takes_ownership(tmp_path):
+    repo = _scaffolded(tmp_path)
+    owner = repo / ".sdlc" / "state" / "owner.json"
+    owner.write_text(json.dumps({"plugin": "other"}))
+    p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
+             _env(**_host(tmp_path)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stderr)) == 1
+    assert json.loads(owner.read_text())["plugin"] == "sigma"
 
 
 # --------------------------------------------------------------------------- surfaces (gestures)
@@ -558,31 +647,38 @@ def _run(argv, env, cwd=None):
                           env=env, cwd=cwd, timeout=120)
 
 
-def test_init_refuses_before_writing_anything(tmp_path):
+def test_init_proceeds_with_one_notice_and_records_the_owner(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_init(repo)
     p = _run([INIT, repo], _env(**_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 2, p.stdout + p.stderr
-    assert "agrim-init refused" in p.stderr and "claude plugin disable" in p.stderr
-    assert not (repo / ".sdlc").exists() and not (repo / ".gitignore").exists()
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stdout + p.stderr)) == 1 and UNINSTALL in p.stderr
+    assert "refused" not in p.stdout + p.stderr
+    assert json.loads((repo / ".sdlc" / "state" / "owner.json").read_text())["plugin"] == "sigma"
 
 
-def test_init_proceeds_and_records_the_owner_when_clear(tmp_path):
+def test_init_proceeds_silently_when_clear(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_init(repo)
     p = _run([INIT, repo], _env(**_host(tmp_path)))
     assert p.returncode == 0, p.stderr
+    assert _notices(p.stdout + p.stderr) == []
     assert json.loads((repo / ".sdlc" / "state" / "owner.json").read_text())["plugin"] == "sigma"
 
 
-def test_init_override_proceeds(tmp_path):
+def test_init_flow_proceeds_with_one_notice(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_init(repo)
-    p = _run([INIT, repo], _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 0 and "warning" in p.stderr
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t.test",
+                    "commit", "-q", "--allow-empty", "-m", "initial"], check=True)
+    p = _run([INIT_FLOW, repo, "--mode", "local-goals", "--local-only", "--no-verify"],
+             _env(**_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stdout + p.stderr)) == 1
+    assert (repo / ".sdlc" / "config.json").exists()
 
 
 def _scaffolded(tmp_path):
@@ -593,35 +689,57 @@ def _scaffolded(tmp_path):
     return repo
 
 
-def test_loop_start_refuses_before_any_write(tmp_path):
+def test_loop_start_proceeds_with_one_notice(tmp_path):
     repo = _scaffolded(tmp_path)
     (repo / ".sdlc" / "state" / "owner.json").unlink()
-    before = _tree(repo / ".sdlc")
     p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
              _env(**_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 2, p.stdout + p.stderr
-    assert "loop.py start refused" in p.stderr
-    assert _tree(repo / ".sdlc") == before
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stderr)) == 1 and "refused" not in p.stderr
+    assert json.loads((repo / ".sdlc" / "state" / "owner.json").read_text())["plugin"] == "sigma"
 
 
-def test_loop_start_proceeds_when_clear(tmp_path):
+def test_loop_start_proceeds_silently_when_clear(tmp_path):
     repo = _scaffolded(tmp_path)
     p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
              _env(**_host(tmp_path)))
     assert p.returncode == 0, p.stderr
-    assert "refused" not in p.stderr
+    assert _notices(p.stderr) == [] and "refused" not in p.stderr
 
 
-def test_watcher_refuses_and_takes_no_lock(tmp_path):
+def _claimable(repo):
+    goals = repo / ".sdlc" / "goals"
+    goals.mkdir(exist_ok=True)
+    goal = goals / "0042.md"
+    goal.write_text("---\nid: 0042\nstatus: pending\n---\nx\n")
+    return goal
+
+
+def test_claim_and_record_proceed_with_one_notice_per_run(tmp_path):
+    """#251: the /agrim-goal admission path (claim, record) says the same single notice -- not a
+    refusal, and not once per verb."""
+    repo = _scaffolded(tmp_path)
+    goal = _claimable(repo)
+    env = _env(**_host(tmp_path, claude=ENABLED))
+    p = _run([LOOP / "loop.py", "claim", repo / ".sdlc", goal], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stderr)) == 1
+    p = _run([LOOP / "loop.py", "record", repo / ".sdlc", goal, "done"], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _notices(p.stderr) == []                           # the same run: said already
+    assert "status: done" in goal.read_text()
+
+
+def test_watcher_starts_with_the_notice_in_its_log(tmp_path):
     repo = _repo(tmp_path)
     (repo / ".sdlc" / "state" / "watch.stop").write_text("")
     p = _run([LOOP / "watch_daemon.py", repo / ".sdlc"],
              _env(SIGMA_WATCH_SLEEP_SCALE="0", **_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 2, p.stdout + p.stderr
-    assert "watcher start refused" in p.stdout
-    state = repo / ".sdlc" / "state"
-    assert not (state / "watch.pid").exists() and not (state / "watch.owner").exists()
-    assert "watcher start refused" in (state / "watch.log").read_text()
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "stop-file present" in p.stdout                    # it took the lock and ran
+    log = (repo / ".sdlc" / "state" / "watch.log").read_text()
+    assert len(_notices(log)) == 1 and "refused" not in log
+    assert not (repo / ".sdlc" / "state" / "watch.owner").exists()     # removed with the pidfile
 
 
 def test_watcher_marks_itself_and_cleans_up(tmp_path):
@@ -643,34 +761,45 @@ def test_watcher_take_over_writes_the_owner_marker(tmp_path):
     assert not (p.state / "watch.owner").exists()
 
 
-def test_override_never_admits_a_second_watcher(tmp_path, live_pid):
+@pytest.mark.parametrize("override", [None, "1"])
+def test_a_live_foreign_watcher_is_never_doubled_nor_signalled(tmp_path, old_watcher_pid,
+                                                                override):
+    """The shared lock admits one watcher. A Sigma watcher start and a loop start beside the old
+    plugin's live watcher: nothing new holds the lock, the pidfile still names the foreign pid,
+    the process is still alive (never signalled), and the message names the polite lever."""
     repo = _repo(tmp_path)
-    _fake_watcher(repo / ".sdlc", live_pid)
-    p = _run([LOOP / "watch_daemon.py", repo / ".sdlc"],
-             _env(SIGMA_WATCH_SLEEP_SCALE="0", SIGMA_ALLOW_COEXIST="1",
-                  **_host(tmp_path, claude=ENABLED)))
+    _fake_watcher(repo / ".sdlc", old_watcher_pid)
+    extra = {"SIGMA_ALLOW_COEXIST": override} if override else {}
+    env = _env(SIGMA_WATCH_SLEEP_SCALE="0", **extra, **_host(tmp_path, claude=ENABLED))
+    p = _run([LOOP / "watch_daemon.py", repo / ".sdlc"], env)
     assert p.returncode == 0, p.stdout + p.stderr
-    assert "already running (pid %d)" % live_pid in p.stdout
-    assert "not started by this Sigma" in p.stdout
-    assert (repo / ".sdlc" / "state" / "watch.pid").read_text().strip() == str(live_pid)
+    assert "already running (pid %d)" % old_watcher_pid in p.stdout
+    assert "not started by Sigma" in p.stdout
+    assert str(repo / ".sdlc" / "state" / "watch.stop") in p.stdout
+    assert (repo / ".sdlc" / "state" / "watch.pid").read_text().strip() == str(old_watcher_pid)
+    _never_signalled(old_watcher_pid)
+    p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (repo / ".sdlc" / "state" / "watch.pid").read_text().strip() == str(old_watcher_pid)
+    _never_signalled(old_watcher_pid)
 
 
-def test_ensure_watcher_does_not_spawn(tmp_path, monkeypatch, capsys):
+def test_ensure_watcher_spawns_beside_the_old_plugin(tmp_path, monkeypatch, capsys):
+    """#314: the watcher spawn is no longer withheld; the shared lock decides who runs. The notice
+    is said once and the spawn happens both times."""
     loop = _load(LOOP / "loop.py", "loop_under_test")
     repo = _repo(tmp_path)
     for key, value in _host(tmp_path, claude=ENABLED).items():
         monkeypatch.setenv(key, value)
+    monkeypatch.delenv("SIGMA_ALLOW_COEXIST", raising=False)
     monkeypatch.setattr(loop.ledger, "enabled", lambda cfg: True)
-    sync = loop._load("sync")
     monkeypatch.setattr(loop, "_load", lambda name, _real=loop._load: (
         type("S", (), {"is_worktree": staticmethod(lambda d: True)}) if name == "sync" else _real(name)))
     spawned = []
     loop._ensure_watcher(str(repo / ".sdlc"), {}, spawn=lambda: spawned.append(1))
-    assert spawned == []
-    assert "not starting the ledger watcher" in capsys.readouterr().err
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "none"))
     loop._ensure_watcher(str(repo / ".sdlc"), {}, spawn=lambda: spawned.append(1))
-    assert spawned == [1] and sync is not None
+    assert spawned == [1, 1]
+    assert len(_notices(capsys.readouterr().err)) == 1
 
 
 def _old_schema_repo(tmp_path):
@@ -681,15 +810,68 @@ def _old_schema_repo(tmp_path):
     return repo, record
 
 
-def test_migrate_apply_refuses_while_the_old_plugin_is_active(tmp_path):
+def test_migrate_dry_run_and_apply_proceed_beside_the_old_plugin(tmp_path):
     repo, record = _old_schema_repo(tmp_path)
     before = record.read_bytes()
-    p = _run([MIGRATE, repo / ".sdlc", "--apply"], _env(**_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 2 and "migrate.py --apply refused" in p.stdout, p.stdout + p.stderr
-    assert record.read_bytes() == before
-    p = _run([MIGRATE, repo / ".sdlc", "--apply"], _env(**_host(tmp_path / "clear")))
-    assert p.returncode == 0, p.stdout
+    env = _env(**_host(tmp_path, claude=ENABLED))
+    p = _run([MIGRATE, repo / ".sdlc"], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert record.read_bytes() == before and "would change" in p.stdout
+    p = _run([MIGRATE, repo / ".sdlc", "--apply"], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert len(_notices(p.stdout + p.stderr)) == 1 and "refused all" not in p.stdout
     assert json.loads(record.read_text())["schema"] == "sigma/landing@1"
+
+
+def test_migrate_apply_still_refuses_while_a_watcher_is_live(tmp_path, live_pid):
+    """Data integrity stays: a live watcher may be writing the old spellings. The refusal names
+    the exact polite lever, and the watcher is never signalled."""
+    repo, record = _old_schema_repo(tmp_path)
+    before = record.read_bytes()
+    _fake_watcher(repo / ".sdlc", live_pid)
+    p = _run([MIGRATE, repo / ".sdlc", "--apply"], _env(**_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 2, p.stdout + p.stderr
+    assert "refused all" in p.stdout
+    assert str(repo / ".sdlc" / "state" / "watch.stop") in p.stdout
+    assert record.read_bytes() == before
+    _never_signalled(live_pid)
+
+
+def test_takeover_offers_the_migrate_dry_run_and_rewrites_nothing(tmp_path):
+    """First Sigma run in a repository the old plugin adopted: `loop.py start` prints the exact
+    dry-run command once; nothing is rewritten without the user's explicit --apply."""
+    repo = _scaffolded(tmp_path)
+    (repo / ".sdlc" / "state" / "landing").mkdir(parents=True)
+    record = repo / ".sdlc" / "state" / "landing" / "7.json"
+    record.write_text(json.dumps({"schema": OLD + "/landing@1", "goal": 7}) + "\n")
+    before = record.read_bytes()
+    p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
+             _env(**_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    [offer] = [ln for ln in p.stderr.splitlines() if ln.startswith("sigma: takeover:")]
+    assert "migrate.py %s" % (repo / ".sdlc") in offer and "--apply" in offer
+    assert record.read_bytes() == before
+    p = _run([INIT, repo], _env(**_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 0 and len([ln for ln in (p.stdout + p.stderr).splitlines()
+                                      if ln.startswith("sigma: takeover:")]) == 1
+    assert record.read_bytes() == before
+    assert _run([MIGRATE, repo / ".sdlc", "--apply"], _env(**_host(tmp_path))).returncode == 0
+    p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
+             _env(**_host(tmp_path, claude=ENABLED)))
+    assert "sigma: takeover:" not in p.stderr                  # migrated: nothing left to offer
+
+
+def test_the_takeover_hint_is_what_migrate_rewrites_not_a_mention(tmp_path, cx):
+    """The cheap hint that gates `migrate.plan()` (linear in the SDLC dir) on every loop start: a
+    comment naming the old plugin is no hint; an env value migrate would rewrite is."""
+    repo = _repo(tmp_path)
+    cfg = repo / ".sdlc" / "config.json"
+    cfg.write_text(json.dumps({"_comment": "adopted by %s 1.4.24" % OLD}))
+    assert cx._legacy_hint(repo / ".sdlc") is False
+    assert cx.takeover_line(repo / ".sdlc") is None
+    cfg.write_text(json.dumps({"x": {"token_env": OLD.upper() + "_SLACK_BOT_TOKEN"}}))
+    assert cx._legacy_hint(repo / ".sdlc") is True
+    assert "migrate.py" in cx.takeover_line(repo / ".sdlc", home=tmp_path)
 
 
 def test_doctor_check_warns_and_proceeds(tmp_path, monkeypatch):
@@ -699,27 +881,14 @@ def test_doctor_check_warns_and_proceeds(tmp_path, monkeypatch):
     doctor = _load(DOCTOR, "doctor_under_test")
     rows = doctor.check(str(repo / ".sdlc"), run=lambda *a, **k: "", cheap_only=True)
     [row] = [r for r in rows if r["name"].startswith("coexistence")]
-    assert row["ok"] is False and "coexist.py check" in row["fix"]
+    assert row["ok"] is True and UNINSTALL in row["fix"]
 
 
-def test_status_warns_on_stderr_and_proceeds(tmp_path):
+def test_status_notes_on_stderr_and_proceeds(tmp_path):
     repo = _scaffolded(tmp_path)
     p = _run([STATUS, repo / ".sdlc"], _env(**_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 0 and "backlog:" in p.stdout
-    assert "also active on this repository" in p.stderr
-
-
-@pytest.mark.skipif(shutil.which("bash") is None, reason="the hook is a bash script")
-def test_session_start_hook_tells_the_session(tmp_path):
-    repo = _repo(tmp_path)
-    env = _env(CLAUDE_PROJECT_DIR=str(repo), **_host(tmp_path, claude=ENABLED))
-    p = subprocess.run(["bash", str(HOOK)], input="{}", capture_output=True, text=True, env=env)
-    assert p.returncode == 0
-    context = json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "claude plugin disable %s" % OLD_ID in context
-    env = _env(CLAUDE_PROJECT_DIR=str(repo), **_host(tmp_path / "clear"))
-    p = subprocess.run(["bash", str(HOOK)], input="{}", capture_output=True, text=True, env=env)
-    assert "refused" not in p.stdout
+    assert len(_notices(p.stderr)) == 1 and "refuse" not in p.stderr
 
 
 BASH_HOOK = pytest.mark.skipif(shutil.which("bash") is None or sys.platform.startswith("win"),
@@ -733,7 +902,20 @@ def _hook(repo, env):
     p = subprocess.run(["bash", str(HOOK)], input="{}", capture_output=True, text=True,
                        env={**env, "CLAUDE_PROJECT_DIR": str(repo)}, timeout=60)
     assert p.returncode == 0, p.stderr
-    return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
+    return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"] if p.stdout else ""
+
+
+@BASH_HOOK
+def test_session_start_hook_is_one_line_and_idempotent(tmp_path):
+    repo = _repo(tmp_path)
+    env = _env(**_host(tmp_path, claude=ENABLED))
+    first = _hook(repo, env)
+    assert _notices(first) == [ln for ln in first.splitlines() if OLD in ln.lower()]
+    assert len(_notices(first)) == 1 and UNINSTALL in first
+    assert "refused" not in first
+    assert _hook(repo, env) == first                          # idempotent: it writes nothing
+    assert not (repo / ".sdlc" / "state" / "coexist.notice").exists()
+    assert "Sigma is handling" not in _hook(repo, _env(**_host(tmp_path / "clear")))
 
 
 def _stale_ledger(repo):
@@ -746,47 +928,37 @@ def _stale_ledger(repo):
 
 
 @BASH_HOOK
-def test_session_start_refusal_still_reaches_the_watcher_staleness_check(tmp_path):
-    """Review block #2, finding 2: the coexist message is informational in a hook. It must not
-    stop the ledger-watcher staleness warning (AGENTS.md LIVENESS)."""
+def test_session_start_notice_still_reaches_the_watcher_staleness_check(tmp_path):
+    """The coexist line is informational in a hook. It must not stop the ledger-watcher staleness
+    warning (AGENTS.md LIVENESS)."""
     repo = _repo(tmp_path)
     _stale_ledger(repo)
     ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
-    assert "claude plugin disable %s" % OLD_ID in ctx
+    assert len(_notices(ctx)) == 1
     assert "looks stale" in ctx and "/agrim-doctor" in ctx
 
 
 @BASH_HOOK
-def test_session_start_override_is_one_line_and_falls_through(tmp_path):
+def test_session_start_override_silences_the_notice_and_falls_through(tmp_path):
     repo = _repo(tmp_path)
     _stale_ledger(repo)
     ctx = _hook(repo, _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
-    assert "coexistence override in effect" in ctx
-    assert "refused" not in ctx and "claude plugin disable" not in ctx
+    assert _notices(ctx) == [] and "refused" not in ctx
     assert "looks stale" in ctx
-    [line] = [ln for ln in ctx.splitlines() if "coexistence override" in ln]
-    assert "SIGMA_ALLOW_COEXIST=1" in line
 
 
 @BASH_HOOK
-def test_session_start_policy_brief_still_runs_beside_the_message(tmp_path):
+def test_session_start_policy_brief_still_runs_beside_the_notice(tmp_path):
     repo = _repo(tmp_path)
     (repo / ".sdlc" / "config.json").write_text('{"session_start":{"enabled":true}}')
     ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
-    assert "claude plugin disable" in ctx and "reviewer is never the author" in ctx
+    assert len(_notices(ctx)) == 1 and "reviewer is never the author" in ctx
 
 
-def test_cli_exit_codes(tmp_path):
+def test_cli_reports_and_exits_0(tmp_path):
     repo = _repo(tmp_path)
     assert _run([LOOP / "coexist.py", "check", repo / ".sdlc"], _env(**_host(tmp_path))).returncode == 0
     p = _run([LOOP / "coexist.py", "check", repo / ".sdlc"], _env(**_host(tmp_path, claude=ENABLED)))
-    assert p.returncode == 2 and "claude plugin disable" in p.stdout
-
-
-def test_cli_check_under_the_override_is_informational(tmp_path):
-    repo = _repo(tmp_path)
-    p = _run([LOOP / "coexist.py", "check", repo / ".sdlc"],
-             _env(SIGMA_ALLOW_COEXIST="1", **_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 0, p.stdout + p.stderr
-    assert "override in effect" in p.stdout and "refused" not in p.stdout
-    assert "Claude Code has %s enabled" % OLD_ID in p.stdout
+    assert UNINSTALL in p.stdout and "Claude Code has %s enabled" % OLD_ID in p.stdout
+    assert "migrate.py %s" % (repo / ".sdlc") in p.stdout and "refused" not in p.stdout
