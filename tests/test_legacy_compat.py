@@ -331,7 +331,7 @@ _DIRECT_READ = re.compile(r"""(?:environ\.get\(|environ\[|\benv\.get\(|\bos\.get
 
 
 def test_every_sigma_env_literal_is_a_name_the_helper_knows(legacy):
-    known = legacy.FALLBACK_ENV | legacy.INTERNAL_ENV
+    known = legacy.FALLBACK_ENV | legacy.INTERNAL_ENV | legacy.POST_RENAME_ENV
     unknown = sorted({"%s: %s" % (p.relative_to(ROOT).as_posix(), m.group())
                       for p in _SHIPPED for m in _SIGMA_NAME.finditer(p.read_text(encoding="utf-8"))
                       if m.group() not in known})

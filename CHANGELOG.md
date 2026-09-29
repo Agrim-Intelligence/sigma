@@ -4,6 +4,27 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- Sigma now detects the plugin under its previous name on the same repository, and refuses rather
+  than writing alongside it (#240). `skills/agrim-loop/scripts/coexist.py` reads the Claude Code
+  settings (`enabledPlugins` and hand-registered hooks, with local over project over user
+  precedence), Codex's `config.toml`, the `.sdlc` owner markers, and the live watcher. While the
+  old plugin is active, `/agrim-init`, `loop.py start`, `watch_daemon.py` and `migrate.py --apply`
+  refuse (exit 2) and print what was found and the fix. The automatic watcher start stays off.
+  `/agrim-doctor` shows a failing `coexistence` row, `status.py` warns on stderr, and the
+  session-start hook repeats the message. `SIGMA_ALLOW_COEXIST=1` lets the write surfaces continue
+  with a warning. Two watchers were already impossible, because both plugins use the same lock
+  files. Sigma now also names a watcher it did not start instead of only reporting "already
+  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. Only an
+  active signal can make an unmarked watcher active, so a Sigma-only upgrade with old state and a
+  running pre-upgrade watcher is not refused. The detector also reads Claude Code's managed
+  settings, accepts comments in settings files, treats a plugin enabled but not installed on this
+  machine as a note, matches hooks by path rather than by substring, and reads every TOML spelling
+  of a Codex plugin entry. A running watcher is identified as the old plugin's only by a directory
+  named exactly the old name in its script path, never by the repository path it was given. The
+  session-start hook no longer stops after the message: the ledger-watcher staleness warning, the
+  wizard and the policy brief still run. Under `SIGMA_ALLOW_COEXIST=1` the hook adds one line and
+  `coexist.py check` exits 0. On macOS and Windows a watcher left running by the old plugin after it
+  was disabled is only a note, because its command line cannot be read. See `docs/upgrading.md`.
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a

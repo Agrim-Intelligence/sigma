@@ -348,10 +348,26 @@ def _ledger_entries(base):
 USAGE = "usage: status.py [sdlc_dir]"
 
 
+def _coexist_warning(sdlc_dir):
+    """#240: one stderr line when the plugin under the previous name is also active here (read-only
+    surface: WARN and proceed). Fail-open like every cross-load in this file."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "coexist", _HERE.parent.parent / "agrim-loop" / "scripts" / "coexist.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.warn_line(sdlc_dir)
+    except Exception:
+        return None
+
+
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
+    warning = _coexist_warning(argv[1] if len(argv) > 1 else ".sdlc")
+    if warning:
+        print(warning, file=sys.stderr)
     s = summary(argv[1] if len(argv) > 1 else ".sdlc")
     line = (f"backlog: {s['proposed']} proposed, {s['pending']} pending, {s['in_progress']} in-progress, "
             f"{s['done']} done, {s['parked']} parked, {s['failed']} failed | "

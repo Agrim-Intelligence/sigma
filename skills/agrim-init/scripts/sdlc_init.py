@@ -355,6 +355,16 @@ def _legacy():
     return module
 
 
+def _coexist():
+    """The coexistence detector (#240), loaded by path like `_legacy` above."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent.parent.parent / "agrim-loop" / "scripts" / "coexist.py"
+    spec = importlib.util.spec_from_file_location("coexist", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def codex_block_update(existing, dest="AGENTS.md"):
     """-> the new AGENTS.md text with Sigma's Codex block in place, or None when it is already
     current. Pure: `scaffold_codex` writes the result, `migrate.py` previews and writes it too.
@@ -482,11 +492,24 @@ def main(argv):
     if not pathlib.Path(target).is_dir():
         print(f"agrim-init: target directory does not exist: {target}", file=sys.stderr)
         return 1
+    # #240: refuse BEFORE any write while the plugin under the previous name is active here. An
+    # agrim-init copied without its agrim-loop sibling cannot check: said aloud, then it proceeds.
+    try:
+        coexist = _coexist()
+    except Exception as exc:                 # noqa: BLE001 - see above
+        coexist = None
+        print(f"agrim-init: warning: cannot check for a second plugin on this repository "
+              f"({type(exc).__name__}); run `coexist.py check` once agrim-loop is installed",
+              file=sys.stderr)
+    if coexist is not None and not coexist.gate(str(pathlib.Path(target) / ".sdlc"), "agrim-init"):
+        return 2
     try:
         created, skipped = scaffold(target)
     except RuntimeIgnoreWriteFailed as exc:
         print(f"agrim-init: {exc}", file=sys.stderr)
         return 1
+    if coexist is not None:
+        coexist.write_owner(pathlib.Path(target) / ".sdlc")  # #240: Sigma owns this state dir
     root = pathlib.Path(target).resolve()
     print(f"agrim-init: {len(created)} created, {len(skipped)} skipped (target: {root})")
     for c in created:

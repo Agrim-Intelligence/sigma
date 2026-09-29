@@ -37,6 +37,7 @@ the least likely to be noticed. Naming the departure is the honest form of keepi
 registry and still calling the whole sequence "what a new user does" would not be.
 """
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -53,6 +54,12 @@ DECISION_GATE = ROOT / "hooks" / "decision_gate.py"
 #: a PATH with no `gh` on it. Nothing in the sequence needs the network, and a census that quietly
 #: resolved a real GitHub identity would depend on which account was logged in that day.
 STUB_ENV = {"PATH": "/usr/bin:/bin"}
+
+
+def _host_inventory():
+    """#240: the empty plugin inventories the autouse conftest fixture points this test at. STUB_ENV
+    is built from scratch, so without these the scan would fall back to the real home directory."""
+    return {k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME") if k in os.environ}
 
 #: The example goal `/agrim-init` scaffolds. Using it rather than authoring one keeps the sequence
 #: inside what a fresh install actually contains.
@@ -92,7 +99,7 @@ def _run(argv, cwd=None, stdin=""):
     rejected phase token writes no event AND changes no assertion), so "it ran" is asserted here
     rather than inferred from the event count downstream."""
     proc = subprocess.run([sys.executable, *[str(a) for a in argv]], cwd=cwd, input=stdin,
-                          capture_output=True, text=True, env=STUB_ENV)
+                          capture_output=True, text=True, env={**STUB_ENV, **_host_inventory()})
     allowed = ALLOWED_EXITS.get(str(argv[0]), {0})
     assert proc.returncode in allowed, (
         f"{pathlib.Path(str(argv[0])).name} exited {proc.returncode} (allowed: {sorted(allowed)})\n"

@@ -482,6 +482,10 @@ def main(argv, environ=None, home=None, stdout=None):
     refused = list(result.refused)
     changed = []
     if result.changes and do_apply:
+        # #240: migrating while the old plugin is still active leaves it reading empty state.
+        if not _load(_LOOP, "coexist").gate(sdlc_dir, "migrate.py --apply", env=environ,
+                                             home=home, stream=out):
+            return 2
         pid = _running_watcher(sdlc_dir)
         if pid:
             say("refused all: a watcher (pid %s) is running for this .sdlc and may be writing the "

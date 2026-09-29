@@ -2,6 +2,7 @@
 already does for agrim_gate.sh -- proving the SHIPPED file behaves correctly, not a copy of its
 logic re-implemented in the test."""
 import json
+import os
 import pathlib
 import subprocess
 
@@ -14,7 +15,10 @@ def _run_hook(project_dir, path_prefix=None, **env):
     and make every assertion below pass vacuously."""
     path = "/usr/bin:/bin" if path_prefix is None else f"{path_prefix}:/usr/bin:/bin"
     return subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
-                          env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": path, **env},
+                          env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": path,
+                               # #240: the conftest's empty plugin inventories, not the real home
+                               **{k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+                                  if k in os.environ}, **env},
                           timeout=15)
 
 
