@@ -146,10 +146,29 @@ All notable changes to Sigma are recorded here, newest first.
   (7) `tests/test_readme_first_run.py` also checks `/agrim-*` names in plain prose, and checks
   `claude plugin` / `codex plugin` syntax against the CLIs' help. (8) The `loop.py start` nag after
   `--local-only` was already fixed by #236 and has its own control, so nothing changed. (9) New
-  `tools/leak_scan.py` is the leak gate that #231's acceptance and `scrub.py` name. It checks
-  tracked files for home paths, `SHAPE_RULES` secret shapes, and links into the origin owner's
-  other repositories. It reports locations only, never values: 0 findings here, and each plant is
-  red (`tests/test_leak_scan.py`).
+  `tools/leak_scan.py` is the leak gate that #231's acceptance and `scrub.py` name. It reports
+  locations only, never values: 0 findings over all 610 tracked files, and each plant is red
+  (`tests/test_leak_scan.py`). After review it scans EVERY tracked file (`.sdlc/` and `tests/`
+  ship too; a first draft skipped them and missed a real home path in `.sdlc/plans/258.md`, now
+  `<home>/…`); its secret rules are scrub.py's `SHAPE_RULES` plus `_SECRET_PATTERNS` (PEM keys, AWS
+  `AKIA`/`ASIA` -- `ASIA` added to scrub.py itself -- classic `gh[pousr]_` tokens, JWTs, bearer
+  auth, and unquoted `key: value` credentials in config-like files); the home rule also catches a
+  bare `/Users/<name>`, `~<name>/` and the host-encoded `-Users-<name>-`; the owner-link rule
+  catches ssh, `git@`, `raw.githubusercontent.com`, `api.github.com/repos` and userinfo spellings,
+  allowing this repository and doctor.py's public slug. 98 lines of token-shaped test fixtures in 16
+  files are now built from fragments, and a line may opt out of one rule only with an in-file
+  allow marker that names the rule and a reason (the syntax is in the tool's docstring; a malformed
+  marker is itself a finding). Measured: 3.5-4.1 s
+  for the whole tree on Python 3.10 and 3.12. (10) The README's two blocker escapes are corrected:
+  `backlog_check.py dismiss-text` only prints the marker, which `loop.py note` must post, and it
+  downgrades one cross-check finding to advisory (GitHub mode only); the keep-parked opt-out is a
+  `<!-- sigma:keep-parked -->` comment, not an `auto_unpark.py` command (that line exited 2). The
+  onboarding control gains a `readme-usage` mode that checks every `python3 <installed-sigma>/...`
+  README gesture against its script's `--help` usage, and asserts each executed init gesture's
+  effect, not just its exit code. (11) The README no longer claims an "85% coverage floor": CI
+  measures no coverage (#194); a test keeps a coverage claim out of shipped prose unless CI
+  enforces one. `verify_detect.py` / `preflight.py` / `state.py` now print `<installed-sigma>`, the
+  README's placeholder, instead of `<sigma>`.
 
 - **A Status option spelled differently from `project.columns` no longer makes a card move a
   silent no-op** (#280). This was confirmed on the fake with GitHub's default options. A read-only

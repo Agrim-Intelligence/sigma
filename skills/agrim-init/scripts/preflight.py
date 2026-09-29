@@ -62,7 +62,7 @@ import sys
 _HERE = pathlib.Path(__file__).resolve().parent
 HERE = str(pathlib.Path(__file__).resolve())
 #: The portable placeholder for text that lands in committed config (verify_detect's convention).
-SCRIPT = "<sigma>/skills/agrim-init/scripts/preflight.py"
+SCRIPT = "<installed-sigma>/skills/agrim-init/scripts/preflight.py"
 
 #: The default of `SIGMA_WATCH_CALL_TIMEOUT` (watch_daemon.py): the bound this codebase already
 #: applies to one hung git/gh call. Reused, not re-chosen.

@@ -940,15 +940,31 @@ the GitHub UI should not have to learn a syntax. That inference has both error d
   still read as one, incorrectly. Nothing about the shape of those distinguishes them from a real
   dependency; only their meaning does.
 
-Two escapes exist when that misfires, and both are deliberate, one-line actions:
+Two escapes exist when that misfires. Each is a **comment on the goal's issue**, posted with
+`loop.py note` — the helper scripts only print text, they never write to GitHub themselves:
 
 ```bash
-# retire ONE specific wrong match (kind + ref) on this goal, permanently
-python3 <installed-sigma>/skills/agrim-loop/scripts/backlog_check.py dismiss-text blocked-by 40
+# 1. dismiss ONE wrong match (kind + ref) found by the pick-time backlog cross-check
+TEXT=$(python3 <installed-sigma>/skills/agrim-loop/scripts/backlog_check.py dismiss-text blocked-by 40 "sequencing note, not a dependency")
+python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "$TEXT"
 
-# or exempt this goal from the auto-unpark sweep entirely
-python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py   # see KEEP_PARKED_MARKER in its SKILL docs
+# 2. exempt ONE goal from the auto-unpark sweep entirely
+python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate checkpoint. <!-- sigma:keep-parked -->"
 ```
+
+What each one does, and does not do:
+
+- **`dismiss-text` only prints** a sentence ending in `<!-- sigma:dismissed-finding kind=blocked-by
+  ref=40 -->`; nothing happens until `loop.py note` posts it. Once posted, the backlog cross-check
+  downgrades that exact `(kind, ref)` finding from confident to advisory, so it no longer parks the
+  goal at pick — the finding stays visible as an advisory note, it is not deleted. It does not change
+  what the auto-unpark sweep or blocker promotion read. **GitHub mode only**: in local mode the note
+  lands in `.sdlc/journey/<goal>.md` and the next park says the dismissal was *not applied*.
+- **The `sigma:keep-parked` marker** makes the auto-unpark sweep skip that issue before any blocker
+  matching, for as long as the comment stays. The sweep only ever resumes `sdlc:blocked` goals (a
+  goal labelled `sdlc:parked` is never auto-resumed anyway), so this is for a `sdlc:blocked` goal
+  you want held. `/agrim-unpark`'s `keep-parked` decision posts the same marker for you. There is no
+  `auto_unpark.py` command for it: that script's only verb is `sweep <sdlc_dir> [--apply]`.
 
 `/agrim-triage`'s `enact` has the mirror-image caveat: it treats any such match as an
 already-present marker and skips writing the real one, so confirm edges in its question round. **Setup:** run `gh auth login` once; leave `repo` empty to auto-detect from the git remote,
@@ -2067,12 +2083,7 @@ the operator must remove that damaged marker after confirming no worker is live.
 > Run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-active .sdlc`. If it prints `ACTIVE`,
 > stop here — a session is already running, nothing to do.
 >
-<<<<<<< HEAD
 > If it prints `FREE`: capture `session_generation=$(python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid "$PPID")` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
-=======
-> If it prints `FREE`: run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid
-> "$PPID"` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
->>>>>>> d6c1b66 (sdlc: 277)
 > shell on THIS call and on every `next`/`next-batch`/`session-end` call below, rather than trying to
 > remember a value captured earlier — it stays the same stable value every time you read it during
 > this one routine firing, which is exactly what makes it safe to use as this firing's own session
@@ -2087,7 +2098,6 @@ the operator must remove that damaged marker after confirming no worker is live.
 <<<<<<< HEAD
 > unattended. When it stops, run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
 > --session-pid "$PPID" --session-generation "$session_generation"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
-=======
 > unattended. When it stops, run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
 > --session-pid "$PPID"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
 >>>>>>> d6c1b66 (sdlc: 277)
@@ -2142,6 +2152,7 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 - **Companions (optional):** `superpowers` + `code-review` — **auto-used when already installed**,
   otherwise the **parity-reviewed portable `agrim-*` executors run the phases**. Never required; you
   install nothing either way.
+<<<<<<< HEAD
 - **Dev/test:** `pip install pytest pytest-cov`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs
   the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
   quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
@@ -2151,6 +2162,7 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution rules. Ask questions
 or report bugs through [SUPPORT.md](SUPPORT.md) and its GitHub Issue templates. Report security
 vulnerabilities privately under [SECURITY.md](SECURITY.md), never in a public issue.
+=======
 
 ## Other platforms supported
 

@@ -27,6 +27,15 @@ is "unanswerable [ask]", red), the verify candidate number and id, and the `Next
 `python3 <existing script under skills/ or tools/> <args without shell syntax>`, the script path
 read from the repository root as a shell would (see _py_argv).
 
+EVERY OTHER README GESTURE IS USAGE-CHECKED (#277 review). The two init subsections are executed;
+every other `python3 <installed-sigma>/<script> ...` line ANYWHERE in the README (fenced, inline, in
+a table or a `$(...)`) cannot be -- most of them need a live board or a running loop -- so each is
+checked against the script's OWN usage instead: `<script> --help` runs (a pure print in every
+shipped script; exit 0 required), and the gesture's verb, positional count and `--flags` must match
+one of the usage alternatives it prints (see `usage_problems`). That is the decision, and its limit:
+a gesture that PARSES but then does something other than its prose claims is not caught here --
+that stays a prose review. Mode line `readme-usage`; red names the gesture and the usage it missed.
+
 TWO VARIANTS per mode. `confirm`: a Makefile test target, confirmed by the README gesture
 (enforce ON). `no-command`: a repository with nothing to confirm, the verify question left open,
 so the default init SCAFFOLDS is what `record done` sees -- the only variant that can see the
@@ -104,8 +113,36 @@ INSTALLED_SIGMA = "<installed-sigma>"
 GESTURE_SECTIONS = ("### What `/agrim-init` will ask you", "### If `/agrim-init` says you lack access")
 #: Exit codes a README gesture may return: `preflight.py check` exits 1 on a blocking failure (the
 #: fake world has no real token), which is its documented report, not a broken gesture. Everything
-#: else must exit 0; a usage error is 2.
+#: else must exit 0; a usage error is 2. The exit code alone is not trusted: GESTURE_EFFECTS below
+#: asserts what each gesture DID.
 GESTURE_OK_RC = {("preflight.py", "check"): (0, 1)}
+
+
+def _cfg(repo):
+    return json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+
+
+def _preflight_report(proc, repo):
+    """A preflight REPORT, never a usage line: exactly one header, `OK - ...` or `N problem(s)`.
+    rc 1 (blocking) needs the problems header; rc 0 takes either (a non-blocking problem, e.g. a
+    non-github.com origin, is reported at exit 0)."""
+    ok = re.search(r"(?m)^sigma: preflight OK - ", proc.stdout)
+    bad = re.search(r"(?m)^sigma: preflight - \d+ problem\(s\)", proc.stdout)
+    if bool(ok) == bool(bad):
+        return False
+    return proc.returncode == 0 or (proc.returncode == 1 and bool(bad))
+
+
+#: (script, verb) -> predicate(proc, repo): the observable effect of each executed README gesture
+#: (#277 review: "assert the effect, not just the code"). A gesture with no entry here is red.
+GESTURE_EFFECTS = {
+    ("verify_detect.py", "set"): lambda p, r: _cfg(r)["verify"].get("command") == "make test"
+    and _cfg(r)["verify"].get("enforce") is True,
+    ("verify_detect.py", "decline"): lambda p, r: _cfg(r)["verify"].get("enforce") is False,
+    ("preflight.py", "check"): _preflight_report,
+    ("preflight.py", "use-remote"): lambda p, r: _cfg(r)["work"].get("remote") == "origin",
+    ("preflight.py", "local-only"): lambda p, r: _cfg(r)["work"].get("enabled") is False,
+}
 
 
 class Red(Exception):
@@ -527,8 +564,143 @@ def run_readme_gestures(run, qs, sigma, repo, env):
         toks = shlex.split(filled)
         ok = GESTURE_OK_RC.get((pathlib.Path(toks[1]).name, toks[2] if len(toks) > 2 else ""), (0,))
         proc = run.step("README gesture: " + line, argv, repo, env, ok_rc=ok)
+        key = (pathlib.Path(toks[1]).name, toks[2] if len(toks) > 2 else "")
+        effect = GESTURE_EFFECTS.get(key)
+        if effect is None or not effect(proc, repo):
+            raise Red("README gesture", f"{line!r}: exit {proc.returncode} but "
+                      + ("no effect is defined for it (GESTURE_EFFECTS)" if effect is None
+                         else "its effect is not observable: " + proc.stdout.strip()[-300:]))
         ran.append((line, proc.returncode))
     return ran
+
+
+#: A `python3 <installed-sigma>/<script>.py <args>` gesture anywhere in the README: the args run to
+#: the end of the code span / line, a `)` closing a `$(...)`, a table `|`, or a `#` comment.
+_README_GESTURE = re.compile(r"python3?\s+" + re.escape(INSTALLED_SIGMA)
+                             + r"/([\w./-]+?\.py)(?![\w.])([^`\n)|#]*)")
+_USAGE_TOKEN = re.compile(r"\[[^\]]*\]|\([^)]*\)|<[^>]*>|\S+")
+
+
+def readme_script_gestures(text):
+    """[(script path under the Sigma dir, [args])] for every `python3 <installed-sigma>/...py`
+    gesture anywhere in the README, deduplicated, in README order. Pure."""
+    out = []
+    for m in _README_GESTURE.finditer(text):
+        try:
+            args = shlex.split(m.group(2), comments=True)
+        except ValueError:
+            args = m.group(2).split()
+        item = (m.group(1), args)
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def _split_top(body):
+    """`a | b (c | d) | e` -> ['a', 'b (c | d)', 'e']: split on ` | ` outside brackets/parens."""
+    parts, depth, cur, i = [], 0, "", 0
+    while i < len(body):
+        ch = body[i]
+        depth += ch in "[(<"
+        depth -= ch in "])>"
+        if depth == 0 and body.startswith(" | ", i):
+            parts.append(cur)
+            cur, i = "", i + 3
+            continue
+        cur += ch
+        i += 1
+    return parts + [cur]
+
+
+def usage_alternatives(help_text):
+    """A script's `--help` text -> [{"required": [set of literals | None], "extras": n}]: one per
+    usage alternative. `<x>` is a required placeholder (None), `a|b` a literal set, `[x]` one
+    optional positional, `[--flag]` none, `(...)` / `...` / `[options]` any number (lenient: a
+    grouped alternative is not modelled), `--flag VALUE` a flag and its value. Pure."""
+    alts = []
+    for line in help_text.splitlines():
+        m = re.match(r"\s*(?:usage:\s*)?[\w-]+\.py\b(.*)$", line)
+        if not m:
+            continue
+        for alt in _split_top(m.group(1)):
+            alt = re.sub(r"^\s*[\w-]+\.py\b", "", alt)
+            toks, req, extras, i = _USAGE_TOKEN.findall(alt), [], 0, 0
+            while i < len(toks):
+                t = toks[i]
+                if t[0] == "(" or "..." in t or t == "[options]":
+                    extras = float("inf")                         # open-ended: lenient on purpose
+                elif t[0] == "[":
+                    extras += not t[1:].lstrip().startswith("-")  # `[x]` one optional slot, `[--f]` none
+                elif t.startswith("-") and len(t) > 1:
+                    if i + 1 < len(toks) and toks[i + 1][0] not in "-[(":
+                        i += 1                                    # the flag's value
+                elif t.startswith("<"):
+                    req.append(None)
+                else:
+                    req.append(set(t.split("|")))
+                i += 1
+            alts.append({"required": req, "extras": extras})
+    return alts
+
+
+def usage_problems(args, help_text):
+    """Why `args` fits none of the usage alternatives in `help_text`, or [] when one fits. A
+    `--flag` the help never names is a problem; a flag the help shows with a value takes the next
+    argument; the rest are positionals, matched verb-first (a first positional that is a verb of
+    some alternative is only matched against the alternatives starting with that verb). Pure."""
+    problems, pos, i = [], [], 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-") and len(a) > 1:
+            flag = a.split("=", 1)[0]
+            if flag not in help_text:
+                problems.append(f"flag {flag} is not in the script's usage")
+            elif "=" not in a and re.search(re.escape(flag) + r"[ =](?![-\[\]|)])\S", help_text):
+                i += 1
+        else:
+            pos.append(a)
+        i += 1
+    alts = usage_alternatives(help_text)
+    verbs = set().union(*[a["required"][0] for a in alts if a["required"] and a["required"][0]])
+    if pos and pos[0] in verbs:
+        alts = [a for a in alts if a["required"] and a["required"][0] and pos[0] in a["required"][0]]
+
+    def fits(alt):
+        req = alt["required"]
+        if not len(req) <= len(pos) <= len(req) + alt["extras"]:
+            return False
+        return all(r is None or p in r for p, r in zip(pos, req))
+    if not any(fits(a) for a in alts):
+        problems.append(f"positionals {pos} fit no usage alternative")
+    return problems
+
+
+def check_readme_usage(text, sigma, cwd):
+    """The `readme-usage` mode (#277 review): every README script gesture against its script's own
+    `--help` usage. -> a mode result like run_local's. `--help` runs from `cwd` (a scratch dir)."""
+    t0, checked, bad, helps = time.monotonic(), [], [], {}
+    gestures = readme_script_gestures(text)
+    for rel, args in gestures:
+        script = pathlib.Path(sigma) / rel
+        line = f"python3 {INSTALLED_SIGMA}/{rel} {' '.join(args)}".strip()
+        if not script.is_file():
+            bad.append({"gesture": line, "problems": [f"{rel} is not shipped"]})
+            continue
+        if rel not in helps:
+            proc = subprocess.run([sys.executable, str(script), "--help"], cwd=str(cwd),
+                                  capture_output=True, text=True, timeout=60)
+            helps[rel] = proc.stdout if proc.returncode == 0 and "usage" in proc.stdout else None
+        if helps[rel] is None:
+            bad.append({"gesture": line, "problems": ["`--help` did not exit 0 with a usage"]})
+            continue
+        problems = usage_problems(args, helps[rel])
+        checked.append({"gesture": line, "problems": problems})
+        if problems:
+            bad.append({"gesture": line, "problems": problems, "usage": helps[rel].strip()[:600]})
+    ok = bool(gestures) and not bad
+    return {"mode": "readme-usage", "ok": ok, "failed_step": None if ok else "README usage",
+            "detail": bad or (None if gestures else "no README script gesture found"),
+            "checked": checked, "seconds": round(time.monotonic() - t0, 3)}
 
 
 def _check(name, ok, detail=None):
@@ -1030,6 +1202,7 @@ def main(argv):
                 else:
                     run_from = pathlib.Path(inst)
         result["scripts_from"] = str(run_from)
+        result["modes"]["readme-usage"] = check_readme_usage(text, run_from, root)
         if qs:
             for variant in VARIANTS if args.variant == "all" else (args.variant,):
                 tag = "" if variant == "confirm" else "/" + variant

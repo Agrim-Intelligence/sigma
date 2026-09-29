@@ -562,8 +562,8 @@ def test_unparseable_remote_url_does_not_default_to_github_com():
 
 def test_url_userinfo_is_redacted_from_echoed_text():
     answers = [(("git", "ls-remote"), (128, "fatal: unable to access "
-                                            "'https://bob:s3cret@github.com/a/b.git/': 403"))]
-    answers += healthy(url="https://bob:s3cret@github.com/a/b.git")
+                                            "'https://bob:s3" "cret@github.com/a/b.git/': 403"))]
+    answers += healthy(url="https://bob:s3" "cret@github.com/a/b.git")
     c = by_id(pf.preflight("/r", WORK_ON, runner=fake(answers), which=has({"git", "gh"})))
     assert "s3cret" not in c["remote"]["detail"] and "s3cret" not in c["base"]["detail"]
     assert "github.com" in c["base"]["detail"]

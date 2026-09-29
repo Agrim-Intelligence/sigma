@@ -98,8 +98,8 @@ def _cli(*args, workdir=None):
 def cli_run(tmp_path_factory):
     rc, lines, blob, proc = _cli(workdir=tmp_path_factory.mktemp("cli"))
     assert rc == 0, proc.stdout[-3000:] + proc.stderr[-2000:]
-    assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "GREEN",
-                     "github/no-command": "GREEN"}, lines
+    assert lines == {"readme-usage": "GREEN", "local": "GREEN", "github": "GREEN",
+                     "local/no-command": "GREEN", "github/no-command": "GREEN"}, lines
     return blob
 
 
@@ -202,6 +202,80 @@ def test_the_gesture_assertion_is_seen_red_once(github_run):
     assert not oc.check_gestures(dict(obs, readme_gestures=[]), dict(qs, gestures=[]))["ok"]
 
 
+# ------------------------------------------------------------ #277 review: README usage + effects
+
+def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
+    usage = cli_run["modes"]["readme-usage"]
+    assert usage["ok"], usage["detail"]
+    checked = [c["gesture"] for c in usage["checked"]]
+    assert len(checked) >= 20, checked                  # the whole README, not just the init sections
+    assert any("backlog_check.py dismiss-text" in g for g in checked), checked
+    assert any("loop.py note .sdlc <goal>" in g for g in checked), checked
+
+
+@pytest.mark.parametrize("old,new,why", [
+    # the #277 review's own find: a bare script with a comment where its verb should be (exit 2)
+    ('python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
+     'python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py  # see KEEP_PARKED_MARKER\nx "',
+     "positionals [] fit no usage alternative"),
+    ('dismiss-text blocked-by 40 "sequencing note, not a dependency"', "dismiss-text 40",
+     "fit no usage alternative"),                                                # a missing <ref>
+    ("reconcile.py census .sdlc", "reconcile.py censuss .sdlc", "fit no usage alternative"),
+    ("verify_detect.py set .sdlc --command-file", "verify_detect.py set .sdlc --cmd-file",
+     "flag --cmd-file is not in the script's usage"),
+    ("migrate.py .sdlc            #", "migrate.py .sdlc extra      #", "fit no usage alternative"),
+    ("loop.py session-end .sdlc", "loop.py session-over .sdlc", "fit no usage alternative"),
+    ("scripts/reconcile.py census", "scripts/reconcile_gone.py census", "is not shipped"),
+])
+def test_control_a_readme_gesture_its_script_would_refuse_is_red(old, new, why, tmp_path):
+    assert old in README_TEXT, old
+    out = oc.check_readme_usage(README_TEXT.replace(old, new, 1), ROOT, tmp_path)
+    assert out["ok"] is False and out["failed_step"] == "README usage", out
+    assert any(why in p for d in out["detail"] for p in d["problems"]), out["detail"]
+
+
+def test_control_the_usage_mode_goes_red_through_the_cli(tmp_path):
+    """Through the documented gesture: the pre-fix README's auto_unpark line is `RED at README
+    usage`, and the run exits 1 even though the local mode itself is green."""
+    drifted = tmp_path / "README.md"
+    drifted.write_text(README_TEXT.replace(
+        'python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
+        "python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py   # see KEEP\nx \"", 1),
+        encoding="utf-8")
+    rc, lines, blob, proc = _cli("--mode", "local", "--variant", "confirm", "--readme", str(drifted),
+                                 workdir=tmp_path)
+    assert rc == 1 and lines == {"readme-usage": "RED at README usage", "local": "GREEN"}, lines
+
+
+class _Proc:
+    def __init__(self, rc, out):
+        self.returncode, self.stdout = rc, out
+
+
+def test_each_gesture_effect_is_seen_red(tmp_path):
+    """GESTURE_EFFECTS is what makes an executed gesture's exit code insufficient on its own."""
+    repo = tmp_path
+    (repo / ".sdlc").mkdir()
+    cfg = {"verify": {"command": "make test", "enforce": True}, "work": {"remote": "origin"}}
+    (repo / ".sdlc" / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+    eff = oc.GESTURE_EFFECTS
+    assert eff[("verify_detect.py", "set")](None, repo)
+    assert not eff[("verify_detect.py", "decline")](None, repo)
+    assert eff[("preflight.py", "use-remote")](None, repo)
+    assert not eff[("preflight.py", "local-only")](None, repo)
+    check = eff[("preflight.py", "check")]
+    assert check(_Proc(0, "sigma: preflight OK - git repository\n"), repo)
+    assert check(_Proc(1, "sigma: preflight - 1 problem(s) the loop would otherwise hit\n"), repo)
+    assert not check(_Proc(1, "sigma: preflight OK - git repository\n"), repo)   # rc/report mismatch
+    assert check(_Proc(0, "sigma: preflight - 1 problem(s) the loop would otherwise hit\n"), repo)
+    assert not check(_Proc(1, "usage: preflight.py check [repo_root]\n"), repo)     # a usage exit
+    assert not check(_Proc(2, "sigma: preflight - 1 problem(s)\n"), repo)
+    assert not check(_Proc(0, ""), repo)
+    assert set(eff) == {("verify_detect.py", "set"), ("verify_detect.py", "decline"),
+                        ("preflight.py", "check"), ("preflight.py", "use-remote"),
+                        ("preflight.py", "local-only")}
+
+
 def test_no_command_variants_reach_done_with_enforce_off(cli_run):
     local = next(g for g in cli_run["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     github = cli_run["modes"]["github/no-command"]["observations"]
@@ -230,8 +304,10 @@ def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
             "        vd.write_verify(sdlc, None, vd.unconfirmed_why(vd.detect(target)))\n", "        pass\n")
     rc, lines, blob, proc = _cli("--mode", "both", "--sigma", str(sigma), workdir=tmp_path)
     assert rc == 1, proc.stdout[-3000:]
-    assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "RED at record done",
-                     "github/no-command": "RED at work pr"}, lines
+    assert lines == {"readme-usage": "GREEN", "local": "GREEN", "github": "GREEN",
+                     "local/no-command": "RED at record done",
+                     "github/no-command": "RED at assert:init left verify.enforce OFF with no "
+                                          "command confirmed"}, lines
     mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
     assert mine["scaffolded_verify"] == {"command": "", "enforce": True}
@@ -252,7 +328,8 @@ def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
     rc, lines, blob, proc = _cli("--mode", "github", "--sigma", str(sigma), workdir=tmp_path)
     assert rc == 1, proc.stdout[-3000:]
     # (the stdout line's name stops at " (", so the assertion name reads truncated here)
-    assert lines == {"github": "GREEN", "github/no-command": "RED at assert:the review gate ran"}, lines
+    assert lines == {"readme-usage": "GREEN", "github": "GREEN",
+                     "github/no-command": "RED at assert:the review gate ran"}, lines
     assert blob["modes"]["github/no-command"]["failed_step"] == \
         "assert:the review gate ran (a sigma:block parked the merge)"
     gh_obs = blob["modes"]["github/no-command"]["observations"]
@@ -480,11 +557,11 @@ def test_main_exit_codes_for_red_and_a_missing_readme(tmp_path):
     drifted.write_text(README_TEXT.replace("/agrim-loop            #", "/agrim-run             #"),
                        encoding="utf-8")
     rc, lines, blob, proc = _cli("--mode", "local", "--readme", str(drifted), workdir=tmp_path)
-    assert rc == 1 and lines == {"readme": "RED at readme"}, proc.stdout[-2000:]
+    assert rc == 1 and lines == {"readme": "RED at readme", "readme-usage": "GREEN"}, proc.stdout[-2000:]
     assert oc.main(["onboarding_control.py", "--mode", "local", "--variant", "no-command",
                     "--workdir", str(tmp_path), "--json", str(tmp_path / "r.json")]) == 0
     result = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
-    assert list(result["modes"]) == ["local/no-command"] and result["ok"] is True
+    assert list(result["modes"]) == ["readme-usage", "local/no-command"] and result["ok"] is True
 
 
 def test_the_gh_summary_folds_numbers_and_flags(tmp_path):

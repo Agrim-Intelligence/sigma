@@ -56,7 +56,7 @@ def test_default_token_env_name_is_used_when_config_names_none():
 
 
 def test_a_real_token_posts_through_the_injected_sender(monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     calls = []
 
     def fake_post(token, channel_id, text):
@@ -65,16 +65,16 @@ def test_a_real_token_posts_through_the_injected_sender(monkeypatch):
 
     ok = slack_client.post_message("C123", "hello team", _config(), post=fake_post)
     assert ok is True
-    assert calls == [("xoxb-fake-token", "C123", "hello team")]
+    assert calls == [("xo" "xb-fake-token", "C123", "hello team")]
 
 
 def test_a_false_return_from_the_sender_is_reported_as_failure(monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     assert slack_client.post_message("C123", "hi", _config(), post=lambda *a: False) is False
 
 
 def test_a_raising_sender_is_treated_as_a_failed_post_never_raises(monkeypatch, capsys):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
 
     def boom(*a):
         raise OSError("connection refused")
@@ -85,7 +85,7 @@ def test_a_raising_sender_is_treated_as_a_failed_post_never_raises(monkeypatch, 
 
 
 def test_no_channel_id_never_calls_the_sender(monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
 
     def boom(*a):
         raise AssertionError("must not POST with no channel_id")
@@ -102,24 +102,24 @@ def test_token_env_override_is_read_verbatim_instead_of_the_config_lookup(monkey
     even consulted once an explicit `token_env` is given, matching Component E's own wording:
     "used verbatim instead of `_token_env(config)`'s own drift-watch-scoped lookup"."""
     override_env = "SIGMA_SLACK_BOT_TOKEN_OVERRIDE_TEST_" + __name__.replace(".", "_")
-    monkeypatch.setenv(override_env, "xoxb-commands-token")
+    monkeypatch.setenv(override_env, "xo" "xb-commands-token")
     monkeypatch.delenv(TOKEN_ENV, raising=False)   # the drift_watch-scoped default is UNSET
     calls = []
     ok = slack_client.post_message("C123", "hi", _config(), token_env=override_env,
                                     post=lambda token, cid, text: calls.append((token, cid, text)) or True)
     assert ok is True
-    assert calls == [("xoxb-commands-token", "C123", "hi")]
+    assert calls == [("xo" "xb-commands-token", "C123", "hi")]
 
 
 def test_omitting_token_env_is_byte_identical_to_before(monkeypatch):
     """Every EXISTING caller (drift_watch.py's own tick) omits `token_env` -- confirms that path is
     completely unaffected by the new parameter: `_token_env(config)`'s own lookup still runs."""
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     calls = []
     ok = slack_client.post_message("C123", "hello team", _config(),
                                     post=lambda token, cid, text: calls.append((token, cid, text)) or True)
     assert ok is True
-    assert calls == [("xoxb-fake-token", "C123", "hello team")]
+    assert calls == [("xo" "xb-fake-token", "C123", "hello team")]
 
 
 def test_token_env_override_with_no_value_set_degrades_to_the_stub(monkeypatch, capsys):
@@ -140,19 +140,19 @@ def test_a_blank_token_env_override_falls_back_to_the_config_lookup(monkeypatch)
     """An empty-string/whitespace `token_env` is not a real override -- `_token_env(config)` still
     decides, exactly like the omitted case, rather than trying to read an env var literally named
     "" or "   "."""
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     calls = []
     ok = slack_client.post_message("C123", "hi", _config(), token_env="   ",
                                     post=lambda token, cid, text: calls.append((token, cid, text)) or True)
     assert ok is True
-    assert calls == [("xoxb-fake-token", "C123", "hi")]
+    assert calls == [("xo" "xb-fake-token", "C123", "hi")]
 
 
 # ------------------------------------------------------------------ scrubbing (BR-15)
 
 
 def test_text_is_scrubbed_before_it_reaches_the_sender(monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     seen = []
     secret = "gh" + "p_" + "x" * 36     # shaped like a real gh token, split so this file itself
                                          # never contains an unbroken secret-shaped literal
@@ -235,40 +235,40 @@ def test_main_prints_usage_and_exits_nonzero_on_a_bad_invocation(capsys):
 
 
 def test_main_posts_to_the_sigma_alias_through_post_message_unchanged(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     _sdlc_cwd(tmp_path, _drift_config(sigma="C1111111"), monkeypatch)
     calls = []
     monkeypatch.setattr(slack_client, "_real_post",
                          lambda token, cid, text: calls.append((token, cid, text)) or True)
     rc = slack_client.main(["slack_client.py", "post", "sigma", "hello", "team"])
     assert rc == 0
-    assert calls == [("xoxb-fake-token", "C1111111", "hello team")]
+    assert calls == [("xo" "xb-fake-token", "C1111111", "hello team")]
 
 
 def test_main_posts_to_the_org_alias(tmp_path, monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     _sdlc_cwd(tmp_path, _drift_config(org="C2222222"), monkeypatch)
     calls = []
     monkeypatch.setattr(slack_client, "_real_post",
                          lambda token, cid, text: calls.append((token, cid, text)) or True)
     rc = slack_client.main(["slack_client.py", "post", "org", "status", "update"])
     assert rc == 0
-    assert calls == [("xoxb-fake-token", "C2222222", "status update")]
+    assert calls == [("xo" "xb-fake-token", "C2222222", "status update")]
 
 
 def test_main_posts_to_a_literal_channel_id(tmp_path, monkeypatch):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     _sdlc_cwd(tmp_path, _drift_config(), monkeypatch)
     calls = []
     monkeypatch.setattr(slack_client, "_real_post",
                          lambda token, cid, text: calls.append((token, cid, text)) or True)
     rc = slack_client.main(["slack_client.py", "post", "C9999999", "direct", "push"])
     assert rc == 0
-    assert calls == [("xoxb-fake-token", "C9999999", "direct push")]
+    assert calls == [("xo" "xb-fake-token", "C9999999", "direct push")]
 
 
 def test_main_fails_loudly_on_a_bad_channel_argument(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv(TOKEN_ENV, "xoxb-fake-token")
+    monkeypatch.setenv(TOKEN_ENV, "xo" "xb-fake-token")
     _sdlc_cwd(tmp_path, _drift_config(), monkeypatch)  # neither alias configured
 
     def boom(*a):

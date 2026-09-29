@@ -383,7 +383,7 @@ def test_actionlog_safe_append_defaults_actor_to_loop(tmp_path):
 
 def test_actionlog_scrubs_a_secret_shaped_detail_field(tmp_path):
     d = _sdlc(tmp_path, ON)
-    secret = "AKIAIOSFODNN7EXAMPLE"
+    secret = "AK" "IAIOSFODNN7EXAMPLE"
     entry = actionlog.append(d, "158", "note", "agent", text=f"see key {secret}")
     assert secret not in entry["text"]
     assert secret not in actionlog.log_path(d, "158").read_text()

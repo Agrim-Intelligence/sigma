@@ -50,10 +50,10 @@ def test_detects_tech_debt_and_test_gap(tmp_path):
 def test_marker_text_is_never_emitted(tmp_path):
     # a TODO can contain a secret — the candidate must carry the location, never the comment body
     repo = _repo(tmp_path)
-    (repo / "a.py").write_text("# TODO: rotate AKIASECRETVALUE123456 before launch\n")
+    (repo / "a.py").write_text("# TODO: rotate AK" "IASECRETVALUE123456 before launch\n")
     _git(repo, "add", "-A")
     blob = json.dumps(_run(repo))
-    assert "AKIASECRETVALUE123456" not in blob and "rotate" not in blob
+    assert "AK" "IASECRETVALUE123456" not in blob and "rotate" not in blob
     assert "a.py:1" in blob                             # but the location IS there
 
 

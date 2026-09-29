@@ -449,7 +449,9 @@ _VERSION = re.compile(r"(?:(?<=pre-)|(?<![\w.@^~=<>/+-]))v?(\d+)\.(\d+)(?:\.(\d+
 #: A lower version is still a previous product's release when a release phrase introduces it.
 _RELEASE_PHRASE = re.compile(r"(?i)(?:\bsince|\bpre-|\bbefore|\bas of|\buntil|\bshipped in|\bon|"
                              r"\bin|\bfrom|\bafter)\s*v?$")
-_TWO_PART_PHRASE = re.compile(r"(?i)(?:\bsince|\bpre-|\bbefore|\bas of|\buntil|\bshipped in)\s*v?$")
+#: `in` / `added in` / `removed in` count too ("added in 0.6", "in 0.6 the gate..."): #277 review.
+_TWO_PART_PHRASE = re.compile(r"(?i)(?:\bsince|\bpre-|\bbefore|\bas of|\buntil|\bshipped in|"
+                              r"\bin|\bintroduced in|\bremoved in)\s*v?$")
 #: A version introduced by one of these names another program, never a Sigma release.
 _OTHER_PROGRAM = re.compile(r"(?i)(?:python|darwin|macos|codex-cli|bun|node|gh|git)\s+v?$")
 #: (path, token): why that exact version string is legitimate there. The reason is required.
@@ -459,6 +461,7 @@ VERSION_ALLOW = {
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
     ("contract/README.md", "1.2.0"): "the event contract's own semver (contract/VERSION)",
     ("contract/README.md", "1.1.0"): "the event contract's own semver history",
+    ("contract/README.md", "1.1"): "the event contract's own planned version (`in v1.1 or later`)",
 }
 
 
@@ -520,7 +523,10 @@ def test_every_version_allowance_carries_a_reason_and_is_still_needed():
                                          ("a stale `sdlc:goal` (1.3.8).", "1.3.8"),
                                          ("On 1.4.x, run step 3", "1.4.x"),
                                          ("Before 1.3.7 both wrote", "1.3.7"),
-                                         ("since 0.9.2 it reads", "0.9.2")])
+                                         ("since 0.9.2 it reads", "0.9.2"),
+                                         ("the gate was added in 0.6 and", "0.6"),
+                                         ("In 0.6 the gate moved", "0.6"),
+                                         ("removed in v0.7.", "0.7")])
 def test_control_a_planted_release_version_is_caught(plant, token):
     assert version_findings([("docs/x.md", "text\n" + plant + "\n")]) == [("docs/x.md", 2, token)]
 
@@ -529,6 +535,42 @@ def test_control_other_programs_and_the_shipped_version_are_not_findings():
     ok = ("Python 3.12.13 on Darwin 25.6; codex-cli 0.154.0-alpha.6.2; older than 1.0.0; "
           "on Python 3.10 and 3.12")
     assert version_findings([("docs/x.md", ok)]) == []
+
+
+# ---------------------------------------------------------------- coverage claims (#277 review)
+
+#: A claim that CI enforces a coverage number: "85% coverage", "coverage floor/threshold/minimum".
+_COVERAGE_CLAIM = re.compile(r"(?i)\b\d+\s*%\s*(?:line\s+|branch\s+)?coverage|"
+                             r"coverage\s+(?:floor|threshold|minimum|gate)")
+#: What would make such a claim true: a pytest-cov fail-under, or coverage.py's own `fail_under`.
+_COVERAGE_ENFORCED = re.compile(r"--cov-fail-under|\bfail_under\b")
+
+
+def coverage_claim_findings(path_texts, config_texts):
+    """[(path, line)] for every shipped-prose coverage claim, unless a CI/config file enforces one."""
+    if any(_COVERAGE_ENFORCED.search(t) for t in config_texts):
+        return []
+    return [(rel, n) for rel, body in path_texts
+            for n, line in enumerate(body.splitlines(), 1) if _COVERAGE_CLAIM.search(line)]
+
+
+def _ci_and_config_texts():
+    names = [p for p in ROOT.glob(".github/workflows/*.y*ml")] + [
+        ROOT / n for n in ("pyproject.toml", "setup.cfg", "tox.ini", ".coveragerc", "pytest.ini")]
+    return [p.read_text(encoding="utf-8") for p in names if p.is_file()]
+
+
+def test_no_shipped_prose_claims_a_coverage_floor_ci_does_not_enforce():
+    """README once said CI runs "with an 85% coverage floor"; ci.yml runs plain pytest (#194)."""
+    assert coverage_claim_findings(_shipped_prose(), _ci_and_config_texts()) == []
+
+
+def test_control_a_planted_coverage_claim_is_red_and_an_enforcing_ci_clears_it():
+    prose = [("README.md", "CI runs it with an **85% coverage floor** on every push.\n")]
+    assert coverage_claim_findings(prose, _ci_and_config_texts()) == [("README.md", 1)]
+    assert coverage_claim_findings([("docs/x.md", "a coverage threshold of 80")], []) == \
+        [("docs/x.md", 1)]
+    assert coverage_claim_findings(prose, ["run: pytest --cov=. --cov-fail-under=85"]) == []
 
 
 # ---------------------------------------------------------------- the worked example's sample output
@@ -542,9 +584,19 @@ def _example_status_lines(text):
     return fences[0].strip()
 
 
-def test_the_example_status_sample_is_what_status_py_prints(tmp_path):
-    """examples/hello-sdlc/README.md's `/agrim-status` sample is the real line: a fresh copy, its one
-    goal recorded `done` through `loop.py record`, then `status.py` -- the script the skill runs."""
+def sample_is_current(readme_text, produced):
+    """The example README's one status sample is exactly what `status.py` printed."""
+    return _example_status_lines(readme_text) == produced
+
+
+#: The line the example README carried before #277 -- the status format before `proposed` and
+#: `failed` were counted. A real stale sample, not a hand-made string that merely differs.
+_PRE_277_SAMPLE = "backlog: 0 pending, 0 in-progress, 1 done, 0 parked | iteration 1 | review-queue: empty"
+
+
+def _recorded_status(tmp_path):
+    """-> (before, after) stdout of `status.py` on a fresh copy of the example, around recording
+    its one goal `done` through `loop.py record` -- the scripts the skills run."""
     repo = tmp_path / "hello"
     shutil.copytree(EXAMPLE, repo)
     env = dict(os.environ, HOME=str(tmp_path / "home"), GIT_CONFIG_GLOBAL=os.devnull,
@@ -557,13 +609,24 @@ def test_the_example_status_sample_is_what_status_py_prints(tmp_path):
                          cwd=repo, env=env, capture_output=True, text=True)
     assert rec.returncode == 0, rec.stdout + rec.stderr
     after = subprocess.run(status, cwd=repo, env=env, capture_output=True, text=True)
+    return before.stdout, after.stdout.strip()
+
+
+def test_the_example_status_sample_is_what_status_py_prints(tmp_path):
+    """examples/hello-sdlc/README.md's `/agrim-status` sample is the real line: a fresh copy, its one
+    goal recorded `done` through `loop.py record`, then `status.py` -- the script the skill runs."""
+    before, after = _recorded_status(tmp_path)
     text = (EXAMPLE / "README.md").read_text(encoding="utf-8")
-    assert after.stdout.strip() == _example_status_lines(text)
-    assert "1 pending" in before.stdout and "iteration 0" in before.stdout, before.stdout
+    assert sample_is_current(text, after), (after, _example_status_lines(text))
+    assert "1 pending" in before and "iteration 0" in before, before
     assert ".gitignore" not in text or "git-ignores" in text     # the old manual-ignore tip is gone
 
 
-def test_control_a_stale_example_sample_is_caught():
-    stale = "```\nbacklog: 0 pending, 0 in-progress, 1 done, 0 parked | iteration 1 | review-queue: empty\n```\n"
-    live = _example_status_lines((EXAMPLE / "README.md").read_text(encoding="utf-8"))
-    assert _example_status_lines(stale) != live
+def test_control_a_stale_example_sample_is_caught(tmp_path):
+    """The example README with its pre-#277 sample put back is red against what status.py prints
+    NOW -- the same comparison the green test makes, so a comparison that cannot fail fails here."""
+    _before, after = _recorded_status(tmp_path)
+    live = (EXAMPLE / "README.md").read_text(encoding="utf-8")
+    stale = live.replace(_example_status_lines(live), _PRE_277_SAMPLE)
+    assert stale != live
+    assert sample_is_current(live, after) and not sample_is_current(stale, after)

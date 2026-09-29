@@ -107,7 +107,7 @@ _SECRET_PATTERN_SPECS = (
                 r"(?:(?:\\[rn]|\s)*[A-Za-z0-9+/=]{16,})*"
                 r"(?:(?:\\[rn]|\s)*[A-Za-z0-9+/=]{1,15}(?=(?:\\[rn]|\s)*$))?"),
      "[REDACTED:private-key]"),
-    ("aws-key", re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED:aws-key]"),
+    ("aws-key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}"), "[REDACTED:aws-key]"),
     ("gh-token", re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"), "[REDACTED:gh-token]"),
     ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
     ("auth", re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),

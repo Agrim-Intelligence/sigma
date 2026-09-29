@@ -79,7 +79,7 @@ _CI_TEST = re.compile(
 #: How a gesture names this script. In config (committed, shared) the portable placeholder -- no
 #: machine path lands in a teammate's repo; on the console, this file's real path, so the printed
 #: line runs as pasted.
-SCRIPT = "<sigma>/skills/agrim-init/scripts/verify_detect.py"
+SCRIPT = "<installed-sigma>/skills/agrim-init/scripts/verify_detect.py"
 HERE = str(pathlib.Path(__file__).resolve())
 
 
@@ -324,7 +324,7 @@ def write_verify(sdlc_dir, command, why):
 
 def unconfirmed_why(candidates):
     """The `_why` a fresh scaffold records -- no command has been confirmed yet. Committed config,
-    so the gestures name the portable <sigma> placeholder, never this machine's path."""
+    so the gestures name the portable <installed-sigma> placeholder (the README's own spelling), never this machine's path."""
     if not candidates:
         return ("enforce OFF: /agrim-init found no test command in this repository (looked for pytest, "
                 "package.json scripts.test, go.mod, Cargo.toml, a Makefile test target, a CI test step). "

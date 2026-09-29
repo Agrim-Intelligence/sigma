@@ -5766,7 +5766,7 @@ def test_record_park_why_is_capped_and_scrubbed():
     with tempfile.TemporaryDirectory() as d:
         base = _telemetry_base(d)
         lp = _loop()
-        secret = "AKIAIOSFODNN7EXAMPLE"
+        secret = "AK" "IAIOSFODNN7EXAMPLE"
         detail = f"blocked on a decision\nsee key {secret}\n" + ("x" * 300)
         lp._record(base, _Sink(), "g.md", "parked", detail)
         events = [e for e in journal_events(lp.ledger, base) if e["kind"] == "park"]
@@ -6775,7 +6775,7 @@ def test_emit_scrubs_a_planted_secret_in_why():
     with tempfile.TemporaryDirectory() as d:
         base = _telemetry_base(d)
         lp = _loop()
-        SECRET = "AKIAIOSFODNN7EXAMPLE"
+        SECRET = "AK" "IAIOSFODNN7EXAMPLE"
         rc = lp.main(["loop.py", "emit", base, "g.md", "gate", "--gate", "plan_review",
                       "--verdict", "warn", "--why", f"key: {SECRET}"])
         assert rc == 0
@@ -6801,7 +6801,7 @@ def test_spend_scrubs_a_planted_secret_in_model():
     with tempfile.TemporaryDirectory() as d:
         base = _telemetry_base(d)
         lp = _loop()
-        SECRET = "AKIAIOSFODNN7EXAMPLE"
+        SECRET = "AK" "IAIOSFODNN7EXAMPLE"
         rc = lp.main(["loop.py", "spend", base, "10", "g.md", "--model", f"sonnet-{SECRET}"])
         assert rc == 0
         evs = _events(base, "spend")
@@ -7014,8 +7014,8 @@ def test_emit_and_spend_share_one_validator():
 # whether the field's NAME was on a "safe" list. These four tests are the reviewer's own repro,
 # verbatim in shape, now asserting the opposite outcome: refused, not written.
 
-_LEAK_SECRET_1 = "AKIAIOSFODNN7EXAMPLE"
-_LEAK_SECRET_2 = "ghp_ABCDEFGHIJ1234567890ABCD"
+_LEAK_SECRET_1 = "AK" "IAIOSFODNN7EXAMPLE"
+_LEAK_SECRET_2 = "gh" "p_ABCDEFGHIJ1234567890ABCD"
 _LEAK_PAYLOAD = f"prose padding {_LEAK_SECRET_1} more padding {_LEAK_SECRET_2} trailing text"
 assert "\n" not in _LEAK_PAYLOAD          # the whole point: no newline, so the old guard missed it
 
