@@ -46,13 +46,14 @@ def _ctx(p):
     return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
 
 
-def test_a_repo_with_no_sdlc_at_all_gets_wizard_context(tmp_path):
+def test_a_repo_with_no_sdlc_at_all_gets_no_wizard_context(tmp_path):
+    """#236 / #186 REVERSED this test's old assertion ("a repo with no .sdlc gets the wizard"): that
+    was the nag -- the hook speaks in every repository the user opens, and a decline could never be
+    remembered there. `/agrim-init` is the entry point for a new repository; see the adopted-repo
+    controls at the end of this file, which prove the wizard itself still fires."""
     p = _run_hook(tmp_path)
     assert p.returncode == 0
-    payload = json.loads(p.stdout)
-    ctx = payload["hookSpecificOutput"]["additionalContext"]
-    assert "agrim-wizard" in ctx or "setup" in ctx.lower()
-    assert "project layer" in ctx or "scaffold" in ctx.lower()
+    assert "agrim-wizard" not in _ctx(p)
 
 
 def test_a_fully_healthy_repo_produces_no_wizard_output(tmp_path):
@@ -120,17 +121,22 @@ def test_the_hook_writes_nothing_into_a_repo_that_has_no_sdlc(tmp_path):
     against a real fresh `git init` repo as well; this pins it."""
     p = _run_hook(tmp_path)
     assert p.returncode == 0
-    assert "agrim-wizard" in _ctx(p)                    # it still REPORTS...
-    assert list(tmp_path.iterdir()) == []              # ...it just leaves nothing behind
+    assert "agrim-wizard" not in _ctx(p)                # #236: it no longer even reports here...
+    assert list(tmp_path.iterdir()) == []              # ...and it leaves nothing behind
 
 
 def test_a_headless_supervised_session_gets_no_wizard(tmp_path):
     """FINAL-REVIEW FINDING I4. A `claude -p /agrim-loop` worker (launched by supervise_daemon.py, which
     exports SIGMA_RUN_ID before spawning it) has nobody to answer the wizard's yes/no
-    questions. Same fixture as the "no .sdlc at all" test above, which DOES fire the wizard --
-    the only difference here is the environment variable, so this cannot pass by accident."""
-    assert "agrim-wizard" in _ctx(_run_hook(tmp_path))                    # control: it would fire
-    p = _run_hook(tmp_path, SIGMA_RUN_ID="supervise-123-456-789")
+    questions. An ADOPTED repo with a failing classified check (#236: an unadopted one never fires
+    at all), which DOES fire the wizard -- the only difference below is the environment variable,
+    so this cannot pass by accident."""
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text('{"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
+    shim = _shimmed_graphify(tmp_path)
+    assert "agrim-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))   # control: it would fire
+    p = _run_hook(tmp_path, path_prefix=shim, SIGMA_RUN_ID="supervise-123-456-789")
     assert p.returncode == 0
     assert p.stdout.strip() == ""
     assert "agrim-wizard" not in _ctx(p)
@@ -198,3 +204,32 @@ def test_missing_python3_still_exits_zero_with_valid_json(tmp_path, monkeypatch)
                        env={"CLAUDE_PROJECT_DIR": str(tmp_path), "PATH": "/bin"},
                        timeout=15)
     assert p.returncode == 0
+
+
+# --- #236 / #186: the wizard fires only in a repository Sigma has adopted ---------------------
+
+
+def test_236_no_wizard_in_a_directory_that_never_adopted_sigma(tmp_path):
+    """#186: a stranger's repo -- no `.sdlc/` -- gets nothing from the session hook, and nothing is
+    written there. `/agrim-init` is the entry point; the wizard is for an adopted repo only."""
+    p = _run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path))
+    assert p.returncode == 0
+    assert "agrim-wizard" not in _ctx(p)
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["shim"]
+
+
+def test_236_no_wizard_for_an_sdlc_without_config(tmp_path):
+    """A bare `.sdlc/` directory (another tool's, or an interrupted scaffold) is not adoption:
+    `.sdlc/config.json` is the one marker (`hooks/gate_state.py:adopted_root`)."""
+    (tmp_path / ".sdlc").mkdir()
+    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path))
+
+
+def test_236_no_wizard_in_an_sdlc_another_plugin_owns(tmp_path):
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    (sdlc / "config.json").write_text('{"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
+    shim = _shimmed_graphify(tmp_path)
+    assert "agrim-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))     # control: adopted
+    (sdlc / "state" / "owner.json").write_text('{"schema": "x", "plugin": "another-plugin"}')
+    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path, path_prefix=shim))

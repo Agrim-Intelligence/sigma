@@ -1,6 +1,6 @@
 ---
 name: agrim-init
-description: Scaffold the per-project .sdlc layer. Use for a new repository setup or /agrim-init.
+description: The one setup command - scaffold .sdlc, check access, choose mode and verify command. Use for a new repository setup or /agrim-init.
 allowed-tools: Bash(python3 *)
 ---
 
@@ -14,28 +14,51 @@ empty path. Claude keeps its provided value.
 
 Detailed selection triggers: [selection](references/selection.md).
 
-Scaffold the `.sdlc/` project layer, then report what happened.
+**This is the one command a new user runs after installing Sigma** (#236). It asks the few
+questions that matter and leaves the repository ready for `/agrim-loop`. `/agrim-setup` is an
+alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Python on every host.
 
-1. Run the bundled scaffolder from the repository root:
+1. Run the flow from the repository root:
 
-   `python3 "${CLAUDE_SKILL_DIR}/scripts/sdlc_init.py"`
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/init_flow.py" .`
 
-   (Pass a target path as the first argument, and pass through any `--github` / `--demo` / `--vision`
-   / `--cursor` / `--codex` flags the user gave. On Codex, pass `--codex` even when the user did not
-   spell it out: this writes or refreshes its managed `AGENTS.md` block and preserves other rules.
-   **`--github`** also installs the GitHub PM scaffolding —
-   epic/task/bug issue templates, the auto-add-to-project workflow, a critical-insight template, and a
-   label guide — into `.github/` — and, when `origin` is a GitHub remote, creates the `sdlc:*` and
-   `priority:P0`–`P3` labels there (one line per label; exits non-zero naming any label it could not
-   create). **`--demo`** queues a small, safe, runnable demo goal so `/agrim-loop`
-   shows the SDLC immediately; with `--github`, also file it as an `sdlc:goal` issue (`gh issue create`)
-   so it runs on the board. **`--vision`** scaffolds the opt-in north-star. **`--cursor`** installs the
-   **Cursor host adapter** (*experimental — not yet verified in a live Cursor session*) — two
-   always-applied rules, `.cursor/rules/sdlc.mdc` carrying the SDLC discipline (Cursor has no
-   `UserPromptSubmit` hook, so the rule is its analog) and `.cursor/rules/output-contract.mdc`
-   pointing status output at `render.py` rather than at prose to imitate — and pins `companions: off`
-   so the portable `agrim-*` executors are used.) **`--codex`** adds the standing Codex rule block
-   without changing `.sdlc/config.json` or the Claude host path.
+   plus any flags the user gave. On Codex, pass `--codex` even when the user did not spell it out
+   (it writes or refreshes the managed `AGENTS.md` block and keeps other rules); on Cursor,
+   `--cursor`. It runs, in order, and prints one section each:
+   `1/5 preflight` (git, remote, base, `gh`, auth, scopes -- 1b below), `2/5 mode` (local-goals or
+   github; the default is github when `origin` is a GitHub repository), `3/5 verify` (3 below),
+   `4/5 github` (github mode only: the `sdlc:*` + `priority:P0`-`P3` labels, `assignee: @me`, the
+   board OFFER -- 1c below -- and the ledger question), `5/5 summary` and a `Next:` line
+   (`/agrim-loop`, or `--demo` first when nothing is queued).
+   Every question not yet answered is ONE `[ask]` line naming the flag that answers it:
+
+   | Question | Flags |
+   |---|---|
+   | mode | `--mode local-goals` / `--mode github` (`--repo OWNER/NAME` when `origin` is not GitHub) |
+   | work (only when no usable remote) | `--local-only` / `--work on` |
+   | verify | `--verify N:ID` / `--verify-command-file FILE` / `--no-verify` |
+   | board (github) | `--board yes` / `--board no` |
+   | ledger (github) | `--ledger yes` / `--ledger no` |
+
+   Other flags: `--demo` (queue a runnable demo goal), `--vision`, `--codex`, `--cursor`,
+   `--github-templates` (the `.github/` issue templates and workflows; `--github` is shorthand for
+   `--mode github --github-templates`), `--ignore-scope local` (1a below). Answers are remembered in
+   `.sdlc/state/init.json`, so re-running is safe and repeats nothing.
+   **`--yes` takes only the safe defaults** (mode = detected, ledger = off). It never answers the
+   board, the verify command, or a work flip.
+   - **Claude Code:** ask the user each `[ask]` as a real question, then re-run the same command
+     with the answers as flags. Never pass `--board yes`, `--verify`, `--local-only` or
+     `--ledger yes` on the user's behalf.
+   - **Codex / Cursor:** relay the `[ask]` lines verbatim; they carry the exact flags. Do not choose
+     for the user.
+
+   Exit 0: every attempted step passed (open questions are allowed). Exit 1: a step failed; the last
+   line is `Resume: <command>` -- relay it. Exit 2: refused before anything was written (not a git
+   repository, another plugin active, github mode with no repository).
+
+   The scaffolder underneath, `scripts/sdlc_init.py`, still runs alone (same `--codex` / `--cursor`
+   / `--demo` / `--vision` flags); it asks nothing and never sets the mode -- its `--github` creates
+   labels but leaves `discovery.source: local-goals`, so prefer the flow.
 1a. `/agrim-init` now git-ignores the machine-written runtime dirs itself, by shelling out to
     `setup.py ignore` (the same mechanism `/agrim-setup` uses) at the end of scaffolding — a bare
     `/agrim-init`, on its own, is a real, supported install and no longer depends on also running
@@ -71,9 +94,11 @@ Scaffold the `.sdlc/` project layer, then report what happened.
       `gh auth login` / `gh auth refresh` for them -- they are interactive; hand them the line.
     - **Codex / Cursor:** relay the printed preflight block and DECISION verbatim. It carries the
       exact gesture and the exact config line; do not choose for the user.
-1c. **Project board (#235), github mode only** (`--github`, or `discovery.source: github`; never in
-    local-goals mode). When no `discovery.github.project.number` is pinned, init prints an `OFFER`
-    block and runs nothing. The gesture is
+1c. **Project board (#235), github mode only** (never in local-goals mode). When no
+    `discovery.github.project.number` is pinned, init prints an `OFFER` block and runs nothing;
+    until you answer, the flow keeps `project.enabled` OFF (with the reason in `_enabled_why`),
+    because the loop would otherwise create a board on its first github pick. `--board yes` runs
+    the gesture below with `--yes`; `--board no` records the decline. The gesture is
     `python3 "${CLAUDE_SKILL_DIR}/scripts/board_setup.py" create <abs .sdlc> [--owner O] [--title T] [--template N|OWNER/N] [--number N] [--yes]`.
     Without `--yes` it only reads and prints what it would do. With `--yes` it checks the gh
     `project` scope (preflight's check and fix lines), then creates `<repo> — SDLC` or copies a
@@ -90,8 +115,8 @@ Scaffold the `.sdlc/` project layer, then report what happened.
     (`--number N` adopts that board on purpose). Every step prints `[ok]`, `[FAIL]` or `[manual]`.
     A failure exits 1 and prints the exact resume command. See [board](references/board.md).
     - **Claude Code:** ask the user a real yes/no question ("Create and pin the board?"). Only on
-      yes, run the printed `... --yes` line. On no, say the loop mirrors nothing until a number is
-      pinned. Never run it unasked.
+      yes, re-run the flow with `--board yes`; on no, with `--board no` (the loop mirrors nothing
+      until a number is pinned). Never run it unasked.
     - **Codex / Cursor:** relay the OFFER block verbatim. It carries the exact command for the
       user to run.
 2. Read the printed `created / skipped` summary and the git tip. `/agrim-init` creates
@@ -112,6 +137,8 @@ Scaffold the `.sdlc/` project layer, then report what happened.
    re-detects, and stores candidate `<n>` only if it still has the `<id>` that was shown --
    otherwise it refuses ("the repository changed since the report") and stores nothing; re-run
    `/agrim-init` and confirm from the new report. A `.sdlc` that is a symlink is refused.
+   The flow's flags do the same as the gestures below: `--verify <n>:<id>` is `confirm`,
+   `--verify-command-file <file>` is `set --command-file`, `--no-verify` is `decline`.
    - **Claude Code:** ask the user with a real question: confirm a detected candidate, replace
      it with their own command, or decline. On confirm, run
      `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" confirm .sdlc <n> <id>` with the

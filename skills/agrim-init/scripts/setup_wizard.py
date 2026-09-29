@@ -153,6 +153,28 @@ def _adopted(sdlc_dir):
     return pathlib.Path(sdlc_dir).is_dir()
 
 
+def adopted_by_sigma(sdlc_dir):
+    """#236 / #186: may the wizard SPEAK here? Stricter than `_adopted` (which only gates this
+    module's own writes): the repository must have adopted Sigma -- `.sdlc/config.json` exists, the
+    ONE adoption marker every gate hook reads (`hooks/gate_state.py:adopted_root`) -- and no other
+    plugin has claimed the directory (`state/owner.json`, written by init and loop start, #240).
+
+    Before this the wizard fired in EVERY repository the user opened: with no `.sdlc/`, doctor's
+    "project layer" row fails and is an allow-listed step, and because the writers no-op there a
+    decline could never be remembered -- a nag, forever, in repos that never asked for Sigma.
+    `/agrim-init` is the entry point for a new repository; the wizard is for an adopted one.
+    Never raises: anything unreadable reads as "not adopted" -- silence, today's status quo."""
+    try:
+        base = pathlib.Path(sdlc_dir)
+        if not (base / "config.json").is_file():
+            return False
+        owner = json.loads((base / "state" / "owner.json").read_text(encoding="utf-8"))
+        return not (isinstance(owner, dict) and isinstance(owner.get("plugin"), str)
+                    and owner["plugin"] != "sigma")
+    except (OSError, ValueError):
+        return (pathlib.Path(sdlc_dir) / "config.json").is_file()
+
+
 def write_dismissed(sdlc_dir, names):
     """Best-effort: a wizard that cannot persist a skip must still let the user proceed with
     their actual request this session -- it would just ask again next time, which is annoying,
@@ -230,6 +252,8 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     the whole cache safe to have added: it can only make a healthy repo cheaper to keep checking,
     never make a broken one look healthy for longer than a single tick."""
     now = now if now is not None else time.time()
+    if not adopted_by_sigma(sdlc_dir):
+        return {"needs_wizard": False, "steps": []}      # #186: not adopted -> say nothing
     if allow_cache:
         cached = _read_cache(sdlc_dir)
         # `0 <=` matters: a NEGATIVE delta means the clock moved backwards since the cache was

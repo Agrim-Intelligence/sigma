@@ -12,7 +12,8 @@ def test_skill_frontmatter_names_sdlc_init():
 def test_skill_grants_python_and_invokes_scaffolder():
     text = (ROOT / "skills" / "agrim-init" / "SKILL.md").read_text()
     assert "allowed-tools:" in text and "Bash(python3" in text   # no per-run permission prompt
-    assert "${CLAUDE_SKILL_DIR}/scripts/sdlc_init.py" in text     # documented path resolution
+    # documented path resolution; #236: the skill runs the one entry point, init_flow.py
+    assert "${CLAUDE_SKILL_DIR}/scripts/init_flow.py" in text
 
 
 def test_readme_marks_init_shipped():

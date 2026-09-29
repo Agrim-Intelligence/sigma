@@ -69,6 +69,10 @@ fi
 export HOOK_COEXIST_NOTICE
 
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
+# #236 / #186: ADOPTED REPOS ONLY. `setup_wizard.wizard_status()` returns "nothing needed" unless
+# `.sdlc/config.json` exists and no other plugin owns the directory -- the gate lives in Python, so
+# every caller (this hook, the agrim-wizard skill) gets it; a stranger's repo hears nothing, and a
+# new repository's entry point is /agrim-init, not this hook.
 # Only ONE additionalContext can be emitted per hook invocation, so this block's own exit status
 # gates whether the policy-brief block below ever runs at all: exit 0 means "already printed,
 # stop here" (caught by the `if`, which `exit 0`s the whole hook immediately, before the

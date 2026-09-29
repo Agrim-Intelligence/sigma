@@ -15,7 +15,9 @@ empty path. Claude keeps its provided value.
 Detailed selection triggers: [selection](references/selection.md).
 
 Triggered by `hooks/session_start.sh` injecting `additionalContext` naming unresolved checks —
-never invoked by a user typing a command. If you are reading this, `setup_wizard.wizard_status()`
+never invoked by a user typing a command. It fires only in a repository that adopted Sigma
+(`.sdlc/config.json`, no other plugin's owner marker, #236); a new repository starts with
+`/agrim-init`, the one entry point, on every host. If you are reading this, `setup_wizard.wizard_status()`
 already found something incomplete.
 
 **Engine:** `setup_wizard.py` (`wizard_status()`, `read_dismissed()`, `write_dismissed()`) and

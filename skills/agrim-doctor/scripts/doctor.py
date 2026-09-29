@@ -4284,7 +4284,7 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          "ON — a worktree/branch/PR per goal; verify runs in it"
          if wk.get("enabled") is True else
          "off — the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR",
-         'config: "work": {"enabled": true}  (or run /agrim-setup)'),
+         'config: "work": {"enabled": true}  (or run /agrim-init)'),
         ("runtime dirs ignored via",
          _ignore_mechanism(pathlib.Path(base).parent),
          "run /agrim-setup (or setup.py ignore .) — never clobbers an ignore rule you already set"),

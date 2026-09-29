@@ -142,18 +142,22 @@ def git_refusal(target_dir, runner=None, which=None):
             + pf.failure_lines(check) + ["  Then re-run /agrim-init."])
 
 
-def preflight_report(target_dir, runner=None, which=None):
+def preflight_report(target_dir, runner=None, which=None, checks=None):
     """#229: the preflight lines /agrim-init prints after scaffolding, on every host: each problem
     with one remediation line per host and what Sigma does meanwhile, plus the work.enabled DECISION
-    when work is on but nothing can be pushed. Prints and flips nothing itself."""
+    when work is on but nothing can be pushed. Prints and flips nothing itself. `checks` (#236):
+    results the caller already measured (init_flow.py reads them for its exit status), so the
+    network checks are not run twice."""
     pf = _preflight()
     sdlc = os.path.abspath(os.path.join(str(target_dir), ".sdlc"))
     try:
         cfg = json.loads(pathlib.Path(sdlc, "config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         cfg = {}
-    checks = pf.preflight(str(pathlib.Path(target_dir).resolve()), cfg if isinstance(cfg, dict) else {},
-                          runner=runner or PREFLIGHT_RUNNER, which=which or PREFLIGHT_WHICH)
+    if checks is None:
+        checks = pf.preflight(str(pathlib.Path(target_dir).resolve()),
+                              cfg if isinstance(cfg, dict) else {},
+                              runner=runner or PREFLIGHT_RUNNER, which=which or PREFLIGHT_WHICH)
     lines = pf.report_lines(checks)
     if not pf.requirements(cfg if isinstance(cfg, dict) else {})["work"]:
         return lines
@@ -514,9 +518,9 @@ def bootstrap_github_labels(target_dir):
     failed."""
     repo = _detect_repo(target_dir)
     if not repo:
-        print("\nagrim-init: labels not created - no GitHub `origin` remote detected. Set "
-              "discovery.github.repo (`/agrim-setup`); `loop.py start` creates them before the "
-              "first pick.")
+        print("\nagrim-init: labels not created - no GitHub `origin` remote detected. Choose github "
+              "mode with its repository (`init_flow.py --mode github --repo O/N`, #236); `loop.py "
+              "start` creates them before the first pick.")
         return True
     print(f"\nagrim-init: labels on {repo}")
     proc = subprocess.run([sys.executable, str(SETUP_SCRIPT), "labels",
@@ -584,6 +588,57 @@ def board_offer(target_dir, github_flag):
     ]
 
 
+def scaffold_extras(target, flags):
+    """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`), each skip-if-exists and
+    each reporting one line. Shared by `main()` and `init_flow.py` (#236), so the one entry point
+    and this low-level scaffolder never diverge on what a flag writes."""
+    if "--demo" in flags:
+        if scaffold_demo(target):
+            print("\nagrim-init: demo goal queued - `.sdlc/goals/0000-demo.md`. Run `/agrim-loop` to watch "
+                  "the SDLC run it end to end (Goal -> Research -> ... -> Review).")
+            if "--github" in flags:
+                print("  github mode: file it as an issue - `gh issue create --label sdlc:goal "
+                      "--title \"[Demo] Sigma\" --body \"<paste the demo goal body>\"` - then `/agrim-loop` "
+                      "creates the board and moves the card Backlog -> ... -> Done.")
+        else:
+            print("\nagrim-init: demo goal already present (kept).")
+    if "--vision" in flags:
+        if scaffold_vision(target):
+            print("\nagrim-init: vision-first north-star queued - `.sdlc/context/north-star.md`. Run "
+                  "`/agrim-vision` to fill the tiers (Vision -> Strategy -> Design -> Architecture); "
+                  "`/agrim-context` then grounds every goal in it.")
+        else:
+            print("\nagrim-init: north-star already present (kept).")
+    if "--cursor" in flags:
+        rules_created, rules_skipped = scaffold_cursor_rules(target)
+        # Cursor never has the superpowers/code-review companions - pin companions:off so the portable
+        # executors are used without a pointless `claude plugin list` probe (fail-open if config's odd).
+        try:
+            cfgp = pathlib.Path(target) / ".sdlc" / "config.json"
+            cfg = json.loads(cfgp.read_text(encoding="utf-8"))
+            if cfg.get("companions") != "off":
+                cfg["companions"] = "off"
+                cfgp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+        if rules_created:
+            print("\nagrim-init: Cursor adapter queued - "
+                  + ", ".join("`.cursor/rules/%s`" % n for n in rules_created)
+                  + " (always-applied rules; `sdlc.mdc` is the SDLC discipline, the hook analog, "
+                  "and `output-contract.mdc` points status output at render.py). companions pinned "
+                  "off (portable executors). The zero-dep python helpers run from your Sigma "
+                  "checkout via Cursor's terminal.")
+            for s in rules_skipped:
+                print("  = .cursor/rules/%s (exists, kept)" % s)
+        else:
+            print("\nagrim-init: Cursor rules already present (kept).")
+    if "--codex" in flags:
+        if scaffold_codex(target):
+            print("\nagrim-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
+        else:
+            print("\nagrim-init: Codex rule already present (kept).")
+
+
 USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
 
 
@@ -642,51 +697,10 @@ def main(argv):
             print(f"  = .github/{s} (exists, kept)")
         if not bootstrap_github_labels(target):
             return 1
-    if "--demo" in flags:
-        if scaffold_demo(target):
-            print("\nagrim-init: demo goal queued - `.sdlc/goals/0000-demo.md`. Run `/agrim-loop` to watch "
-                  "the SDLC run it end to end (Goal -> Research -> ... -> Review).")
-            if "--github" in flags:
-                print("  github mode: file it as an issue - `gh issue create --label sdlc:goal "
-                      "--title \"[Demo] Sigma\" --body \"<paste the demo goal body>\"` - then `/agrim-loop` "
-                      "creates the board and moves the card Backlog -> ... -> Done.")
-        else:
-            print("\nagrim-init: demo goal already present (kept).")
-    if "--vision" in flags:
-        if scaffold_vision(target):
-            print("\nagrim-init: vision-first north-star queued - `.sdlc/context/north-star.md`. Run "
-                  "`/agrim-vision` to fill the tiers (Vision -> Strategy -> Design -> Architecture); "
-                  "`/agrim-context` then grounds every goal in it.")
-        else:
-            print("\nagrim-init: north-star already present (kept).")
-    if "--cursor" in flags:
-        rules_created, rules_skipped = scaffold_cursor_rules(target)
-        # Cursor never has the superpowers/code-review companions - pin companions:off so the portable
-        # executors are used without a pointless `claude plugin list` probe (fail-open if config's odd).
-        try:
-            cfgp = pathlib.Path(target) / ".sdlc" / "config.json"
-            cfg = json.loads(cfgp.read_text(encoding="utf-8"))
-            if cfg.get("companions") != "off":
-                cfg["companions"] = "off"
-                cfgp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-        except Exception:
-            pass
-        if rules_created:
-            print("\nagrim-init: Cursor adapter queued - "
-                  + ", ".join("`.cursor/rules/%s`" % n for n in rules_created)
-                  + " (always-applied rules; `sdlc.mdc` is the SDLC discipline, the hook analog, "
-                  "and `output-contract.mdc` points status output at render.py). companions pinned "
-                  "off (portable executors). The zero-dep python helpers run from your Sigma "
-                  "checkout via Cursor's terminal.")
-            for s in rules_skipped:
-                print("  = .cursor/rules/%s (exists, kept)" % s)
-        else:
-            print("\nagrim-init: Cursor rules already present (kept).")
-    if "--codex" in flags:
-        if scaffold_codex(target):
-            print("\nagrim-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
-        else:
-            print("\nagrim-init: Codex rule already present (kept).")
+        print("agrim-init: note - this low-level `--github` gesture does NOT switch the backlog to "
+              "GitHub (discovery.source is unchanged). The one entry point does: "
+              "`init_flow.py --mode github` (`/agrim-init`, #236).")
+    scaffold_extras(target, flags)
     # #246 review 2: the verify report comes LAST, after every step above that writes files
     # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
     # prints are detected from the repository exactly as `confirm` will see it. The config's

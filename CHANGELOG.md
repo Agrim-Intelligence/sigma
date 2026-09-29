@@ -92,6 +92,37 @@ All notable changes to Sigma are recorded here, newest first.
     `Python gate` row (`work.py` `_plan_review_refusal`). `/agrim-doctor` gains a
     `plan-review gate` row, including ON-but-not-enforced when `work.enabled` is off.
 
+- **`/agrim-init` is the one entry point; `/agrim-setup` is its alias** (#236, folds in #186).
+  - New `skills/agrim-init/scripts/init_flow.py` runs, in order: preflight (#229), mode
+    (local-goals or github; github by default when `origin` is a GitHub repository), the verify
+    command (#228), and in github mode the labels (#230), `assignee: @me`, the board OFFER (#235)
+    and the ledger question; then a one-screen summary and the next command. It integrates the
+    sibling scripts; it does not re-implement them.
+  - Questions are flags, so Claude Code, Codex and Cursor run the same flow: `--mode`, `--repo`,
+    `--local-only` / `--work on`, `--verify N:ID` / `--verify-command-file` / `--no-verify`,
+    `--board yes|no`, `--ledger yes|no`. An unanswered one prints an `[ask]` line with its flag.
+    `--yes` takes only the detected mode and ledger off; it never answers the board, the verify
+    command or a work flip. Answers are remembered in `.sdlc/state/init.json`, so a re-run is
+    idempotent (measured: zero label writes and an unchanged config on the second run). Exit 1
+    on a failed step or a blocking preflight problem, with a `Resume:` line; exit 2 when refused
+    before any write.
+  - In github mode `discovery.github.project.enabled` stays off until `--board yes`: the loop
+    otherwise creates a board on its first github pick, so "no board without a yes" held for init
+    and broke at the first `loop.py next`.
+  - The scaffolded example goal ships `status: proposed`; the loop's first pick on a fresh repo
+    was "Example goal — delete me". `--demo` still queues a runnable demo.
+  - `setup.py configure` refuses (exit 2, nothing written) github mode with no repository, and a
+    missing `.sdlc/` (was a traceback). `setup.py init ...` forwards to the flow.
+  - The setup wizard fires only in an adopted repository (`.sdlc/config.json`, and no other
+    plugin's `state/owner.json`), in `setup_wizard.wizard_status()` so every host gets it (#186:
+    it fired in every repository the user opened, where a decline could not be remembered).
+  - `loop.py start` no longer warns about `work.enabled` off once `--local-only` (or
+    `preflight.py local-only`) recorded the choice; the warning, the `record done` note and
+    doctor's row point at `/agrim-init` instead of `/agrim-setup`.
+  - The old `sdlc_init.py --github` still works and now says it does not switch the backlog to
+    GitHub. The control, on a fresh repo with a labelled issue: the old gesture leaves the issue
+    unpicked (and, before this change, picked the placeholder goal); the new flow picks it.
+
 - **`/agrim-init` offers to create the GitHub Project board, and pins it** (#235). The loop only
   creates a board when the owner has none, so in any real organisation nothing ever wrote
   `discovery.github.project.number`. Now:

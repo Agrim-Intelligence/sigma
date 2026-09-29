@@ -114,10 +114,26 @@ def _ledger_and_broken_gh_auth(root, *, heartbeat_age=3600):
 # time, and nothing ever told the user), not a behavior worth preserving. See
 # docs/superpowers/plans/2026-08-23-guided-setup-wizard.md.
 
-def test_no_config_triggers_the_setup_wizard(tmp_path):
-    ctx = _context(_run(tmp_path))
-    assert "agrim-wizard" in ctx
-    assert "project layer" in ctx
+def _adopted_with_a_wizard_step(tmp_path):
+    """An ADOPTED repo (`.sdlc/config.json`) with one failing allow-listed check: a `graphify` on
+    PATH that always fails, so "graphify installed" is deterministic on any machine."""
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text(
+        '{"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "graphify").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "graphify").chmod(0o755)
+    return str(shim) + os.pathsep + os.environ.get("PATH", "")
+
+
+def test_no_config_is_silent_the_wizard_needs_an_adopted_repo(tmp_path):
+    """#236 / #186 reversed #1560's "no .sdlc/ triggers the wizard": that fired in every repository
+    the user opened, and a decline could not be remembered there. `/agrim-init` is the entry point
+    for a new repository; the control below shows the wizard itself still fires once adopted."""
+    assert _run(tmp_path) == ""
+    path = _adopted_with_a_wizard_step(tmp_path)
+    assert "agrim-wizard" in _context(_run(tmp_path, PATH=path))
 
 
 def test_a_headless_supervised_session_is_silent_again(tmp_path):
@@ -125,8 +141,9 @@ def test_a_headless_supervised_session_is_silent_again(tmp_path):
     SIGMA_RUN_ID before launching it) has nobody to answer the wizard's yes/no questions, so
     the wizard must not fire there at all. The line above is the control -- the identical fixture
     with the variable absent DOES produce wizard context."""
-    assert "agrim-wizard" in _context(_run(tmp_path))
-    assert _run(tmp_path, SIGMA_RUN_ID="supervise-1-2-3") == ""
+    path = _adopted_with_a_wizard_step(tmp_path)
+    assert "agrim-wizard" in _context(_run(tmp_path, PATH=path))
+    assert _run(tmp_path, PATH=path, SIGMA_RUN_ID="supervise-1-2-3") == ""
 
 
 def test_sdlc_present_but_not_enabled_is_silent(tmp_path):
@@ -168,13 +185,11 @@ def test_output_is_valid_json_on_warning_path(tmp_path):
 
 # --- fail-open + wiring ---
 
-def test_no_sdlc_dir_triggers_the_setup_wizard(tmp_path):
-    # Kept as its own test, not merged with the one above, even though both exercise the
-    # identical "no .sdlc/ at all" condition -- they existed as two separate tests before this
-    # change, and silently deleting one during this revision would trade one coverage gap this
-    # plan is fixing for a different, smaller one nobody asked for.
-    ctx = _context(_run(tmp_path))
-    assert "agrim-wizard" in ctx
+def test_no_sdlc_dir_is_silent(tmp_path):
+    # #236 / #186: a directory that never adopted Sigma gets nothing from this hook -- the
+    # opposite of what this test pinned under #1560 (see the test above for the adopted control).
+    assert _run(tmp_path) == ""
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_wired_into_hooks_json():

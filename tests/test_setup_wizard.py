@@ -5,6 +5,19 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
                        / "skills" / "agrim-init" / "scripts"))
 import setup_wizard  # noqa: E402
+import pytest  # noqa: E402
+
+#: The real #236 adoption gate, kept so the tests that exercise it can restore it.
+REAL_ADOPTED = setup_wizard.adopted_by_sigma
+
+
+@pytest.fixture(autouse=True)
+def _adopted(monkeypatch):
+    """#236 put an adoption gate in front of `wizard_status()` (an unadopted repo returns before
+    doctor is asked). The tests in this file exercise what happens BEHIND that gate --
+    classification, dismissal, the cache, the writers' own consent guard -- so they run as if
+    adopted. The gate itself is tested with `REAL_ADOPTED` restored (end of this file)."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", lambda sdlc_dir: True)
 
 
 def _fake_doctor_check(results):
@@ -24,10 +37,14 @@ def test_a_fully_healthy_repo_needs_no_wizard(monkeypatch, tmp_path):
 
 
 def test_missing_sdlc_classifies_as_auto_fixable(monkeypatch, tmp_path):
+    """Classification only: the fake doctor reports "project layer" failing inside an ADOPTED
+    `.sdlc` (#236: an unadopted one returns before doctor is asked -- see the test below)."""
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check([
         {"name": "project layer", "ok": False, "fix": "run /agrim-init to scaffold .sdlc/"},
     ]))
-    status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"))
+    status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"), allow_cache=False)
     assert status["needs_wizard"] is True
     assert status["steps"] == [{
         "name": "project layer",
@@ -331,3 +348,37 @@ def test_verify_trap_is_a_first_run_wizard_step_against_the_real_doctor(tmp_path
     step = [s for s in status["steps"] if s["name"] == "verify command present (enforce is on)"]
     assert step and step[0]["mode"] == "human_command"
     assert "verify_detect.py detect ." in step[0]["fix"] and "confirm .sdlc <n> <id>" in step[0]["fix"]
+
+
+def test_236_an_unadopted_repo_never_reaches_doctor(monkeypatch, tmp_path):
+    """#186: the adoption gate runs BEFORE the (cheap) doctor sweep -- a stranger's repo costs
+    nothing and hears nothing. Control: the same fake, adopted, does reach doctor."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", REAL_ADOPTED)
+    calls = []
+
+    def _check(**kwargs):
+        calls.append(kwargs)
+        return [{"name": "gh auth", "ok": False, "fix": "gh auth login"}]
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _check)
+    assert setup_wizard.wizard_status(str(tmp_path / ".sdlc")) == {"needs_wizard": False, "steps": []}
+    assert calls == []
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    assert setup_wizard.wizard_status(str(tmp_path / ".sdlc"), allow_cache=False)["needs_wizard"]
+    assert len(calls) == 1
+
+
+def test_236_adoption_is_config_json_and_no_other_owner(tmp_path):
+    sdlc = tmp_path / ".sdlc"
+    assert REAL_ADOPTED(str(sdlc)) is False                      # nothing there
+    sdlc.mkdir()
+    assert REAL_ADOPTED(str(sdlc)) is False                      # a bare directory is not adoption
+    (sdlc / "config.json").write_text("{}")
+    assert REAL_ADOPTED(str(sdlc)) is True
+    (sdlc / "state").mkdir()
+    (sdlc / "state" / "owner.json").write_text('{"plugin": "sigma"}')
+    assert REAL_ADOPTED(str(sdlc)) is True
+    (sdlc / "state" / "owner.json").write_text('{"plugin": "another-plugin"}')
+    assert REAL_ADOPTED(str(sdlc)) is False
+    (sdlc / "state" / "owner.json").write_text("{not json")
+    assert REAL_ADOPTED(str(sdlc)) is True                       # unreadable marker: config decides

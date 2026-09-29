@@ -3254,9 +3254,13 @@ def _config_warnings(config):
     way adopting into real repos. Plain strings so the CLI prints them to stderr, never touching stdout
     (the goal channel the caller parses)."""
     out = []
-    if not work.enabled(config):
+    # #236: silent once the choice is on record -- `work._enabled_why` is written only by a
+    # deliberate gesture (`preflight.py local-only`, `/agrim-init --local-only`). A nag after the
+    # user said "local-only" on purpose is noise; one that is still unexplained points at init.
+    if not work.enabled(config) and not (config.get("work") or {}).get("_enabled_why"):
         out.append("work.enabled is off — the loop writes NOTHING to git: a completed goal's changes "
-                   "stay in your working tree, no branch/commit/PR. Run /agrim-setup or set work.enabled.")
+                   "stay in your working tree, no branch/commit/PR. Run /agrim-init (--work on, or "
+                   "--local-only to keep this and stop this warning), or set work.enabled.")
     verify = config.get("verify") or {}
     if _enforce_enabled(verify) and not verify.get("command"):
         out.append("verify.enforce is on but verify.command is empty — EVERY `done` will be refused. "
@@ -5765,7 +5769,9 @@ def _dispatch(argv):
                 return 4
         if argv[4] == "done" and not work.enabled(config):
             print("loop: work.enabled is off — this goal's change is only in your working tree; no "
-                  "branch/commit/PR was created (run /agrim-setup or set work.enabled).", file=sys.stderr)
+                  "branch/commit/PR was created"
+                  + ("." if (config.get("work") or {}).get("_enabled_why")      # #236: chosen
+                     else " (run /agrim-init --work on, or set work.enabled)."), file=sys.stderr)
             # #2116: the one configuration where `gates.hard_plan_gate` has NO host-agnostic
             # enforcement point at all. `work.py main()` refuses every verb with `work.enabled` off,
             # so `pr()` -- the check that makes the org lock uniform across hosts -- never runs, and

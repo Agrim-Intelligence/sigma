@@ -161,7 +161,7 @@ claude plugin install sigma@sigma
 Restart the session, then, from the root of the repository you want Sigma to work on:
 
 ```
-/agrim-init --demo     # scaffolds .sdlc/, checks access, proposes a verify command, queues a demo goal
+/agrim-init --demo     # checks access, asks mode + verify command, scaffolds .sdlc/, queues a demo goal
 /agrim-loop            # runs the demo goal Goal → Research → … → Review
 ```
 
@@ -174,11 +174,11 @@ codex plugin add sigma@sigma
 
 Codex reads the same `.claude-plugin/marketplace.json`. These two lines follow Codex's published
 plugin CLI; this README's own end-to-end run was on Claude Code, not Codex. Then run the `agrim-init`
-skill, or its scaffolder directly, with `--codex` so `AGENTS.md` carries the standing rules
+skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
 ([details](#codex-partial-live-validation)):
 
 ```
-python3 <installed-sigma>/skills/agrim-init/scripts/sdlc_init.py . --codex --demo
+python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --codex --demo
 ```
 
 `<installed-sigma>` is the plugin directory Codex shows for the installed `agrim-init` skill.
@@ -190,34 +190,42 @@ Cursor has no plugin system, so Sigma runs from a checkout
 
 ```
 git clone <SIGMA_REPO> ~/sigma
-python3 ~/sigma/skills/agrim-init/scripts/sdlc_init.py . --cursor --demo
+python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo
 ```
 
 ### The next step is `/agrim-init`
 
-Run **`/agrim-init`** first, in every repository, on every host. It is safe to re-run.
+Run **`/agrim-init`** first, in every repository, on every host. It is the one command, and it is
+safe to re-run: it remembers your answers.
 
-- **`/agrim-init`** scaffolds `.sdlc/`, git-ignores its runtime directories, checks git and `gh`
-  access, and settles the verify command. This is the command to run.
-- **`/agrim-setup`** is the one-pass adoption for a team repository. It runs `/agrim-init` when
-  `.sdlc/` is missing, then writes team defaults (github discovery scoped to `@me`, the ledger on, a
-  PR per goal on) and creates the `sdlc:*` labels. Run it after `/agrim-init` only when you want
-  those defaults.
+- **`/agrim-init`** checks git and `gh` access, asks the backlog mode and the verify command, and in
+  github mode creates the `sdlc:*` labels, scopes discovery to `@me` and offers a board and the
+  ledger. It scaffolds `.sdlc/` and git-ignores its runtime directories. It ends with the next
+  command to run.
+- **`/agrim-setup`** is an alias: it runs the same flow.
+
+On Codex and Cursor there is no interactive question: the flow prints each open one as an `[ask]`
+line with the flag that answers it (`--mode`, `--verify`, `--board`, `--ledger`, `--local-only`),
+and `--yes` takes the safe defaults (the detected mode, ledger off; never a board, a verify command
+or a work flip).
 
 ### What `/agrim-init` will ask you
 
-- **Mode.** The backlog starts as local goal files in `.sdlc/goals/` (`discovery.source:
-  "local-goals"`); `/agrim-setup` switches it to GitHub issues. Flags add to that: `--github` for the
-  GitHub scaffolding below, `--vision` to start from a product vision, `--demo` to queue a demo
+- **Mode.** Local goal files in `.sdlc/goals/` (`--mode local-goals`) or GitHub issues labelled
+  `sdlc:goal` (`--mode github`; the default when `origin` is a GitHub repository). The scaffolded
+  example goal ships `status: proposed`, so nothing is picked until you queue a goal or pass
+  `--demo`. Flags add to that: `--vision` to start from a product vision, `--demo` to queue a demo
   goal, `--codex` / `--cursor` for those hosts' standing rules. A PR per goal
   (`work.enabled`) is on by default. If this repository has no usable remote, init prints a
   DECISION: add the remote, use another existing remote, or go local-only (the loop then edits this
-  checkout directly, with no worktree, branch, push or PR). Nothing is flipped for you.
-- **Board.** `--github` copies issue templates, an auto-add-to-project workflow and a label guide
-  into `.github/`, and creates the `sdlc:*` and `priority:P0`–`P3` labels on a GitHub `origin`. It
-  then OFFERS a Projects board and creates nothing unless you say yes: `board_setup.py create`
-  makes `<repo> — SDLC` with Status and Priority, links it and pins `project.number`
-  ([board](skills/agrim-init/references/board.md)). Or point `project.number` at an existing board.
+  checkout directly, with no worktree, branch, push or PR; `--local-only`). Nothing is flipped for
+  you.
+- **Board.** Github mode creates the `sdlc:*` and `priority:P0`–`P3` labels on the repository, then
+  OFFERS a Projects board and creates nothing unless you say yes (`--board yes`):
+  `board_setup.py create` makes `<repo> — SDLC` with Status and Priority, links it and pins
+  `project.number` ([board](skills/agrim-init/references/board.md)). Or point `project.number` at an
+  existing board. `--github` also copies issue templates, an auto-add-to-project workflow and a
+  label guide into `.github/`.
 - **Verify command.** Init lists the test commands it detects, each with a number and an id. Confirm
   one, give your own, or decline. Confirming turns `verify.enforce` on; declining leaves it off and
   records why. The gestures, with `<n>` and `<id>` copied from the printed list:
@@ -264,26 +272,26 @@ you authorize the token for it.
 
 ### Adopting into an existing repo
 
-For a real project (existing code, a GitHub board, a team), run `/agrim-init`, then:
+For a real project (existing code, a GitHub board, a team), run `/agrim-init` (or its alias
+`/agrim-setup`) in github mode:
 
 ```
-/agrim-setup
+/agrim-init --mode github --ledger yes
 ```
 
-It detects the repo + board, scaffolds `.sdlc/` if needed, and writes a config with the defaults a
-team actually wants — **github discovery scoped to `@me`, the ledger on, a PR per goal on** — then
-**creates the core `sdlc:*` lifecycle labels on the repo** so the board isn't left fully configured
-but unpickable, then bootstraps the ledger and runs `/agrim-doctor`. It deliberately avoids three traps
+It writes a config scoped to **your own issues (`@me`), with a PR per goal**, **creates the core
+`sdlc:*` lifecycle labels on the repo** so nothing is left configured but unpickable, and prints the
+ledger's bootstrap line (it pushes an ops branch, so you run it). It deliberately avoids three traps
 real adoptions hit: it never enables `verify.enforce` without a real `verify.command` (that refuses
-every `done` forever); it never clobbers or narrows a git-ignore rule you already set (use
-`/agrim-setup` with a local-only scope to keep the repo's tracked files untouched); and label
-creation never touches `priority:P<n>` labels or applies a label to any issue — deciding which
+every `done` forever); it never clobbers or narrows a git-ignore rule you already set (pass
+`--ignore-scope local` to keep the repo's tracked files untouched); and label creation never
+recolours an existing label or applies a label to any issue — deciding which
 issues become pickable stays a deliberate, separate, human triage call. If your repo already gates
 source edits behind its own `PreToolUse` hook, note that Sigma's Implement-phase edits go
 through it too — make sure whatever it expects is satisfied.
 
-The plugin installs machine-wide, but the hook only speaks in repos that adopt the spine
-(scoped to `.sdlc/` presence). If the `superpowers` + `code-review` companions are
+The plugin installs machine-wide, but its hooks only speak in repos that adopted Sigma (the prompt
+hook checks for `.sdlc/`; the gates and the setup wizard for `.sdlc/config.json`). If the `superpowers` + `code-review` companions are
 **already** in your plugin list, Sigma uses them automatically; if not, the portable `agrim-*`
 executors run the same phases ([details](#companions-optional-enhancement)) — **nothing to install
 either way**.
