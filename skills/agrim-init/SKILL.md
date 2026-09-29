@@ -71,6 +71,22 @@ Scaffold the `.sdlc/` project layer, then report what happened.
       `gh auth login` / `gh auth refresh` for them -- they are interactive; hand them the line.
     - **Codex / Cursor:** relay the printed preflight block and DECISION verbatim. It carries the
       exact gesture and the exact config line; do not choose for the user.
+1c. **Project board (#235), github mode only** (`--github`, or `discovery.source: github`; never in
+    local-goals mode). When no `discovery.github.project.number` is pinned, init prints an `OFFER`
+    block and runs nothing. The gesture is
+    `python3 "${CLAUDE_SKILL_DIR}/scripts/board_setup.py" create <abs .sdlc> [--owner O] [--title T] [--template N|OWNER/N] [--number N] [--yes]`.
+    Without `--yes` it only reads and prints what it would do. With `--yes` it checks the gh
+    `project` scope (preflight's check and fix lines), then creates `<repo> — SDLC` or copies a
+    template board, and links the repository. It pins `project.number` and `project.owner` right
+    away, then sets the Status options and the Priority field. At the end it reads back the board's
+    "Item closed" workflow. It refuses a title the owner already uses and prints the manual runbook
+    (`--number N` adopts that board on purpose). Every step prints `[ok]`, `[FAIL]` or `[manual]`.
+    A failure exits 1 and prints the exact resume command. See [board](references/board.md).
+    - **Claude Code:** ask the user a real yes/no question ("Create and pin the board?"). Only on
+      yes, run the printed `... --yes` line. On no, say the loop mirrors nothing until a number is
+      pinned. Never run it unasked.
+    - **Codex / Cursor:** relay the OFFER block verbatim. It carries the exact command for the
+      user to run.
 2. Read the printed `created / skipped` summary and the git tip. `/agrim-init` creates
    `.sdlc/ledger/` holding only a `README.md`; the ledger stays off (`ledger.enabled: null`) until
    you enable it and `/agrim-ledger` bootstraps it.

@@ -6784,3 +6784,28 @@ def test_doctor_resolves_an_ssh_alias_to_its_real_host(tmp_path):
     status = _wizard().wizard_status(base, run=_alias_run("hostname github.com")[0], dismissed=set(),
                                      allow_cache=False)
     assert not [s for s in status["steps"] if s["name"].startswith("gh ")], status
+
+
+def test_pinned_board_reachable_row_235():
+    """#235: a pinned project.number gets its own row -- ok when `gh project view` returns that
+    board under the owner, FAIL (with the fix) when it cannot be read. No pin -> no row (the
+    duplicate-board check owns that case)."""
+    import json as _json
+    d = _doc()
+    view = (lambda a: _json.dumps({"number": 12, "id": "PVT_x", "title": "widget — SDLC"})
+            if a[:3] == ["gh", "project", "view"] and a[3] == "12" and "acme" in a else "")
+    gh = {"repo": "acme/widget", "project": {"enabled": True, "number": 12}}
+    assert d._pinned_board_unreachable(gh, view) is None
+    gone = d._pinned_board_unreachable(dict(gh, project={"enabled": True, "number": 13}), view)
+    assert gone and "#13" in gone and "gh auth refresh -s project" in gone
+    assert d._pinned_board_unreachable({"repo": "acme/widget", "project": {"enabled": True}},
+                                       view) is None
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github", "github": gh}}
+        rows = _by_name(d.check(_sdlc(t, cfg), run=view))
+        assert rows["pinned board #12 reachable"]["ok"] is True
+    with tempfile.TemporaryDirectory() as t:
+        cfg = {"discovery": {"source": "github",
+                             "github": dict(gh, project={"enabled": True, "number": 13})}}
+        row = _by_name(d.check(_sdlc(t, cfg), run=view))["pinned board #13 reachable"]
+        assert row["ok"] is False and "could not be read" in row["fix"]

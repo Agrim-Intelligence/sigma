@@ -3706,8 +3706,24 @@ class GitHubSource:
         data = self._gh_json(["project", "list", "--owner", owner, "--format", "json", "--limit", "100"])
         projects = (data.get("projects") if isinstance(data, dict) else data) or []
         self._owner_had_boards = len(projects) > 0
+        # #235: a PINNED number wins over a title match, and is honoured even when it sits outside
+        # the one page of 100 boards read above (an org with >100 boards): that one board is read
+        # directly -- one extra read, and only when the pin was not in the page. A pin that still
+        # cannot be read falls through to the title match and then to the loud refusal, as before.
+        if want_num:
+            for p in projects:
+                if p.get("number") == want_num:
+                    return p.get("number"), p.get("id"), False
+            try:
+                p = self._gh_json(["project", "view", str(want_num), "--owner", owner,
+                                   "--format", "json"])
+                if isinstance(p, dict) and p.get("number") == want_num and p.get("id"):
+                    self._owner_had_boards = True
+                    return p.get("number"), p.get("id"), False
+            except Exception as exc:
+                self._note_scope(exc)
         for p in projects:
-            if (want_num and p.get("number") == want_num) or p.get("title") == title:
+            if p.get("title") == title:
                 return p.get("number"), p.get("id"), False
         return None, None, False
 

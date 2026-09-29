@@ -341,7 +341,39 @@ def _board_dup_risk(gh_cfg, run):
     titles = ", ".join(b.get("title", "") for b in boards[:4] if b.get("title"))
     return (f"board mirroring is on with NO project.number, and {owner} already has board(s) "
             f"({titles}) - sigma resolves by title and will CREATE a new board if none matches "
-            "its auto-title, silently duplicating one. Set discovery.github.project.number.")
+            "its auto-title, silently duplicating one. Set discovery.github.project.number, or "
+            "create and pin one: python3 <sigma>/skills/agrim-init/scripts/board_setup.py create "
+            ".sdlc (read-only preview; add --yes to create).")
+
+
+def _pinned_board_unreachable(gh_cfg, run):
+    """#235: `project.number` is pinned but that board cannot be read under its owner -- deleted,
+    transferred, a wrong owner, or a token without the `project` scope. The loop then turns board
+    mirroring OFF on every run (`_warn_board_unresolved`), so the pin is only worth what this row
+    confirms. Returns a one-line fix, else None. None too when no number is pinned: that case is
+    `_board_dup_risk`'s. One read (`gh project view`), the same verb the loop's own resolution
+    falls back to for a pin outside the first 100 boards."""
+    proj = _block(gh_cfg, "project")
+    number = proj.get("number")
+    if number in (None, ""):
+        return None
+    repo = gh_cfg.get("repo") or ""
+    owner = proj.get("owner") or (repo.split("/")[0] if "/" in repo else "@me")
+    try:
+        want = int(number)
+    except (TypeError, ValueError):
+        return f"project.number {number!r} is not a number - set it to the board's number."
+    raw = run(["gh", "project", "view", str(want), "--owner", owner, "--format", "json"])
+    try:
+        got = json.loads(raw or "{}")
+    except Exception:
+        got = {}
+    if isinstance(got, dict) and got.get("number") == want:
+        return None
+    return (f"the pinned board #{want} could not be read under {owner} (deleted, moved, wrong "
+            "project.owner, or the gh token lacks the `project` scope: `gh auth refresh -s "
+            "project`) - the loop mirrors nothing while it is unreachable. Fix "
+            "discovery.github.project.number/owner.")
 
 
 def _self_merge_risk(gh_cfg, wk, run):
@@ -1928,6 +1960,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             dup = _board_dup_risk(gh_disc, run)
             if dup:
                 out.append(_chk("project.number pinned (no duplicate-board risk)", False, dup))
+            if _block(gh_disc, "project").get("number") not in (None, ""):
+                gone = _pinned_board_unreachable(gh_disc, run)
+                out.append(_chk("pinned board #%s reachable"
+                                % _block(gh_disc, "project").get("number"), not gone, gone))
             stale_cards = _item_closed_workflow_off(gh_disc, run)
             if stale_cards:
                 out.append(_chk("board marks closed items Done", False, stale_cards))

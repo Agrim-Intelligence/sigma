@@ -4,6 +4,34 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`/agrim-init` offers to create the GitHub Project board, and pins it** (#235). The loop only
+  creates a board when the owner has none, so in any real organisation nothing ever wrote
+  `discovery.github.project.number`. Now:
+  - In github mode (`--github` or `discovery.source: github`, never in local-goals mode), init prints
+    an OFFER block and makes no call. On Claude Code the agent asks yes/no. On Codex and Cursor the
+    block carries the command to run.
+  - New `skills/agrim-init/scripts/board_setup.py create <.sdlc> [--owner O] [--title T]
+    [--template N|OWNER/N] [--number N] [--yes]`. Without `--yes` it only reads. With `--yes` it
+    checks the gh `project` scope (preflight's check and per-host fix, #229), then creates
+    `<repo> — SDLC` linked to the repository, or copies a template board and links it. It pins
+    `project.number` + `project.owner` right away (atomic; no other key touched). It sets Status to
+    the `project.columns` options, renaming GitHub's `Todo` / `In progress` with their ids kept so
+    the built-in workflows stay on, and adds Priority `P0`..`P4` from `discovery.PRIORITIES`.
+    Finally it reads back the "Item closed" workflow.
+  - It refuses a title the owner already uses and prints the manual runbook (`--number N` adopts
+    that board on purpose). A missing `project` scope is refused with the remediation. Any failed
+    step exits 1 with the exact resume command, and a re-run reuses the pinned board.
+  - GraphQL schema introspection (read-only) shows `createProjectV2View` exists, while no mutation
+    creates or enables a workflow. When "Item closed" is off, board_setup prints the manual step and
+    the `/projects/<n>/workflows` deep link. Whether `copyProjectV2` carries views and workflows
+    could not be checked without a mutation; `references/board.md` has a 5-step check for the owner.
+  - The loop honours a pinned number outside the first 100 boards (one `gh project view`, only
+    then). A pinned number now wins over a title match.
+  - New doctor row: `pinned board #N reachable`.
+  - Cost, measured against a fake gh: a fresh create is 4 GraphQL calls (3 mutations) plus
+    5 + ceil(boards/100) REST reads. A re-run on a finished board is 1 GraphQL read. The loop's
+    steady state adds no calls.
+
 - **Done now means merged** (#232, owner decision). On the shipped defaults (`work.auto_merge:
   "off"`, `work.require_review: "changes"`) a goal used to be recorded `done` and its issue closed
   while its PR was still open, and the review gate never ran. Now:

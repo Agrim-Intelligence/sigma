@@ -215,8 +215,9 @@ Run **`/agrim-init`** first, in every repository, on every host. It is safe to r
   checkout directly, with no worktree, branch, push or PR). Nothing is flipped for you.
 - **Board.** `--github` copies issue templates, an auto-add-to-project workflow and a label guide
   into `.github/`, and creates the `sdlc:*` and `priority:P0`–`P3` labels on a GitHub `origin`. It
-  does not create a Projects board. Point `project.number` at an existing board, or let the loop
-  create one ([Projects v2 board](#projects-v2-board)).
+  then OFFERS a Projects board and creates nothing unless you say yes: `board_setup.py create`
+  makes `<repo> — SDLC` with Status and Priority, links it and pins `project.number`
+  ([board](skills/agrim-init/references/board.md)). Or point `project.number` at an existing board.
 - **Verify command.** Init lists the test commands it detects, each with a number and an id. Confirm
   one, give your own, or decline. Confirming turns `verify.enforce` on; declining leaves it off and
   records why. The gestures, with `<n>` and `<id>` copied from the printed list:
