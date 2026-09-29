@@ -1,10 +1,24 @@
 import json
+import os
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
                        / "skills" / "agrim-init" / "scripts"))
 import setup_wizard  # noqa: E402
+import pytest  # noqa: E402
+
+#: The real #236 adoption gate, kept so the tests that exercise it can restore it.
+REAL_ADOPTED = setup_wizard.adopted_by_sigma
+
+
+@pytest.fixture(autouse=True)
+def _adopted(monkeypatch):
+    """#236 put an adoption gate in front of `wizard_status()` (an unadopted repo returns before
+    doctor is asked). The tests in this file exercise what happens BEHIND that gate --
+    classification, dismissal, the cache, the writers' own consent guard -- so they run as if
+    adopted. The gate itself is tested with `REAL_ADOPTED` restored (end of this file)."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", lambda sdlc_dir: True)
 
 
 def _fake_doctor_check(results):
@@ -24,10 +38,14 @@ def test_a_fully_healthy_repo_needs_no_wizard(monkeypatch, tmp_path):
 
 
 def test_missing_sdlc_classifies_as_auto_fixable(monkeypatch, tmp_path):
+    """Classification only: the fake doctor reports "project layer" failing inside an ADOPTED
+    `.sdlc` (#236: an unadopted one returns before doctor is asked -- see the test below)."""
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check([
         {"name": "project layer", "ok": False, "fix": "run /agrim-init to scaffold .sdlc/"},
     ]))
-    status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"))
+    status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"), allow_cache=False)
     assert status["needs_wizard"] is True
     assert status["steps"] == [{
         "name": "project layer",
@@ -331,3 +349,73 @@ def test_verify_trap_is_a_first_run_wizard_step_against_the_real_doctor(tmp_path
     step = [s for s in status["steps"] if s["name"] == "verify command present (enforce is on)"]
     assert step and step[0]["mode"] == "human_command"
     assert "verify_detect.py detect ." in step[0]["fix"] and "confirm .sdlc <n> <id>" in step[0]["fix"]
+
+
+def test_236_an_unadopted_repo_never_reaches_doctor(monkeypatch, tmp_path):
+    """#186: the adoption gate runs BEFORE the (cheap) doctor sweep -- a stranger's repo costs
+    nothing and hears nothing. Control: the same fake, adopted, does reach doctor."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", REAL_ADOPTED)
+    calls = []
+
+    def _check(**kwargs):
+        calls.append(kwargs)
+        return [{"name": "gh auth", "ok": False, "fix": "gh auth login"}]
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _check)
+    assert setup_wizard.wizard_status(str(tmp_path / ".sdlc")) == {"needs_wizard": False, "steps": []}
+    assert calls == []
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    assert setup_wizard.wizard_status(str(tmp_path / ".sdlc"), allow_cache=False)["needs_wizard"]
+    assert len(calls) == 1
+
+
+def test_236_adoption_is_config_json_and_no_other_owner(tmp_path):
+    sdlc = tmp_path / ".sdlc"
+    assert REAL_ADOPTED(str(sdlc)) is False                      # nothing there
+    sdlc.mkdir()
+    assert REAL_ADOPTED(str(sdlc)) is False                      # a bare directory is not adoption
+    (sdlc / "config.json").write_text("{}")
+    assert REAL_ADOPTED(str(sdlc)) is True
+    (sdlc / "state").mkdir()
+    (sdlc / "state" / "owner.json").write_text('{"plugin": "sigma"}')
+    assert REAL_ADOPTED(str(sdlc)) is True
+    (sdlc / "state" / "owner.json").write_text('{"plugin": "another-plugin"}')
+    assert REAL_ADOPTED(str(sdlc)) is False
+    (sdlc / "state" / "owner.json").write_text("{not json")
+    assert REAL_ADOPTED(str(sdlc)) is True                       # unreadable marker: config decides
+
+
+def test_236_an_interrupted_sigma_scaffold_still_nudges_init(monkeypatch, tmp_path):
+    """Review of PR #286: `.sdlc/` that Sigma owns (state/owner.json, written by init BEFORE the
+    scaffold) but with no config.json is an interrupted `/agrim-init`: say so. Another plugin's, or
+    an ownerless bare `.sdlc/`, stays silent (the tests above)."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", REAL_ADOPTED)
+    monkeypatch.setattr(setup_wizard, "_doctor_check", lambda **kw: [])
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False
+    (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "sigma"}')
+    status = setup_wizard.wizard_status(str(sdlc), allow_cache=False)
+    assert status["needs_wizard"] is True
+    assert [s["name"] for s in status["steps"]] == ["project layer"]
+    assert "/agrim-init" in status["steps"][0]["fix"] and status["steps"][0]["degraded"]
+    (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "another-plugin"}')
+    assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False
+
+
+def test_236_the_interrupted_scaffold_fix_uses_the_shared_python_and_quoting(monkeypatch, tmp_path):
+    """Review of PR #286: the fix text hardcoded `python3` and an unquoted path. It is built by
+    verify_detect's python_command()/_q: a path with a space is quoted, and a host with only
+    `python` (or Windows' `py`) gets that interpreter."""
+    import shlex
+    import shutil
+    spaced = tmp_path / "my plugins" / "init_flow.py"
+    monkeypatch.setattr(setup_wizard, "INIT_FLOW", spaced)
+    fix = setup_wizard._interrupted_step()["fix"]
+    if os.name != "nt":
+        assert shlex.quote(str(spaced)) + " ." in fix, fix
+        assert shlex.split(fix.split("Codex/Cursor: ", 1)[1].split(")", 1)[0])[1] == str(spaced)
+    else:
+        assert f'"{spaced}" .' in fix, fix
+    monkeypatch.setattr(shutil, "which", lambda name: "/x/python" if name == "python" else None)
+    assert "Codex/Cursor: python " in setup_wizard._interrupted_step()["fix"]

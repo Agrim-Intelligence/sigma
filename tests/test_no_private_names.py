@@ -830,7 +830,6 @@ RAW_RESIDUAL_SHIPPED = {
     "skills/agrim-audit/SKILL.md": {"collector": 1},
     "skills/agrim-audit/scripts/audit-collect.sh": {"collector": 3, "collectors": 1},
     # core label: the critical / research issue labels
-    "skills/agrim-init/SKILL.md": {"critical-insight": 1},
     "skills/agrim-init/github-templates/CRITICAL_INSIGHT_TEMPLATE.md.tmpl": {"research-insight": 1},
     "skills/agrim-init/scripts/sdlc_init.py": {"critical-insight": 1},
     "skills/agrim-loop/references/progress.md": {"research-insight": 1},

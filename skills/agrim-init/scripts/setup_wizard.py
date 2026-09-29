@@ -153,6 +153,71 @@ def _adopted(sdlc_dir):
     return pathlib.Path(sdlc_dir).is_dir()
 
 
+def adopted_by_sigma(sdlc_dir):
+    """#236 / #186: may the wizard SPEAK here? Stricter than `_adopted` (which only gates this
+    module's own writes): the repository must have adopted Sigma -- `.sdlc/config.json` exists, the
+    ONE adoption marker every gate hook reads (`hooks/gate_state.py:adopted_root`) -- and no other
+    plugin has claimed the directory (`state/owner.json`, written by init and loop start, #240).
+
+    Before this the wizard fired in EVERY repository the user opened: with no `.sdlc/`, doctor's
+    "project layer" row fails and is an allow-listed step, and because the writers no-op there a
+    decline could never be remembered -- a nag, forever, in repos that never asked for Sigma.
+    `/agrim-init` is the entry point for a new repository; the wizard is for an adopted one.
+    Never raises: anything unreadable reads as "not adopted" -- silence, today's status quo."""
+    try:
+        base = pathlib.Path(sdlc_dir)
+        if not (base / "config.json").is_file():
+            return False
+        owner = json.loads((base / "state" / "owner.json").read_text(encoding="utf-8"))
+        return not (isinstance(owner, dict) and isinstance(owner.get("plugin"), str)
+                    and owner["plugin"] != "sigma")
+    except (OSError, ValueError):
+        return (pathlib.Path(sdlc_dir) / "config.json").is_file()
+
+
+def sigma_scaffold_interrupted(sdlc_dir):
+    """Review of PR #286: a `.sdlc/` Sigma OWNS (`state/owner.json` says "sigma" -- `/agrim-init`
+    writes it before it scaffolds) but with no `config.json` is an interrupted `/agrim-init`. The
+    adoption gate above keeps the wizard silent there (no config.json = not adopted), which left
+    that user with nothing; this is the one exception, and it reaches no doctor. An ownerless bare
+    `.sdlc/` (another tool's) or another plugin's stays silent. Never raises."""
+    try:
+        base = pathlib.Path(sdlc_dir)
+        if (base / "config.json").exists():
+            return False
+        owner = json.loads((base / "state" / "owner.json").read_text(encoding="utf-8"))
+        return isinstance(owner, dict) and owner.get("plugin") == "sigma"
+    except (OSError, ValueError):
+        return False
+
+
+#: The flow the interrupted-scaffold fix names; a module attribute so a test can point it at a path
+#: with a space in it and see the printed gesture quoted.
+INIT_FLOW = pathlib.Path(__file__).resolve().parent / "init_flow.py"
+
+
+def _init_gesture():
+    """`<python> <init_flow.py> .`, built by the SAME helpers every other printed gesture uses
+    (`verify_detect.python_command` / `_q`): `python3`, else `python`, else `py` (Windows), and the
+    path quoted for the host's shell (so a path with a space, or a Windows one, runs as pasted).
+    Loaded lazily, and only on this rare branch -- verify_detect is stdlib-only."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "setup_wizard_verify_detect", str(pathlib.Path(__file__).resolve().parent / "verify_detect.py"))
+    vd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vd)
+    return f"{vd.python_command()} {vd._q(str(INIT_FLOW))} ."
+
+
+def _interrupted_step():
+    return {
+        "name": "project layer",
+        "fix": f"re-run /agrim-init (Codex/Cursor: {_init_gesture()}): .sdlc/ is Sigma's but has no "
+               "config.json -- an interrupted scaffold. It is skip-if-exists, so re-running it keeps "
+               "every file already there.",
+    }
+
+
 def write_dismissed(sdlc_dir, names):
     """Best-effort: a wizard that cannot persist a skip must still let the user proceed with
     their actual request this session -- it would just ask again next time, which is annoying,
@@ -230,6 +295,12 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     the whole cache safe to have added: it can only make a healthy repo cheaper to keep checking,
     never make a broken one look healthy for longer than a single tick."""
     now = now if now is not None else time.time()
+    if not adopted_by_sigma(sdlc_dir):
+        if sigma_scaffold_interrupted(sdlc_dir) and "project layer" not in (
+                read_dismissed(sdlc_dir) if dismissed is None else dismissed):
+            mode, degraded = _classify("project layer")
+            return {"needs_wizard": True, "steps": [dict(_interrupted_step(), mode=mode, degraded=degraded)]}
+        return {"needs_wizard": False, "steps": []}      # #186: not adopted -> say nothing
     if allow_cache:
         cached = _read_cache(sdlc_dir)
         # `0 <=` matters: a NEGATIVE delta means the clock moved backwards since the cache was

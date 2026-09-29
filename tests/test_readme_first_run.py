@@ -51,6 +51,10 @@ def missing_scripts(text, root=ROOT):
 def unknown_init_flags(text, root=ROOT):
     usage = (root / "skills/agrim-init/scripts/sdlc_init.py").read_text(encoding="utf-8")
     known = set(re.findall(r"\[(--[a-z]+)\]", re.search(r'USAGE = "([^"]+)"', usage).group(1)))
+    # #236: `/agrim-init` runs init_flow.py, the one entry point; its USAGE lists its own flags.
+    flow = (root / "skills/agrim-init/scripts/init_flow.py").read_text(encoding="utf-8")
+    known |= set(re.findall(r"(?m)^\s+(--[a-z][\w-]*)", re.search(r'USAGE = """(.+?)"""', flow, re.S).group(1)))
+    known |= set(re.findall(r"(?<=\s)(--[a-z][\w-]*)", re.search(r'USAGE = """(.+?)"""', flow, re.S).group(1)))
     used = {f for span in _code(text) for group in _INIT_FLAG.findall(span)
             for f in group.split()}
     return sorted(used - known)
@@ -117,7 +121,7 @@ def test_quickstart_covers_every_host_with_one_placeholder():
         assert f"### {host}" in quick, host
     assert "claude plugin install sigma@sigma" in quick
     assert "codex plugin add sigma@sigma" in quick
-    assert "sdlc_init.py . --cursor" in quick
+    assert "init_flow.py . --cursor" in quick      # #236: the one entry point, on every host
     # the placeholder is defined exactly once, and nothing else stands in for the URL
     assert quick.count("`<SIGMA_REPO>` is") == 1
     assert "<git-url-or-local-path>" not in text
@@ -138,5 +142,6 @@ def test_control_a_planted_script_path_is_caught():
 
 
 def test_control_a_planted_init_flag_is_caught():
-    text = README.read_text(encoding="utf-8") + "\n`/agrim-init --board`\n"
-    assert unknown_init_flags(text) == ["--board"]
+    # (#236: `--board` became a real flag of the one entry point; the plant is a flag nothing has)
+    text = README.read_text(encoding="utf-8") + "\n`/agrim-init --boardroom`\n"
+    assert unknown_init_flags(text) == ["--boardroom"]

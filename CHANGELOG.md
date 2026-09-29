@@ -92,6 +92,63 @@ All notable changes to Sigma are recorded here, newest first.
     `Python gate` row (`work.py` `_plan_review_refusal`). `/agrim-doctor` gains a
     `plan-review gate` row, including ON-but-not-enforced when `work.enabled` is off.
 
+- **`/agrim-init` is the one entry point; `/agrim-setup` is its alias** (#236, folds in #186).
+  - New `skills/agrim-init/scripts/init_flow.py` runs, in order: preflight (#229), mode
+    (local-goals or github; github by default when `origin` is a GitHub repository), the verify
+    command (#228), and in github mode the labels (#230), `assignee: @me`, the board OFFER (#235)
+    and the ledger question; then a one-screen summary and the next command. It integrates the
+    sibling scripts; it does not re-implement them.
+  - Questions are flags, so Claude Code, Codex and Cursor run the same flow: `--mode`, `--repo`,
+    `--local-only` / `--work on`, `--verify N:ID` / `--verify-command-file` / `--no-verify`,
+    `--board yes|no`, `--ledger yes|no`. An unanswered one prints an `[ask]` line with its flag.
+    `--yes` takes only the detected mode and ledger off, and only for a question config.json does
+    not already answer; it never answers the board, the verify command or a work flip.
+    `.sdlc/config.json` is the one source of truth: `.sdlc/state/init.json` records only that a
+    question was answered, never re-applies a value, and never supplies the repository. A re-run
+    keeps a setting changed since (`preflight.py local-only`, a hand edit) and prints
+    `[kept] ... config.json wins`; only a flag on that run changes it. Measured in
+    `tests/test_init_flow.py` on a fake `gh`: a bare re-run makes zero label writes and leaves
+    config unchanged; `--yes` on a repository configured before the flow (local-goals, ledger on)
+    makes zero label writes and changes no key (it made 14 label writes and switched the source
+    before this review). A scaffolded template value is open only while config.json still matches
+    the SHA-256 + mtime init.json recorded when the flow last wrote it; `setup.py configure
+    --source local-goals` or a hand edit that leaves the template's own value is therefore kept
+    (review block #2: `--yes` had switched it to github with 14 label writes). Measured the same
+    way: zero label writes, source kept, after configure, a hand edit, a byte-identical re-save,
+    and a corrupt init.json; an untouched scaffold still takes the detected mode. Exit 1
+    on a failed step or a blocking preflight problem, with a `Resume:` line; exit 2 when refused
+    before any write.
+  - When the flow switches a repository to github mode, `discovery.github.project.enabled` is
+    turned off until `--board yes`: the loop otherwise creates a board on its first github pick,
+    so "no board without a yes" held for init and broke at the first `loop.py next`. `--board yes`
+    turns it on only after `board_setup.py create --yes` succeeds and a board is pinned (also for a
+    board pinned by hand after declining); a failure leaves it as it was.
+  - `--repo` must be `OWNER/NAME` (a name ending `.git` is refused). After a successful
+    `--board yes` the flow no longer relays board_setup's "project.enabled is not true" note that
+    it makes false one line later. The session wizard's interrupted-scaffold fix prints the
+    interpreter and quoted path through the shared helpers (was `python3` and an unquoted path). The `Resume:` line prints `--verify-command-file` absolute, and
+    on Windows is withheld (as `board_setup.py` does) when a value carries `"`, `%`, `$`, a
+    backtick or `!`. The demo's github hint no longer says the loop creates a board when mirroring
+    is off.
+  - The scaffolded example goal ships `status: proposed`; the loop's first pick on a fresh repo
+    was "Example goal — delete me". `--demo` still queues a runnable demo.
+  - `setup.py configure` refuses (exit 2, nothing written) github mode with no repository, and a
+    missing `.sdlc/` (was a traceback); a repository config.json already names is kept, never
+    refused for a missing origin and never swapped for `origin`. `setup.py detect` returns nothing
+    for a non-GitHub origin (a GitLab ssh URL read as `o/r`). `setup.py init ...` forwards to the
+    flow.
+  - The setup wizard fires only in an adopted repository (`.sdlc/config.json`, and no other
+    plugin's `state/owner.json`), in `setup_wizard.wizard_status()` so every host gets it (#186:
+    it fired in every repository the user opened, where a decline could not be remembered). The
+    one exception: a `.sdlc/` Sigma owns (init writes `state/owner.json` before it scaffolds) with
+    no `config.json` is an interrupted `/agrim-init`, and the wizard says to re-run it.
+  - `loop.py start` no longer warns about `work.enabled` off once `--local-only` (or
+    `preflight.py local-only`) recorded the choice; the warning, the `record done` note and
+    doctor's row point at `/agrim-init` instead of `/agrim-setup`.
+  - The old `sdlc_init.py --github` still works and now says it does not switch the backlog to
+    GitHub. The control, on a fresh repo with a labelled issue: the old gesture leaves the issue
+    unpicked (and, before this change, picked the placeholder goal); the new flow picks it.
+
 - **`/agrim-init` offers to create the GitHub Project board, and pins it** (#235). The loop only
   creates a board when the owner has none, so in any real organisation nothing ever wrote
   `discovery.github.project.number`. Now:

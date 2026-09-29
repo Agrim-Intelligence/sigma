@@ -6,4 +6,5 @@ One markdown file per goal. The loop runs them in filename order. Copy
 - `done_when` — a checkable condition (a command/criteria), not a vibe.
 - `lane` — `auto` lets the Research phase size it (small/medium/large) from the blast radius it
   measures, and write the result back here. Set it yourself to override.
-- `status` — leave `pending`; the loop advances it to `done` or `parked`.
+- `status` — `pending` queues the goal (the example ships `proposed`, which the loop never
+  picks); the loop advances it to `done` or `parked`.

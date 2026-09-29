@@ -14,6 +14,8 @@ Two field-tested traps this refuses to walk into:
 import sys, json, pathlib, subprocess, importlib.util
 
 _HERE = pathlib.Path(__file__).resolve().parent
+#: #236: the one entry point `/agrim-init` runs; `setup.py init ...` hands its arguments to it.
+INIT_FLOW = _HERE.parent.parent / "agrim-init" / "scripts" / "init_flow.py"
 
 
 def _load_loop_script(name):
@@ -63,11 +65,27 @@ def _run_git(repo_root, args):
 # --------------------------------------------------------------------------- detect
 
 
+#: Hosts that are NOT GitHub -- the same list as `agrim-init/scripts/preflight.py:_NON_GITHUB` (pinned
+#: equal by tests/test_setup.py). A GitLab `git@gitlab.com:o/r.git` origin used to read as `o/r`.
+_NON_GITHUB = ("gitlab", "bitbucket", "dev.azure.com", "visualstudio.com", "codeberg.org",
+               "gitea", "sr.ht", "sourceforge", "gitee.com")
+
+
+def _remote_host(url):
+    if "://" in url:
+        host = url.split("://", 1)[1].split("/", 1)[0]
+    elif ":" in url:
+        host = url.split(":", 1)[0]
+    else:
+        return ""
+    return host.rsplit("@", 1)[-1].split(":", 1)[0].lower()
+
+
 def detect_repo(repo_root=".", run=None):
-    """`owner/name` from `git remote get-url origin`, or '' if not resolvable. Handles ssh, https, and
-    the `github.com-<alias>:owner/repo` host-alias form this org uses."""
+    """`owner/name` from `git remote get-url origin`, or '' if not resolvable or not a GitHub host.
+    Handles ssh, https, and the `github.com-<alias>:owner/repo` host-alias form this org uses."""
     url = (run or _run_git)(repo_root, ["remote", "get-url", "origin"]).strip()
-    if not url:
+    if not url or any(tag in _remote_host(url) for tag in _NON_GITHUB):
         return ""
     for sep in ("github.com:", "github.com/"):
         if sep in url:
@@ -301,7 +319,7 @@ def _flags(argv):
     return out
 
 
-USAGE = ("usage: setup.py detect [repo_root] | configure <sdlc_dir> [--repo O/N --source github|local-goals "
+USAGE = ("usage: setup.py init [init_flow.py options] | detect [repo_root] | configure <sdlc_dir> [--repo O/N --source github|local-goals "
          "--verify CMD --auto-merge off|protected|always] | ignore <repo_root> [--scope tracked|local] | "
          "ignore-status <repo_root> | labels <sdlc_dir> [--repo O/N]")
 
@@ -313,9 +331,33 @@ def main(argv):
     if len(argv) >= 2 and argv[1] == "detect":
         print(detect_repo(argv[2] if len(argv) > 2 else ".") or "")
         return 0
+    if len(argv) >= 2 and argv[1] == "init":
+        # #236: /agrim-setup is an alias of /agrim-init -- the SAME flow, never a second door.
+        # A subprocess (not an import): the sibling skill's CLI, as `sdlc_init.py` calls this one.
+        return subprocess.run([sys.executable, str(INIT_FLOW), *argv[2:]]).returncode
     if len(argv) >= 3 and argv[1] == "configure":
         f = _flags(argv[3:])
-        cfg, notes = configure(argv[2], repo=f.get("repo", ""), source=f.get("source", "github"),
+        sdlc = pathlib.Path(argv[2])
+        if not (sdlc / "config.json").is_file():
+            # #236: was a FileNotFoundError traceback from write_cfg (or a config written into a
+            # directory init never scaffolded). Refuse, name the entry point, write nothing.
+            print(f"setup.py configure: REFUSED - no {sdlc / 'config.json'}; run /agrim-init first "
+                  f"({INIT_FLOW}). Nothing written.", file=sys.stderr)
+            return 2
+        source = f.get("source", "github")
+        # --repo, else the repository config.json already names (never swapped for `origin`), else
+        # the GitHub `origin` -- a configured repo is never refused for a missing/foreign origin.
+        configured = ((_load_cfg(sdlc).get("discovery") or {}).get("github") or {}).get("repo") or ""
+        repo = f.get("repo", "") or (str(configured).strip() or detect_repo(str(sdlc.resolve().parent))
+                                     if source == "github" else "")
+        if source == "github" and not repo:
+            # #236: github discovery with an empty repo queries nothing -- a config that reads as
+            # "adopted" while no issue can ever be picked. Refuse instead of writing "UNSET".
+            print("setup.py configure: REFUSED - github mode needs a repository and `origin` is not "
+                  "a GitHub remote. Pass --repo OWNER/NAME, or --source local-goals. Nothing written.",
+                  file=sys.stderr)
+            return 2
+        cfg, notes = configure(argv[2], repo=repo, source=source,
                                verify_command=f.get("verify", ""), auto_merge=f.get("auto-merge", "off"))
         write_cfg(argv[2], cfg)
         for n in notes:
