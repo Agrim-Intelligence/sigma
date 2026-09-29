@@ -201,11 +201,14 @@ BLOCK_DIVERGED = "block-diverged"          # a hand-edit inside the managed bloc
 NO_REPO = "no-repo"                        # no slug resolved, so no goal could be filed anywhere
 REMOTE_UNREADABLE = "remote-unreadable"    # the live branch set could not be read; nothing was judged
 SHARD_UNREADABLE = "shard-unreadable"      # #1565: the unit's own file is there and cannot be read
+LEGACY_DELTA_CONFLICT = "legacy-delta-conflict"  # #327: a write would drop a newer legacy record's value
+LEGACY_DELTA_DISCARD = "legacy-delta-discard"    # #327: a write replaced an older legacy record, dropping values
 UNSERIALISED = "unserialised"              # a write went in without a lock, so it cannot be PROVED
 LOST = "lost"                              # re-read at the end of the pass, and the goal was gone
 SCOPE_EXPANSION = "scope-expansion"        # #1477: the pick's repo is not one this unit names
 DIVERGENCES = (BRANCH_MISSING, BRANCH_ABSENT, CLOSED, PICKED_WHILE_CLOSED, BLOCK_DIVERGED, NO_REPO,
-               REMOTE_UNREADABLE, UNSERIALISED, LOST, SCOPE_EXPANSION)
+               REMOTE_UNREADABLE, UNSERIALISED, LOST, SCOPE_EXPANSION, LEGACY_DELTA_CONFLICT,
+               LEGACY_DELTA_DISCARD)
 
 #: WHICH DIVERGENCES REACH THE LEDGER, AND THE RULE BEHIND THE LIST: only the ones that record a
 #: STATE CHANGE this pass made. Those are one-shot by construction -- a branch is reconciled away
@@ -227,7 +230,11 @@ DIVERGENCES = (BRANCH_MISSING, BRANCH_ABSENT, CLOSED, PICKED_WHILE_CLOSED, BLOCK
 #: opposite way round: it is a change this pass REFUSED to make, and the refusal is only useful if
 #: the one person who could authorise it hears about it. Left off, a goal would sit unrecorded with
 #: nothing anywhere naming why (#1477, §7.1).
-LEDGERED = (BRANCH_MISSING, CLOSED, LOST, SCOPE_EXPANSION)
+#: `LEGACY_DELTA_DISCARD` (#327) IS A STATE CHANGE THIS PASS MADE, and one-shot by construction:
+#: the record it replaced is in Sigma's schema afterwards, so it is never a delta again. The values
+#: it dropped were the previous plugin's post-conversion edits, which the unit's owner may still
+#: want -- so the owner hears about it, not only whoever ran the pick.
+LEDGERED = (BRANCH_MISSING, CLOSED, LOST, SCOPE_EXPANSION, LEGACY_DELTA_DISCARD)
 
 #: `owner/name`, the shape a registry repo key and a `gh` `--repo` argument both have. Borrowed in
 #: SPIRIT from `cross_repo._REPO_RE` and not by import: `cross_repo` loads `work`, `work` loads this
@@ -376,6 +383,14 @@ def amend(sdlc_dir, name, mutate, timeout=LOCK_TIMEOUT):
     catches the clobbers that arrive while the rest of the pass runs -- not the ones that arrive
     after it, which nothing lock-free can catch.
 
+    A LEGACY DELTA IS NEVER REWRITTEN SILENTLY (#327). When `name`'s own file is a record in the
+    previous plugin's schema read as a delta (`feature_registry.legacy_delta_record`), the write
+    replaces it with Sigma's -- and drops each record value the entry already had another value
+    for. `_delta_verdict` is the rule, shared with `repair`: every such value is printed and put in
+    `discarded`; and when there is one and the record is at least as new as `index.json` (an edit
+    that plugin made after the conversion), nothing is written -- `refused` says why and
+    `delta_conflict` is True.
+
     RAISES `InvalidUnitName` on a name that is not a unit name (via `lock_path`), and whatever the
     filesystem raises on a write that genuinely failed. `sync_at_pick` is the layer that turns those
     into a report; a direct caller gets the exception, the same division `feature_registry.write_unit`
@@ -384,7 +399,7 @@ def amend(sdlc_dir, name, mutate, timeout=LOCK_TIMEOUT):
     fd = _acquire(lock_path(sdlc_dir, name), timeout)
     report = {"name": name, "entry": None, "changed": False, "existed": False, "written": False,
               "landed": False, "serialised": fd is not None, "attempts": 0, "path": None,
-              "refused": None}
+              "refused": None, "delta_conflict": False, "discarded": []}
     try:
         # #1565: AN UNREADABLE SHARD IS NOT A SHARD WE MAY REPLACE.
         #
@@ -426,7 +441,23 @@ def amend(sdlc_dir, name, mutate, timeout=LOCK_TIMEOUT):
                 # follows the same rule as every other path: it needs the lock to be a fact.
                 report["written"] = True
                 break
-            report["path"] = registry.write_unit(features_dir, name, entry)
+            # #327: a legacy delta record is rewritten through ONE rule (`_delta_verdict`), the
+            # same one `repair` applies -- never by a pick that silently drops what it carries.
+            verdict = _delta_verdict(features_dir, name, entry)
+            if verdict is not None and verdict[1] and verdict[2]:
+                report["refused"] = _conflict_text(features_dir, verdict)
+                report["delta_conflict"] = True
+                _note("sigma: features: %s\n" % report["refused"])
+                break
+            try:
+                report["path"] = registry.write_unit(features_dir, name, entry)
+            except registry.LegacyDeltaConflict as exc:
+                # `write_unit` applies the same rule itself: the record changed since the verdict
+                # above (the previous plugin takes no Sigma lock). Same refusal, never a raise.
+                report["refused"] = str(exc)
+                report["delta_conflict"] = True
+                _note("sigma: features: %s\n" % report["refused"])
+                break
             # THE VERIFY IS A READ OF THE SHARD, not of `read`'s union: the shard is what this write
             # produced, and it is the only thing this write can be held to. `read_unit` returns the
             # normalised entry, and `entry` is already normalised, so equality here is exactly "the
@@ -435,6 +466,12 @@ def amend(sdlc_dir, name, mutate, timeout=LOCK_TIMEOUT):
             if registry.read_unit(features_dir, name) == entry:
                 report["written"] = True
                 report["changed"] = True
+                if verdict is not None and verdict[1]:
+                    report["discarded"] = verdict[1]
+                    _note("sigma: features: unit %s: rewrote %s (a record in the previous plugin's "
+                          "schema, read as a delta) in Sigma's schema, and discarded what it held "
+                          "that %s already had a value for: %s\n"
+                          % (name, verdict[0], registry.INDEX_NAME, "; ".join(verdict[1])))
                 break
             time.sleep(random.uniform(0, LOCK_POLL))
     finally:
@@ -766,6 +803,12 @@ def _tell(sdlc_dir, name, goal, why, to=None):
 _WORDING = {
     SHARD_UNREADABLE: ("unit %(unit)s has a record on disk that cannot be read, so nothing about it "
                        "was recorded. %(detail)s"),
+    LEGACY_DELTA_CONFLICT: ("unit %(unit)s was not written, so nothing about it was recorded: "
+                            "%(detail)s"),
+    LEGACY_DELTA_DISCARD: ("unit %(unit)s: its record in the previous plugin's schema (read as a "
+                           "delta, older than index.json) was rewritten in Sigma's schema, and "
+                           "these values it held were DISCARDED because index.json already had "
+                           "another: %(detail)s"),
     BRANCH_MISSING: "the registry recorded %(detail)s for unit %(unit)s in %(repo)s, and that "
                     "branch no longer exists on the remote -- the entry no longer claims it, and "
                     "every goal recorded against it is kept",
@@ -917,6 +960,20 @@ def sync_at_pick(sdlc_dir, config, goal, unit, run=None, cwd=None, remote=None):
         return report
 
 
+def _refusal(amended, name, repo):
+    """-> the divergence for a unit `amend` refused to write, or []: #1565's unreadable record, or
+    #327's legacy delta whose newer values the write would drop -- or, when it DID write over an
+    older legacy delta, the `LEGACY_DELTA_DISCARD` naming each value dropped (#327 review block #2:
+    stderr alone never reached the loop's result line or the owner)."""
+    if amended.get("discarded") and amended.get("written"):
+        return [_div(LEGACY_DELTA_DISCARD, name, repo, "; ".join(amended["discarded"]))]
+    if amended.get("delta_conflict"):
+        return [_div(LEGACY_DELTA_CONFLICT, name, repo, amended["refused"])]
+    if amended.get("refused"):
+        return [_div(SHARD_UNREADABLE, name, repo, amended["refused"])]
+    return []
+
+
 def _sync_at_pick(sdlc_dir, config, goal, unit, run, cwd, remote, report):
     features_dir = registry.registry_dir(sdlc_dir)
     if not features_dir.is_dir():
@@ -957,9 +1014,7 @@ def _sync_at_pick(sdlc_dir, config, goal, unit, run, cwd, remote, report):
 
         amended = amend(sdlc_dir, unit, _pick)
         report["divergences"] += found
-        if amended.get("refused"):        # #1565: never silent -- see `amend`
-            report["divergences"].append(
-                _div(SHARD_UNREADABLE, unit, repo, amended["refused"]))
+        report["divergences"] += _refusal(amended, unit, repo)   # never silent -- see `amend`
         # `written`, NOT `landed`: "was the goal recorded" is a question about the bytes going in,
         # and it is answerable. "Can that be proved to have stayed" is `landed`, is a different
         # question, and is reported separately rather than folded into this one.
@@ -1011,9 +1066,7 @@ def _sync_at_pick(sdlc_dir, config, goal, unit, run, cwd, remote, report):
 
         amended = amend(sdlc_dir, name, _pass)
         report["divergences"] += found
-        if amended.get("refused"):        # #1565: never silent -- see `amend`
-            report["divergences"].append(
-                _div(SHARD_UNREADABLE, name, repo, amended["refused"]))
+        report["divergences"] += _refusal(amended, name, repo)   # never silent -- see `amend`
         report["serialised"] = report["serialised"] and amended["serialised"]
         if amended["changed"]:
             report["changed"].append(name)
@@ -1091,7 +1144,7 @@ _CLAUSE_CAP = 2
 #: because they are the fail-open path's honesty, and honesty in a field nobody reads is decoration
 #: -- `report["serialised"]` and `report["recorded"]` had no consumer at all until this list did.
 IN_CLAUSE = (BRANCH_MISSING, BRANCH_ABSENT, PICKED_WHILE_CLOSED, NO_REPO, REMOTE_UNREADABLE,
-             UNSERIALISED, LOST, SCOPE_EXPANSION)
+             UNSERIALISED, LOST, SCOPE_EXPANSION, LEGACY_DELTA_CONFLICT, LEGACY_DELTA_DISCARD)
 
 
 def _clause(report):
@@ -1118,21 +1171,135 @@ def _clause(report):
 # --------------------------------------------------------------------------- the fold
 
 
+class FoldRefused(Exception):
+    """`fold` will not write an `index.json` that loses anything the current one records (#314).
+    The message names each loss and the exact recovery."""
+
+
 def fold(sdlc_dir):
     """Materialise `index.json` from the whole registry. -> the path written.
 
     A DELIBERATE MATERIALISATION, OFF THE PICK PATH -- see the module docstring for why it is not on
     it, and why the shards it folds are never removed. `read`'s shard-wins union is already correct
     with both present, so this changes what a fresh clone carries and nothing about what this
-    checkout answers."""
+    checkout answers.
+
+    It writes `read`'s view, which already merges a legacy-id record as a DELTA onto the index
+    entry (`feature_registry.merge_legacy_delta`, #314) -- so a record the plugin under the previous
+    name wrote cannot shrink the entry by construction. And it CHECKS that rather than trusting it:
+    `feature_registry.monotonic_violations` compares the result with the current index, and any
+    loss (a goal, or a field/grant of a merged unit) refuses the fold (`FoldRefused`, nothing
+    written) with the repair command."""
     features_dir = registry.registry_dir(sdlc_dir)
-    return registry.write_index(features_dir, registry.read(features_dir))
+    merged = registry.read(features_dir)
+    lost = registry.monotonic_violations(features_dir, merged)
+    if lost:
+        raise FoldRefused(
+            "feature_sync: fold refused, nothing written: it would lose what %s records -- %s. "
+            "Recover: %s. If a record in Sigma's schema dropped these on purpose, edit %s to match."
+            % (registry.INDEX_NAME, "; ".join(lost), registry.delta_recovery(features_dir),
+               registry.index_path(features_dir)))
+    return registry.write_index(features_dir, merged)
+
+
+#: #327: THE rule for rewriting a legacy delta record lives in the registry beside `write_unit`,
+#: which enforces it itself (review block #2) -- these names are the same functions, not copies.
+_newer_than_index = registry.newer_than_index
+_delta_verdict = registry.delta_verdict
+_conflict_text = registry.delta_conflict_text
+
+
+def repair(sdlc_dir, timeout=LOCK_TIMEOUT):
+    """Rewrite each legacy-id record `read` merges as a delta (`feature_registry.legacy_deltas`)
+    in Sigma's schema, as exactly what `read` serves for it -- the index entry plus what the record
+    adds -- under the unit's own lock, re-checked inside it. Idempotent: a second run finds nothing.
+    The plugin under the previous name cannot read the rewritten record (Sigma's schema id) and its
+    own #1565 guard then refuses that unit rather than replacing it -- so disable it first anyway.
+
+    NOT LOSSLESS, AND IT SAYS SO (#326). The rewrite DISCARDS every non-empty record value the delta
+    merge does not keep (`feature_registry.delta_discards`: a differing owner, priority, branch, a
+    grant). Each is returned. And when there is anything to discard and the record is at least as
+    new as `index.json` (`_newer_than_index`: file mtime, a hint), those values are most likely an
+    edit the previous plugin made after the conversion -- one Sigma never applied, and a human may
+    still want: that unit is REFUSED, nothing is written, and the caller names the ways forward.
+    `_delta_verdict` is the rule, and `amend` applies the same one. -> (done [(name, path,
+    discarded)], refused [(name, path, discarded)])."""
+    features_dir = registry.registry_dir(sdlc_dir)
+    done, refused = [], []
+    for name, _path in registry.legacy_deltas(features_dir):
+        fd = _acquire(lock_path(sdlc_dir, name), timeout)
+        try:
+            now = [r for r in registry.legacy_delta_records(features_dir) if r[0] == name]
+            if not now:
+                continue
+            verdict = _delta_verdict(features_dir, now[0][0])
+            if verdict is None:
+                continue
+            path, discarded, newer = verdict
+            if discarded and newer:
+                refused.append((name, path, discarded))
+                continue
+            entry = registry.read(features_dir).get(name)
+            if entry is not None:
+                try:
+                    done.append((name, registry.write_unit(features_dir, name, entry), discarded))
+                except registry.LegacyDeltaConflict as exc:   # rewritten since the verdict above
+                    refused.append((name, exc.path, exc.discarded))
+        finally:
+            _release(fd)
+    return done, refused
+
+
+def _live_deltas(sdlc_dir):
+    """-> (records, how many the one rule would refuse now). Local reads only: the unit files and
+    `index.json` once (`legacy_delta_records`), one stat per record. Never raises."""
+    features_dir = registry.registry_dir(sdlc_dir)
+    try:
+        found = registry.legacy_delta_records(features_dir)
+        refused = sum(1 for _n, path, base, record in found
+                      if registry.delta_discards(base, record)
+                      and registry.newer_than_index(features_dir, path))
+    except Exception:                     # noqa: BLE001 - a health surface must never raise
+        return 0, 0
+    return len(found), refused
+
+
+def _repair_command(sdlc_dir):
+    return "python3 %s repair %s" % (pathlib.Path(__file__).resolve(), sdlc_dir)
+
+
+def legacy_delta_row(sdlc_dir):
+    """#327 review (e), LIVENESS: the `doctor.py check` row for live legacy delta records -- unit
+    records the previous plugin wrote after the conversion, which Sigma merges but never applies.
+    None when there are none, so a healthy project's check list is unchanged. A WARN (`ok` True):
+    nothing is lost while the record stands, but a pick on a unit whose record would be refused
+    records nothing until a human resolves it."""
+    count, refused = _live_deltas(sdlc_dir)
+    if not count:
+        return None
+    return {"name": "legacy delta records: WARN -- %d legacy delta record(s) under %s (the previous "
+                    "plugin wrote them after the conversion; index.json wins, they only fill blanks "
+                    "and add goals); %d would be refused (a value newer than index.json)"
+                    % (count, registry.registry_dir(sdlc_dir) / registry.UNITS_DIRNAME, refused),
+            "ok": True,
+            "fix": "disable the previous plugin on this repository, then `%s` (docs/upgrading.md)"
+                   % _repair_command(sdlc_dir)}
+
+
+def legacy_delta_segment(sdlc_dir):
+    """The one `status.py` segment for the same fact, or "" when there is none."""
+    count, refused = _live_deltas(sdlc_dir)
+    if not count:
+        return ""
+    return ("legacy delta records: %d (%d would be refused): %s"
+            % (count, refused, _repair_command(sdlc_dir)))
 
 
 # --------------------------------------------------------------------------- CLI
 
 
-USAGE = "usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir>"
+USAGE = ("usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir> | "
+         "feature_sync.py repair <sdlc_dir>")
 
 
 def main(argv):
@@ -1141,13 +1308,35 @@ def main(argv):
     THERE IS NO `sync` VERB, and the omission is the same one `cross_repo.main` makes for the same
     reason: the sync belongs to the pick, and a second way to run it is a second answer. `fold` is
     here because it is explicitly NOT part of a pick, and `show` because a record nobody can read is
-    not much of a record."""
+    not much of a record. `repair` (#314) rewrites a legacy-id record merged as a delta in Sigma's
+    schema."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "fold":
-        print(fold(argv[2]))
+        try:
+            print(fold(argv[2]))
+        except FoldRefused as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         return 0
+    if len(argv) >= 3 and argv[1] == "repair":
+        done, refused = repair(argv[2])
+        for name, path, discarded in done:
+            print("repaired %s: %s" % (name, path))
+            for what in discarded:
+                print("  discarded %s: %s" % (name, what))
+        for name, path, discarded in refused:
+            print("feature_sync: repair refused %s, nothing written: %s is at least as new as %s "
+                  "(file time) and rewriting it would discard %s -- most likely an edit the "
+                  "previous plugin made after the conversion, which Sigma reads but does not "
+                  "apply. To keep those values, copy them into %s; to drop them, delete them from "
+                  "the record; then rerun repair."
+                  % (name, path, registry.INDEX_NAME, "; ".join(discarded),
+                     registry.index_path(registry.registry_dir(argv[2]))), file=sys.stderr)
+        if not done and not refused:
+            print("feature_sync: nothing to repair in %s" % argv[2])
+        return 2 if refused else 0
     if len(argv) >= 3 and argv[1] == "show":
         print(json.dumps(registry.read(registry.registry_dir(argv[2])), indent=2, sort_keys=True))
         return 0

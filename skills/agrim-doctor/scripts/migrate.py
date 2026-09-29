@@ -26,11 +26,25 @@ listed with the reason, exit 2. Unknown previous-name schema kinds, history (led
 sessions) and the old journal config block are LEFT AS IS and listed -- history is not rewritten,
 and turning the journal on is an explicit opt-in.
 
-SAFE TO RE-RUN. A second `--apply` finds nothing and says so. Each write is atomic (temp file in the
+UNIT RECORDS FIRST, THE INDEX LAST, AND ONLY WHOLE (#326). `features/index.json` converts only
+once no unit record under `features/units/` is left in the previous schema -- one refused, symlinked,
+or written by the previous plugin during the run keeps the index back (listed as refused, exit 2),
+because beside a Sigma index such a record is read as a partial delta, and it may be the newer
+complete one. A rerun converts it.
+
+RE-RUNNABLE, WITH ONE STATE NAMED (#327). A second `--apply` with nothing changed since finds
+nothing and says so. After the previous plugin wrote a unit record beside the converted index (a
+legacy DELTA), that record is REFUSED here, not converted -- a bare schema-id rewrite would make it
+replace the index entry -- and the refusal names `feature_sync.py repair`, which merges it. Each write is atomic (temp file in the
 same directory, then `os.replace`), taken under the unit's `feature_sync` lock for feature files, and
 refused if the file changed after it was read. A symlinked target (an `AGENTS.md` linked to
 `CLAUDE.md`, a linked feature file) is REFUSED, never followed: replacing it would destroy the link. `--apply` refuses outright while this SDLC dir's
-watcher is running (it may be the old plugin's, still writing old spellings).
+watcher is running (it may be the old plugin's, still writing old spellings), and -- #314 -- while
+the old plugin can still RUN on this repository, unless `--replace-old-plugin` is given (then a
+one-time copy of `features/` is saved under `state/backup/` first, and that copy is never scanned
+here): the old plugin cannot read Sigma's registry, and a goal it starts afterwards writes a unit
+record in its own schema that Sigma can only merge as a partial delta. The refusal prints the exact
+disable step.
 
 WHAT IT CANNOT DO FOR YOU. The plugin under its previous name cannot read Sigma's spellings. Every
 file this changes is one that plugin also reads, and committed ones (`config.json`, `features/`)
@@ -53,9 +67,12 @@ import sys
 import tempfile
 import time
 
-USAGE = ("usage: migrate.py [<sdlc_dir>] [--apply]\n"
+USAGE = ("usage: migrate.py [<sdlc_dir>] [--apply [--replace-old-plugin]]\n"
          "  Rewrites state written under the plugin's previous name to Sigma's names.\n"
-         "  Dry run (writes nothing) unless --apply is given. Safe to re-run.")
+         "  Dry run (writes nothing) unless --apply is given. Re-runnable: a unit record the\n"
+         "  old plugin wrote after conversion is refused, naming `feature_sync.py repair`.\n"
+         "  While the old plugin can still run on this repository, --apply needs\n"
+         "  --replace-old-plugin: disable it here first instead (docs/upgrading.md).")
 
 _HERE = pathlib.Path(__file__).resolve().parent
 _LOOP = _HERE.parent.parent / "agrim-loop" / "scripts"
@@ -65,6 +82,9 @@ _INIT = _HERE.parent.parent / "agrim-init" / "scripts"
 _OLD_JOURNAL_BLOCK = "tele" + "metry"
 #: Directories under the SDLC dir that hold other checkouts, never this repo's own state.
 _SKIP_TOP = ("work",)
+#: #314: the one-time registry pre-image (`coexist.BACKUP_PARTS`) is a copy of old state kept on
+#: purpose -- rewriting it would destroy the thing a restore needs.
+_SKIP_NESTED = (("state", "backup"),)
 #: History: reported (counted), never rewritten.
 _HISTORY_DIRS = (("ledger",), ("state", "time"))
 
@@ -115,14 +135,38 @@ def _candidate_json(sdlc_dir):
         here = pathlib.Path(dirpath)
         if here == base:
             dirnames[:] = [d for d in dirnames if d not in _SKIP_TOP]
+        dirnames[:] = [d for d in dirnames
+                       if tuple((here / d).relative_to(base).parts) not in _SKIP_NESTED]
         dirnames[:] = sorted(d for d in dirnames if not (here / d / ".git").exists())
         for name in sorted(filenames):
             if name.endswith(".json"):
                 yield here / name
 
 
+def _delta_reason(sdlc_dir, name):
+    """#327: why a legacy-schema unit record beside a Sigma index entry is NOT converted here."""
+    return ("not converted: it is in the previous plugin's schema next to a features/index.json "
+            "already in Sigma's schema with an entry for unit %r, so Sigma reads it as a DELTA onto "
+            "that entry (the previous plugin wrote it after the conversion, without seeing the "
+            "entry). Rewriting only its schema id would make it REPLACE the entry, and Sigma would "
+            "serve the record alone. Run `python3 %s repair %s` instead: it rewrites the record as "
+            "the entry plus what the record adds, and lists anything it discards"
+            % (name, _LOOP / "feature_sync.py", sdlc_dir))
+
+
+def _live_deltas(sdlc_dir):
+    """-> {record path: unit name} for each legacy delta record a bare schema-id rewrite would
+    change what Sigma serves for (`feature_registry.bare_rewrite_changes_it`). Read NOW."""
+    reg = _load(_LOOP, "feature_registry")
+    features = pathlib.Path(sdlc_dir) / "features"
+    return {os.path.abspath(path): name
+            for name, path, base, record in reg.legacy_delta_records(features)
+            if reg.bare_rewrite_changes_it(base, record)}
+
+
 def _plan_schemas(plan, legacy):
     needle = (legacy.RETIRED + "/").encode("ascii")
+    deltas = _live_deltas(plan.sdlc_dir)
     for path in _candidate_json(plan.sdlc_dir):
         if path.name == "config.json" and path.parent == plan.sdlc_dir:
             continue                                   # config has no schema id; see _plan_config
@@ -157,6 +201,10 @@ def _plan_schemas(plan, legacy):
                                  "(its text also appears elsewhere, or is spelled with escapes)"))
             continue
         unit = path.stem if path.parent.name == "units" else None
+        if os.path.abspath(path) in deltas:
+            plan.refused.append((plan.rel_link(path),
+                                 _delta_reason(plan.sdlc_dir, deltas[os.path.abspath(path)])))
+            continue
         _add_change(plan, Change(path, data, new, "schema id %s -> %s" % (old_id, new_id), unit))
 
 
@@ -356,6 +404,19 @@ def _previous_install(home, legacy):
     return found
 
 
+def _hold_index(result):
+    """#326, the deterministic half of `apply`'s rule: a unit record this run will NOT convert (a
+    symlink, unreadable, ambiguous) keeps `features/index.json` in the previous schema too -- said
+    in the dry run, so `--apply` never surprises."""
+    planned = {result.rel_link(c.path) for c in result.changes}
+    stuck = [rel for rel in _legacy_units(result) if rel not in planned]
+    if not stuck:
+        return
+    for change in [c for c in result.changes if _is_index(result, c.path)]:
+        result.changes.remove(change)
+        result.refused.append((result.rel_link(change.path), _index_reason(stuck)))
+
+
 def plan(sdlc_dir, environ=None, home=None):
     """-> a `Plan`. Reads only; never writes."""
     legacy = _load(_LOOP, "legacy")
@@ -365,6 +426,7 @@ def plan(sdlc_dir, environ=None, home=None):
     _plan_codex(result, legacy)
     _plan_config(result, legacy)
     _plan_history(result, legacy)
+    _hold_index(result)
     for name in legacy.retired_env_set(os.environ if environ is None else environ):
         target = legacy.sigma_env_name(name)
         if target in legacy.FALLBACK_ENV:
@@ -429,11 +491,74 @@ def _write(change):
     return None
 
 
+def _is_index(result, path):
+    return pathlib.Path(path) == result.sdlc_dir / "features" / "index.json"
+
+
+def _index_reason(names):
+    return ("not converted: %s still in the previous plugin's schema (listed as refused here, "
+            "or written after this run read it). Converting the index without it would make Sigma "
+            "read that record -- which may be the complete, newer one -- as a partial delta under "
+            "the older index. Left as is, both are read exactly as before; fix what is refused and "
+            "rerun, and the index converts with the last record" % ", ".join(sorted(names)))
+
+
+def _legacy_units(result):
+    """-> rel paths under `features/units/` still declaring the previous schema id NOW (or that
+    cannot be read), whatever the plan saw -- the previous plugin may have created one since."""
+    legacy = _load(_LOOP, "legacy")
+    units = result.sdlc_dir / "features" / "units"
+    found = []
+    try:
+        paths = sorted(units.glob("*.json"))
+    except (OSError, ValueError):
+        return found
+    for path in paths:
+        try:
+            doc = json.loads(path.read_bytes().decode("utf-8"))
+        except OSError:
+            found.append(result.rel_link(path))
+            continue
+        except ValueError:
+            continue                          # not a record anyone could read, in either schema
+        schema = doc.get("schema") if isinstance(doc, dict) else None
+        if legacy.is_legacy_schema(schema) and legacy.canonical_schema(schema) != schema:
+            found.append(result.rel_link(path))   # an id Sigma cannot read either way holds nothing
+    return found
+
+
 def apply(result):
-    """Write every planned change. -> [(change, refusal-or-None)]."""
+    """Write every planned change. -> [(change, refusal-or-None)].
+
+    #326: `features/index.json` is written LAST, and only once nothing under `features/units/` is
+    left in the previous schema. The previous plugin writes its unit record first and rebuilds its
+    index only on demand, so a record it holds is the newer statement of its unit; beside a Sigma
+    index, `feature_registry.read` would merge it as a DELTA under the older entry (#314), and
+    `repair` would make that permanent. Left in the previous schema, the index keeps shard-wins
+    reading -- the rule that plugin itself reads by -- and a rerun converts it.
+
+    THE WINDOW, NARROWED AND NAMED (#327). The last check and the replace are not atomic, so after a
+    successful index write `units/` is scanned AGAIN, and if a previous-schema record appeared the
+    index's previous bytes are put back (only if the index still holds exactly what this run wrote)
+    and it is listed as refused -- the record is read whole again and a rerun converts both.
+    Measured by the #327 reviewer: such a record ends up ~4 ms OLDER than the index, so `repair`'s
+    newer-than-index refusal never protected this case; the re-scan does. What remains is a record
+    written after the re-scan by a writer that read the index before the replace -- microseconds,
+    not closed: Sigma then reads it as a delta, prints the recovery notice on every read, and every
+    rewrite of it (`repair`, a pick) lists each value it would drop.
+
+    A UNIT RECORD THAT IS NOW A LEGACY DELTA (the index turned Sigma's since the plan, e.g. a fold)
+    is re-checked under its lock and refused exactly as `plan` refuses it (#327)."""
     fsync = _load(_LOOP, "feature_sync")
     done = []
-    for change in result.changes:
+    ordered = ([c for c in result.changes if not _is_index(result, c.path)]
+               + [c for c in result.changes if _is_index(result, c.path)])
+    for change in ordered:
+        if _is_index(result, change.path):
+            left = _legacy_units(result)
+            if left:
+                done.append((change, _index_reason(left)))
+                continue
         fd = None
         if change.unit:
             try:
@@ -441,22 +566,48 @@ def apply(result):
             except Exception:                 # noqa: BLE001 - an unlockable name is written unlocked
                 fd = None                     # (fail-open, exactly as feature_sync itself is)
         try:
-            done.append((change, _write(change)))
+            why = None
+            if change.unit and change.path.parent.name == "units":
+                name = _live_deltas(result.sdlc_dir).get(os.path.abspath(change.path))
+                if name is not None:
+                    why = _delta_reason(result.sdlc_dir, name)
+            done.append((change, why or _write(change)))
         finally:
             fsync._release(fd)
+        if _is_index(result, change.path) and done[-1][1] is None:
+            left = _legacy_units(result)
+            if left:
+                done[-1] = (change, _put_back(change, left))
     return done
 
 
+def _put_back(change, left):
+    """The index write landed but a previous-schema unit record appeared meanwhile: restore the
+    index's planned-from bytes (refused if the index moved on again) -> the refusal to report."""
+    undone = _write(Change(change.path, change.new, change.old, "restore"))
+    if undone is None:
+        return _index_reason(left) + " (it was converted, then put back when the record appeared)"
+    return (_index_reason(left) + ". It was converted before the record appeared and could NOT be "
+            "put back (%s): run `feature_sync.py repair`, which lists what it discards" % undone)
+
+
 # --------------------------------------------------------------------------- CLI
+
+
+#: The acknowledgement flag -- spelled once, in coexist (`REPLACE_FLAG`); mirrored here so bad usage
+#: is caught before anything is loaded. `tests/test_coexist.py` pins the two to one spelling.
+_REPLACE = "--replace-old-plugin"
 
 
 def _parse(argv):
     args = argv[1:]
     flags = [a for a in args if a.startswith("-")]
     pos = [a for a in args if not a.startswith("-")]
-    if any(f not in ("--apply",) for f in flags) or len(pos) > 1:
+    if any(f not in ("--apply", _REPLACE) for f in flags) or len(pos) > 1:
         return None
-    return (pos[0] if pos else ".sdlc"), "--apply" in flags
+    if _REPLACE in flags and "--apply" not in flags:
+        return None
+    return (pos[0] if pos else ".sdlc"), "--apply" in flags, _REPLACE in flags
 
 
 def main(argv, environ=None, home=None, stdout=None):
@@ -469,7 +620,7 @@ def main(argv, environ=None, home=None, stdout=None):
     if parsed is None:
         print(USAGE, file=sys.stderr)
         return 2
-    sdlc_dir, do_apply = parsed
+    sdlc_dir, do_apply, replace = parsed
     if not pathlib.Path(sdlc_dir).is_dir():
         print("migrate: %s is not a directory -- pass the project's .sdlc" % sdlc_dir,
               file=sys.stderr)
@@ -481,16 +632,50 @@ def main(argv, environ=None, home=None, stdout=None):
            sdlc_dir, legacy.RETIRED, legacy.RETIRED_ENV_PREFIX))
     refused = list(result.refused)
     changed = []
+    gated = False
     if result.changes and do_apply:
-        # #240: migrating while the old plugin is still active leaves it reading empty state.
-        if not _load(_LOOP, "coexist").gate(sdlc_dir, "migrate.py --apply", env=environ,
-                                             home=home, stream=out):
-            return 2
+        # #240/#314: the old plugin still enabled is a NOTICE everywhere else in Sigma. THIS step
+        # alone -- the conversion -- waits for an acknowledgement while that plugin can still run
+        # here: it cannot read Sigma's registry, so a goal it starts afterwards writes a unit
+        # record in its own schema (`feature_registry.merge_legacy_delta` merges it as a delta; the
+        # reviewer's sequences on PR #319). A LIVE watcher stays a refusal (it may be writing the
+        # old spellings).
+        coexist = _load(_LOOP, "coexist")
+        coexist.gate(sdlc_dir, "migrate.py --apply", env=environ, home=home, stream=out)
         pid = _running_watcher(sdlc_dir)
         if pid:
             say("refused all: a watcher (pid %s) is running for this .sdlc and may be writing the "
-                "old spellings -- stop it, then rerun" % pid)
+                "old spellings -- nothing was written, and Sigma never signals it. Stop it "
+                "politely: %s; then rerun" % (pid, coexist.stop_lever(sdlc_dir)))
             return 2
+        runs = coexist.runs_here(coexist.assess(sdlc_dir, env=environ, home=home))
+        if runs and not replace:
+            gated = True
+            report = coexist.Report(str(sdlc_dir), tuple(runs))
+            say("refused --apply: the plugin previously published as %r can still run on this "
+                "repository (%s). %s. Nothing was written; the changes it would make are listed "
+                "below." % (legacy.RETIRED, "; ".join(s.detail for s in runs),
+                             coexist.REGISTRY_CAVEAT[0].upper() + coexist.REGISTRY_CAVEAT[1:]))
+            steps = coexist.disable_steps(report)
+            say("  next: stop it on this repository first -- %s -- then rerun: %s"
+                % (" ; ".join(steps) if steps else "see `coexist.py check`",
+                   coexist.migrate_command(sdlc_dir, "--apply")))
+            say("  or, to convert with it still running (a copy of .sdlc/features is saved "
+                "under .sdlc/%s/ first): %s" % ("/".join(coexist.BACKUP_PARTS),
+                                        coexist.migrate_command(sdlc_dir, "--apply",
+                                                                coexist.REPLACE_FLAG)))
+        elif runs:
+            path, error = coexist.backup_features(sdlc_dir)
+            if error:
+                say("refused all: %s acknowledged, but the registry backup could not be taken "
+                    "(%s) -- nothing was written. Disable the old plugin on this repository "
+                    "instead, then rerun without it." % (coexist.REPLACE_FLAG, error))
+                return 2
+            if path is not None:
+                say("  backup  %s: a copy of %s taken before converting (%s)"
+                    % (result.rel(path), result.rel(pathlib.Path(sdlc_dir) / "features"),
+                       coexist.REGISTRY_CAVEAT))
+    if result.changes and do_apply and not gated:
         for change, why in apply(result):
             if why:
                 refused.append((result.rel_link(change.path), why))
@@ -510,6 +695,11 @@ def main(argv, environ=None, home=None, stdout=None):
         say("  note    every file listed as changed is one the plugin under its previous name also "
             "reads: a machine still running it can no longer read them, and committed ones "
             "(config.json, features/) reach teammates through git -- switch the team together.")
+    if gated:
+        say("migrate: nothing applied -- %d change(s) wait for the old plugin to be disabled on "
+            "this repository (or for %s), %d refused, %d left as is."
+            % (len(result.changes), coexist.REPLACE_FLAG, len(refused), len(result.left)))
+        return 2
     if not result.changes and not refused:
         say("migrate: nothing to migrate in %s." % sdlc_dir)
     elif do_apply:

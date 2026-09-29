@@ -53,6 +53,7 @@ import inspect
 import json
 import os
 import pathlib
+import re
 import stat
 import threading
 import types
@@ -666,10 +667,10 @@ def test_the_isolation_check_catches_a_write_that_reads_a_sibling(tmp_path):
     reading a sibling unit before writing its own -- and the recorder must see it. Without this, the
     isolation tests below could be passing because the harness is blind rather than because the
     write is clean, and no result-shaped assertion would tell the two apart."""
-    r = _mod_with("    path = unit_path(features_dir, name)\n    _atomic_write_text",
-                  "    path = unit_path(features_dir, name)\n"
+    r = _mod_with("    _protect(features_dir)\n    _atomic_write_text(path, dumps(",
+                  "    _protect(features_dir)\n"
                   "    _read_json(units_dir(features_dir) / ('beta' + UNIT_SUFFIX))\n"
-                  "    _atomic_write_text")
+                  "    _atomic_write_text(path, dumps(")
     r.write_unit(tmp_path, "beta", _entry())
     with _Recorder() as rec:
         r.write_unit(tmp_path, "alpha", _entry())
@@ -1432,6 +1433,11 @@ _NO_UNIT_NAME = {
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),
+    # #314: the recovery TEXT for a legacy-id delta record -- joins this module's own directory
+    # with `feature_sync.py` and prints the features dir it was handed; no unit name reaches a path.
+    ("feature_registry", "delta_recovery"),
+    # #327: the doctor row's TEXT names the `units/` directory it counted; no unit name reaches it.
+    ("feature_sync", "legacy_delta_row"),
     # #2265: `feature_frontier._config(sdlc_dir)` joins `sdlc_dir / "config.json"` -- the same
     # "directories: no name reaches them at all" shape as the three `feature_registry` entries
     # directly above. It takes only an `.sdlc` root, never a unit name, and is not a unit-scoped
@@ -1764,3 +1770,125 @@ def test_the_unit_name_cross_check_fires_when_a_declared_member_names_the_vocabu
             == [("synthetic", "dirty", ["unit_key"])]), (
         "a declared-clean member whose CODE folds a unit name did NOT fire the check — the "
         "vocabulary is the only thing standing between the third set and a free pass (#1674)")
+
+
+# ------------------- #327 review block #2: every writer of a unit record or the index, classified
+#
+# Tier-1 classify's reopen called `write_unit` DIRECTLY, so it skipped the one legacy-delta rule
+# every other Sigma write went through, and a newer post-conversion record's P0 vanished with nothing
+# said. `write_unit` now applies that rule itself (`LegacyDeltaConflict`), so no caller can bypass
+# it -- and this inventory is DISCOVERED from the tree, not written down, so a new direct writer
+# fails here until someone says, in this file, why it is safe.
+
+#: (module, enclosing function, callee) -> why that call is safe. A key missing here fails the test.
+_REGISTRY_WRITE_CALLERS = {
+    # THE write surface: under the unit's lock, `delta_verdict` first (report, never raise), and
+    # `write_unit`'s own refusal caught as the same report if the record changed in between.
+    ("feature_sync", "amend", "write_unit"):
+        "the one rule, reported: refused -> `refused`/`delta_conflict`; discard -> `discarded`",
+    # The documented recovery: the delta merge, under the unit's lock, refused when newer.
+    ("feature_sync", "repair", "write_unit"):
+        "the one rule, reported: refused units are returned, never raised",
+    # The chart sheet only; never a unit record. `monotonic_violations` refuses a shrinking index,
+    # and `write_index` writes nothing when the bytes are unchanged (the delta's age survives).
+    ("feature_sync", "fold", "write_index"):
+        "index only, monotonic-checked; a changed index is the newer file (docs/upgrading.md)",
+}
+
+#: Modules OUTSIDE `feature_registry` that both name the registry's files and contain a write
+#: primitive -- i.e. could write `features/units/*.json` or `features/index.json` without the
+#: registry. Each is said here to be one that does not, or does so under a rule of its own.
+_REGISTRY_ADJACENT_WRITERS = {
+    "migrate": "the converter: refuses a legacy delta record (names `repair`), converts the index "
+               "only once no record is left in the previous schema, under the unit's lock",
+    "coexist": "reads `features/` once to take the one-time backup; writes only under "
+               "`state/backup/` (and its own owner/notice markers)",
+    "feature_propagate": "writes a SIBLING repository's record through the host API, destination "
+                         "wins every field, and refuses a sibling record in the previous schema",
+    "work": "names `.sdlc/features/units/` only to allow-list it in the secret-file check",
+    "slack_commands_listen": "writes only its own heartbeat/pid files; 'units' is prose",
+}
+
+_WRITE_PRIMITIVE = re.compile(
+    r"os\.replace\(|\.write_text\(|\.write_bytes\(|_atomic_write|open\([^)]*[\"']w")
+_NAMES_REGISTRY_FILES = re.compile(
+    r"UNITS_DIRNAME|INDEX_NAME|[\"']units[\"']|[\"']index\.json[\"']|features/units|features/index")
+
+
+def _registry_write_calls(root):
+    """-> {(module stem, enclosing function, callee)} for every call of `write_unit`/`write_index`
+    under `skills/` and `hooks/`, outside `feature_registry` itself. By AST, so a call spelled
+    `registry.write_unit(`, `feature_registry.write_unit(` or a bare `write_unit(` is all found."""
+    import ast
+    found = set()
+    for path in sorted(list(root.glob("skills/**/*.py")) + list(root.glob("hooks/**/*.py"))):
+        if path.stem == "feature_registry":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Call):
+                    f = node.func
+                    name = (f.attr if isinstance(f, ast.Attribute)
+                            else f.id if isinstance(f, ast.Name) else None)
+                    if name in ("write_unit", "write_index"):
+                        found.add((path.stem, fn.name, name))
+    return found
+
+
+def _registry_adjacent_writers(root):
+    out = set()
+    for path in sorted(list(root.glob("skills/**/*.py")) + list(root.glob("hooks/**/*.py"))):
+        src = path.read_text(encoding="utf-8")
+        if (path.stem != "feature_registry" and _NAMES_REGISTRY_FILES.search(src)
+                and _WRITE_PRIMITIVE.search(src)):
+            out.add(path.stem)
+    return out
+
+
+def test_every_registry_writer_is_classified():
+    found = _registry_write_calls(ROOT)
+    assert ("feature_sync", "amend", "write_unit") in found, "the AST scan has gone blind"
+    unclassified = sorted(found - set(_REGISTRY_WRITE_CALLERS))
+    assert not unclassified, (
+        "a new caller writes a unit record or the index without being classified -- route it "
+        "through `feature_sync.amend` (the unit's lock and the one legacy-delta rule), or say "
+        "here why it is safe: %r" % (unclassified,))
+    stale = sorted(set(_REGISTRY_WRITE_CALLERS) - found)
+    assert not stale, "classified callers that no longer exist -- remove them: %r" % (stale,)
+    for hook in ROOT.glob("hooks/*.sh"):
+        text = hook.read_text(encoding="utf-8")
+        assert "write_unit" not in text and "write_index" not in text, hook
+    adjacent = _registry_adjacent_writers(ROOT)
+    assert not sorted(adjacent - set(_REGISTRY_ADJACENT_WRITERS)), (
+        "a module names the registry's files and writes something -- if it can write "
+        "`features/units/*.json` or `features/index.json`, route it through the registry; either "
+        "way classify it in _REGISTRY_ADJACENT_WRITERS: %r"
+        % sorted(adjacent - set(_REGISTRY_ADJACENT_WRITERS)))
+
+
+def test_the_writer_inventory_sees_a_direct_write_unit_call(tmp_path):
+    """The control: a synthetic tree whose module calls `write_unit` directly (the classify reopen
+    this inventory exists for) and one that writes `index.json` by hand are both reported."""
+    (tmp_path / "skills" / "x" / "scripts").mkdir(parents=True)
+    (tmp_path / "skills" / "x" / "scripts" / "feature_classify.py").write_text(
+        "def _tier1(d, r, e):\n    feature_registry.write_unit(d, r, e)\n")
+    (tmp_path / "skills" / "x" / "scripts" / "rogue.py").write_text(
+        "def f(p):\n    (p / 'index.json').write_text('{}')\n")
+    assert _registry_write_calls(tmp_path) == {("feature_classify", "_tier1", "write_unit")}
+    assert _registry_adjacent_writers(tmp_path) == {"rogue"}
+
+
+def test_write_index_leaves_an_unchanged_index_alone(tmp_path):
+    """#327 review (c): identical bytes are not rewritten, so the index's file time -- which the
+    legacy-delta rule reads -- moves only when its content does."""
+    m = _mod()
+    m.write_index(tmp_path, {"alpha": _entry()})
+    path = m.index_path(tmp_path)
+    os.utime(path, (1_000_000, 1_000_000))
+    m.write_index(tmp_path, {"alpha": _entry()})
+    assert path.stat().st_mtime == 1_000_000
+    m.write_index(tmp_path, {"alpha": _entry(title="changed")})
+    assert path.stat().st_mtime != 1_000_000

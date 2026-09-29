@@ -349,8 +349,9 @@ USAGE = "usage: status.py [sdlc_dir]"
 
 
 def _coexist_warning(sdlc_dir):
-    """#240: one stderr line when the plugin under the previous name is also active here (read-only
-    surface: WARN and proceed). Fail-open like every cross-load in this file."""
+    """#240/#314: the one notice line on stderr when the plugin under the previous name is also
+    active here (Sigma proceeds; `SIGMA_ALLOW_COEXIST=1` silences it). Fail-open like every
+    cross-load in this file."""
     try:
         spec = importlib.util.spec_from_file_location(
             "coexist", _HERE.parent.parent / "agrim-loop" / "scripts" / "coexist.py")
@@ -371,6 +372,20 @@ def _awaiting_merge_segment(sdlc_dir, now=None):
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         return m.awaiting_merge_line(sdlc_dir, now=now)
+    except Exception:
+        return ""
+
+
+def _legacy_delta_segment(sdlc_dir):
+    """#327 LIVENESS: `legacy delta records: N (M would be refused): <repair command>` -- unit
+    records the previous plugin wrote after the conversion, which Sigma merges but never applies.
+    "" when there are none (the line stays as it was). Local reads only; fail-open."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "feature_sync", _HERE.parent.parent / "agrim-loop" / "scripts" / "feature_sync.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.legacy_delta_segment(sdlc_dir)
     except Exception:
         return ""
 
@@ -398,6 +413,9 @@ def main(argv):
     awaiting = _awaiting_merge_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if awaiting:                                # #255: silent unless a goal is awaiting a merge
         line += f" | {awaiting}"
+    deltas = _legacy_delta_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if deltas:                                  # #327: silent unless a legacy delta record is live
+        line += f" | {deltas}"
     print(line)
     return 0
 

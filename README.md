@@ -305,7 +305,9 @@ See the **[worked walkthrough](examples/hello-sdlc/)** for a runnable end-to-end
 
 Install Sigma and carry on. Sigma reads the schema ids, markers, environment variables and config
 key that the previous name's 1.4.x releases wrote. When you want the files themselves renamed, run
-the one-shot migration. It is a dry run by default, `--apply` writes, and it is safe to re-run:
+the one-shot migration. It is a dry run by default, `--apply` writes, and it is safe to re-run (a
+unit record the old plugin wrote after the conversion is refused and left for
+`feature_sync.py repair`; see docs/upgrading.md):
 
 ```
 python3 skills/agrim-doctor/scripts/migrate.py .sdlc            # lists every change
@@ -315,10 +317,12 @@ python3 skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes and pri
 The old plugin cannot read Sigma's spellings, so migrate once the whole team runs Sigma. See
 [docs/upgrading.md](docs/upgrading.md) for what it reads, what it rewrites and what it leaves alone.
 
-Run one plugin per repository. While the old plugin is still enabled for a repository, Sigma's init,
-loop start, watcher and `migrate.py --apply` refuse and print the exact fix;
-`/agrim-doctor` shows why. See
-[Running both plugins on one repository](docs/upgrading.md#running-both-plugins-on-one-repository).
+Sigma runs fully next to the old plugin and replaces it: nothing is refused while both are
+installed, and each run prints one notice naming the uninstall command. Cut over with
+[Switching over from the previous plugin](docs/upgrading.md#switching-over-from-the-previous-plugin):
+install Sigma, run it, **stop the old plugin on the repository**, migrate, then uninstall it. The
+old plugin cannot read Sigma's registry, so `--apply` waits for that step (or for an explicit
+`--replace-old-plugin`).
 
 ---
 

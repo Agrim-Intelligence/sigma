@@ -14,7 +14,7 @@
 # no config / not enabled / no .sdlc → emit nothing, exit 0 (a session with no Sigma is untouched).
 set -uo pipefail
 
-# allow(): the hook's quiet exit. When the coexistence tier (below) found something and no later
+# allow(): the hook's quiet exit. When the coexistence notice (below) found something and no later
 # tier emitted, it emits that notice alone -- the one additionalContext of this invocation.
 allow() {
     if [ -n "${HOOK_COEXIST_NOTICE:-}" ] && command -v python3 >/dev/null 2>&1; then
@@ -35,15 +35,18 @@ PLUGIN_ROOT="$(dirname "$HOOK_DIR")"
 
 command -v python3 >/dev/null 2>&1 || allow
 
-# --- The plugin under the previous name also active here (issue #240) -------------------------
-# An ACCELERATOR only: it tells the session up front. The load-bearing refusals live in Sigma's own
-# Python on every write surface (init, loop start, the watcher and its spawn, migrate --apply) via
+# --- The plugin under the previous name also active here (issues #240, #314) -----------------
+# An ACCELERATOR only: it tells the session up front. The behaviour lives in Sigma's own Python on
+# every write surface (init, loop start, claim/record, the watcher and its spawn, migrate) via
 # skills/agrim-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
+# Since #314 that is a NOTICE, never a refusal: Sigma is handling this repository. So this is ONE
+# line (coexist.notice_line), READ-ONLY (it writes no mark: running it twice says the same thing,
+# idempotent), and silent under SIGMA_ALLOW_COEXIST=1. Both plugins' session hooks may fire; this
+# line only states what Sigma does and names the uninstall command -- it asks nothing of the other.
 # NOT a tier: it never ends the hook. Its text is carried in HOOK_COEXIST_NOTICE and PREPENDED to
 # whichever tier below emits (only one additionalContext per invocation), or emitted alone by
 # allow() when none does -- so the watcher-staleness check, the wizard and the policy brief still
-# run while both plugins are enabled (AGENTS.md LIVENESS: a dead watcher is never hidden by this).
-# Under SIGMA_ALLOW_COEXIST=1 the notice is ONE line (the override is in effect), not the refusal.
+# run (AGENTS.md LIVENESS: a dead watcher is never hidden by this).
 # Silent when nothing is active or the check cannot run.
 HOOK_COEXIST_NOTICE=""
 if [ -d "$PROJECT/.sdlc" ]; then
@@ -55,12 +58,9 @@ try:
         "coexist", os.path.join(plugin_root, "skills", "agrim-loop", "scripts", "coexist.py"))
     coexist = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(coexist)
-    report = coexist.assess(os.path.join(project, ".sdlc"))
-    if report.active and coexist.overridden():
-        print("Tell the user this: " + coexist.override_line(report))
-    elif report.active:
-        print("Tell the user this before anything else, verbatim:\n"
-              + coexist.message(report, coexist.WRITE_SURFACES))
+    line = coexist.warn_line(os.path.join(project, ".sdlc"))
+    if line:
+        print("Tell the user this: " + line)
 except Exception:
     pass
 PY

@@ -675,8 +675,10 @@ def main(argv):
         for line in refusal:
             print(line, file=sys.stderr)
         return 2
-    # #240: refuse BEFORE any write while the plugin under the previous name is active here. An
-    # agrim-init copied without its agrim-loop sibling cannot check: said aloud, then it proceeds.
+    # #240/#314: the plugin under the previous name active here is a NOTICE (one line naming the
+    # uninstall command), never a refusal; a repository it adopted is offered the migrate dry run
+    # (never applied from here). An agrim-init copied without its agrim-loop sibling cannot check:
+    # said aloud, then it proceeds.
     try:
         coexist = _coexist()
     except Exception as exc:                 # noqa: BLE001 - see above
@@ -684,8 +686,11 @@ def main(argv):
         print(f"agrim-init: warning: cannot check for a second plugin on this repository "
               f"({type(exc).__name__}); run `coexist.py check` once agrim-loop is installed",
               file=sys.stderr)
-    if coexist is not None and not coexist.gate(str(pathlib.Path(target) / ".sdlc"), "agrim-init"):
-        return 2
+    if coexist is not None:
+        coexist.gate(str(pathlib.Path(target) / ".sdlc"), "agrim-init")
+        offer = coexist.takeover_line(str(pathlib.Path(target) / ".sdlc"))
+        if offer:
+            print(offer, file=sys.stderr)
     try:
         created, skipped = scaffold(target)
     except RuntimeIgnoreWriteFailed as exc:

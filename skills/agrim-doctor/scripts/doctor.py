@@ -2054,6 +2054,16 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
         out.append({"name": f"coexistence: could not check ({type(exc).__name__})", "ok": True,
                     "fix": "python3 skills/agrim-loop/scripts/coexist.py check <sdlc_dir>"})
+    # #327: live legacy delta records (the previous plugin's post-conversion unit records). Local
+    # reads only; the row appears only when there is one, so a healthy check list is unchanged.
+    try:
+        delta_row = _load_loop_script("feature_sync").legacy_delta_row(sdlc_dir)
+        if delta_row:
+            out.append(delta_row)
+    except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
+        out.append({"name": f"legacy delta records: could not check ({type(exc).__name__})",
+                    "ok": True, "fix": "python3 skills/agrim-loop/scripts/feature_sync.py show "
+                                       "<sdlc_dir>"})
     # ---- end #240
     # #144: a feature branch whose rebase upkeep is REFUSING a replay that would delete its content.
     # Emitted only when such a refusal is on record, so a healthy project's check list is unchanged.
