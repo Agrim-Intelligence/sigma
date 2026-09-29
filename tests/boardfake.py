@@ -26,6 +26,16 @@ It models GITHUB'S BEHAVIOUR that the tests depend on, not the transport:
     come back keyed by field ID, never flattened by name. The same read carries `viewer { login }`
     (`self.viewer`; None models a viewer that cannot be read), and `gh project create` makes a fresh
     board with GitHub's default fields.
+  - #234: VIEWS, modelled on the schema as introspected read-only (2026-09-29,
+    `.sdlc/evidence/234/`): `createProjectV2View` takes ONLY projectId/name/layout/configuration
+    {visibleFieldIds} (a `filter`, `groupBy`, `sortBy` ... is a GraphQL error, as an unknown input
+    argument is on GitHub); `updateProjectV2View` adds `filter`. A layout outside the enum and a
+    visible field id from another board are errors. Group-by, column-by and sort are STORED on a view
+    (tests set them by hand, as a person does in the UI) and read back, never settable. Duplicate
+    view names are ACCEPTED here: whether GitHub rejects them was not measured, so the code under
+    test must never rely on a rejection. A fresh board has one view, `View 1`. A TEXT field is
+    created without options. `add_board(..., builtins=True)` adds GitHub's built-in fields (the
+    list read from board #17).
 
 Imported as a plain sibling module (`import boardfake`), like gqlfake.
 """
@@ -54,6 +64,48 @@ _OPT = re.compile(r'\s*\{(?:id: (%s), )?name: (%s), color: ([A-Z]+), description
 
 class GraphQLError(LookupError):
     """A GraphQL error gh reports on stderr with exit 1 (not a 404)."""
+
+
+#: GitHub's built-in fields as read on board #17 (2026-09-29), with their GraphQL dataType.
+BUILTIN_FIELDS = (("Assignees", "ASSIGNEES"), ("Labels", "LABELS"),
+                  ("Linked pull requests", "LINKED_PULL_REQUESTS"), ("Milestone", "MILESTONE"),
+                  ("Repository", "REPOSITORY"), ("Reviewers", "REVIEWERS"),
+                  ("Parent issue", "PARENT_ISSUE"), ("Sub-issues progress", "SUB_ISSUES_PROGRESS"),
+                  ("Created", "CREATED"), ("Updated", "UPDATED"), ("Closed", "CLOSED"))
+LAYOUTS = ("BOARD_LAYOUT", "TABLE_LAYOUT", "ROADMAP_LAYOUT")
+#: Input members per the introspected schema (CreateProjectV2ViewInput / UpdateProjectV2ViewInput
+#: / ProjectV2ViewConfigurationInput).
+VIEW_CREATE_KEYS = {"clientMutationId", "projectId", "name", "layout", "configuration"}
+VIEW_UPDATE_KEYS = {"clientMutationId", "viewId", "name", "layout", "filter", "configuration"}
+VIEW_CONFIG_KEYS = {"visibleFieldIds"}
+
+
+def _input_keys(doc):
+    """(top-level keys, configuration keys) of a mutation's `input: {...}`, string literals removed
+    first so a filter value like `status:Done` is never read as a key."""
+    bare = re.sub(_STR, '""', doc)
+    body = bare[bare.index("input: {") + len("input: {"):]
+    depth, top, conf = 1, [], []
+    i = 0
+    in_conf = False
+    while i < len(body) and depth:
+        m = re.match(r"(\w+):", body[i:])
+        if m and (i == 0 or not (body[i - 1].isalnum() or body[i - 1] == "_")):
+            key = m.group(1)
+            if depth == 1:
+                top.append(key)
+                in_conf = key == "configuration"
+            elif depth == 2 and in_conf:
+                conf.append(key)
+            i += len(m.group(0))
+            continue
+        ch = body[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    return top, conf
 
 
 def parse_options(doc):
@@ -93,7 +145,7 @@ class GitHub:
         self.labels = {}
 
     # ------------------------------------------------------------ state helpers
-    def add_board(self, title, number=None, fields=None, workflows=None, owner=None):
+    def add_board(self, title, number=None, fields=None, workflows=None, owner=None, builtins=False):
         owner = owner or self.owner
         taken = [b["number"] for b in self.boards if b["owner"] == owner]
         number = number or (max(taken) + 1 if taken else 1)
@@ -112,6 +164,12 @@ class GitHub:
              "workflows": dict(workflows) if workflows is not None
              else {w: True for w in DEFAULT_WORKFLOWS},
              "repos": [], "items": []}
+        if builtins:
+            b["fields"] += [{"id": "PVTF_%s_%s" % (dt.lower(), tag), "name": n, "options": None,
+                             "data_type": dt.lower()} for n, dt in BUILTIN_FIELDS]
+        shown = [f["id"] for f in b["fields"] if f["name"] in ("Title", "Assignees", "Status",
+                                                                 "Linked pull requests")]
+        b["views"] = [self._new_view(b, "View 1", "TABLE_LAYOUT", shown)]
         # which Status option (by ID) each workflow sets: the ids survive a rename, not a delete
         ids = {o["name"]: o["id"] for o in (self.field(b, "Status") or {}).get("options") or []}
         b["wf_targets"] = {wf: ids.get(t) for wf, t in (("Item closed", "Done"),
@@ -119,6 +177,31 @@ class GitHub:
                                                         ("Item reopened", "In progress"))}
         self.boards.append(b)
         return b
+
+    def _new_view(self, b, name, layout, field_ids):
+        n = max([v["number"] for v in b.get("views") or []] + [0]) + 1
+        return {"id": "PVTV_%s_%d" % (b["id"], n), "number": n, "name": name, "layout": layout,
+                "filter": None, "fields": list(field_ids), "group_by": [], "column_by": [],
+                "sort": []}
+
+    def view(self, board, name):
+        """The views named `name` on `board` (a list: duplicates are allowed here)."""
+        return [v for v in board["views"] if v["name"] == name]
+
+    def add_view(self, board, name, layout="TABLE_LAYOUT", fields=("Title",), filter=None,
+                 group_by=(), column_by=(), sort=()):
+        """A view as a person makes it in the UI (group/column/sort included, which the API cannot
+        set). `fields`/`group_by`/`column_by` are field NAMES; `sort` is [(name, direction)]."""
+        ids = {f["name"]: f["id"] for f in board["fields"]}
+        v = self._new_view(board, name, layout, [ids[n] for n in fields])
+        v.update(filter=filter, group_by=[ids[n] for n in group_by],
+                 column_by=[ids[n] for n in column_by], sort=[(ids[n], d) for n, d in sort])
+        board["views"].append(v)
+        return v
+
+    def field_names(self, board, ids):
+        by = {f["id"]: f["name"] for f in board["fields"]}
+        return [by.get(i) for i in ids]
 
     def board(self, number=None, node_id=None, title=None, owner=None):
         """Numbers are per owner: `number` alone means the default owner's board."""
@@ -295,6 +378,8 @@ class GitHub:
         if doc.startswith("mutation"):
             return self._mutation(doc)
         m = re.search(r'node\(id: "([^"]+)"\)', doc)
+        if m and "views(" in doc:
+            return self._layout_read(m.group(1))
         if m and "workflows" in doc:
             b = self.board(node_id=m.group(1))
             if not b:
@@ -306,6 +391,39 @@ class GitHub:
                 "workflows": {"nodes": [{"name": k, "enabled": v}
                                         for k, v in b["workflows"].items()]}}}})
         raise LookupError("graphql read not modelled: " + doc[:80])
+
+    def _layout_read(self, node_id):
+        """#234's one board read: fields (with options on a single-select), views in POSITION order
+        (layout, filter, visible fields, group/column/sort) and workflows."""
+        b = self.board(node_id=node_id)
+        if not b:
+            return json.dumps({"data": {"node": None}})
+        by = {f["id"]: f for f in b["fields"]}
+
+        def ref(fid):
+            return {"id": fid, "name": by[fid]["name"]} if fid in by else {}
+
+        def dtype(f):
+            if f["options"] is not None:
+                return "SINGLE_SELECT"
+            return str(f.get("data_type") or "text").upper()
+
+        return json.dumps({"data": {"node": {
+            "id": b["id"], "number": b["number"], "title": b["title"],
+            "fields": {"nodes": [dict({"id": f["id"], "name": f["name"], "dataType": dtype(f)},
+                                      **({"options": [{"id": o["id"], "name": o["name"]}
+                                                      for o in f["options"]]}
+                                         if f["options"] is not None else {}))
+                                 for f in b["fields"]]},
+            "views": {"nodes": [{
+                "id": v["id"], "number": v["number"], "name": v["name"], "layout": v["layout"],
+                "filter": v["filter"],
+                "fields": {"nodes": [ref(i) for i in v["fields"]]},
+                "groupByFields": {"nodes": [ref(i) for i in v["group_by"]]},
+                "verticalGroupByFields": {"nodes": [ref(i) for i in v["column_by"]]},
+                "sortByFields": {"nodes": [{"direction": d, "field": ref(i)} for i, d in v["sort"]]}}
+                for v in b["views"]]},
+            "workflows": {"nodes": [{"name": k, "enabled": v} for k, v in b["workflows"].items()]}}}})
 
     def _card_read(self, doc):
         """#233's single-card read: the issue's labels and every card it has, each with its board's
@@ -408,11 +526,19 @@ class GitHub:
                 if target and target not in kept and wf in b["workflows"]:
                     b["workflows"][wf] = False
             return json.dumps({"data": {"updateProjectV2Field": {"projectV2Field": {"id": fid}}}})
+        if "createProjectV2View(" in doc or "updateProjectV2View(" in doc:
+            return self._view_mutation(doc)
         if "createProjectV2Field(" in doc:
             b = self.board(node_id=self._s(doc, "projectId"))
             name = self._s(doc, "name")
             if self.field(b, name) is not None:
                 raise GraphQLError("Name has already been taken")
+            if re.search(r"dataType: TEXT\b", doc):
+                f = {"id": "PVTF_%s_%d" % (name.replace(" ", "_"), b["number"]), "name": name,
+                     "options": None, "data_type": "text"}
+                b["fields"].append(f)
+                return json.dumps({"data": {"createProjectV2Field": {"projectV2Field": {
+                    "id": f["id"], "name": name}}}})
             opts = parse_options(doc)
             f = {"id": "PVTSSF_%s_%d" % (name, b["number"]), "name": name,
                  "options": [dict(o, id="o_%s_%d" % (o["name"], b["number"])) for o in opts]}
@@ -421,6 +547,50 @@ class GitHub:
                 "id": f["id"], "name": name,
                 "options": [{"id": o["id"], "name": o["name"]} for o in f["options"]]}}}})
         raise LookupError("mutation not modelled: " + doc[:80])
+
+    def _view_mutation(self, doc):
+        create = "createProjectV2View(" in doc
+        top, conf = _input_keys(doc)
+        allowed = VIEW_CREATE_KEYS if create else VIEW_UPDATE_KEYS
+        bad = [k for k in top if k not in allowed] + [k for k in conf if k not in VIEW_CONFIG_KEYS]
+        if bad:
+            raise GraphQLError("InputObject '%s' doesn't accept argument '%s'"
+                               % ("CreateProjectV2ViewInput" if create else
+                                  "UpdateProjectV2ViewInput", bad[0]))
+        layout = re.search(r"layout: ([A-Z_]+)", doc)
+        if layout and layout.group(1) not in LAYOUTS:
+            raise GraphQLError("Argument 'layout' has an invalid value (%s)" % layout.group(1))
+        if create:
+            b = self.board(node_id=self._s(doc, "projectId"))
+            if not b:
+                raise GraphQLError("Could not resolve to a node with the global id")
+            name = self._s(doc, "name")
+            if not name:
+                raise GraphQLError("Name can't be blank")
+            v = self._new_view(b, name, layout.group(1), [])
+            b["views"].append(v)
+        else:
+            vid = self._s(doc, "viewId")
+            b, v = next(((b, v) for b in self.boards for v in b["views"] if v["id"] == vid),
+                        (None, None))
+            if not v:
+                raise GraphQLError("Could not resolve to a node with the global id of '%s'" % vid)
+            if "name" in top:
+                v["name"] = self._s(doc, "name")
+            if layout:
+                v["layout"] = layout.group(1)
+            if "filter" in top:
+                v["filter"] = self._s(doc, "filter")
+        if "visibleFieldIds" in conf:
+            ids = [json.loads(x) for x in re.findall(
+                _STR, doc[doc.index("visibleFieldIds: [") + len("visibleFieldIds: ["):].split("]")[0])]
+            mine = {f["id"] for f in b["fields"]}
+            foreign = [i for i in ids if i not in mine]
+            if foreign:
+                raise GraphQLError("Field %s does not belong to this project" % foreign[0])
+            v["fields"] = ids
+        key = "createProjectV2View" if create else "updateProjectV2View"
+        return json.dumps({"data": {key: {"projectV2View": {"id": v["id"], "name": v["name"]}}}})
 
     def _arg(self, a, flag):
         return a[a.index(flag) + 1] if flag in a else None

@@ -135,6 +135,10 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
     "Item closed" workflow. It refuses a title the owner already uses and prints the manual runbook
     (`--number N` adopts that board on purpose). Every step prints `[ok]`, `[FAIL]` or `[manual]`.
     A failure exits 1 and prints the exact resume command. See [board](references/board.md).
+    After a successful `--board yes` the flow also PRINTS (never runs) the canonical-layout step
+    (#234): `scripts/board_layout.py fields|views <abs .sdlc>` (dry runs until `--yes`: Phase, Area
+    and Model tier fields, and the six views) and `verify` (read-only). Relay those lines; run them
+    only when the user asks. Design and runbook: `docs/board.md`.
     - **Claude Code:** ask the user a real yes/no question ("Create and pin the board?"). Only on
       yes, re-run the flow with `--board yes`; on no, with `--board no` (the loop mirrors nothing
       until a number is pinned). Never run it unasked.
