@@ -68,3 +68,64 @@ the old plugin off the branches Sigma writes to until you do.
 Cross-repository propagation follows the same rule. Sigma will not overwrite a sibling repository's
 registry file while that file still carries the old schema id. Run the migration in that repository
 first.
+
+## Running both plugins on one repository
+
+Both plugins register hooks, start a ledger watcher and write `.sdlc/`. Sigma detects the old
+plugin and refuses to write alongside it, instead of silently sharing the state. The detector is
+`skills/agrim-loop/scripts/coexist.py`:
+
+```
+python3 skills/agrim-loop/scripts/coexist.py check .sdlc    # exit 0: clear; exit 2: active
+```
+
+It counts the old plugin as **active** on this repository when any of these holds:
+- Claude Code has `<old>@…` enabled in `enabledPlugins`. The local, project and user settings
+  files are read in that order of precedence, and `CLAUDE_CONFIG_DIR` is honoured.
+- Codex's `config.toml` has `[plugins."<old>@…"]` with `enabled = true`. `CODEX_HOME` is honoured.
+- A hook whose command runs the old plugin is registered by hand in one of those settings files.
+- A live watcher holds this `.sdlc`'s watcher lock and Sigma did not start it. Sigma records its
+  own watcher in `.sdlc/state/watch.owner`, and the old plugin never wrote that file. This counts as
+  active when the watcher's command line names the old plugin (read on Linux only), or when any
+  other old-plugin signal below is also present.
+- `.sdlc/state/owner.json` names a plugin other than Sigma. Sigma writes this file on init and
+  on loop start.
+
+These are reported as notes and never refused: the old plugin installed but not enabled here,
+old schema ids in `.sdlc/` (at most 200 files are read), an old-name Cursor rule or Codex
+`AGENTS.md` block (committed text, not running code), and a watcher Sigma did not start with no
+other signal. A Sigma watcher started before this release looks exactly like that last case.
+
+What each surface does:
+
+| Surface | When the old plugin is active |
+|---|---|
+| `/agrim-init` (`sdlc_init.py`) | Refuses before writing anything (exit 2). |
+| `loop.py start` | Refuses before writing anything (exit 2). |
+| `watch_daemon.py` | Refuses (exit 2) and writes the reason to `.sdlc/state/watch.log`. |
+| `loop.py`'s automatic watcher start | Does not start the watcher and prints one line on stderr. |
+| `migrate.py --apply` | Refuses (exit 2). Migrating while the old plugin still runs leaves it reading empty state. |
+| `/agrim-doctor` | A failing `coexistence` row. The check still completes. |
+| `status.py` | A warning on stderr. The status line still prints. |
+| Session-start hook (Claude Code) | Adds the same message to the session. The hook only speeds up detection. The refusals above are in Python and apply on every host, including Cursor, which has no hooks. |
+
+`log.py` has no coexistence check. It reads only the local action log and imports nothing from
+`agrim-loop`.
+
+Two watchers on one `.sdlc` cannot run whatever you set. Both plugins' watchers take the same lock
+files (`state/watch.pid`, `state/watch.heartbeat`, `state/watch.decide.lock`). When the lock is
+held by a watcher Sigma did not start, Sigma says so instead of only reporting "already running".
+
+The refusal message lists what was found and the fix:
+1. Disable one plugin for this repository. For Claude Code, set `"<old>@<marketplace>": false`
+   under `enabledPlugins` in the repository's `.claude/settings.local.json`, which applies to this
+   repository and this machine only. To disable it everywhere, run
+   `claude plugin disable <old>@<marketplace>`. For Codex, set `enabled = false` under its
+   `[plugins."…"]` table in `config.toml`.
+2. If the old plugin's watcher is still running, stop it. Create `.sdlc/state/watch.stop` and wait
+   one tick. Disable the plugin first, or its triggers start the watcher again.
+3. Run the migration above with `--apply`.
+
+**The override.** `SIGMA_ALLOW_COEXIST=1` (exactly `1`) lets the write surfaces continue, each with
+a warning, when you know both plugins will act on this repository. It is read under the Sigma name
+only, never the old prefix. It does not let a second watcher start.

@@ -118,3 +118,16 @@ def _no_host_legacy_env(monkeypatch):
     silently change what a test observes; every test starts without them and sets its own."""
     for name in [k for k in os.environ if k.startswith(_RETIRED_ENV_PREFIX)]:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_plugin_inventory(monkeypatch, tmp_path_factory):
+    """#240: `coexist.py` refuses init, loop start and the watcher when the host has the plugin
+    under the previous name ENABLED -- read from `$CLAUDE_CONFIG_DIR` (else `~/.claude`) and
+    `$CODEX_HOME` (else `~/.codex`). A developer machine that still has it enabled would make
+    every such test refuse. Each test starts with both pointed at an empty directory (a test
+    that needs an inventory builds its own); the override `SIGMA_ALLOW_COEXIST` is cleared too."""
+    empty = tmp_path_factory.mktemp("host-plugin-inventory")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(empty / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(empty / "codex"))
+    monkeypatch.delenv("SIGMA_ALLOW_COEXIST", raising=False)

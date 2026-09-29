@@ -28,6 +28,36 @@ PLUGIN_ROOT="$(dirname "$HOOK_DIR")"
 
 command -v python3 >/dev/null 2>&1 || allow
 
+# --- The plugin under the previous name also active here (issue #240) -------------------------
+# An ACCELERATOR only: it tells the session up front. The load-bearing refusals live in Sigma's own
+# Python on every write surface (init, loop start, the watcher and its spawn, migrate --apply) via
+# skills/agrim-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
+# First tier on purpose: only one additionalContext is emitted per invocation, and this one names
+# a data-integrity risk. Silent (falls through) when nothing is active or the check cannot run.
+if [ -d "$PROJECT/.sdlc" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
+import importlib.util, json, os, sys
+project, plugin_root = sys.argv[1], sys.argv[2]
+try:
+    spec = importlib.util.spec_from_file_location(
+        "coexist", os.path.join(plugin_root, "skills", "agrim-loop", "scripts", "coexist.py"))
+    coexist = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(coexist)
+    report = coexist.assess(os.path.join(project, ".sdlc"))
+except Exception:
+    sys.exit(1)
+if not report.active:
+    sys.exit(1)
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "Tell the user this before anything else, verbatim:\n"
+                         + coexist.message(report, coexist.WRITE_SURFACES),
+}}))
+sys.exit(0)
+PY
+then
+    exit 0
+fi
+
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
 # Only ONE additionalContext can be emitted per hook invocation, so this block's own exit status
 # gates whether the policy-brief block below ever runs at all: exit 0 means "already printed,

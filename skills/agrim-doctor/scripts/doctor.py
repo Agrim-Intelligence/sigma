@@ -1825,6 +1825,16 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # Informational: absence is normal (not adopted), presence is reported as state.
     out.append(_chk(f"managed settings: {_managed_settings_state(base, cfg)}", True, ""))
 
+    # ---- #240: coexistence with the plugin under the previous name (read-only: WARN, proceed).
+    # Everything lives in agrim-loop's coexist.py; this block only appends its row. Local reads
+    # only (no CLI, no network), so it is not gated by `cheap_only`.
+    try:
+        out.append(_load_loop_script("coexist").doctor_row(sdlc_dir))
+    except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
+        out.append({"name": f"coexistence: could not check ({type(exc).__name__})", "ok": True,
+                    "fix": "python3 skills/agrim-loop/scripts/coexist.py check <sdlc_dir>"})
+    # ---- end #240
+
     # A shared site-packages holds one slot per import name. A local `pip install [-e] <path>` bakes
     # that path in permanently, so on a machine running several worktrees of the same repo (this
     # project's own normal working style), whichever worktree last ran that command silently wins

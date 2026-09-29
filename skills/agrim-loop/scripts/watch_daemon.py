@@ -554,6 +554,10 @@ def take_over(p):
     stale, no exceptions."""
     p.pid.unlink(missing_ok=True)
     p.heartbeat.unlink(missing_ok=True)
+    try:                                     # #240: `watch.pid`'s format is frozen, so WHOSE
+        _coexist().write_watch_owner(p.state, os.getpid())   # watcher this is lives beside it --
+    except Exception:                        # noqa: BLE001 - written BEFORE the pid, so no reader
+        pass                                 # sees our live pid unmarked; best-effort (a NOTE only)
     p.pid.write_text(f"{os.getpid()}\n", encoding="utf-8")   # B-25: `<pid>\n`
     p.heartbeat.touch()
 
@@ -586,6 +590,33 @@ def decide(p, stale_after, now):
     return "already-running" if running else "acquired"
 
 
+_COEXIST = []
+
+
+def _coexist():
+    """`coexist.py` (#240), loaded once, lazily: it loads this module itself for the live-watcher
+    probe, so a module-scope load here would recurse."""
+    if not _COEXIST:
+        _COEXIST.append(_load("coexist"))
+    return _COEXIST[0]
+
+
+def _coexist_refusal(sdlc_dir, stream=None):
+    """The refusal text when the old plugin is active here and no override is set, else "".
+    The override's own warning goes to stderr. A detector that cannot run refuses nothing."""
+    import io
+    buf = io.StringIO()
+    try:
+        allowed = _coexist().gate(sdlc_dir, "watcher start", stream=buf)
+    except Exception:                        # noqa: BLE001 - the lock below still admits one watcher
+        return ""
+    if allowed:
+        if buf.getvalue():
+            print(buf.getvalue().rstrip("\n"), file=stream or sys.stderr, flush=True)
+        return ""
+    return buf.getvalue().rstrip("\n")
+
+
 def cleanup(p, my_pid):
     """B-28/B-29. Registered ONLY on the takeover path, after the mutex is released -- a process
     that exits as a sibling or as "already running" removes nothing.
@@ -607,6 +638,10 @@ def cleanup(p, my_pid):
         p.pid.unlink(missing_ok=True)
         p.heartbeat.unlink(missing_ok=True)
     except OSError:
+        pass
+    try:
+        _coexist().clear_watch_owner(p.state, my_pid)    # #240: ownership-checked, like the pidfile
+    except Exception:                        # noqa: BLE001 - cleanup must never raise
         pass
 
 
@@ -844,6 +879,16 @@ def _run(p, sdlc_dir):
         tee(p, f"watch: SIGMA_WATCH_CALL_TIMEOUT ({call_timeout}s) >= STALE_AFTER "
                f"({stale_after}s) -- a single hung call could still misread as a dead watcher")
 
+    # #240: the plugin under the previous name takes the SAME lock files, so two watchers are
+    # already impossible; what this adds is that a Sigma watcher refuses LOUDLY, naming the fix,
+    # while that plugin is active here, instead of racing it for the lock (coexist.py). The
+    # override (SIGMA_ALLOW_COEXIST=1) lets it proceed to the lock, which still admits only one.
+    refusal = _coexist_refusal(sdlc_dir)
+    if refusal:
+        for line in refusal.splitlines():
+            tee(p, "watch: " + line)
+        return 2
+
     outcome = decide(p, stale_after, time.time())
     if outcome == "sibling":
         tee(p, "watch: a sibling is already deciding — nothing to do")
@@ -854,6 +899,9 @@ def _run(p, sdlc_dir):
         except OSError:
             pid_text = ""
         tee(p, f"watch: already running (pid {pid_text}) — nothing to do")
+        if pid_text.isdigit() and _coexist().watch_owner_pid(p.state) != int(pid_text):
+            tee(p, f"watch: pid {pid_text} was not started by this Sigma release (no matching "
+                   f"state/watch.owner) — if it is the old plugin's, run `coexist.py check {sdlc_dir}`")
         return 0
 
     _install_cleanup(p, os.getpid())
@@ -877,8 +925,9 @@ USAGE = "usage: watch_daemon.py [sdlc_dir]"
 
 
 def main(argv):
-    """B-3/B-36. `exit 0` everywhere: the only non-zero exit this function can PRODUCE is `_run`'s
-    one remaining deliberate refusal (an unwritable state dir) -- the win32 refusal that used to be
+    """B-3/B-36. `exit 0` everywhere: the only non-zero exits this function can PRODUCE are `_run`'s
+    deliberate refusals (an unwritable state dir -> 1; the plugin under the previous name active on
+    this repository, #240 -> 2, see coexist.py) -- the win32 refusal that used to be
     a second one here is gone (#2498; `pid_alive()` now probes win32 safely instead of refusing).
     Everything else -- every tick failure, every malformed env value, every mutex OSError, every
     loser and every early exit -- returns 0.

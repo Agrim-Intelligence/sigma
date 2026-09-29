@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- Sigma now detects the plugin under its previous name on the same repository, and refuses rather
+  than writing alongside it (#240). `skills/agrim-loop/scripts/coexist.py` reads the Claude Code
+  settings (`enabledPlugins` and hand-registered hooks, with local over project over user
+  precedence), Codex's `config.toml`, the `.sdlc` owner markers, and the live watcher. While the
+  old plugin is active, `/agrim-init`, `loop.py start`, `watch_daemon.py` and `migrate.py --apply`
+  refuse (exit 2) and print what was found and the fix. The automatic watcher start stays off.
+  `/agrim-doctor` shows a failing `coexistence` row, `status.py` warns on stderr, and the
+  session-start hook repeats the message. `SIGMA_ALLOW_COEXIST=1` lets the write surfaces continue
+  with a warning. Two watchers were already impossible, because both plugins use the same lock
+  files. Sigma now also names a watcher it did not start instead of only reporting "already
+  running". New local state: `.sdlc/state/owner.json` and `.sdlc/state/watch.owner`. See
+  `docs/upgrading.md`.
 - `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
   empty command (#228). Before this, the shipped config refused `record done` for every goal,
   including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a

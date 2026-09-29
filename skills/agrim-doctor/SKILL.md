@@ -54,6 +54,11 @@ The explicit cutover is a dry run by default, `--apply` writes, and it is safe t
 refuses anything it cannot rewrite with certainty (exit 2), and never runs on the user's behalf
 without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
 
+The `coexistence` row reports whether the old plugin is also active on this repository. When it is,
+init, loop start, the watcher and `migrate.py --apply` refuse until one plugin is disabled; relay
+the exact steps `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints, and never set
+`SIGMA_ALLOW_COEXIST=1` on the user's behalf.
+
 ## Secret-file coverage
 
 One row deserves naming because it is the only check whose MISSING state is a live exposure rather

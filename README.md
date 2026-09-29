@@ -204,6 +204,11 @@ python3 skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes and pri
 The old plugin cannot read Sigma's spellings, so migrate once the whole team runs Sigma. See
 [docs/upgrading.md](docs/upgrading.md) for what it reads, what it rewrites and what it leaves alone.
 
+Run one plugin per repository. While the old plugin is still enabled for a repository, Sigma's init,
+loop start, watcher and `migrate.py --apply` refuse and print the exact fix;
+`/agrim-doctor` shows why. See
+[Running both plugins on one repository](docs/upgrading.md#running-both-plugins-on-one-repository).
+
 ---
 
 ## What you get

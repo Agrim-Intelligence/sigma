@@ -45,6 +45,23 @@ decision_tier = _load("decision_tier")   # #953: needs_decision-park tier classi
 feature_labels = _load("feature_labels") # #1468: attach a declared unit's label at pick, never create one
 
 
+def _coexist_allows(sdlc_dir, surface, brief=False):
+    """#240: may this WRITE surface proceed, given the plugin under the previous name? Delegates to
+    `coexist.gate` (the refusal text and the `SIGMA_ALLOW_COEXIST=1` override live there). `brief`
+    prints one line instead of the full message -- for a trigger that fires on every loop verb."""
+    import io
+    coexist = _load("coexist")
+    buf = io.StringIO()
+    allowed = coexist.gate(sdlc_dir, surface, stream=buf)
+    text = buf.getvalue().rstrip("\n")
+    if text:
+        if brief and not allowed:
+            text = ("loop: not starting the ledger watcher -- the old plugin is also active on "
+                    "this repository; `coexist.py check %s` prints the fix" % sdlc_dir)
+        print(text, file=sys.stderr)
+    return allowed
+
+
 def _ensure_watcher(sdlc_dir, config, spawn=None):
     """Start the ledger watcher for this repo if it isn't already, so a loop trigger shares its trail
     without a separate step. Otherwise entries only ever get pushed when someone remembers to run the
@@ -58,6 +75,8 @@ def _ensure_watcher(sdlc_dir, config, spawn=None):
         sync = _load("sync")
         if not sync.is_worktree(sdlc_dir):
             return
+        if not _coexist_allows(sdlc_dir, "watcher start", brief=True):
+            return                   # #240: said on stderr; the old plugin is active here
         launch = spawn or (lambda: subprocess.Popen(
             [sys.executable, str(_HERE / "watch_daemon.py"), str(sdlc_dir)],
             start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -5343,6 +5362,9 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         for warning in _config_warnings(config):
             print("loop: " + warning, file=sys.stderr)       # surface the trap up front, not 40 goals in
+        if not _coexist_allows(argv[2], "loop.py start"):    # #240: refuse BEFORE any write
+            return 2
+        _load("coexist").write_owner(argv[2])
         if not _bootstrap_github_labels(argv[2], config):     # #230: before any session is registered
             return 1
         # #1199: registers a session by DEFAULT now, not only when a caller remembers `--session-
