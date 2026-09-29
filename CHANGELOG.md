@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`tools/leak_refs.py`: find, and plan the removal of, private-repository references before the
+  visibility flip** (#282). A patterns file (`--patterns` or `SIGMA_LEAK_PATTERNS`, no default,
+  refused inside any git work tree) drives four verbs: `scan` reads every issue and PR in every
+  state (titles, bodies, conversation and review comments, review bodies), commit comments,
+  releases, and their edit history and title renames; `tree` reads this checkout's files, paths and
+  commit messages; `text` checks one file or stdin before it is posted; `rewrite` writes a dry-run
+  (0600, outside every repository) and `rewrite --apply --from` applies it compare-and-skip, owned
+  text only, with no new blocker edge, link or mention. Output is locations and pattern line
+  numbers, never matched text; any `gh` failure, truncation-by-cap, bad shape or count that moved
+  during the walk exits 2, never clean. The owner's steps, including the web-UI history purge the
+  API cannot do, are in `docs/publish-runbook.md`. Tests: `tests/test_leak_refs.py` (offline).
+
 - **Automatic classification can no longer drop the old plugin's post-conversion edit, and no
   Sigma writer can skip the one legacy-delta rule** (#326, review block #2 on PR #327). Tier-1
   classification reopened a closed unit by calling `feature_registry.write_unit` directly, so it
