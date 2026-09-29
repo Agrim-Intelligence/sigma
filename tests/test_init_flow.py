@@ -474,13 +474,24 @@ def test_board_is_created_only_on_an_explicit_yes(tmp_path):
     (sdlc / "config.json").write_text(json.dumps(
         {"discovery": {"source": "github", "github": {"repo": REPO}}}))
     calls = []
-    flow.BOARD_RUNNER = lambda argv: calls.append(argv) or (0, "[ok] board created\n")
+
+    def pins(argv):                                      # board_setup.py pins what it created
+        calls.append(argv)
+        cfg = json.loads((sdlc / "config.json").read_text())
+        cfg["discovery"]["github"]["project"] = {"number": 3, "owner": "acme"}
+        (sdlc / "config.json").write_text(json.dumps(cfg))
+        return 0, "[ok] board created\n"
+    flow.BOARD_RUNNER = pins
     lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer=None, repo=REPO)
     assert calls == [] and ok and any("OFFER" in l for l in lines)
     lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer="no", repo=REPO)
     assert calls == [] and ok
     lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer="yes", repo=REPO)
     assert ok and len(calls) == 1 and calls[0][-1] == "--yes" and "create" in calls[0]
+    assert json.loads((sdlc / "config.json").read_text())["discovery"]["github"]["project"]["enabled"]
+    # a REMEMBERED yes runs nothing
+    lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer="yes", repo=REPO, how="kept")
+    assert ok and len(calls) == 1
     flow.BOARD_RUNNER = lambda argv: (1, "[FAIL] project scope missing\n")
     lines, ok = flow.board_step(str(tmp_path), str(sdlc), answer="yes", repo=REPO)
     assert not ok and any("FAIL" in l for l in lines)
@@ -488,11 +499,36 @@ def test_board_is_created_only_on_an_explicit_yes(tmp_path):
 
 def test_yes_never_answers_board_verify_or_work():
     flow = _load_flow()
-    answers = flow.resolve_answers({"yes": True}, previous={}, detected_mode="github",
-                                   remote_ok=False)
-    assert answers["mode"] == "github" and answers["ledger"] == "no"
-    assert answers.get("board") is None and answers.get("verify") is None
-    assert answers.get("work") is None
+    res = flow.resolve_answers({"yes": True}, answered={}, scaffolded={}, current={},
+                               detected_mode="github")
+    assert res["mode"] == ("github", "default") and res["ledger"] == ("no", "default")
+    assert res["board"] == (None, "open") and "verify" not in res
+    assert res["work"][1] == "open"
+
+
+def test_yes_and_memory_never_override_config_in_process():
+    """The resolution table itself: config.json (not init.json, not --yes) decides a set key."""
+    flow = _load_flow()
+    cur = {"mode": "local-goals", "work": "off", "ledger": "yes"}
+    res = flow.resolve_answers({"yes": True}, answered={"mode": "github", "work": "on", "ledger": "no"},
+                               scaffolded={}, current=cur, detected_mode="github")
+    assert res["mode"] == ("local-goals", "kept") and res["work"] == ("off", "kept")
+    assert res["ledger"] == ("yes", "kept")
+    # a template value this flow scaffolded is still an OPEN question: --yes may answer it
+    res = flow.resolve_answers({"yes": True}, answered={}, scaffolded={"mode": "local-goals"},
+                               current={"mode": "local-goals"}, detected_mode="github")
+    assert res["mode"] == ("github", "default")
+    # a flag always wins
+    res = flow.resolve_answers({"mode": "github"}, answered={}, scaffolded={}, current=cur,
+                               detected_mode="local-goals")
+    assert res["mode"] == ("github", "flag")
+    # remembered values outside the closed sets are dropped, and a remembered repo is never read
+    sdlc_memory = {"mode": "bogus", "board": "yes", "repo": "old/gone"}
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        (pathlib.Path(d) / "state").mkdir()
+        (pathlib.Path(d) / "state" / "init.json").write_text(json.dumps(sdlc_memory))
+        assert flow.load_memory(d) == ({"board": "yes"}, {})
 
 
 # ---------------------------------------------------------------- setup.py configure
@@ -539,3 +575,312 @@ def test_the_pre_236_github_flag_means_github_mode():
     opts, target, err = flow.parse(["--github"])
     assert err is None and opts["mode"] == "github" and opts["github-templates"] is True
     assert flow.parse(["--github", "--mode", "local-goals"])[2]          # a contradiction is refused
+
+
+# ---------------------------------------------------------------- review of PR #286: config.json is
+# the single source of truth. `.sdlc/state/init.json` records only that a question was ANSWERED (so it
+# is not asked again); it never re-applies a value over config.json, and `--yes` answers only what
+# config.json and the flags leave open. Each test below is a port of a reviewer repro.
+
+
+def _write_cfg(w, cfg):
+    (w["sdlc"] / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+
+def _proj(cfg):
+    return ((cfg.get("discovery") or {}).get("github") or {}).get("project") or {}
+
+
+@posix_only
+def test_rerun_never_reverts_what_the_user_changed_in_config_since_answering(tmp_path):
+    """rv286/stale.py: answered once, then changed through the documented gestures; the flow's own
+    `Next:` re-run (`--demo`) must keep every one of those changes -- and say it kept them."""
+    w = _world(tmp_path)
+    first = _run(w, [FLOW, ".", "--mode", "github", "--work", "on", "--ledger", "yes", "--board", "no",
+                     "--no-verify"])
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert _run(w, [PREFLIGHT, "local-only", ".sdlc"]).returncode == 0
+    cfg = _cfg(w)
+    cfg["ledger"]["enabled"] = False
+    cfg["discovery"]["source"] = "local-goals"
+    cfg["discovery"]["github"]["project"]["enabled"] = True
+    _write_cfg(w, cfg)
+    before = _cfg(w)
+    w["log"].write_text("")
+    again = _run(w, [FLOW, ".", "--demo"])
+    assert again.returncode == 0, again.stdout + again.stderr
+    after = _cfg(w)
+    assert after["work"] == before["work"] and after["work"]["enabled"] is False
+    assert after["ledger"]["enabled"] is False                    # no watcher from a stale "yes"
+    assert after["discovery"]["source"] == "local-goals"
+    assert _proj(after)["enabled"] is True
+    assert "kept" in again.stdout and "config.json wins" in again.stdout, again.stdout
+    assert not any(c[:2] == ["label", "create"] for c in _calls(w))
+
+
+@posix_only
+def test_a_remembered_board_yes_never_creates_a_board_without_the_flag(tmp_path):
+    w = _world(tmp_path)
+    assert _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--board", "no",
+                    "--no-verify"]).returncode == 0
+    # a remembered "yes" (the pre-review flat format) -- and project.enabled still off in config
+    (w["sdlc"] / "state" / "init.json").write_text(json.dumps(
+        {"mode": "github", "board": "yes", "ledger": "no", "repo": REPO}))
+    w["log"].write_text("")
+    p = _run(w, [FLOW, "."])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _proj(_cfg(w))["enabled"] is False
+    assert not _proj(_cfg(w)).get("number")
+    assert not any("projectsV2" in " ".join(c) or c[:2] == ["api", "user"] for c in _calls(w)), _calls(w)
+    assert w["unhandled"].read_text() == ""
+
+
+@posix_only
+def test_a_remembered_repo_never_beats_config_or_origin(tmp_path):
+    w = _world(tmp_path)
+    assert _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--board", "no",
+                    "--no-verify"]).returncode == 0
+    (w["sdlc"] / "state" / "init.json").write_text(json.dumps(
+        {"mode": "github", "board": "no", "ledger": "no", "repo": "old/gone"}))
+    assert _run(w, [FLOW, "."]).returncode == 0
+    assert _cfg(w)["discovery"]["github"]["repo"] == REPO          # config.json kept
+    # no repo in config at all: the CURRENT origin wins over the remembered one
+    cfg = _cfg(w)
+    del cfg["discovery"]["github"]["repo"]
+    cfg["discovery"]["source"] = "local-goals"
+    _write_cfg(w, cfg)
+    p = _run(w, [FLOW, ".", "--mode", "github"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _cfg(w)["discovery"]["github"]["repo"] == REPO
+    assert w["unhandled"].read_text() == ""
+
+
+@posix_only
+def test_yes_on_a_repo_adopted_before_the_flow_changes_nothing(tmp_path):
+    """rv286/yes_existing.py: adopted with the old scaffolder + `setup.py configure`, local-goals
+    chosen by hand. `--yes` must not switch the source, write labels, or touch the ledger/board."""
+    w = _world(tmp_path)
+    assert _run(w, [SDLC_INIT, "."]).returncode == 0
+    assert _run(w, [SETUP, "configure", ".sdlc", "--source", "local-goals"]).returncode == 0
+    before = _cfg(w)
+    w["log"].write_text("")
+    p = _run(w, [FLOW, ".", "--yes"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    after = _cfg(w)
+    assert after["discovery"]["source"] == "local-goals"
+    assert after["ledger"] == before["ledger"] and after["work"] == before["work"]
+    assert _proj(after) == _proj(before)
+    assert not any(c[:2] == ["label", "create"] for c in _calls(w))
+    assert "kept" in p.stdout, p.stdout
+
+
+@posix_only
+@pytest.mark.parametrize("key", ["mode", "work", "ledger", "board"])
+def test_yes_keeps_each_existing_setting(tmp_path, key):
+    """One key at a time, each set to the value `--yes` (or the flow's own default) would NOT pick."""
+    w = _world(tmp_path)
+    assert _run(w, [SDLC_INIT, "."]).returncode == 0
+    cfg = _cfg(w)
+    gh = cfg["discovery"].setdefault("github", {})
+    gh["repo"] = REPO
+    if key == "mode":
+        cfg["discovery"]["source"] = "local-goals"              # --yes would detect github
+    else:
+        cfg["discovery"]["source"] = "github"
+    if key == "work":
+        cfg["work"]["enabled"] = False
+    if key == "ledger":
+        cfg["ledger"] = {"enabled": True}                        # --yes would say no
+    if key == "board":
+        gh.setdefault("project", {})["enabled"] = True           # the flow would switch it off
+        gh["project"]["number"] = None
+    _write_cfg(w, cfg)
+    before = _cfg(w)
+    p = _run(w, [FLOW, ".", "--yes", "--no-verify"])
+    assert p.returncode in (0, 1), p.stdout + p.stderr
+    after = _cfg(w)
+    assert after["discovery"]["source"] == before["discovery"]["source"]
+    assert after["work"]["enabled"] == before["work"]["enabled"]
+    was = (before.get("ledger") or {}).get("enabled")
+    if was is not None:                                          # null is unset: --yes may answer it
+        assert (after.get("ledger") or {}).get("enabled") == was
+    assert _proj(after).get("enabled") == _proj(before).get("enabled")
+    assert "kept" in p.stdout, p.stdout
+
+
+@posix_only
+def test_an_explicit_flag_still_changes_an_existing_setting(tmp_path):
+    """The other half of "config wins": a flag on THIS run is the one way to change it."""
+    w = _world(tmp_path)
+    assert _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--board", "no",
+                    "--no-verify"]).returncode == 0
+    p = _run(w, [FLOW, ".", "--mode", "local-goals", "--ledger", "yes", "--local-only"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    cfg = _cfg(w)
+    assert cfg["discovery"]["source"] == "local-goals"
+    assert cfg["ledger"]["enabled"] is True and cfg["work"]["enabled"] is False
+
+
+@posix_only
+def test_an_existing_assignee_is_never_clobbered(tmp_path):
+    w = _world(tmp_path)
+    assert _run(w, [SDLC_INIT, "."]).returncode == 0
+    cfg = _cfg(w)
+    cfg["discovery"].setdefault("github", {})["assignee"] = "alice"
+    _write_cfg(w, cfg)
+    p = _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--board", "no", "--no-verify"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _cfg(w)["discovery"]["github"]["assignee"] == "alice"
+
+
+# ---------------------------------------------------------------- board: yes turns a pinned board on
+
+
+def _main_inproc(w, argv, monkeypatch, board_runner):
+    """init_flow.main in-process (so the board runner seam applies), against the same fake world."""
+    import contextlib
+    import io
+    flow = _load_flow()
+    flow.BOARD_RUNNER = board_runner
+    fake_gh = str(w["repo"].parent / "bin" / "gh")
+    real = flow._pf.real_runner
+    # conftest's live-gh guard trips on an argv[0] named `gh`: run the SAME fake via the interpreter
+    flow._si.PREFLIGHT_RUNNER = lambda argv, cwd=None, timeout=None: real(
+        [sys.executable, fake_gh, *argv[1:]] if argv and argv[0] == "gh" else argv, cwd, timeout)
+    for k, v in w["env"].items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.chdir(w["repo"])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        rc = flow.main(["init_flow.py", *[str(a) for a in argv]])
+    return rc, buf.getvalue()
+
+
+def _pinning_runner(w, calls, number=7):
+    def run(argv):
+        calls.append(argv)
+        cfg = _cfg(w)
+        cfg["discovery"]["github"]["project"].update(number=number, owner="acme")
+        _write_cfg(w, cfg)
+        return 0, "board_setup: done -- board #%d is pinned\n" % number
+    return run
+
+
+@posix_only
+def test_board_yes_turns_on_a_board_pinned_after_declining(tmp_path, monkeypatch):
+    """rv286/board.py: declined, then pinned by hand (`board_setup.py create` pins number/owner only);
+    `--board yes` must verify it (board_setup, which refuses an unreachable pinned board) and turn
+    mirroring ON."""
+    w = _world(tmp_path)
+    p = _run(w, [SETUP, "init", ".", "--mode", "github", "--board", "no", "--ledger", "no", "--no-verify"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    cfg = _cfg(w)
+    cfg["discovery"]["github"]["project"].update(number=7, owner="acme")
+    _write_cfg(w, cfg)
+    calls = []
+    rc, out = _main_inproc(w, [".", "--board", "yes"], monkeypatch, _pinning_runner(w, calls))
+    assert rc == 0, out
+    assert len(calls) == 1 and "create" in calls[0] and calls[0][-1] == "--yes"
+    proj = _proj(_cfg(w))
+    assert proj["number"] == 7 and proj["enabled"] is True
+    assert not str(proj.get("_enabled_why") or "").startswith("off")
+    # an unreachable pinned board (board_setup refuses) leaves mirroring exactly as it was
+    cfg = _cfg(w)
+    cfg["discovery"]["github"]["project"]["enabled"] = False
+    _write_cfg(w, cfg)
+    rc, out = _main_inproc(w, [".", "--board", "yes"], monkeypatch,
+                           lambda argv: (2, "board_setup: REFUSED -- the pinned board #7 is not one of acme's\n"))
+    assert rc == 1 and "Resume:" in out, out
+    assert _proj(_cfg(w))["enabled"] is False
+
+
+@posix_only
+def test_a_failed_board_yes_restores_project_enabled(tmp_path, monkeypatch):
+    w = _world(tmp_path)
+    assert _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--no-verify"]).returncode == 0
+    assert _proj(_cfg(w))["enabled"] is False                      # the offer is open
+    seen = []
+
+    def failing(argv):
+        seen.append(_proj(_cfg(w)).get("enabled"))                 # state board_setup would see
+        return 2, "board_setup: REFUSED -- the gh token cannot create a board: project scope\n"
+    rc, out = _main_inproc(w, [".", "--board", "yes"], monkeypatch, failing)
+    assert rc == 1, out
+    proj = _proj(_cfg(w))
+    assert proj["enabled"] is False and not proj.get("number")
+    assert seen == [False]                                         # never True with no number
+
+
+# ---------------------------------------------------------------- flags + the resume line
+
+
+def test_repo_flag_must_be_owner_slash_name():
+    flow = _load_flow()
+    for bad in ("acme", "acme/app/extra", "https://github.com/acme/app", "acme/", "/app", "a b/c",
+                "acme/..", "-x/app"):
+        assert flow.parse(["--repo", bad])[2], bad
+    assert flow.parse(["--repo", "acme-co/app.name_2"])[2] is None
+
+
+def test_resume_keeps_the_verify_command_file_absolute(tmp_path, monkeypatch):
+    flow = _load_flow()
+    monkeypatch.chdir(tmp_path)
+    line = flow.resume_command(".", [".", "--mode", "local-goals", "--verify-command-file", "cmd.txt"])
+    assert str(tmp_path.resolve() / "cmd.txt") in line or str(tmp_path / "cmd.txt") in line, line
+    assert " --mode local-goals " in line + " "
+
+
+def test_resume_is_not_printed_on_windows_when_a_value_would_break_the_quoting(tmp_path, monkeypatch):
+    flow = _load_flow()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(flow, "_windows", lambda: True)
+    assert flow.resume_command(".", [".", "--verify-command-file", 'a"b.txt']) is None
+    ok = flow.resume_command(".", [".", "--mode", "local-goals"])
+    assert ok is not None and '"' in ok
+
+
+@posix_only
+def test_the_demo_hint_does_not_promise_a_board_that_is_off(tmp_path):
+    w = _world(tmp_path)
+    p = _run(w, [FLOW, ".", "--mode", "github", "--ledger", "no", "--board", "no", "--no-verify", "--demo"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "creates the board" not in p.stdout, p.stdout
+
+
+@posix_only
+def test_an_interrupted_scaffold_leaves_sigma_s_owner_marker(tmp_path, monkeypatch):
+    """The owner marker is written BEFORE the scaffold, so the session wizard can tell an interrupted
+    `/agrim-init` (Sigma's `.sdlc/`, no config.json) from another tool's bare `.sdlc/`."""
+    w = _world(tmp_path, origin=None)
+    flow = _load_flow()
+
+    def boom(target):
+        (pathlib.Path(target) / ".sdlc").mkdir(exist_ok=True)
+        raise flow._si.RuntimeIgnoreWriteFailed("disk full")
+    monkeypatch.setattr(flow._si, "scaffold", boom)
+    for k, v in w["env"].items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.chdir(w["repo"])
+    assert flow.main(["init_flow.py", ".", "--mode", "local-goals"]) == 1
+    owner = json.loads((w["sdlc"] / "state" / "owner.json").read_text())
+    assert owner["plugin"] == "sigma"
+    assert not (w["sdlc"] / "config.json").exists()
+
+
+@posix_only
+def test_the_next_line_demo_rerun_keeps_answers_and_queues_the_demo(tmp_path):
+    """rv286/e2e_local.py: bare run -> answered -> `loop.py next` finds nothing -> the `Next:` line's
+    own `--demo` re-run keeps every answer (and asks nothing) -> the loop picks the demo."""
+    w = _world(tmp_path, origin=None)
+    bare = _run(w, [FLOW, "."])
+    assert bare.returncode == 0 and "[ask] mode" in bare.stdout, bare.stdout + bare.stderr
+    ans = _run(w, [FLOW, ".", "--mode", "local-goals", "--local-only", "--no-verify"])
+    assert ans.returncode == 0 and "--demo" in ans.stdout, ans.stdout + ans.stderr
+    assert _run(w, [LOOP, "next", ".sdlc"]).stdout.strip().startswith("DONE")
+    before = _cfg(w)
+    demo = _run(w, [FLOW, ".", "--demo"])
+    assert demo.returncode == 0 and "[ask]" not in demo.stdout, demo.stdout + demo.stderr
+    assert _cfg(w)["discovery"] == before["discovery"] and _cfg(w)["work"] == before["work"]
+    assert _run(w, [LOOP, "next", ".sdlc"]).stdout.strip().endswith("0000-demo.md")
+    memory = json.loads((w["sdlc"] / "state" / "init.json").read_text())
+    assert memory["answered"] == {"mode": "local-goals", "work": "off"}

@@ -233,3 +233,17 @@ def test_236_no_wizard_in_an_sdlc_another_plugin_owns(tmp_path):
     assert "agrim-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))     # control: adopted
     (sdlc / "state" / "owner.json").write_text('{"schema": "x", "plugin": "another-plugin"}')
     assert "agrim-wizard" not in _ctx(_run_hook(tmp_path, path_prefix=shim))
+
+
+def test_236_an_interrupted_sigma_scaffold_gets_the_init_nudge(tmp_path):
+    """Review of PR #286: Sigma's own `.sdlc/` (state/owner.json) without config.json -- an
+    interrupted `/agrim-init` -- is the one config-less state the hook speaks in, and it writes
+    nothing there. Control: the same directory without the owner marker stays silent."""
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path))
+    (sdlc / "state" / "owner.json").write_text('{"schema": "sigma/owner@1", "plugin": "sigma"}')
+    before = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*"))
+    ctx = _ctx(_run_hook(tmp_path))
+    assert "agrim-wizard" in ctx and "agrim-init" in ctx, ctx
+    assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*")) == before

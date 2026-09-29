@@ -382,3 +382,21 @@ def test_236_adoption_is_config_json_and_no_other_owner(tmp_path):
     assert REAL_ADOPTED(str(sdlc)) is False
     (sdlc / "state" / "owner.json").write_text("{not json")
     assert REAL_ADOPTED(str(sdlc)) is True                       # unreadable marker: config decides
+
+
+def test_236_an_interrupted_sigma_scaffold_still_nudges_init(monkeypatch, tmp_path):
+    """Review of PR #286: `.sdlc/` that Sigma owns (state/owner.json, written by init BEFORE the
+    scaffold) but with no config.json is an interrupted `/agrim-init`: say so. Another plugin's, or
+    an ownerless bare `.sdlc/`, stays silent (the tests above)."""
+    monkeypatch.setattr(setup_wizard, "adopted_by_sigma", REAL_ADOPTED)
+    monkeypatch.setattr(setup_wizard, "_doctor_check", lambda **kw: [])
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False
+    (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "sigma"}')
+    status = setup_wizard.wizard_status(str(sdlc), allow_cache=False)
+    assert status["needs_wizard"] is True
+    assert [s["name"] for s in status["steps"]] == ["project layer"]
+    assert "/agrim-init" in status["steps"][0]["fix"] and status["steps"][0]["degraded"]
+    (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "another-plugin"}')
+    assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False

@@ -391,3 +391,41 @@ def test_flags_drops_a_whitespace_bearing_key_in_the_eq_form_too():
     space-separated sibling applies, so leaked prose that happened to contain '=' still landed
     as a whitespace-bearing key. Same shape in all four `_flags` copies, pinned in each."""
     assert setup._flags(["--zzunknown", "--a b=c d"]) == {"zzunknown": "true"}
+
+
+# ------------------------------------------------------------------ review of PR #286 (#236)
+
+
+def test_detect_repo_is_empty_for_a_non_github_host():
+    for url in ("git@gitlab.com:o/r.git", "https://gitlab.com/o/r.git", "git@bitbucket.org:o/r.git",
+                "ssh://git@gitlab.example.com:2222/o/r.git", "https://dev.azure.com/o/p/_git/r"):
+        assert setup.detect_repo(".", run=lambda _r, _a, u=url: u) == "", url
+
+
+def test_detect_repo_non_github_hosts_match_preflight():
+    """The host list is duplicated (setup.py does not load the init skill's preflight) -- pinned."""
+    spec = importlib.util.spec_from_file_location(
+        "pf_for_setup_test", S.parent.parent.parent / "agrim-init" / "scripts" / "preflight.py")
+    pf = importlib.util.module_from_spec(spec); spec.loader.exec_module(pf)
+    assert tuple(setup._NON_GITHUB) == tuple(pf._NON_GITHUB)
+
+
+def test_configure_keeps_a_configured_repo_when_origin_is_not_github(tmp_path):
+    """rv286/cfg.py: a config that already names its repository is never refused for the missing
+    origin -- the repository it names is kept."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    d = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/app"}}})
+    p = subprocess.run([__import__("sys").executable, str(S), "configure", d],
+                       capture_output=True, text=True)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert json.loads((pathlib.Path(d) / "config.json").read_text())["discovery"]["github"]["repo"] == "acme/app"
+
+
+def test_configure_never_swaps_a_configured_repo_for_origin(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin",
+                    "https://github.com/other/thing.git"], check=True)
+    d = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/app"}}})
+    p = subprocess.run([__import__("sys").executable, str(S), "configure", d], capture_output=True, text=True)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert json.loads((pathlib.Path(d) / "config.json").read_text())["discovery"]["github"]["repo"] == "acme/app"

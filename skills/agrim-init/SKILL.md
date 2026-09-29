@@ -42,10 +42,16 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
 
    Other flags: `--demo` (queue a runnable demo goal), `--vision`, `--codex`, `--cursor`,
    `--github-templates` (the `.github/` issue templates and workflows; `--github` is shorthand for
-   `--mode github --github-templates`), `--ignore-scope local` (1a below). Answers are remembered in
-   `.sdlc/state/init.json`, so re-running is safe and repeats nothing.
-   **`--yes` takes only the safe defaults** (mode = detected, ledger = off). It never answers the
-   board, the verify command, or a work flip.
+   `--mode github --github-templates`), `--ignore-scope local` (1a below).
+   **`.sdlc/config.json` is the one source of truth.** `.sdlc/state/init.json` records only that a
+   question was answered, so a re-run does not ask it again; it never re-applies a value over
+   config.json. A setting changed since (`preflight.py local-only`, a hand edit) is kept, and the run
+   prints `[kept] ... config.json wins` with the flag that would change it. Only a flag on the
+   current run changes an existing setting (work, ledger, board, source). The repository is
+   `--repo`, else config.json's, else the current `origin` (never a remembered one).
+   **`--yes` takes only the safe defaults** (mode = detected, ledger = off), and only for a question
+   config.json does not already answer: on an already-configured repository it changes nothing and
+   says "kept". It never answers the board, the verify command, or a work flip.
    - **Claude Code:** ask the user each `[ask]` as a real question, then re-run the same command
      with the answers as flags. Never pass `--board yes`, `--verify`, `--local-only` or
      `--ledger yes` on the user's behalf.
@@ -98,7 +104,11 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
     `discovery.github.project.number` is pinned, init prints an `OFFER` block and runs nothing;
     until you answer, the flow keeps `project.enabled` OFF (with the reason in `_enabled_why`),
     because the loop would otherwise create a board on its first github pick. `--board yes` runs
-    the gesture below with `--yes`; `--board no` records the decline. The gesture is
+    the gesture below with `--yes` and turns `project.enabled` on only when it succeeded and a board
+    is pinned; a failure leaves `project.enabled` as it was. On an already-pinned board (say one
+    pinned by hand after declining), `--board yes` runs the same gesture, which refuses a pinned
+    number the owner does not have, then turns mirroring on. `--board no` turns mirroring off and
+    records the decline. A remembered answer never runs the gesture. The gesture is
     `python3 "${CLAUDE_SKILL_DIR}/scripts/board_setup.py" create <abs .sdlc> [--owner O] [--title T] [--template N|OWNER/N] [--number N] [--yes]`.
     Without `--yes` it only reads and prints what it would do. With `--yes` it checks the gh
     `project` scope (preflight's check and fix lines), then creates `<repo> — SDLC` or copies a

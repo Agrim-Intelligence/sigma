@@ -101,21 +101,39 @@ All notable changes to Sigma are recorded here, newest first.
   - Questions are flags, so Claude Code, Codex and Cursor run the same flow: `--mode`, `--repo`,
     `--local-only` / `--work on`, `--verify N:ID` / `--verify-command-file` / `--no-verify`,
     `--board yes|no`, `--ledger yes|no`. An unanswered one prints an `[ask]` line with its flag.
-    `--yes` takes only the detected mode and ledger off; it never answers the board, the verify
-    command or a work flip. Answers are remembered in `.sdlc/state/init.json`, so a re-run is
-    idempotent (measured: zero label writes and an unchanged config on the second run). Exit 1
+    `--yes` takes only the detected mode and ledger off, and only for a question config.json does
+    not already answer; it never answers the board, the verify command or a work flip.
+    `.sdlc/config.json` is the one source of truth: `.sdlc/state/init.json` records only that a
+    question was answered, never re-applies a value, and never supplies the repository. A re-run
+    keeps a setting changed since (`preflight.py local-only`, a hand edit) and prints
+    `[kept] ... config.json wins`; only a flag on that run changes it. Measured in
+    `tests/test_init_flow.py` on a fake `gh`: a bare re-run makes zero label writes and leaves
+    config unchanged; `--yes` on a repository configured before the flow (local-goals, ledger on)
+    makes zero label writes and changes no key (it made 14 label writes and switched the source
+    before this review). Exit 1
     on a failed step or a blocking preflight problem, with a `Resume:` line; exit 2 when refused
     before any write.
-  - In github mode `discovery.github.project.enabled` stays off until `--board yes`: the loop
-    otherwise creates a board on its first github pick, so "no board without a yes" held for init
-    and broke at the first `loop.py next`.
+  - When the flow switches a repository to github mode, `discovery.github.project.enabled` is
+    turned off until `--board yes`: the loop otherwise creates a board on its first github pick,
+    so "no board without a yes" held for init and broke at the first `loop.py next`. `--board yes`
+    turns it on only after `board_setup.py create --yes` succeeds and a board is pinned (also for a
+    board pinned by hand after declining); a failure leaves it as it was.
+  - `--repo` must be `OWNER/NAME`. The `Resume:` line prints `--verify-command-file` absolute, and
+    on Windows is withheld (as `board_setup.py` does) when a value carries `"`, `%`, `$`, a
+    backtick or `!`. The demo's github hint no longer says the loop creates a board when mirroring
+    is off.
   - The scaffolded example goal ships `status: proposed`; the loop's first pick on a fresh repo
     was "Example goal — delete me". `--demo` still queues a runnable demo.
   - `setup.py configure` refuses (exit 2, nothing written) github mode with no repository, and a
-    missing `.sdlc/` (was a traceback). `setup.py init ...` forwards to the flow.
+    missing `.sdlc/` (was a traceback); a repository config.json already names is kept, never
+    refused for a missing origin and never swapped for `origin`. `setup.py detect` returns nothing
+    for a non-GitHub origin (a GitLab ssh URL read as `o/r`). `setup.py init ...` forwards to the
+    flow.
   - The setup wizard fires only in an adopted repository (`.sdlc/config.json`, and no other
     plugin's `state/owner.json`), in `setup_wizard.wizard_status()` so every host gets it (#186:
-    it fired in every repository the user opened, where a decline could not be remembered).
+    it fired in every repository the user opened, where a decline could not be remembered). The
+    one exception: a `.sdlc/` Sigma owns (init writes `state/owner.json` before it scaffolds) with
+    no `config.json` is an interrupted `/agrim-init`, and the wizard says to re-run it.
   - `loop.py start` no longer warns about `work.enabled` off once `--local-only` (or
     `preflight.py local-only`) recorded the choice; the warning, the `record done` note and
     doctor's row point at `/agrim-init` instead of `/agrim-setup`.

@@ -588,6 +588,24 @@ def board_offer(target_dir, github_flag):
     ]
 
 
+def _demo_board_hint(target):
+    """What `/agrim-loop` does with a board, as config.json says NOW (#236: `/agrim-init` leaves
+    `project.enabled` off until the user says `--board yes`, so "the loop creates the board" is not
+    true by default any more)."""
+    try:
+        cfg = json.loads((pathlib.Path(target) / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+        proj = cfg["discovery"]["github"]["project"]
+    except (OSError, ValueError, KeyError, TypeError):
+        proj = {}
+    if not isinstance(proj, dict) or not proj.get("enabled"):
+        return ("`/agrim-loop` picks it (no board: mirroring is off; `/agrim-init --board yes` "
+                "creates and pins one).")
+    if proj.get("number"):
+        return f"`/agrim-loop` moves its card on board #{proj['number']} Backlog -> ... -> Done."
+    return ("`/agrim-loop` finds or creates the board on its first pick and moves the card "
+            "Backlog -> ... -> Done.")
+
+
 def scaffold_extras(target, flags):
     """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`), each skip-if-exists and
     each reporting one line. Shared by `main()` and `init_flow.py` (#236), so the one entry point
@@ -598,8 +616,8 @@ def scaffold_extras(target, flags):
                   "the SDLC run it end to end (Goal -> Research -> ... -> Review).")
             if "--github" in flags:
                 print("  github mode: file it as an issue - `gh issue create --label sdlc:goal "
-                      "--title \"[Demo] Sigma\" --body \"<paste the demo goal body>\"` - then `/agrim-loop` "
-                      "creates the board and moves the card Backlog -> ... -> Done.")
+                      "--title \"[Demo] Sigma\" --body \"<paste the demo goal body>\"` - then "
+                      + _demo_board_hint(target))
         else:
             print("\nagrim-init: demo goal already present (kept).")
     if "--vision" in flags:

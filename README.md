@@ -196,7 +196,8 @@ python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo
 ### The next step is `/agrim-init`
 
 Run **`/agrim-init`** first, in every repository, on every host. It is the one command, and it is
-safe to re-run: it remembers your answers.
+safe to re-run: it does not ask an answered question again, and it never changes a setting in
+`.sdlc/config.json` unless you pass the flag for it on that run.
 
 - **`/agrim-init`** checks git and `gh` access, asks the backlog mode and the verify command, and in
   github mode creates the `sdlc:*` labels, scopes discovery to `@me` and offers a board and the
@@ -207,7 +208,7 @@ safe to re-run: it remembers your answers.
 On Codex and Cursor there is no interactive question: the flow prints each open one as an `[ask]`
 line with the flag that answers it (`--mode`, `--verify`, `--board`, `--ledger`, `--local-only`),
 and `--yes` takes the safe defaults (the detected mode, ledger off; never a board, a verify command
-or a work flip).
+or a work flip) for questions `.sdlc/config.json` does not already answer.
 
 ### What `/agrim-init` will ask you
 

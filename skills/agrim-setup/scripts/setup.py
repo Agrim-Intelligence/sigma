@@ -65,11 +65,27 @@ def _run_git(repo_root, args):
 # --------------------------------------------------------------------------- detect
 
 
+#: Hosts that are NOT GitHub -- the same list as `agrim-init/scripts/preflight.py:_NON_GITHUB` (pinned
+#: equal by tests/test_setup.py). A GitLab `git@gitlab.com:o/r.git` origin used to read as `o/r`.
+_NON_GITHUB = ("gitlab", "bitbucket", "dev.azure.com", "visualstudio.com", "codeberg.org",
+               "gitea", "sr.ht", "sourceforge", "gitee.com")
+
+
+def _remote_host(url):
+    if "://" in url:
+        host = url.split("://", 1)[1].split("/", 1)[0]
+    elif ":" in url:
+        host = url.split(":", 1)[0]
+    else:
+        return ""
+    return host.rsplit("@", 1)[-1].split(":", 1)[0].lower()
+
+
 def detect_repo(repo_root=".", run=None):
-    """`owner/name` from `git remote get-url origin`, or '' if not resolvable. Handles ssh, https, and
-    the `github.com-<alias>:owner/repo` host-alias form this org uses."""
+    """`owner/name` from `git remote get-url origin`, or '' if not resolvable or not a GitHub host.
+    Handles ssh, https, and the `github.com-<alias>:owner/repo` host-alias form this org uses."""
     url = (run or _run_git)(repo_root, ["remote", "get-url", "origin"]).strip()
-    if not url:
+    if not url or any(tag in _remote_host(url) for tag in _NON_GITHUB):
         return ""
     for sep in ("github.com:", "github.com/"):
         if sep in url:
@@ -329,7 +345,11 @@ def main(argv):
                   f"({INIT_FLOW}). Nothing written.", file=sys.stderr)
             return 2
         source = f.get("source", "github")
-        repo = f.get("repo", "") or (detect_repo(str(sdlc.resolve().parent)) if source == "github" else "")
+        # --repo, else the repository config.json already names (never swapped for `origin`), else
+        # the GitHub `origin` -- a configured repo is never refused for a missing/foreign origin.
+        configured = ((_load_cfg(sdlc).get("discovery") or {}).get("github") or {}).get("repo") or ""
+        repo = f.get("repo", "") or (str(configured).strip() or detect_repo(str(sdlc.resolve().parent))
+                                     if source == "github" else "")
         if source == "github" and not repo:
             # #236: github discovery with an empty repo queries nothing -- a config that reads as
             # "adopted" while no issue can ever be picked. Refuse instead of writing "UNSET".

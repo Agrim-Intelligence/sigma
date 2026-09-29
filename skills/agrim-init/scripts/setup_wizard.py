@@ -175,6 +175,30 @@ def adopted_by_sigma(sdlc_dir):
         return (pathlib.Path(sdlc_dir) / "config.json").is_file()
 
 
+def sigma_scaffold_interrupted(sdlc_dir):
+    """Review of PR #286: a `.sdlc/` Sigma OWNS (`state/owner.json` says "sigma" -- `/agrim-init`
+    writes it before it scaffolds) but with no `config.json` is an interrupted `/agrim-init`. The
+    adoption gate above keeps the wizard silent there (no config.json = not adopted), which left
+    that user with nothing; this is the one exception, and it reaches no doctor. An ownerless bare
+    `.sdlc/` (another tool's) or another plugin's stays silent. Never raises."""
+    try:
+        base = pathlib.Path(sdlc_dir)
+        if (base / "config.json").exists():
+            return False
+        owner = json.loads((base / "state" / "owner.json").read_text(encoding="utf-8"))
+        return isinstance(owner, dict) and owner.get("plugin") == "sigma"
+    except (OSError, ValueError):
+        return False
+
+
+_INTERRUPTED_STEP = {
+    "name": "project layer",
+    "fix": "re-run /agrim-init (Codex/Cursor: python3 "
+           + str(pathlib.Path(__file__).resolve().parent / "init_flow.py") + " .): .sdlc/ is Sigma's but has no config.json -- an interrupted scaffold. It is skip-if-exists, "
+           "so re-running it keeps every file already there.",
+}
+
+
 def write_dismissed(sdlc_dir, names):
     """Best-effort: a wizard that cannot persist a skip must still let the user proceed with
     their actual request this session -- it would just ask again next time, which is annoying,
@@ -253,6 +277,10 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     never make a broken one look healthy for longer than a single tick."""
     now = now if now is not None else time.time()
     if not adopted_by_sigma(sdlc_dir):
+        if sigma_scaffold_interrupted(sdlc_dir) and "project layer" not in (
+                read_dismissed(sdlc_dir) if dismissed is None else dismissed):
+            mode, degraded = _classify("project layer")
+            return {"needs_wizard": True, "steps": [dict(_INTERRUPTED_STEP, mode=mode, degraded=degraded)]}
         return {"needs_wizard": False, "steps": []}      # #186: not adopted -> say nothing
     if allow_cache:
         cached = _read_cache(sdlc_dir)

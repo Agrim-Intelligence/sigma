@@ -19,13 +19,22 @@ WHAT. One flow, in this order, integrating the sibling goals rather than re-impl
   5. a one-screen summary and the next command
 
 QUESTIONS ARE FLAGS, SO EVERY HOST RUNS THE SAME FLOW. Claude Code asks the user and re-runs with the
-answers; Codex and Cursor relay the printed `[ask]` lines, each carrying the exact flag. An answer is
-remembered in `.sdlc/state/init.json` (runtime, git-ignored), so a bare re-run repeats the same
-decisions: idempotent, and the second run writes no label and changes no config key.
+answers; Codex and Cursor relay the printed `[ask]` lines, each carrying the exact flag.
 
-`--yes` ANSWERS ONLY WHAT IS SAFE TO DEFAULT: the mode (the detected one) and the ledger (no). It never
-answers the board (creates external state -- #235 "never unasked"), the verify command (only the user
-knows what proves their repo -- #228), or a `work.enabled` flip (#229 "nothing flips it silently").
+CONFIG.JSON IS THE ONE SOURCE OF TRUTH FOR CURRENT STATE (review of PR #286). `.sdlc/state/init.json`
+(runtime, git-ignored) records only THAT a question was answered -- so a re-run does not ask it again
+-- and never re-applies a value over config.json: a user who later runs `preflight.py local-only` or
+edits config.json by hand keeps that choice on every re-run, and the flow says so ("kept ... config.json
+wins"). A consequential change -- work off/on, the ledger on, a board created, the source switched --
+happens only from a flag on the CURRENT run (or `--yes`, below, for a question nothing has answered).
+A remembered repository is never used: `--repo`, else config.json's, else the current `origin`.
+
+`--yes` ANSWERS ONLY WHAT IS SAFE TO DEFAULT AND STILL OPEN: the mode (the detected one) and the ledger
+(no), and only where neither a flag nor config.json already answers it -- on a repository configured
+before this flow existed it changes nothing and says "kept". A key is open when config.json does not
+carry it, or still carries the template value this flow scaffolded (recorded in init.json). `--yes`
+never answers the board (creates external state -- #235 "never unasked"), the verify command (only the
+user knows what proves their repo -- #228), or a `work.enabled` flip (#229 "nothing flips it silently").
 
 EXIT: 0 = every attempted step passed (open `[ask]` questions allowed); 1 = a step FAILED, or preflight
 found a blocking problem -- the last line is `Resume: <the exact command>`; 2 = refused before anything
@@ -40,6 +49,8 @@ import io
 import json
 import os
 import pathlib
+import re
+import shlex
 import subprocess
 import sys
 
@@ -50,10 +61,20 @@ LOOP_SCRIPT = _HERE.parent.parent / "agrim-loop" / "scripts" / "loop.py"
 SYNC_SCRIPT = _HERE.parent.parent / "agrim-loop" / "scripts" / "sync.py"
 ANSWERS = pathlib.Path("state") / "init.json"
 MODES = ("local-goals", "github")
+#: The questions whose answer lives in config.json, and the values each may take (a remembered value
+#: outside these is ignored -- init.json is runtime state, never trusted as config).
+ANSWER_VALUES = {"mode": MODES, "work": ("on", "off"), "ledger": ("yes", "no"), "board": ("yes", "no")}
+CONFIG_KEYS = ("mode", "work", "ledger")
+#: GitHub's owner (login: alphanumerics and single hyphens, <= 39) / repository name shape.
+_REPO_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
+#: Characters no single quoting survives in BOTH cmd.exe and PowerShell -- the same set, and the same
+#: refusal, as `board_setup._WIN_UNSAFE`: `"` ends the quote, `%` (cmd) and `$` / backtick
+#: (PowerShell) expand inside double quotes, `!` does under cmd's delayed expansion.
+_WIN_UNSAFE = frozenset('"%$`!')
 
 USAGE = """usage: init_flow.py [target_dir] [options]
   --mode local-goals|github      the backlog: goal files in .sdlc/goals/, or GitHub issues
-  --repo OWNER/NAME              github mode's repository (default: read from `origin`)
+  --repo OWNER/NAME              github mode's repository (default: config.json's, else `origin`)
   --local-only                   work.enabled off: the loop edits this checkout (no worktree/PR)
   --work on                      work.enabled on: a worktree + branch + PR per goal
   --verify N:ID                  confirm detected candidate N (the id printed beside it)
@@ -61,8 +82,9 @@ USAGE = """usage: init_flow.py [target_dir] [options]
   --no-verify                    decline: verify.enforce stays off, the reason is recorded
   --board yes|no                 github mode: create + pin a Projects board (yes), or decline
   --ledger yes|no                github mode: the team ledger on or off
-  --yes                          accept the safe defaults (mode = detected, ledger = no); never
-                                 answers --board, --verify or a work flip
+  --yes                          accept the safe defaults (mode = detected, ledger = no) for
+                                 questions config.json does not already answer; never answers
+                                 --board, --verify or a work flip, never changes a setting
   --demo --vision --codex --cursor   the opt-in scaffolds (see sdlc_init.py)
   --github-templates             also copy the .github/ issue templates + workflows
   --github                       shorthand: --mode github --github-templates (the pre-#236 flag)
@@ -118,6 +140,9 @@ def parse(argv):
                          ("work", ("on",)), ("ignore-scope", ("tracked", "local"))):
         if key in opts and opts[key] not in allowed:
             return opts, None, f"--{key} takes one of: {' | '.join(allowed)}"
+    if "repo" in opts and (not _REPO_RE.fullmatch(opts["repo"])
+                           or opts["repo"].split("/")[1] in (".", "..")):
+        return opts, None, "--repo takes OWNER/NAME (e.g. acme/app), not a URL or a path"
     if "verify" in opts and ":" not in opts["verify"]:
         return opts, None, "--verify takes N:ID, exactly as printed beside a candidate"
     if sum(k in opts for k in ("verify", "verify-command-file", "no-verify")) > 1:
@@ -141,21 +166,65 @@ def detect_github_repo(target):
     return f"{owner}/{name}"
 
 
-def resolve_answers(opts, previous, detected_mode, remote_ok):
-    """The answers this run acts on: a flag, else the remembered answer, else (`--yes`, safe
-    questions only) the default, else None (asked). `remote_ok` is accepted for the caller's
-    symmetry and deliberately unused: a missing remote never flips `work.enabled` by default."""
-    del remote_ok
+def config_answers(cfg):
+    """The questions config.json ALREADY answers, in answer vocabulary: {"mode": source, "work":
+    on|off, "ledger": yes|no}. A key it does not carry -- or carries as null -- is absent (unset)."""
+    out = {}
+    disc = cfg.get("discovery") if isinstance(cfg.get("discovery"), dict) else {}
+    if disc.get("source") in MODES:
+        out["mode"] = disc["source"]
+    work = cfg.get("work") if isinstance(cfg.get("work"), dict) else {}
+    if isinstance(work.get("enabled"), bool):
+        out["work"] = "on" if work["enabled"] else "off"
+    ledger = cfg.get("ledger") if isinstance(cfg.get("ledger"), dict) else {}
+    if isinstance(ledger.get("enabled"), bool):
+        out["ledger"] = "yes" if ledger["enabled"] else "no"
+    return out
+
+
+def load_memory(sdlc):
+    """-> (answered, scaffolded) from init.json: which questions were answered (and what was said,
+    for the "config.json wins" note only), and the template values this flow scaffolded for keys no
+    one has answered yet. Values outside `ANSWER_VALUES` are dropped; a remembered repo is ignored.
+    Reads the pre-review flat format ({"mode": ..., "board": ...}) as `answered`."""
+    raw = _read_json(pathlib.Path(sdlc) / ANSWERS)
+    if isinstance(raw.get("answered"), dict) or isinstance(raw.get("scaffolded"), dict):
+        answered, scaffolded = raw.get("answered") or {}, raw.get("scaffolded") or {}
+    else:
+        answered, scaffolded = raw, {}
+
+    def valid(d):
+        return {k: v for k, v in d.items() if k in ANSWER_VALUES and v in ANSWER_VALUES[k]}
+    return valid(answered), valid(scaffolded)
+
+
+def resolve_answers(opts, answered, scaffolded, current, detected_mode):
+    """-> {key: (value, how)} for mode / work / ledger, and board. `how`:
+      "flag"    a flag on THIS run -- the only thing that changes an existing setting
+      "default" `--yes` took the safe default for a question nothing had answered
+      "kept"    config.json already answers it (a value is never re-applied over it)
+      "open"    unanswered -- asked
+    `current` is `config_answers(config.json)` before this run."""
     yes = bool(opts.get("yes"))
-    work = "off" if opts.get("local-only") else opts.get("work") or previous.get("work")
-    return {
-        "mode": opts.get("mode") or previous.get("mode") or (detected_mode if yes else None),
-        "repo": opts.get("repo") or previous.get("repo"),
-        "ledger": opts.get("ledger") or previous.get("ledger") or ("no" if yes else None),
-        "board": opts.get("board") or previous.get("board"),
-        "work": work,
-        "verify": None,
-    }
+    flags = {"mode": opts.get("mode"), "ledger": opts.get("ledger"),
+             "work": "off" if opts.get("local-only") else opts.get("work")}
+    defaults = {"mode": detected_mode, "ledger": "no"}
+    out = {}
+    for key in CONFIG_KEYS:
+        cur = current.get(key)
+        if flags[key]:
+            out[key] = (flags[key], "flag")
+        elif key in answered or (cur is not None and scaffolded.get(key) != cur):
+            out[key] = (cur, "kept")
+        elif yes and key in defaults:
+            out[key] = (defaults[key], "default")
+        else:
+            out[key] = (cur, "open")
+    if opts.get("board"):
+        out["board"] = (opts["board"], "flag")
+    else:
+        out["board"] = (answered.get("board"), "kept" if "board" in answered else "open")
+    return out
 
 
 def _read_json(path):
@@ -178,73 +247,128 @@ def _child(d, key):
     return d[key]
 
 
-def apply_config(sdlc, answers, repo):
-    """Write the answered decisions into config.json; -> the lines saying what was set. Only
-    answered keys are touched, and a value already equal is not rewritten (idempotent)."""
+def _project(cfg):
+    disc = cfg.get("discovery") if isinstance(cfg.get("discovery"), dict) else {}
+    gh = disc.get("github") if isinstance(disc.get("github"), dict) else {}
+    return gh.get("project") if isinstance(gh.get("project"), dict) else {}
+
+
+def apply_config(sdlc, res, repo, repo_flag=False):
+    """Write into config.json ONLY what a flag (or `--yes`, for an open question) decided on THIS
+    run; -> the lines saying what the mode is. A key config.json already answers ("kept") is never
+    rewritten, and a value already equal is not rewritten either (idempotent)."""
     path = pathlib.Path(sdlc) / "config.json"
     cfg = _read_json(path)
     before = json.dumps(cfg, sort_keys=True)
     lines = []
     disc = _child(cfg, "discovery")
-    if answers["mode"] == "github":
-        disc["source"] = "github"
+    was_github = disc.get("source") == "github"
+    mode, how = res["mode"]
+    if how in ("flag", "default"):
+        disc["source"] = mode
+    kept = " (kept from config.json; --mode %s changes it)"
+    if disc.get("source") == "github":
         gh = _child(disc, "github")
-        gh["repo"] = repo
+        if repo and (repo_flag or not str(gh.get("repo") or "").strip()):
+            gh["repo"] = repo                            # a flag, or filling an empty key -- never a swap
         for key, value in (("goal_label", "sdlc:goal"), ("in_progress_label", "sdlc:in-progress"),
                            ("parked_label", "sdlc:parked")):
             gh.setdefault(key, value)
         if gh.get("assignee") is None:                 # never clobber a real choice (setup.py #2255)
             gh["assignee"] = "@me"
         # The loop FINDS OR CREATES a board on its first github-mode pick while `project.enabled`
-        # is on (the template ships it on). So a board the user has not said yes to is switched
-        # off here, with the reason -- otherwise "no board without a yes" would hold for init and
-        # then break at the first `loop.py next`. A pinned board is the user's; never touched.
+        # is on (the template ships it on). So when THIS run switches the source to github, an
+        # unpinned board is switched off, with the reason -- otherwise "no board without a yes"
+        # would hold for init and then break at the first `loop.py next`. `--board yes` turns it on
+        # only after board_setup.py pinned a board (`board_step`). A pinned board is the user's.
         proj = _child(gh, "project")
-        if not proj.get("number"):
-            proj["enabled"] = answers["board"] == "yes"
-            proj["_enabled_why"] = ("on: board_setup.py creates/pins it (--board yes at /agrim-init)"
-                                    if proj["enabled"] else
-                                    "off until you say yes: /agrim-init --board yes creates and pins "
+        board, board_how = res["board"]
+        if board_how == "flag" and board == "no":
+            proj["enabled"] = False
+            proj["_enabled_why"] = ("off: declined at /agrim-init (--board no); /agrim-init --board yes "
+                                    "creates and pins a board and turns this on")
+        elif not was_github and not proj.get("number"):
+            proj["enabled"] = False
+            proj["_enabled_why"] = ("off until you say yes: /agrim-init --board yes creates and pins "
                                     "a board (the loop would otherwise create one on its first pick)")
-        lines.append(f"  [ok] mode: github - issues labelled sdlc:goal on {repo}, "
-                     f"assignee {gh['assignee']}")
-    elif answers["mode"] == "local-goals":
-        disc["source"] = "local-goals"
-        lines.append("  [ok] mode: local-goals - goal files in .sdlc/goals/")
+        lines.append(f"  [ok] mode: github - issues labelled sdlc:goal on {gh.get('repo')}, "
+                     f"assignee {gh['assignee']}" + (kept % "local-goals" if how == "kept" else ""))
+    elif disc.get("source") == "local-goals" and how != "open":
+        lines.append("  [ok] mode: local-goals - goal files in .sdlc/goals/"
+                     + (kept % "github" if how == "kept" else ""))
     work = _child(cfg, "work")
-    if answers["work"] == "off":
+    value, how = res["work"]
+    if how == "flag" and value == "off":
         work["enabled"] = False
         work["_enabled_why"] = ("set false at /agrim-init (--local-only): the loop edits this "
                                 "checkout directly -- no worktree, branch, push or PR.")
         lines.append("  [ok] work: local-only (the loop edits this checkout; no worktree, branch or PR)")
-    elif answers["work"] == "on":
+    elif how == "flag" and value == "on":
         work["enabled"] = True
         work["_enabled_why"] = "set true at /agrim-init (--work on): a worktree + branch + PR per goal."
         lines.append("  [ok] work: a worktree + branch + PR per goal")
-    if answers["ledger"] in ("yes", "no"):
-        _child(cfg, "ledger")["enabled"] = answers["ledger"] == "yes"
+    value, how = res["ledger"]
+    if how in ("flag", "default"):
+        _child(cfg, "ledger")["enabled"] = value == "yes"
     if json.dumps(cfg, sort_keys=True) != before:
         _write_json(path, cfg)
     return lines
 
 
-def board_step(target, sdlc, answer, repo):
-    """#235, github mode only. -> (lines, ok). None: print the OFFER (and the flag that answers it);
-    "no": nothing is created; "yes": `board_setup.py create <sdlc> --yes`, the only path that creates
-    a board. A pinned board is reported, never re-created."""
-    cfg = _read_json(pathlib.Path(sdlc) / "config.json")
-    proj = ((cfg.get("discovery") or {}).get("github") or {}).get("project") or {}
-    if isinstance(proj, dict) and proj.get("number"):
-        return [f"  [ok] board: project #{proj['number']} is pinned"], True
-    if answer == "no":
-        return ["  [ok] board: declined - nothing created (pin one later: board_setup.py create)"], True
+def _set_project(sdlc, **values):
+    """Set (value) or remove (None) keys of discovery.github.project; never writes a config.json it
+    could not read (a `{}` from an unreadable file would otherwise replace the whole config)."""
+    path = pathlib.Path(sdlc) / "config.json"
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(cfg, dict):
+        return
+    proj = _child(_child(_child(cfg, "discovery"), "github"), "project")
+    before = json.dumps(proj, sort_keys=True)
+    for key, value in values.items():
+        if value is None:
+            proj.pop(key, None)
+        else:
+            proj[key] = value
+    if json.dumps(proj, sort_keys=True) != before:
+        _write_json(path, cfg)
+
+
+def board_step(target, sdlc, answer, repo, how="flag"):
+    """#235, github mode only. -> (lines, ok). Only a `--board yes` FLAG on this run runs
+    `board_setup.py create <sdlc> --yes` -- the one path that creates (or, for a pinned board,
+    verifies: it refuses a pinned number the owner does not have) a board -- and only its success
+    turns `project.enabled` on. A failure restores `project.enabled` to what it was. A remembered
+    answer never runs anything: it only stops the OFFER being printed again."""
+    proj = _project(_read_json(pathlib.Path(sdlc) / "config.json"))
+    number = proj.get("number")
     cmd = [_vd.python_command(), str(BOARD_SETUP), "create", os.path.abspath(str(sdlc))]
-    if answer == "yes":
+    if how == "flag" and answer == "yes":
+        prev_enabled, prev_why = proj.get("enabled"), proj.get("_enabled_why")
         rc, out = (BOARD_RUNNER or _run_board)(cmd + ["--yes"])
         lines = ["  " + l for l in (out or "").splitlines()]
-        if rc != 0:
-            return lines + [f"  [FAIL] board: board_setup.py exited {rc} (its resume command is above)"], False
-        return lines + ["  [ok] board: created and pinned"], True
+        pinned = _project(_read_json(pathlib.Path(sdlc) / "config.json")).get("number")
+        if rc == 0 and pinned:
+            _set_project(sdlc, enabled=True, _enabled_why=None)
+            return lines + [f"  [ok] board: project #{pinned} pinned and reachable - mirroring on"], True
+        _set_project(sdlc, enabled=prev_enabled, _enabled_why=prev_why)
+        why = (f"board_setup.py exited {rc} (its resume command is above)" if rc
+               else "board_setup.py pinned no board")
+        return lines + [f"  [FAIL] board: {why}; project.enabled left as it was ({prev_enabled})"], False
+    if how == "flag" and answer == "no":
+        also = f"; project #{number} stays pinned" if number else ""
+        return [f"  [ok] board: declined - mirroring off{also} (pin one later: --board yes)"], True
+    if number:
+        state = "on" if proj.get("enabled") else "off (--board yes turns it on)"
+        return [f"  [ok] board: project #{number} is pinned, mirroring {state}"], True
+    if proj.get("enabled"):
+        return ["  [ok] board: on, none pinned - the loop finds or creates one on its first pick "
+                "(kept from config.json; --board no turns it off)"], True
+    if how == "kept":
+        said = "declined - off" if answer == "no" else "off"
+        return [f"  [ok] board: {said} (kept from config.json; --board yes creates and pins one)"], True
     offer = _si.board_offer(target, True)
     if not offer:
         offer = [f"  OFFER: create a GitHub Project board for {repo} and pin it. Preview: "
@@ -312,10 +436,45 @@ def _has_pending_goal(sdlc):
     return False
 
 
+def _windows():
+    return os.name == "nt"
+
+
 def resume_command(target, argv):
-    return " ".join([_vd.python_command(), _vd._q(str(pathlib.Path(__file__).resolve())),
-                     _vd._q(os.path.abspath(str(target)))]
-                    + [_vd._q(a) for a in argv if a != target])
+    """The exact gesture to re-run, or None when it cannot be printed safely: on Windows a value
+    carrying a character cmd or PowerShell would expand or end the quote on is refused (as
+    `board_setup.resume_command` does) rather than printed as a line that runs something else.
+    `--verify-command-file` is made absolute: the resume line must work from any directory."""
+    rest, i, dropped_target = [], 0, False
+    while i < len(argv):
+        a = argv[i]
+        if a in _VALUE and i + 1 < len(argv):
+            value = argv[i + 1]
+            if a == "--verify-command-file":
+                value = os.path.abspath(value)
+            rest += [a, value]
+            i += 2
+            continue
+        if not a.startswith("-") and not dropped_target:
+            dropped_target = True                        # the positional target: printed absolute
+        else:
+            rest.append(a)
+        i += 1
+    values = [str(pathlib.Path(__file__).resolve()), os.path.abspath(str(target))] + rest
+    if _windows():
+        if any(ch in _WIN_UNSAFE or _vd._unsafe_char(ch) for v in values for ch in v):
+            return None
+        quote = lambda v: v if v.startswith("--") else '"%s"' % v      # noqa: E731
+    else:
+        quote = shlex.quote
+    return " ".join([_vd.python_command()] + [quote(v) for v in values])
+
+
+def _say_resume(target, argv):
+    line = resume_command(target, argv)
+    print("Resume: " + (line if line is not None else
+                        "(no command printed: a value contains a character cmd/PowerShell would "
+                        "expand or end the quote on -- one of \" % $ ` !). Re-run the command you ran."))
 
 
 def main(argv):
@@ -344,50 +503,72 @@ def main(argv):
     if coexist is not None and not coexist.gate(sdlc, "agrim-init"):
         return 2
 
-    previous = _read_json(pathlib.Path(sdlc) / ANSWERS)
+    answered, scaffolded = load_memory(sdlc)
+    cfg_path = pathlib.Path(sdlc) / "config.json"
+    cfg0 = _read_json(cfg_path)
     detected = detect_github_repo(target)
-    answers = resolve_answers(opts, previous, "github" if detected else "local-goals", None)
-    repo = answers["repo"] or detected
-    if answers["mode"] == "github" and not repo:
+    res = resolve_answers(opts, answered, scaffolded, config_answers(cfg0),
+                          "github" if detected else "local-goals")
+    cfg_repo = str(((cfg0.get("discovery") or {}).get("github") or {}).get("repo") or "").strip() \
+        if isinstance((cfg0.get("discovery") or {}).get("github"), dict) else ""
+    repo = opts.get("repo") or cfg_repo or detected
+    if res["mode"][0] == "github" and not repo:
         print("agrim-init: REFUSED - github mode needs a repository, and `origin` is not a GitHub "
               "remote. Re-run with --repo OWNER/NAME (or add the GitHub remote first). Nothing "
               "was written.", file=sys.stderr)
         return 2
 
     # scaffold (skip-if-exists) -----------------------------------------------------------------
+    if coexist is not None:
+        # BEFORE the scaffold: a `.sdlc/` whose scaffold is interrupted is still recognisably
+        # Sigma's, so the session wizard can say "re-run /agrim-init" there (and only there).
+        coexist.write_owner(sdlc)
     if opts.get("ignore-scope") == "local":
         subprocess.run([sys.executable, str(SETUP_SCRIPT), "ignore", str(target), "--scope", "local"],
                        capture_output=True, text=True)
     try:
         created, skipped = _si.scaffold(target)
     except _si.RuntimeIgnoreWriteFailed as exc:
-        print(f"agrim-init: [FAIL] scaffold: {exc}\nResume: {resume_command(target, args)}")
+        print(f"agrim-init: [FAIL] scaffold: {exc}")
+        _say_resume(target, args)
         return 1
-    if coexist is not None:
-        coexist.write_owner(sdlc)
     print(f"agrim-init: scaffold - {len(created)} created, {len(skipped)} kept "
           f"(target: {pathlib.Path(target).resolve()})")
     for c in created:
         print(f"  + .sdlc/{c}")
+    if "config.json" in created:                         # #228: `_why` from the repo as it now is
+        _vd.write_verify(sdlc, None, _vd.unconfirmed_why(_vd.detect(target)))
+        # the template's values: still OPEN questions until someone answers or changes them
+        fresh = config_answers(_read_json(cfg_path))
+        scaffolded = {k: v for k, v in fresh.items() if res[k][1] == "open"}
+
+    mode_lines = apply_config(sdlc, res, repo, repo_flag=bool(opts.get("repo")))
+    cfg = _read_json(cfg_path)
+    source = (cfg.get("discovery") or {}).get("source")
     extras = {"--" + k for k in ("demo", "vision", "codex", "cursor") if opts.get(k)}
-    if answers["mode"] == "github":
+    if source == "github":
         extras.add("--github")                           # only for the demo's gh-issue hint
     _si.scaffold_extras(target, extras)
     if opts.get("github-templates"):
         gcreated, _ = _si.scaffold_github(target)
         print(f"\nagrim-init: .github/ scaffolding - {len(gcreated)} created")
-    if "config.json" in created:                         # #228: `_why` from the repo as it now is
-        _vd.write_verify(sdlc, None, _vd.unconfirmed_why(_vd.detect(target)))
 
-    mode_lines = apply_config(sdlc, answers, repo)
-    remember = {k: v for k, v in answers.items() if v is not None and k != "verify"}
-    if answers["mode"] == "github":
-        remember["repo"] = repo
-    if remember != previous:
-        _write_json(pathlib.Path(sdlc) / ANSWERS, remember)
+    # init.json: which questions are answered -- never a value re-applied over config.json
+    now_answered = dict(answered)
+    for key in CONFIG_KEYS:
+        if res[key][1] in ("flag", "default"):
+            now_answered[key] = res[key][0]
+    kept_notes = []
+    for key, flag in (("mode", "--mode %s"), ("work", "--work on / --local-only"),
+                      ("ledger", "--ledger %s")):
+        cur, how = res[key]
+        said = answered.get(key)
+        if how == "kept" and said is not None and cur is not None and said != cur:
+            kept_notes.append(f"  [kept] {key}: config.json says {cur}; you answered {said} at an "
+                              f"earlier /agrim-init - config.json wins (to change it: "
+                              f"{flag % said if '%s' in flag else flag})")
 
     failed, asked = [], []
-    cfg = _read_json(pathlib.Path(sdlc) / "config.json")
 
     # 1 preflight --------------------------------------------------------------------------------
     print("\nagrim-init: 1/5 preflight")
@@ -397,7 +578,7 @@ def main(argv):
         print("  " + line)
     work_on = bool((cfg.get("work") or {}).get("enabled"))
     remote = next((c for c in checks if c["id"] == "remote"), {})
-    if work_on and remote.get("ok") is False and answers["work"] is None:
+    if work_on and remote.get("ok") is False and res["work"][1] != "flag" and "work" not in answered:
         asked.append("work")
         print("  [ask] work: fix the remote above, or re-run with --local-only")
     # A missing remote while that very choice is still open is a question (the DECISION above),
@@ -407,14 +588,17 @@ def main(argv):
 
     # 2 mode -------------------------------------------------------------------------------------
     print("\nagrim-init: 2/5 mode")
-    if answers["mode"] is None:
+    if res["mode"][1] == "open":
         asked.append("mode")
         default = "github" if detected else "local-goals"
         why = f"origin is {detected}" if detected else "origin is not a GitHub repository"
         print(f"  [ask] mode: local-goals (goal files) or github (issues)? default: {default} ({why}).")
         print("        Re-run with --mode github or --mode local-goals (--yes takes the default).")
-    for line in mode_lines:
+    for line in mode_lines + kept_notes:
         print(line)
+    if source == "github" and detected and cfg_repo and detected != cfg_repo and not opts.get("repo"):
+        print(f"  [note] origin is {detected}; discovery.github.repo stays {cfg_repo} "
+              f"(re-run with --repo {detected} to switch)")
 
     # 3 verify -----------------------------------------------------------------------------------
     print("\nagrim-init: 3/5 verify")
@@ -427,44 +611,56 @@ def main(argv):
 
     # 4 github -----------------------------------------------------------------------------------
     print("\nagrim-init: 4/5 github")
-    if answers["mode"] != "github":
-        print("  [skip] " + ("local-goals mode: no labels, no board, no ledger question"
-                             if answers["mode"] else "mode not chosen yet"))
+    if source != "github":
+        print("  [skip] " + ("mode not chosen yet" if res["mode"][1] == "open"
+                             else "local-goals mode: no labels, no board, no ledger question"))
     else:
         lines, ok = labels_step(sdlc)
         print("\n".join(lines))
         if not ok:
             failed.append("labels")
-        cfg = _read_json(pathlib.Path(sdlc) / "config.json")
+        cfg = _read_json(cfg_path)
         print(f"  [ok] assignee: {((cfg.get('discovery') or {}).get('github') or {}).get('assignee')}"
               " (the loop picks issues assigned to you)")
-        lines, ok = board_step(target, sdlc, answers["board"], repo)
+        board, board_how = res["board"]
+        lines, ok = board_step(target, sdlc, board, repo, board_how)
         print("\n".join(lines))
         if not ok:
             failed.append("board")
-        elif answers["board"] is None and not any("is pinned" in l for l in lines):
+        elif board_how == "flag":
+            now_answered["board"] = board
+        elif any("[ask] board" in l for l in lines):
             asked.append("board")
-        if answers["ledger"] == "yes":
+        value, how = res["ledger"]
+        suffix = " (kept from config.json; --ledger yes|no changes it)" if how == "kept" else ""
+        if value == "yes":
             print("  [ok] ledger: on. Bootstrap its ops branch when ready (it pushes a branch): "
-                  + " ".join([_vd.python_command(), _vd._q(str(SYNC_SCRIPT)), "bootstrap", _vd._q(sdlc)]))
-        elif answers["ledger"] == "no":
-            print("  [ok] ledger: off")
+                  + " ".join([_vd.python_command(), _vd._q(str(SYNC_SCRIPT)), "bootstrap", _vd._q(sdlc)])
+                  + suffix)
+        elif value == "no" or how == "kept":
+            print("  [ok] ledger: off" + suffix)
         else:
             asked.append("ledger")
             print("  [ask] ledger: the team ledger (claims + hand-offs on an ops branch)? "
                   "re-run with --ledger yes or --ledger no (--yes: no)")
 
+    memory = {"answered": now_answered,
+              "scaffolded": {k: v for k, v in scaffolded.items() if k not in now_answered}}
+    if memory != _read_json(pathlib.Path(sdlc) / ANSWERS):
+        _write_json(pathlib.Path(sdlc) / ANSWERS, memory)
+
     # 5 summary ----------------------------------------------------------------------------------
-    cfg = _read_json(pathlib.Path(sdlc) / "config.json")
+    cfg = _read_json(cfg_path)
     verify = cfg.get("verify") or {}
     print("\nagrim-init: 5/5 summary")
     print(f"  mode:   {(cfg.get('discovery') or {}).get('source')}"
-          + (f" ({repo})" if (cfg.get("discovery") or {}).get("source") == "github" else ""))
+          + (f" ({((cfg.get('discovery') or {}).get('github') or {}).get('repo')})"
+             if (cfg.get("discovery") or {}).get("source") == "github" else ""))
     print(f"  work:   {'PR per goal' if (cfg.get('work') or {}).get('enabled') else 'local-only (this checkout)'}")
     print(f"  verify: {('`' + _vd.printable(verify['command']) + '`') if verify.get('command') else 'none (enforce OFF)'}")
     if failed:
         print(f"  result: FAILED at {', '.join(failed)} - everything written so far is kept")
-        print(f"Resume: {resume_command(target, args)}")
+        _say_resume(target, args)
         return 1
     if asked:
         print(f"  open:   {', '.join(asked)} - answer the [ask] lines above (same command + the flag)")
