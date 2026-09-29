@@ -5,6 +5,10 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
+import tempfile
+
+import pytest
 
 HOOK = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "session_start.sh"
 
@@ -13,13 +17,18 @@ def _run_hook(project_dir, path_prefix=None, **env):
     """`env` is built from scratch, never inherited -- SIGMA_RUN_ID in the developer's own
     shell (a session launched under supervise_daemon.py) would otherwise silently switch the wizard off
     and make every assertion below pass vacuously."""
-    path = "/usr/bin:/bin" if path_prefix is None else f"{path_prefix}:/usr/bin:/bin"
-    return subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
-                          env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": path,
-                               # #240: the conftest's empty plugin inventories, not the real home
-                               **{k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
-                                  if k in os.environ}, **env},
-                          timeout=15)
+    # #112: the system python3 may be an unusable Xcode stub. Expose only pytest's
+    # interpreter, not its entire bin directory (which may contain graphify or gh).
+    with tempfile.TemporaryDirectory(prefix="sigma-hook-python-") as python_bin:
+        (pathlib.Path(python_bin) / "python3").symlink_to(sys.executable)
+        parts = [python_bin] + ([str(path_prefix)] if path_prefix is not None else [])
+        path = os.pathsep.join(parts + ["/usr/bin", "/bin"])
+        return subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
+                              env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": path,
+                                   # #240: conftest's empty inventories, not the real home
+                                   **{k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+                                      if k in os.environ}, **env},
+                              timeout=15)
 
 
 def _shimmed_graphify(tmp_path):
@@ -44,6 +53,31 @@ def _ctx(p):
     if not p.stdout.strip():
         return ""
     return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize("wizard", [False, True], ids=["policy", "wizard"])
+def test_hook_uses_pytest_interpreter_when_fallback_python_is_broken(tmp_path, monkeypatch, wizard):
+    """#112: a broken host python must not silently erase real hook output. The fixture
+    tools stand in for the system PATH; removing interpreter isolation makes this go red."""
+    project = tmp_path / "project"
+    sdlc = project / ".sdlc"
+    sdlc.mkdir(parents=True)
+    cfg = ({"knowledge_graph": {"enabled": True, "builder": "graphify"}} if wizard
+           else {"session_start": {"enabled": True}})
+    (sdlc / "config.json").write_text(json.dumps(cfg))
+    tools = pathlib.Path(_shimmed_graphify(tmp_path))
+    broken_called = tools / "broken-python-called"
+    broken = tools / "python3"
+    broken.write_text('#!/bin/sh\n: > "${0%/*}/broken-python-called"\nexit 97\n')
+    broken.chmod(0o755)
+    monkeypatch.setenv("SIGMA_RUN_ID", "unrelated-pytest-parent")
+
+    result = _run_hook(project, path_prefix=str(tools))
+
+    assert result.returncode == 0, result.stderr
+    expected = "graphify installed" if wizard else "reviewer is never the author"
+    assert expected in _ctx(result), (result.stdout, result.stderr)
+    assert not broken_called.exists(), "the broken fallback interpreter ran"
 
 
 def test_a_repo_with_no_sdlc_at_all_gets_no_wizard_context(tmp_path):
