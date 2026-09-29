@@ -4,6 +4,32 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Board mirroring survives a repo rename, the docs now say what the old `setup_created` marker
+  does, and a Phase-field race recovers** (#308, follow-ups from the #233 review). (1) Since #233 the
+  status path skipped board cards whose `content.repository` differs from `discovery.github.repo`.
+  After a rename or transfer with a stale config, every card read as uncarded. The sync then tried
+  `item-add` with an old-name issue URL, and on github.com such a URL does not resolve
+  (`resource(url:)` is null, measured read-only in `.sdlc/evidence/308/`), so board mirroring
+  stopped. If `item-add` had returned the existing card instead, In Progress and Blocked cards would
+  have been reset to Ready, which the fake reproduced. The configured name is now resolved with one
+  `gh api repos/<repo>` read. GitHub answers with the current `full_name`. The read happens when a
+  card names another repository or before the first `item-add`, whichever comes first, so a board
+  holding none of our cards yet still gets new cards under the current name. A success is cached
+  for the source's life. A failure is cached for 5 minutes, then retried, so a long-lived watcher
+  is not stuck on one failed read. While the read fails, the strict rule stands and another repo's
+  card is never written. (2) `docs/board-fields.md` promised that `board_setup.py create` would
+  re-pin the pre-#233 bare-number marker, but `pin()` deletes it. That deletion is right and stays:
+  the pre-#233 `pin()` kept the bare marker when only the owner changed, and so does a hand edit of
+  `project.owner`, so the owner beside it cannot vouch for it. An upgrade would have made a
+  hand-made board of another owner, reusing the number, read as Sigma's. The docs now say the truth:
+  the bare form reads as not Sigma's and any re-pin drops it. To make that board's Priority column
+  Sigma's, set `project.mirror_priority: true`, or run `board_setup.py create` without `--number`
+  so it creates a board itself. (3) When two first phase starts both create the Phase field, the
+  loser's create is refused ("Name has already been taken" on the fake; not measured on a live
+  board). The loser now re-reads the card once and writes Phase into the winner's field, where
+  before it printed a warning and skipped the write. Tests: `tests/test_board_phase.py`,
+  `tests/test_board_setup.py`. The fake's `renames` models a renamed repo. None of it was run
+  against a live board.
 - **Declining the verify command no longer parks every github-mode merge** (#312). The onboarding
   control found it: a github-mode user who declines the verify command (the README offers it; the
   scaffold writes `verify.enforce: false` and no command) had every `work.py merge` parked on "no

@@ -885,3 +885,164 @@ def test_ctrl_c_during_a_board_call_kills_the_gh_group_then_propagates(monkeypat
     else:
         raise AssertionError("the interrupt must propagate")
     assert killed == [424242], killed
+
+
+# ---------------------------------------------------------------- #308: a renamed repo, a race
+
+
+def _renamed(tmp_path, old_urls_resolve):
+    """#308's repro: the repo was renamed `acme/old` -> `acme/widget` and the config still says
+    `acme/old`. The board's cards name the CURRENT repo (as GitHub reports them): #11 In Progress,
+    #12 Blocked, a same-numbered #11 of ANOTHER repo, and #13 is a goal with no card yet."""
+    gh, board = _world()
+    gh.add_item(board, 12, Status="Blocked")
+    stranger = gh.add_item(board, 11, repo="acme/other", Status="Backlog")
+    gh.issues = [{"number": n, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""}
+                 for n in (11, 12, 13)]
+    gh.renames = {"acme/old": "acme/widget"}
+    gh.old_urls_resolve = old_urls_resolve
+    cfg = _cfg()
+    cfg["discovery"]["github"]["repo"] = "acme/old"
+    src = src_mod.GitHubSource(cfg, run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path, cfg)))
+    src._RETRY_BASE = 0
+    return gh, board, stranger, src
+
+
+def _status(board, n, repo="acme/widget"):
+    return [i.get("status") for i in board["items"]
+            if i["content"]["number"] == n and i["content"]["repository"] == repo]
+
+
+def _check_renamed(gh, board, stranger):
+    assert _status(board, 11) == ["QC"], board["items"]            # the transition landed
+    assert _status(board, 12) == ["Blocked"], board["items"]       # sync never clobbers
+    assert _status(board, 13) == ["Ready"], board["items"]         # the uncarded goal is carded
+    assert stranger.get("status") == "Backlog", stranger           # another repo's card: untouched
+    added = [c[c.index("--url") + 1] for c in gh.calls if c[:2] == ["project", "item-add"]]
+    assert added == ["https://github.com/acme/widget/issues/13"], added
+    reads = [c for c in gh.calls if c[:2] == ["api", "repos/acme/old"]]
+    assert len(reads) == 1, reads                                  # ONE resolve read per run
+
+
+def test_a_renamed_repo_with_a_stale_config_keeps_mirroring_the_board(tmp_path):
+    """#308 (1) as GitHub behaves (measured, `.sdlc/evidence/308/`): an issue URL under the old name
+    does not resolve, so treating every card as uncarded made `item-add` fail and the sync stop."""
+    gh, board, stranger, src = _renamed(tmp_path, old_urls_resolve=False)
+    src.mark_qc("11")
+    _check_renamed(gh, board, stranger)
+
+
+def test_a_renamed_repo_never_resets_in_flight_cards_to_ready(tmp_path):
+    """#308 (1), the #233 reviewer's worse case: were the old URL to resolve, `item-add` hands back
+    the EXISTING card, `was_new` is True, and the sync reset In Progress/Blocked cards to Ready."""
+    gh, board, stranger, src = _renamed(tmp_path, old_urls_resolve=True)
+    src.mark_qc("11")
+    _check_renamed(gh, board, stranger)
+
+
+def test_a_board_of_only_our_repo_costs_no_resolve_read(tmp_path):
+    """The resolve read happens only when a card names another repository."""
+    gh, board = _world()
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")
+    assert _card(board).get("status") == "QC"
+    assert not [c for c in gh.calls if c[:2] == ["api", "repos/acme/widget"]]
+
+
+def test_an_unresolvable_repo_name_still_never_writes_another_repos_card(tmp_path):
+    """The resolve read failing is the strict #233 rule again: another repo's card is not ours."""
+    gh, board = _world()
+    stranger = gh.add_item(board, 11, repo="acme/other", Status="Backlog")
+
+    def run(args):
+        if args[:2] == ["api", "repos/acme/widget"]:
+            raise RuntimeError("gh: Not Found (HTTP 404)")
+        return gh.loop_run(args)
+
+    src = src_mod.GitHubSource(_cfg(), run=run, sdlc_dir=str(_sdlc(tmp_path)))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")
+    assert _card(board).get("status") == "QC"
+    assert stranger.get("status") == "Backlog", stranger
+
+
+def test_a_stale_config_on_a_board_without_our_cards_adds_under_the_current_name(tmp_path):
+    """#308 review (a): no card on the board names the repo yet, so nothing triggers the resolve
+    from the item-list read. The first `item-add` still resolves the configured name once (cached)
+    and adds by a URL under the CURRENT name -- one under the old name does not resolve."""
+    gh, board = _world(carded=False)
+    gh.renames = {"acme/old": "acme/widget"}
+    cfg = _cfg()
+    cfg["discovery"]["github"]["repo"] = "acme/old"
+    src = src_mod.GitHubSource(cfg, run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path, cfg)))
+    src._RETRY_BASE = 0
+    src.mark_qc("11")
+    assert _status(board, 11) == ["QC"], board["items"]
+    added = [c[c.index("--url") + 1] for c in gh.calls if c[:2] == ["project", "item-add"]]
+    assert added and set(added) == {"https://github.com/acme/widget/issues/11"}, added
+    src.mark_in_progress("11")
+    assert len([c for c in gh.calls if c[:2] == ["api", "repos/acme/old"]]) == 1
+
+
+def test_a_failed_repo_resolve_is_retried_after_its_ttl_not_cached_forever(tmp_path):
+    """#308 review (b): a long-lived GitHubSource must not keep one failed resolve for its whole
+    life. Within `_REPO_RETRY_S` the failure is cached (bounded: no read per card); after it, the
+    next need reads again and the recovered name counts."""
+    gh, _board = _world()
+    gh.renames = {"acme/old": "acme/widget"}
+    down = [True]
+
+    def run(args):
+        if args[:2] == ["api", "repos/acme/old"] and down[0]:
+            raise RuntimeError("gh: HTTP 502")
+        return gh.loop_run(args)
+
+    cfg = _cfg()
+    cfg["discovery"]["github"]["repo"] = "acme/old"
+    src = src_mod.GitHubSource(cfg, run=run, sdlc_dir=str(_sdlc(tmp_path, cfg)))
+    src._RETRY_BASE = 0
+    reads = lambda: len([c for c in gh.calls if c[:2] == ["api", "repos/acme/old"]])  # noqa: E731
+    assert src._resolved_repo() == ""
+    down[0] = False
+    assert src._resolved_repo() == ""                  # inside the TTL: cached, no second read
+    assert reads() == 0                                # (the failing reads never reached the fake)
+    src._REPO_RETRY_S = 0                              # the TTL has run out
+    assert src._resolved_repo() == "acme/widget"
+    assert reads() == 1
+    src._REPO_RETRY_S = 10 ** 9
+    assert src._resolved_repo() == "acme/widget"       # a success is kept
+    assert reads() == 1
+
+
+def test_concurrent_first_starts_the_loser_adopts_the_winners_phase_field(
+        tmp_path, monkeypatch, capsys):
+    """#308 (3): two first phase starts race to create Phase. The fake rejects the second create
+    ("Name has already been taken", as GitHub rejects a duplicate field name); the loser re-reads
+    the card, adopts the field the winner made and writes its Phase -- no warning, no skip."""
+    gh, board = _world()
+    raced = []
+
+    def run(args):
+        if any(str(a).startswith("query=mutation") and "createProjectV2Field(" in str(a)
+               and 'name: "Phase"' in str(a) for a in args) and not raced:
+            raced.append(gh.loop_run(args))          # the OTHER start's create lands first
+        return gh.loop_run(args)
+
+    monkeypatch.setattr(pr, "_BOARD_RUN", run)
+    monkeypatch.setattr(pr, "BOARD_RETRY_BASE", 0)
+    assert pr.cmd_start([str(_sdlc(tmp_path)), "11", "research", "--model", "sonnet"]) == 0
+    assert raced, "the race never happened"
+    assert [f["name"] for f in board["fields"]].count("Phase") == 1
+    assert _card(board).get("phase") == "P2 RESEARCH"
+    assert not [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+
+
+def test_the_fake_rejects_a_duplicate_phase_field(tmp_path, monkeypatch):
+    """The premise of the race test: a second create of the same name is refused."""
+    gh, board = _world()
+    src = src_mod.GitHubSource(_cfg(), run=gh.loop_run)
+    doc = src._create_field_mutation(board["id"], "Phase", [("P1 GOAL", "GRAY")])
+    gh.loop_run(["api", "graphql", "-f", doc])
+    rc, _out, err = gh.gh(["gh", "api", "graphql", "-f", doc])
+    assert rc == 1 and "already been taken" in err, err

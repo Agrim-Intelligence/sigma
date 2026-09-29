@@ -232,7 +232,10 @@ def pin(sdlc, owner, number, created=False):
     """Write ONLY discovery.github.project.number/owner (+ `setup_created` when this run created
     the board; dropped when a DIFFERENT board is pinned -- another number OR another owner, #233
     review); every other key is kept. Atomic. The marker is `{"number": N, "owner": login}`: a
-    bare number cannot tell a hand-made board of another owner, reusing the number, from ours."""
+    bare number cannot tell a hand-made board of another owner, reusing the number, from ours.
+    The pre-#233 bare-number form is dropped on EVERY re-pin, never upgraded (#308 review): the
+    old pin() kept it when only the owner changed, as does a hand edit of `project.owner`, so the
+    owner pinned beside it cannot vouch for it."""
     path, cfg = _config(sdlc)
     _gh, proj = _gh_block(cfg)
     proj["number"] = int(number)

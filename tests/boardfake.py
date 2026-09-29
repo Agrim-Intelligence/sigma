@@ -143,6 +143,14 @@ class GitHub:
         self.issues = []            # REST issue dicts for the loop's backlog read
         self.viewer = "someone"     # the token's own login (`gh api user`, GraphQL `viewer`); None = unreadable
         self.labels = {}
+        #: #308: a renamed/transferred repo, OLD "owner/name" -> CURRENT one. As measured read-only
+        #: on github.com (`.sdlc/evidence/308/`): REST `repos/<old>` answers with the current
+        #: `full_name`, and a card's `content.repository` names the current repo -- but an issue URL
+        #: under the OLD name does NOT resolve (`resource(url:)` is null), so `gh project item-add
+        #: --url <old>` fails. `old_urls_resolve = True` models the worse case the #233 review
+        #: feared instead: the old URL resolves and item-add hands back the EXISTING card.
+        self.renames = {}
+        self.old_urls_resolve = False
 
     # ------------------------------------------------------------ state helpers
     def add_board(self, title, number=None, fields=None, workflows=None, owner=None, builtins=False):
@@ -321,7 +329,8 @@ class GitHub:
                                else "Organization", "node_id": "OWNER_%s" % login})
         m = re.fullmatch(r"repos/([^/]+)/([^/]+)", path)
         if m:
-            return json.dumps({"full_name": "%s/%s" % m.groups(), "node_id": "R_%s" % m.group(2)})
+            full = self.renames.get("%s/%s" % m.groups(), "%s/%s" % m.groups())
+            return json.dumps({"full_name": full, "node_id": "R_%s" % full.split("/")[1]})
         m = re.fullmatch(r"repos/([^/]+)/([^/]+)/issues", path)
         if m:
             page = int(next((x[5:] for x in a if str(x).startswith("page=")), "1"))
@@ -635,8 +644,19 @@ class GitHub:
         if verb == "item-add":
             url = self._arg(a, "--url").rstrip("/").split("/")
             num = int(url[-1])
+            full = "/".join(url[-4:-2])
+            if full in self.renames:                  # #308: an issue URL under an OLD repo name
+                if not self.old_urls_resolve:
+                    raise GraphQLError("Could not resolve to a node with the global id of ''")
+                full = self.renames[full]
+            # #308: adding an issue that is ALREADY on the board returns its existing card (the
+            # item-add mutation is idempotent) -- it never makes a second one.
+            old = next((i for i in b["items"] if (i.get("content") or {}).get("number") == num
+                        and (i.get("content") or {}).get("repository") == full), None)
+            if old is not None:
+                return json.dumps(old)
             it = {"id": "PVTI_%d" % num, "content": {"type": "Issue", "number": num,
-                                                     "repository": "/".join(url[-4:-2])},
+                                                     "repository": full},
                   "status": None, "values": {}}
             b["items"].append(it)
             return json.dumps(it)
