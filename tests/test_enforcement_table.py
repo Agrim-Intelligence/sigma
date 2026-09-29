@@ -272,11 +272,11 @@ def test_drift_is_caught_both_ways(tmp_path):
     assert gen.render(tmp).encode("utf-8") == doc.read_bytes()
     tmpl = tmp / "skills/agrim-init/templates/config.json.tmpl"
     data = json.loads(tmpl.read_text(encoding="utf-8"))
-    # #2741: `verify.enforce` now SHIPS true (was false) -- the precondition and the flip both
-    # invert accordingly. The test only needs SOME value change to prove `gen.render` reacts to a
-    # template edit; which direction the flip goes is incidental to what it's proving.
-    assert data["verify"]["enforce"] is True
-    data["verify"]["enforce"] = False
+    # #228: `verify.enforce` SHIPS false again (#2741 had it true with an empty command, which
+    # refused every `done`). The test only needs SOME value change to prove `gen.render` reacts to
+    # a template edit; which direction the flip goes is incidental to what it's proving.
+    assert data["verify"]["enforce"] is False
+    data["verify"]["enforce"] = True
     tmpl.write_text(json.dumps(data, indent=2), encoding="utf-8")
     assert gen.render(tmp).encode("utf-8") != doc.read_bytes(), \
         "the table reads the template: a default flip must regenerate it"

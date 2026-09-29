@@ -46,9 +46,10 @@ continue.
 ## 3. Pick the verify command (do NOT skip — this is a known trap)
 
 `verify.enforce: true` with an **empty** `verify.command` refuses *every* `done` forever. So find a
-real command: detect the repo's test runner (`pytest`, `npm test`, `go test ./...`, a `Makefile`
-target, an existing CI step) — read `pyproject.toml` / `package.json` / the CI workflow — or ask the
-user for the exact command. If you genuinely can't get one yet, leave verify off and say so; never
+real command: `python3 <sigma>/skills/agrim-init/scripts/verify_detect.py detect .` lists the
+candidates it finds by reading files (pytest, `package.json` scripts.test, `go.mod`, `Cargo.toml`, a
+`Makefile` test target, a CI test step). Confirm one with the user, or ask them for the exact
+command. If you genuinely can't get one yet, leave verify off and say so; never
 enable enforce without a command. `setup.py configure` guarantees this, but choose the command here.
 
 ## 4. Choose the ignore scope (respect an existing choice)

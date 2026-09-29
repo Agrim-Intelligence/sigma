@@ -104,7 +104,8 @@ pipeline was rebuilt to stop doing.
    skipped check can see it there and delete the file. Do not tell the user a reset command
    exists.
 
-**`human_command`** (only the user can act — `gh auth login`, `gh auth refresh -s project`):
+**`human_command`** (only the user can act — `gh auth login`, `gh auth refresh -s project`, or
+choosing the verify command for `verify command present (enforce is on)`: never guess one for them):
 1. Explain the check and its cost of staying unresolved.
 2. Give the exact command. Do not run it, do not offer to — this needs the user's own browser and
    credentials, and no tool should ever act here on their behalf.

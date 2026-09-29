@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- `/agrim-init` now leaves a working verify command, and never leaves `verify.enforce` on with an
+  empty command (#228). Before this, the shipped config refused `record done` for every goal,
+  including the Quickstart demo. The new `skills/agrim-init/scripts/verify_detect.py` proposes a
+  command by reading files only: pytest, `package.json` scripts.test, `go.mod`, `Cargo.toml`, a
+  `Makefile` test target or a CI test step. `verify_detect.py set .sdlc "<command>"` records the
+  confirmed command and turns enforce on. `decline` keeps enforce off and records the reason.
+  Claude Code asks the user to choose. Codex and Cursor print the candidate and the exact config
+  line. A fresh config now ships `verify.enforce: false`, with the reason in `verify._why`. The
+  `--demo` goal carries its own `verify_command`, so the Quickstart reaches `done`. The false
+  instruction to fill in `.sdlc/project.md` is gone; the command is read only from goal
+  `verify_command` or config `verify.command`. `/agrim-doctor` and the setup wizard flag enforce
+  on with no command, with a one-line fix. `record done` now names a missing command rather than
+  saying "run verify first".
+
 - Upgrade path from the plugin's previous name (#239). A repository adopted under the previous
   name's 1.4.x releases now works under Sigma with no data loss. Sigma reads the old schema ids
   (features, landing, withheld and propagation records), the old feature-doc and Codex

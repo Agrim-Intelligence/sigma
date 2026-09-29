@@ -64,8 +64,48 @@ def scaffold(target_dir):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(tmpl.read_text(encoding="utf-8").replace("{{PROJECT_NAME}}", project_name), encoding="utf-8")
         created.append(str(rel))
+    if "config.json" in created:
+        # #228: the template cannot know a command, so it ships enforce OFF; record WHY here, naming
+        # the detected candidate (if any) and the exact gesture that confirms it. Enforce turns ON
+        # only through a confirmed command -- never ON with an empty one (every `done` refused).
+        vd = _verify_detect()
+        vd.write_verify(sdlc, None, vd.unconfirmed_why(vd.detect(target)))
     _ignore_runtime_dirs(target)
     return created, skipped
+
+
+def _verify_detect():
+    """The sibling verify_detect.py, loaded by path: this module is itself loaded by path from
+    wizard_actions.py, where the scripts dir is not on sys.path."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent / "verify_detect.py"
+    spec = importlib.util.spec_from_file_location("verify_detect", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_report(target_dir):
+    """Lines /agrim-init prints about the verify command, on every host: the detected candidate and
+    the exact gesture (Codex/Cursor have no interactive question, so this IS their prompt), or a
+    loud warning when an existing config holds the permanent-refusal trap."""
+    cfgp = pathlib.Path(target_dir) / ".sdlc" / "config.json"
+    try:
+        verify = json.loads(cfgp.read_text(encoding="utf-8")).get("verify") or {}
+    except (OSError, ValueError, AttributeError):
+        return []
+    if verify.get("command"):
+        return [f"agrim-init: verify command - `{verify['command']}` "
+                f"(enforce {'ON' if verify.get('enforce') else 'OFF'})."]
+    vd = _verify_detect()
+    lines = vd.proposal_lines(vd.detect(target_dir))
+    enforce = verify.get("enforce")        # read generously, as loop.py's _enforce_enabled does
+    if isinstance(enforce, str):
+        enforce = enforce.strip().lower() not in ("", "false", "0", "no", "off")
+    if enforce:
+        lines.insert(0, "agrim-init: WARNING - existing .sdlc/config.json has verify.enforce ON with "
+                        "an EMPTY verify.command: EVERY `record done` is refused until you fix it.")
+    return lines
 
 
 _DEMO_GOAL = """---
@@ -75,12 +115,16 @@ lane: auto
 done_when: "sigma-demo.md exists with a one-line note"
 auto_ok: true
 status: pending
+verify_command: python3 -c "import pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.is_file() and p.read_text().strip() else 1)" sigma-demo.md
 ---
 
 A throwaway demo goal so you can watch the SDLC run end to end. Create
 `sigma-demo.md` containing a single line noting that Sigma ran this goal
 through Goal -> Research -> Plan -> Plan-Review -> Implement -> Review. Delete this
 goal file once you've seen it work.
+
+`verify_command` above is this goal's machine-checked done_when: `loop.py verify` runs it (it wins
+over config `verify.command`), and `record done` needs it green whenever `verify.enforce` is on.
 """
 
 
@@ -417,6 +461,11 @@ def main(argv):
               "change the ignore scope later (tracked vs. local-only), move the lines from "
               ".gitignore to .git/info/exclude by hand -- /agrim-setup never relocates an existing "
               "rule.")
+    report = verify_report(target)
+    if report:
+        print()
+        for line in report:
+            print(line)
     if "--github" in flags:
         gcreated, gskipped = scaffold_github(target)
         print(f"\nagrim-init: GitHub PM scaffolding - {len(gcreated)} created, {len(gskipped)} skipped")

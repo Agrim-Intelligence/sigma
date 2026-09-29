@@ -13,7 +13,7 @@ comparison exists so the fallback is **at par or better** — no quality lost wh
 | Verify a subagent's output independently | ✓ | ✓ | **par** |
 | Spirit-over-letter ("different words don't exempt you") | ✓ | ✓ | **par** |
 | Red flags / anti-rationalization | ✓ two full tables (red-flags + excuse→reality) | ~ condensed to one red-flags line | **slightly lighter** |
-| Loop integration (gate `record done` on evidence; `.sdlc/project.md` verify cmd) | ✗ (host-agnostic) | ✓ ties to `loop.py record` + the project's verify command | **better** (Sigma-native) |
+| Loop integration (gate `record done` on evidence; goal `verify_command` / config `verify.command`) | ✗ (host-agnostic) | ✓ ties to `loop.py record` + the project's verify command | **better** (Sigma-native) |
 
 **Net:** **at par** on the whole discipline (every proof-requirement + the red-green cycle preserved),
 **better** on loop integration, **slightly lighter** only on the exhaustive excuse-rebuttal tables —

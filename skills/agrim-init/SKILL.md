@@ -46,6 +46,19 @@ Scaffold the `.sdlc/` project layer, then report what happened.
 2. Read the printed `created / skipped` summary and the git tip. `/agrim-init` creates
    `.sdlc/ledger/` holding only a `README.md`; the ledger stays off (`ledger.enabled: null`) until
    you enable it and `/agrim-ledger` bootstraps it.
-3. Report which files were created. If `.sdlc/project.md` was newly created, prompt the
-   user to fill its **Verify command** and **Stack** sections before running goals.
+3. Report which files were created, then settle the verify command. `loop.py verify` reads it
+   from two places only: a local goal's frontmatter `verify_command` (wins), else
+   `verify.command` in `.sdlc/config.json`. `.sdlc/project.md` is not read for it. The scaffold
+   never leaves `verify.enforce` on with an empty command, because that refuses every `done`. A
+   fresh config ships enforce OFF, with the reason in `verify._why`, and the scaffolder prints the
+   detected candidate (`python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" detect .` lists
+   them all).
+   - **Claude Code:** ask the user with a real question: confirm the detected candidate, replace
+     it with their own command, or decline. On confirm or replace, run
+     `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" set .sdlc "<command>"`. That sets
+     the command and turns enforce ON. On decline, run
+     `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" decline .sdlc`. That keeps enforce
+     OFF and records why. If nothing was detected, say so and say that enforce is OFF.
+   - **Codex / Cursor:** relay the printed candidate block verbatim. It carries the exact `set`
+     command and the exact config line. Do not guess a command on the user's behalf.
 4. Relay the git tip. Never overwrite a file the scaffolder reports as skipped — those hold live state.

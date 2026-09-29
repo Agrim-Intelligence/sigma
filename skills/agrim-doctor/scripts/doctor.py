@@ -2195,7 +2195,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         out.append(_chk("verify command present (enforce is on)",
                         bool(verify.get("command")) or _any_goal_verify_command(base),
                         "verify.enforce is on but no verify.command (and no goal sets verify_command) — "
-                        "every `done` is refused. Set verify.command, or turn enforce off."))
+                        "every `done` is refused. Fix: python3 <sigma>/skills/agrim-init/scripts/"
+                        "verify_detect.py set .sdlc \"<command>\" (`... detect .` proposes one), or "
+                        "`... decline .sdlc` to turn enforce off."))
 
     # A backlog cross-check whose park_threshold sits BELOW its candidate threshold parks EVERYTHING it
     # finds — the opposite of "confident hits only". Flag it (only when the feature is actually on).
@@ -2556,7 +2558,10 @@ def _any_goal_verify_command(base):
         return False
     for path in goals.glob("*.md"):
         try:
-            if "verify_command:" in path.read_text(encoding="utf-8", errors="replace"):
+            # #228: a NON-EMPTY value -- `verify_command: ""` declares nothing, and loop.py's
+            # verify reads it as absent (NO-COMMAND), so it must not satisfy this row either.
+            if re.search(r'^verify_command:[ \t]*(?!["\']?[ \t]*["\']?[ \t]*$)\S',
+                         path.read_text(encoding="utf-8", errors="replace"), re.MULTILINE):
                 return True
         except OSError:
             continue
