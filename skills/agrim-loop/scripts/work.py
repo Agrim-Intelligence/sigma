@@ -104,8 +104,10 @@ DEFAULTS = {"worktree_dir": ".sdlc/work", "branch_prefix": "sdlc/", "base": "",
 ENFORCEMENT_GATES = (
     {"control": "Verify evidence before a merge", "function": "merge", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
-     "mechanism": "refuses the merge (PARK) without this run's passing `loop.py verify` evidence, "
-                  "whether or not `verify.enforce` is set; the command run is the local goal's `verify_command` frontmatter, else the repo-wide `verify.command` (GitHub-mode goals always use the latter)",
+     "mechanism": "refuses the merge (PARK) without this run's passing `loop.py verify` evidence "
+                  "whenever verify is required (`state.verify_required`): `verify.enforce` on, or a "
+                  "verify command declared even with enforce off; with neither there is nothing to "
+                  "run and the merge proceeds to its review and CI gates (#312); the command run is the local goal's `verify_command` frontmatter, else the repo-wide `verify.command` (GitHub-mode goals always use the latter)",
      "readme": "Clean-AND-safe auto-merge (opt-in)"},
     {"control": "Merge only when GitHub reports clean AND safe", "function": "gate",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "work.auto_merge"),
@@ -5107,9 +5109,19 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     if not may:                                      # permission, before anything it could gate on
         return f"PR #{rec['pr']} opened — {why_not}"
 
-    refusal = state.done_refusal(sdlc_dir, goal)     # local evidence: CI is not the only leg
+    # Local evidence: CI is not the only leg -- whenever verify is REQUIRED (#312, the one rule
+    # `state.verify_required` states for this gate and `record done` alike). With enforce off and
+    # no command declared there is nothing `loop.py verify` could run, so there is no evidence to
+    # demand; the review / CI / clean-state gates below still decide the merge.
+    required = state.verify_required(config, goal)
+    refusal = state.done_refusal(sdlc_dir, goal) if required else None
     if refusal:
-        return f"PARK: no fresh verify evidence for this run ({refusal})"
+        if state.declared_verify_command(goal, config) is None:
+            # enforce on, nothing to run: "run verify" would be the wrong advice (#228's lesson).
+            return (f"PARK: no fresh verify evidence for this run ({refusal}; {required} but no "
+                    f"verify command is declared) — {state.verify_set_hint()}")
+        return (f"PARK: no fresh verify evidence for this run ({refusal}; {required}) — run "
+                f"`loop.py verify {sdlc_dir} {goal}` in this run, then merge again")
 
     ok, verdict, final_data = gate(sdlc_dir, config, goal, run=run, sleep=sleep)
     if verdict == BEHIND:                            # the ONE case a rebase is the right answer

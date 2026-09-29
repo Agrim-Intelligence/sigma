@@ -26,9 +26,12 @@ TWO VARIANTS per mode. `confirm`: a Makefile test target, confirmed by the READM
 (enforce ON). `no-command`: a repository with nothing to confirm, the verify question left open,
 so the default init SCAFFOLDS is what `record done` sees -- the only variant that can see the
 original bug, because a confirm overwrites whatever default was scaffolded. In github mode the
-no-command variant also passes `--local-only`: with work ON, `work.py merge` refuses without
-passing verify evidence whether or not enforce is set, so the enforce default is invisible there.
-github mode passes `--repo` itself: no `[ask]` names it and the control's origin is a local path.
+no-command variant runs the REAL path, work ON (#312): PR, review gate, merge, done-means-merged,
+exactly as the confirm variant does -- with enforce off and no command, `work.py merge` demands no
+verify evidence (`state.verify_required`), so the approved merge must pass. Before #312 it parked
+on "no fresh verify evidence", and an earlier version of this control hid that behind
+`--local-only`. github mode passes `--repo` itself: no `[ask]` names it and the control's origin
+is a local path.
 
 WHAT IT DOES NOT DO (see docs/onboarding-control.md for the owner runbook of each):
   * no model session. `/agrim-loop` is a model turn; this control drives the SAME scripts the
@@ -87,10 +90,6 @@ DEMO_FILE = "sigma-demo.md"
 #: SCAFFOLD writes is what `record done` sees. The confirm variant overwrites whatever default
 #: init scaffolded, so only this variant sees a bad default (review of PR #306).
 VARIANTS = ("confirm", "no-command")
-
-
-class _Finished(Exception):
-    """A mode's flow ended early by design (the github no-command variant stops at `record done`)."""
 
 
 class Red(Exception):
@@ -410,7 +409,7 @@ def _loop_next_line(init_out):
 
 # ------------------------------------------------------------------------------ the flow
 
-def _init_and_verify(run, qs, sigma, repo, env, mode, variant, extra=()):
+def _init_and_verify(run, qs, sigma, repo, env, mode, variant):
     """README flags, then the [ask] answers, then (confirm variant) the README's confirm gesture.
     -> (init's last stdout, config.json's `verify` as init left it, before any confirm)."""
     init = [sys.executable, pathlib.Path(sigma) / qs["init_script"], "."] + qs["init_flags"]
@@ -434,7 +433,7 @@ def _init_and_verify(run, qs, sigma, repo, env, mode, variant, extra=()):
         if mode == "github" and "mode" in new:
             # No [ask] names --repo: the control's origin is a local path (or absent), not a GitHub
             # owner/name, so github mode needs the repository given -- as the SKILL table says.
-            flags += ["--repo", FAKE_REPO] + list(extra)
+            flags += ["--repo", FAKE_REPO]
         out = run.step("init (answers: " + ",".join(new) + ")", init + flags, repo, env, ok_rc=(0, 1))
     else:
         raise Red("init", "init still asking after four rounds of answers")
@@ -477,8 +476,8 @@ def check_local(obs):
 
 
 def check_no_command(obs):
-    """The no-command variant's own goal (#228's trap, at the default init scaffolds): with no
-    confirmable candidate and the verify question left open, init must leave enforce OFF, so
+    """The local no-command variant's own goal (#228's trap, at the default init scaffolds): with
+    no confirmable candidate and the verify question left open, init must leave enforce OFF, so
     `loop.py verify` says NO-COMMAND (exit 3) and `record done` still succeeds. The shipped bug
     (enforce ON + command "" persisted by the scaffold) is exit 4 here. Pure, like check_local."""
     cfg = obs.get("scaffolded_verify") or {}
@@ -495,11 +494,6 @@ def check_no_command(obs):
     if "gh_calls" in obs:
         out.append(_check("the loop made no gh call in local-goals mode", obs.get("gh_calls") == [],
                           obs.get("gh_calls")))
-    if "issue_final" in obs:
-        out.append(_check("issue closed after done", obs.get("issue_final") == "closed",
-                          obs.get("issue_final")))
-        out.append(_check("every gh call was one the fake models", obs.get("unhandled") == "",
-                          obs.get("unhandled")))
     return out
 
 
@@ -507,7 +501,8 @@ def check_github(obs):
     """#232 done-means-merged, as the fake records it. Pure, like check_local."""
     return [
         _check("the review gate ran (a sigma:block parked the merge)",
-               str(obs.get("blocked_merge", "")).startswith("PARK:"), obs.get("blocked_merge")),
+               str(obs.get("blocked_merge", "")).startswith("PARK:")
+               and "sigma:block" in str(obs.get("blocked_merge")), obs.get("blocked_merge")),
         _check("merge passed the review gate once approved",
                "review gate passed" in str(obs.get("merge", "")), obs.get("merge")),
         _check("record done REFUSED while the PR is open", obs.get("early_done_rc") == 4,
@@ -528,6 +523,22 @@ def check_github(obs):
         _check("every gh call was one the fake models", obs.get("unhandled") == "",
                obs.get("unhandled")),
     ]
+
+
+def check_github_no_command(obs):
+    """#312: the github no-command variant runs the confirm variant's whole real path (work ON), so
+    every check_github assertion applies except the one about evidence, which is replaced by its
+    honest opposite: nothing to run, so no evidence -- and the merge passed anyway. The #312 bug is
+    `merge passed the review gate once approved` red (the approved merge parked on "no fresh verify
+    evidence"). Pure, like check_local."""
+    cfg = obs.get("scaffolded_verify") or {}
+    return [
+        _check("init left verify.enforce OFF with no command confirmed",
+               not cfg.get("enforce") and not cfg.get("command"), cfg),
+        _check("loop verify said NO-COMMAND (exit 3)", obs.get("verify_rc") == 3, obs.get("verify_rc")),
+        _check("no verify evidence was written (nothing to run)", not obs.get("evidence"),
+               obs.get("evidence")),
+    ] + [a for a in check_github(obs) if a["name"] != "verify evidence passed in the goal worktree"]
 
 
 def _stub_gh(bin_dir, log):
@@ -642,7 +653,7 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
 
 def _drive_local_goal(run, loop, repo, env, goal, pid):
     """The agrim-loop skill's per-goal gestures with work.enabled off (--local-only). `goal` is a
-    goal file (local-goals mode) or an issue number (github mode, the no-command variant)."""
+    goal file (local-goals mode)."""
     is_file = (repo / goal).is_file()
     py = sys.executable
     name = pathlib.Path(goal).name
@@ -714,13 +725,11 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         _git(["add", "-A"], repo, env)
         _git(["commit", "-qm", "fresh repository"], repo, env)
         _git(["push", "-q", "-u", "origin", "main"], repo, env)
-        # The no-command variant also passes --local-only (no [ask] names it here: the remote is
-        # fine). With work ON, `work.py merge` refuses without passing verify evidence WHETHER OR
-        # NOT enforce is set, so a no-command goal parks there either way and the enforce default
-        # is invisible; `record done`'s enforce gate is reachable in github mode only with work off.
-        extra = ["--local-only"] if variant == "no-command" else []
+        # #312: both variants run work ON -- the real github path. (The no-command variant used to
+        # add --local-only, because `work.py merge` demanded verify evidence even with enforce off
+        # and no command to produce it; that was the bug, not the premise.)
         init_out, obs["scaffolded_verify"] = _init_and_verify(run, qs, sigma, repo, env, "github",
-                                                              variant, extra)
+                                                              variant)
 
         def gh_(args, name):
             return run.step(name, [gh] + args, repo, env)
@@ -739,13 +748,6 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         goal = run.step("loop next", nxt, repo, env).stdout.strip()
         if goal != "1":
             raise Red("loop next", f"expected issue 1, got {goal!r}")
-        if variant == "no-command":
-            obs.update(_drive_local_goal(run, loop, repo, env, goal, pid))
-            obs.pop("status")
-            obs["issue_final"] = state()["issues"][goal]["state"]
-            if obs["record_rc"] != 0:
-                raise Red("record done", f"{goal}: {obs['record_err'].strip()[-300:]}")
-            raise _Finished()
         run.step("agent-start", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid], repo, env)
         run.step("work start", [py, loop / "work.py", "start", ".sdlc", goal, "--session-pid", pid], repo, env)
         run.step("phase_report start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement",
@@ -754,7 +756,8 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         end = run.step("phase_report end", [py, loop / "phase_report.py", "end", ".sdlc", goal,
                                             "implement", "--pid", pid], repo, env)
         obs["cost_line"] = next((l for l in end.stdout.splitlines() if "cost" in l), "")
-        run.step("loop verify", [py, loop / "loop.py", "verify", ".sdlc", goal], repo, env, ok_rc=None)
+        obs["verify_rc"] = run.step("loop verify", [py, loop / "loop.py", "verify", ".sdlc", goal],
+                                    repo, env, ok_rc=None).returncode
         ev = repo / ".sdlc" / "state" / "verify" / f"{goal}.json"
         obs["evidence"] = json.loads(ev.read_text(encoding="utf-8")) if ev.is_file() else None
         run.step("work commit", [py, loop / "work.py", "commit", ".sdlc", goal, "--message",
@@ -784,14 +787,12 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         shown = subprocess.run(["git", "--git-dir", str(remote), "show", f"main:{WORK_FILE}"],
                                capture_output=True, text=True)
         obs["remote_file"] = shown.stdout if shown.returncode == 0 else None
-    except _Finished:
-        pass
     except Red as red:
         run.failed = red.step
         run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
     obs["unhandled"] = unhandled.read_text(encoding="utf-8") if unhandled.is_file() else ""
     if run.failed is None:
-        run.assertions += (check_no_command if variant == "no-command" else check_github)(obs)
+        run.assertions += (check_github_no_command if variant == "no-command" else check_github)(obs)
     calls = _gh_calls(log_path)
     ev = obs.get("evidence") or {}
     obs["evidence"] = {k: ev.get(k) for k in ("command", "exit", "verify_state")} if ev else None
