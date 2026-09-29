@@ -527,6 +527,66 @@ def test_attempt_rebase_guard_control_the_fixture_loses_content_without_it(tmp_p
                                                      world.tip(BRANCH)])
 
 
+def test_attempt_rebase_keeps_a_merge_commit_landing_rather_than_flattening_it(tmp_path):
+    """#2756: a plain rebase drops a "Merge pull request #N" landing and replays its second-parent
+    commits flat onto the first-parent line, where upkeep's no-direct-commits check refuses them
+    on every later pass. The human-attended rebase must not create that state either."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", "-b", "sdlc/5")
+    _write(world.local / "g.txt", "g\n")
+    _git(world.local, "add", "g.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 5")
+    _git(world.local, "checkout", "-q", BRANCH)
+    _git(world.local, "merge", "-q", "--no-ff", "-m", "Merge pull request #9 from org/sdlc/5", "sdlc/5")
+    _git(world.local, "push", "-q", "origin", BRANCH)
+    world.commit_on_base("m1.txt", "m1", "chore: base moves")
+    cwd = str(world.local)
+    report = m.attempt_rebase(_run, cwd, "origin", BRANCH, BASE)
+    assert report["outcome"] == m.REBASED, report
+    first_parent = _run(cwd, ["git", "log", "--first-parent", "--format=%s",
+                              "origin/%s..%s" % (BASE, world.tip(BRANCH))]).splitlines()
+    assert first_parent == ["Merge pull request #9 from org/sdlc/5",
+                            "feat: seed the feature branch (#1)"], first_parent
+
+
+def test_161_attempt_rebase_still_refuses_a_reverted_merge_landing_under_rebase_merges(tmp_path):
+    """#161: `--rebase-merges` puts merge commits into the replayed history; the #144/#278 guard
+    in front of this push (`_would_lose`, then `push_branch`) must still see a base revert of a
+    merge landing's content -- a deletion and a rollback -- and push nothing."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _git(world.local, "checkout", "-q", "-b", "sdlc/5")
+    _write(world.local / "g.txt", "g\n")
+    _git(world.local, "add", "g.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 5 part 1")
+    _write(world.local / "seed.txt", "seed, edited by goal 5\n")
+    _git(world.local, "add", "seed.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 5 part 2")
+    _git(world.local, "checkout", "-q", BRANCH)
+    _git(world.local, "merge", "-q", "--no-ff", "-m", "Merge pull request #9 from org/sdlc/5", "sdlc/5")
+    _git(world.local, "push", "-q", "origin", BRANCH)
+    _git(world.local, "checkout", "-q", BASE)
+    _git(world.local, "cherry-pick", "sdlc/5~1", "sdlc/5")
+    _git(world.local, "revert", "--no-edit", "HEAD", "HEAD~1")
+    _git(world.local, "push", "-q", "origin", BASE)
+    _git(world.local, "checkout", "-q", BRANCH)
+    cwd = str(world.local)
+    before = world.tip(BRANCH)
+    local_before = _run(cwd, ["git", "rev-parse", "HEAD"])
+    seen = []
+
+    def watch(c, argv):
+        seen.append([str(a) for a in argv])
+        return _run(c, argv)
+    report = m.attempt_rebase(watch, cwd, "origin", BRANCH, BASE)
+    assert any(a[:2] == ["git", "rebase"] and "--rebase-merges" in a for a in seen), seen
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["files"] == ["g.txt", "seed.txt"], report
+    assert world.tip(BRANCH) == before
+    assert _run(cwd, ["git", "rev-parse", "HEAD"]) == local_before
+
+
 def test_attempt_rebase_on_a_conflict_stops_and_leaves_both_repos_as_they_were(tmp_path):
     m = _mod()
     world = World(tmp_path).build()

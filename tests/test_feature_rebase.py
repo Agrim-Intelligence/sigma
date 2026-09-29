@@ -2409,3 +2409,285 @@ def test_278_a_would_drop_refusal_is_not_classified_as_a_merge_conflict(tmp_path
     assert "could not apply cleanly" not in stale and "conflict" not in stale.lower(), stale
     assert loop._reason_class(stale) == "needs_decision"
     assert "re-run `loop.py verify`" not in work._without_verify_remediation(stale)
+
+
+# ===========================================================================================
+# #2756 — upkeep must not FLATTEN a merge-commit landing (and then refuse the branch forever),
+# and a human needs a sanctioned exit for a branch that was already flattened.
+# ===========================================================================================
+
+
+def _land_with_a_merge_commit(world, number=11, pr=101):
+    """A goal lands on the feature branch as a two-parent `Merge pull request #N` commit --
+    exactly what a human pressing "Create a merge commit" leaves, whatever `merge_method` says."""
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "pull", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", "-b", "sdlc/%s" % number)
+    for i in (1, 2):
+        _write(world.local / ("g%s-%s.txt" % (number, i)), "g%s\n" % i)
+        _git(world.local, "add", "g%s-%s.txt" % (number, i))
+        _git(world.local, "commit", "-q", "-m", "sdlc: %s part %s" % (number, i))
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "merge", "-q", "--no-ff", "-m",
+         "Merge pull request #%s from org/sdlc/%s" % (pr, number), "sdlc/%s" % number)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+
+
+def test_a_merge_commit_landing_survives_upkeep_with_its_pull_request_trace(tmp_path):
+    """#2756's definition of done: build a unit branch with a `--no-ff` "Merge pull request #N"
+    landing in a SQUASH repo, advance the integration branch, run upkeep -- the merge commit must
+    still be there afterwards, and the NEXT pass must still accept the branch. A plain `git rebase`
+    replays the merge's second-parent commits flat onto the first-parent line, where their
+    `sdlc: <n>` subjects carry no trace, and every later pass then refuses the branch forever."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _land_with_a_merge_commit(world)
+    world.move_integration()
+    filed = _filer(m)
+    first = _upkeep(m, world)
+    assert first["outcome"] == m.REBASED, first
+    _git(world.local, "fetch", "-q", "origin")
+    merges = _git(world.local, "log", "--merges", "--format=%s",
+                  "origin/%s..origin/%s" % (INTEGRATION, FEATURE)).splitlines()
+    assert merges == ["Merge pull request #101 from org/sdlc/11"], merges
+    assert m.direct_commits(m._run, str(world.local),
+                            "origin/" + INTEGRATION, "origin/" + FEATURE) == []
+    world.move_integration(name="m2.txt", body="m2", subject="integration moves again")
+    second = _upkeep(m, world)
+    assert second["outcome"] == m.REBASED, second
+    assert filed == [], "a PR-landed branch must never be filed as carrying direct commits"
+
+
+def _flatten_by_hand(world):
+    """Reproduce the reported incident's end state: the merge landing already linearized by an
+    older, plain-rebase upkeep, so its commits now sit on the first-parent line with no trace."""
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "pull", "-q", "origin", FEATURE)
+    _git(world.local, "rebase", "-q", "origin/" + INTEGRATION)
+    _git(world.local, "push", "-q", "--force", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+
+
+def test_an_already_flattened_branch_can_be_acked_and_the_ack_survives_the_rebase_it_allows(tmp_path):
+    """The sanctioned exit. An ack is keyed by PATCH-ID, not sha: the very rebase the ack unblocks
+    rewrites every sha on the branch, so a sha-keyed ack would re-lock the branch on the next pass."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _land_with_a_merge_commit(world)
+    world.move_integration()
+    _flatten_by_hand(world)
+    world.move_integration(name="m2.txt", body="m2", subject="integration moves again")
+    filed = _filer(m)
+    locked = _upkeep(m, world)
+    assert locked["outcome"] == m.DIRECT_COMMITS, locked
+    assert len(locked["direct"]) == 2
+    assert "feature_rebase.py ack" in filed[0]["body"], "the finding must name the real exit"
+
+    result = m.ack(str(world.sdlc), _cfg(), UNIT, [d["sha"] for d in locked["direct"]])
+    assert result["ok"] is True, result
+    assert len(result["acked"]) == 2
+    assert m.ack_path(str(world.sdlc), UNIT).is_file()
+
+    freed = _upkeep(m, world)
+    assert freed["outcome"] == m.REBASED, freed
+    world.move_integration(name="m3.txt", body="m3", subject="and again")
+    again = _upkeep(m, world)
+    assert again["outcome"] == m.REBASED, "the ack must survive the rewrite it allowed: %s" % again
+
+
+def test_an_ack_covers_only_the_commits_it_names(tmp_path):
+    """The check stays strict for everything else: a direct commit added AFTER the ack blocks."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    _filer(m)
+    first = _upkeep(m, world)
+    assert m.ack(str(world.sdlc), _cfg(), UNIT, [first["direct"][0]["sha"]])["ok"] is True
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "pull", "-q", "origin", FEATURE)
+    _write(world.local / "k.txt", "k\n")
+    _git(world.local, "add", "k.txt")
+    _git(world.local, "commit", "-q", "-m", "another one, also direct")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.DIRECT_COMMITS, report
+    assert [d["subject"] for d in report["direct"]] == ["another one, also direct"]
+
+
+def test_an_ack_refuses_a_sha_that_is_not_an_unaccounted_commit_on_the_branch(tmp_path):
+    """An ack is a statement about THIS branch's current findings. A typo'd or unrelated sha is
+    refused loudly rather than silently recorded as a no-op."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    _git(world.local, "fetch", "-q", "origin")
+    landed, direct = _git(world.local, "log", "--format=%H", "-2",
+                          "origin/" + FEATURE).splitlines()[::-1]
+    for asked in ([landed], [direct, landed]):
+        result = m.ack(str(world.sdlc), _cfg(), UNIT, asked)
+        assert result["ok"] is False, (asked, result)
+        assert landed[:12] in result["why"]
+        assert not m.ack_path(str(world.sdlc), UNIT).exists(), "a refused ack writes nothing"
+
+
+def test_the_cli_acks_every_current_finding_with_all(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    _filer(m)
+    assert m.main(["feature_rebase.py", "ack", str(world.sdlc), UNIT]) == 2, "no shas, no --all"
+    assert m.main(["feature_rebase.py", "ack", str(world.sdlc), UNIT, "--all"]) == 0
+    assert _upkeep(m, world)["outcome"] == m.REBASED
+
+
+# ===========================================================================================
+# #161 — Sigma's own additions: the #2756 port COMPOSES with #144's data-loss guard, which the
+# upstream change never had to. The guard is the OUTER guard: an ack only lets the pass reach the
+# replay, and the replay's result is still measured before anything is pushed. And
+# `--rebase-merges` puts merge commits into the replayed history, which the guard's reads must
+# still see through.
+# ===========================================================================================
+
+
+def _acked_revert_world(tmp_path):
+    """`_revert_world` (the base's tip reverts X1, which the branch carries) with ONE commit on the
+    branch that no pull request accounts for -- so without an ack the pass stops at DIRECT_COMMITS
+    and never reaches the replay, and with one it does."""
+    world, x1 = _revert_world(tmp_path)
+    _git(world.local, "checkout", "-q", FEATURE)
+    _write(world.local / "pay" / "direct.txt", "confirmed, but no trace\n")
+    _git(world.local, "add", "pay/direct.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 12 flattened")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    return world, x1
+
+
+def test_161_acked_commits_plus_a_base_revert_are_still_refused_before_any_push(tmp_path):
+    """#161's composition control. An ack answers "did these commits come through a pull
+    request?"; it says nothing about whether the REPLAY keeps the branch's content, and it must
+    never be read as licence to skip that measurement. Acked commits + a revert in the base: the
+    ack is honoured (the pass gets past DIRECT_COMMITS) and the guard still refuses; the remote is
+    byte-identical. Seen red under a deliberate order break (the guard skipped for an acked pass,
+    and the push moved above the guard)."""
+    m = _mod()
+    world, x1 = _acked_revert_world(tmp_path)
+    (world.sdlc / "config.json").write_text(json.dumps(_cfg()), encoding="utf-8")
+    filed = _filer(m)
+    locked = _upkeep(m, world)
+    assert locked["outcome"] == m.DIRECT_COMMITS, locked
+    assert m.main(["feature_rebase.py", "ack", str(world.sdlc), UNIT, "--all"]) == 0
+    remote_before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["acked"] and report["direct"] == [], "the ack was not honoured: %s" % report
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert sorted(report["dropped"]) == sorted(x1), report["dropped"]
+    assert world.tip(FEATURE) == remote_before, "an acked pass force-pushed a lossy replay"
+    assert set(x1) <= _tree_paths(world, world.tip(FEATURE))
+    assert world.dirt()["worktrees"] == [str(world.local)]
+    assert any("would lose" in f["title"] for f in filed), filed
+
+
+def test_161_the_acked_revert_fixture_is_destructive_without_the_guard(tmp_path):
+    """Sensitivity of the control above: with the comparison disabled, the SAME acked scenario
+    force-pushes and loses X1 -- so the ack path really does reach a push the guard has to stop."""
+    m = _mod()
+    world, x1 = _acked_revert_world(tmp_path)
+    _filer(m)
+    _upkeep(m, world)
+    assert m.ack(str(world.sdlc), _cfg(), UNIT, [], all_=True)["ok"] is True
+    m.dropped_paths = lambda *a, **k: []
+    before = world.tip(FEATURE)
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    assert world.tip(FEATURE) != before
+    assert not (set(x1) & _tree_paths(world, world.tip(FEATURE)))
+
+
+def _merge_landing_reverted_in_the_base(world):
+    """A merge landing whose second-parent commits ADD a file and EDIT `seed.txt`; the base then
+    receives copies of both (a rebase-merge onto `main`) and reverts them. Under
+    `--rebase-merges` the replayed history carries merge commits, and the loss is a deletion
+    (g11-1.txt) plus a rollback (seed.txt) -- the two shapes `dropped_paths` measures."""
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "pull", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", "-b", "sdlc/11")
+    _write(world.local / "g11-1.txt", "g1\n")
+    _git(world.local, "add", "g11-1.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 11 part 1")
+    _write(world.local / "seed.txt", "seed, edited by goal 11\n")
+    _git(world.local, "add", "seed.txt")
+    _git(world.local, "commit", "-q", "-m", "sdlc: 11 part 2")
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "merge", "-q", "--no-ff", "-m", "Merge pull request #101 from org/sdlc/11",
+         "sdlc/11")
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "cherry-pick", "sdlc/11~1", "sdlc/11")
+    _git(world.local, "revert", "--no-edit", "HEAD", "HEAD~1")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+
+
+def test_161_rebase_merges_does_not_defeat_the_guard_on_a_reverted_merge_landing(tmp_path):
+    """`--rebase-merges` changes the SHAPE of the replayed history (merges in it); the guard reads
+    trees plus `git log -m`, so a base revert of a merge landing's content is still refused."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _merge_landing_reverted_in_the_base(world)
+    _filer(m)
+    before = world.tip(FEATURE)
+    seen = []
+
+    def watch(cwd, argv):
+        seen.append(list(argv))
+        return m._run(cwd, argv)
+    report = m.upkeep(str(world.sdlc), _cfg(), "7", UNIT, run=watch)
+    assert any(a[:3] == ["git", "rebase", "--rebase-merges"] for a in seen), seen
+    assert report["outcome"] == m.WOULD_DROP, report
+    assert report["dropped"] == ["g11-1.txt", "seed.txt"], report["dropped"]
+    assert world.tip(FEATURE) == before
+
+
+def test_161_the_reverted_merge_landing_fixture_is_destructive_without_the_guard(tmp_path):
+    """Sensitivity: `--rebase-merges` itself does NOT preserve the content -- with the comparison
+    disabled the same fixture force-pushes and loses both paths, so the guard is doing the work."""
+    m = _mod()
+    world = World(tmp_path).build()
+    _merge_landing_reverted_in_the_base(world)
+    _filer(m)
+    m.dropped_paths = lambda *a, **k: []
+    report = _upkeep(m, world)
+    assert report["outcome"] == m.REBASED, report
+    tip = world.tip(FEATURE)
+    assert "g11-1.txt" not in _tree_paths(world, tip)
+    assert _git(world.local, "show", "%s:seed.txt" % tip) == "seed"
+
+
+def test_161_an_ack_landed_on_the_integration_branch_frees_a_checkout_that_lacks_the_file(tmp_path):
+    """The team half of the exit: the ack is read from the remote integration branch too, so a
+    teammate whose working tree does not have the file yet is still freed once it has landed."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    _filer(m)
+    assert m.ack(str(world.sdlc), _cfg(), UNIT, [], all_=True)["ok"] is True
+    path = m.ack_path(str(world.sdlc), UNIT)
+    rel = path.relative_to(world.local).as_posix()
+    _git(world.local, "checkout", "-q", INTEGRATION)
+    _git(world.local, "add", rel)
+    _git(world.local, "commit", "-q", "-m", "chore: land the rebase ack (#12)")
+    _git(world.local, "push", "-q", "origin", INTEGRATION)
+    path.unlink()
+    assert not path.exists()
+    assert _upkeep(m, world)["outcome"] == m.REBASED

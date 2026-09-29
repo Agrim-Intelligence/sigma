@@ -123,7 +123,24 @@ and the difference decides what you may rely on:
   from a merge landing (`arrived_through_a_pull_request`). One commit with no trace and the pass
   stops: the branch is left exactly as it was, and the finding is filed as a tracked issue naming
   each unaccounted-for commit. `--first-parent` is what keeps a merge landing's second-parent
-  commits from reading as direct ones.
+  commits from reading as direct ones — and it holds only because the replay itself runs
+  `git rebase --rebase-merges` (as does `/agrim-rebase`), which recreates a merge landing instead of
+  flattening its commits onto the first-parent line (#2756; a plain rebase did exactly that on a
+  real host repo and locked the unit on every later pick).
+- **the sanctioned exit is an ack** (#2756). Commits a human has confirmed arrived through a pull
+  request but lost its trace are acked with `feature_rebase.py ack .sdlc <unit> <sha>...` (or
+  `--all`), which writes `.sdlc/features/rebase-acks/<unit>.json`. The ack is keyed by
+  **patch-id**, so it survives the rebase it unblocks; it is read from the working tree AND from
+  the remote integration branch, so landing that file on the integration branch through a pull
+  request makes it every teammate's answer. Only a commit the check currently reports can be
+  acked; everything else stays strict.
+- **an ack is not a licence to lose content** (#161). It answers only "did these commits come
+  through a pull request?", so it lets the pass reach the replay and nothing more: the replay's
+  result is still measured by the §3b tree guard before any push, so an acked branch whose base
+  holds a revert of its work is still refused (`would-drop`) with the remote unchanged. The same
+  holds for `--rebase-merges`: it changes the replayed history's shape (merge commits in it), and
+  the guard reads trees plus the branch's history with `git log -m`, so a base revert of a merge
+  landing's content is refused too.
 
 The check is narrow on purpose and its blind spots are inventoried with the model's other gaps in
 §15. The short version: it runs only on a pick, and only when the branch is behind — and when it
