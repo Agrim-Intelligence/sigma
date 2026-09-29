@@ -1329,6 +1329,36 @@ def test_backlog_cards_without_the_goal_label_are_not_mistaken_for_an_unseeded_m
     assert "board_migrate" not in capsys.readouterr().err
 
 
+def test_goal_cards_stranded_in_a_humans_own_lanes_warn_once_per_run(capsys):
+    """#235 (review of PR #279, block #2): a board that GAINED a `Ready` lane while its goal cards
+    sat in a human's own lanes (`Todo`, `Needs design`) or in no lane at all reads as an empty queue
+    -- `_board_queue` picks only Ready, and the uncarded fallback only issues with NO card. Counting
+    only Backlog cards left that silent (the loop reported DONE). Every open, eligible goal card
+    outside Ready and outside the loop's own post-pick lanes is stranded; one warning per run."""
+    run = _queue_world(items=[_card(5, "Todo", "sdlc:goal"), _card(6, "Needs design", "sdlc:goal"),
+                              _card(8, None, "sdlc:goal"), _card(7, "Done", "sdlc:goal"),
+                              _card(9, "Todo", "sdlc:goal", "sdlc:parked"), _card(10, "Todo")],
+                       issues=[])
+    src = _src(run)
+    assert src.next_pending() is None
+    err = capsys.readouterr().err
+    assert "3 sdlc:goal card(s)" in err and "board_migrate" in err, err
+    assert "'Todo'" in err and "'Needs design'" in err and "no Status" in err
+    assert "--owner acme --project 4" in err
+    assert src.next_pending() is None
+    assert "board_migrate" not in capsys.readouterr().err             # once per run, not per pick
+
+
+def test_goal_cards_in_the_loops_own_in_flight_lanes_are_not_stranded(capsys):
+    """In Progress / QC / Blocked / Parked / Done are where the loop itself puts picked work: a goal
+    card there is not a missed migration."""
+    run = _queue_world(items=[_card(n, s, "sdlc:goal") for n, s in
+                              enumerate(("In Progress", "QC", "Blocked", "Parked", "Done"), 1)],
+                       issues=[])
+    assert _src(run).next_pending() is None
+    assert "board_migrate" not in capsys.readouterr().err
+
+
 # --- #719: a real Priority field on the board, mirrored from the label ---------------------------
 # priority:P* is a LABEL. The loop reads it for ordering (#698) but the board never knew about it,
 # so there was no column to sort or group by and the only way to see it was to switch on `Labels`,

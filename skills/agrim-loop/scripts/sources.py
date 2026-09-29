@@ -1873,8 +1873,15 @@ class GitHubSource:
             return None
         items = (data.get("items") if isinstance(data, dict) else data) or []
         self._warn_truncated("open board items", len(items))
-        ready, carded, stranded = [], set(), 0
+        ready, carded, stranded = [], set(), {}
         seen_ready = 0                        # #1437/S3: distinguishes "lane empty" from "filtered"
+        # #235 (review of PR #279, block #2): the lanes the LOOP itself moves a picked goal into. A
+        # goal card anywhere else -- Backlog, a human's own `Todo` / `Needs design`, or no Status at
+        # all -- can never be picked on this path (only Ready is), and the uncarded fallback below
+        # only covers issues with NO card. Counting Backlog alone left a board that gained `Ready`
+        # while its goal cards sat in a human's lanes reading as a silent DONE.
+        in_flight = {self.col[k] for k in ("in_progress", "qc", "done", "blocked", "parked")}
+        not_eligible = set(self.not_eligible_labels())
         # #1437/S1: resolved ONCE per read. Called per card, a persistent resolution failure spawns
         # one `gh api user` subprocess PER READY CARD (measured: 25 cards -> 25 calls), and the
         # once-only warning makes that silent as well as slow.
@@ -1919,8 +1926,11 @@ class GitHubSource:
                               and self.blocking_label in names)
                 ready.append((0 if is_blocking else 1, self._card_rank(it),
                              self._board_feature_rank(names), pos, int(n)))
-            elif it.get("status") == self.col["backlog"] and self.goal_label in (it.get("labels") or []):
-                stranded += 1
+            elif it.get("status") not in in_flight:
+                names = set(it.get("labels") or [])
+                if self.goal_label in names and not (names & not_eligible):
+                    lane = it.get("status")
+                    stranded[lane] = stranded.get(lane, 0) + 1
         # #1437/S3: only when the lane is GENUINELY empty. A lane that is full but entirely
         # FILTERED (every Ready card is someone else's, or parked) also leaves `ready` empty, and
         # telling that operator to run a seeding migration is advice that cannot help them.
@@ -1969,19 +1979,34 @@ class GitHubSource:
         return self._unit_priority_rank(unit)
 
     def _warn_unseeded(self, stranded):
-        """`Ready` exists, nothing is in it, and goal-labelled cards are sitting in Backlog. That is
-        an unfinished migration (#707), not a drained backlog — and it does not self-heal: the queue
-        reads empty, so `_next()` reports DONE, so no status write happens, so `_sync_backlog` (the
-        only thing that would promote those cards) never runs. Silence here looks exactly like a
-        finished sprint, which is why it has to be loud. Costs no extra call: the `is:open` read
-        already carries each card's labels and status. Best-effort; never raises."""
+        """`Ready` exists, nothing is in it, and open goal cards that are eligible by their labels
+        sit OUTSIDE it -- in Backlog, in a lane of a human's own (`Todo`, `Needs design`), or with
+        no Status at all (`stranded`: {lane or None: count}; the loop's own post-pick lanes are
+        never counted). That is an unfinished migration (#707), or a `Ready` lane that arrived on a
+        board whose cards were never moved into it (#235, review of PR #279), not a drained backlog
+        -- and it does not self-heal: the queue reads empty, so `_next()` reports DONE, so no status
+        write happens, so `_sync_backlog` (the only thing that would promote a Backlog or blank
+        card) never runs, and nothing ever moves a card out of a human's own lane. Silence here
+        looks exactly like a finished sprint, which is why it has to be loud.
+
+        ONCE PER RUN (per source instance; `loop.py` builds one per run): the queue is read on
+        every pick attempt, and repeating the same line on each is noise that buries it. Costs no
+        extra call: the `is:open` read already carries each card's labels and status.
+        Best-effort; never raises."""
+        if getattr(self, "_unseeded_warned", False):
+            return
+        self._unseeded_warned = True
         try:
+            total = sum(stranded.values())
+            where = ", ".join("%d in %s" % (n, "no Status" if lane is None else repr(lane))
+                              for lane, n in sorted(stranded.items(), key=lambda kv: -kv[1]))
             sys.stderr.write(
-                "sigma: the board has a %r lane but NOTHING in it, while %d %s card(s) sit in "
-                "%r — this reads as an empty queue and will not fix itself. Looks like a board "
-                "migration that added the lane without seeding it: run "
-                "`board_migrate.py --owner <owner> --project <n> --apply` to move them.\n"
-                % (self.col["ready"], stranded, self.goal_label, self.col["backlog"]))
+                "sigma: the board has a %r lane but NOTHING in it, while %d %s card(s) sit outside "
+                "it (%s) — this reads as an empty queue and will not fix itself: on this board only "
+                "a card in %r is picked. Move them with `board_migrate.py --owner %s --project %s "
+                "--backlog <lane> --apply` (once per lane), or drag them to %r.\n"
+                % (self.col["ready"], total, self.goal_label, where, self.col["ready"],
+                   self._proj_owner(), self._project_number, self.col["ready"]))
         except Exception:
             pass
 
@@ -3706,8 +3731,24 @@ class GitHubSource:
         data = self._gh_json(["project", "list", "--owner", owner, "--format", "json", "--limit", "100"])
         projects = (data.get("projects") if isinstance(data, dict) else data) or []
         self._owner_had_boards = len(projects) > 0
+        # #235: a PINNED number wins over a title match, and is honoured even when it sits outside
+        # the one page of 100 boards read above (an org with >100 boards): that one board is read
+        # directly -- one extra read, and only when the pin was not in the page. A pin that still
+        # cannot be read falls through to the title match and then to the loud refusal, as before.
+        if want_num:
+            for p in projects:
+                if p.get("number") == want_num:
+                    return p.get("number"), p.get("id"), False
+            try:
+                p = self._gh_json(["project", "view", str(want_num), "--owner", owner,
+                                   "--format", "json"])
+                if isinstance(p, dict) and p.get("number") == want_num and p.get("id"):
+                    self._owner_had_boards = True
+                    return p.get("number"), p.get("id"), False
+            except Exception as exc:
+                self._note_scope(exc)
         for p in projects:
-            if (want_num and p.get("number") == want_num) or p.get("title") == title:
+            if p.get("title") == title:
                 return p.get("number"), p.get("id"), False
         return None, None, False
 
@@ -3839,19 +3880,38 @@ class GitHubSource:
         is the fresh-board path, where GitHub itself created the options we are replacing.
 
         `existing` defaults to empty, which reproduces the historical all-id-less output exactly —
-        so a caller that has not read the field yet is no worse off than before."""
+        so a caller that has not read the field yet is no worse off than before.
+
+        Colour and description (#235, review of PR #279): an existing option that carries a valid
+        `color` and a `description` is sent back WITH them, so a rewrite never recolours or blanks
+        a lane a human styled. Only a new option, or an existing one read without them (`gh project
+        field-list` returns just id + name), gets the colour-by-position and an empty description.
+
+        Every interpolated value -- field id, option id, name, description -- is a JSON-quoted
+        GraphQL string literal (JSON's escapes are a subset GraphQL accepts), never pasted raw: a
+        human's lane named `Needs "design"` otherwise ends the string and breaks the mutation."""
         colors = ("GRAY", "YELLOW", "ORANGE", "GREEN", "RED", "BLUE", "PURPLE", "PINK")
-        by_name = {o.get("name"): o.get("id") for o in (existing or []) if o.get("id")}
+        existing = [o for o in (existing or []) if isinstance(o, dict)]
+        by_id = {o.get("id"): o for o in existing if o.get("id")}
+        by_name = {o.get("name"): o.get("id") for o in existing if o.get("id")}
         # Casefolded fallback for rule 1's case-insensitive half. `setdefault` so the FIRST existing
         # option under a given casefold wins — irrelevant on a healthy board (names are unique) and
         # merely stable, not a cleanup, on one that already carries a case-duplicate.
         by_name_ci = {}
-        for o in (existing or []):
+        for o in existing:
             nm, oid_ = o.get("name"), o.get("id")
             if nm and oid_:
                 by_name_ci.setdefault(nm.casefold(), (nm, oid_))
         # {new name -> old name}, so a desired column can claim the id of the option it replaces.
         was = {new: old for old, new in (rename or {}).items()}
+
+        def style(oid, position):
+            o = by_id.get(oid) or {}
+            color = str(o.get("color") or "").upper()
+            desc = o.get("description")
+            return (color if color in colors else colors[position % len(colors)],
+                    desc if isinstance(desc, str) else "")
+
         claimed, entries = set(), []
         for i, n in enumerate(names):
             entry_name, oid = n, (by_name.get(n) or by_name.get(was.get(n)))
@@ -3861,13 +3921,15 @@ class GitHubSource:
                     entry_name, oid = hit          # keep GitHub's existing spelling, not ours
             if oid:
                 claimed.add(oid)
-            entries.append((entry_name, oid, colors[i % len(colors)]))
-        for j, o in enumerate([o for o in (existing or []) if o.get("id") not in claimed]):
-            entries.append((o.get("name"), o.get("id"), colors[(len(entries) + j) % len(colors)]))
-        opts = ", ".join('{%sname: "%s", color: %s, description: ""}'
-                         % (('id: "%s", ' % oid) if oid else "", n, c) for n, oid, c in entries)
-        return ('query=mutation { updateProjectV2Field(input: {fieldId: "%s", singleSelectOptions: [%s]}) '
-                '{ projectV2Field { ... on ProjectV2SingleSelectField { id } } } }' % (field_id, opts))
+            entries.append((entry_name, oid) + style(oid, i))
+        for j, o in enumerate([o for o in existing if o.get("id") not in claimed]):
+            entries.append((o.get("name"), o.get("id")) + style(o.get("id"), len(entries) + j))
+        q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
+        opts = ", ".join('{%sname: %s, color: %s, description: %s}'
+                         % (("id: %s, " % q(oid)) if oid else "", q(n), c, q(d))
+                         for n, oid, c, d in entries)
+        return ('query=mutation { updateProjectV2Field(input: {fieldId: %s, singleSelectOptions: [%s]}) '
+                '{ projectV2Field { ... on ProjectV2SingleSelectField { id } } } }' % (q(field_id), opts))
 
     def _sync_backlog(self, owner, number, exclude):
         """Seed the board with any open goal issue not yet carded (as Todo), except the one being
@@ -3920,7 +3982,8 @@ class GitHubSource:
             # the board carrying NO Status at all. `was_new` is False (it is carded) and blank is
             # not `backlog_name`, so neither clause above fired and the card stayed blank forever
             # — invisible to `_board_queue` (which matches `status == ready_name`) and to
-            # `_warn_unseeded` (which counts only cards in Backlog), so nothing even reported it.
+            # `_warn_unseeded` (which then counted only cards in Backlog; since #235 it counts a
+            # blank goal card too), so nothing even reported it.
             # Measured on this repo's board #6: 8 open cards, five of them goal-labelled
             # (#739-743) with a correctly mirrored Priority but no Status. Those five are the
             # natural experiment that proves the asymmetry — `_mirror_priority` handles its own
