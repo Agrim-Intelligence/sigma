@@ -2114,7 +2114,7 @@ class GitHubSource:
         return fetch_issues_rest(self._run, self.repo, labels, cap,
                                   assignee=assignee, page_size=self._REST_PAGE_SIZE)
 
-    def _fetch_pending(self, extra_labels, skip, primary=True):
+    def _fetch_pending(self, extra_labels, skip, primary=True, retry_empty=True):
         """One retried, filtered, sorted fetch — `(raw_count, pending)`, `pending` sorted by
         `_pick_key`, or `(0, None)` on an exhausted-retries read failure. `extra_labels` narrows
         the query (e.g. a single priority label, ANDed onto `goal_label`) without duplicating the
@@ -2133,7 +2133,15 @@ class GitHubSource:
         everything it calls through `_pending_by_priority`/`_pending_by_label` — default `True`,
         the common case, since most repos have no board) from `next_pending`'s board-mode
         "labelled but uncarded" safety net, which passes `primary=False`. See the retry loop below
-        for what the distinction actually changes."""
+        for what the distinction actually changes.
+
+        #312: `retry_empty=False` is for an OVERLAY lane (`sdlc:blocking`) whose successful empty
+        read is an answer -- the lane legitimately has no members almost always -- rather than the
+        drained-backlog signal #447's empty-read retry insures. It changes only that branch: an
+        exception is still retried exactly as before (empty-because-error is not
+        empty-because-none), and the unresolved-assignee retry is untouched. Measured: a stock
+        github `next_pending` with an empty blocking lane went from 3.005s (1s + 2s backoff on the
+        overlay alone) to under 10ms with the same fake runner."""
         # #1661: `--feature <name>` costs ZERO extra calls: `_fetch_issues_rest` always returns
         # `body` (REST has no field selection to opt out of it), which is what `features.read`
         # needs to adjudicate the declaration pair, and `_issue_in_feature` filters the pool
@@ -2315,7 +2323,7 @@ class GitHubSource:
             if pending:
                 pending.sort(key=self._pick_key)            # priority, then bug, then oldest-first (see _pick_key)
                 return len(issues), pending
-            if last_attempt:
+            if last_attempt or not retry_empty:
                 return len(issues), None
             # Loud even on the happy path's empty case — an operator watching stderr sees WHY a
             # pick took a few extra seconds instead of silently wondering later why a goal that
@@ -2353,7 +2361,11 @@ class GitHubSource:
 
         #1837: `primary` passes straight through to `_fetch_pending` unchanged -- see that
         method's docstring."""
-        _, pending = self._fetch_pending([self.blocking_label], skip, primary=primary)
+        # #312: `retry_empty=False` -- an empty blocking lane is the normal case, and both a failed
+        # and an empty check fall through to the same full pool, so re-reading it only cost ~3s of
+        # backoff on every pick. A raised read is still retried (see `_fetch_pending`).
+        _, pending = self._fetch_pending([self.blocking_label], skip, primary=primary,
+                                         retry_empty=False)
         return pending
 
     def _pending_by_label(self, skip, primary=True):

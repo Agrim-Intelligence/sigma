@@ -63,8 +63,8 @@ flag (renamed), a value outside the offered set, or a line without the machine p
 nothing is open (github mode's board and ledger questions only appear once the mode is answered).
 Two answers the control supplies itself, because no `[ask]` names them: `--repo
 acme/onboarding-demo` in github mode (the origin is a local path, not a GitHub owner/name, so
-github mode needs the repository given), and `--local-only` in the github no-command variant
-(below). The `Next:` line's `loop.py next` command is the one the loop runs.
+github mode needs the repository given). Both github variants run with work ON -- the real path
+(#312). The `Next:` line's `loop.py next` command is the one the loop runs.
 
 **Two variants per mode.** `confirm`: the repository has a Makefile test target and the README
 gesture confirms it (enforce ON). `no-command`: the repository has only a README.txt, so nothing is
@@ -73,7 +73,7 @@ default init SCAFFOLDS is exactly what `record done` sees. The confirm variant c
 default -- the confirm overwrites it -- which is why the no-command variant exists (review of PR
 #306). Asserted for the control's goal there: init left `verify.enforce` OFF with no command;
 `loop.py verify` said NO-COMMAND (exit 3); `record done` exited 0; the goal is done (local: status
-`done`, no gh call; github: issue closed, every gh call modelled).
+`done`, no gh call). The github no-command variant asserts its own set (below).
 
 **Local-goals mode, confirm variant.** A fresh `git init` repository with no remote and a `Makefile` whose `test`
 target checks `hello.txt` (so the confirmed verify command fails before the work and passes after
@@ -106,11 +106,22 @@ while the PR was open; issue open and PR open before the merge; reconcile printe
 passed; and every gh call was one the fake models. The gh calls themselves are recorded by kind.
 
 **github mode, no-command variant.** The same origin and fake, a repository with nothing to
-confirm, init answered as above plus `--local-only`. Why work off: with work ON, `work.py merge`
-refuses without passing verify evidence whether or not `verify.enforce` is set, so a no-command
-goal parks there either way and the enforce default is invisible; `record done`'s enforce gate is
-reachable in github mode only with work off. Then `gh issue create` -> `loop.py start/next` -> the
-per-goal gestures of local mode on issue `1` -> `record done` (must exit 0 and close the issue).
+confirm, init answered exactly as the confirm variant -- work ON, no `--local-only` (#312). Then
+the confirm variant's whole flow: `gh issue create` -> `loop.py start/next` -> `work.py start` ->
+the work -> `loop.py verify` (NO-COMMAND, exit 3, no evidence) -> `work.py commit`, `pr` ->
+`sigma:block` -> `work.py merge` (must park on the review gate, naming `sigma:block`) ->
+`sigma:approve` -> `work.py merge` (must pass the review gate) -> `record done` (refused, exit 4)
+-> `record review` -> the human's `gh pr merge` -> `loop.py reconcile-merges`.
+
+Asserted: init left `verify.enforce` OFF with no command; `loop.py verify` exit 3; no verify
+evidence was written; and every github-mode assertion above except the evidence one. Before #312
+this variant passed `--local-only`, because `work.py merge` demanded verify evidence even with
+enforce off and no command -- evidence `loop.py verify` cannot write -- so every merge parked on
+"no fresh verify evidence". That was the bug: `state.verify_required` is now the one rule (enforce
+on, or a command declared) and the merge demands evidence only then. The control: that guard
+reverted in a scratch copy turns `github/no-command` RED through the documented gesture
+(`--mode github --sigma <scratch>`), its approved merge parked on "no fresh verify evidence", while
+`github` stays GREEN.
 
 ## Recorded runs
 
@@ -118,6 +129,14 @@ per-goal gestures of local mode on issue `1` -> `record done` (must exit 0 and c
 `python3 tools/onboarding_control.py`: exit 0, whole run 18.6s. `local` GREEN 2.46s, `github`
 GREEN 8.22s, `local/no-command` GREEN 1.98s (`loop verify` exit 3 NO-COMMAND, `record done` exit 0),
 `github/no-command` GREEN 5.94s (`loop verify` exit 3, `record done` exit 0, issue closed).
+
+2026-09-29, macOS (Darwin 25.6), Python 3.12.13, after #312 (github no-command on the real work-ON
+path), `/opt/homebrew/bin/python3.12 tools/onboarding_control.py`: exit 0, whole run 29.8s wall.
+`local` GREEN 4.05s, `github` GREEN 11.64s, `local/no-command` GREEN 4.72s, `github/no-command`
+GREEN 9.22s (`loop verify` exit 3, no evidence, approved merge "review gate passed", `record done`
+refused while open, reconcile `1 done (PR #100 merged)`, issue closed, 86 gh calls -- the same
+count as the confirm variant). The #312 guard reverted: `github/no-command` RED at its review-gate
+assertion (the merge parked on evidence first), `github` GREEN, exit 1.
 
 The run below predates the variants and the `[ask]` parsing; its install and per-step numbers are
 still the only measured `--install` run.
@@ -198,7 +217,8 @@ Each was run through the CLI gesture above, not only through pytest, and each is
 | Control | Gesture | Result |
 |---|---|---|
 | The empty-verify-command default reintroduced: in a scratch copy, `verify_detect.write_verify` writes `enforce: true, command: ""` again, its guard removed | `--mode local --sigma <scratch>` | exit 1, **RED at `record done`** (5.8s): the demo goal (its own `verify_command`) is done; the control's goal gets `loop.py verify` NO-COMMAND exit 3, then `record done` REFUSED exit 4 |
-| The ORIGINAL bug, as the PR #306 review reproduced it: `config.json.tmpl` back to `"enforce": true` with an empty command, and both scaffold rewrites removed (`init_flow.py`'s and `sdlc_init.py`'s `write_verify(sdlc, None, ...)`), `write_verify` itself intact | `--mode both --sigma <scratch>` | exit 1 (27.5s): `local` and `github` GREEN (the confirm overwrites the default -- before the no-command variant this was the whole run, and it was wrongly green); `local/no-command` and `github/no-command` **RED at `record done`**: `loop verify` exit 3, `record done` REFUSED exit 4, issue still open |
+| The ORIGINAL bug, as the PR #306 review reproduced it: `config.json.tmpl` back to `"enforce": true` with an empty command, and both scaffold rewrites removed (`init_flow.py`'s and `sdlc_init.py`'s `write_verify(sdlc, None, ...)`), `write_verify` itself intact | `--mode both --sigma <scratch>` | exit 1 (27.5s): `local` and `github` GREEN (the confirm overwrites the default -- before the no-command variant this was the whole run, and it was wrongly green); `local/no-command` **RED at `record done`**: `loop verify` exit 3, `record done` REFUSED exit 4. Since #312 `github/no-command` runs work ON and goes **RED at its enforce-off assertion**; its merge parks on "no fresh verify evidence" and names the `verify_detect.py` fix (enforce ON still demands evidence) |
+| #312: the merge gate's `state.verify_required` guard reverted in a scratch copy (every merge demands evidence again) | `--mode github --sigma <scratch>` | exit 1: `github` GREEN; `github/no-command` **RED at its review-gate assertion**: the `sigma:block` merge and the approved merge both parked on "no fresh verify evidence" |
 | Every `[ask]` flag renamed in `init_flow.py` (`--board`, `--verify`, `--local-only`, `--mode`, `--ledger` to names nothing accepts) | pytest (`run_local` on a scratch copy) | RED at `init`: "unanswerable [ask] mode: it offers ['--backlog'] ..." |
 | An `[ask]` with an unknown id, without the ` -> ` part, a renamed flag, or a value outside its set | pytest (parser) | RED, "unanswerable [ask]" |
 | An init flag the README shows renamed (`--local-only` -> `--offline`), or dropped from init_flow.py's parser | pytest (parse) | RED at `readme` |
@@ -208,7 +228,7 @@ Each was run through the CLI gesture above, not only through pytest, and each is
 | README drift: `verify_detect.py confirm` renamed `accept` | `--mode local --readme <copy>` | exit 1, RED at `verify confirm (README gesture)` |
 | README drift: `init_flow.py` renamed `init.py` | `--mode local --readme <copy>` | exit 1, RED at `readme` (the README names a script that does not ship) |
 | README drift: `/agrim-loop`, `/agrim-init` or `claude plugin install` renamed | pytest (parse) | RED at `readme` |
-| Every assertion in `check_local` (5), `check_github` (11) and `check_no_command` (7) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
+| Every assertion in `check_local` (5), `check_github` (11), `check_no_command` (5) and `check_github_no_command` (13) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
 
 Each guard the controls above rely on was itself broken once (the variant removed, the offered-flag
 check skipped, an unknown question tolerated, the shell-syntax / interpreter / script pins removed,

@@ -3236,23 +3236,9 @@ def _surface_inbox(sdlc_dir):
         pass
 
 
-def _enforce_enabled(verify):
-    """`verify.enforce` as a bool, read generously — the mirror image of this file's `ledger.enabled`
-    idiom (deliberately strict `is True`, because a stray truthy value there must NOT quietly turn a
-    team surface on; failing safe there means off). `enforce` inverts which direction is safe: it
-    gates `record done` itself, so a truthy-but-not-bool value (JSON's easy `enforce: 1` or
-    `enforce: "true"` typos, both plainly meant as true) missing the strict check must not silently
-    leave the done-gate off and let unverified work through (F17/#342). A real bool passes through
-    unchanged. A string counts as off only when it spells out false/no/off/empty — `bool("false")`
-    being True in plain Python is exactly this same silent-unsafe trap in another guise. Anything
-    else falls back to plain truthiness, so an absent key, `0`, or `""` still reads as off, same as
-    before."""
-    value = verify.get("enforce")
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() not in ("", "false", "0", "no", "off")
-    return bool(value)
+#: F17/#342's generous `verify.enforce` read. One copy since #312: `state.enforce_enabled` (its
+#: docstring carries the full rationale), aliased here so existing callers and tests are unchanged.
+_enforce_enabled = state.enforce_enabled
 
 
 def _config_warnings(config):
@@ -4804,40 +4790,15 @@ def _verified_tree(sdlc_dir, goal, config=None):
     return (root, head, fell_back)
 
 
-def _python_command():
-    """`python3`, else `python`, else the Windows `py` launcher -- whichever is on PATH (a lookup,
-    not an execution), so a printed gesture runs on an install without `python3` (#228)."""
-    import shutil
-    for name in ("python3", "python", "py"):
-        if shutil.which(name):
-            return name
-    return "python3"
+#: The one gesture every "no verify command" message names (#228), so the loop, the merge gate,
+#: /agrim-init and /agrim-doctor all point at the same fix. Built by `state.verify_set_hint` since
+#: #312, so `work.py merge`'s park names the identical fix. `confirm .sdlc <n> <id>` re-derives
+#: candidate n from the repo itself: no repository text is ever pasted into a shell.
+_VERIFY_SET_HINT = state.verify_set_hint()
 
-
-#: The one gesture every "no verify command" message names (#228), so the loop, /agrim-init and
-#: /agrim-doctor all point at the same fix. `confirm .sdlc <n> <id>` re-derives candidate n from the
-#: repo itself: no repository text is ever pasted into a shell.
-_VERIFY_SET_HINT = (f"set one: {_python_command()} <sigma>/skills/agrim-init/scripts/verify_detect.py "
-                    "detect . lists candidates with ids, `... confirm .sdlc <n> <id>` sets candidate n if its id "
-                    "still matches (enforce ON), "
-                    "or put your command in config verify.command; or `... decline .sdlc` to turn "
-                    "verify.enforce off")
-
-
-def _declared_verify_command(goal, config):
-    """The proving command `verify` would run for this goal, or None: goal frontmatter
-    `verify_command` (local mode, goal given as a `.md` path), else config `verify.command`.
-    Shared by `verify_goal` and the `record done` refusal so the two never disagree (#228)."""
-    cmd = None
-    goal_path = pathlib.Path(str(goal))
-    if goal_path.suffix == ".md" and goal_path.exists():
-        cmd = state.frontmatter.get(goal_path.read_text(), "verify_command")
-        # `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips
-        # only `"`, so `''` would otherwise reach the shell as a command. doctor's trap row reads
-        # it as empty too; the two must agree (#228).
-        if cmd is not None and not cmd.strip().strip("'\"").strip():
-            cmd = None
-    return cmd or (config.get("verify") or {}).get("command") or None
+#: #312: one copy, in state.py, read by `record done` here and by `work.merge` -- see
+#: `state.verify_required` for the rule the two gates share.
+_declared_verify_command = state.declared_verify_command
 
 
 def verify_goal(sdlc_dir, goal):

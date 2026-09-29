@@ -30,6 +30,24 @@ All notable changes to Sigma are recorded here, newest first.
   before it printed a warning and skipped the write. Tests: `tests/test_board_phase.py`,
   `tests/test_board_setup.py`. The fake's `renames` models a renamed repo. None of it was run
   against a live board.
+- **Declining the verify command no longer parks every github-mode merge** (#312). The onboarding
+  control found it: a github-mode user who declines the verify command (the README offers it; the
+  scaffold writes `verify.enforce: false` and no command) had every `work.py merge` parked on "no
+  fresh verify evidence for this run" -- evidence `loop.py verify` cannot write with no command
+  (it exits 3, NO-COMMAND). **Decision:** evidence is demanded when verify is REQUIRED, and
+  `state.verify_required` is the one rule: `verify.enforce` on, or a verify command declared (goal
+  frontmatter or config) even with enforce off. With neither, the merge proceeds to its review, CI
+  and clean-state gates; with either, it parks exactly as before (stale, failed, foreign-run or
+  missing evidence). `enforce_enabled` and `declared_verify_command` moved from loop.py to
+  state.py so `record done` and the merge read one copy; `record done` still gates on the enforce
+  half only, and its github path reaches `done` through the merge, so the merge never requires
+  less. A park with enforce on and nothing to run now names the `verify_detect.py` fix instead of
+  "run verify". `tools/onboarding_control.py`'s github no-command variant now runs the real work-ON
+  path (no `--local-only`) and is green; the guard reverted turns it red through the documented
+  gesture. Also: the `sdlc:blocking` overlay lane no longer retries a successful EMPTY read (a
+  raised read is still retried) -- a stock github `next_pending` with no blocking issue measured
+  3.005s before and under 10ms after, against the same fake runner; the backlog's own empty-read
+  retry (#447) is unchanged. Nothing here was run against real GitHub.
 
 - **The canonical board: fields and six views, applied and checked by a script** (#234). New
   `skills/agrim-init/scripts/board_spec.py` is the single definition of the board, built from the
