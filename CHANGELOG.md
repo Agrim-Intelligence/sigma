@@ -4,6 +4,26 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
+  an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as
+  a "Merge pull request #N" commit was flattened by the next upkeep pass: a plain `git rebase`
+  replayed its second-parent commits onto the first-parent line, where their subjects carry no PR
+  trace, so every later pick refused the branch as carrying "commits no pull request accounts
+  for" -- forever, with no way out inside Sigma (measured on a real host repo: 18 commits, 76
+  behind `main`, five teammates' loops blocked). Upkeep and `/agrim-rebase` now run `git rebase
+  --rebase-merges`, which recreates the merge with its subject intact; a squash-only branch
+  replays exactly as before. For a branch that was already flattened, `feature_rebase.py ack .sdlc
+  <unit> <sha>...|--all` records the confirmed commits in the tracked
+  `.sdlc/features/rebase-acks/<unit>.json`, keyed by patch-id so the ack survives the rebase it
+  unblocks, and read from the remote integration branch too so one landed ack frees every
+  teammate. Only commits the check currently reports can be acked. The filed finding now names
+  both real exits instead of a remedy that had no mechanism. **Sigma-only:** the #144 data-loss
+  guard stays the outer guard -- an ack only lets the pass reach the replay, and a replay that
+  would remove or roll back the branch's content is still refused before any push (acked commits
+  plus a revert in the base: `would-drop`, remote unchanged), including when `--rebase-merges`
+  puts merge commits in the replayed history. The predecessor's companion fix in the same
+  release, `promote.py list` saying UNKNOWN for an unread queue (#2757), was already ported.
+
 - The rebase loss guard (#144) is now exact about what a human decided and what the branch already
   had (#278, closes #144's two open review findings). **The conflict walker no longer exempts a
   whole file for a one-line resolution.** Resolving one conflicted hunk used to exempt the whole

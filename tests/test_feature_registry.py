@@ -1379,6 +1379,7 @@ _FOLDS = {
     ("feature_rebase", "lock_path"),          # #1577 — the upkeep lock
     ("feature_rebase", "filed_path"),         # #1577 — the "already filed this conflict" marker
     ("feature_rebase", "blocked_path"),       # #144 — the "upkeep is refusing" marker the doctor reads
+    ("feature_rebase", "ack_path"),           # #2756 — the sanctioned-exit ack file
     ("feature_propagate", "sibling_path"),    # #1672 — a shard path in ANOTHER repo
     ("feature_rebase", "worktree_path"),      # #1673 — the throwaway upkeep checkout
     ("feature_doc", "doc_path"),              # #1673 — the `<name>.md` page a person opens

@@ -52,6 +52,9 @@ each commit on the branch's own first-parent line:
 the goal branch's own `sdlc: <n>` commits along as SECOND parents; walking every commit would report
 each of them as a direct commit and disable upkeep on every repo that merges rather than squashes.
 The first-parent line is exactly "what was put ON this branch", which is exactly the question.
+That argument holds only if the REPLAY keeps the merge: `_rebase_feature` runs
+`git rebase --rebase-merges`, because a plain rebase moves a merge landing's second-parent commits
+onto the first-parent line -- the pass would create the very state it refuses (#2756).
 
 The classifier's honest limits, stated rather than discovered later: a human whose commit message
 happens to end in `(#123)` is accepted, and a repo that squashes with a custom title template that
@@ -467,6 +470,158 @@ def direct_commits(run, cwd, integration_ref, feature_ref):
     return [{"sha": sha, "subject": subject}
             for sha, subject in landed_commits(run, cwd, integration_ref, feature_ref)
             if not arrived_through_a_pull_request(subject)]
+
+
+#: `.sdlc/features/rebase-acks/<unit>.json` -- the sanctioned exit from `DIRECT_COMMITS` (#2756).
+ACK_DIRNAME = "rebase-acks"
+
+
+def ack_path(sdlc_dir, name):
+    """`.sdlc/features/rebase-acks/<unit>.json` -- commits a human has confirmed arrived through a
+    pull request even though their subject carries no trace.
+
+    UNDER `.sdlc/features/`, NOT `state/`, AND THAT IS THE POINT. `features/` is tracked, so an ack
+    lands through a reviewed pull request and reaches every teammate's loop -- the incident that
+    motivated this locked five people's picks at once, and a per-machine ack would have had to be
+    repeated by each of them. `_acked` also reads the copy on the remote integration branch, so a
+    stale root checkout still honours an ack that has landed. Folded through `unit_key`, by
+    #1566's rule, after the same name guard every other path here applies."""
+    if not (isinstance(name, str) and registry.is_unit_name(name)):
+        raise registry.InvalidUnitName("%r is not a unit name, so it cannot be acked" % (name,))
+    return (registry.registry_dir(sdlc_dir) / ACK_DIRNAME
+            / (registry.unit_key(name) + ".json"))
+
+
+def patch_id(run, cwd, sha):
+    """`git patch-id --stable` of one commit -> str, or "" when it has none (a merge, an empty
+    commit) or it could not be computed.
+
+    THE ACK IS KEYED BY THIS, NOT BY SHA. The rebase an ack unblocks rewrites every sha on the
+    branch (the committer changes), so a sha-keyed ack would re-lock the branch on the very next
+    pass. A patch-id is the content of the change, and survives a clean replay unchanged."""
+    import subprocess
+    try:
+        diff = run(cwd, ["git", "diff-tree", "-p", "--root", sha])
+        out = subprocess.run(["git", "patch-id", "--stable"], input=str(diff or ""), cwd=cwd,
+                             capture_output=True, text=True, check=True).stdout
+    except Exception:                     # noqa: BLE001 - no key is "not acked", never a crash
+        return ""
+    return (out.split() or [""])[0]
+
+
+def _read_acks(text):
+    try:
+        data = json.loads(text)
+    except Exception:                     # noqa: BLE001 - unreadable acks accept nothing
+        return []
+    acked = data.get("acked") if isinstance(data, dict) else None
+    return [a for a in (acked or []) if isinstance(a, dict)]
+
+
+def _acked(sdlc_dir, run, cwd, unit, integration_ref):
+    """Every ack for `unit` -> `(patch_ids, shas)`: the local file UNION the copy on the remote
+    integration branch. Never raises; anything unreadable contributes nothing, so a broken store
+    fails towards REFUSING, which costs a pass and never data."""
+    entries = []
+    try:
+        path = ack_path(sdlc_dir, unit)
+    except ValueError:
+        return set(), set()
+    try:
+        entries += _read_acks(path.read_text(encoding="utf-8"))
+    except OSError:
+        pass
+    try:
+        rel = pathlib.Path(os.path.relpath(path.resolve(), pathlib.Path(cwd).resolve())).as_posix()
+    except ValueError:                    # a different drive on Windows: no repo-relative path
+        rel = ""
+    if rel and not rel.startswith(".."):
+        try:
+            entries += _read_acks(run(cwd, ["git", "show", "%s:%s" % (integration_ref, rel)]))
+        except Exception:                 # noqa: BLE001 - not on the integration branch yet
+            pass
+    return ({str(e.get("patch_id")) for e in entries if e.get("patch_id")},
+            {str(e.get("sha")) for e in entries if e.get("sha")})
+
+
+def _unacked(sdlc_dir, run, cwd, unit, integration_ref, found):
+    """`found` minus every commit a human has acked -> `(still_direct, acked)`."""
+    if not found:
+        return found, []
+    pids, shas = _acked(sdlc_dir, run, cwd, unit, integration_ref)
+    if not pids and not shas:
+        return found, []
+    still, acked = [], []
+    for d in found:
+        pid = patch_id(run, cwd, d["sha"]) if pids else ""
+        (acked if (d["sha"] in shas or (pid and pid in pids)) else still).append(d)
+    return still, acked
+
+
+def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=None):
+    """Record that the named unaccounted-for commits arrived through a pull request -> report dict.
+
+    Only a commit that `direct_commits` CURRENTLY reports on this branch can be acked -- a typo'd or
+    unrelated sha is refused loudly rather than recorded as a silent no-op, and nothing is written.
+    `all_` acks every current finding. Writes the local file only; landing it on the integration
+    branch through a pull request is what makes it the team's answer rather than this machine's.
+
+    #161: AN ACK ANSWERS ONE QUESTION AND NO OTHER -- "did these commits come through a pull
+    request?". It lets `_rebase_pass` get past `DIRECT_COMMITS` to the replay, and nothing more:
+    the replay's result is still measured by #144's guard (`dropped_paths`, in `_rebase_feature`)
+    before any push, so an acked branch whose base holds a revert is still `WOULD_DROP`. This
+    function itself never rebases and never pushes."""
+    run = run or _run
+    cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
+    remote = remote or _remote(config)
+    base = _settings(config).get("base") or ""
+    branch = features.BRANCH_PREFIX + unit
+    result = {"ok": False, "unit": unit, "acked": [], "why": "", "path": ""}
+    try:
+        path = ack_path(sdlc_dir, unit)
+        if not base:
+            result["why"] = "work.base is not set, so there is no integration branch to measure against"
+            return result
+        run(cwd, ["git", "fetch", remote, base, branch])
+        base_ref, feature_ref = "%s/%s" % (remote, base), "%s/%s" % (remote, branch)
+        found, _ = _unacked(sdlc_dir, run, cwd, unit, base_ref,
+                            direct_commits(run, cwd, base_ref, feature_ref))
+    except Exception as exc:              # noqa: BLE001
+        result["why"] = _flat(exc)
+        return result
+    if all_:
+        chosen = list(found)
+    else:
+        chosen, unknown = [], []
+        for want in shas:
+            hits = [d for d in found if len(want) >= 7 and d["sha"].startswith(want)]
+            (chosen.extend(hits) if len(hits) == 1 else unknown.append(want))
+        if unknown or not chosen:
+            result["why"] = ("not an unaccounted-for commit on %s: %s -- run `feature_rebase.py show` "
+                             "for the current list" % (branch, ", ".join(unknown) or "(none given)"))
+            return result
+    if not chosen:
+        result["why"] = "%s carries no unaccounted-for commits; nothing to ack" % branch
+        return result
+    entries = []
+    try:
+        entries = _read_acks(path.read_text(encoding="utf-8"))
+    except OSError:
+        pass
+    have = {e.get("sha") for e in entries}
+    for d in chosen:
+        if d["sha"] not in have:
+            entries.append({"sha": d["sha"], "patch_id": patch_id(run, cwd, d["sha"]),
+                            "subject": d["subject"]})
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"unit": unit, "branch": branch, "acked": entries},
+                                   indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:
+        result["why"] = _flat(exc)
+        return result
+    result.update(ok=True, acked=[d["sha"] for d in chosen], path=str(path))
+    return result
 
 
 def _verifiable(config):
@@ -1071,7 +1226,16 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
             return FAILED
     try:
         try:
-            run(str(path), ["git", "rebase", base_ref])
+            # `--rebase-merges` (#2756). A plain rebase LINEARIZES a merge-commit landing: it drops
+            # the "Merge pull request #N" commit and replays its second-parent `sdlc: <n>` commits
+            # flat onto the first-parent line, where they carry no PR trace -- so this pass created
+            # exactly the state `direct_commits` then refuses on every later pick, forever
+            # (measured on a real host repo: 18 commits locked, 2026-09-23). Recreating
+            # the merge keeps its subject, so the first-parent walk still sees the trace. On a
+            # branch with no merges (every squash landing) it replays exactly what a plain rebase
+            # would. #161: it changes the replay's SHAPE only; the #144 guard below measures its
+            # RESULT (trees, plus `git log -m` over the branch's history), merges included.
+            run(str(path), ["git", "rebase", "--rebase-merges", base_ref])
         except Exception as exc:          # noqa: BLE001 - a conflict is an outcome to report
             # NO `rebase --abort` HERE, AND THAT IS MEASURED RATHER THAN OVERLOOKED. `work.rebase()`
             # aborts because its tree is the goal's real worktree and has to survive the failure;
@@ -1092,6 +1256,8 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report):
             return FAILED
         # #144: THE OUTER GUARD, between computing the replayed head and pushing it. Nothing below
         # this line may run for a replay that would delete what the branch currently has.
+        # #161: and it is NOT conditional on `report["acked"]`. An ack (#2756) only let this pass
+        # reach the replay; it says nothing about what the replay keeps.
         try:
             dropped = dropped_paths(path, sha, after)
         except Exception as exc:          # noqa: BLE001 - unmeasured is never "nothing dropped"
@@ -1491,11 +1657,22 @@ def _direct_body(unit, branch, base, found):
         "only because no human ever holds commits there. A commit that did not arrive through a goal "
         "branch is evidence that somebody does — so upkeep stopped rather than rewriting the branch "
         "underneath them.\n\n"
-        "**To resolve:** move the work onto an `sdlc/*` branch and land it through a pull request, "
-        "or confirm the commits are safe to rewrite and re-run upkeep. Until then `%s` stays behind "
-        "`%s`.\n\n"
+        "**To resolve**, one of:\n\n"
+        "- **The commits really are direct:** move the work onto an `sdlc/*` branch, land it "
+        "through a pull request, and drop them from `%s`.\n"
+        "- **They did arrive through a pull request** but lost its trace (for example a "
+        "merge-commit landing that an older, plain-rebase upkeep flattened -- #2756): confirm "
+        "that against the pull request, then ack them. From the repository root:\n\n"
+        "  ```\n"
+        "  python3 <sigma>/skills/agrim-loop/scripts/feature_rebase.py ack .sdlc %s <sha>...\n"
+        "  ```\n\n"
+        "  (`--all` in place of the shas acks every commit listed above.) It writes "
+        "`.sdlc/features/rebase-acks/%s.json`; land that file on `%s` through a pull request so "
+        "every teammate's loop honours it. The ack is keyed by patch-id, so it survives the "
+        "rebase it unblocks.\n\n"
+        "Until then `%s` stays behind `%s`.\n\n"
         "Filed by Sigma's rebase upkeep for unit `%s`.\n"
-        % (branch, len(found), listed, branch, base, unit))
+        % (branch, len(found), listed, branch, unit, unit, base, branch, base, unit))
 
 
 def _would_drop_body(unit, branch, base, before, report):
@@ -1591,7 +1768,8 @@ _WORDING = {
     #: clause sent an operator looking for an issue that did not exist. What happened to the filing
     #: is appended by `clause` from `report["filing"]`, which is a measurement.
     DIRECT_COMMITS: ("%(branch)s carries %(direct)d commit(s) no pull request accounts for and was "
-                     "NOT rebased"),
+                     "NOT rebased (if they did come through a pull request: `feature_rebase.py ack "
+                     ".sdlc %(unit)s --all`)"),
     CONFLICT: ("%(branch)s conflicts with %(base)s; the rebase was aborted and both repositories "
                "were left as they were"),
     LEASE_REFUSED: ("%(branch)s moved on the remote while it was being rebased, so the push was "
@@ -1625,7 +1803,7 @@ def clause(report):
     if report["outcome"] not in IN_CLAUSE:
         return ""
     said = _WORDING[report["outcome"]] % {
-        "branch": report["branch"], "base": report["base"],
+        "branch": report["branch"], "base": report["base"], "unit": report["unit"],
         "merge_method": report["merge_method"], "direct": len(report["direct"]),
         "replayed": len(report["replayed"]), "conflicts": len(report["conflicts"]),
         "skipped": len(report["skipped"]),
@@ -1654,7 +1832,7 @@ def clause(report):
 def _report(goal, unit, config):
     return {"outcome": FAILED, "goal": str(goal), "unit": unit, "branch": None, "base": None,
             "before": None, "after": None, "tip": None, "replayed": [], "conflicts": [],
-            "skipped": [], "direct": [], "issues": [], "leftovers": [], "filing": NO_FILING,
+            "skipped": [], "direct": [], "acked": [], "issues": [], "leftovers": [], "filing": NO_FILING,
             "dropped": [], "dropped_count": 0, "would_be": None,
             "serialised": True, "merge_method": merge_method(config), "why": "", "note": ""}
 
@@ -1797,8 +1975,10 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     if not _verifiable(config):
         report["outcome"] = UNVERIFIABLE
         return report
-    found = direct_commits(run, cwd, base_ref, feature_ref)
+    found, acked = _unacked(sdlc_dir, run, cwd, unit, base_ref,
+                            direct_commits(run, cwd, base_ref, feature_ref))
     report["direct"] = found
+    report["acked"] = acked
     if found:
         report["outcome"] = DIRECT_COMMITS
         _file_issue(sdlc_dir, config, goal, report,
@@ -1872,7 +2052,8 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
 
 
 USAGE = ("usage: feature_rebase.py upkeep <sdlc_dir> <unit> [goal] | "
-         "feature_rebase.py show <sdlc_dir> <unit>")
+         "feature_rebase.py show <sdlc_dir> <unit> | "
+         "feature_rebase.py ack <sdlc_dir> <unit> (<sha>... | --all)")
 
 
 def main(argv):
@@ -1880,7 +2061,8 @@ def main(argv):
 
     `upkeep` exists as a verb, unlike `feature_sync`'s sync, because this one has a use OFF the pick
     path: a unit whose goals are all finished still wants its branch kept current, and nobody is
-    picking it. `show` reports what the pass WOULD find without moving anything."""
+    picking it. `show` reports what the pass WOULD find without moving anything. `ack` (#2756)
+    records confirmed commits from `show`'s list and never rebases or pushes (see `ack`)."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
@@ -1903,6 +2085,17 @@ def main(argv):
                                      "%s/%s" % (remote, branch)) if base else []},
             indent=2, sort_keys=True))
         return 0
+    if len(argv) >= 4 and argv[1] == "ack":
+        rest = argv[4:]
+        all_ = "--all" in rest
+        shas = [a for a in rest if a != "--all"]
+        if not all_ and not shas:
+            print("usage: feature_rebase.py ack <sdlc_dir> <unit> (<sha>... | --all)",
+                  file=sys.stderr)
+            return 2
+        result = ack(argv[2], state.load_config(argv[2]), argv[3], shas, all_=all_)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["ok"] else 1
     print(USAGE, file=sys.stderr)
     return 2
 

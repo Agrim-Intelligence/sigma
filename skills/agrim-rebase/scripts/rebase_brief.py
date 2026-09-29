@@ -670,7 +670,9 @@ def attempt_rebase(run, cwd, remote, branch, base):
         return {"outcome": CURRENT, "why": ""}
     pre_head = str(run(cwd, ["git", "rev-parse", "HEAD"]) or "").strip()
     try:
-        run(cwd, ["git", "rebase", "--autostash", base_ref])
+        # `--rebase-merges` (#2756): a plain rebase flattens a merge-commit landing onto the
+        # first-parent line, where upkeep's no-direct-commits check then refuses it forever.
+        run(cwd, ["git", "rebase", "--autostash", "--rebase-merges", base_ref])
     except Exception as exc:                    # noqa: BLE001 - a conflict is an outcome, not a crash
         if feature_rebase.rebase_stopped(run, cwd):
             return {"outcome": CONFLICT, "why": _flat(exc), "files": conflicted_files(run, cwd)}
