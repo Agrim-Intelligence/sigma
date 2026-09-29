@@ -170,30 +170,30 @@ def write_cfg(sdlc_dir, cfg):
 # --------------------------------------------------------------------------- labels
 
 
-def ensure_core_labels(sdlc_dir, config=None, run=None):
-    """Create GitHub's core lifecycle labels up front, on adoption -- the same idempotent,
-    colour-preserving mechanism (`GitHubSource.ensure_labels`, #1917: no `--force`, so an existing
-    label's colour is never repainted) `loop.py`'s own pick path already calls before every
-    claim/park. Without this, `/agrim-setup` finishes with a fully-wired config pointed at a real
-    repo, but a repo where NOTHING is pickable yet -- because none of the labels the config just
-    referenced by name actually exist -- discoverable only later via a `/agrim-doctor` warning most
-    adopters never think to check right after setup. Found live adopting Sigma into a real repo
-    (issue #2254).
+def ensure_core_labels(sdlc_dir, config=None, run=None, repo=None):
+    """Create GitHub's core lifecycle labels AND the `priority:P0`-`P3` tiers up front, on adoption
+    -- through `GitHubSource.ensure_labels_report` (#230), the measured sibling of the pick path's
+    best-effort `_ensure_labels`: same colour-preserving creation (#1917: no `--force`, an existing
+    label is never written), but every label's outcome is REPORTED (`created` / `existed` /
+    `failed` + reason) instead of swallowed. Without this `/agrim-setup` finished pointed at a repo
+    where nothing is pickable, because the labels the config names do not exist (#2254); and until
+    #230 it printed "ensured" even when every create had been refused.
 
-    Deliberately does NOT create `priority:P<n>` labels and NEVER applies a label to any issue --
-    `GitHubSource._LABEL_COLORS` (the table `ensure_labels` iterates) already excludes both, so this
-    stays correct by construction rather than by a scoping check written here: a board keeping
-    priority on a Projects-v2 field only, by deliberate repo policy, is untouched, and deciding
-    which issues become pickable stays a human's triage call, not a mechanical setup step.
+    Never applies a label to any issue: which issues become pickable stays a human's triage call.
+    (#230 reverses #2254's "never creates priority labels": without them an unlabelled issue sorts
+    last and the issue-field gate refuses `gh issue create`.)
 
-    No-op (`outcome: "skipped"`) when `discovery.source` isn't `"github"` or no
-    `discovery.github.repo` is configured yet -- mirrors `configure()`'s own local-goals/no-repo
-    early-outs. Never raises: `ensure_labels()`'s own per-label `except Exception: pass` is
-    unchanged, so a `gh` failure here is silent and best-effort, exactly like every other call site.
-    `config`, when given, is used AS-IS (so a caller can pass the just-written in-memory `cfg` from
-    `configure()` without a round-trip through disk); otherwise it's read fresh from
-    `<sdlc_dir>/config.json`."""
+    Outcomes: `skipped` (not github mode / no repo -- nothing attempted), `ensured` (every label
+    measured present), `failed` (at least one label could not be created -- the caller exits
+    non-zero). `repo`, when given, forces github mode against that repository (how `sdlc_init.py
+    --github` bootstraps before `discovery.source` is set). `config`, when given, is used AS-IS;
+    otherwise it is read fresh from `<sdlc_dir>/config.json`. Never raises on a `gh` failure."""
     config = config if config is not None else _load_cfg(sdlc_dir)
+    if repo:
+        config = json.loads(json.dumps(config))                   # never mutate the caller's dict
+        disc = config.setdefault("discovery", {})
+        disc["source"] = "github"
+        disc.setdefault("github", {})["repo"] = repo
     disc = config.get("discovery") or {}
     if disc.get("source") != "github":
         return {"outcome": "skipped", "detail": "discovery.source is not github; no labels to create"}
@@ -201,9 +201,10 @@ def ensure_core_labels(sdlc_dir, config=None, run=None):
     source = sources.GitHubSource(config, run=run, sdlc_dir=sdlc_dir)
     if not source.repo:
         return {"outcome": "skipped", "detail": "discovery.github.repo is not set"}
-    source.ensure_labels()
-    labels = sorted({getattr(source, attr) for attr, _ in source._LABEL_COLORS})
-    return {"outcome": "ensured", "repo": source.repo, "labels": labels}
+    results = source.ensure_labels_report()
+    lines, failed = sources.render_label_report(source.repo, results)
+    return {"outcome": "failed" if failed else "ensured", "repo": source.repo,
+            "labels": sorted(r["label"] for r in results), "results": results, "lines": lines}
 
 
 # --------------------------------------------------------------------------- ignore
@@ -302,7 +303,7 @@ def _flags(argv):
 
 USAGE = ("usage: setup.py detect [repo_root] | configure <sdlc_dir> [--repo O/N --source github|local-goals "
          "--verify CMD --auto-merge off|protected|always] | ignore <repo_root> [--scope tracked|local] | "
-         "ignore-status <repo_root> | labels <sdlc_dir>")
+         "ignore-status <repo_root> | labels <sdlc_dir> [--repo O/N]")
 
 
 def main(argv):
@@ -332,12 +333,14 @@ def main(argv):
             print("  %s: %s" % (t, where or "NOT ignored"))
         return 0
     if len(argv) >= 3 and argv[1] == "labels":
-        result = ensure_core_labels(argv[2])
+        f = _flags(argv[3:])
+        result = ensure_core_labels(argv[2], repo=f.get("repo") or None)
         if result["outcome"] == "skipped":
             print("  skipped: " + result["detail"])
-        else:
-            print("  ensured on %s: %s" % (result["repo"], ", ".join(result["labels"])))
-        return 0
+            return 0
+        for line in result["lines"]:
+            print(line)
+        return 1 if result["outcome"] == "failed" else 0          # #230: a failed label is loud
     print(USAGE, file=sys.stderr)
     return 2
 

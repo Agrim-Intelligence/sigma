@@ -434,6 +434,41 @@ def scaffold_github(target_dir):
     return created, skipped
 
 
+def bootstrap_github_labels(target_dir):
+    """#230: github mode creates the `sdlc:*` and `priority:P0`-`P3` labels NOW, before the first
+    pick -- a repo without `sdlc:goal` reads as an empty backlog forever. Shells out to the sibling
+    agrim-setup CLI (never a cross-skill import, #2626): `setup.py detect` for the origin's
+    `owner/name`, then `setup.py labels --repo`, which prints one line per label (created /
+    existed / FAILED: reason) and "ensured" only when every label was measured present. No GitHub
+    remote: says so and writes nothing (`loop.py start` bootstraps again once the repo is set).
+    Returns False -- init exits 1, before the remaining optional steps; every step is
+    skip-if-exists, so rerunning once the token can write labels completes them -- when any label
+    failed."""
+    try:
+        repo = subprocess.run([sys.executable, str(SETUP_SCRIPT), "detect", str(target_dir)],
+                              capture_output=True, text=True).stdout.strip()
+    except OSError:
+        repo = ""
+    if not repo:
+        print("\nagrim-init: labels not created - no GitHub `origin` remote detected. Set "
+              "discovery.github.repo (`/agrim-setup`); `loop.py start` creates them before the "
+              "first pick.")
+        return True
+    print(f"\nagrim-init: labels on {repo}")
+    proc = subprocess.run([sys.executable, str(SETUP_SCRIPT), "labels",
+                           str(pathlib.Path(target_dir) / ".sdlc"), "--repo", repo],
+                          capture_output=True, text=True)
+    sys.stdout.write(proc.stdout)
+    if proc.stderr:
+        sys.stderr.write(proc.stderr)
+    if proc.returncode != 0:
+        print("agrim-init: stopping - required labels could not be created (see above). Fix the "
+              "token's label-write permission and rerun; already-written files are kept.",
+              file=sys.stderr)
+        return False
+    return True
+
+
 USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
 
 
@@ -472,6 +507,8 @@ def main(argv):
             print(f"  + .github/{c}")
         for s in gskipped:
             print(f"  = .github/{s} (exists, kept)")
+        if not bootstrap_github_labels(target):
+            return 1
     if "--demo" in flags:
         if scaffold_demo(target):
             print("\nagrim-init: demo goal queued - `.sdlc/goals/0000-demo.md`. Run `/agrim-loop` to watch "

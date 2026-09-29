@@ -618,7 +618,7 @@ backlog mirrors reality:
 
 So your **review queue = open issues labelled `sdlc:parked`**, and **done = closed issues**;
 **re-queue** a parked issue with `/agrim-unpark` (which answers *why* it was parked before flipping
-the label — see below). The labels are auto-created on first run.
+the label — see below). The labels (and `priority:P0`–`P3`) are created before the first pick — by `/agrim-init --github`, `setup.py labels`, and again by `loop.py start` in github mode, which refuses to start, naming the label, if one cannot be created.
 
 #### The label model, in one table
 

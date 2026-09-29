@@ -108,6 +108,31 @@ def fetch_issues_rest(run, repo, labels, cap, state="open", sort="created", dire
     return collected[:cap]
 
 
+def render_label_report(repo, results):
+    """#230: the per-label lines for `GitHubSource.ensure_labels_report()`'s results, plus ONE
+    summary line -- `labels ensured on <repo>: ...` only when every label was measured to exist
+    (created now, or read back as already there), otherwise `labels NOT ensured on <repo>: ...`
+    naming each failed label. Returns `(lines, any_failed)`. Shared by `setup.py labels`,
+    `sdlc_init.py --github` (through that CLI) and `loop.py start`, so the three can never word the
+    same outcome differently."""
+    lines = []
+    for r in results:
+        lines.append("  %s: %s" % (r["label"], "FAILED: " + r["reason"] if r["outcome"] == "failed"
+                                    else r["outcome"]))
+    failed = [r["label"] for r in results if r["outcome"] == "failed"]
+    where = repo or "the current repository"
+    if failed:
+        lines.append("labels NOT ensured on %s: %d of %d failed (%s) -- a label that does not exist "
+                     "makes the pick query return nothing; create it by hand or grant the token "
+                     "label-write (Issues: write) and rerun" % (where, len(failed), len(results),
+                                                                 ", ".join(failed)))
+    else:
+        created = sum(1 for r in results if r["outcome"] == "created")
+        lines.append("labels ensured on %s: %d created, %d existed" % (where, created,
+                                                                       len(results) - created))
+    return lines, bool(failed)
+
+
 def resolve_assignee_login(run, raw):
     """The LOGIN to pass into REST's `assignee=` query param, or None to skip assignee scoping
     entirely — for standalone callers (`mirror.py`, `triage.py`, `status.py`) that have no
@@ -804,6 +829,24 @@ class GitHubSource:
                      # genuinely rarer and more open-ended state. Not used anywhere else in the
                      # existing `sdlc:*` palette (checked against `_LABEL_COLORS` above).
                      ("needs_triage_label", "5319e7"))
+    #: #230: the priority tiers bootstrapped alongside `_LABEL_COLORS` -- by `ensure_labels_report`
+    #: only (setup, init --github, `loop.py start`), never by the hot-path `_ensure_labels` above,
+    #: whose per-pick contract (and its tests) stays the lifecycle set alone. Without these an
+    #: unlabelled issue sorts last and the issue-field gate refuses `gh issue create`. P0-P3 only:
+    #: P4 is still ranked if an adopter creates it, but #230 scopes the bootstrap to the four tiers
+    #: work is actually filed at. Colours are the kit's own `sdlc:*` severity palette above, in the
+    #: same order of urgency (b60205 > d93f0b > fbca04 > 0e8a16); the descriptions are the anchor
+    #: sentences of the triage rubric (`triage._PRIORITY_PATTERNS`' comment). The ONE table: every
+    #: caller reads it from here.
+    _PRIORITY_LABELS = (
+        ("priority:P0", "b60205", "Broken, unsafe, or silently doing the wrong thing"),
+        ("priority:P1", "d93f0b", "Degrades most runs, leaves output wrong, or blocks work"),
+        ("priority:P2", "fbca04", "Real, wanted, planned work; nothing broken by waiting"),
+        ("priority:P3", "0e8a16", "Narrow bugs, tech debt, follow-up polish"),
+    )
+    #: #230: pages of 100 read by `_existing_label_names` before it gives up and falls back to
+    #: create-and-classify -- 100 x 100 = 10,000 labels, far past any real repository.
+    _LABEL_LIST_MAX_PAGES = 100
     # `gh project` is occasionally flaky (intermittent "unknown owner type", 5xx, rate-limit). Those
     # blips silently dropped card-status updates, drifting the board from the issues (the source of
     # truth). Retry project calls with short exponential backoff; non-transient errors still fail fast.
@@ -962,6 +1005,7 @@ class GitHubSource:
         self._feature_registry_cache = _UNRESOLVED
         self._raw_run = run or _run_gh
         self._labels_ready = False
+        self._last_goal_raw_count = None   # #230: raw size of the last goal-label read, see census
         self._label_ids = None                   # {label name -> node id}, see `_label_node_ids`
         self._inferred_owner_name = None         # (owner, name) from cwd when repo is unset
         # Projects-v2 board (opt-in). An ABSENT `project` block => disabled, so existing github
@@ -1518,6 +1562,90 @@ class GitHubSource:
         docstring for the mechanism and #1917 for why there is no `--force`."""
         self._ensure_labels()
 
+    def _label_endpoint(self):
+        return "repos/%s/labels" % self.repo if self.repo else "repos/{owner}/{repo}/labels"
+
+    def _existing_label_names(self):
+        """#230: the repository's label names, casefolded (GitHub label names are case-insensitive),
+        read by paginated REST GET -- never GraphQL, and never `gh label list`, which is. None when
+        the read fails or the page ceiling is hit, so the caller falls back to create-and-classify
+        rather than trusting a partial set."""
+        names, page = set(), 1
+        try:
+            while page <= self._LABEL_LIST_MAX_PAGES:
+                items = json.loads(self._run(["api", self._label_endpoint(), "--method", "GET",
+                                              "-f", "per_page=100", "-f", "page=%d" % page]) or "[]")
+                names.update(str(i.get("name", "")).casefold() for i in items if isinstance(i, dict))
+                if len(items) < 100:
+                    return names
+                page += 1
+        except Exception:
+            return None
+        return None
+
+    def ensure_labels_report(self):
+        """#230: the MEASURED bootstrap -- every `_LABEL_COLORS` label plus `_PRIORITY_LABELS`,
+        each reported as `created`, `existed`, or `failed` with the reason `gh` gave. Unlike
+        `_ensure_labels` (the hot path, best-effort by design), nothing here is swallowed: a caller
+        prints `render_label_report` and exits non-zero on any failure.
+
+        Cost: one paginated REST read of the repo's labels (1 call below 100 labels), then one
+        `gh label create` per label MISSING -- zero writes on a repo already bootstrapped. It is
+        per-repository, not per-issue: at 100x issues the cost is unchanged; at 100x labels it is
+        still one read per 100. An existing label is never written, so never recoloured (#1917: no
+        `--force`). If the read fails the create is attempted and `gh`'s "already exists" refusal
+        is classified as `existed`. A token that can apply but not create labels passes whenever
+        the labels already exist, because nothing needs creating. On full success the hot-path
+        `_ensure_labels` is marked done, so a run that bootstrapped here spends nothing there."""
+        wanted, seen = [], set()
+        for attr, color in self._LABEL_COLORS:
+            name = getattr(self, attr)
+            if name and name.casefold() not in seen:
+                seen.add(name.casefold()); wanted.append((name, color, ""))
+        for name, color, desc in self._PRIORITY_LABELS:
+            if name.casefold() not in seen:
+                seen.add(name.casefold()); wanted.append((name, color, desc))
+        existing = self._existing_label_names()
+        results = []
+        for name, color, desc in wanted:
+            if existing is not None and name.casefold() in existing:
+                results.append({"label": name, "outcome": "existed", "reason": ""})
+                continue
+            args = ["label", "create", name, *self._repo_args(), "--color", color]
+            if desc:
+                args += ["--description", desc]
+            try:
+                self._run(args)
+                results.append({"label": name, "outcome": "created", "reason": ""})
+            except Exception as exc:
+                reason = str(getattr(exc, "hint", "") or exc).strip()
+                if "already exists" in reason.lower():
+                    results.append({"label": name, "outcome": "existed", "reason": ""})
+                else:
+                    results.append({"label": name, "outcome": "failed",
+                                    "reason": (reason.splitlines() or ["unknown error"])[0]})
+        if not any(r["outcome"] == "failed" for r in results):
+            self._labels_ready = True
+        return results
+
+    def goal_label_census(self):
+        """#230: how many open issues carry `goal_label`, as 0 or 1 -- enough to tell "nothing is
+        labelled at all" from "labelled goals exist but none is pickable". ONE REST read of one
+        item (PRs filtered; `fetch_issues_rest` pages past a PR), unscoped by assignee on purpose:
+        the question is whether the label is in use at all. None when the read fails, so a caller
+        never claims zero it did not measure.
+
+        Free when the pick itself already saw a labelled issue: `_fetch_pending` records the raw
+        (pre-filter) size of its last goal-label read, and a non-zero one answers without a call.
+        The REST read is spent only when that read was empty or never ran (a board-lane pick), to
+        confirm the zero unscoped by assignee."""
+        if self._last_goal_raw_count:
+            return self._last_goal_raw_count
+        try:
+            return len(fetch_issues_rest(self._run, self.repo, [self.goal_label], 1))
+        except Exception:
+            return None
+
     # F447: `_next()` trusts a `next_pending` result of "nothing pending" as FINAL — one bad read
     # here ends the whole run (`("DONE", None)`, zero claims). Historically (#447) the backlog
     # fetch was a `gh issue list --label ...` call, which routes through GitHub's
@@ -2029,6 +2157,8 @@ class GitHubSource:
                       f"{attempt + 1}/{self._BACKLOG_READ_RETRIES})", file=sys.stderr)
                 time.sleep(self._BACKLOG_READ_RETRY_BASE * (2 ** attempt))
                 continue
+            if not extra_labels:
+                self._last_goal_raw_count = len(issues)   # #230: read by goal_label_census, free
             pending = []
             # #1437/S1: `login` is resolved once per attempt above (not once per issue) -- see
             # the #1829 comment above for why it is resolved PER ATTEMPT rather than once for the

@@ -25,7 +25,9 @@ Scaffold the `.sdlc/` project layer, then report what happened.
    spell it out: this writes or refreshes its managed `AGENTS.md` block and preserves other rules.
    **`--github`** also installs the GitHub PM scaffolding —
    epic/task/bug issue templates, the auto-add-to-project workflow, a critical-insight template, and a
-   label guide — into `.github/`. **`--demo`** queues a small, safe, runnable demo goal so `/agrim-loop`
+   label guide — into `.github/` — and, when `origin` is a GitHub remote, creates the `sdlc:*` and
+   `priority:P0`–`P3` labels there (one line per label; exits non-zero naming any label it could not
+   create). **`--demo`** queues a small, safe, runnable demo goal so `/agrim-loop`
    shows the SDLC immediately; with `--github`, also file it as an `sdlc:goal` issue (`gh issue create`)
    so it runs on the board. **`--vision`** scaffolds the opt-in north-star. **`--cursor`** installs the
    **Cursor host adapter** (*experimental — not yet verified in a live Cursor session*) — two
