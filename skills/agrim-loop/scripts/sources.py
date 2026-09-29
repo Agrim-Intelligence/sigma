@@ -3855,19 +3855,38 @@ class GitHubSource:
         is the fresh-board path, where GitHub itself created the options we are replacing.
 
         `existing` defaults to empty, which reproduces the historical all-id-less output exactly —
-        so a caller that has not read the field yet is no worse off than before."""
+        so a caller that has not read the field yet is no worse off than before.
+
+        Colour and description (#235, review of PR #279): an existing option that carries a valid
+        `color` and a `description` is sent back WITH them, so a rewrite never recolours or blanks
+        a lane a human styled. Only a new option, or an existing one read without them (`gh project
+        field-list` returns just id + name), gets the colour-by-position and an empty description.
+
+        Every interpolated value -- field id, option id, name, description -- is a JSON-quoted
+        GraphQL string literal (JSON's escapes are a subset GraphQL accepts), never pasted raw: a
+        human's lane named `Needs "design"` otherwise ends the string and breaks the mutation."""
         colors = ("GRAY", "YELLOW", "ORANGE", "GREEN", "RED", "BLUE", "PURPLE", "PINK")
-        by_name = {o.get("name"): o.get("id") for o in (existing or []) if o.get("id")}
+        existing = [o for o in (existing or []) if isinstance(o, dict)]
+        by_id = {o.get("id"): o for o in existing if o.get("id")}
+        by_name = {o.get("name"): o.get("id") for o in existing if o.get("id")}
         # Casefolded fallback for rule 1's case-insensitive half. `setdefault` so the FIRST existing
         # option under a given casefold wins — irrelevant on a healthy board (names are unique) and
         # merely stable, not a cleanup, on one that already carries a case-duplicate.
         by_name_ci = {}
-        for o in (existing or []):
+        for o in existing:
             nm, oid_ = o.get("name"), o.get("id")
             if nm and oid_:
                 by_name_ci.setdefault(nm.casefold(), (nm, oid_))
         # {new name -> old name}, so a desired column can claim the id of the option it replaces.
         was = {new: old for old, new in (rename or {}).items()}
+
+        def style(oid, position):
+            o = by_id.get(oid) or {}
+            color = str(o.get("color") or "").upper()
+            desc = o.get("description")
+            return (color if color in colors else colors[position % len(colors)],
+                    desc if isinstance(desc, str) else "")
+
         claimed, entries = set(), []
         for i, n in enumerate(names):
             entry_name, oid = n, (by_name.get(n) or by_name.get(was.get(n)))
@@ -3877,13 +3896,15 @@ class GitHubSource:
                     entry_name, oid = hit          # keep GitHub's existing spelling, not ours
             if oid:
                 claimed.add(oid)
-            entries.append((entry_name, oid, colors[i % len(colors)]))
-        for j, o in enumerate([o for o in (existing or []) if o.get("id") not in claimed]):
-            entries.append((o.get("name"), o.get("id"), colors[(len(entries) + j) % len(colors)]))
-        opts = ", ".join('{%sname: "%s", color: %s, description: ""}'
-                         % (('id: "%s", ' % oid) if oid else "", n, c) for n, oid, c in entries)
-        return ('query=mutation { updateProjectV2Field(input: {fieldId: "%s", singleSelectOptions: [%s]}) '
-                '{ projectV2Field { ... on ProjectV2SingleSelectField { id } } } }' % (field_id, opts))
+            entries.append((entry_name, oid) + style(oid, i))
+        for j, o in enumerate([o for o in existing if o.get("id") not in claimed]):
+            entries.append((o.get("name"), o.get("id")) + style(o.get("id"), len(entries) + j))
+        q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
+        opts = ", ".join('{%sname: %s, color: %s, description: %s}'
+                         % (("id: %s, " % q(oid)) if oid else "", q(n), c, q(d))
+                         for n, oid, c, d in entries)
+        return ('query=mutation { updateProjectV2Field(input: {fieldId: %s, singleSelectOptions: [%s]}) '
+                '{ projectV2Field { ... on ProjectV2SingleSelectField { id } } } }' % (q(field_id), opts))
 
     def _sync_backlog(self, owner, number, exclude):
         """Seed the board with any open goal issue not yet carded (as Todo), except the one being

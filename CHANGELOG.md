@@ -27,7 +27,21 @@ All notable changes to Sigma are recorded here, newest first.
     could not be checked without a mutation; `references/board.md` has a 5-step check for the owner.
   - The loop honours a pinned number outside the first 100 boards (one `gh project view`, only
     then). A pinned number now wins over a title match.
-  - New doctor row: `pinned board #N reachable`.
+  - New doctor row: `pinned board #N reachable`. It fails only when GitHub answers that the board
+    does not exist. When the read itself fails (offline, rate limit, gh missing, no `project`
+    scope) there is no row. The read is skipped under `cheap_only` (the SessionStart wizard).
+  - Adopting a board a human built (`--number N`, or a pin) renames nothing (review of PR #279).
+    Every existing option keeps its id, name, colour and description, and only the missing options
+    are added. Only a board created or copied in the same run gets GitHub's `Todo` / `In progress`
+    renamed. A lane differing only by case (`In progress`) is mapped in `project.columns`. A
+    same-named field that is not single-select, a `p0`-style Priority variant, or unreadable
+    option colours is REFUSED (exit 2) with the manual fix.
+  - `sources._options_mutation` quotes every value it puts into GraphQL with JSON escaping, and
+    sends an existing option's colour and description back instead of resetting them. The fields
+    read is paginated (`per_page=100`, `--paginate`).
+  - The Priority field is `P0`..`P4` (from `discovery.PRIORITIES`), not the issue's `P0`..`P3`.
+    On Windows the resume command is double-quoted, and it is not printed when a value contains
+    `"`, `%`, `$`, a backtick or `!`.
   - Cost, measured against a fake gh: a fresh create is 4 GraphQL calls (3 mutations) plus
     5 + ceil(boards/100) REST reads. A re-run on a finished board is 1 GraphQL read. The loop's
     steady state adds no calls.

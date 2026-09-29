@@ -346,34 +346,61 @@ def _board_dup_risk(gh_cfg, run):
             ".sdlc (read-only preview; add --yes to create).")
 
 
+#: What gh prints when GitHub ANSWERED and the board (or its owner) is not there. Measured:
+#: `gh project view 99999 --owner <org>` -> "GraphQL: Could not resolve to a ProjectV2 with the
+#: number 99999."; an owner login that does not exist -> "unknown owner type".
+_BOARD_GONE = ("could not resolve to a", "unknown owner type")
+
+
 def _pinned_board_unreachable(gh_cfg, run):
-    """#235: `project.number` is pinned but that board cannot be read under its owner -- deleted,
-    transferred, a wrong owner, or a token without the `project` scope. The loop then turns board
-    mirroring OFF on every run (`_warn_board_unresolved`), so the pin is only worth what this row
-    confirms. Returns a one-line fix, else None. None too when no number is pinned: that case is
-    `_board_dup_risk`'s. One read (`gh project view`), the same verb the loop's own resolution
-    falls back to for a pin outside the first 100 boards."""
+    """The fix line when `_pinned_board_state` says "gone", else None."""
+    state, fix = _pinned_board_state(gh_cfg, run)
+    return fix if state == "gone" else None
+
+
+def _pinned_board_state(gh_cfg, run):
+    """(state, fix): "ok", "gone" (with the fix), "unverifiable", or "unpinned".
+
+    #235: `project.number` is pinned but GitHub says that board does not exist under its owner --
+    deleted, transferred, or a wrong `project.owner`. The loop then turns board mirroring OFF on
+    every run (`_warn_board_unresolved`), so the pin is only worth what this row confirms. Returns
+    a one-line fix, else None.
+
+    None -- no alarm, and the caller emits NO row (never a pass) -- whenever the read itself failed:
+    offline, rate-limited, gh missing or killed, or a token without the `project` scope (the
+    "gh project scope" row already names that). A failed read says nothing about the board, and a
+    FAIL there would send an operator to "fix" a pin that is fine. Only a read GitHub ANSWERED
+    (`_BOARD_GONE`) is an alarm. None too when no number is pinned: that case is
+    `_board_dup_risk`'s ("unpinned"). One GraphQL-backed read (`gh project view`), the same verb the loop's own
+    resolution falls back to for a pin outside the first 100 boards; the caller gates it out of
+    `cheap_only`."""
     proj = _block(gh_cfg, "project")
     number = proj.get("number")
     if number in (None, ""):
-        return None
+        return "unpinned", None
     repo = gh_cfg.get("repo") or ""
     owner = proj.get("owner") or (repo.split("/")[0] if "/" in repo else "@me")
     try:
         want = int(number)
     except (TypeError, ValueError):
-        return f"project.number {number!r} is not a number - set it to the board's number."
+        return "gone", f"project.number {number!r} is not a number - set it to the board's number."
     raw = run(["gh", "project", "view", str(want), "--owner", owner, "--format", "json"])
-    try:
-        got = json.loads(raw or "{}")
-    except Exception:
-        got = {}
-    if isinstance(got, dict) and got.get("number") == want:
-        return None
-    return (f"the pinned board #{want} could not be read under {owner} (deleted, moved, wrong "
-            "project.owner, or the gh token lacks the `project` scope: `gh auth refresh -s "
-            "project`) - the loop mirrors nothing while it is unreachable. Fix "
-            "discovery.github.project.number/owner.")
+    if raw:
+        try:
+            got = json.loads(raw)
+        except Exception:
+            got = None
+        # an answer that is not this board is odd, but it is not GitHub saying the board is gone
+        return ("ok" if isinstance(got, dict) and got.get("number") == want
+                else "unverifiable"), None
+    said = str(getattr(raw, "raw", "") or "").lower()
+    if not any(tell in said for tell in _BOARD_GONE):
+        return "unverifiable", None  # the read failed -- says nothing about the board
+    return "gone", (f"the pinned board #{want} does not exist under {owner} (GitHub: could not "
+                    "resolve it -- deleted, moved, or a wrong project.owner) - the loop mirrors "
+                    "nothing while it is unreachable. Fix discovery.github.project.number/owner, "
+                    "or create and pin a new one: python3 "
+                    "<sigma>/skills/agrim-init/scripts/board_setup.py create .sdlc.")
 
 
 def _self_merge_risk(gh_cfg, wk, run):
@@ -1960,10 +1987,13 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             dup = _board_dup_risk(gh_disc, run)
             if dup:
                 out.append(_chk("project.number pinned (no duplicate-board risk)", False, dup))
-            if _block(gh_disc, "project").get("number") not in (None, ""):
-                gone = _pinned_board_unreachable(gh_disc, run)
-                out.append(_chk("pinned board #%s reachable"
-                                % _block(gh_disc, "project").get("number"), not gone, gone))
+            # #235: a GraphQL-backed read, so never under cheap_only (the SessionStart wizard).
+            # A read that failed is no row at all -- never a pass, never a false alarm.
+            if not cheap_only:
+                state, gone = _pinned_board_state(gh_disc, run)
+                if state in ("ok", "gone"):
+                    out.append(_chk("pinned board #%s reachable"
+                                    % _block(gh_disc, "project").get("number"), state == "ok", gone))
             stale_cards = _item_closed_workflow_off(gh_disc, run)
             if stale_cards:
                 out.append(_chk("board marks closed items Done", False, stale_cards))

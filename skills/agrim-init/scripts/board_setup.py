@@ -21,19 +21,31 @@ Without `--yes` it only READS and prints what it would do (exit 0). With `--yes`
   4. pin              `project.number` + `project.owner` into config.json, IMMEDIATELY (atomic;
                       every other key kept), so a re-run after any later failure reuses this board.
   5. Status options   the configured columns (`project.columns`, sources.GitHubSource.col) via
-                      sources' own id-preserving `_options_mutation` -- GitHub's `Todo` and
-                      `In progress` are RENAMED (ids kept, so the built-in workflows stay on).
-  6. Priority field   `priority_field` with `discovery.PRIORITIES`, created or completed.
+                      sources' own id-preserving `_options_mutation`. On a board created or copied
+                      IN THIS RUN, GitHub's `Todo` and `In progress` are RENAMED (ids kept, so the
+                      built-in workflows stay on). On an ADOPTED board (`--number`, or a pin) the
+                      rename map is never passed: nothing is renamed, every existing option keeps
+                      its id, name, colour and description (read back and echoed), and only the
+                      missing options are ADDED. A missing column whose only difference from an
+                      existing option is case (`In progress` vs `In Progress`) is mapped in
+                      config (`project.columns.<key>` = the board's spelling), never renamed and
+                      never duplicated. Colours/descriptions that cannot be read -> REFUSED.
+  6. Priority field   `priority_field` with `discovery.PRIORITIES` (`P0`..`P4`), created or
+                      completed. A same-named field that is not single-select, or a case-only
+                      variant (`p0`), is REFUSED with the manual fix -- never renamed.
   7. verify           fields re-read and checked; repo link + workflows read in one GraphQL query.
                       "Item closed" off or unreadable -> the exact manual step and its deep link
                       (the API has no workflow create/enable mutation -- research/235).
-Every step prints `[ok]`, `[FAIL]`, `[skip]` or `[manual]`. Any FAIL exits 1 and prints the exact
-resume command (it carries `--number N` once the board exists). Re-running on a finished board
-makes no mutation.
+Every step prints `[ok]`, `[FAIL]`, `[REFUSED]`, `[skip]` or `[manual]`. Any FAIL exits 1 and
+prints the exact resume command (it carries `--number N` once the board exists). A REFUSED step
+exits 2 with no resume command: re-running cannot help until the named thing is changed by hand.
+Re-running on a finished board makes no mutation. A resume after a partial first run is an
+adoption, so a `Todo` the first run did not get to rename survives as an extra lane (cosmetic).
 
 COST: reads are REST (core quota); GraphQL only for mutations and one read. A fresh create is
-4 GraphQL calls (3 mutations + 1 read), 5 + ceil(boards/100) REST reads and one `gh auth status`
-(measured against the fake: tests/test_board_setup.py); a finished board re-run is 1 GraphQL read. Nothing here runs in the loop's steady state.
+4 GraphQL calls (3 mutations + 1 read), 3 + ceil(boards/100) + 2 * ceil(fields/100) REST reads and
+one `gh auth status` (measured against the fake: tests/test_board_setup.py); a finished board
+re-run is 1 GraphQL read. Nothing here runs in the loop's steady state.
 
 SECRETS: gh holds the token; this never passes `--show-token`, never prints gh's raw auth output,
 and redacts userinfo from any error it echoes.
@@ -42,6 +54,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -105,8 +118,24 @@ def real_runner(argv, timeout=None):
 # ---------------------------------------------------------------- helpers
 
 def _q(value):
-    """A GraphQL string literal. JSON's escaping is a subset GraphQL accepts (\\uXXXX included)."""
+    """A GraphQL string literal. JSON's escaping is a subset GraphQL accepts (\\uXXXX included).
+    EVERY value interpolated into a GraphQL document here goes through this (pinned by
+    tests/test_board_setup.py::test_q_is_a_graphql_string_literal)."""
     return json.dumps(str(value))
+
+
+#: GraphQL's ProjectV2SingleSelectFieldOptionColor. REST returns the same names upper-case
+#: (measured on a real board, review of PR #279).
+COLORS = ("GRAY", "BLUE", "GREEN", "YELLOW", "ORANGE", "RED", "PINK", "PURPLE")
+
+#: Characters no single quoting survives in BOTH cmd.exe and PowerShell: `"` ends the quote, `%`
+#: (cmd) and `$` / backtick (PowerShell) expand inside double quotes, `!` does under cmd's delayed
+#: expansion.
+_WIN_UNSAFE = frozenset('"%$`!')
+
+
+def _windows():
+    return os.name == "nt"
 
 
 def _clean(text):
@@ -130,6 +159,7 @@ class Board:
         self.out = out
         self.host = host
         self.failed = False
+        self.refused = False
 
     # -- gh plumbing
     def gh(self, *args):
@@ -153,6 +183,8 @@ class Board:
     def step(self, tag, what, detail=""):
         if tag == "FAIL":
             self.failed = True
+        if tag == "REFUSED":
+            self.refused = True
         self.out(f"  [{tag}] {what}" + (f": {detail}" if detail else ""))
 
 
@@ -185,6 +217,15 @@ def pin(sdlc, owner, number):
     pf._vd._atomic_write_json(path, cfg)
 
 
+def pin_columns(sdlc, mapping):
+    """Write discovery.github.project.columns.<key> for each {key: board spelling}; every other key
+    (including other column names already configured) is kept. Atomic."""
+    path, cfg = _config(sdlc)
+    _gh, proj = _gh_block(cfg)
+    _child(proj, "columns").update(mapping)
+    pf._vd._atomic_write_json(path, cfg)
+
+
 def _repo_from_origin(root):
     """The origin's owner/name and host -- local git only (the gh runner is for gh)."""
     rc, out, _err = real_runner(["git", "-C", str(root), "remote", "get-url", "origin"])
@@ -195,13 +236,32 @@ def _repo_from_origin(root):
 
 
 def resume_command(sdlc, owner, title, number=None, template=None):
-    parts = [f"create {pf._vd._q(str(sdlc))}", f"--owner {pf._vd._q(owner)}",
-             f"--title {pf._vd._q(title)}"]
+    """The exact gesture to re-run, or None when it cannot be printed safely: on Windows a value
+    carrying a character cmd or PowerShell would expand or end the quote on (`_WIN_UNSAFE`, or a
+    control character) is refused rather than printed as a line that runs something else."""
+    values = [str(sdlc), str(owner), str(title), HERE] + ([str(template)] if template else [])
+    if _windows():
+        if any(ch in _WIN_UNSAFE or pf._vd._unsafe_char(ch) for v in values for ch in v):
+            return None
+        quote = lambda v: '"%s"' % v                                  # noqa: E731
+    else:
+        quote = shlex.quote
+    parts = [f"create {quote(str(sdlc))}", f"--owner {quote(owner)}", f"--title {quote(title)}"]
     if number is not None:
         parts.append(f"--number {int(number)}")
     elif template:
-        parts.append(f"--template {pf._vd._q(str(template))}")
-    return f"{pf._vd.python_command()} {pf._vd._q(HERE)} " + " ".join(parts) + " --yes"
+        parts.append(f"--template {quote(str(template))}")
+    return f"{pf._vd.python_command()} {quote(HERE)} " + " ".join(parts) + " --yes"
+
+
+def _say_resume(out, sdlc, owner, title, number=None, template=None):
+    line = resume_command(sdlc, owner, title, number, template)
+    if line is not None:
+        out("  " + line)
+        return
+    out("  (no command printed: a value contains a character cmd/PowerShell would expand or end "
+        "the quote on -- one of \" % $ ` !). Re-run the command you ran"
+        + (f", adding --number {int(number)}" if number is not None else "") + ".")
 
 
 def workflows_url(kind, owner, number, host="github.com"):
@@ -214,7 +274,9 @@ def manual_runbook(kind, owner, title, host="github.com"):
         "  Manual runbook (nothing was created):",
         f"    1. Open https://{host}/{kind}/{owner}/projects and decide which board the loop should use.",
         f"    2. If it is the existing '{pf.printable(title)}', adopt it: re-run with --number <its number> --yes",
-        "       (it gets the Status/Priority options it lacks; nothing else on it changes).",
+        "       (it gets the Status/Priority options it lacks, ADDED; nothing on it is renamed,",
+        "       recoloured or deleted. A lane differing only by case, e.g. 'In progress', is used",
+        "       as-is via project.columns in config).",
         "    3. If not, re-run with --title '<a different title>' --yes to create a separate board.",
         "    4. Or pin it by hand: discovery.github.project.number = <number> in .sdlc/config.json.",
     ]
@@ -312,23 +374,25 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
         for line in manual_runbook(kind, owner, title, host):
             out(line)
         return 2
-    cols = [src.col[k] for k in ("backlog", "ready", "in_progress", "qc", "done", "blocked",
-                                  "parked")]
+    keys = ("backlog", "ready", "in_progress", "qc", "done", "blocked", "parked")
+    cols = [src.col[k] for k in keys]
     prio = src.priority_field
     prios = list(_sources().discovery.PRIORITIES) if prio else []
     if not yes:
-        what = (f"reuse pinned board #{mine['number']} '{pf.printable(mine['title'])}'" if mine
+        what = (f"reuse pinned board #{mine['number']} '{pf.printable(mine['title'])}' (only "
+                "ADDING missing options; nothing renamed)" if mine
                 else f"copy template board {template} as '{pf.printable(title)}'" if template
                 else f"create '{pf.printable(title)}' under {pf.printable(owner)}")
         out(f"board_setup: dry run (nothing written) -- would {what}, link {repo}, set Status to "
             f"{' / '.join(cols)}" + (f" and {prio} to {' / '.join(prios)}" if prio else "")
             + ", and pin its number in config.json.")
-        out("  To do it: " + resume_command(sdlc, owner, title,
-                                            mine["number"] if mine else None, template))
+        out("  To do it:")
+        _say_resume(out, sdlc, owner, title, mine["number"] if mine else None, template)
         return 0
 
     out(f"board_setup: {pf.printable(owner)} / {repo}")
     num, pid = (mine["number"], mine["node_id"]) if mine else (None, None)
+    fresh = False               # True only for a board this run created or copied: may rename
     try:
         repo_id = b.rest(f"repos/{repo}").get("node_id")
     except (Failed, ValueError, AttributeError) as exc:
@@ -355,12 +419,12 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
                     "{ projectV2 { id number url } } }"
                     % (_q(who.get("node_id")), _q(title), _q(repo_id)))["createProjectV2"]["projectV2"]
                 b.step("ok", "board", f"created #{made['number']} '{pf.printable(title)}'")
-            num, pid = made["number"], made["id"]
+            num, pid, fresh = made["number"], made["id"], True
         except (Failed, KeyError, TypeError, ValueError) as exc:
             b.step("FAIL", "create board", getattr(exc, "detail", repr(exc)))
     if num is None:
         out("board_setup: stopped -- no board exists yet. Fix the cause above, then resume:")
-        out("  " + resume_command(sdlc, owner, title, None, template))
+        _say_resume(out, sdlc, owner, title, None, template)
         return 1
 
     # 4. pin -- before anything else can fail, so a resume finds this board by its number
@@ -372,15 +436,21 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
                "by hand")
 
     # 5 + 6. fields
-    _ensure_fields(b, kind, owner, num, src, cols, prio, prios)
+    cols = _ensure_fields(b, kind, owner, num, src, dict(zip(keys, cols)), prio, prios, fresh,
+                          sdlc)
 
     # 7. repository link + workflows, one read
     _link_and_workflows(b, kind, owner, num, pid, repo, repo_id, host)
 
+    if b.refused:
+        out(f"board_setup: REFUSED -- board #{num} is pinned, but a step above was refused; "
+            "re-running changes nothing until you make the fix it names by hand. Then re-run:")
+        _say_resume(out, sdlc, owner, title, num)
+        return 2
     if b.failed:
         out("board_setup: INCOMPLETE -- see [FAIL] above. Resume (safe to repeat; it reuses board "
             f"#{num}):")
-        out("  " + resume_command(sdlc, owner, title, num))
+        _say_resume(out, sdlc, owner, title, num)
         return 1
     if not _gh_block(_config(sdlc)[1])[1].get("enabled"):
         out("  note: discovery.github.project.enabled is not true, so the loop will not mirror "
@@ -396,54 +466,123 @@ def _split_template(template, owner):
     return int(tnum), (towner or owner)
 
 
+def _raw(value):
+    """REST returns option names/descriptions as {"raw": ..., "html": ...}; accept a plain string."""
+    return value.get("raw") if isinstance(value, dict) else value
+
+
 def _read_fields(b, kind, owner, num):
-    rows = b.rest(f"{kind}/{owner}/projectsV2/{num}/fields") or []
+    """{name: {id, type, options: [{id, name, color, description}], readable}} for EVERY field,
+    over every page (`--paginate`; a board has up to 50 fields and the default page is 30).
+    `readable` is False when any option's colour or description could not be read -- then a
+    rewrite would have to invent them, so the caller refuses instead."""
+    listing = b.gh("api", "--paginate", f"{kind}/{owner}/projectsV2/{num}/fields?per_page=100",
+                   "--jq", ".[]")
     fields = {}
-    for f in rows:
-        if "options" not in f:
+    for ln in listing.splitlines():
+        if not ln.strip():
             continue
-        opts = [{"id": o.get("id"), "name": (o.get("name") or {}).get("raw")
-                 if isinstance(o.get("name"), dict) else o.get("name")}
-                for o in f.get("options") or []]
-        fields[f.get("name")] = {"id": f.get("node_id"), "options": opts}
+        f = json.loads(ln)
+        opts, readable = [], True
+        for o in f.get("options") or []:
+            color = str(o.get("color") or "").upper()
+            desc = _raw(o.get("description")) if "description" in o else None
+            if color not in COLORS or not isinstance(desc, str):
+                readable = False
+            opts.append({"id": o.get("id"), "name": _raw(o.get("name")),
+                         "color": color if color in COLORS else None,
+                         "description": desc if isinstance(desc, str) else None})
+        fields[f.get("name")] = {"id": f.get("node_id"), "type": f.get("data_type"),
+                                 "options": opts, "readable": readable}
     return fields
 
 
 def _create_field(b, pid, name, options):
-    opts = ", ".join("{name: %s, color: GRAY, description: \"\"}" % _q(o) for o in options)
+    opts = ", ".join("{name: %s, color: GRAY, description: %s}" % (_q(o), _q("")) for o in options)
     b.graphql("mutation { createProjectV2Field(input: {projectId: %s, dataType: SINGLE_SELECT, "
               "name: %s, singleSelectOptions: [%s]}) { projectV2Field { ... on "
               "ProjectV2SingleSelectField { id } } } }" % (_q(pid), _q(name), opts))
 
 
-def _ensure_fields(b, kind, owner, num, src, cols, prio, prios):
+def _case_variants(options, have):
+    """{wanted: existing} for each wanted name absent verbatim but present differing only by case."""
+    folded = {}
+    for h in have:
+        folded.setdefault(h.casefold(), h)
+    return {o: folded[o.casefold()] for o in options
+            if o not in have and o.casefold() in folded}
+
+
+def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
+    """Status + Priority. `cols` is {column key: name}; returns the column names in key order as
+    the board now spells them. `fresh` (a board created/copied in THIS run) is the only case that
+    may rename GitHub's own `Todo` / `In progress`; on an adopted board nothing is renamed and every
+    existing option is echoed back with its own id, name, colour and description."""
     status_name = src._project_cfg.get("status_field") or "Status"
+    names = list(cols.values())
     try:
         fields = _read_fields(b, kind, owner, num)
         pid = b.rest(f"{kind}/{owner}/projectsV2/{num}")["node_id"]
     except (Failed, ValueError, KeyError, TypeError) as exc:
         b.step("FAIL", "read fields", getattr(exc, "detail", repr(exc)))
-        return
-    wanted = [(status_name, cols, {"Todo": cols[0], "In progress": cols[2]})]
+        return names
+    rename = {"Todo": cols["backlog"], "In progress": cols["in_progress"]} if fresh else None
+    wanted = [(status_name, names, rename)]
     if prio:
         wanted.append((prio, prios, None))
     else:
         b.step("skip", "priority field", "priority_field is off in config")
-    for name, options, rename in wanted:
+    checked = []
+    for name, options, ren in wanted:
         fld = fields.get(name)
         have = [o["name"] for o in (fld or {}).get("options") or []]
+        if fld is not None and fld.get("type") != "single_select":
+            other = "status_field" if name == status_name else "priority_field"
+            b.step("REFUSED", f"{name} field",
+                   f"'{pf.printable(name)}' exists but is a {pf.printable(fld.get('type'))} field, "
+                   f"not single-select. Rename or delete it on the board, or set "
+                   f"discovery.github.project.{other} to another name")
+            continue
+        variants = _case_variants(options, have) if (fld is not None and not ren) else {}
+        if variants and name == status_name:
+            # the board's own spelling becomes the configured column: nothing renamed, no duplicate
+            mapping = {k: variants[v] for k, v in cols.items() if v in variants}
+            try:
+                pin_columns(sdlc, mapping)
+            except (OSError, ValueError) as exc:
+                b.step("FAIL", f"{name} field", f"could not map {mapping} in config: "
+                       f"{pf.printable(exc)}")
+                continue
+            cols.update(mapping)
+            options = names = list(cols.values())
+            b.step("ok", f"{name} field", "mapped " + ", ".join(
+                f"project.columns.{k} = '{pf.printable(v)}'" for k, v in mapping.items())
+                + " (the board's own spelling; nothing renamed)")
+        elif variants:
+            b.step("REFUSED", f"{name} field", "the board spells " + ", ".join(
+                f"'{pf.printable(h)}' where the loop needs '{w}'" for w, h in variants.items())
+                + "; rename those options on the board by hand (never renamed for you)")
+            continue
+        checked.append((name, options))
+        missing = [o for o in options if o not in have]
         try:
             if fld is None:
                 _create_field(b, pid, name, options)
-                b.step("ok", f"{name} field", "created with " + " / ".join(options))
-            elif all(o in have for o in options):
-                b.step("ok", f"{name} field", "already has " + " / ".join(options))
-                continue
+                b.step("ok", f"{name} field", "created with " + pf.printable(" / ".join(options)))
+            elif not missing:
+                b.step("ok", f"{name} field", "already has " + pf.printable(" / ".join(options)))
+            elif not fld["readable"]:
+                b.step("REFUSED", f"{name} field",
+                       "its options' colours/descriptions could not be read, so rewriting them "
+                       "would reset them; add " + " / ".join(missing) + " on the board by hand")
+                checked.pop()
             else:
-                doc = src._options_mutation(fld["id"], options, fld["options"], rename=rename)
+                doc = src._options_mutation(fld["id"], options, fld["options"], rename=ren)
                 b.gh("api", "graphql", "-f", doc)
-                b.step("ok", f"{name} field", "options set to " + " / ".join(options)
-                       + " (existing option ids kept)")
+                b.step("ok", f"{name} field", ("options set to " + " / ".join(options)
+                       + " (Todo / In progress renamed on this new board; ids kept)") if ren else
+                       ("added " + " / ".join(missing) + " (nothing renamed; existing options' "
+                        "ids, names, colours and descriptions kept)"))
         except Failed as exc:
             b.step("FAIL", f"{name} field", exc.detail)
     # measured, not assumed: read back what GitHub now holds
@@ -451,12 +590,13 @@ def _ensure_fields(b, kind, owner, num, src, cols, prio, prios):
         after = _read_fields(b, kind, owner, num)
     except (Failed, ValueError) as exc:
         b.step("FAIL", "verify fields", getattr(exc, "detail", repr(exc)))
-        return
-    for name, options, _r in wanted:
+        return names
+    for name, options in checked:
         have = [o["name"] for o in (after.get(name) or {}).get("options") or []]
         missing = [o for o in options if o not in have]
         if missing:
-            b.step("FAIL", f"verify {name}", "missing " + ", ".join(missing))
+            b.step("FAIL", f"verify {name}", "missing " + pf.printable(", ".join(missing)))
+    return names
 
 
 def _link_and_workflows(b, kind, owner, num, pid, repo, repo_id, host):

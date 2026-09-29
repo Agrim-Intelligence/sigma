@@ -153,7 +153,12 @@ def test_adopting_the_same_titled_board_with_number_completes_it(tmp_path):
     rc, text = _run(sdlc, gh, "--number", "7", "--yes")
     assert rc == 0, text
     assert len(gh.boards) == 1 and _cfg(sdlc)["discovery"]["github"]["project"]["number"] == 7
-    assert gh.option_names(gh.board(number=7), "Status") == COLS
+    # adoption renames nothing (review of PR #279): `Todo` stays as a trailing lane, `In progress`
+    # keeps its spelling and is mapped in config, and only the missing columns are added
+    assert gh.option_names(gh.board(number=7), "Status") == [
+        "Backlog", "Ready", "In progress", "QC", "Done", "Blocked", "Parked", "Todo"]
+    assert _cfg(sdlc)["discovery"]["github"]["project"]["columns"] == {"in_progress": "In progress"}
+    assert "moves its card to In progress" in text
 
 
 def test_missing_project_scope_is_refused_with_preflight_remediation(tmp_path):
@@ -394,3 +399,203 @@ def test_pin_lands_even_when_the_project_block_is_null(tmp_path):
     (sdlc / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
     assert _run(sdlc, gh, "--yes")[0] == 0
     assert _cfg(sdlc)["discovery"]["github"]["project"]["number"] == 3
+
+
+# ---------------------------------------------------------------- review of PR #279
+# Block #1: adopting a human-built board (`--number N`) must RENAME nothing and must keep every
+# existing option's id, name, colour and description -- only missing options are ADDED. The fake
+# now stores colour + description and wipes a card's value when its option id is dropped, so the
+# reviewer's reproduction (Todo -> Backlog, Done recoloured RED, descriptions wiped) is visible.
+
+HUMAN_STATUS = [
+    {"id": "h_todo", "name": "Todo", "color": "BLUE", "description": "Not started yet"},
+    {"id": "h_ip", "name": "In progress", "color": "ORANGE", "description": "Someone owns it"},
+    {"id": "h_done", "name": "Done", "color": "GREEN", "description": "Shipped"},
+    {"id": "h_nd", "name": "Needs design", "color": "PINK", "description": "Waiting on design"},
+]
+#: The same board with a human lane whose name and description need GraphQL escaping.
+ODD_STATUS = HUMAN_STATUS[:3] + [
+    {"id": "h_nd", "name": 'Needs "design" \\ — ü', "color": "PINK",
+     "description": 'Waiting on "design" \\ review'}]
+
+
+def _human_board(status=None, extra_fields=()):
+    gh = boardfake.GitHub(boards=[{"title": "Team board", "number": 1, "fields": [
+        {"id": "PVTF_title_1", "name": "Title", "options": None, "data_type": "title"},
+        {"id": "PVTSSF_status_1", "name": "Status",
+         "options": [dict(o) for o in (status or HUMAN_STATUS)]}, *extra_fields]}])
+    board = gh.board(number=1)
+    gh.add_item(board, 5, Status="Todo")
+    gh.add_item(board, 6, Status=(status or HUMAN_STATUS)[-1]["name"])
+    gh.add_item(board, 7, Status="Done")
+    return gh, board
+
+
+@pytest.mark.parametrize("status", [HUMAN_STATUS, ODD_STATUS], ids=["reviewer", "escaping"])
+def test_adopting_a_human_board_renames_nothing_and_keeps_colour_and_description(tmp_path, status):
+    gh, board = _human_board(status=status)
+    before = [dict(o) for o in gh.field(board, "Status")["options"]]
+    values = {i["id"]: dict(i["values"]) for i in board["items"]}
+    sdlc = _sdlc(tmp_path)
+    rc, text = _run(sdlc, gh, "--number", "1", "--yes")
+    assert rc == 0, text
+    after = {o["id"]: o for o in gh.field(board, "Status")["options"]}
+    for o in before:                                   # every human option: untouched, byte for byte
+        assert after[o["id"]] == o, (o, after.get(o["id"]))
+    names = gh.option_names(board, "Status")
+    assert "Todo" in names and "Backlog" in names       # added, not renamed
+    assert "In Progress" not in names                   # the case variant is used, not duplicated
+    assert {i["id"]: i["values"] for i in board["items"]} == values   # no card lost its value
+    assert all(board["workflows"].values())
+    assert _cfg(sdlc)["discovery"]["github"]["project"]["columns"] == {"in_progress": "In progress"}
+    assert "renamed nothing" in text or "nothing renamed" in text
+
+
+def test_adopted_board_case_variant_is_what_the_loop_then_writes(tmp_path, capsys):
+    gh, board = _human_board()
+    gh.issues = [{"number": 11, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""}]
+    sdlc = _sdlc(tmp_path)
+    assert _run(sdlc, gh, "--number", "1", "--yes")[0] == 0
+    _src(sdlc, gh).mark_in_progress("11")
+    assert _card_status(gh, board, 11) == "In progress"
+    assert "mirroring OFF" not in capsys.readouterr().err
+
+
+def test_a_fresh_board_keeps_githubs_colours_and_descriptions_on_kept_options(tmp_path):
+    """The fresh path may rename (GitHub made those options), but it must not recolour `Done`."""
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    assert _run(sdlc, gh, "--yes")[0] == 0
+    board = gh.board(title="widget — SDLC")
+    done = gh.option(board, "Status", "Done")
+    assert (done["color"], done["description"]) == ("PURPLE", "This has been completed")
+
+
+def test_unreadable_option_colours_refuse_instead_of_resetting_them(tmp_path):
+    status = [dict(o) for o in HUMAN_STATUS]
+    status[0]["color"] = ""                             # REST gave no usable colour
+    gh, board = _human_board(status=status)
+    rc, text = _run(_sdlc(tmp_path), gh, "--number", "1", "--yes")
+    assert rc == 2 and "REFUSED" in text
+    assert not any("updateProjectV2Field(" in " ".join(c) for c in gh.mutations())
+
+
+def test_a_priority_case_variant_is_refused_not_renamed(tmp_path):
+    prio = {"id": "PVTSSF_prio_1", "name": "Priority", "options": [
+        {"id": "p%d" % i, "name": "p%d" % i, "color": "GRAY", "description": ""} for i in range(5)]}
+    gh, board = _human_board(extra_fields=[prio])
+    rc, text = _run(_sdlc(tmp_path), gh, "--number", "1", "--yes")
+    assert rc == 2 and "[REFUSED] Priority field" in text and "'p0'" in text
+    assert gh.option_names(board, "Priority") == ["p0", "p1", "p2", "p3", "p4"]
+
+
+# (2) the pin wins over a same-titled board on the SAME first page
+
+def test_a_pinned_board_beats_a_same_titled_board_on_the_first_page(tmp_path):
+    gh = boardfake.GitHub(boards=[{"title": "widget — SDLC", "number": 1},
+                                  {"title": "Renamed by a human", "number": 2}])
+    sdlc = _sdlc(tmp_path, project={"number": 2})
+    src = _src(sdlc, gh)
+    assert src._find_project("acme", "widget — SDLC")[0] == 2
+
+
+# (3) the post-write check is what catches a write GitHub accepted but did not apply
+
+def test_a_silently_dropped_field_creation_fails_the_verify_step(tmp_path):
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    gh.ignore.add("createProjectV2Field(")
+    rc, text = _run(sdlc, gh, "--yes")
+    assert rc == 1 and "[FAIL] verify Priority" in text and "missing P0" in text
+
+
+# (4) escaping: every interpolated GraphQL value goes through JSON quoting
+
+def test_q_is_a_graphql_string_literal():
+    for raw in ['plain', 'a "quoted" word', 'back\\slash', 'ünï — code', 'line\nbreak']:
+        lit = bs._q(raw)
+        assert lit.startswith('"') and lit.endswith('"') and json.loads(lit) == raw
+        assert '\n' not in lit and '"' not in lit[1:-1].replace('\\"', '')
+
+
+def test_a_title_with_quotes_and_backslashes_round_trips(tmp_path):
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    title = 'Say "hi" \\ — ü'
+    rc, text = _run(sdlc, gh, "--title", title, "--yes")
+    assert rc == 0, text
+    assert gh.board(title=title) is not None
+
+
+def test_options_mutation_quotes_names_descriptions_and_the_field_id():
+    src = _load(LOOP / "sources.py", "sources_for_quoting")
+    doc = src.GitHubSource._options_mutation('F"1', ["Backlog"], ODD_STATUS)
+    assert 'fieldId: "F\\"1"' in doc
+    opts = boardfake.parse_options(doc)
+    assert [o["name"] for o in opts][-1] == ODD_STATUS[-1]["name"]
+    assert opts[-1]["description"] == ODD_STATUS[-1]["description"]
+
+
+# (6) the fields read is paginated; a wrong-typed field is a clear refusal
+
+def _many_fields(n, then):
+    return [{"id": "PVTF_f%d" % i, "name": "Custom %d" % i, "options": None, "data_type": "text"}
+            for i in range(n)] + then
+
+
+def test_the_fields_read_sees_a_status_field_past_the_first_page(tmp_path):
+    status = {"id": "PVTSSF_status_1", "name": "Status",
+              "options": [dict(o) for o in HUMAN_STATUS]}
+    gh = boardfake.GitHub(boards=[{"title": "Team board", "number": 1,
+                                   "fields": _many_fields(35, [status])}])
+    rc, text = _run(_sdlc(tmp_path), gh, "--number", "1", "--yes")
+    assert rc == 0, text
+    assert [f["name"] for f in gh.board(number=1)["fields"]].count("Status") == 1
+
+
+def test_a_priority_field_that_is_not_single_select_is_refused_once(tmp_path):
+    prio = {"id": "PVTF_prio", "name": "Priority", "options": None, "data_type": "text"}
+    gh, board = _human_board(extra_fields=[prio])
+    rc, text = _run(_sdlc(tmp_path), gh, "--number", "1", "--yes")
+    assert rc == 2 and "[REFUSED] Priority field" in text and "not single-select" in text
+    assert "Resume" not in text and "project.priority_field" in text
+    assert not any("createProjectV2Field(" in " ".join(c) for c in gh.mutations())
+
+
+# (7) fake fidelity: numbers are per owner, a duplicate field name is rejected
+
+def test_fake_board_numbers_are_per_owner_and_the_template_owner_is_honoured(tmp_path):
+    gh = boardfake.GitHub(boards=[{"title": "Ours", "number": 1},
+                                  {"title": "Their template", "number": 1, "owner": "octo"}])
+    assert gh.board(number=1)["title"] == "Ours"
+    assert gh.board(number=1, owner="octo")["title"] == "Their template"
+    gh.board(number=1, owner="octo")["fields"].append(
+        {"id": "PVTSSF_marker", "name": "Octo only", "options": [], "data_type": "single_select"})
+    rc, text = _run(_sdlc(tmp_path), gh, "--template", "octo/1", "--yes")
+    assert rc == 0, text
+    made = gh.board(title="widget — SDLC")
+    assert gh.field(made, "Octo only") is not None           # copied from octo's #1, not ours
+
+
+def test_fake_rejects_a_duplicate_field_name():
+    gh = _org_with_boards()
+    doc = ('mutation { createProjectV2Field(input: {projectId: "PVT_1", dataType: SINGLE_SELECT, '
+           'name: "Status", singleSelectOptions: [{name: "A", color: GRAY, description: ""}]}) '
+           '{ projectV2Field { ... on ProjectV2SingleSelectField { id } } } }')
+    rc, _out, err = gh.gh(["gh", "api", "graphql", "-f", "query=" + doc])
+    assert rc == 1 and "already been taken" in err
+
+
+# (8) the printed resume command on Windows
+
+def test_windows_resume_uses_double_quotes_and_refuses_expanding_characters(monkeypatch, tmp_path):
+    monkeypatch.setattr(bs, "_windows", lambda: True)
+    line = bs.resume_command(tmp_path, "acme", "widget — SDLC", 3)
+    assert '--title "widget — SDLC"' in line and "'" not in line.split(" create ", 1)[1]
+    for bad in ('say "hi"', "100% done", "cost $x", "wow!", "tick`s"):
+        assert bs.resume_command(tmp_path, "acme", bad, 3) is None
+
+
+def test_windows_failure_with_an_unquotable_title_says_how_to_resume(monkeypatch, tmp_path):
+    monkeypatch.setattr(bs, "_windows", lambda: True)
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    gh.fail["createProjectV2Field("] = "GraphQL: secondary rate limit"
+    rc, text = _run(sdlc, gh, "--title", "100% done", "--yes")
+    assert rc == 1 and "cmd/PowerShell" in text and "--number" in text

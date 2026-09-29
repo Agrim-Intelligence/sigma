@@ -9,7 +9,16 @@ It models GITHUB'S BEHAVIOUR that the tests depend on, not the transport:
   - an option rewrite that omits an existing option's id DELETES that option, and a deleted option
     a workflow targeted disables that workflow (#720's measurement);
   - `gh project list --limit 100` returns only the first 100 boards (the cap `_find_project` reads);
-  - REST option names come back as {"raw": ..., "html": ...} (measured live, evidence/235).
+  - REST option names AND descriptions come back as {"raw": ..., "html": ...}, and colours as an
+    upper-case enum name (`"GRAY"`), measured live against a real board (review of PR #279);
+  - REST `/fields` returns one page (`per_page`, default 30) unless `--paginate` is passed;
+  - board numbers are per OWNER (acme's #1 and octo's #1 are different boards);
+  - a second field with an existing name is rejected ("Name has already been taken");
+  - `updateProjectV2Field` STORES each option's colour and description exactly as sent, and an
+    option whose id is left out is DELETED: every card whose value was that option loses it
+    (the card-value wipe board_migrate's rehearsal measures), and a workflow targeting it goes off;
+  - GraphQL string literals are parsed as GraphQL parses them (JSON escapes), and an option list
+    that does not parse is a GraphQL error, never a silently shorter list.
 
 Imported as a plain sibling module (`import boardfake`), like gqlfake.
 """
@@ -25,6 +34,41 @@ DEFAULT_WORKFLOWS = ("Item closed", "Pull request merged", "Item reopened", "Aut
 FAKE_TOKEN = "ghp_SECRETSECRETSECRETSECRETSECRETSECRET"
 
 
+#: GitHub's own defaults for a fresh board's Status options (colour + description), so a test can
+#: tell "kept" from "reset to colour-by-position with an empty description".
+GH_DEFAULTS = (("Todo", "GREEN", "This item hasn't been started"),
+               ("In progress", "YELLOW", "This is actively being worked on"),
+               ("Done", "PURPLE", "This has been completed"))
+
+_STR = r'"(?:[^"\\\n]|\\.)*"'
+_OPT = re.compile(r'\s*\{(?:id: (%s), )?name: (%s), color: ([A-Z]+), description: (%s)\}\s*(,)?'
+                  % (_STR, _STR, _STR))
+
+
+class GraphQLError(LookupError):
+    """A GraphQL error gh reports on stderr with exit 1 (not a 404)."""
+
+
+def parse_options(doc):
+    """The `singleSelectOptions: [...]` list of a mutation, parsed strictly: each option's
+    id/name/color/description decoded as GraphQL string literals. Anything that does not parse is
+    a GraphQL error -- an unescaped quote in a name must fail loudly, as GitHub's parser does."""
+    at = doc.find("singleSelectOptions: [")
+    if at < 0:
+        raise GraphQLError("singleSelectOptions missing")
+    i, out = at + len("singleSelectOptions: ["), []
+    while True:
+        if doc[i:].lstrip().startswith("]"):
+            return out
+        m = _OPT.match(doc, i)
+        if not m:
+            raise GraphQLError("Parse error on %r" % doc[i:i + 40])
+        oid, name, color, desc, _comma = m.groups()
+        out.append({"id": json.loads(oid) if oid else None, "name": json.loads(name),
+                    "color": color, "description": json.loads(desc)})
+        i = m.end()
+
+
 class GitHub:
     def __init__(self, owner="acme", owner_type="Organization", repo="widget", boards=(),
                  scopes=("repo", "workflow", "read:org", "project"), token_kind="ghp_"):
@@ -32,26 +76,31 @@ class GitHub:
         self.scopes = list(scopes)
         self.token_kind = token_kind
         self.boards = []            # dicts: number, id, title, fields[], workflows{}, repos[], items[]
-        self.next_number = 1
         for b in boards:
             self.add_board(**b)
         self.fail = {}              # substring of a gh call -> stderr; the call exits 1
+        self.ignore = set()         # substring of a gh call -> exit 0, "{}", and NOTHING applied
         self.calls = []             # every argv, as passed (without the leading "gh")
         self.issues = []            # REST issue dicts for the loop's backlog read
         self.labels = {}
 
     # ------------------------------------------------------------ state helpers
     def add_board(self, title, number=None, fields=None, workflows=None, owner=None):
-        number = number or self.next_number
-        self.next_number = max(self.next_number, number) + 1
-        b = {"number": number, "id": "PVT_%d" % number, "title": title,
-             "owner": owner or self.owner,
+        owner = owner or self.owner
+        taken = [b["number"] for b in self.boards if b["owner"] == owner]
+        number = number or (max(taken) + 1 if taken else 1)
+        if number in taken:
+            raise ValueError("board %s/#%d already exists" % (owner, number))
+        tag = "%d" % number if owner == self.owner else "%s_%d" % (owner, number)
+        ids = ("o_todo_", "o_inprog_", "o_done_")
+        b = {"number": number, "id": "PVT_%s" % tag, "title": title,
+             "owner": owner,
              "fields": fields if fields is not None else [
-                 {"id": "PVTF_title_%d" % number, "name": "Title", "options": None},
-                 {"id": "PVTSSF_status_%d" % number, "name": "Status", "options": [
-                     {"id": "o_todo_%d" % number, "name": "Todo"},
-                     {"id": "o_inprog_%d" % number, "name": "In progress"},
-                     {"id": "o_done_%d" % number, "name": "Done"}]}],
+                 {"id": "PVTF_title_%s" % tag, "name": "Title", "options": None,
+                  "data_type": "title"},
+                 {"id": "PVTSSF_status_%s" % tag, "name": "Status", "options": [
+                     {"id": pre + tag, "name": n, "color": c, "description": d}
+                     for pre, (n, c, d) in zip(ids, GH_DEFAULTS)]}],
              "workflows": dict(workflows) if workflows is not None
              else {w: True for w in DEFAULT_WORKFLOWS},
              "repos": [], "items": []}
@@ -63,13 +112,31 @@ class GitHub:
         self.boards.append(b)
         return b
 
-    def board(self, number=None, node_id=None, title=None):
+    def board(self, number=None, node_id=None, title=None, owner=None):
+        """Numbers are per owner: `number` alone means the default owner's board."""
         for b in self.boards:
-            if (number is not None and b["number"] == int(number)) or \
+            if (number is not None and b["number"] == int(number)
+                    and b["owner"] == (owner or self.owner)) or \
                     (node_id is not None and b["id"] == node_id) or \
                     (title is not None and b["title"] == title):
                 return b
         return None
+
+    def option(self, board, field, name):
+        return next((o for o in (self.field(board, field) or {}).get("options") or []
+                     if o["name"] == name), None)
+
+    def add_item(self, board, number, **values):
+        """A card for issue `number`, with single-select values by field name -> option name."""
+        it = {"id": "PVTI_%d" % number, "content": {"type": "Issue", "number": number},
+              "status": None, "values": {}}
+        board["items"].append(it)
+        for fname, oname in values.items():
+            f = self.field(board, fname)
+            o = self.option(board, fname, oname)
+            it["values"][f["id"]] = o["id"]
+            it[fname.lower()] = o["name"]
+        return it
 
     def field(self, board, name):
         return next((f for f in board["fields"] if f["name"] == name), None)
@@ -91,8 +158,12 @@ class GitHub:
         for needle, err in self.fail.items():
             if needle in joined:
                 return 1, "", err
+        if any(needle in joined for needle in self.ignore):
+            return 0, json.dumps({"data": {}}), ""
         try:
             return 0, self._answer(args), ""
+        except GraphQLError as exc:
+            return 1, "", "GraphQL: %s" % exc
         except LookupError as exc:
             return 1, "", "gh: Not Found (HTTP 404) %s" % exc
 
@@ -136,16 +207,18 @@ class GitHub:
         return "orgs" if self.owner_type == "Organization" else "users"
 
     def _rest(self, a):
-        path = a[1] if a[1] != "--paginate" else a[2]
-        path = path.split("?", 1)[0]
+        full = a[1] if a[1] != "--paginate" else a[2]
+        path, _, query = full.partition("?")
+        per = int(re.search(r"per_page=(\d+)", query).group(1)) if "per_page=" in query else 30
         if path == "user":
             return "someone\n"
         m = re.fullmatch(r"users/([^/]+)", path)
         if m:
-            if m.group(1) != self.owner:
+            login = m.group(1)
+            if login != self.owner and login not in {b["owner"] for b in self.boards}:
                 raise LookupError(path)
-            return json.dumps({"login": self.owner, "type": self.owner_type,
-                               "node_id": "OWNER_%s" % self.owner})
+            return json.dumps({"login": login, "type": self.owner_type if login == self.owner
+                               else "Organization", "node_id": "OWNER_%s" % login})
         m = re.fullmatch(r"repos/([^/]+)/([^/]+)", path)
         if m:
             return json.dumps({"full_name": "%s/%s" % m.groups(), "node_id": "R_%s" % m.group(2)})
@@ -160,25 +233,34 @@ class GitHub:
                 raise LookupError(path)
             # `--paginate --jq '.[] | {...}'`: one compact object per line, every page
             return "".join(json.dumps({"number": b["number"], "title": b["title"],
-                                       "node_id": b["id"]}) + "\n" for b in self.boards)
+                                       "node_id": b["id"]}) + "\n" for b in self.boards
+                           if b["owner"] == self.owner)
         m = re.fullmatch(r"(orgs|users)/([^/]+)/projectsV2/(\d+)", path)
         if m:
-            b = self.board(number=m.group(3))
-            if not b or m.group(2) != b["owner"]:
+            b = self.board(number=m.group(3), owner=m.group(2))
+            if not b:
                 raise LookupError(path)
             return json.dumps({"number": b["number"], "title": b["title"], "node_id": b["id"]})
         m = re.fullmatch(r"(orgs|users)/([^/]+)/projectsV2/(\d+)/fields", path)
         if m:
-            b = self.board(number=m.group(3))
+            b = self.board(number=m.group(3), owner=m.group(2))
             if not b:
                 raise LookupError(path)
-            return json.dumps([
+            rows = [
                 {"id": 1000 + i, "node_id": f["id"], "name": f["name"],
-                 "data_type": "single_select" if f["options"] is not None else "title",
+                 "data_type": f.get("data_type") or ("single_select" if f["options"] is not None
+                                                     else "text"),
                  **({"options": [{"id": o["id"], "name": {"raw": o["name"], "html": o["name"]},
-                                  "description": {"raw": "", "html": ""}, "color": "GRAY"}
+                                  "description": {"raw": o.get("description", ""),
+                                                  "html": o.get("description", "")},
+                                  "color": o.get("color", "GRAY")}
                                  for o in f["options"]]} if f["options"] is not None else {})}
-                for i, f in enumerate(b["fields"])])
+                for i, f in enumerate(b["fields"])]
+            if "--paginate" not in a:
+                rows = rows[:per]                    # one page only, as the real API does
+            if "--jq" in a:                          # `--jq '.[]'`: one compact object per line
+                return "".join(json.dumps(r) + "\n" for r in rows)
+            return json.dumps(rows)
         raise LookupError(path)
 
     def _graphql(self, doc):
@@ -236,13 +318,20 @@ class GitHub:
                         (None, None))
             if not f:
                 raise LookupError("field " + str(fid))
-            new = []
-            for body in re.findall(r"\{((?:id: \"[^\"]*\", )?name: \"[^\"]*\"[^}]*)\}", doc):
-                oid = re.search(r'id: "([^"]*)"', body)
-                name = re.search(r'name: "([^"]*)"', body).group(1)
-                new.append({"id": oid.group(1) if oid else "o_%s_%s" % (fid, name), "name": name})
-            kept = {o["id"] for o in new}
+            new = parse_options(doc)
+            for n, o in enumerate(new):
+                o["id"] = o["id"] or "o_%s_new%d" % (fid, n)
+            kept = {o["id"]: o["name"] for o in new}
             f["options"] = new
+            for it in b["items"]:                         # a dropped id wipes the card's value
+                oid = (it.get("values") or {}).get(fid)
+                if oid is None:
+                    continue
+                if oid in kept:
+                    it[f["name"].lower()] = kept[oid]     # a rename shows through; the id holds
+                else:
+                    del it["values"][fid]
+                    it[f["name"].lower()] = None
             for wf, target in b["wf_targets"].items():   # #720: a deleted target disables it
                 if target and target not in kept and wf in b["workflows"]:
                     b["workflows"][wf] = False
@@ -250,10 +339,11 @@ class GitHub:
         if "createProjectV2Field(" in doc:
             b = self.board(node_id=self._s(doc, "projectId"))
             name = self._s(doc, "name")
-            opts = [json.loads(n) for n in re.findall(r'name: ("(?:[^"\\]|\\.)*"), color',
-                                                      doc)]
+            if self.field(b, name) is not None:
+                raise GraphQLError("Name has already been taken")
+            opts = parse_options(doc)
             f = {"id": "PVTSSF_%s_%d" % (name, b["number"]), "name": name,
-                 "options": [{"id": "o_%s_%d" % (o, b["number"]), "name": o} for o in opts]}
+                 "options": [dict(o, id="o_%s_%d" % (o["name"], b["number"])) for o in opts]}
             b["fields"].append(f)
             return json.dumps({"data": {"createProjectV2Field": {"projectV2Field": {
                 "id": f["id"]}}}})
@@ -265,16 +355,17 @@ class GitHub:
     def _project_cli(self, a):
         verb = a[1]
         if verb == "list":
-            visible = [b for b in self.boards if b["owner"] == self._arg(a, "--owner")]
+            visible = [b for b in self.boards if b["owner"] == self._arg(a, "--owner")]  # per owner
             limit = int(self._arg(a, "--limit") or 30)
             return json.dumps({"projects": [{"number": b["number"], "id": b["id"],
                                              "title": b["title"]} for b in visible[:limit]]})
         if verb == "view":
-            b = self.board(number=a[2])
-            if not b or b["owner"] != self._arg(a, "--owner"):
-                raise LookupError("project %s" % a[2])
+            b = self.board(number=a[2], owner=self._arg(a, "--owner"))
+            if not b:
+                raise GraphQLError("Could not resolve to a ProjectV2 with the number %s." % a[2])
             return json.dumps({"number": b["number"], "id": b["id"], "title": b["title"]})
-        b = self.board(number=a[2]) if len(a) > 2 and str(a[2]).isdigit() else None
+        b = (self.board(number=a[2], owner=self._arg(a, "--owner"))
+             if len(a) > 2 and str(a[2]).isdigit() else None)
         if verb == "link":
             return ""
         if verb == "field-list":
@@ -286,8 +377,11 @@ class GitHub:
         if verb == "field-create":
             opts = [o.strip() for o in self._arg(a, "--single-select-options").split(",")]
             name = self._arg(a, "--name")
+            if self.field(b, name) is not None:
+                raise GraphQLError("Name has already been taken")
             b["fields"].append({"id": "PVTSSF_%s_%d" % (name, b["number"]), "name": name,
-                                "options": [{"id": "o_%s_%d" % (o, b["number"]), "name": o}
+                                "options": [{"id": "o_%s_%d" % (o, b["number"]), "name": o,
+                                             "color": "GRAY", "description": ""}
                                             for o in opts]})
             return "{}"
         if verb == "item-list":
@@ -295,7 +389,7 @@ class GitHub:
         if verb == "item-add":
             num = int(self._arg(a, "--url").rstrip("/").split("/")[-1])
             it = {"id": "PVTI_%d" % num, "content": {"type": "Issue", "number": num},
-                  "status": None}
+                  "status": None, "values": {}}
             b["items"].append(it)
             return json.dumps(it)
         if verb == "item-edit":
@@ -306,5 +400,6 @@ class GitHub:
             opt = next(o for o in f["options"] if o["id"] == oid)
             item = next(i for i in b["items"] if i["id"] == iid)
             item[f["name"].lower()] = opt["name"]
+            item.setdefault("values", {})[fid] = oid
             return ""
         raise LookupError("project " + verb)

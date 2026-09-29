@@ -78,7 +78,9 @@ Scaffold the `.sdlc/` project layer, then report what happened.
     Without `--yes` it only reads and prints what it would do. With `--yes` it checks the gh
     `project` scope (preflight's check and fix lines), then creates `<repo> — SDLC` or copies a
     template board, and links the repository. It pins `project.number` and `project.owner` right
-    away, then sets the Status options and the Priority field. At the end it reads back the board's
+    away, then sets the Status options and the Priority field (`P0`..`P4`, from
+    `discovery.PRIORITIES`). On a board it did not create in the same run (`--number`, a pin), it
+    only ADDS missing options and renames, recolours or deletes nothing. At the end it reads back the board's
     "Item closed" workflow. It refuses a title the owner already uses and prints the manual runbook
     (`--number N` adopts that board on purpose). Every step prints `[ok]`, `[FAIL]` or `[manual]`.
     A failure exits 1 and prints the exact resume command. See [board](references/board.md).
