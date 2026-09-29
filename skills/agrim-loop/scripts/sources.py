@@ -1593,13 +1593,20 @@ class GitHubSource:
         # their board had it repainted on every loop start, forever, with nothing reporting it.
         # Without the flag `gh` refuses an existing label (exit 1, "already exists; use `--force`
         # to update its color and description"), which is precisely the outcome wanted, and the
-        # except below already absorbs it. A missing label is still created, at these colours.
+        # except below used to absorb it. Read the bounded REST inventory first so the common
+        # already-bootstrapped case spends no rejected writes; an unreadable inventory deliberately
+        # keeps the old create-and-ignore fallback, so a missing lifecycle label still self-heals.
         if self._labels_ready:
             return
+        existing = self._existing_label_names()
         for attr, color in self._LABEL_COLORS:
+            name = getattr(self, attr)
+            if existing is not None and name.casefold() in existing:
+                continue
             try:
-                self._run(["label", "create", getattr(self, attr), *self._repo_args(),
-                           "--color", color])
+                self._run(["label", "create", name, *self._repo_args(), "--color", color])
+                if existing is not None:
+                    existing.add(name.casefold())
             except Exception:
                 pass
         self._labels_ready = True
