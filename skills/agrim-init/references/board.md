@@ -10,17 +10,42 @@ It creates the board the loop mirrors onto, or finishes or adopts one, and pins 
 | auth + scopes | `gh auth status`, preflight's `repo` + `project` check | REFUSED, exit 2, per-host fix lines |
 | resolve | the owner's boards over REST. A pinned number is reused; a same-titled board is refused | REFUSED, exit 2, runbook below |
 | create | `createProjectV2` (links the repo in the same call), or `copyProjectV2` + `linkProjectV2ToRepository` | exit 1, resume command |
-| pin | `project.number` + `project.owner` only, atomic, written before anything else can fail | `[FAIL]`, the value to set by hand |
-| fields | Status options from `project.columns`, id-preserving. Only on a board created or copied in this same run are GitHub's `Todo` / `In progress` renamed to Backlog / In Progress. Priority gets `P0`..`P4` | `[FAIL]`, exit 1, resume command; `[REFUSED]`, exit 2 (below) |
+| pin | `project.number` + `project.owner` (+ `project.setup_created` when this run created the board), atomic, written before anything else can fail | `[FAIL]`, the value to set by hand |
+| fields | Status options from `project.columns`, id-preserving. Only on OUR EMPTY board (created or copied in this run, or the board an earlier run created that still has no card) are GitHub's `Todo` / `In progress` renamed to Backlog / In Progress and `Ready` added. Priority gets `P0`..`P4` | `[FAIL]`, exit 1, resume command; `[REFUSED]`, exit 2 (below) |
 | verify | reads the fields back; one GraphQL read for the repo link and workflows | `[FAIL]` / `[manual]` |
 
 Re-running is safe. It finds its board by the pin and makes no mutation when nothing is missing.
 
+## `Ready` is the loop's queue switch, so it goes only on our empty board
+
+`Ready` decides HOW the loop picks work (`sources._ready_lane`). Without a `Ready` option the loop
+picks by the `sdlc:goal` label. With one (and the shipped `queue_source: "status"`) the board IS
+the queue: only a card in `Ready` is picked, and the only fallback is an issue with NO card. So
+adding `Ready` to a board whose goal cards sit in other lanes (`Todo`, `In progress`, no Status)
+strands all of them and the loop reports DONE. Reproduced in review of PR #279: a human board with
+goal cards #5/#6/#7 picked `5` before adoption and nothing after.
+
+So board_setup adds `Ready` only where nothing can be stranded: a board it created itself
+(`project.setup_created` names it) that has no card yet. Everywhere else it prints
+`[skip] Ready lane` with the reason, says the loop keeps picking by label, and prints the explicit
+step that changes that:
+
+    python3 <sigma>/skills/agrim-doctor/scripts/board_migrate.py --owner <O> --project <N> --backlog <lane> --apply
+
+`board_migrate.py` adds `Ready` AND moves the open goal cards from `<lane>` into it (run it once per
+lane that holds queued goals; without `--apply` it is a dry run). A `Ready` the board already has
+is left exactly as it is: that board is already on the status queue, and nothing about it changes.
+
+If a board does end up with an empty `Ready` while goal cards sit elsewhere, the loop says so once
+per run on stderr (`the board has a 'Ready' lane but NOTHING in it, while N sdlc:goal card(s) sit
+outside it (...)`), naming each lane and the command, instead of reading DONE in silence.
+
 ## Adopting a board a human built (`--number N`, or a pin)
 
-Nothing on it is renamed, recoloured or deleted. The field's options are read over REST (every
-page), and each existing option is sent back with its own id, name, colour and description; only
-the missing options are added. An option id left out of that write would delete the lane, wipe
+Adoption does not change how the loop picks work: no `Ready` is added (above). Nothing on the
+board is renamed, recoloured, reordered or deleted. The field's options are read over REST (every
+page), and each existing option is sent back with its own id, name, colour and description, in its
+own position; only the missing options are appended after them. An option id left out of that write would delete the lane, wipe
 every card's value in it, and turn off any workflow that targets it, so none is ever left out.
 
 - **Case-only variant.** If the board has `In progress` where the loop wants `In Progress`, the
@@ -31,9 +56,13 @@ every card's value in it, and turn off any workflow that targets it, so none is 
   hand).** A `Status` or `Priority` field that exists but is not single-select; a Priority option
   spelled differently only by case (`p0`); options whose colour or description could not be read,
   because rewriting them would reset them.
-- **Resume after a partial first run is an adoption too.** If the first run created the board but
-  failed before setting Status, the resume adds Backlog and the rest and leaves GitHub's `Todo` as
-  an extra lane. That is cosmetic; delete it on the board if you do not want it.
+- **Resume after a partial first run.** While the board the first run created still has no card,
+  the resume finishes it exactly as the first run would have (`Todo` / `In progress` renamed, ids
+  kept, `Ready` added). One extra REST read tells: `projectsV2/<n>/items?per_page=1`. If a loop tick
+  ran in between and carded goals on it (with no Status, since the board had no matching lane), the
+  resume is an adoption: nothing renamed, no `Ready`, the `board_migrate.py` line printed. Adding
+  `Ready` there would strand exactly those cards. If the card read fails, `Ready` is not added and
+  the run exits 1 with the resume command.
 
 ## Priority: `P0`..`P4`, not `P0`..`P3`
 
@@ -81,6 +110,7 @@ Checked by reading GitHub's GraphQL schema (introspection, no mutation). The evi
 
 A fresh create is 3 GraphQL mutations plus 1 GraphQL read, and 3 + ceil(boards/100) +
 2 x ceil(fields/100) REST reads (all core quota; a board has at most 50 fields, so that is 5 +
-ceil(boards/100)) plus one `gh auth status`. Re-running on a finished board is 1 GraphQL read.
+ceil(boards/100)) plus one `gh auth status`. Re-running on a finished board is 1 GraphQL read. A
+resume of our own board that has no `Ready` yet adds one REST read (does any card exist?).
 `/agrim-init` itself makes no call: it prints the offer. In the loop's steady state the only extra call is one `gh project view`,
 made when a pinned number is not in the first page of 100 boards.

@@ -21,15 +21,26 @@ Without `--yes` it only READS and prints what it would do (exit 0). With `--yes`
   4. pin              `project.number` + `project.owner` into config.json, IMMEDIATELY (atomic;
                       every other key kept), so a re-run after any later failure reuses this board.
   5. Status options   the configured columns (`project.columns`, sources.GitHubSource.col) via
-                      sources' own id-preserving `_options_mutation`. On a board created or copied
-                      IN THIS RUN, GitHub's `Todo` and `In progress` are RENAMED (ids kept, so the
-                      built-in workflows stay on). On an ADOPTED board (`--number`, or a pin) the
-                      rename map is never passed: nothing is renamed, every existing option keeps
-                      its id, name, colour and description (read back and echoed), and only the
-                      missing options are ADDED. A missing column whose only difference from an
-                      existing option is case (`In progress` vs `In Progress`) is mapped in
-                      config (`project.columns.<key>` = the board's spelling), never renamed and
-                      never duplicated. Colours/descriptions that cannot be read -> REFUSED.
+                      sources' own id-preserving `_options_mutation`. On OUR EMPTY board -- created
+                      or copied IN THIS RUN, or the one an earlier run created (`setup_created` in
+                      config) that still has no card -- GitHub's `Todo` and `In progress` are
+                      RENAMED (ids kept, so the built-in workflows stay on). On any other board
+                      (`--number`, or a pin) the rename map is never passed: nothing is renamed,
+                      every existing option keeps its id, name, colour, description and position
+                      (read back and echoed), and only the missing options are APPENDED. A missing
+                      column whose only difference from an existing option is case (`In progress`
+                      vs `In Progress`) is mapped in config (`project.columns.<key>` = the board's
+                      spelling), never renamed and never duplicated. Colours/descriptions that
+                      cannot be read -> REFUSED.
+     the Ready lane   `Ready` is the loop's QUEUE SWITCH (sources `_ready_lane`): without it the
+                      loop picks by label; with it (and the shipped `queue_source: "status"`) only
+                      a card IN Ready is picked. So it is added ONLY to our empty board above. On
+                      an adopted board, or ours once it carries any card, it is WITHHELD ([skip]
+                      with the reason) and the loop stays on the label queue: adding it there would
+                      strand every goal card in another lane and the loop would read DONE (review
+                      of PR #279). Moving to the board queue is `board_migrate.py`'s explicit step,
+                      which also seeds the lane; the exact command is printed. A `Ready` the board
+                      already has is left exactly as it is.
   6. Priority field   `priority_field` with `discovery.PRIORITIES` (`P0`..`P4`), created or
                       completed. A same-named field that is not single-select, or a case-only
                       variant (`p0`), is REFUSED with the manual fix -- never renamed.
@@ -39,13 +50,16 @@ Without `--yes` it only READS and prints what it would do (exit 0). With `--yes`
 Every step prints `[ok]`, `[FAIL]`, `[REFUSED]`, `[skip]` or `[manual]`. Any FAIL exits 1 and
 prints the exact resume command (it carries `--number N` once the board exists). A REFUSED step
 exits 2 with no resume command: re-running cannot help until the named thing is changed by hand.
-Re-running on a finished board makes no mutation. A resume after a partial first run is an
-adoption, so a `Todo` the first run did not get to rename survives as an extra lane (cosmetic).
+Re-running on a finished board makes no mutation. A resume after a partial first run finishes the
+board exactly as the first run would have while it still has no card; once a loop tick has carded
+anything on it, the resume is treated as an adoption (nothing renamed, no `Ready`).
 
 COST: reads are REST (core quota); GraphQL only for mutations and one read. A fresh create is
 4 GraphQL calls (3 mutations + 1 read), 3 + ceil(boards/100) + 2 * ceil(fields/100) REST reads and
 one `gh auth status` (measured against the fake: tests/test_board_setup.py); a finished board
-re-run is 1 GraphQL read. Nothing here runs in the loop's steady state.
+re-run is 1 GraphQL read. A resume of our own board without `Ready` adds ONE REST read (`/items
+?per_page=1 --jq length`: does any card exist?; endpoint shape checked read-only against a real
+org board, 2026-09-29). Nothing here runs in the loop's steady state.
 
 SECRETS: gh holds the token; this never passes `--show-token`, never prints gh's raw auth output,
 and redacts userinfo from any error it echoes.
@@ -208,13 +222,31 @@ def _gh_block(cfg):
     return gh, _child(gh, "project")
 
 
-def pin(sdlc, owner, number):
-    """Write ONLY discovery.github.project.number/owner; every other key is kept. Atomic."""
+#: config key: the number of the board THIS script created (`project.setup_created`). It is what
+#: lets a resume tell "our half-built board" from "a board a human adopted" -- both arrive as
+#: `--number N` -- and so decide whether the board may be finished as a fresh one (`_ready_plan`).
+CREATED_KEY = "setup_created"
+
+
+def pin(sdlc, owner, number, created=False):
+    """Write ONLY discovery.github.project.number/owner (+ `setup_created` when this run created
+    the board; dropped when a DIFFERENT board is pinned); every other key is kept. Atomic."""
     path, cfg = _config(sdlc)
     _gh, proj = _gh_block(cfg)
     proj["number"] = int(number)
     proj["owner"] = owner
+    if created:
+        proj[CREATED_KEY] = int(number)
+    elif CREATED_KEY in proj and _as_int(proj.get(CREATED_KEY)) != int(number):
+        del proj[CREATED_KEY]
     pf._vd._atomic_write_json(path, cfg)
+
+
+def _as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def pin_columns(sdlc, mapping):
@@ -268,15 +300,33 @@ def workflows_url(kind, owner, number, host="github.com"):
     return f"https://{host}/{kind}/{owner}/projects/{int(number)}/workflows"
 
 
+def migrate_command(owner, number, src, backlog="<lane your queued goals sit in>"):
+    """The explicit step that moves a board to the status queue: board_migrate.py adds `Ready`
+    AND seeds it (#696/#707). Printed, never run from here."""
+    script = _HERE.parent.parent / "agrim-doctor" / "scripts" / "board_migrate.py"
+    quote = (lambda v: '"%s"' % v) if _windows() else shlex.quote
+    extra = ""
+    if src.col["ready"] != "Ready":
+        extra += " --ready " + quote(src.col["ready"])
+    status = src._project_cfg.get("status_field") or "Status"
+    if status != "Status":
+        extra += " --status-field " + quote(status)
+    if src.goal_label != "sdlc:goal":
+        extra += " --goal-label " + quote(src.goal_label)
+    return (f"{pf._vd.python_command()} {quote(str(script))} --owner {quote(owner)} "
+            f"--project {int(number)}{extra} --backlog {quote(backlog)} --apply")
+
+
 def manual_runbook(kind, owner, title, host="github.com"):
     """The manual path, printed whenever this refuses to create."""
     return [
         "  Manual runbook (nothing was created):",
         f"    1. Open https://{host}/{kind}/{owner}/projects and decide which board the loop should use.",
         f"    2. If it is the existing '{pf.printable(title)}', adopt it: re-run with --number <its number> --yes",
-        "       (it gets the Status/Priority options it lacks, ADDED; nothing on it is renamed,",
-        "       recoloured or deleted. A lane differing only by case, e.g. 'In progress', is used",
-        "       as-is via project.columns in config).",
+        "       (it gets the Status/Priority options it lacks, APPENDED; nothing on it is renamed,",
+        "       recoloured, reordered or deleted. A lane differing only by case, e.g. 'In progress',",
+        "       is used as-is via project.columns in config. It does NOT get a 'Ready' lane, so the",
+        "       loop keeps picking by label; board_migrate.py is the step that changes that).",
         "    3. If not, re-run with --title '<a different title>' --yes to create a separate board.",
         "    4. Or pin it by hand: discovery.github.project.number = <number> in .sdlc/config.json.",
     ]
@@ -310,6 +360,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     owner = owner or src._proj_owner()
     title = title or src._proj_title()
     template = template if template is not None else proj.get("template")
+    created_before = _as_int(proj.get(CREATED_KEY))
     pinned = number if number is not None else proj.get("number")
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
@@ -380,7 +431,8 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     prios = list(_sources().discovery.PRIORITIES) if prio else []
     if not yes:
         what = (f"reuse pinned board #{mine['number']} '{pf.printable(mine['title'])}' (only "
-                "ADDING missing options; nothing renamed)" if mine
+                "APPENDING missing options; nothing renamed; 'Ready' only if this setup created "
+                "the board and it has no card yet)" if mine
                 else f"copy template board {template} as '{pf.printable(title)}'" if template
                 else f"create '{pf.printable(title)}' under {pf.printable(owner)}")
         out(f"board_setup: dry run (nothing written) -- would {what}, link {repo}, set Status to "
@@ -429,7 +481,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
 
     # 4. pin -- before anything else can fail, so a resume finds this board by its number
     try:
-        pin(sdlc, owner, num)
+        pin(sdlc, owner, num, created=fresh)
         b.step("ok", "pin", f"discovery.github.project.number = {num}, owner = {pf.printable(owner)}")
     except (OSError, ValueError) as exc:
         b.step("FAIL", "pin", f"{pf.printable(exc)} -- set discovery.github.project.number = {num} "
@@ -437,7 +489,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
 
     # 5 + 6. fields
     cols = _ensure_fields(b, kind, owner, num, src, dict(zip(keys, cols)), prio, prios, fresh,
-                          sdlc)
+                          sdlc, ours=fresh or created_before == num)
 
     # 7. repository link + workflows, one read
     _link_and_workflows(b, kind, owner, num, pid, repo, repo_id, host)
@@ -513,11 +565,44 @@ def _case_variants(options, have):
             if o not in have and o.casefold() in folded}
 
 
-def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
+def _has_cards(b, kind, owner, num):
+    """True/False: does the board carry ANY item? One REST read of one item. Raises Failed."""
+    got = b.gh("api", f"{kind}/{owner}/projectsV2/{num}/items?per_page=1", "--jq", "length")
+    try:
+        return int(got.strip() or 0) > 0
+    except ValueError:
+        raise Failed("unexpected answer to the items read: " + _clean(got)) from None
+
+
+def _ready_plan(b, kind, owner, num, fresh, ours, ready, have):
+    """(plan, why) for the `Ready` lane -- the loop's queue switch (sources `_ready_lane`):
+    "present" the board already has it (left exactly as it is), "add" (our empty board), or
+    "withhold" with the reason. Only a board that is OURS and has NO card may get it: there,
+    nothing can be stranded outside the lane. `fresh` needs no read -- a board created or copied
+    seconds ago carries no card (copyProjectV2 is sent includeDraftIssues: false)."""
+    if ready in have:
+        return "present", None
+    if fresh:
+        return "add", None
+    if not ours:
+        return "withhold", "an adopted board"
+    try:
+        carded = _has_cards(b, kind, owner, num)
+    except Failed as exc:
+        b.step("FAIL", "read cards", f"could not tell whether board #{num} has cards, so "
+               f"'{ready}' is not added: {exc.detail}")
+        return "withhold", None
+    return ("withhold", "this board already has card(s)") if carded else ("add", None)
+
+
+def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc, ours=None):
     """Status + Priority. `cols` is {column key: name}; returns the column names in key order as
-    the board now spells them. `fresh` (a board created/copied in THIS run) is the only case that
-    may rename GitHub's own `Todo` / `In progress`; on an adopted board nothing is renamed and every
-    existing option is echoed back with its own id, name, colour and description."""
+    the board now spells them. Only OUR EMPTY board (`fresh`, or `ours` -- the board an earlier run
+    created -- with no card yet) may rename GitHub's own `Todo` / `In progress` and gain `Ready`;
+    on any other board nothing is renamed, no `Ready` is added, every existing option is echoed back
+    with its own id, name, colour and description IN ITS OWN POSITION, and missing ones are
+    appended."""
+    ours = fresh if ours is None else ours
     status_name = src._project_cfg.get("status_field") or "Status"
     names = list(cols.values())
     try:
@@ -526,7 +611,10 @@ def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
     except (Failed, ValueError, KeyError, TypeError) as exc:
         b.step("FAIL", "read fields", getattr(exc, "detail", repr(exc)))
         return names
-    rename = {"Todo": cols["backlog"], "In progress": cols["in_progress"]} if fresh else None
+    have_status = [o["name"] for o in (fields.get(status_name) or {}).get("options") or []]
+    plan, why = _ready_plan(b, kind, owner, num, fresh, ours, cols["ready"], have_status)
+    rename = ({"Todo": cols["backlog"], "In progress": cols["in_progress"]} if plan == "add"
+              else None)
     wanted = [(status_name, names, rename)]
     if prio:
         wanted.append((prio, prios, None))
@@ -563,6 +651,11 @@ def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
                 f"'{pf.printable(h)}' where the loop needs '{w}'" for w, h in variants.items())
                 + "; rename those options on the board by hand (never renamed for you)")
             continue
+        if name == status_name and plan == "withhold":
+            options = [o for o in options if o != cols["ready"]]
+        if fld is not None and not ren:
+            # adoption: the board's own lanes first, in THEIR order; only what is missing appended
+            options = have + [o for o in options if o not in have]
         checked.append((name, options))
         missing = [o for o in options if o not in have]
         try:
@@ -581,10 +674,15 @@ def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
                 b.gh("api", "graphql", "-f", doc)
                 b.step("ok", f"{name} field", ("options set to " + " / ".join(options)
                        + " (Todo / In progress renamed on this new board; ids kept)") if ren else
-                       ("added " + " / ".join(missing) + " (nothing renamed; existing options' "
-                        "ids, names, colours and descriptions kept)"))
+                       ("appended " + " / ".join(missing) + " (nothing renamed or reordered; "
+                        "existing options' ids, names, colours and descriptions kept)"))
         except Failed as exc:
             b.step("FAIL", f"{name} field", exc.detail)
+    if plan == "present" and not fresh:
+        b.step("ok", "Ready lane", f"the board already has '{pf.printable(cols['ready'])}'; left as "
+               "it is (the loop already picks from it)")
+    elif plan == "withhold" and why:
+        _say_withheld(b, owner, num, src, cols, why, have_status)
     # measured, not assumed: read back what GitHub now holds
     try:
         after = _read_fields(b, kind, owner, num)
@@ -597,6 +695,19 @@ def _ensure_fields(b, kind, owner, num, src, cols, prio, prios, fresh, sdlc):
         if missing:
             b.step("FAIL", f"verify {name}", "missing " + pf.printable(", ".join(missing)))
     return names
+
+
+def _say_withheld(b, owner, num, src, cols, why, lanes):
+    ready = pf.printable(cols["ready"])
+    b.step("skip", "Ready lane", f"not added -- {why}. '{ready}' is the loop's queue switch: "
+           f"with it, only a card IN '{ready}' is picked, so every goal card now in another lane "
+           "would be stranded and the loop would read DONE")
+    lane = next((x for x in lanes if x not in cols.values()), None) or cols["backlog"]
+    b.out(f"  The loop KEEPS picking by the {pf.printable(src.goal_label)} label queue on this "
+          "board (how it picks work is unchanged); its status writes still move cards here.")
+    b.out(f"  To switch it to the board queue deliberately -- adds '{ready}' AND moves the queued "
+          "goal cards into it (repeat per lane holding them; dry run without --apply):")
+    b.out("    " + migrate_command(owner, num, src, backlog=lane))
 
 
 def _link_and_workflows(b, kind, owner, num, pid, repo, repo_id, host):

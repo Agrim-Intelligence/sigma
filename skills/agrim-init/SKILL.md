@@ -79,8 +79,13 @@ Scaffold the `.sdlc/` project layer, then report what happened.
     `project` scope (preflight's check and fix lines), then creates `<repo> — SDLC` or copies a
     template board, and links the repository. It pins `project.number` and `project.owner` right
     away, then sets the Status options and the Priority field (`P0`..`P4`, from
-    `discovery.PRIORITIES`). On a board it did not create in the same run (`--number`, a pin), it
-    only ADDS missing options and renames, recolours or deletes nothing. At the end it reads back the board's
+    `discovery.PRIORITIES`). On a board it did not create (`--number`, a pin), it only APPENDS
+    missing options and renames, recolours, reorders or deletes nothing. **Adopting a board does
+    not change how the loop picks work:** the `Ready` lane is the loop's queue switch, so it is
+    added only to a board board_setup created that has no card yet; elsewhere it prints
+    `[skip] Ready lane`, the loop keeps picking by the `sdlc:goal` label, and the printed
+    `board_migrate.py --owner O --project N --backlog <lane> --apply` line is the explicit step to
+    move to the board queue (it adds `Ready` and moves the queued cards into it). At the end it reads back the board's
     "Item closed" workflow. It refuses a title the owner already uses and prints the manual runbook
     (`--number N` adopts that board on purpose). Every step prints `[ok]`, `[FAIL]` or `[manual]`.
     A failure exits 1 and prints the exact resume command. See [board](references/board.md).

@@ -1873,8 +1873,15 @@ class GitHubSource:
             return None
         items = (data.get("items") if isinstance(data, dict) else data) or []
         self._warn_truncated("open board items", len(items))
-        ready, carded, stranded = [], set(), 0
+        ready, carded, stranded = [], set(), {}
         seen_ready = 0                        # #1437/S3: distinguishes "lane empty" from "filtered"
+        # #235 (review of PR #279, block #2): the lanes the LOOP itself moves a picked goal into. A
+        # goal card anywhere else -- Backlog, a human's own `Todo` / `Needs design`, or no Status at
+        # all -- can never be picked on this path (only Ready is), and the uncarded fallback below
+        # only covers issues with NO card. Counting Backlog alone left a board that gained `Ready`
+        # while its goal cards sat in a human's lanes reading as a silent DONE.
+        in_flight = {self.col[k] for k in ("in_progress", "qc", "done", "blocked", "parked")}
+        not_eligible = set(self.not_eligible_labels())
         # #1437/S1: resolved ONCE per read. Called per card, a persistent resolution failure spawns
         # one `gh api user` subprocess PER READY CARD (measured: 25 cards -> 25 calls), and the
         # once-only warning makes that silent as well as slow.
@@ -1919,8 +1926,11 @@ class GitHubSource:
                               and self.blocking_label in names)
                 ready.append((0 if is_blocking else 1, self._card_rank(it),
                              self._board_feature_rank(names), pos, int(n)))
-            elif it.get("status") == self.col["backlog"] and self.goal_label in (it.get("labels") or []):
-                stranded += 1
+            elif it.get("status") not in in_flight:
+                names = set(it.get("labels") or [])
+                if self.goal_label in names and not (names & not_eligible):
+                    lane = it.get("status")
+                    stranded[lane] = stranded.get(lane, 0) + 1
         # #1437/S3: only when the lane is GENUINELY empty. A lane that is full but entirely
         # FILTERED (every Ready card is someone else's, or parked) also leaves `ready` empty, and
         # telling that operator to run a seeding migration is advice that cannot help them.
@@ -1969,19 +1979,34 @@ class GitHubSource:
         return self._unit_priority_rank(unit)
 
     def _warn_unseeded(self, stranded):
-        """`Ready` exists, nothing is in it, and goal-labelled cards are sitting in Backlog. That is
-        an unfinished migration (#707), not a drained backlog — and it does not self-heal: the queue
-        reads empty, so `_next()` reports DONE, so no status write happens, so `_sync_backlog` (the
-        only thing that would promote those cards) never runs. Silence here looks exactly like a
-        finished sprint, which is why it has to be loud. Costs no extra call: the `is:open` read
-        already carries each card's labels and status. Best-effort; never raises."""
+        """`Ready` exists, nothing is in it, and open goal cards that are eligible by their labels
+        sit OUTSIDE it -- in Backlog, in a lane of a human's own (`Todo`, `Needs design`), or with
+        no Status at all (`stranded`: {lane or None: count}; the loop's own post-pick lanes are
+        never counted). That is an unfinished migration (#707), or a `Ready` lane that arrived on a
+        board whose cards were never moved into it (#235, review of PR #279), not a drained backlog
+        -- and it does not self-heal: the queue reads empty, so `_next()` reports DONE, so no status
+        write happens, so `_sync_backlog` (the only thing that would promote a Backlog or blank
+        card) never runs, and nothing ever moves a card out of a human's own lane. Silence here
+        looks exactly like a finished sprint, which is why it has to be loud.
+
+        ONCE PER RUN (per source instance; `loop.py` builds one per run): the queue is read on
+        every pick attempt, and repeating the same line on each is noise that buries it. Costs no
+        extra call: the `is:open` read already carries each card's labels and status.
+        Best-effort; never raises."""
+        if getattr(self, "_unseeded_warned", False):
+            return
+        self._unseeded_warned = True
         try:
+            total = sum(stranded.values())
+            where = ", ".join("%d in %s" % (n, "no Status" if lane is None else repr(lane))
+                              for lane, n in sorted(stranded.items(), key=lambda kv: -kv[1]))
             sys.stderr.write(
-                "sigma: the board has a %r lane but NOTHING in it, while %d %s card(s) sit in "
-                "%r — this reads as an empty queue and will not fix itself. Looks like a board "
-                "migration that added the lane without seeding it: run "
-                "`board_migrate.py --owner <owner> --project <n> --apply` to move them.\n"
-                % (self.col["ready"], stranded, self.goal_label, self.col["backlog"]))
+                "sigma: the board has a %r lane but NOTHING in it, while %d %s card(s) sit outside "
+                "it (%s) — this reads as an empty queue and will not fix itself: on this board only "
+                "a card in %r is picked. Move them with `board_migrate.py --owner %s --project %s "
+                "--backlog <lane> --apply` (once per lane), or drag them to %r.\n"
+                % (self.col["ready"], total, self.goal_label, where, self.col["ready"],
+                   self._proj_owner(), self._project_number, self.col["ready"]))
         except Exception:
             pass
 
@@ -3957,7 +3982,8 @@ class GitHubSource:
             # the board carrying NO Status at all. `was_new` is False (it is carded) and blank is
             # not `backlog_name`, so neither clause above fired and the card stayed blank forever
             # — invisible to `_board_queue` (which matches `status == ready_name`) and to
-            # `_warn_unseeded` (which counts only cards in Backlog), so nothing even reported it.
+            # `_warn_unseeded` (which then counted only cards in Backlog; since #235 it counts a
+            # blank goal card too), so nothing even reported it.
             # Measured on this repo's board #6: 8 open cards, five of them goal-labelled
             # (#739-743) with a correctly mirrored Priority but no Status. Those five are the
             # natural experiment that proves the asymmetry — `_mirror_priority` handles its own

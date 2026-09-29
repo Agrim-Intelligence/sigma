@@ -93,7 +93,8 @@ def test_other_config_keys_survive_the_pin(tmp_path):
     assert cfg["work"] == {"enabled": True, "remote": "origin"}
     assert cfg["verify"] == {"command": "x", "enforce": True}
     assert cfg["discovery"]["github"]["project"]["columns"] == {"qc": "QC"}
-    assert set(cfg["discovery"]["github"]["project"]) == {"enabled", "columns", "number", "owner"}
+    assert set(cfg["discovery"]["github"]["project"]) == {"enabled", "columns", "number", "owner",
+                                                          "setup_created"}
 
 
 def test_configured_column_names_are_used_not_a_second_table(tmp_path):
@@ -155,10 +156,12 @@ def test_adopting_the_same_titled_board_with_number_completes_it(tmp_path):
     assert len(gh.boards) == 1 and _cfg(sdlc)["discovery"]["github"]["project"]["number"] == 7
     # adoption renames nothing (review of PR #279): `Todo` stays as a trailing lane, `In progress`
     # keeps its spelling and is mapped in config, and only the missing columns are added
+    # and (review block #2) an ADOPTED board never gets `Ready`: it would switch the loop's queue
     assert gh.option_names(gh.board(number=7), "Status") == [
-        "Backlog", "Ready", "In progress", "QC", "Done", "Blocked", "Parked", "Todo"]
+        "Todo", "In progress", "Done", "Backlog", "QC", "Blocked", "Parked"]
     assert _cfg(sdlc)["discovery"]["github"]["project"]["columns"] == {"in_progress": "In progress"}
     assert "moves its card to In progress" in text
+    assert "board_migrate.py" in text and "--project 7" in text
 
 
 def test_missing_project_scope_is_refused_with_preflight_remediation(tmp_path):
@@ -262,7 +265,9 @@ def test_acceptance_next_pick_moves_the_card_to_in_progress(tmp_path, capsys):
     gh.issues = [{"number": 11, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""}]
     assert _run(sdlc, gh, "--yes")[0] == 0
     board = gh.board(title="widget — SDLC")
-    _src(sdlc, gh).mark_in_progress("11")
+    src = _src(sdlc, gh)
+    assert src.next_pending() == "11"
+    src.mark_in_progress("11")
     assert _card_status(gh, board, 11) == "In Progress"
     assert "mirroring OFF" not in capsys.readouterr().err
 
@@ -599,3 +604,134 @@ def test_windows_failure_with_an_unquotable_title_says_how_to_resume(monkeypatch
     gh.fail["createProjectV2Field("] = "GraphQL: secondary rate limit"
     rc, text = _run(sdlc, gh, "--title", "100% done", "--yes")
     assert rc == 1 and "cmd/PowerShell" in text and "--number" in text
+
+
+# ---------------------------------------------------------------- review of PR #279, block #2
+# `Ready` is the loop's QUEUE SWITCH (`sources._ready_lane`): without it the loop picks by label;
+# with it (and the shipped `queue_source: "status"`) only a card IN Ready is picked, and the
+# uncarded fallback covers issues with NO card. So adding `Ready` to a board that already carries
+# cards strands every goal card sitting in another lane, and the loop reads DONE. board_setup adds
+# it only to a board it created itself that has no card yet; everywhere else the switch stays the
+# explicit, seeding `board_migrate.py` step (#696).
+
+def _label_issue(gh, n):
+    gh.issues.append({"number": n, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""})
+
+
+def test_adopting_a_board_with_goal_cards_keeps_the_loop_picking_them(tmp_path, capsys):
+    """The reviewer's reproduction (evidence/235/rev/test_rev_queue.py::test_adopt_flips_queue):
+    human board, goal cards #5/#6/#7; before the fix the pick went '5' -> None, silently."""
+    gh, board = _human_board()
+    for n in (5, 6, 7):
+        _label_issue(gh, n)
+    for it in board["items"]:
+        it["labels"] = ["sdlc:goal"]
+    sdlc = _sdlc(tmp_path, project={"number": 1})
+    before = _src(sdlc, gh).next_pending()
+    rc, text = _run(sdlc, gh, "--number", "1", "--yes")
+    assert rc == 0, text
+    assert before == "5" and _src(sdlc, gh).next_pending() == before
+    assert "Ready" not in gh.option_names(board, "Status")
+    assert "[skip] Ready lane" in text and "label queue" in text
+    assert "board_migrate.py" in text and "--owner acme --project 1" in text and "--apply" in text
+
+
+def test_a_resume_after_a_loop_tick_does_not_strand_the_cards_the_tick_made(tmp_path, capsys):
+    """The reviewer's second reproduction: the first run fails before Status is set, a loop tick
+    cards #11/#12 (Status None) on the half-built board, then the resume. Adding `Ready` then
+    would strand both cards (carded, so the uncarded fallback skips them)."""
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    _label_issue(gh, 11)
+    _label_issue(gh, 12)
+    gh.fail["updateProjectV2Field("] = "GraphQL: secondary rate limit"
+    assert _run(sdlc, gh, "--yes")[0] == 1
+    del gh.fail["updateProjectV2Field("]
+    board = gh.board(title="widget — SDLC")
+    s = _src(sdlc, gh)
+    p = s.next_pending()
+    s.mark_in_progress(p)
+    assert len(board["items"]) == 2
+    rc, text = _run(sdlc, gh, "--number", str(board["number"]), "--yes")
+    assert rc == 0, text
+    for it in board["items"]:
+        it["labels"] = ["sdlc:goal"]
+    assert "Ready" not in gh.option_names(board, "Status")
+    assert _src(sdlc, gh).next_pending(skip=[p]) == ({"11", "12"} - {p}).pop()
+    assert "[skip] Ready lane" in text and "already has card(s)" in text
+
+
+def test_a_resume_of_the_empty_board_this_setup_created_finishes_it_like_a_fresh_one(tmp_path):
+    """Nothing can be stranded on a board that has no card, and it is ours (config's
+    `setup_created`), so the resume completes it exactly as the first run would have: GitHub's
+    `Todo` / `In progress` renamed (ids kept), `Ready` added -- no stray lane, no config mapping."""
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    _label_issue(gh, 11)
+    gh.fail["updateProjectV2Field("] = "GraphQL: secondary rate limit"
+    assert _run(sdlc, gh, "--yes")[0] == 1
+    del gh.fail["updateProjectV2Field("]
+    board = gh.board(title="widget — SDLC")
+    assert _cfg(sdlc)["discovery"]["github"]["project"]["setup_created"] == board["number"]
+    rc, text = _run(sdlc, gh, "--number", str(board["number"]), "--yes")
+    assert rc == 0, text
+    assert gh.option_names(board, "Status") == COLS
+    assert "columns" not in _cfg(sdlc)["discovery"]["github"]["project"]
+    assert all(board["workflows"].values())
+    src = _src(sdlc, gh)
+    assert src.next_pending() == "11"
+    src.mark_in_progress("11")
+    assert _card_status(gh, board, 11) == "In Progress"
+
+
+def test_an_adopted_empty_board_still_does_not_get_ready(tmp_path):
+    """No `setup_created` for this number: a human's board, even an empty one. Its lanes are theirs
+    and cards they add later would land outside Ready -- the switch stays board_migrate's."""
+    gh = boardfake.GitHub(boards=[{"title": "Team board", "number": 4}])
+    sdlc = _sdlc(tmp_path, project={"setup_created": 9})         # ours was a DIFFERENT board
+    rc, text = _run(sdlc, gh, "--number", "4", "--yes")
+    assert rc == 0, text
+    assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
+    assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
+
+
+def test_an_unreadable_card_count_withholds_ready_and_fails_for_a_resume(tmp_path):
+    gh, sdlc = _org_with_boards(), _sdlc(tmp_path)
+    gh.fail["updateProjectV2Field("] = "GraphQL: secondary rate limit"
+    assert _run(sdlc, gh, "--yes")[0] == 1
+    del gh.fail["updateProjectV2Field("]
+    board = gh.board(title="widget — SDLC")
+    gh.fail["/items?per_page=1"] = "HTTP 502"
+    rc, text = _run(sdlc, gh, "--number", str(board["number"]), "--yes")
+    assert rc == 1 and "[FAIL] read cards" in text and "--number" in text
+    assert "Ready" not in gh.option_names(board, "Status")
+
+
+READY_HUMAN = {"id": "h_ready", "name": "Ready", "color": "RED", "description": "Our sprint"}
+
+
+def test_an_adopted_board_whose_own_ready_lane_exists_is_left_untouched(tmp_path, capsys):
+    """A human's own `Ready`: the board already IS the queue, so nothing about the switch changes.
+    The option keeps id, name, colour, description and position; no card moves; the pick holds."""
+    status = HUMAN_STATUS[:1] + [READY_HUMAN] + HUMAN_STATUS[1:]
+    gh, board = _human_board(status=status)
+    gh.add_item(board, 8, Status="Ready")
+    for it in board["items"]:
+        it["labels"] = ["sdlc:goal"]
+    _label_issue(gh, 8)
+    sdlc = _sdlc(tmp_path, project={"number": 1})
+    values = {i["id"]: dict(i["values"]) for i in board["items"]}
+    before = _src(sdlc, gh).next_pending()
+    rc, text = _run(sdlc, gh, "--number", "1", "--yes")
+    assert rc == 0, text
+    assert gh.option(board, "Status", "Ready") == READY_HUMAN
+    assert gh.option_names(board, "Status")[:5] == [o["name"] for o in status]
+    assert {i["id"]: i["values"] for i in board["items"]} == values
+    assert before == "8" and _src(sdlc, gh).next_pending() == "8"
+    assert "already has" in text and "left as it is" in text
+
+
+def test_adoption_keeps_the_humans_lane_order_and_appends_only_what_is_missing(tmp_path):
+    gh, board = _human_board()
+    rc, text = _run(_sdlc(tmp_path), gh, "--number", "1", "--yes")
+    assert rc == 0, text
+    assert gh.option_names(board, "Status") == [
+        "Todo", "In progress", "Done", "Needs design", "Backlog", "QC", "Blocked", "Parked"]

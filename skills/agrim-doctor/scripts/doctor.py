@@ -30,6 +30,16 @@ class _RawFailure(str):
         return obj
 
 
+def _failure_text(result):
+    """THE runner-failure contract, read in one place: the text a FAILED `run(...)` carried (gh's
+    stderr + stdout on `_RawFailure.raw`), or "" for a success or a runner that does not carry it
+    (every plain-string fake). A check that must tell "GitHub answered no" from "the call itself
+    failed" (`_pinned_board_state`, the preflight adapter) reads it through this, so the producer
+    (`_real_run`) and those consumers cannot drift apart silently -- pinned by
+    tests/test_doctor.py::test_runner_failure_contract_reaches_the_pinned_board_row_235."""
+    return str(getattr(result, "raw", "") or "")
+
+
 def _real_run(args):
     import subprocess
     try:
@@ -393,7 +403,7 @@ def _pinned_board_state(gh_cfg, run):
         # an answer that is not this board is odd, but it is not GitHub saying the board is gone
         return ("ok" if isinstance(got, dict) and got.get("number") == want
                 else "unverifiable"), None
-    said = str(getattr(raw, "raw", "") or "").lower()
+    said = _failure_text(raw).lower()
     if not any(tell in said for tell in _BOARD_GONE):
         return "unverifiable", None  # the read failed -- says nothing about the board
     return "gone", (f"the pinned board #{want} does not exist under {owner} (GitHub: could not "
@@ -963,7 +973,7 @@ def _preflight_rows(base, cfg, run, which, injected, cheap_only):
     if injected:
         def runner(argv, cwd=None, timeout=None):
             res = run(list(argv))
-            return (0, str(res)) if res else (1, getattr(res, "raw", "") or "")
+            return (0, str(res)) if res else (1, _failure_text(res))
     else:
         runner = None
     req = pf.requirements(cfg)

@@ -30,10 +30,22 @@ All notable changes to Sigma are recorded here, newest first.
   - New doctor row: `pinned board #N reachable`. It fails only when GitHub answers that the board
     does not exist. When the read itself fails (offline, rate limit, gh missing, no `project`
     scope) there is no row. The read is skipped under `cheap_only` (the SessionStart wizard).
+  - Adopting a board does not change how the loop picks work (review of PR #279, block #2). The
+    `Ready` lane is the loop's queue switch: with it, only a card in `Ready` is picked, so adding it
+    to a board whose goal cards sit in other lanes stranded them and the loop read DONE (reproduced:
+    pick `5` before adoption, nothing after). board_setup now adds `Ready` only to a board it
+    created (`project.setup_created`) that has no card yet. Elsewhere it prints `[skip] Ready lane`
+    and the explicit `board_migrate.py --owner O --project N --backlog <lane> --apply` step, which
+    adds the lane and seeds it. A `Ready` the board already has is left as it is. A resume of our
+    own still-empty board finishes it like a fresh one; once a loop tick carded goals on it, the
+    resume is an adoption.
+  - The loop's empty-`Ready` warning now counts every open, eligible goal card outside `Ready` (a
+    human's own `Todo`, `Needs design`, no Status), not only Backlog cards, names each lane and the
+    migrate command, and prints once per run.
   - Adopting a board a human built (`--number N`, or a pin) renames nothing (review of PR #279).
-    Every existing option keeps its id, name, colour and description, and only the missing options
-    are added. Only a board created or copied in the same run gets GitHub's `Todo` / `In progress`
-    renamed. A lane differing only by case (`In progress`) is mapped in `project.columns`. A
+    Every existing option keeps its id, name, colour, description and position, and only the
+    missing options are appended after them. Only our own empty board gets GitHub's `Todo` /
+    `In progress` renamed. A lane differing only by case (`In progress`) is mapped in `project.columns`. A
     same-named field that is not single-select, a `p0`-style Priority variant, or unreadable
     option colours is REFUSED (exit 2) with the manual fix.
   - `sources._options_mutation` quotes every value it puts into GraphQL with JSON escaping, and

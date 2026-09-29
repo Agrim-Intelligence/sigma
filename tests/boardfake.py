@@ -11,7 +11,8 @@ It models GITHUB'S BEHAVIOUR that the tests depend on, not the transport:
   - `gh project list --limit 100` returns only the first 100 boards (the cap `_find_project` reads);
   - REST option names AND descriptions come back as {"raw": ..., "html": ...}, and colours as an
     upper-case enum name (`"GRAY"`), measured live against a real board (review of PR #279);
-  - REST `/fields` returns one page (`per_page`, default 30) unless `--paginate` is passed;
+  - REST `/fields` returns one page (`per_page`, default 30) unless `--paginate` is passed, and
+    REST `/items` one page of the board's cards (board_setup reads `per_page=1`: any card at all?);
   - board numbers are per OWNER (acme's #1 and octo's #1 are different boards);
   - a second field with an existing name is rejected ("Name has already been taken");
   - `updateProjectV2Field` STORES each option's colour and description exactly as sent, and an
@@ -241,6 +242,17 @@ class GitHub:
             if not b:
                 raise LookupError(path)
             return json.dumps({"number": b["number"], "title": b["title"], "node_id": b["id"]})
+        m = re.fullmatch(r"(orgs|users)/([^/]+)/projectsV2/(\d+)/items", path)
+        if m:                                        # one page of the board's items, any content
+            b = self.board(number=m.group(3), owner=m.group(2))
+            if not b:
+                raise LookupError(path)
+            rows = [{"id": 2000 + i, "node_id": it["id"],
+                     "content_type": (it.get("content") or {}).get("type", "Issue")}
+                    for i, it in enumerate(b["items"][:per])]
+            if self._arg(a, "--jq") == "length":
+                return "%d\n" % len(rows)
+            return json.dumps(rows)
         m = re.fullmatch(r"(orgs|users)/([^/]+)/projectsV2/(\d+)/fields", path)
         if m:
             b = self.board(number=m.group(3), owner=m.group(2))
