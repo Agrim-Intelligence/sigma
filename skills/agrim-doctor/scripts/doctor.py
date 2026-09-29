@@ -13,6 +13,13 @@ except Exception:       # (the Windows cp1252 default); a stream without reconfi
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
+# graphify emits this warning while still exiting successfully, so a presence-only probe would
+# report a healthy builder even though every extraction uses the stale bundled skill. Keep the
+# pattern intentionally narrow: other successful version diagnostics are not Sigma's to classify.
+_GRAPHIFY_SKILL_PACKAGE_MISMATCH = re.compile(
+    r"skill is from graphify\s+([0-9][0-9A-Za-z._+-]*),\s*package is\s+([0-9][0-9A-Za-z._+-]*)",
+    re.IGNORECASE)
+
 
 class _RawFailure(str):
     """An empty string for every existing caller of `run(...)` — `bool()`, `in`, `json.loads()` all
@@ -2307,9 +2314,17 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
 
     if kg.get("enabled") is True:
         builder = kg.get("builder", "graphify")
-        ok = bool(run([builder, "--version"]))
+        version_output = run([builder, "--version"])
+        ok = bool(version_output)
         fix = "run: pip install graphifyy" if builder == "graphify" else f"install the '{builder}' graph builder"
         out.append(_chk(f"{builder} installed", ok, fix))
+        if builder == "graphify":
+            mismatch = _GRAPHIFY_SKILL_PACKAGE_MISMATCH.search(str(version_output))
+            if mismatch:
+                skill_version, package_version = mismatch.groups()
+                out.append(_chk(
+                    "graphify skill/package versions match", False,
+                    f"graphify skill {skill_version} differs from package {package_version} — run `graphify install`"))
         # issue #1562. ONLY when auto_refresh is on: a project that builds the graph by hand with
         # /agrim-kg has nothing wrong with it, and flagging a never-built graph there would be a
         # false alarm on every run. With auto_refresh ON, though, "never built" is a real fault --
