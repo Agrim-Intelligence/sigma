@@ -149,6 +149,11 @@ def test_github_mode_is_done_only_after_the_pr_merged(github_run):
     assert obs["unhandled"] == ""
 
 
+def test_github_bootstrap_does_not_recreate_lifecycle_labels(github_run):
+    """#304: blind hot-path creates make 34 calls; init alone needs the 14 bootstrap writes."""
+    assert github_run["gh_calls"]["label create"] == 14
+
+
 def test_no_command_variants_reach_done_with_enforce_off(cli_run):
     local = next(g for g in cli_run["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     github = cli_run["modes"]["github/no-command"]["observations"]

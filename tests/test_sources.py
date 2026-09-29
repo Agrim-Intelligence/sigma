@@ -737,7 +737,9 @@ def test_github_transitions_issue_correct_gh_commands():
     assert any("issue edit 9" in c and "--add-label sdlc:parked" in c for c in flat)
     assert any("issue comment 9" in c and "hit a deploy gate" in c for c in flat)
     assert any(c.startswith("label create") for c in flat)            # labels auto-ensured
-    assert all("--repo o/r" in c for c in flat)                       # repo threaded into every call
+    # CLI commands carry `--repo`; the bounded REST label inventory scopes the same repository
+    # in its endpoint. Keep both forms covered without treating a read as a malformed CLI write.
+    assert all("--repo o/r" in c or c.startswith("api repos/o/r/") for c in flat)
 
 
 def test_github_custom_labels_respected():
@@ -2570,7 +2572,7 @@ def test_complete_falls_back_to_rest_when_the_already_closed_comment_hits_exhaus
     graphql_attempts = [c for c in calls if c[:2] == ["issue", "comment"]]
     # excludes the SEPARATE `api graphql` label-removal call `complete()` also issues -- that one
     # is unrelated to this comment's own retry/fallback and this test does not stub it out.
-    rest_attempts = [c for c in calls if c[0] == "api" and c[1] != "graphql"]
+    rest_attempts = [c for c in calls if c[:2] == ["api", "repos/o/r/issues/42/comments"]]
     assert len(graphql_attempts) == gh._NOTE_RETRIES     # every GraphQL retry spent first
     assert len(rest_attempts) == 1                       # then exactly one REST fallback, not lost
     rest_call = rest_attempts[0]
@@ -2601,7 +2603,7 @@ def test_park_falls_back_to_rest_when_the_comment_hits_exhausted_graphql():
     gh.park("42", "deploy gate")   # must not raise -- and must not silently lose the comment either
 
     graphql_attempts = [c for c in calls if c[:2] == ["issue", "comment"]]
-    rest_attempts = [c for c in calls if c[0] == "api" and c[1] != "graphql"]
+    rest_attempts = [c for c in calls if c[:2] == ["api", "repos/o/r/issues/42/comments"]]
     assert len(graphql_attempts) == gh._NOTE_RETRIES
     assert len(rest_attempts) == 1
     rest_call = rest_attempts[0]
