@@ -43,7 +43,8 @@ migration does not understand, is refused: it is left untouched and listed, and 
 It is safe to run again. A second `--apply` prints `nothing to migrate`. Each write is atomic. A file
 that changed after it was read is refused, so rerun the command. `--apply` refuses to run while this
 `.sdlc`'s watcher is running, because that watcher may belong to the old plugin and be writing the
-old spellings. Stop it first.
+old spellings. Stop it first. It also waits while the old plugin can still run on this repository:
+see [Switching over from the previous plugin](#switching-over-from-the-previous-plugin).
 
 Some things are **left as is and listed**, on purpose:
 - history: ledger entries and timing sessions;
@@ -65,6 +66,20 @@ own schema id, printing a one-line `migrated legacy ... on use` notice when it d
 reads those files as empty. So either switch every machine to Sigma and migrate together, or keep
 the old plugin off the branches Sigma writes to until you do.
 
+Two things protect the registry meanwhile. Before Sigma's first write to `.sdlc/features` on a
+machine where the old plugin can still run on the repository, it saves one copy of `.sdlc/features`
+to `.sdlc/state/backup/features-<UTC time>/` and says so on stderr (once per repository; `state/` is
+machine-local and ignored by git; a registry over 5,000 files or 64 MB is not copied, and that is
+said instead). And Sigma's registry reader recognises the record the old plugin writes when it
+cannot read Sigma's registry -- a unit record with no title, owner, tracking issue, priority or
+parent while `index.json` holds more for that unit -- and never lets it hide the fuller entry: it
+reads the `index.json` entry plus the goals that record adds, prints the recovery, and
+`feature_sync.py fold` refuses (exit 2, nothing written) until you run the repair it names:
+
+```
+python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record from index.json plus its goals
+```
+
 Cross-repository propagation follows the same rule. Sigma will not overwrite a sibling repository's
 registry file while that file still carries the old schema id. Run the migration in that repository
 first.
@@ -73,7 +88,14 @@ first.
 
 Sigma replaces the old plugin in place. You can install Sigma next to it and use every Sigma skill,
 the loop and the watcher straight away; the old plugin being installed is a notice, never a
-refusal. Once you trust Sigma on a repository, migrate its state and uninstall the old plugin.
+refusal. Once you trust Sigma on a repository, stop the old plugin there, migrate its state, and
+uninstall the old plugin -- in that order.
+
+**Why the order matters.** The old plugin cannot read Sigma's registry: it reads a
+`.sdlc/features/index.json` carrying Sigma's schema id as empty. So if it starts a goal in a unit
+that exists only in that index, it writes a new, nearly empty record for the unit (no title, owner,
+priority or tracking issue, `authorized` false, only its own goal), which would otherwise hide
+everything the index knew. Stop it on the repository **before** converting the registry.
 
 The cut-over, per machine:
 
@@ -81,21 +103,39 @@ The cut-over, per machine:
 2. **Run it.** `/agrim-init`, `/agrim-loop`, `/agrim-goal` and the watcher all work. Each run
    prints one line, once:
    `sigma: notice: the plugin previously published as '<old>' is also enabled here; Sigma is
-   handling this repository -- uninstall it when ready: claude plugin uninstall <old>@<marketplace>`.
+   handling this repository -- uninstall it when ready: claude plugin uninstall <old>@<marketplace>;
+   the old plugin cannot read Sigma's registry; ...`.
    In a repository the old plugin adopted, init and `loop.py start` also print one
    `sigma: takeover:` line with the exact migration dry-run command. Until you migrate, Sigma reads
    the old state as it is (the table above).
-3. **Migrate** (see above): the dry run first; `--apply` only when you say yes. `--apply` still
-   refuses while any watcher is running for this `.sdlc` (next section).
-4. **Uninstall the old plugin**, with the exact command the notice printed:
-   - Claude Code: `claude plugin uninstall <old>@<marketplace>` (add `--scope project` or
-     `--scope local` for an install in that scope -- the notice says which), then optionally
-     `claude plugin marketplace remove <old>`.
-   - Codex: remove the `[plugins."<old>@<marketplace>"]` table from `config.toml` (`CODEX_HOME`,
-     else `~/.codex`). This is the edit Sigma names; Codex's own plugin commands were not available
-     to verify here.
+3. **Stop the old plugin on this repository.** Use the exact step `coexist.py check .sdlc` or the
+   migration's refusal prints:
+   - Claude Code, this repository only: run `claude plugin disable <old>@<marketplace> --scope local`
+     in the repository. It writes `"<old>@<marketplace>": false` under `enabledPlugins` in the
+     repository's `.claude/settings.local.json`, which wins over the project and user settings on
+     this machine. Or uninstall it now (step 5). A machine-wide managed setting that enables it
+     wins over both: ask whoever manages it.
+   - Codex: set `enabled = false` in the `[plugins."<old>@<marketplace>"]` table of `config.toml`
+     (`CODEX_HOME`, else `~/.codex`), or remove the table. Codex has no per-repository switch, so
+     this stops it on every repository on this machine.
    - A hook registered by hand that runs the old plugin: remove that entry from the settings file
      the notice names.
+   - A watcher it left running: the polite lever under "What stays impossible" below.
+4. **Migrate** (see above): the dry run first, then `--apply` only when you say yes.
+   `migrate.py .sdlc --apply` refuses (exit 2, nothing written, the dry run shown) while the old
+   plugin can still run on this repository, and prints the exact step 3 command and the rerun.
+   If you must convert with it still running, add `--replace-old-plugin`: a copy of
+   `.sdlc/features` is saved under `.sdlc/state/backup/` first, and the registry reader's guard
+   (above) still stands. `--apply` also refuses while any watcher is running for this `.sdlc`.
+5. **Uninstall the old plugin**, with the exact command the notice printed:
+   - Claude Code: `claude plugin uninstall <old>@<marketplace>` (add `--scope project` or
+     `--scope local` for an install in that scope -- the notice says which). Then, optionally and
+     only if nothing else you use comes from it, `claude plugin marketplace remove <marketplace>`,
+     where `<marketplace>` is the part after `@` in the id the notice printed (`coexist.py check`
+     prints this command with the real name; it is not always the plugin's own name).
+   - Codex: remove the `[plugins."<old>@<marketplace>"]` table from `config.toml`. This is the edit
+     Sigma names; Codex's own plugin commands were not available to verify here.
+   - A hook registered by hand: as in step 3.
 
 `SIGMA_ALLOW_COEXIST=1` (exactly `1`, read under the Sigma name only) silences the notice. It is
 not needed for anything to run.
@@ -111,7 +151,9 @@ found and the cut-over steps, and exits 0.
 | `loop.py start` | The same. |
 | `loop.py claim` / `record` (the `/agrim-goal` path) and the automatic watcher start | Proceed; the notice at most once per run (below). |
 | `watch_daemon.py` | Proceeds to the shared lock; the notice goes to `.sdlc/state/watch.log`. |
-| `migrate.py` | Proceeds (dry run and `--apply`) with the notice. `--apply` still refuses while a watcher is live. |
+| `migrate.py` | The dry run proceeds with the notice. `--apply` waits for the old plugin to be stopped on this repository (exit 2, dry run shown, the exact disable step) unless `--replace-old-plugin` is given, which takes the `.sdlc/features` backup first. `--apply` still refuses while a watcher is live. This is the only step that waits: it is the one that converts the registry the old plugin cannot read. |
+| Registry writes (`.sdlc/features`) | Proceed. The first one saves the one-time copy to `.sdlc/state/backup/features-<time>/`. |
+| Registry reads, `feature_sync.py show` / `fold` | A near-empty record the old plugin wrote never hides a fuller `index.json` entry; `fold` refuses until `feature_sync.py repair`. |
 | `/agrim-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |

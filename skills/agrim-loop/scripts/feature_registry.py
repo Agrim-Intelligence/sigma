@@ -109,6 +109,7 @@ Module shape follows `features.py` and `owners.py`: zero third-party dependencie
 constants, pure functions apart from the filesystem calls that are the point, loaded by siblings
 via `_load("feature_registry")`.
 """
+import copy
 import importlib.util
 import json
 import os
@@ -616,6 +617,7 @@ def read(features_dir):
     and no signal to the caller. A note now names the file, because a unit vanishing from the
     registry is exactly the kind of thing whose cause has to be findable."""
     registry = read_index(features_dir)
+    index = dict(registry)
     for path in _unit_files(features_dir):
         got = _read_unit_file(path)
         if got is None:
@@ -625,9 +627,165 @@ def read(features_dir):
                   % (path, INDEX_NAME))
             continue
         name, entry = got
+        base = _same_unit(index, name)
+        if is_shadow(entry, base):
+            # #314: the ONE exception to shard-wins -- see `is_shadow`. The index entry stands,
+            # plus whatever the near-empty record ADDS (its goals, a repo the index lacks).
+            _note_shadow(features_dir, name, path)
+            entry = merge_shadow(base, entry)
         _drop_same_unit(registry, name)
         registry[name] = entry
     return registry
+
+
+# --------------------------------------------------------------------------- the shadow guard (#314)
+
+#: The fields a Sigma pick NEVER clears from a unit record. `branch` and `open` are deliberately
+#: absent: `feature_sync.reconcile` legitimately clears a gone branch and closes an empty unit, so
+#: a record lacking those is not evidence of anything.
+_KEPT_FIELDS = ("title", "owner", "parent", "tracking_issue", "priority")
+_SHADOW_NOTED = set()
+
+
+def _same_unit(registry, name):
+    lowered = name.lower()
+    for key, entry in registry.items():
+        if key.lower() == lowered:
+            return entry
+    return None
+
+
+def _repo_of(repos, key):
+    for other, value in (repos or {}).items():
+        if isinstance(other, str) and other.lower() == key.lower():
+            return other
+    return None
+
+
+def is_shadow(record, index_entry):
+    """Is this per-unit record a NEAR-EMPTY record SHADOWING a fuller `index.json` entry? (#314)
+
+    The shape the plugin under Sigma's previous name writes when it cannot read Sigma's registry
+    (it reads a `sigma/features@1` index as EMPTY): asked to record a goal on a unit that exists
+    only in the index, it starts from `{}` and writes a record with no title, owner, tracking
+    issue, priority or parent, `authorized` false and only its own goal. Shard-wins would then
+    serve THAT, and a fold would bake it into the index: title, owner, priority, tracking issue,
+    branch, the other goals gone and a grant flipped to false (the reviewer's sequence on PR #319).
+
+    True only when BOTH hold: (1) the record carries none of `_KEPT_FIELDS` -- a Sigma pick
+    starts from the full union, so a record Sigma wrote has every kept field the index has; and
+    (2) the index says something the record would erase: a kept field, a repo, a goal, or a grant
+    (`authorized: true`). Branch and `open` never count (a pick narrows those on purpose). No
+    timestamp is consulted: git checkouts rewrite mtimes, so "created just now" is not a fact a
+    reader can rely on; the content shape is. The one false positive is a human deliberately
+    blanking every kept field in the record while the index still has them -- `feature_sync.py
+    repair` then restores them, and editing the index too is the way to really clear them."""
+    if not isinstance(record, dict) or not isinstance(index_entry, dict):
+        return False
+    if any(record.get(k) for k in _KEPT_FIELDS):
+        return False
+    if any(index_entry.get(k) for k in _KEPT_FIELDS):
+        return True
+    mine = record.get("repos") or {}
+    for key, theirs in (index_entry.get("repos") or {}).items():
+        other = _repo_of(mine, key)
+        if other is None:
+            return True
+        ours = mine[other] if isinstance(mine[other], dict) else {}
+        theirs = theirs if isinstance(theirs, dict) else {}
+        if theirs.get("authorized") is True and ours.get("authorized") is not True:
+            return True
+        if set(_goals(theirs.get("goals"))) - set(_goals(ours.get("goals"))):
+            return True
+    return False
+
+
+def merge_shadow(index_entry, record):
+    """The index entry, plus what a shadowing record ADDS: its goals (union, index order first), a
+    repo the index lacks, a branch/owner where the index has none, a grant either side holds.
+    Nothing the index says is dropped -- which is the point."""
+    out = copy.deepcopy(normalise_entry(index_entry))
+    for key, one in (normalise_entry(record).get("repos") or {}).items():
+        other = _repo_of(out["repos"], key)
+        if other is None:
+            out["repos"][key] = copy.deepcopy(one)
+            continue
+        mine = out["repos"][other]
+        mine["goals"] = _goals(list(mine["goals"]) + list(one["goals"]))
+        for field in ("branch", "owner"):
+            if not mine.get(field):
+                mine[field] = one.get(field)
+        mine["authorized"] = mine["authorized"] is True or one.get("authorized") is True
+    return normalise_entry(out)
+
+
+def shadows(features_dir):
+    """-> [(name, record path)] for every record `is_shadow` flags. Never raises."""
+    index = read_index(features_dir)
+    found = []
+    for path in _unit_files(features_dir):
+        got = _read_unit_file(path)
+        if got is not None and is_shadow(got[1], _same_unit(index, got[0])):
+            found.append((got[0], path))
+    return found
+
+
+def shadow_recovery(features_dir):
+    """The exact recovery, one sentence: `feature_sync.py repair`, or restore the one-time backup."""
+    sdlc_dir = pathlib.Path(features_dir).parent
+    try:
+        coexist = _coexist()
+        repair = coexist.shell_command("python3", _HERE / "feature_sync.py", "repair", sdlc_dir)
+        backup = coexist.existing_backup(sdlc_dir)
+    except Exception:                     # noqa: BLE001 - the text degrades, never the reader
+        repair, backup = "python3 %s repair %s" % (_HERE / "feature_sync.py", sdlc_dir), None
+    return ("stop the plugin under Sigma's previous name on this repository first (docs/"
+            "upgrading.md), then either run `%s` (rewrites each such record as the %s entry plus "
+            "the goals it adds) or restore %s from %s and re-run migrate.py --apply"
+            % (repair, INDEX_NAME, features_dir,
+               backup if backup is not None else "your backup (Sigma keeps a one-time copy under "
+               ".sdlc/state/backup/ when the old plugin was active at its first registry write)"))
+
+
+def _note_shadow(features_dir, name, path):
+    if str(path) in _SHADOW_NOTED:
+        return
+    _SHADOW_NOTED.add(str(path))
+    _note("sigma: features: %s is a near-empty record for unit %r (no title, owner, tracking issue, "
+          "priority or parent) that would hide the fuller entry %s holds -- the shape the plugin "
+          "under Sigma's previous name writes when it cannot read Sigma's registry. Sigma reads "
+          "the %s entry plus the goals that record adds, and `feature_sync.py fold` refuses until "
+          "it is repaired. Recover: %s.\n"
+          % (path, name, INDEX_NAME, INDEX_NAME, shadow_recovery(features_dir)))
+
+
+# --------------------------------------------------------------------------- the backup hook (#314)
+
+_COEXIST = []
+
+
+def _coexist():
+    if not _COEXIST:
+        _COEXIST.append(_load("coexist"))
+    return _COEXIST[0]
+
+
+def _protect(features_dir):
+    """Before ANY Sigma write to the registry: the one-time backup of `.sdlc/features` when the old
+    plugin can still run on this repository (`coexist.protect_features`). Fail-open by contract --
+    a registry write must never fail because a safety copy could not be taken; that is said on
+    stderr by `protect_features` itself, and the reader-side guard above still stands.
+
+    THE ISOLATION RULE, READ EXACTLY: a write for unit A still never WRITES (or holds) unit B's
+    file. The one-time copy READS every file under `features/` once per repository, beside a
+    runnable old plugin only, and writes only under `state/backup/` -- nothing another writer
+    replaces, so it adds no conflict and no lost update. With a copy present, or no old plugin, it
+    opens nothing under `features/` at all (tested: `test_a_write_for_one_unit_never_opens_another
+    _units_file` runs with no old plugin)."""
+    try:
+        _coexist().protect_features(pathlib.Path(features_dir).parent)
+    except Exception:                     # noqa: BLE001 - see the docstring
+        pass
 
 
 def read_unit(features_dir, name):
@@ -811,6 +969,7 @@ def write_unit(features_dir, name, entry):
     condition it names, because a caller writing `../escape` has a bug rather than a corrupt file,
     and nothing is written when it does."""
     path = unit_path(features_dir, name)
+    _protect(features_dir)
     _atomic_write_text(path, dumps({"schema": SCHEMA,
                                     "features": {name: normalise_entry(entry)}}), schema=SCHEMA)
     return path
@@ -826,5 +985,6 @@ def write_index(features_dir, registry):
     the branch a shard names still exists. Until it does, `read`'s shard-wins rule keeps the union
     correct with both present."""
     path = index_path(features_dir)
+    _protect(features_dir)
     _atomic_write_text(path, dumps(document(registry)), schema=SCHEMA)
     return path

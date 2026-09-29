@@ -318,7 +318,9 @@ The old plugin cannot read Sigma's spellings, so migrate once the whole team run
 Sigma runs fully next to the old plugin and replaces it: nothing is refused while both are
 installed, and each run prints one notice naming the uninstall command. Cut over with
 [Switching over from the previous plugin](docs/upgrading.md#switching-over-from-the-previous-plugin):
-install Sigma, run it, migrate, then uninstall the old plugin.
+install Sigma, run it, **stop the old plugin on the repository**, migrate, then uninstall it. The
+old plugin cannot read Sigma's registry, so `--apply` waits for that step (or for an explicit
+`--replace-old-plugin`).
 
 ---
 

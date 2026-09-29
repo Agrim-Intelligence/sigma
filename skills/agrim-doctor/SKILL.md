@@ -69,9 +69,14 @@ without being asked. See [docs/upgrading.md](../../docs/upgrading.md).
 The `coexistence` row reports whether the old plugin is also active on this repository. When it is,
 the row is a WARN, never a failure: Sigma runs normally beside it and is handling the repository
 (one notice line per run names the uninstall command). Relay the cut-over steps
-`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints -- migrate dry
-run, `--apply` only on the user's explicit yes, then uninstall the old plugin -- and never uninstall
-it, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice), on the user's behalf.
+`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/coexist.py" check .sdlc` prints, IN ORDER --
+stop the old plugin on this repository first (`claude plugin disable <id> --scope local`, run by
+the user), migrate dry run, `--apply` only on the user's explicit yes, then uninstall the old
+plugin. The old plugin cannot read Sigma's registry, so while it can still run here `--apply`
+refuses (exit 2, dry run shown) unless `--replace-old-plugin` is added: never add that flag, disable,
+uninstall, or set `SIGMA_ALLOW_COEXIST=1` (which only silences the notice) on the user's behalf. A
+`near-empty record` line from the registry means the old plugin already wrote over a unit: relay
+the `feature_sync.py repair` command it prints.
 
 ## Secret-file coverage
 

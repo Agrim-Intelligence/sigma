@@ -47,6 +47,16 @@ is younger than `NOTICE_TTL_SECONDS`, and every notice refreshes that mark. Read
 session-start hook repeats the line, read-only, and carries on to its other tiers: Cursor has no
 hooks, so the hook is an accelerator and decides nothing.
 
+THE ONE STEP THAT WAITS (#314, review of PR #319): the old plugin reads a `sigma/features@1`
+registry as EMPTY, so once the registry is converted a goal it starts writes a near-empty unit
+record over a unit that exists only in `index.json`. So `migrate.py --apply` -- the conversion --
+refuses while the old plugin can still RUN here (`RUNS_KINDS`) unless `REPLACE_FLAG` is given,
+naming `disable_steps()` (`claude plugin disable <id> --scope local`). Every other surface stays a
+notice. In depth: `protect_features()` takes ONE copy of `.sdlc/features` under `state/backup/`
+before Sigma's first registry write beside a runnable old plugin (called from
+`feature_registry`'s writers), and `feature_registry.is_shadow` keeps the reader and `fold` from
+ever serving or baking the near-empty record over the fuller entry.
+
 WHAT STAYS IMPOSSIBLE is not this module's job and never depended on it: two watchers on one
 `.sdlc` (both plugins' watchers take the SAME lock files; a Sigma watcher that meets a foreign
 holder names it and the polite lever `stop_lever()`, and signals nothing), and `migrate.py --apply`
@@ -68,6 +78,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -108,7 +119,22 @@ STATE_SCAN_CAP = 200
 _STATE_GLOBS = ("features/index.json", "features/units/*.json", "state/landing/*.json",
                 "state/withheld/*.json", "state/propagation/*.json")
 DOC = "docs/upgrading.md (Switching over from the previous plugin)"
-MIGRATE = "python3 skills/agrim-doctor/scripts/migrate.py %s --apply"
+MIGRATE_SCRIPT = _HERE.parent.parent / "agrim-doctor" / "scripts" / "migrate.py"
+#: The acknowledgement `migrate.py --apply` requires while the old plugin can still run here.
+REPLACE_FLAG = "--replace-old-plugin"
+#: Why the conversion step (and only it) waits for that acknowledgement -- one fixed sentence, said
+#: by migrate's refusal, the notice, the takeover line and docs/upgrading.md alike.
+REGISTRY_CAVEAT = ("the old plugin cannot read Sigma's registry; if it starts a goal in this repo "
+                   "afterwards it will overwrite unit records")
+#: Signals meaning the old plugin can RUN here. The conversion gate and the one-time registry
+#: backup key on these; a foreign `owner.json` alone is a stale marker Sigma rewrites, not a runner.
+RUNS_KINDS = ("claude-enabled", "codex-enabled", "hook", "watcher")
+#: The one-time pre-image of `.sdlc/features` (#314): `state/` is machine-local and runtime-ignored.
+BACKUP_PARTS = ("state", "backup")
+BACKUP_PREFIX = "features-"
+#: A registry larger than this is not copied (said aloud): a backup must never become the outage.
+BACKUP_FILE_CAP = 5000
+BACKUP_BYTE_CAP = 64 * 1024 * 1024
 #: The per-run notice mark (state/, machine-local). A per-verb surface stays quiet while it is
 #: younger than the TTL: one notice per working session, not one per `loop.py` verb (#251).
 NOTICE_FILE = "coexist.notice"
@@ -125,6 +151,7 @@ class Signal(NamedTuple):
     level: str      # ACTIVE | NOTE
     detail: str     # what was found, naming the file
     fix: str        # the exact next step for THIS signal ("" when the general fix covers it)
+    plugin: str = ""   # the old plugin's id (`<old>@<marketplace>`) when the signal names one
 
 
 class Report(NamedTuple):
@@ -232,6 +259,28 @@ def _realpath(path):
         return os.path.realpath(str(path))
     except Exception:            # noqa: BLE001
         return str(path)
+
+
+def quote(arg, platform=None):
+    """One argument, quoted for the platform's shell -- a printed command must paste as is. The ONE
+    quoting rule for every command this module (and `migrate.py`, `feature_registry.py`) prints:
+    `subprocess.list2cmdline` on Windows, `shlex.quote` elsewhere."""
+    text = str(arg)
+    if (sys.platform if platform is None else platform).startswith("win"):
+        import subprocess
+        return subprocess.list2cmdline([text])
+    import shlex
+    return shlex.quote(text)
+
+
+def shell_command(*args, platform=None):
+    """A whole printed command, each argument quoted by `quote`."""
+    return " ".join(quote(a, platform=platform) for a in args)
+
+
+def migrate_command(sdlc_dir, *flags, script=MIGRATE_SCRIPT):
+    """The exact migrate command for this SDLC dir (`flags`: "--apply", REPLACE_FLAG)."""
+    return shell_command("python3", script, sdlc_dir, *flags)
 
 
 # --------------------------------------------------------------------------- Claude Code
@@ -367,15 +416,16 @@ def claude_signals(croot, repo_root, managed=None):
             out.append(Signal("claude-enabled", ACTIVE,
                               "Claude Code has %s enabled (%s settings, %s); its hooks and "
                               "watcher run in every session here" % (pid, scope, path),
-                              "claude plugin uninstall %s%s" % (
-                                  pid, " --scope %s" % where if where not in (None, "user")
-                                  else "")))
+                              shell_command("claude", "plugin", "uninstall", pid,
+                                            *(("--scope", where) if where not in (None, "user")
+                                              else ())),
+                              pid))
     for pid in sorted(old_ids):
         if installed_here(pid) and not decided.get(pid, (False,))[0]:
             out.append(Signal("installed", NOTE,
                               "%s is installed for Claude Code but not enabled here" % pid,
-                              "claude plugin uninstall %s   (when nobody on this machine "
-                              "still needs it)" % pid))
+                              "%s   (when nobody on this machine still needs it)"
+                              % shell_command("claude", "plugin", "uninstall", pid), pid))
     return out
 
 
@@ -487,7 +537,7 @@ def codex_signals(xroot):
         if on:
             out.append(Signal("codex-enabled", ACTIVE,
                               "Codex has %s enabled (%s)" % (pid, path),
-                              "remove the [plugins.\"%s\"] table from %s" % (pid, path)))
+                              "remove the [plugins.\"%s\"] table from %s" % (pid, path), pid))
         else:
             out.append(Signal("installed", NOTE,
                               "Codex lists %s (%s), %s" % (pid, path,
@@ -525,7 +575,7 @@ def adapter_signals(repo_root):
     if old_start in agents:
         out.append(Signal("adapter", NOTE,
                           "AGENTS.md still carries the old plugin's Codex block",
-                          MIGRATE % "<sdlc>"))
+                          migrate_command(repo / ".sdlc")))
     return out
 
 
@@ -585,7 +635,7 @@ def state_signals(sdlc_dir):
         out.append(Signal("state", NOTE,
                           "%d state file(s) under %s carry the old plugin's schema ids (of %d "
                           "read, cap %d); Sigma reads them" % (found, base, seen, STATE_SCAN_CAP),
-                          MIGRATE % base))
+                          migrate_command(base)))
     return out
 
 
@@ -717,8 +767,46 @@ def _removals(report):
             and s.fix]
 
 
+def runs_here(report):
+    """The ACTIVE signals meaning the old plugin can still RUN on this repository."""
+    return [s for s in report.active if s.kind in RUNS_KINDS]
+
+
+def disable_steps(report):
+    """The exact step that stops the old plugin acting on THIS repository, per ACTIVE runner --
+    what must happen BEFORE `migrate.py --apply`. Claude Code: `claude plugin disable <id> --scope
+    local` (writes `"<id>": false` to this repository's `.claude/settings.local.json`, which beats
+    project and user settings; verified against Claude Code's own CLI, #314). Codex has no
+    per-repository switch, so its step is the machine-wide config edit, said as such."""
+    steps = []
+    for s in runs_here(report):
+        if s.kind == "claude-enabled" and s.plugin:
+            steps.append("%s   (run in this repository; this repository on this machine only)"
+                         % shell_command("claude", "plugin", "disable", s.plugin,
+                                         "--scope", "local"))
+        elif s.kind == "codex-enabled" and s.plugin:
+            steps.append("Codex: %s (Codex has no per-repository switch: this stops it on every "
+                         "repository on this machine)" % s.fix)
+        elif s.fix:
+            steps.append(s.fix)
+    return steps
+
+
+def marketplaces(report):
+    """The marketplace each old Claude Code plugin id came from (`<old>@<marketplace>` -> the part
+    after `@`) -- never assumed to equal the plugin's own name."""
+    out = []
+    for s in report.signals:
+        if s.plugin and s.kind in ("claude-enabled", "installed") and "@" in s.plugin:
+            market = s.plugin.split("@", 1)[1]
+            if market and market not in out:
+                out.append(market)
+    return out
+
+
 def notice_line(report):
-    """THE notice (#314): one line, naming the uninstall command. It never says "refused"."""
+    """THE notice (#314): one line, naming the uninstall command, the ordering caveat for the one
+    step that converts the registry, and the one-time backup. It never says "refused"."""
     removals = _removals(report)
     line = ("%s: notice: the plugin previously published as %r is also enabled here; %s -- "
             "uninstall it when ready%s" % (BRAND, OLD, HANDLING,
@@ -726,28 +814,148 @@ def notice_line(report):
     if any(s.kind == "watcher" for s in report.active):
         line += ("; its live watcher keeps this repository's watcher lock, so Sigma starts none "
                  "beside it (`coexist.py check` names the polite way to stop it)")
+    line += ("; %s, so disable it here before `migrate.py --apply` (Sigma saves one copy of "
+             ".sdlc/features to .sdlc/%s/%s<time> before its first registry write here)"
+             % (REGISTRY_CAVEAT, "/".join(BACKUP_PARTS), BACKUP_PREFIX))
     return line + " (%s; %s=1 silences this)" % (DOC, OVERRIDE_ENV)
 
 
 def message(report):
-    """The full report for `coexist.py check`: what was found, then the cut-over steps."""
+    """The full report for `coexist.py check`: what was found, then the cut-over steps IN ORDER --
+    stop the old plugin on this repository FIRST, then convert, then uninstall."""
     lines = ["%s: the plugin previously published as %r is also active on this repository "
              "(%s); %s:" % (BRAND, OLD, report.sdlc_dir, HANDLING)]
     for s in report.active:
         lines.append("  - " + s.detail)
-    apply_cmd = MIGRATE % report.sdlc_dir
-    lines.append("Cut-over, when ready:")
-    lines.append("  1. preview the state rewrite (writes nothing): %s"
-                 % apply_cmd[:-len(" --apply")])
-    lines.append("  2. apply it, once no watcher is live: %s" % apply_cmd)
-    step = 3
+    lines.append("Cut-over, when ready (%s -- so step 1 comes first):" % REGISTRY_CAVEAT)
+    step = 1
+    for text in disable_steps(report) or ["nothing to disable"]:
+        lines.append("  %d. stop it on this repository: %s" % (step, text))
+        step += 1
+    lines.append("  %d. preview the state rewrite (writes nothing): %s"
+                 % (step, migrate_command(report.sdlc_dir)))
+    lines.append("  %d. apply it, once no watcher is live: %s"
+                 % (step + 1, migrate_command(report.sdlc_dir, "--apply")))
+    step += 2
     for s in report.active:
-        if s.fix:
+        if s.fix and s.kind != "watcher":
             lines.append("  %d. %s" % (step, s.fix))
             step += 1
+    for market in marketplaces(report):
+        lines.append("  %d. optionally, if nothing else you use comes from it: %s"
+                     % (step, shell_command("claude", "plugin", "marketplace", "remove", market)))
+        step += 1
     lines.append("Nothing is blocked meanwhile, and the shared watcher lock still admits only one "
                  "watcher. %s=1 silences the notice. See %s." % (OVERRIDE_ENV, DOC))
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- the registry backup
+
+
+def backup_root(sdlc_dir):
+    return pathlib.Path(sdlc_dir).joinpath(*BACKUP_PARTS)
+
+
+def existing_backup(sdlc_dir):
+    """The oldest `state/backup/features-*` copy, or None. Never raises."""
+    try:
+        found = sorted(p for p in backup_root(sdlc_dir).glob(BACKUP_PREFIX + "*") if p.is_dir())
+    except (OSError, ValueError):
+        return None
+    return found[0] if found else None
+
+
+def _tree_size(src):
+    files = size = 0
+    for dirpath, _dirs, names in os.walk(str(src)):
+        for name in names:
+            files += 1
+            try:
+                size += os.lstat(os.path.join(dirpath, name)).st_size
+            except OSError:
+                pass
+            if files > BACKUP_FILE_CAP or size > BACKUP_BYTE_CAP:
+                return files, size, False
+    return files, size, True
+
+
+def backup_features(sdlc_dir):
+    """-> (path, error). ONE-TIME: when a copy already exists it is returned and nothing is copied
+    (the pre-image is the one worth keeping; later ones would only grow). `(None, None)` when there
+    is no `features/` to protect. Copied to a hidden partial directory, then renamed into place, so
+    a crash never leaves a half copy that looks whole. Bounded: over `BACKUP_FILE_CAP` files or
+    `BACKUP_BYTE_CAP` bytes nothing is copied and the error says so."""
+    have = existing_backup(sdlc_dir)
+    if have is not None:
+        return have, None
+    src = pathlib.Path(sdlc_dir) / "features"
+    if not src.is_dir():
+        return None, None
+    files, size, ok = _tree_size(src)
+    if not ok:
+        return None, ("%s is over the backup cap (%d files / %d bytes max), so it was not copied"
+                      % (src, BACKUP_FILE_CAP, BACKUP_BYTE_CAP))
+    root = backup_root(sdlc_dir)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    dest = root / (BACKUP_PREFIX + stamp)
+    tmp = root / (".partial-%s-%d" % (stamp, os.getpid()))
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(src), str(tmp), symlinks=True)
+        os.replace(str(tmp), str(dest))
+    except OSError as exc:
+        shutil.rmtree(str(tmp), ignore_errors=True)
+        have = existing_backup(sdlc_dir)             # a concurrent writer made it first
+        if have is not None:
+            return have, None
+        return None, "copying %s failed (%s)" % (src, exc)
+    return dest, None
+
+
+def _runs_cheap(sdlc_dir, env=None, home=None, managed=_DEFAULT):
+    """The Claude Code / Codex runners only -- no state scan, no watcher probe: what a registry
+    WRITE can afford to ask. At most four settings files, one install list, one TOML file."""
+    env = os.environ if env is None else env
+    managed = managed_settings_path() if managed is _DEFAULT else managed
+    repo = pathlib.Path(sdlc_dir).resolve().parent
+    found = []
+    for source in (lambda: claude_signals(claude_root(env, home), repo, managed),
+                   lambda: codex_signals(codex_root(env, home))):
+        try:
+            found.extend(source())
+        except Exception:        # noqa: BLE001 - a source that cannot be read contributes nothing
+            pass
+    return [s for s in found if s.level == ACTIVE and s.kind in RUNS_KINDS]
+
+
+def protect_features(sdlc_dir, env=None, home=None, stream=None, managed=_DEFAULT):
+    """Before Sigma writes `.sdlc/features` (#314): when the old plugin can run on this repository
+    and no copy exists yet, take the one-time backup and say where. -> the new copy's path, else
+    None. Fail-open and never raises: a backup that cannot be taken is SAID, and the write goes on
+    (the reader-side shadow guard in `feature_registry.read` still stands). Cost once a copy exists,
+    or with no `features/`: one glob and one stat."""
+    try:
+        stream = sys.stderr if stream is None else stream
+        if existing_backup(sdlc_dir) is not None:
+            return None
+        if not (pathlib.Path(sdlc_dir) / "features").is_dir():
+            return None
+        if not _runs_cheap(sdlc_dir, env=env, home=home, managed=managed):
+            return None
+        path, error = backup_features(sdlc_dir)
+        if path is not None:
+            print("%s: backup: the plugin previously published as %r can still run here and %s; "
+                  "before Sigma's first registry write a copy of %s was saved to %s (restore it "
+                  "over .sdlc/features if unit records are lost; %s)"
+                  % (BRAND, OLD, REGISTRY_CAVEAT.split("; ")[0],
+                     pathlib.Path(sdlc_dir) / "features", path, DOC), file=stream)
+        elif error:
+            print("%s: backup: NOT taken -- %s; the registry write goes on (%s)"
+                  % (BRAND, error, DOC), file=stream)
+        return path
+    except Exception:            # noqa: BLE001 - see the docstring
+        return None
 
 
 def _mark_fresh(marker, now):
@@ -814,16 +1022,6 @@ def doctor_row(sdlc_dir, env=None, home=None):
     return {"name": "coexistence: no second plugin found", "ok": True, "fix": ""}
 
 
-def _quote(arg):
-    """One argument, quoted for the platform's shell -- the printed command must paste as is."""
-    text = str(arg)
-    if sys.platform.startswith("win"):
-        import subprocess
-        return subprocess.list2cmdline([text])
-    import shlex
-    return shlex.quote(text)
-
-
 def _legacy_hint(sdlc_dir):
     """Cheap, bounded: does this SDLC dir look like it still carries the previous name in a place
     `migrate.py` rewrites? Old schema ids in the known record kinds, an old managed-block marker in
@@ -865,7 +1063,7 @@ def takeover_line(sdlc_dir, environ=None, home=None):
     if not _legacy_hint(sdlc_dir):
         return None
     try:
-        script = _HERE.parent.parent / "agrim-doctor" / "scripts" / "migrate.py"
+        script = MIGRATE_SCRIPT
         spec = importlib.util.spec_from_file_location("coexist_migrate", script)
         migrate = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(migrate)
@@ -873,9 +1071,10 @@ def takeover_line(sdlc_dir, environ=None, home=None):
         if not result.changes:
             return None
         return ("%s: takeover: %d file(s) here still carry the previous name %r; Sigma reads them "
-                "as they are. Preview the rewrite (writes nothing): python3 %s %s -- then add "
-                "--apply only once the user has said yes" % (BRAND, len(result.changes), OLD,
-                                                              _quote(script), _quote(sdlc_dir)))
+                "as they are. Preview the rewrite (writes nothing): %s -- then, only once the user "
+                "has said yes AND the old plugin is disabled for this repository (%s), add --apply"
+                % (BRAND, len(result.changes), OLD, migrate_command(sdlc_dir, script=script),
+                   REGISTRY_CAVEAT))
     except Exception:            # noqa: BLE001 - an offer that cannot be computed is not made
         return None
 

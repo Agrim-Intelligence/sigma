@@ -471,6 +471,28 @@ All notable changes to Sigma are recorded here, newest first.
   watcher is live (exit 2, naming the same lever). A foreign `owner.json` is a notice, not a lock:
   init and loop start record Sigma as the owner. See `docs/upgrading.md`, "Switching over from the
   previous plugin".
+  The one step that converts the registry now waits for the old plugin to stop. The old plugin
+  reads a registry carrying Sigma's schema id as empty. So a goal it starts afterwards in a unit
+  that exists only in `index.json` writes a nearly empty record for that unit, and Sigma's
+  `feature_sync.py show` and `fold` then served and saved that record in place of the full entry
+  (title, owner, priority, tracking issue, branch and goals lost; `authorized` flipped to false).
+  Four changes (#314, review of PR #319):
+  - `migrate.py --apply` refuses (exit 2, nothing written, dry run shown) while the old plugin can
+    still run on the repository. It prints the reason and the exact step:
+    `claude plugin disable <id> --scope local` (checked against Claude Code's CLI in a fake home),
+    or the Codex `config.toml` edit, then the rerun. `--replace-old-plugin` converts anyway, after a
+    backup.
+  - Before Sigma's first registry write on a repository where the old plugin can still run, it
+    saves one copy of `.sdlc/features` to `.sdlc/state/backup/features-<time>/`. That directory is
+    machine-local and git-ignored, and the copy is capped at 5,000 files or 64 MB. `migrate.py`
+    never rewrites the copy. The check costs 0.08 ms per registry write (measured, macOS).
+  - The registry reader recognises the near-empty record and never lets it hide a fuller
+    `index.json` entry. It reads the index entry plus the record's goals and prints the recovery.
+    `feature_sync.py fold` refuses until the new `feature_sync.py repair` rewrites the record.
+  - The docs, the notice, the takeover line and `coexist.py check` now give the order: stop the
+    old plugin on the repository, migrate, then uninstall it. `coexist.py check` prints
+    `claude plugin marketplace remove` with the marketplace from the plugin id. Every printed
+    command is quoted for the platform (`list2cmdline` on Windows).
 - Sigma detects the plugin under its previous name on the same repository (#240).
   `skills/agrim-loop/scripts/coexist.py` reads the Claude Code settings (`enabledPlugins` and
   hand-registered hooks, with local over project over user precedence, plus the managed settings;

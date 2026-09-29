@@ -568,6 +568,35 @@ def test_project_scoped_install_names_its_scope_in_the_uninstall_command(tmp_pat
     assert UNINSTALL + " --scope project" in out.getvalue()
 
 
+def test_cut_over_steps_disable_first_and_name_the_real_marketplace(tmp_path, cx):
+    """#314: the checklist stops the old plugin on this repository BEFORE the conversion, and the
+    optional marketplace removal names the marketplace from the plugin id -- never assumes it
+    equals the plugin's own name."""
+    repo = _repo(tmp_path)
+    pid = OLD + "@acme-market"
+    env = _host(tmp_path, claude={"enabledPlugins": {pid: True}})
+    text = cx.message(cx.assess(repo / ".sdlc", env=env, managed=None))
+    lines = text.splitlines()
+    disable = next(i for i, ln in enumerate(lines) if "claude plugin disable %s --scope local" % pid
+                   in ln)
+    apply_at = next(i for i, ln in enumerate(lines) if "--apply" in ln)
+    assert disable < apply_at and CAVEAT in text
+    assert "claude plugin marketplace remove acme-market" in text
+    assert "marketplace remove %s" % OLD not in text
+
+
+def test_printed_commands_are_quoted_for_the_platform(tmp_path, cx, monkeypatch):
+    """Every printed command goes through the one quoting helper: a path with a space pastes on
+    POSIX (single quotes) and on Windows (`list2cmdline`'s double quotes)."""
+    spaced = tmp_path / "my repo" / ".sdlc"
+    assert cx.shell_command("python3", spaced, platform="linux") == "python3 '%s'" % spaced
+    assert cx.shell_command("python3", spaced, platform="win32") == 'python3 "%s"' % spaced
+    monkeypatch.setattr(cx.sys, "platform", "win32")
+    assert '"%s"' % spaced in cx.migrate_command(spaced, "--apply")
+    report = cx.Report(str(spaced), (cx.Signal("claude-enabled", cx.ACTIVE, "d", "f", OLD_ID),))
+    assert '"%s"' % spaced in cx.message(report)
+
+
 def test_codex_notice_names_the_config_edit(tmp_path, cx):
     repo = _repo(tmp_path)
     env = _host(tmp_path, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID)
@@ -730,6 +759,21 @@ def test_claim_and_record_proceed_with_one_notice_per_run(tmp_path):
     assert "status: done" in goal.read_text()
 
 
+@pytest.mark.parametrize("verb", ["claim", "record"])
+def test_each_per_verb_surface_is_quiet_while_the_run_mark_is_fresh(tmp_path, verb):
+    """#251: EACH of claim and record honours the per-run mark on its own. The test above runs
+    claim first, so it cannot see claim lose `once=True` (claim then speaks first anyway); here
+    the mark is already fresh, so either verb speaking at all is the defect."""
+    repo = _scaffolded(tmp_path)
+    goal = _claimable(repo)
+    (repo / ".sdlc" / "state" / "coexist.notice").write_text("%d\n" % int(time.time()))
+    argv = ([LOOP / "loop.py", "claim", repo / ".sdlc", goal] if verb == "claim"
+            else [LOOP / "loop.py", "record", repo / ".sdlc", goal, "done"])
+    p = _run(argv, _env(**_host(tmp_path, claude=ENABLED)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert _notices(p.stderr) == []
+
+
 def test_watcher_starts_with_the_notice_in_its_log(tmp_path):
     repo = _repo(tmp_path)
     (repo / ".sdlc" / "state" / "watch.stop").write_text("")
@@ -810,7 +854,25 @@ def _old_schema_repo(tmp_path):
     return repo, record
 
 
-def test_migrate_dry_run_and_apply_proceed_beside_the_old_plugin(tmp_path):
+REPLACE = "--replace-old-plugin"
+CAVEAT = ("the old plugin cannot read Sigma's registry; if it starts a goal in this repo "
+          "afterwards it will overwrite unit records")
+DISABLE_LOCAL = "claude plugin disable %s --scope local" % OLD_ID
+
+
+def _disable_here(repo):
+    """What `claude plugin disable <id> --scope local` writes (verified against Claude Code's own
+    CLI in a fake HOME, #314 evidence): `"<id>": false` in this repository's settings.local.json."""
+    (repo / ".claude").mkdir(exist_ok=True)
+    (repo / ".claude" / "settings.local.json").write_text(
+        json.dumps({"enabledPlugins": {OLD_ID: False}}), encoding="utf-8")
+
+
+def test_migrate_dry_run_proceeds_and_apply_waits_for_the_old_plugin_to_stop(tmp_path):
+    """#314 review block #1: the conversion -- and only it -- waits while the old plugin can still
+    run here. Without the acknowledgement: the notice, the exact reason, the exact next steps, the
+    dry-run listing, nothing written, exit 2. With it: a backup first, then the rewrite. After the
+    documented disable step: no flag needed."""
     repo, record = _old_schema_repo(tmp_path)
     before = record.read_bytes()
     env = _env(**_host(tmp_path, claude=ENABLED))
@@ -818,9 +880,192 @@ def test_migrate_dry_run_and_apply_proceed_beside_the_old_plugin(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     assert record.read_bytes() == before and "would change" in p.stdout
     p = _run([MIGRATE, repo / ".sdlc", "--apply"], env)
+    assert p.returncode == 2, p.stdout + p.stderr
+    assert record.read_bytes() == before
+    assert len(_notices(p.stdout + p.stderr)) == 1
+    out = p.stdout
+    assert "refused --apply" in out and CAVEAT[1:] in out
+    assert DISABLE_LOCAL in out and "would change" in out
+    assert "migrate.py %s --apply %s" % (repo / ".sdlc", REPLACE) in out
+    assert not (repo / ".sdlc" / "state" / "backup").exists()
+    p = _run([MIGRATE, repo / ".sdlc", "--apply", REPLACE], env)
     assert p.returncode == 0, p.stdout + p.stderr
-    assert len(_notices(p.stdout + p.stderr)) == 1 and "refused all" not in p.stdout
     assert json.loads(record.read_text())["schema"] == "sigma/landing@1"
+    # the documented order instead: disable it on this repository, then --apply needs no flag
+    repo2, record2 = _old_schema_repo(tmp_path / "second")
+    _disable_here(repo2)
+    p = _run([MIGRATE, repo2 / ".sdlc", "--apply"], _env(**_host(tmp_path / "second",
+                                                                 claude=ENABLED)))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert json.loads(record2.read_text())["schema"] == "sigma/landing@1"
+
+
+def test_replace_flag_is_spelled_once(cx):
+    migrate = _load(MIGRATE, "migrate_flag")
+    assert migrate._REPLACE == cx.REPLACE_FLAG == REPLACE
+    assert migrate._parse(["m", ".sdlc", REPLACE]) is None          # only meaningful with --apply
+    assert migrate._parse(["m", ".sdlc", "--apply", REPLACE]) == (".sdlc", True, True)
+
+
+# --------------------------------------------------------------------------- the reviewer's sequence
+
+
+def _predecessor(tmp_path):
+    """A faithful stand-in for the plugin under the previous name's registry code: Sigma's own
+    scripts, copied, with that plugin's schema id and its STRICT schema check (it never learned
+    to read Sigma's id) -- the two lines in which its 1.4.x `feature_registry.py` differs for this
+    purpose (checked against a scratch copy of the real 1.4.24 install, #314 evidence). Sigma's
+    coexist module is left out, so the copy takes no Sigma backup (its hook fails open)."""
+    dest = tmp_path / "predecessor"
+    shutil.copytree(LOOP, dest, ignore=shutil.ignore_patterns("__pycache__", "coexist.py"))
+    reg = dest / "feature_registry.py"
+    text = reg.read_text(encoding="utf-8")
+    schema, check = 'SCHEMA = "sigma/features@1"', 'if not legacy.schema_is(doc.get("schema"), SCHEMA):'
+    assert text.count(schema) == 1 and text.count(check) == 1
+    reg.write_text(text.replace(schema, 'SCHEMA = "%s/features@1"' % OLD)
+                   .replace(check, 'if doc.get("schema") != SCHEMA:'), encoding="utf-8")
+    return _load(dest / "feature_sync.py", "predecessor_feature_sync")
+
+
+ALPHA = {"title": "Alpha unit", "owner": "alice", "open": True, "tracking_issue": "#200",
+         "priority": "p1", "repos": {"o/r": {"branch": "feature/alpha", "owner": "alice",
+                                             "authorized": True, "goals": [201, 202]}}}
+
+
+def _adopted(tmp_path):
+    """A repository the old plugin adopted: unit `alpha` lives ONLY in index.json, old schema id."""
+    repo = _repo(tmp_path)
+    _git_init(repo)
+    features = repo / ".sdlc" / "features"
+    features.mkdir()
+    (features / "index.json").write_text(json.dumps(
+        {"schema": OLD + "/features@1", "features": {"alpha": ALPHA}}) + "\n", encoding="utf-8")
+    return repo
+
+
+def _predecessor_starts_a_goal(pred, repo, goal):
+    def mutate(entry):
+        entry["repos"].setdefault("o/r", {"goals": []})["goals"].append(goal)
+    return pred.amend(str(repo / ".sdlc"), "alpha", mutate)
+
+
+def _alpha(entry):
+    return (entry["title"], entry["owner"], entry["priority"], entry["tracking_issue"],
+            entry["repos"]["o/r"]["branch"], entry["repos"]["o/r"]["authorized"],
+            entry["repos"]["o/r"]["goals"])
+
+
+def test_the_documented_cut_over_with_the_old_plugin_still_enabled_loses_nothing(tmp_path):
+    """#314 review block #1, the reviewer's sequence end to end: migrate with the old plugin still
+    enabled; the old plugin starts a goal in a unit that exists only in the index (it reads Sigma's
+    index as EMPTY and writes a near-empty record); Sigma's `show` and `fold` must not serve or bake
+    that record over the richer entry. Every layer is on the path: the flag gate, the backup, the
+    reader's shadow guard, fold's refusal, and the repair."""
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    index = sdlc / "features" / "index.json"
+    original = index.read_bytes()
+    env = _env(**_host(tmp_path, claude=ENABLED))
+    p = _run([MIGRATE, sdlc, "--apply"], env)                 # 1. the gate: nothing converted
+    assert p.returncode == 2 and index.read_bytes() == original, p.stdout + p.stderr
+    p = _run([MIGRATE, sdlc, "--apply", REPLACE], env)        # 2. acknowledged: backup, convert
+    assert p.returncode == 0, p.stdout + p.stderr
+    [backup] = list((sdlc / "state" / "backup").glob("features-*"))
+    assert (backup / "index.json").read_bytes() == original
+    assert json.loads(index.read_text())["schema"] == "sigma/features@1"
+    pred = _predecessor(tmp_path)                             # 3. the old plugin starts a goal
+    report = _predecessor_starts_a_goal(pred, repo, 203)
+    assert report["existed"] is False                         # it could not read Sigma's index
+    record = json.loads((sdlc / "features" / "units" / "alpha.json").read_text())
+    assert record["schema"] == OLD + "/features@1" and record["features"]["alpha"]["title"] == ""
+    folded = index.read_bytes()
+    show = _run([LOOP / "feature_sync.py", "show", sdlc], env)  # 4. Sigma's reader: nothing lost
+    assert show.returncode == 0, show.stderr
+    assert _alpha(json.loads(show.stdout)["alpha"]) == (
+        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True, [201, 202, 203])
+    assert "near-empty record" in show.stderr and "feature_sync.py repair" in show.stderr
+    assert str(backup) in show.stderr
+    fold = _run([LOOP / "feature_sync.py", "fold", sdlc], env)  # 5. fold refuses, writes nothing
+    assert fold.returncode == 2 and index.read_bytes() == folded, fold.stdout + fold.stderr
+    assert "fold refused" in fold.stderr and "repair" in fold.stderr
+    fixed = _run([LOOP / "feature_sync.py", "repair", sdlc], env)  # 6. the documented recovery
+    assert fixed.returncode == 0 and "repaired alpha" in fixed.stdout, fixed.stdout + fixed.stderr
+    assert _run([LOOP / "feature_sync.py", "fold", sdlc], env).returncode == 0
+    doc = json.loads(index.read_text())
+    assert _alpha(doc["features"]["alpha"]) == (
+        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True, [201, 202, 203])
+    again = _run([LOOP / "feature_sync.py", "repair", sdlc], env)
+    assert "nothing to repair" in again.stdout
+
+
+def test_without_migrating_sigma_writes_are_backed_up_and_the_shadow_guard_holds(tmp_path):
+    """The same exposure with no migrate at all: Sigma's own registry write (here a fold) turns
+    index.json into Sigma's schema. The one-time backup is taken BEFORE that first write, and the
+    old plugin's near-empty record is still never served nor folded over the index."""
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    original = (sdlc / "features" / "index.json").read_bytes()
+    env = _env(**_host(tmp_path, claude=ENABLED))
+    p = _run([LOOP / "feature_sync.py", "fold", sdlc], env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    [backup] = list((sdlc / "state" / "backup").glob("features-*"))
+    assert (backup / "index.json").read_bytes() == original and "sigma: backup:" in p.stderr
+    _predecessor_starts_a_goal(_predecessor(tmp_path), repo, 203)
+    show = _run([LOOP / "feature_sync.py", "show", sdlc], env)
+    assert _alpha(json.loads(show.stdout)["alpha"])[:6] == (
+        "Alpha unit", "alice", "p1", "#200", "feature/alpha", True)
+    assert _run([LOOP / "feature_sync.py", "fold", sdlc], env).returncode == 2
+    p = _run([LOOP / "feature_sync.py", "repair", sdlc], env)          # a second Sigma write
+    assert p.returncode == 0 and "repaired alpha" in p.stdout, p.stdout + p.stderr
+    assert list((sdlc / "state" / "backup").glob("features-*")) == [backup]   # one-time
+    assert "sigma: backup:" not in p.stderr
+
+
+def test_the_backup_is_taken_once_only_beside_a_runnable_old_plugin_and_migrate_skips_it(tmp_path,
+                                                                                        cx):
+    repo = _adopted(tmp_path)
+    sdlc = repo / ".sdlc"
+    out = io.StringIO()
+    assert cx.protect_features(sdlc, env=_host(tmp_path / "clear"), stream=out,
+                               managed=None) is None
+    assert not (sdlc / "state" / "backup").exists() and out.getvalue() == ""
+    env = _host(tmp_path, claude=ENABLED)
+    first = cx.protect_features(sdlc, env=env, stream=out, managed=None)
+    assert first is not None and (first / "index.json").is_file()
+    assert str(first) in out.getvalue() and CAVEAT.split(";")[0] in out.getvalue()
+    assert cx.protect_features(sdlc, env=env, stream=out, managed=None) is None
+    assert cx.existing_backup(sdlc) == first
+    p = _run([MIGRATE, sdlc], _env(**_host(tmp_path / "clear")))   # the copy is never rewritten
+    assert "state/backup" not in p.stdout and "features/index.json" in p.stdout
+
+
+def test_the_backup_is_bounded(tmp_path, cx, monkeypatch):
+    repo = _adopted(tmp_path)
+    monkeypatch.setattr(cx, "BACKUP_FILE_CAP", 0)
+    path, error = cx.backup_features(repo / ".sdlc")
+    assert path is None and "over the backup cap" in error
+    assert cx.existing_backup(repo / ".sdlc") is None
+
+
+def test_the_shadow_shape_is_only_the_old_plugins(tmp_path):
+    """`is_shadow` flags a record with no kept field while the index says more; it never flags a
+    Sigma record that legitimately narrowed a branch or closed the unit, nor a record that carries
+    its own title."""
+    reg = _load(LOOP / "feature_registry.py", "registry_shadow")
+    index = reg.normalise_entry(ALPHA)
+    near_empty = reg.normalise_entry({"repos": {"o/r": {"goals": [203]}}})
+    assert reg.is_shadow(near_empty, index) is True
+    untitled = reg.normalise_entry({"repos": {"o/r": {"branch": "feature/alpha", "goals": [201]}}})
+    narrowed = reg.normalise_entry({"open": False, "repos": {"o/r": {"branch": None,
+                                                                     "goals": [201]}}})
+    assert reg.is_shadow(narrowed, untitled) is False            # reconcile's own narrowing
+    grant = reg.normalise_entry({"repos": {"o/r": {"authorized": True, "goals": [201]}}})
+    assert reg.is_shadow(untitled, grant) is True                # a grant would flip to false
+    titled = reg.normalise_entry(dict(ALPHA, title="Renamed", owner=None))
+    assert reg.is_shadow(titled, index) is False
+    assert reg.is_shadow(near_empty, None) is False              # a new unit is not a shadow
+    merged = reg.merge_shadow(index, near_empty)
+    assert merged["title"] == "Alpha unit" and merged["repos"]["o/r"]["goals"] == [201, 202, 203]
 
 
 def test_migrate_apply_still_refuses_while_a_watcher_is_live(tmp_path, live_pid):
@@ -850,12 +1095,14 @@ def test_takeover_offers_the_migrate_dry_run_and_rewrites_nothing(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     [offer] = [ln for ln in p.stderr.splitlines() if ln.startswith("sigma: takeover:")]
     assert "migrate.py %s" % (repo / ".sdlc") in offer and "--apply" in offer
+    assert "disabled for this repository" in offer and CAVEAT in offer   # #314: the ordering
     assert record.read_bytes() == before
     p = _run([INIT, repo], _env(**_host(tmp_path, claude=ENABLED)))
     assert p.returncode == 0 and len([ln for ln in (p.stdout + p.stderr).splitlines()
                                       if ln.startswith("sigma: takeover:")]) == 1
     assert record.read_bytes() == before
-    assert _run([MIGRATE, repo / ".sdlc", "--apply"], _env(**_host(tmp_path))).returncode == 0
+    assert _run([MIGRATE, repo / ".sdlc", "--apply"],
+                _env(**_host(tmp_path / "clear"))).returncode == 0
     p = _run([LOOP / "loop.py", "start", repo / ".sdlc", "--session-pid", os.getpid()],
              _env(**_host(tmp_path, claude=ENABLED)))
     assert "sigma: takeover:" not in p.stderr                  # migrated: nothing left to offer

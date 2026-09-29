@@ -666,8 +666,9 @@ def test_the_isolation_check_catches_a_write_that_reads_a_sibling(tmp_path):
     reading a sibling unit before writing its own -- and the recorder must see it. Without this, the
     isolation tests below could be passing because the harness is blind rather than because the
     write is clean, and no result-shaped assertion would tell the two apart."""
-    r = _mod_with("    path = unit_path(features_dir, name)\n    _atomic_write_text",
-                  "    path = unit_path(features_dir, name)\n"
+    r = _mod_with("    path = unit_path(features_dir, name)\n    _protect(features_dir)\n"
+                  "    _atomic_write_text",
+                  "    path = unit_path(features_dir, name)\n    _protect(features_dir)\n"
                   "    _read_json(units_dir(features_dir) / ('beta' + UNIT_SUFFIX))\n"
                   "    _atomic_write_text")
     r.write_unit(tmp_path, "beta", _entry())
@@ -1432,6 +1433,9 @@ _NO_UNIT_NAME = {
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),
+    # #314: the recovery TEXT for a shadowing record -- joins this module's own directory with
+    # `feature_sync.py` and prints the features dir it was handed; no unit name reaches a path.
+    ("feature_registry", "shadow_recovery"),
     # #2265: `feature_frontier._config(sdlc_dir)` joins `sdlc_dir / "config.json"` -- the same
     # "directories: no name reaches them at all" shape as the three `feature_registry` entries
     # directly above. It takes only an `.sdlc` root, never a unit name, and is not a unit-scoped

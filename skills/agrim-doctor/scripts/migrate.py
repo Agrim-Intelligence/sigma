@@ -30,7 +30,11 @@ SAFE TO RE-RUN. A second `--apply` finds nothing and says so. Each write is atom
 same directory, then `os.replace`), taken under the unit's `feature_sync` lock for feature files, and
 refused if the file changed after it was read. A symlinked target (an `AGENTS.md` linked to
 `CLAUDE.md`, a linked feature file) is REFUSED, never followed: replacing it would destroy the link. `--apply` refuses outright while this SDLC dir's
-watcher is running (it may be the old plugin's, still writing old spellings).
+watcher is running (it may be the old plugin's, still writing old spellings), and -- #314 -- while
+the old plugin can still RUN on this repository, unless `--replace-old-plugin` is given (then a
+one-time copy of `features/` is saved under `state/backup/` first, and that copy is never scanned
+here): the old plugin cannot read Sigma's registry, and a goal it starts afterwards would write a
+near-empty unit record over the converted one. The refusal prints the exact disable step.
 
 WHAT IT CANNOT DO FOR YOU. The plugin under its previous name cannot read Sigma's spellings. Every
 file this changes is one that plugin also reads, and committed ones (`config.json`, `features/`)
@@ -53,9 +57,11 @@ import sys
 import tempfile
 import time
 
-USAGE = ("usage: migrate.py [<sdlc_dir>] [--apply]\n"
+USAGE = ("usage: migrate.py [<sdlc_dir>] [--apply [--replace-old-plugin]]\n"
          "  Rewrites state written under the plugin's previous name to Sigma's names.\n"
-         "  Dry run (writes nothing) unless --apply is given. Safe to re-run.")
+         "  Dry run (writes nothing) unless --apply is given. Safe to re-run.\n"
+         "  While the old plugin can still run on this repository, --apply needs\n"
+         "  --replace-old-plugin: disable it here first instead (docs/upgrading.md).")
 
 _HERE = pathlib.Path(__file__).resolve().parent
 _LOOP = _HERE.parent.parent / "agrim-loop" / "scripts"
@@ -65,6 +71,9 @@ _INIT = _HERE.parent.parent / "agrim-init" / "scripts"
 _OLD_JOURNAL_BLOCK = "tele" + "metry"
 #: Directories under the SDLC dir that hold other checkouts, never this repo's own state.
 _SKIP_TOP = ("work",)
+#: #314: the one-time registry pre-image (`coexist.BACKUP_PARTS`) is a copy of old state kept on
+#: purpose -- rewriting it would destroy the thing a restore needs.
+_SKIP_NESTED = (("state", "backup"),)
 #: History: reported (counted), never rewritten.
 _HISTORY_DIRS = (("ledger",), ("state", "time"))
 
@@ -115,6 +124,8 @@ def _candidate_json(sdlc_dir):
         here = pathlib.Path(dirpath)
         if here == base:
             dirnames[:] = [d for d in dirnames if d not in _SKIP_TOP]
+        dirnames[:] = [d for d in dirnames
+                       if tuple((here / d).relative_to(base).parts) not in _SKIP_NESTED]
         dirnames[:] = sorted(d for d in dirnames if not (here / d / ".git").exists())
         for name in sorted(filenames):
             if name.endswith(".json"):
@@ -450,13 +461,20 @@ def apply(result):
 # --------------------------------------------------------------------------- CLI
 
 
+#: The acknowledgement flag -- spelled once, in coexist (`REPLACE_FLAG`); mirrored here so bad usage
+#: is caught before anything is loaded. `tests/test_coexist.py` pins the two to one spelling.
+_REPLACE = "--replace-old-plugin"
+
+
 def _parse(argv):
     args = argv[1:]
     flags = [a for a in args if a.startswith("-")]
     pos = [a for a in args if not a.startswith("-")]
-    if any(f not in ("--apply",) for f in flags) or len(pos) > 1:
+    if any(f not in ("--apply", _REPLACE) for f in flags) or len(pos) > 1:
         return None
-    return (pos[0] if pos else ".sdlc"), "--apply" in flags
+    if _REPLACE in flags and "--apply" not in flags:
+        return None
+    return (pos[0] if pos else ".sdlc"), "--apply" in flags, _REPLACE in flags
 
 
 def main(argv, environ=None, home=None, stdout=None):
@@ -469,7 +487,7 @@ def main(argv, environ=None, home=None, stdout=None):
     if parsed is None:
         print(USAGE, file=sys.stderr)
         return 2
-    sdlc_dir, do_apply = parsed
+    sdlc_dir, do_apply, replace = parsed
     if not pathlib.Path(sdlc_dir).is_dir():
         print("migrate: %s is not a directory -- pass the project's .sdlc" % sdlc_dir,
               file=sys.stderr)
@@ -481,10 +499,13 @@ def main(argv, environ=None, home=None, stdout=None):
            sdlc_dir, legacy.RETIRED, legacy.RETIRED_ENV_PREFIX))
     refused = list(result.refused)
     changed = []
+    gated = False
     if result.changes and do_apply:
-        # #240/#314: the old plugin still enabled is a NOTICE (it will read Sigma's spellings as
-        # empty from here on -- the cut-over's point); a LIVE watcher is still a refusal (data
-        # integrity: it may be writing the old spellings), with the polite lever.
+        # #240/#314: the old plugin still enabled is a NOTICE everywhere else in Sigma. THIS step
+        # alone -- the conversion -- waits for an acknowledgement while that plugin can still run
+        # here: it cannot read Sigma's registry, so a goal it starts afterwards writes a
+        # near-empty unit record that hides the converted one (the reviewer's sequence on PR
+        # #319). A LIVE watcher stays a refusal (it may be writing the old spellings).
         coexist = _load(_LOOP, "coexist")
         coexist.gate(sdlc_dir, "migrate.py --apply", env=environ, home=home, stream=out)
         pid = _running_watcher(sdlc_dir)
@@ -493,6 +514,34 @@ def main(argv, environ=None, home=None, stdout=None):
                 "old spellings -- nothing was written, and Sigma never signals it. Stop it "
                 "politely: %s; then rerun" % (pid, coexist.stop_lever(sdlc_dir)))
             return 2
+        runs = coexist.runs_here(coexist.assess(sdlc_dir, env=environ, home=home))
+        if runs and not replace:
+            gated = True
+            report = coexist.Report(str(sdlc_dir), tuple(runs))
+            say("refused --apply: the plugin previously published as %r can still run on this "
+                "repository (%s). %s. Nothing was written; the changes it would make are listed "
+                "below." % (legacy.RETIRED, "; ".join(s.detail for s in runs),
+                             coexist.REGISTRY_CAVEAT[0].upper() + coexist.REGISTRY_CAVEAT[1:]))
+            steps = coexist.disable_steps(report)
+            say("  next: stop it on this repository first -- %s -- then rerun: %s"
+                % (" ; ".join(steps) if steps else "see `coexist.py check`",
+                   coexist.migrate_command(sdlc_dir, "--apply")))
+            say("  or, to convert with it still running (a copy of .sdlc/features is saved "
+                "under .sdlc/%s/ first): %s" % ("/".join(coexist.BACKUP_PARTS),
+                                        coexist.migrate_command(sdlc_dir, "--apply",
+                                                                coexist.REPLACE_FLAG)))
+        elif runs:
+            path, error = coexist.backup_features(sdlc_dir)
+            if error:
+                say("refused all: %s acknowledged, but the registry backup could not be taken "
+                    "(%s) -- nothing was written. Disable the old plugin on this repository "
+                    "instead, then rerun without it." % (coexist.REPLACE_FLAG, error))
+                return 2
+            if path is not None:
+                say("  backup  %s: a copy of %s taken before converting (%s)"
+                    % (result.rel(path), result.rel(pathlib.Path(sdlc_dir) / "features"),
+                       coexist.REGISTRY_CAVEAT))
+    if result.changes and do_apply and not gated:
         for change, why in apply(result):
             if why:
                 refused.append((result.rel_link(change.path), why))
@@ -512,6 +561,11 @@ def main(argv, environ=None, home=None, stdout=None):
         say("  note    every file listed as changed is one the plugin under its previous name also "
             "reads: a machine still running it can no longer read them, and committed ones "
             "(config.json, features/) reach teammates through git -- switch the team together.")
+    if gated:
+        say("migrate: nothing applied -- %d change(s) wait for the old plugin to be disabled on "
+            "this repository (or for %s), %d refused, %d left as is."
+            % (len(result.changes), coexist.REPLACE_FLAG, len(refused), len(result.left)))
+        return 2
     if not result.changes and not refused:
         say("migrate: nothing to migrate in %s." % sdlc_dir)
     elif do_apply:

@@ -1118,21 +1118,61 @@ def _clause(report):
 # --------------------------------------------------------------------------- the fold
 
 
+class ShadowRefused(Exception):
+    """`fold` will not bake a near-empty record over a fuller index entry (#314). The message is
+    the exact recovery."""
+
+
 def fold(sdlc_dir):
     """Materialise `index.json` from the whole registry. -> the path written.
 
     A DELIBERATE MATERIALISATION, OFF THE PICK PATH -- see the module docstring for why it is not on
     it, and why the shards it folds are never removed. `read`'s shard-wins union is already correct
     with both present, so this changes what a fresh clone carries and nothing about what this
-    checkout answers."""
+    checkout answers.
+
+    REFUSED (#314, `ShadowRefused`, nothing written) while any unit record is a near-empty record
+    shadowing a fuller index entry (`feature_registry.is_shadow`) -- the shape the plugin under the
+    previous name writes when it cannot read Sigma's registry. `read` already serves the index
+    entry for such a unit, but the index is what a fresh clone carries, so a human sees the repair
+    (`repair`) before anything synthesised is baked into it."""
     features_dir = registry.registry_dir(sdlc_dir)
+    found = registry.shadows(features_dir)
+    if found:
+        raise ShadowRefused(
+            "feature_sync: fold refused, nothing written: %d unit record(s) are near-empty records "
+            "hiding a fuller %s entry (%s). Recover: %s."
+            % (len(found), registry.INDEX_NAME, ", ".join(str(p) for _n, p in found),
+               registry.shadow_recovery(features_dir)))
     return registry.write_index(features_dir, registry.read(features_dir))
+
+
+def repair(sdlc_dir, timeout=LOCK_TIMEOUT):
+    """Rewrite each shadowing record (`feature_registry.is_shadow`) as what `read` already serves
+    for it -- the index entry plus the goals the record adds -- under the unit's own lock, re-checked
+    inside it. -> [(name, path written)]. After it, `fold` proceeds. Idempotent: a second run finds
+    nothing. The old plugin cannot read the rewritten record (Sigma's schema id) and its own
+    #1565 guard then refuses that unit rather than replacing it -- so stop it here first anyway."""
+    features_dir = registry.registry_dir(sdlc_dir)
+    done = []
+    for name, _path in registry.shadows(features_dir):
+        fd = _acquire(lock_path(sdlc_dir, name), timeout)
+        try:
+            if name not in [n for n, _p in registry.shadows(features_dir)]:
+                continue
+            entry = registry.read(features_dir).get(name)
+            if entry is not None:
+                done.append((name, registry.write_unit(features_dir, name, entry)))
+        finally:
+            _release(fd)
+    return done
 
 
 # --------------------------------------------------------------------------- CLI
 
 
-USAGE = "usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir>"
+USAGE = ("usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir> | "
+         "feature_sync.py repair <sdlc_dir>")
 
 
 def main(argv):
@@ -1141,12 +1181,23 @@ def main(argv):
     THERE IS NO `sync` VERB, and the omission is the same one `cross_repo.main` makes for the same
     reason: the sync belongs to the pick, and a second way to run it is a second answer. `fold` is
     here because it is explicitly NOT part of a pick, and `show` because a record nobody can read is
-    not much of a record."""
+    not much of a record. `repair` (#314) is the recovery `fold`'s shadow refusal names."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "fold":
-        print(fold(argv[2]))
+        try:
+            print(fold(argv[2]))
+        except ShadowRefused as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
+    if len(argv) >= 3 and argv[1] == "repair":
+        done = repair(argv[2])
+        for name, path in done:
+            print("repaired %s: %s" % (name, path))
+        if not done:
+            print("feature_sync: nothing to repair in %s" % argv[2])
         return 0
     if len(argv) >= 3 and argv[1] == "show":
         print(json.dumps(registry.read(registry.registry_dir(argv[2])), indent=2, sort_keys=True))
