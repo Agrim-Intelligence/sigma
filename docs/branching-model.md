@@ -221,18 +221,34 @@ resolved, and its manual-recovery push after a rebase a human finished with raw 
 it compares HEAD with `<remote>/<branch>`, exactly the commit the lease would overwrite, and with the
 **pre-rebase head** — the head the branch had before this rebase (#278). Everything the rebase
 itself loses (pre-rebase head → HEAD) is refused. A loss already present between the remote tip and
-the pre-rebase head is let through **only when the branch's own commit made it**
-(`feature_rebase.own_losses`): for each such path, a commit reachable from the pre-rebase head but
-from neither the remote tip nor the base (`git log <pre> --not <remote>/<branch> <base> -- <path>`,
-non-merge, full history) must have touched it, the newest one's own result must be exactly what the
-pre-rebase head holds (the deletion, or the same blob), and that commit must not be a replay of a
-base change (`--cherry-mark` against the base finds no patch-equivalent). A local, unpushed `git rm`
-commit passes. The same loss left by an **earlier local rebase that was never pushed** — the base
-landed a file, the feature was cut and pushed, the base reverted it, someone ran `git rebase
-origin/main` by hand — does not: the deletion came in with the base's revert, which the base
-reaches, so it is refused (review block #1 on #278; before, any remote → pre-rebase-head loss was
-exempt and this one was force-pushed). So is a base revert cherry-picked onto the branch, and a
-deletion or rollback a merge of the base brought in. Anything refused is named, and the remote is
+the pre-rebase head is let through **only when it is the branch's own deliberate local deletion**
+(`feature_rebase.own_losses`; narrowed by review block #2 on #278). A path `P` is exempt ONLY IF
+all three hold: **(a)** the loss is a pure deletion — `P` is in the remote tip and absent from the
+pre-rebase head; **(b)** a non-merge commit unique to the branch — reachable from the pre-rebase
+head, from neither the remote tip nor the base (`git log <pre> --not <remote>/<branch> <base> --
+<P>`, full history) — has a `D` status for exactly `P` in its own diff; **(c)** the base left `P`
+alone since the remote tip — no commit in `git log -m <base> --not <remote>/<branch> -- <P>`
+touches it, so the deletion cannot be a base revert replayed. A local, unpushed `git rm` / "drop
+obsolete" commit passes, and still does when amended or squashed (the `D` survives in a unique
+commit); deleting then re-adding `P` leaves it in the pre-rebase head, so it is not a loss at all.
+**A rollback is never exempt**: a path both hold but at an older version in the pre-rebase head,
+and any other modification-type loss in that range, is refused even when the branch's own commit
+made it — after a rebase every surviving branch commit is a rewritten copy and a commit git skipped
+as already upstream leaves no trace, so a sibling commit that edited the same file would otherwise
+pass for the author of a loss an earlier lossy rebase made (review block #2's repro: a pushed
+commit copied to main and reverted there, a hand `git rebase origin/main` that dropped it, and a
+sibling edit of the same file — `x.txt` 359 → 60 lines, which upkeep then force-pushed). A local
+rollback that IS deliberate is confirmed by the human with the documented manual gesture the
+refusal prints — `git push --force-with-lease <remote> HEAD:<branch>` — never silently. The same
+loss left by an **earlier local rebase that was never pushed** is refused whatever its shape (the
+deletion or rollback came in with the base's revert, so (b) or (c) fails — review block #1), and
+so is a base revert cherry-picked onto the branch (the base touched `P`, (c)) and a deletion a
+merge of the base brought in (merges never supply (b)). In a **shallow clone** nothing is exempt
+and the refusal says so (the history (b) and (c) read is cut off; `git fetch --unshallow` first).
+All the guard's reads for one push share one wall-clock budget, `SIGMA_WATCH_CALL_TIMEOUT` seconds
+(default `120`, the fleet's own per-call bound), on top of each read's own
+`SIGMA_REBASE_GUARD_TIMEOUT`; running out is a refusal that names the budget. Anything refused is
+named, and the remote is
 left alone. `attempt_rebase` passes the head it started from; the walker reads the stopped rebase's
 own `orig-head`; the manual-recovery push reads it from the branch reflog when the newest entry is a
 rebase's own landing on that branch — `rebase (finish): <its full ref> onto <sha>` (a plain,
@@ -1767,10 +1783,25 @@ Two things about it that are easy to get wrong:
   merge) and were then reverted is not seen there — its diff since the fork is empty. Replaying a
   goal whose PR has merged is not a flow the loop takes.
   The `agrim-rebase` pushes exempt a loss between the remote tip and the pre-rebase head only when
-  a branch-only commit made it (§3b), which is only as good as the base ref it is told: a base
-  **rewritten** (force-pushed) after an earlier lossy local rebase no longer reaches the revert that
-  caused it, so that revert reads as branch-only — and is exempt if the rewritten base kept no
-  patch-equivalent of it. A caller with no base, or no pre-rebase head, exempts nothing instead.
+  it is a pure deletion the branch's own non-merge commit made, of a path the base has not touched
+  since the remote tip (§3b). That costs something on purpose: a deliberate local **rollback**
+  pushed after a rebase is always refused and needs the human's `git push --force-with-lease
+  <remote> HEAD:<branch>`. It is only as good as the base ref it is told: a base **rewritten**
+  (force-pushed) after an earlier lossy local rebase no longer reaches the revert that caused it,
+  so a DELETION that revert made reads as a unique branch commit's `D` and is exempt if the
+  rewritten base does not touch that path. A caller with no base, or no pre-rebase head, exempts
+  nothing instead.
+  **Shallow clones.** Both the rollback detection (`dropped_paths`' history read) and the
+  deletion attribution are history-dependent, and a shallow clone cuts that history off: a rollback
+  to a version held only below the shallow boundary is NOT SEEN by `dropped_paths` there. The
+  exemption fails closed — in a shallow repository (`git rev-parse --is-shallow-repository`) nothing
+  is exempt and the refusal says the clone is shallow — but the loss detection itself is weaker;
+  run upkeep and `agrim-rebase` from a full clone (`git fetch --unshallow`).
+  **Budget.** The history reads come in 200-path batches, each bounded by
+  `SIGMA_REBASE_GUARD_TIMEOUT`; all of one push's reads together are bounded by
+  `SIGMA_WATCH_CALL_TIMEOUT` (default `120`s), and exceeding it refuses the push rather than
+  passing it. At 10x/100x the losing paths that is 10x/100x batches inside the same budget, so a
+  very large loss on a slow disk refuses (safe) rather than stalls.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that

@@ -1544,9 +1544,9 @@ def test_278_b1_the_walkers_done_push_refuses_when_orig_head_is_lossy(tmp_path):
 
 
 def test_278_b1_a_cherry_picked_base_revert_is_not_the_branchs_own_deletion(tmp_path):
-    """The second half of the attribution rule: a branch-only commit that is a REPLAY of the base's
-    own change (here main's revert, cherry-picked onto the branch by hand) is the base's loss, not
-    the branch's -- so it is not exempt either. A plain `git rm` commit of the branch's own is."""
+    """Rule (c): a branch-only commit that is a REPLAY of the base's own change (here main's revert,
+    cherry-picked onto the branch by hand) has a `D` for w.txt, but the base touched w.txt since the
+    remote tip -- so it is not exempt. A plain `git rm` commit of the branch's own is."""
     m = _mod()
     fr = m.feature_rebase
     remote, local = tmp_path / "r.git", tmp_path / "l"
@@ -1585,9 +1585,9 @@ def test_278_b1_a_cherry_picked_base_revert_is_not_the_branchs_own_deletion(tmp_
 
 
 def test_278_b1_a_branch_edit_does_not_excuse_a_deletion_a_base_merge_brought_in(tmp_path):
-    """Rule (2): the branch's own commit touching P is not enough -- its RESULT must be what the
-    pre-rebase head has. Here the branch edits w.txt, then merges the base's revert (resolving the
-    modify/delete by deleting): the deletion is the base's, and it is not exempt."""
+    """Rule (b): the branch's own commit touching P is not enough -- a non-merge commit must DELETE
+    it. Here the branch edits w.txt, then merges the base's revert (resolving the modify/delete by
+    deleting): the deletion is the merge's, and it is not exempt."""
     m = _mod()
     fr = m.feature_rebase
     remote, local = tmp_path / "r.git", tmp_path / "l"
@@ -1701,9 +1701,8 @@ def test_278_a_failed_put_back_marks_the_branch_and_refuses_later_pushes(tmp_pat
 
 
 def test_278_b1_a_branch_edit_does_not_excuse_a_rollback_a_base_merge_brought_in(tmp_path):
-    """Rule (2), the held-path arm: the branch edits w.txt, then merges the base's revert of w.txt's
-    newer version and takes the base's side -- pre_head holds the OLD blob (a rollback), which is
-    not what the branch's own commit produced, so it is not exempt."""
+    """Rule (a): the branch edits w.txt, then merges the base's revert of w.txt's newer version and
+    takes the base's side -- pre_head holds the OLD blob (a rollback), and no rollback is exempt."""
     m = _mod()
     fr = m.feature_rebase
     remote, local = tmp_path / "r.git", tmp_path / "l"
@@ -1770,3 +1769,292 @@ def test_278_pre_rebase_head_reads_the_other_finish_subjects_git_writes(tmp_path
     # Another branch's landing is never this branch's answer.
     assert rb._rebase_finish_re(BRANCH).match(
         "rebase (finish): refs/heads/other onto %s" % ("a" * 40)) is None
+
+
+# --------------------------------------------------------------------------- #278 review block #2
+# The block-#1 attribution ("a branch-unique commit touched P and its result is what pre_head
+# holds") is defeated by a SIBLING commit: after a rebase every surviving branch commit is a
+# rewritten copy, and the commits git skipped as already-upstream leave no trace. So the exemption
+# is now only a pure local DELETION the branch's own commit made, of a path the base left alone
+# since the remote tip; every rollback or modification inside remote..pre_head refuses.
+
+_X = "".join("l%d\n" % i for i in range(60))
+_BIG = "".join("A WORK %d\n" % i for i in range(300))
+
+
+def _sibling_world(tmp_path, sibling=True):
+    """The reviewer's repro (rv281x/new/test_own.py): the pushed branch holds Z (a small edit of
+    x.txt, with `sibling`) and A (300 lines into x.txt); main cherry-picks A and reverts it; a human
+    rebases by hand (A skipped as upstream: x.txt 361 -> 60 lines) and never pushes; main moves."""
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "x.txt", _X)
+    _write(local / "a.txt", "a\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    head = _X.replace("l1\n", "Z EDIT\n") if sibling else _X
+    if sibling:
+        _write(local / "x.txt", head)
+        _git(local, "commit", "-qam", "Z: small edit")
+    _write(local / "x.txt", head.replace("l50\n", _BIG))
+    _git(local, "commit", "-qam", "A: big work")
+    work = _git(local, "rev-parse", "HEAD")
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "cherry-pick", work)
+    _git(local, "revert", "--no-edit", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    _git(local, "rebase", "-q", "origin/%s" % BASE)            # by hand, lossy, NOT pushed
+    assert len((local / "x.txt").read_text().splitlines()) == 60
+    return local
+
+
+def _main_moves(local):
+    _git(local, "checkout", "-q", BASE)
+    _write(local / "m.txt", "m\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "main moves")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+
+
+def _remote_lines(local, path="x.txt"):
+    _git(local, "fetch", "-q", "origin")
+    return len(_git(local, "show", "origin/%s:%s" % (BRANCH, path)).splitlines())
+
+
+def test_278_b2_an_earlier_lossy_rebase_is_refused_despite_a_sibling_commit(tmp_path):
+    m = _mod()
+    rb = m.rebase_brief
+    local = _sibling_world(tmp_path)
+    _main_moves(local)
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    report = rb.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == rb.WOULD_DROP and report["files"] == ["x.txt"], report
+    assert _remote_lines(local) == 359, "DATA LOSS: remote x.txt rolled back"
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+
+
+def test_278_b2_the_control_without_a_sibling_is_refused_too(tmp_path):
+    m = _mod()
+    rb = m.rebase_brief
+    local = _sibling_world(tmp_path, sibling=False)
+    _main_moves(local)
+    report = rb.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == rb.WOULD_DROP and report["files"] == ["x.txt"], report
+    assert _remote_lines(local) == 359
+
+
+def test_278_b2_the_manual_recovery_push_refuses_a_sibling_masked_rollback(tmp_path):
+    m = _mod()
+    local = _sibling_world(tmp_path)
+    for base_ref in (None, "origin/%s" % BASE):
+        rec = m._manual_recovery_push(_run, str(local), "origin", BRANCH, base_ref)
+        assert rec and rec["pushed"] is False and rec["dropped"] == ["x.txt"], (base_ref, rec)
+    assert _remote_lines(local) == 359
+
+
+def test_278_b2_the_walkers_done_push_refuses_a_sibling_masked_rollback(tmp_path):
+    m = _mod()
+    local = _sibling_world(tmp_path)
+    lossy = _git(local, "rev-parse", "HEAD")
+    _git(local, "checkout", "-q", BASE)
+    _write(local / "a.txt", "base a\n")
+    _git(local, "commit", "-qam", "main edits a.txt")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _write(local / "a.txt", "branch a\n")
+    _git(local, "commit", "-qam", "branch edits a.txt (local)")
+    _git(local, "fetch", "-q", "origin")
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.CONFLICT, report
+
+    def decide(state):
+        _write(local / "a.txt", "base a\nbranch a\n")
+        _git(local, "add", "a.txt")
+        return {"option": m.MANUAL}
+    brief = {"branch": BRANCH, "base_ref": "origin/%s" % BASE, "changelog_entries": [],
+             "merge_base": _git(local, "merge-base", lossy, "origin/%s" % BASE)}
+    walk = m.walk_conflicts(_run, str(local), brief, decide, "origin")
+    assert walk["outcome"] == m.FAILED and walk["dropped"] == ["x.txt"], walk
+    assert _remote_lines(local) == 359
+
+
+def test_278_b2_a_base_revert_deletion_stays_refused_beside_a_sibling_deleting_another_file(tmp_path):
+    """The lost thing is a DELETION the base's revert made (w.txt, pushed on the branch, copied to
+    main and reverted there, skipped by a hand rebase); a sibling commit deletes a DIFFERENT file
+    (old.txt). old.txt is the branch's own deletion; w.txt is not, and it keeps the push refused."""
+    m = _mod()
+    fr = m.feature_rebase
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "a.txt", "a\n")
+    _write(local / "old.txt", "obsolete\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _write(local / "w.txt", _BIG)
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "w: big work")
+    work = _git(local, "rev-parse", "HEAD")
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    _git(local, "push", "-q", "-u", "origin", "%s~1:refs/heads/%s" % (BRANCH, BRANCH))
+    _git(local, "branch", "-q", "--set-upstream-to", "origin/%s" % BRANCH)
+    _git(local, "checkout", "-q", BASE)
+    _git(local, "cherry-pick", work)
+    _git(local, "revert", "--no-edit", "HEAD")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "fetch", "-q", "origin")
+    _git(local, "rebase", "-q", "origin/%s" % BASE)            # w.txt skipped: lossy, NOT pushed
+    assert not (local / "w.txt").exists() and not (local / "old.txt").exists()
+    remote_tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    lost = fr.dropped_paths(str(local), remote_tip, head)
+    assert lost == ["old.txt", "w.txt"], lost
+    assert fr.own_losses(str(local), remote_tip, head, "origin/%s" % BASE, lost) == {"old.txt"}
+    _main_moves(local)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.WOULD_DROP and report["files"] == ["w.txt"], report
+    assert "w.txt" in _git(local, "ls-tree", "-r", "--name-only", "origin/%s" % BRANCH).split()
+
+
+def _pushed_then_local(tmp_path):
+    """A pushed branch (old.txt, keep.txt, w.txt at v2), ready for LOCAL, unpushed commits."""
+    remote, local = tmp_path / "r.git", tmp_path / "l"
+    _git(tmp_path, "init", "-q", "--bare", str(remote))
+    _git(tmp_path, "init", "-q", "-b", BASE, str(local))
+    _git(local, "remote", "add", "origin", str(remote))
+    _write(local / "a.txt", "a\n")
+    _write(local / "old.txt", "obsolete\n")
+    _write(local / "w.txt", "v1\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "seed")
+    _git(local, "push", "-q", "origin", BASE)
+    _git(local, "checkout", "-q", "-b", BRANCH)
+    _write(local / "w.txt", "v2\n")
+    _git(local, "commit", "-qam", "w v2")
+    _git(local, "push", "-q", "-u", "origin", BRANCH)
+    return local
+
+
+def test_278_b2_an_amended_deletion_commit_is_still_the_branchs_own(tmp_path):
+    m = _mod()
+    local = _pushed_then_local(tmp_path)
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    _git(local, "commit", "-q", "--amend", "-m", "drop obsolete (amended)")
+    _main_moves(local)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.REBASED, report
+    assert "old.txt" not in _git(local, "ls-tree", "-r", "--name-only", "origin/%s" % BRANCH)
+
+
+def test_278_b2_a_squashed_edit_and_deletion_is_still_the_branchs_own(tmp_path):
+    m = _mod()
+    local = _pushed_then_local(tmp_path)
+    _write(local / "z.txt", "z\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "z")
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    _git(local, "reset", "-q", "--soft", "HEAD~2")
+    _git(local, "commit", "-qm", "z and drop obsolete (squashed)")
+    _main_moves(local)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.REBASED, report
+    names = _git(local, "ls-tree", "-r", "--name-only", "origin/%s" % BRANCH).split()
+    assert "old.txt" not in names and "z.txt" in names
+
+
+def test_278_b2_a_deletion_then_re_add_is_not_a_loss(tmp_path):
+    m = _mod()
+    local = _pushed_then_local(tmp_path)
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    _write(local / "old.txt", "obsolete\n")
+    _git(local, "add", "-A")
+    _git(local, "commit", "-qm", "re-add it")
+    _main_moves(local)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.REBASED, report
+
+
+def test_278_b2_a_local_rollback_is_never_silently_exempt(tmp_path):
+    """The branch's OWN deliberate rollback (`git revert` of its pushed w.txt v2, unpushed) is a
+    rollback, not a deletion: refused, and the refusal names the manual gesture that confirms it."""
+    m = _mod()
+    rb = m.rebase_brief
+    local = _pushed_then_local(tmp_path)
+    _git(local, "revert", "--no-edit", "HEAD")
+    pre = _git(local, "rev-parse", "HEAD")
+    _main_moves(local)
+    report = rb.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == rb.WOULD_DROP and report["files"] == ["w.txt"], report
+    assert "git push --force-with-lease origin HEAD:%s" % BRANCH in report["why"], report
+    assert "git reset --keep %s" % pre in report["why"], report
+    assert _git(local, "show", "origin/%s:w.txt" % BRANCH) == "v2"
+
+
+def test_278_b2_a_shallow_clone_exempts_nothing_and_says_so(tmp_path):
+    m = _mod()
+    fr = m.feature_rebase
+    local = _pushed_then_local(tmp_path)
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    _main_moves(local)
+    shallow = tmp_path / "shallow"
+    _git(tmp_path, "clone", "-q", "--depth", "1", "--no-single-branch",
+         "file://%s" % (tmp_path / "r.git"), str(shallow))
+    assert _git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    tip = _git(shallow, "rev-parse", "origin/%s" % BRANCH)
+    _git(shallow, "checkout", "-q", "-b", "probe", tip)
+    _git(shallow, "rm", "-q", "old.txt")
+    _git(shallow, "commit", "-qm", "drop obsolete")
+    head = _git(shallow, "rev-parse", "HEAD")
+    with pytest.raises(RuntimeError, match="shallow"):
+        fr.own_losses(str(shallow), tip, head, "origin/%s" % BASE, ["old.txt"])
+    push = m.rebase_brief.push_branch(_run, str(shallow), "origin", BRANCH, pre_head=head,
+                                      base_ref="origin/%s" % BASE)
+    assert push["ok"] is False and "shallow" in push["why"], push
+    # Nothing to exempt asks nothing, so a shallow clone with no such loss is not refused for it.
+    assert fr.own_losses(str(shallow), tip, head, "origin/%s" % BASE, []) == set()
+
+
+def test_278_b2_the_guard_has_one_wall_clock_budget_across_its_reads(tmp_path, monkeypatch):
+    """Each history read is bounded on its own; the multi-batch reads together are bounded by
+    SIGMA_WATCH_CALL_TIMEOUT, and running out is a refusal that says so, never a pass."""
+    m = _mod()
+    fr = m.feature_rebase
+    local = _pushed_then_local(tmp_path)
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "drop obsolete")
+    tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    assert fr.own_losses(str(local), tip, head, "origin/%s" % BASE, ["old.txt"]) == {"old.txt"}
+    clock = [0.0]
+
+    def tick():
+        clock[0] += 50.0
+        return clock[0]
+    monkeypatch.setattr(fr, "_now", tick)
+    monkeypatch.setattr(m.rebase_brief.feature_rebase, "_now", tick)
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "120")
+    with pytest.raises(RuntimeError, match="SIGMA_WATCH_CALL_TIMEOUT"):
+        fr.own_losses(str(local), tip, head, "origin/%s" % BASE, ["old.txt"])
+    with pytest.raises(RuntimeError, match="SIGMA_WATCH_CALL_TIMEOUT"):
+        fr._history_blobs(str(local), head, ["p%d" % i for i in range(3 * fr._HISTORY_CHUNK)])
+    push = m.rebase_brief.push_branch(_run, str(local), "origin", BRANCH, pre_head=head,
+                                      base_ref="origin/%s" % BASE)
+    assert push["ok"] is False and "SIGMA_WATCH_CALL_TIMEOUT" in push["why"], push

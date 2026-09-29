@@ -20,11 +20,18 @@ All notable changes to Sigma are recorded here, newest first.
   landing on that branch (`rebase (finish): …`, `pull <argv> (finish): …` for a one-go `pull
   --rebase`, or `rebase (continue) (finish): …`, measured against real git; older gits' `rebase
   finished: …` accepted, not measured). A loss that already exists between the remote tip and that
-  head is exempt **only when a commit unique to the branch made it** — it touched the path, its
-  result is what that head holds, and it is not a replay of a base change — so a local `git rm`
-  commit passes, but the same loss left by an earlier, never-pushed local rebase onto a base holding
-  a revert is refused (it was force-pushed before). With no base or no pre-rebase head nothing is
-  exempt. Everything the rebase itself loses is still refused. The advice names the pre-rebase
+  head is exempt **only when it is the branch's own deliberate local DELETION**: the path is in
+  the remote tip and gone from that head, a non-merge commit unique to the branch has a `D` for
+  exactly that path, and the base has not touched the path since the remote tip. So a local `git
+  rm` commit passes (amended or squashed too), but the same loss left by an earlier, never-pushed
+  local rebase onto a base holding a revert is refused (it was force-pushed before) — including
+  when a sibling branch commit edited the same file, which the first version of this rule took for
+  the loss's author (review block #2: `x.txt` 359 → 60 lines force-pushed). **A rollback in that
+  range is never exempt**, even the branch's own: the human confirms a deliberate one with the
+  `git push --force-with-lease <remote> HEAD:<branch>` the refusal prints. With no base, no
+  pre-rebase head, or a **shallow clone** (the refusal says so) nothing is exempt, and all of one
+  push's guard reads share one wall-clock budget, `SIGMA_WATCH_CALL_TIMEOUT` (default 120s);
+  running out refuses the push. Everything the rebase itself loses is still refused. The advice names the pre-rebase
   head. When that head is unknown, the advice points at `git reflog <branch>` and no longer at the
   remote tip. If a refusal cannot put the branch back (`git reset --keep` fails), the refusal is
   recorded in the git dir and every later push of that branch (`push_branch`, `work.rebase()`,

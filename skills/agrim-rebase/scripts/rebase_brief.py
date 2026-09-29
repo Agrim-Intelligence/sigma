@@ -545,10 +545,12 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
 
     #278: `pre_head` is the head the branch had BEFORE the rebase being pushed; what the rebase
     itself loses (`pre_head` -> HEAD) is always measured. A loss already present between the remote
-    tip and `pre_head` is exempt ONLY when the branch's own commit made it --
-    `feature_rebase.own_losses` against `base_ref` (a local, unpushed `git rm` commit: exempt; the
-    same loss left by an earlier, unpushed LOCAL rebase onto a base holding a revert: refused, since
-    the deletion came in with the base's revert -- review block #1). No `base_ref` exempts nothing.
+    tip and `pre_head` is exempt ONLY when it is the branch's own deliberate local DELETION --
+    `feature_rebase.own_losses` against `base_ref` (a local, unpushed `git rm` commit of a path the
+    base left alone: exempt; a ROLLBACK or any modification in that range, and anything an earlier,
+    unpushed LOCAL rebase lost: refused -- review blocks #1 and #2). No `base_ref`, or a shallow
+    clone, exempts nothing. All the guard's reads for one push share one wall-clock budget
+    (`feature_rebase.guard_deadline`, `SIGMA_WATCH_CALL_TIMEOUT`); running out refuses.
     `None` derives `pre_head` from git's own record: when the branch reflog's newest entry is a
     rebase's own `(finish)` line for this branch, the pre-rebase head is `<branch>@{1}`
     (`pre_rebase_head`). Unknown (no such entry, reflogs off) falls back to the remote-tip
@@ -572,14 +574,16 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
             pre_head = pre_rebase_head(run, cwd, branch)
         refusal = None
         if overwritten or pre_head:
-            lost = set()
+            lost, deadline = set(), feature_rebase.guard_deadline()    # one budget per push
             if overwritten:
-                lost |= set(feature_rebase.dropped_paths(cwd, overwritten, "HEAD"))
+                lost |= set(feature_rebase.dropped_paths(cwd, overwritten, "HEAD", deadline))
                 if pre_head and pre_head != overwritten and lost:
-                    already = set(feature_rebase.dropped_paths(cwd, overwritten, pre_head)) & lost
-                    lost -= feature_rebase.own_losses(cwd, overwritten, pre_head, base_ref, already)
+                    already = set(feature_rebase.dropped_paths(cwd, overwritten, pre_head,
+                                                               deadline)) & lost
+                    lost -= feature_rebase.own_losses(cwd, overwritten, pre_head, base_ref, already,
+                                                      deadline)
             if pre_head:
-                lost |= set(feature_rebase.dropped_paths(cwd, pre_head, "HEAD"))
+                lost |= set(feature_rebase.dropped_paths(cwd, pre_head, "HEAD", deadline))
             refusal = feature_rebase.refuse_losing_push(cwd, overwritten, "HEAD", accepted,
                                                         dropped=lost)
     except Exception as exc:                    # noqa: BLE001 - unmeasured is never "nothing lost"
@@ -597,8 +601,9 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
                     "any local commits not yet pushed)" % (branch, overwritten[:12]))
         return {"ok": False, "dropped": dropped,
                 "why": "%s/%s: %s. The local branch still holds the rewritten history -- %s; if "
-                       "losing those paths IS intended, push it yourself with `git push "
-                       "--force-with-lease %s HEAD:%s`" % (remote, branch, why, undo, remote, branch)}
+                       "losing or rolling back those paths IS intended (only a plain local "
+                       "deletion is ever let through without you), push it yourself with `git push "
+                       "--force-with-lease %s HEAD:%s`" %(remote, branch, why, undo, remote, branch)}
     try:
         run(cwd, ["git", "push", "--force-with-lease", remote, "HEAD:%s" % branch])
     except Exception as exc:                    # noqa: BLE001 - a refused lease is an outcome, not a crash

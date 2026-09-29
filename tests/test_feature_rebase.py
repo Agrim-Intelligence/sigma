@@ -2251,9 +2251,9 @@ def test_144_r2_batching_and_pathspec_magic_names(tmp_path):
     reads = []
     real = m._git_read
 
-    def counting(cwd, args):
+    def counting(cwd, args, *rest):
         reads.append(list(args))
-        return real(cwd, args)
+        return real(cwd, args, *rest)
 
     m._git_read = counting
     report = _upkeep(m, w)

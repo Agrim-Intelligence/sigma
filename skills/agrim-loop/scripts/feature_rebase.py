@@ -661,24 +661,59 @@ def _guard_timeout():
     return value if value > 0 else _GUARD_TIMEOUT_DEFAULT
 
 
-def _git_read(cwd, args):
+#: The wall clock the guard's budget is measured on (a module attribute so a test can drive it).
+_now = time.monotonic
+
+#: The TOTAL seconds one push's guard reads may take together (#278, review block #2): each read is
+#: bounded by `SIGMA_REBASE_GUARD_TIMEOUT`, but the history reads come in `_HISTORY_CHUNK` batches,
+#: so without an overall cap a 10,000-path loss is 50 bounded reads -- unbounded in sum. Derived
+#: from `SIGMA_WATCH_CALL_TIMEOUT` (default 120, the fleet's own per-call bound), so one guarded push
+#: never outlasts one watch-loop call. Exhausted is a refusal, never "nothing dropped".
+_BUDGET_ENV = "SIGMA_WATCH_CALL_TIMEOUT"
+_BUDGET_DEFAULT = 120.0
+
+
+def guard_deadline():
+    """The `_now()` instant by which every guard read of ONE push must have finished. Pass it to
+    `dropped_paths` / `own_losses` so a push's several measurements share one budget."""
+    global _LEGACY
+    if _LEGACY is None:
+        _LEGACY = _load("legacy")
+    try:
+        value = float(str(_LEGACY.getenv(_BUDGET_ENV) or _BUDGET_DEFAULT).strip())
+    except ValueError:
+        value = _BUDGET_DEFAULT
+    return _now() + (value if value > 0 else _BUDGET_DEFAULT)
+
+
+def _git_read(cwd, args, deadline=None):
     """One config-pinned, time-bounded git read for the guard -> stdout as str. NOT the injected
     `run`: every runner in this kit decodes with the LOCALE (`text=True`), which on a non-UTF-8
     Windows code page garbles a non-ASCII path, strips trailing whitespace a `-z` path may end in,
     and has no timeout. Bytes in, UTF-8 with `surrogateescape` out, so any byte a path holds
-    round-trips. RAISES on a non-zero exit or on the timeout -- the caller refuses the push."""
+    round-trips. `deadline` (`guard_deadline()`) caps the read at what is left of the push's total
+    budget too. RAISES on a non-zero exit, on the timeout, or on an exhausted budget -- the caller
+    refuses the push."""
     import subprocess                     # local: only the guard reads git this way
     argv = ["git"]
     for pin in _GUARD_CONFIG:
         argv += ["-c", pin]
     argv += list(args)
     timeout = _guard_timeout()
+    if deadline is not None:
+        left = deadline - _now()
+        if left <= 0:
+            raise RuntimeError("the guard's reads used up their total budget (%s, default %gs), so "
+                               "the check is unanswered and nothing is pushed"
+                               % (_BUDGET_ENV, _BUDGET_DEFAULT))
+        timeout = min(timeout, left)
     try:
         proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        raise RuntimeError("the guard's git read timed out after %gs (%s=%s to raise it), so the "
-                           "check is unanswered and nothing is pushed: git %s"
-                           % (timeout, _GUARD_TIMEOUT_ENV, "N", " ".join(str(a) for a in args[:3])))
+        raise RuntimeError("the guard's git read timed out after %gs (%s, or the total budget %s, "
+                           "to raise it), so the check is unanswered and nothing is pushed: git %s"
+                           % (timeout, _GUARD_TIMEOUT_ENV, _BUDGET_ENV,
+                              " ".join(str(a) for a in args[:3])))
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace").strip()
         raise RuntimeError(err or "git exited %s" % proc.returncode)
@@ -686,26 +721,17 @@ def _git_read(cwd, args):
 
 
 def _raw_entries(out):
-    """`git diff|log --raw -z --no-abbrev` output -> [(status, old_blob, new_blob, src, dst)].
-    `dst` is `src` for every status but a rename/copy, which carries two paths. A combined-format
-    entry (`::`, one colon per parent -- what a merge prints under `-c`/`--cc`) is read too: its
-    LAST blob is the result, its first the first parent's; it carries one path. Pinned config asks
-    for the separate format, so this is defence, not the normal path."""
-    return [entry[1:] for entry in _raw_records(out)]
-
-
-def _raw_records(out):
-    """`_raw_entries`, each entry prefixed with the commit it belongs to: a `git log --raw -z
-    --format=C%H` header token (`C` + a 40/64-hex sha, read only where a header can stand, never in
-    a path slot) sets it; "" before any header (plain `git diff` output)."""
+    """`git diff|log --raw -z --no-abbrev --format=` output -> [(status, old_blob, new_blob, src,
+    dst)]. `dst` is `src` for every status but a rename/copy, which carries two paths. A
+    combined-format entry (`::`, one colon per parent -- what a merge prints under `-c`/`--cc`) is
+    read too: its LAST blob is the result, its first the first parent's; it carries one path. Pinned
+    config asks for the separate format, so this is defence, not the normal path."""
     tokens = str(out or "").split("\0")
-    found, i, commit = [], 0, ""
+    found, i = [], 0
     while i < len(tokens):
         meta = tokens[i].lstrip("\n")
         i += 1
         if not meta.startswith(":"):
-            if _COMMIT_HEADER_RE.match(meta):
-                commit = meta[1:]
             continue                      # the empty `--format=` line between commits, or the tail
         parents = len(meta) - len(meta.lstrip(":"))
         fields = meta[parents:].split()
@@ -719,29 +745,32 @@ def _raw_records(out):
         if parents == 1 and status[:1] in ("R", "C") and i < len(tokens):
             dst = tokens[i]
             i += 1
-        found.append((commit, status, blobs[0], blobs[-1], src, dst))
+        found.append((status, blobs[0], blobs[-1], src, dst))
     return found
 
 
-def _history_blobs(cwd, tip, paths):
+def _history_blobs(cwd, tip, paths, deadline=None):
     """{path: every blob that path has held anywhere in `tip`'s history}, one `git log` per
     `_HISTORY_CHUNK` paths. `-m` so a MERGE's own result counts (a version born in a conflict
     resolution, or in a clean two-sided merge, exists in no single-parent commit and `git log --raw`
     prints nothing for merges by default); `log.showRoot=true` (pinned) so the ROOT commit's
     versions count. `--literal-pathspecs` because a path is a name, never a glob. RAISES like
-    `dropped_paths` does, for the same reason."""
+    `dropped_paths` does, for the same reason -- and when the batches together outrun `deadline`
+    (`guard_deadline()`, made here when none is passed)."""
+    if deadline is None:
+        deadline = guard_deadline()
     seen = {}
     for start in range(0, len(paths), _HISTORY_CHUNK):
         chunk = paths[start:start + _HISTORY_CHUNK]
         out = _git_read(cwd, ["--literal-pathspecs", "log", "-m", "--no-renames", "--raw", "-z",
                               "--no-abbrev", "--no-color", "--no-ext-diff", "--format=", tip,
-                              "--"] + chunk)
+                              "--"] + chunk, deadline)
         for _status, _old, new_blob, src, _dst in _raw_entries(out):
             seen.setdefault(src, set()).add(new_blob)
     return seen
 
 
-def dropped_paths(cwd, before, after):
+def dropped_paths(cwd, before, after, deadline=None):
     """Paths whose content the branch tip `before` has and the replayed head `after` LOSES ->
     sorted list. Two shapes count, both measured on trees plus the branch's own history:
 
@@ -774,14 +803,15 @@ def dropped_paths(cwd, before, after):
 
     COST: one `git diff`; plus, only when the replay modified or renamed paths, one `git log -m`
     over `before`'s whole history per `_HISTORY_CHUNK` such paths, each bounded by
-    `SIGMA_REBASE_GUARD_TIMEOUT`. A base move touching nothing the branch has changed paths as
+    `SIGMA_REBASE_GUARD_TIMEOUT`, and all of them together by `deadline` (`guard_deadline()`: the
+    `SIGMA_WATCH_CALL_TIMEOUT` budget). A base move touching nothing the branch has changed paths as
     additions only and pays no history read.
 
     `-z` because a path may hold any byte but NUL, and this list names files in an issue. RAISES when
     any read cannot be run or times out: the caller must treat an unanswered question as "do not
     push", never as "nothing was dropped"."""
     out = _git_read(cwd, ["diff", "--no-ext-diff", "--no-color", "--raw", "-z", "--no-abbrev", "-M",
-                          before, after])
+                          before, after], deadline)
     dropped, restored = set(), {}
     for status, old_blob, new_blob, src, dst in _raw_entries(out):
         kind = status[:1]
@@ -794,7 +824,7 @@ def dropped_paths(cwd, before, after):
                 continue                            # mode-only (chmod / type bit): no content lost
             restored[src] = (new_blob, src)
     if restored:
-        seen = _history_blobs(cwd, before, sorted(restored))
+        seen = _history_blobs(cwd, before, sorted(restored), deadline)
         for path, (blob, lost) in restored.items():
             if blob in seen.get(path, ()):
                 dropped.add(lost)
@@ -824,82 +854,95 @@ def refuse_losing_push(cwd, before, after, accepted=(), dropped=None):
                      "docs/branching-model.md §3b)" % (len(dropped), shown))
 
 
-#: `git log --raw -z --format=C%H`'s per-commit header token, as `_raw_records` reads it.
-_COMMIT_HEADER_RE = re.compile(r"^C(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-
-
-def own_losses(cwd, remote_tip, pre_head, base_ref, paths):
-    """The subset of `paths` -- losses measured from `remote_tip` (what a push overwrites) to
-    `pre_head` (the branch as it was before the rebase being pushed) -- that the BRANCH ITSELF made,
-    as a set (#278, review block #1). Only those are exempt at a push; every other loss refuses it.
-
-    WHY A LOSS INSIDE remote..pre_head IS NOT AUTOMATICALLY THE BRANCH'S OWN. A local, unpushed
-    `git rm` commit is (the healthy case). But a previous LOCAL rebase that silently lost content --
-    the base landed w.txt, the feature was cut and pushed, the base reverted w.txt, a human ran `git
-    rebase origin/main` without pushing -- leaves the very same shape: w.txt is in the remote tip
-    and absent from `pre_head`. There it came in with the BASE's revert, and pushing publishes it.
-
-    THE RULE, per path P, all three required:
-      1. a commit reachable from `pre_head` but from neither `remote_tip` nor `base_ref` touches P
-         (`git log pre_head --not remote_tip base_ref -- P`, `--no-merges`: a merge's result is its
-         parents' story, and bringing the base in by merge is the same shape as the lossy rebase;
-         `--full-history`, so path simplification never picks which side of a merge is seen);
-      2. the NEWEST such commit's own result for P is exactly `pre_head`'s state of P -- a deletion
-         where `pre_head` lacks P, the same blob where it holds one -- so what `pre_head` has is
-         attributable to that commit's diff and not to something that came after it;
-      3. that commit is not itself a replay of a base change: `--cherry-mark` against `base_ref`
-         finds no patch-equivalent there (a base revert cherry-picked onto the branch by hand is
-         still the base's loss).
-    In the lossy-rebase repro the revert is reachable from `base_ref`, so (1) finds nothing for w.txt.
-
-    CONSERVATIVE BY CONSTRUCTION: a missing `remote_tip`, `pre_head` or `base_ref` exempts nothing;
-    the documented cost is a healthy local deletion refused (`docs/branching-model.md` §3b). A base rewritten (force-pushed) since the lossy rebase no longer reaches its revert,
-    so (1) could then see the branch-side copy -- (3) still catches it only if the rewritten base
-    kept a patch-equivalent commit; that residual is named in §15.
-
-    COST, only when there is a remote -> pre_head loss at all: one `git log` over the branch-only
-    commits and one `--cherry-mark` walk of `base_ref...pre_head`, each per `_HISTORY_CHUNK` paths,
-    plus one `ls-tree`; all config-pinned, `--literal-pathspecs`, bounded by
-    `SIGMA_REBASE_GUARD_TIMEOUT`. RAISES when a read fails: the caller refuses the push."""
-    paths = sorted(set(paths or ()))
-    if not (paths and remote_tip and pre_head and base_ref):
-        return set()
-    newest = {}
+def _tree_blobs(cwd, commit, paths, deadline):
+    """{path: blob} for those of `paths` that `commit`'s tree holds, one `ls-tree` per chunk."""
+    held = {}
     for start in range(0, len(paths), _HISTORY_CHUNK):
         chunk = paths[start:start + _HISTORY_CHUNK]
-        out = _git_read(cwd, ["--literal-pathspecs", "log", "--no-merges", "--full-history",
-                              "--topo-order", "--no-renames", "--raw", "-z", "--no-abbrev",
-                              "--no-color",
-                              "--no-ext-diff", "--format=C%H", pre_head, "--not", remote_tip,
-                              base_ref, "--"] + chunk)
-        for commit, status, _old, new_blob, src, _dst in _raw_records(out):
-            newest.setdefault(src, (commit, status[:1], new_blob))
-    if not newest:
-        return set()
-    touched = sorted(newest)
-    replays, held = set(), {}
-    for start in range(0, len(touched), _HISTORY_CHUNK):
-        chunk = touched[start:start + _HISTORY_CHUNK]
-        out = _git_read(cwd, ["--literal-pathspecs", "log", "--no-merges", "--cherry-mark",
-                              "--right-only", "--no-color", "--format=%m%H",
-                              "%s...%s" % (base_ref, pre_head), "--"] + chunk)
-        replays |= {line[1:].strip() for line in out.splitlines() if line.startswith("=")}
         listed = _git_read(cwd, ["--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree",
-                                 pre_head, "--"] + chunk)
+                                 commit, "--"] + chunk, deadline)
         for entry in listed.split("\0"):
             meta, tab, name = entry.partition("\t")
             if tab and len(meta.split()) == 3:
                 held[name] = meta.split()[2]
-    own = set()
-    for path, (commit, kind, blob) in newest.items():
-        if not commit or commit in replays:
-            continue
-        if path in held:
-            if kind != "D" and blob == held[path]:
-                own.add(path)
-        elif kind == "D":
-            own.add(path)
-    return own
+    return held
+
+
+def _touched(cwd, revs, paths, deadline, merges):
+    """{path: set of the one-letter statuses any commit in `revs` gave it}, over `paths`, one
+    `git log --raw` per chunk. `merges` reads each merge against every parent (`-m`): what a merge
+    brought in counts too. Without it merges are skipped, so they can never supply an exemption."""
+    found = {}
+    for start in range(0, len(paths), _HISTORY_CHUNK):
+        chunk = paths[start:start + _HISTORY_CHUNK]
+        out = _git_read(cwd, ["--literal-pathspecs", "log", "-m" if merges else "--no-merges",
+                              "--full-history", "--no-renames", "--raw", "-z", "--no-abbrev",
+                              "--no-color", "--no-ext-diff", "--format="] + list(revs)
+                        + ["--"] + chunk, deadline)
+        for status, _old, _new, src, _dst in _raw_entries(out):
+            found.setdefault(src, set()).add(status[:1])
+    return found
+
+
+def own_losses(cwd, remote_tip, pre_head, base_ref, paths, deadline=None):
+    """The subset of `paths` -- losses measured from `remote_tip` (what a push overwrites) to
+    `pre_head` (the branch as it was before the rebase being pushed) -- that are the branch's own
+    deliberate local DELETION, as a set (#278). Only those are exempt at a push; every other loss
+    in that range refuses it.
+
+    WHY SO NARROW (review block #2). A loss inside remote..pre_head is not automatically the
+    branch's own: an earlier LOCAL rebase that silently lost content (the base copied the branch's
+    pushed commit and reverted it; a human ran `git rebase origin/main` and never pushed; git skipped
+    the commit as already upstream) leaves the same shape. After such a rebase every surviving
+    branch commit is a rewritten copy and the skipped commit leaves no trace, so ANY attribution by
+    "a branch commit touched P and produced what pre_head holds" is fooled by a sibling commit that
+    edited the same file. So the only exemption left is the one its purpose needs -- a `git rm` /
+    "drop obsolete" commit -- and a path P is exempt ONLY IF all three hold:
+      (a) the loss is a pure DELETION: P is in `remote_tip`'s tree and absent from `pre_head`'s;
+      (b) a commit unique to the branch -- reachable from `pre_head`, from neither `remote_tip`
+          nor `base_ref`, not a merge -- has a `D` status for exactly P in its own diff;
+      (c) the base left P alone since the remote tip: no commit reachable from `base_ref` and not
+          from `remote_tip` (merges read against every parent) touches P at all, so the deletion
+          cannot be a base revert replayed onto the branch.
+    A ROLLBACK (P held by both, `pre_head` at an older version) and ANY modification-type loss are
+    NEVER exempt here: they stay refused, and the refusal's advice (`git reset --keep <pre-rebase
+    head>`) and manual gesture (`git push --force-with-lease <remote> HEAD:<branch>`) are how a human
+    confirms a deliberate one -- never silently. Amending or squashing the deletion keeps a `D` in a
+    unique commit (still exempt); deleting then re-adding P leaves P in `pre_head` (not a loss).
+
+    FAIL CLOSED: a missing `remote_tip`, `pre_head` or `base_ref` exempts nothing (the documented
+    cost: a healthy local deletion refused, `docs/branching-model.md` §3b). A SHALLOW repository
+    RAISES (the history (b) and (c) read is cut off, so their answer is not known) and says so.
+    Residual (§15): a base force-pushed since the lossy rebase no longer reaches its revert, which
+    then reads as a unique branch commit -- (b) can pass, and (c) sees only the rewritten base.
+
+    COST, only when there is a remote -> pre_head pure deletion: one `rev-parse`, two `ls-tree` and
+    two `git log --raw` per `_HISTORY_CHUNK` paths, config-pinned, `--literal-pathspecs`, each bounded
+    by `SIGMA_REBASE_GUARD_TIMEOUT` and all of them by `deadline` (`guard_deadline()`). RAISES when a
+    read fails or the budget runs out: the caller refuses the push."""
+    paths = sorted(set(paths or ()))
+    if not (paths and remote_tip and pre_head and base_ref):
+        return set()
+    if deadline is None:
+        deadline = guard_deadline()
+    shallow = _git_read(cwd, ["rev-parse", "--is-shallow-repository"], deadline).strip()
+    if shallow != "false":
+        raise RuntimeError("this repository is a shallow clone (`git rev-parse "
+                           "--is-shallow-repository` says %r), so the history that tells the "
+                           "branch's own deletion from a lossy earlier rebase is cut off and no "
+                           "remote-to-pre-rebase loss is exempt; `git fetch --unshallow` and run it "
+                           "again (docs/branching-model.md §15)" % shallow)
+    remote_held = _tree_blobs(cwd, remote_tip, paths, deadline)
+    pre_held = _tree_blobs(cwd, pre_head, paths, deadline)
+    deleted = sorted(p for p in paths if p in remote_held and p not in pre_held)       # (a)
+    if not deleted:
+        return set()
+    branch = _touched(cwd, [pre_head, "--not", remote_tip, base_ref], deleted, deadline, False)
+    deleted = [p for p in deleted if "D" in branch.get(p, ())]                         # (b)
+    if not deleted:
+        return set()
+    base = _touched(cwd, [base_ref, "--not", remote_tip], deleted, deadline, True)
+    return {p for p in deleted if p not in base}                                       # (c)
 
 
 # --------------------------------------------------------------------------- refused-push marker
