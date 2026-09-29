@@ -53,6 +53,11 @@ def _world(extra_fields=(), number=17, labels=("sdlc:goal", "priority:P1"), card
     return gh, board
 
 
+#: `project.setup_created` as `board_setup.py create` writes it: the board it made, by number AND
+#: owner (#233 review block #2 -- a bare number could not tell another owner's board #17 from ours).
+OURS = {"number": 17, "owner": "acme"}
+
+
 def _cfg(**project):
     p = {"enabled": True, "owner": "acme", "number": 17}
     p.update(project)
@@ -94,7 +99,7 @@ def test_one_goal_through_p2_to_p7_advances_phase_and_priority_matches_label(
         tmp_path, monkeypatch, capsys):
     """On the board Sigma created (`project.setup_created` names it), both fields are Sigma's."""
     gh, board = _world()
-    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=OURS))
     seen = []
     for phase in PHASES[1:]:                                     # P2 RESEARCH .. P7 RETRO
         assert _start(sdlc, phase, monkeypatch, gh) == 0
@@ -113,7 +118,7 @@ def test_one_goal_through_p2_to_p7_advances_phase_and_priority_matches_label(
 
 def test_a_repeated_start_for_the_same_phase_writes_nothing(tmp_path, monkeypatch):
     gh, board = _world()
-    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=OURS))
     _start(sdlc, "research", monkeypatch, gh)
     before, made = len(gh.calls), len(gh.mutations())
     _start(sdlc, "research", monkeypatch, gh)
@@ -282,7 +287,7 @@ def test_disabled_when_no_number_is_pinned(tmp_path, monkeypatch):
 
 def test_phase_field_false_disables_phase_but_not_priority(tmp_path, monkeypatch):
     gh, board = _world()
-    _start(_sdlc(tmp_path, _cfg(phase_field=False, setup_created=17)), "research", monkeypatch, gh)
+    _start(_sdlc(tmp_path, _cfg(phase_field=False, setup_created=OURS)), "research", monkeypatch, gh)
     assert gh.field(board, "Phase") is None
     assert _card(board).get("priority") == "P1"
 
@@ -336,7 +341,7 @@ def test_several_failures_in_one_run_still_print_exactly_one_warning(tmp_path, m
     """Neither field exists and GitHub refuses both creates: two failures, ONE line."""
     gh, board = _world()
     gh.fail["createProjectV2Field"] = "GraphQL: Resource not accessible by integration"
-    assert _start(_sdlc(tmp_path, _cfg(setup_created=17)), "research", monkeypatch, gh) == 0
+    assert _start(_sdlc(tmp_path, _cfg(setup_created=OURS)), "research", monkeypatch, gh) == 0
     assert len(gh.mutations()) == 2                             # both creates were tried
     lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
     assert len(lines) == 1, lines
@@ -430,7 +435,7 @@ def _relabel(gh, board, *labels):
 def test_on_the_board_sigma_created_the_field_still_wins_as_before(tmp_path, monkeypatch, capsys):
     """Unchanged where #719's rule always applied: Sigma's own board (`setup_created`)."""
     gh, board = _world()
-    sdlc = _sdlc(tmp_path, _cfg(setup_created=17))
+    sdlc = _sdlc(tmp_path, _cfg(setup_created=OURS))
     _start(sdlc, "research", monkeypatch, gh)
     assert _card(board).get("priority") == "P1"                 # created, filled from the label
     _relabel(gh, board, "sdlc:goal", "priority:P0")
@@ -722,3 +727,161 @@ def test_a_status_write_on_an_adopted_board_never_rewrites_the_label_from_its_fi
     assert _card(board).get("status") == "In Progress"
     assert not [c for c in gh.calls if c[:2] == ["issue", "edit"] and "11" in c
                 and any("priority:" in str(a) for a in c)]
+
+
+# ---------------------------------------------------------------- review block #2 (PR #296)
+
+
+def _two_boards_numbered_5(viewer="swapnil"):
+    """The reviewer's t_me repro: issue #11 carded on org acme's project #5 AND on the user's own
+    project #5. The org's card comes FIRST in the read, as it did in the repro."""
+    gh = boardfake.GitHub(owner="acme", repo="widget")
+    gh.viewer = viewer
+    org = gh.add_board("org board", number=5, owner="acme", fields=[_status_field("a5")])
+    mine = gh.add_board("my board", number=5, owner="swapnil", fields=[_status_field("s5")])
+    a, b = gh.add_item(org, 11, Status="In Progress"), gh.add_item(mine, 11, Status="In Progress")
+    gh.issues = [{"number": 11, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""}]
+    return gh, org, mine, a, b
+
+
+def test_at_me_owner_writes_the_viewers_own_board_never_an_orgs_same_numbered_one(
+        tmp_path, monkeypatch):
+    gh, org, mine, a, b = _two_boards_numbered_5()
+    sdlc = _sdlc(tmp_path, _cfg(owner="@me", number=5))
+    assert _start(sdlc, "research", monkeypatch, gh) == 0
+    assert a.get("phase") is None and gh.field(org, "Phase") is None, a     # the org's: untouched
+    assert b.get("phase") == "P2 RESEARCH", b                               # the pinned one: written
+
+
+def test_an_explicit_user_owner_matches_its_board_whatever_the_case(tmp_path, monkeypatch):
+    gh, org, mine, a, b = _two_boards_numbered_5()
+    _start(_sdlc(tmp_path, _cfg(owner="Swapnil", number=5)), "research", monkeypatch, gh)
+    assert b.get("phase") == "P2 RESEARCH" and a.get("phase") is None
+
+
+def test_an_explicit_org_owner_still_writes_the_orgs_board(tmp_path, monkeypatch):
+    gh, org, mine, a, b = _two_boards_numbered_5()
+    _start(_sdlc(tmp_path, _cfg(owner="acme", number=5)), "research", monkeypatch, gh)
+    assert a.get("phase") == "P2 RESEARCH" and b.get("phase") is None
+    assert gh.field(mine, "Phase") is None
+
+
+def test_at_me_with_an_unresolvable_viewer_writes_nothing_and_warns_once(
+        tmp_path, monkeypatch, capsys):
+    gh, org, mine, a, b = _two_boards_numbered_5(viewer=None)
+    before = len(gh.calls)
+    assert _start(_sdlc(tmp_path, _cfg(owner="@me", number=5)), "research", monkeypatch, gh) == 0
+    assert a.get("phase") is None and b.get("phase") is None
+    assert gh.field(org, "Phase") is None and gh.field(mine, "Phase") is None
+    assert [c[:2] for c in gh.calls[before:]] == [["api", "graphql"]]       # the one read, no write
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("sigma:")]
+    assert len(lines) == 1 and "could not resolve project.owner '@me'" in lines[0], lines
+
+
+def test_a_failure_before_the_board_code_runs_is_fail_open(tmp_path, monkeypatch, capsys):
+    """Review (a): the outer guard in `mirror_phase_to_board` covers what happens BEFORE
+    `set_board_phase` too -- here `sources` cannot be imported. Exit 0, the banner, one line."""
+    gh, _board = _world()
+    sdlc = _sdlc(tmp_path)
+    real_load = pr._load
+
+    def load(name):
+        if name == "sources":
+            raise ImportError("sources.py is broken")
+        return real_load(name)
+
+    monkeypatch.setattr(pr, "_load", load)
+    assert _start(sdlc, "research", monkeypatch, gh) == 0
+    out, err = capsys.readouterr()
+    assert "PHASE START" in out
+    lines = [ln for ln in err.splitlines() if "board Phase/Priority" in ln]
+    assert len(lines) == 1 and "sources.py is broken" in lines[0], err
+    assert not gh.calls
+
+
+def test_an_unreadable_config_that_names_a_board_warns_once(tmp_path, monkeypatch, capsys):
+    gh, _board = _world()
+    sdlc = _sdlc(tmp_path)
+    text = (sdlc / "config.json").read_text(encoding="utf-8")
+    (sdlc / "config.json").write_text(text[:-1], encoding="utf-8")         # truncated: not JSON
+    assert pr.mirror_phase_to_board(str(sdlc), "11", "research", run=gh.loop_run) is False
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if "board Phase/Priority" in ln]
+    assert len(lines) == 1, lines
+    assert not gh.calls
+
+
+def test_an_unreadable_config_with_no_board_says_nothing(tmp_path, monkeypatch, capsys):
+    """Review (e): a repo with no board must never read "board ... not written"."""
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text('{"discovery": {"source": "local-goals"', encoding="utf-8")
+    monkeypatch.setattr(pr, "_BOARD_RUN", lambda _a: (_ for _ in ()).throw(AssertionError("gh")))
+    assert pr.mirror_phase_to_board(str(sdlc), "11", "research") is False
+    assert "board Phase/Priority" not in capsys.readouterr().err
+
+
+def test_a_board_created_in_this_run_keeps_field_wins_on_the_status_path(tmp_path):
+    """Review (b): `_created_board_now` is what makes a board the loop created THIS run Sigma's on
+    the Status path (`_set_board_status` passes `_priority_owned()`). No `setup_created`, no opt-in:
+    the field wins on that board, and the moved goal's label is corrected from it."""
+    gh = boardfake.GitHub(owner="acme", repo="widget")
+    gh.issues = [{"number": 11, "labels": [{"name": "sdlc:goal"}, {"name": "priority:P1"}],
+                  "title": "t", "body": ""}]
+    cfg = _cfg()
+    del cfg["discovery"]["github"]["project"]["number"]
+    src = src_mod.GitHubSource(cfg, run=gh.loop_run, sdlc_dir=str(_sdlc(tmp_path, cfg)))
+    src._RETRY_BASE = 0
+    src._ensure_board(exclude="11")                         # creates the board; #11 left uncarded
+    board = gh.boards[0]
+    assert src._created_board_now and gh.field(board, "Priority") is not None
+    it = gh.add_item(board, 11, Status="Ready", Priority="P3")     # a human set P3 on the board
+    src._items[11], src._item_status[11], src._item_priority[11] = it["id"], "Ready", "P3"
+    src._issue_labels[11] = gh.issues[0]["labels"]
+    assert src._set_board_status("11", src.col["qc"]) is True
+    assert _card(board).get("status") == "QC"
+    edits = [c for c in gh.calls if c[:2] == ["issue", "edit"]]
+    assert edits and "priority:P3" in edits[-1], edits      # field wins on Sigma's own board
+
+
+def test_setup_created_names_a_board_by_number_and_owner(tmp_path, monkeypatch):
+    """Review (c): a hand-made board that REUSES the number board_setup's board had, under another
+    owner, is not Sigma's -- and the older bare-number marker reads as not ours either."""
+    for marker in ({"number": 17, "owner": "octo"}, 17, {"number": 17}, {"number": "x", "owner": "acme"}):
+        gh, board = _world()
+        d = tmp_path / str(len(list(tmp_path.iterdir())))
+        d.mkdir()
+        _start(_sdlc(d, _cfg(setup_created=marker)), "research", monkeypatch, gh)
+        assert gh.field(board, "Priority") is None, marker        # never created: not Sigma's
+        assert _card(board).get("phase") == "P2 RESEARCH"
+    gh, board = _world()
+    (tmp_path / "ours").mkdir()
+    _start(_sdlc(tmp_path / "ours", _cfg(setup_created={"number": 17, "owner": "ACME"})),
+           "research", monkeypatch, gh)
+    assert gh.field(board, "Priority") is not None                # ours (owner by case): created
+
+
+class _InterruptedProc:
+    pid = 424242
+
+    def __init__(self, *_a, **_k):
+        pass
+
+    def communicate(self, timeout=None):
+        raise KeyboardInterrupt()
+
+
+def test_ctrl_c_during_a_board_call_kills_the_gh_group_then_propagates(monkeypatch):
+    """Review (d): `gh` runs in its own session, so the terminal's SIGINT never reaches it. The
+    runner must kill its group before letting the interrupt through, or `gh` is left orphaned."""
+    import subprocess
+    killed = []
+    monkeypatch.setattr(subprocess, "Popen", _InterruptedProc)
+    monkeypatch.setattr(pr, "_kill_tree", lambda proc: killed.append(proc.pid))
+    run = pr._bounded_gh(budget_s=30, call_timeout_s=10)
+    try:
+        run(["project", "item-edit"])
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("the interrupt must propagate")
+    assert killed == [424242], killed

@@ -670,7 +670,8 @@ def test_a_resume_of_the_empty_board_this_setup_created_finishes_it_like_a_fresh
     assert _run(sdlc, gh, "--yes")[0] == 1
     del gh.fail["updateProjectV2Field("]
     board = gh.board(title="widget — SDLC")
-    assert _cfg(sdlc)["discovery"]["github"]["project"]["setup_created"] == board["number"]
+    assert _cfg(sdlc)["discovery"]["github"]["project"]["setup_created"] == {
+        "number": board["number"], "owner": "acme"}
     rc, text = _run(sdlc, gh, "--number", str(board["number"]), "--yes")
     assert rc == 0, text
     assert gh.option_names(board, "Status") == COLS
@@ -690,6 +691,39 @@ def test_an_adopted_empty_board_still_does_not_get_ready(tmp_path):
     rc, text = _run(sdlc, gh, "--number", "4", "--yes")
     assert rc == 0, text
     assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
+    assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
+
+
+def test_pin_keeps_the_marker_only_for_the_same_board_of_the_same_owner(tmp_path):
+    """#233 review block #2: `setup_created` names a board by number AND owner. Re-pinning the
+    same number under another owner (a hand-made board reusing it) drops the marker; the older
+    bare-number form cannot be vouched for and is dropped too; the same board keeps it."""
+    sdlc = _sdlc(tmp_path)
+    proj = lambda: _cfg(sdlc)["discovery"]["github"]["project"]            # noqa: E731
+    bs.pin(sdlc, "acme", 7, created=True)
+    assert proj()["setup_created"] == {"number": 7, "owner": "acme"}
+    bs.pin(sdlc, "ACME", 7)                                                   # same board
+    assert proj()["setup_created"] == {"number": 7, "owner": "acme"}
+    bs.pin(sdlc, "octo", 7)                                                   # same number, not ours
+    assert "setup_created" not in proj()
+    bs.pin(sdlc, "acme", 7, created=True)
+    bs.pin(sdlc, "acme", 8)                                                   # another number
+    assert "setup_created" not in proj()
+    path = sdlc / "config.json"
+    cfg = _cfg(sdlc)
+    cfg["discovery"]["github"]["project"]["setup_created"] = 7                # the pre-#233 form
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+    bs.pin(sdlc, "acme", 7)
+    assert "setup_created" not in proj()
+
+
+def test_a_resume_with_another_owners_marker_is_not_our_board(tmp_path):
+    """The marker names board 3 of `octo`: acme's board 3 is a human's, so no Ready lane."""
+    gh = boardfake.GitHub(boards=[{"title": "Team board", "number": 3}])
+    sdlc = _sdlc(tmp_path, project={"setup_created": {"number": 3, "owner": "octo"}})
+    rc, text = _run(sdlc, gh, "--number", "3", "--yes")
+    assert rc == 0, text
+    assert "Ready" not in gh.option_names(gh.board(number=3), "Status")
     assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
 
 

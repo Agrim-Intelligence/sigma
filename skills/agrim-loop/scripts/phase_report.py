@@ -1801,6 +1801,13 @@ def _bounded_gh(budget_s=None, call_timeout_s=None):
             killed.append("%g" % wait)
             raise BoardCallTimeout("gh %s gave no answer within %gs and was killed"
                                    % (" ".join(map(str, args[:2])), wait))
+        except BaseException:
+            # #233 review (block #2): Ctrl-C (KeyboardInterrupt), SystemExit or anything else that
+            # unwinds out of the wait. `gh` runs in a session of its own, so the terminal's SIGINT
+            # never reached it: without this kill it was left orphaned, with no timeout. Kill the
+            # group, then let the interrupt through unchanged -- the operator asked to stop.
+            _kill_tree(proc)
+            raise
         if proc.returncode != 0:
             exc = RuntimeError("gh %s failed: %s" % (" ".join(map(str, args[:2])),
                                                      (err or "").strip()[:300]))
@@ -1810,13 +1817,31 @@ def _bounded_gh(budget_s=None, call_timeout_s=None):
     return run
 
 
+def _config_mentions_board(sdlc_dir):
+    """Does config.json's raw text name a board (`"project"`)? Used only when it cannot be parsed,
+    to decide between silence (no board could be configured) and the one warning. Never raises."""
+    try:
+        text = (pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    return '"project"' in text
+
+
 def mirror_phase_to_board(sdlc_dir, goal, phase, run=None):
     """#233: write the phase the loop is ENTERING onto the goal's board card (and mirror its
     Priority). One write per boundary, from Sigma's own Python on every host. A no-op unless the
     config is github mode with `project.enabled` and a pinned `project.number`; fail-open always
     -- returns True/False, never raises, and at most one stderr line (`GitHubSource._warn_field`)."""
     try:
-        cfg = _load("state").load_config(sdlc_dir)
+        try:
+            cfg = _load("state").load_config(sdlc_dir)
+        except Exception:
+            # #233 review (block #2): an unreadable config (missing, not JSON, not an object) is
+            # other code's to report. Say nothing here unless its text at least names a board --
+            # a repo with no board must never read "board ... not written".
+            if not _config_mentions_board(sdlc_dir):
+                return False
+            raise
         disc = cfg.get("discovery") or {}
         project = ((disc.get("github") or {}).get("project")) or {}
         if disc.get("source") != "github" or not project.get("enabled") \

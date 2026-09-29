@@ -230,23 +230,25 @@ CREATED_KEY = "setup_created"
 
 def pin(sdlc, owner, number, created=False):
     """Write ONLY discovery.github.project.number/owner (+ `setup_created` when this run created
-    the board; dropped when a DIFFERENT board is pinned); every other key is kept. Atomic."""
+    the board; dropped when a DIFFERENT board is pinned -- another number OR another owner, #233
+    review); every other key is kept. Atomic. The marker is `{"number": N, "owner": login}`: a
+    bare number cannot tell a hand-made board of another owner, reusing the number, from ours."""
     path, cfg = _config(sdlc)
     _gh, proj = _gh_block(cfg)
     proj["number"] = int(number)
     proj["owner"] = owner
     if created:
-        proj[CREATED_KEY] = int(number)
-    elif CREATED_KEY in proj and _as_int(proj.get(CREATED_KEY)) != int(number):
+        proj[CREATED_KEY] = {"number": int(number), "owner": owner}
+    elif CREATED_KEY in proj and not _ours(proj.get(CREATED_KEY), number, owner):
         del proj[CREATED_KEY]
     pf._vd._atomic_write_json(path, cfg)
 
 
-def _as_int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+def _ours(marker, number, owner):
+    """Does the `setup_created` marker name board `number` of `owner`? (sources' one parse; the old
+    bare-number form never does.)"""
+    made = _sources().GitHubSource.setup_marker(marker)
+    return made is not None and made == (int(number), str(owner or "").strip().casefold())
 
 
 def pin_columns(sdlc, mapping):
@@ -360,7 +362,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     owner = owner or src._proj_owner()
     title = title or src._proj_title()
     template = template if template is not None else proj.get("template")
-    created_before = _as_int(proj.get(CREATED_KEY))
+    created_before = proj.get(CREATED_KEY)
     pinned = number if number is not None else proj.get("number")
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
@@ -489,7 +491,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
 
     # 5 + 6. fields
     cols = _ensure_fields(b, kind, owner, num, src, dict(zip(keys, cols)), prio, prios, fresh,
-                          sdlc, ours=fresh or created_before == num)
+                          sdlc, ours=fresh or _ours(created_before, num, owner))
 
     # 7. repository link + workflows, one read
     _link_and_workflows(b, kind, owner, num, pid, repo, repo_id, host)

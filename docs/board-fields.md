@@ -30,7 +30,8 @@ The `priority:*` label is the source of truth. Whether the loop may also treat t
 column as a writer depends on whose column it is.
 
 **Sigma's Priority field.** That is a board the loop created in this run, the board
-`board_setup.py create` created (`project.setup_created` equals the pinned `project.number`), or any
+`board_setup.py create` created (`project.setup_created` names the pinned `project.number` under
+the configured `project.owner`), or any
 pinned board once you set **`project.mirror_priority: true`**. There the loop creates the field when
 it is missing, and keeps the #719 rule: a recognised field value wins and the label is corrected
 (with a message on stderr); a blank field is filled from the label.
@@ -46,6 +47,12 @@ it is missing, and keeps the #719 rule: a recognised field value wins and the la
   (default `Priority`) on any board. A case-only variant (`PRIORITY`) is adopted by the same name
   rule as the phase path, but label-to-field only. To make the field the writer on your own board,
   opt in with `project.mirror_priority: true`.
+- **A widening, stated plainly.** Before #233 the sync read only a column named *exactly*
+  `priority_field`, so a board whose column was spelled `PRIORITY` (or `priority`) got no Priority
+  writes at all. It now adopts that lone case-variant, which means the sync **starts filling blank
+  cells** in it from the labels on an adopted board where it wrote nothing before. It still never
+  overwrites a value somebody set there and never rewrites a label from it. To keep the loop out of
+  such a column entirely, set `project.priority_field: false`.
 
 To add the column to your own board, either set `project.mirror_priority: true` (the next phase
 start creates it), or run `board_setup.py create <sdlc> --number <N> --yes`, which adds the fields
@@ -83,12 +90,20 @@ repository, and the status path skips `item-list` rows whose `content.repository
 The phase path also requires the card's board to be the pinned number under the configured owner. A
 board that merely has the expected title never stands in for a pin that cannot be read.
 
+`project.owner: "@me"` (a supported value: `board_migrate --owner @me`, and what the owner falls back
+to when neither `project.owner` nor `discovery.github.repo` is set) is resolved to the token's own
+login by the **same** read (`viewer { login }`), and compared like any other owner, case-insensitively.
+It is never a wildcard: an org's board #5 is not your board #5. If the login cannot be read, nothing
+is written and the run prints its one warning.
+
 ## Fail-open, and the time bound
 
 A board write never fails a pick or a phase. `phase_report.py start` does the write after its
 marker, its ledger event and its banner, so its exit code and stdout are the same whatever the
 board does. Each run prints at most one line on stderr, whatever goes wrong:
-`sigma: board Phase/Priority not written - <reason>. The goal continues unaffected; ...`.
+`sigma: board Phase/Priority not written - <reason>. The goal continues unaffected; ...`. That
+includes failures before the board code runs (it cannot be loaded). A `config.json` that cannot be
+parsed prints the line only if its text names a `"project"`; a repo with no board says nothing.
 
 - Each `gh` call has `BOARD_CALL_TIMEOUT_S` (20s). The whole write stops making calls once
   `BOARD_BUDGET_S` (45s) is spent.
@@ -96,6 +111,9 @@ board does. Each run prints at most one line on stderr, whatever goes wrong:
   of its own and its process group gets SIGKILL. On Windows, `taskkill /T /F` kills the tree, with a
   `BOARD_REAP_S` (5s) bound of its own. Collecting a killed call's output is bounded by
   `BOARD_REAP_S` on every platform: a pipe that is still held open is abandoned, not waited on.
+- **Ctrl-C (or any other interrupt) during a call** kills that call's process group or tree the
+  same way before the interrupt goes through. `gh` runs in a session of its own, so the terminal's
+  SIGINT never reaches it; without the kill it would be left running with no timeout.
 - A killed call is **never retried**. `gh`'s own timeout text says "timed out", which the board
   layer's transient-error list matches, so the runner marks it `no_retry`. The boundary then skips
   every remaining board write, prints its one warning, and the next boundary tries again.
@@ -133,8 +151,12 @@ whole-board read (`_sync_backlog` does not run here).
   Priority.
 - `mirror_priority`: `true` makes the pinned board's Priority column Sigma's (created if missing;
   #719 field-wins). Default off. Only the literal `true` turns it on.
-- `setup_created`: written by `board_setup.py create` when it created the board. Not for hand
-  editing.
+- `setup_created`: written by `board_setup.py create` when it created the board, as
+  `{"number": N, "owner": "<login>"}`. It counts only while it names the pinned number under the
+  pinned owner: a hand-made board of another owner that reuses the number is not Sigma's, and
+  re-pinning under another owner or number drops it. The older bare-number form (`"setup_created": 17`)
+  cannot tell two owners' boards apart, so it reads as **not** Sigma's board (the label stays the
+  one Priority writer) until `board_setup.py create` re-pins it. Not for hand editing.
 - `enabled` off, or no `number`: nothing runs. A phase start makes zero `gh` calls and does not load
   the board code.
 

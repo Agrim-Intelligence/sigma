@@ -1041,7 +1041,7 @@ class GitHubSource:
         # by `phase_report.py start`). Falsy disables it; Priority is unaffected by that switch.
         self.phase_field = self._project_cfg.get("phase_field", "Phase")
         # #233 review: WHO WRITES the Priority field on this board. Sigma's field (a board this run
-        # created, `project.setup_created` naming the pinned number, or this explicit opt-in) keeps
+        # created, `project.setup_created` naming the pinned number+owner, or this opt-in) keeps
         # #719's field-wins rule and may be CREATED by the loop. Anyone else's board: the loop never
         # creates the field and never rewrites a label from it (`_priority_owned`).
         self.mirror_priority = self._project_cfg.get("mirror_priority") is True
@@ -4592,17 +4592,38 @@ class GitHubSource:
 
     def _priority_owned(self):
         """#233 review: is this board's Priority field SIGMA'S? True for a board `_ensure_board`
-        created in this run, the board `board_setup.py` created (`project.setup_created` equal to
-        the pinned number), or the explicit opt-in `project.mirror_priority: true`. Only then may
+        created in this run, the board `board_setup.py` created (`project.setup_created` naming
+        the pinned number AND owner, `setup_marker`), or the explicit opt-in `project.mirror_priority: true`. Only then may
         the loop create the field, and only then does #719's field-wins rule rewrite labels from it
         on #233's paths. Anyone else's board keeps the label as the one writer."""
         if self.mirror_priority or self._created_board_now:
             return True
-        try:
-            made = int(self._project_cfg.get("setup_created"))
-        except (TypeError, ValueError):
+        made = self.setup_marker(self._project_cfg.get("setup_created"))
+        if made is None:
             return False
-        return made == (self._project_number or self._pinned_number())
+        # #233 review (block #2): the marker names a board by number AND owner -- a hand-made board
+        # of another owner that happens to reuse the number is not the one board_setup created.
+        return made == ((self._project_number or self._pinned_number()),
+                        str(self._proj_owner() or "").casefold())
+
+    @staticmethod
+    def setup_marker(value):
+        """`project.setup_created` -> (number, casefolded owner), or None when it names no board
+        this code can vouch for. THE one parse, shared with `board_setup.py` (its writer). Only the
+        `{"number": N, "owner": "<login>"}` form counts; the older bare-number form (number only,
+        so it cannot tell two owners' boards apart) reads as NOT ours -- the safe direction: the
+        label stays the one Priority writer until `board_setup.py create` re-pins it."""
+        if not isinstance(value, dict):
+            return None
+        owner = value.get("owner")
+        try:
+            number = int(value.get("number"))
+        except (TypeError, ValueError):
+            return None
+        if isinstance(value.get("number"), bool) or number <= 0 \
+                or not isinstance(owner, str) or not owner.strip() or owner.startswith("@"):
+            return None
+        return number, owner.strip().casefold()
 
     @staticmethod
     def _match_field(names, name):
@@ -4643,7 +4664,9 @@ class GitHubSource:
 
     def _card_query(self, owner, name, n):
         q = lambda v: json.dumps(str(v))        # noqa: E731 - a GraphQL string literal
-        return ("query=query { repository(owner: %s, name: %s) { issue(number: %d) { "
+        # #233 review (block #2): `viewer { login }` rides the SAME read, so a `project.owner` of
+        # `@me` is resolved to a login and compared like any other owner -- never a wildcard.
+        return ("query=query { viewer { login } repository(owner: %s, name: %s) { issue(number: %d) { "
                 "labels(first: 100) { nodes { name } } "
                 "projectItems(first: %d, includeArchived: false) { nodes { id "
                 "project { id number owner { ... on Organization { login } ... on User { login } } "
@@ -4670,13 +4693,24 @@ class GitHubSource:
             if isinstance(data, dict) else None
         if not issue:
             raise RuntimeError("issue #%d was not found in %s/%s" % (n, owner, name))
-        want_owner = str(self._proj_owner() or "")
+        want_owner = str(self._proj_owner() or "").strip()
+        if not want_owner or want_owner.startswith("@"):
+            # #233 review (block #2): `@me` (board_migrate --owner @me, or `_proj_owner`'s own
+            # fallback) used to SKIP the owner check, so the first card on ANY board numbered
+            # `number` -- an org's #5 as readily as the user's own #5 -- was written. It is the
+            # viewer's login, read in this same query; unresolved, nothing is written.
+            viewer = ((data.get("data") or {}).get("viewer") or {}).get("login")
+            if not (isinstance(viewer, str) and viewer.strip()):
+                raise RuntimeError("could not resolve project.owner %r to a login, so board #%d "
+                                   "cannot be told from another owner's board of that number"
+                                   % (want_owner or "@me", number))
+            want_owner = viewer.strip()
         for node in ((issue.get("projectItems") or {}).get("nodes") or []):
             proj = (node or {}).get("project") or {}
             login = str((proj.get("owner") or {}).get("login") or "")
             if proj.get("number") != number or not proj.get("id") or not node.get("id"):
                 continue
-            if want_owner != "@me" and login.casefold() != want_owner.casefold():
+            if login.casefold() != want_owner.casefold():
                 continue
             fields = [f for f in ((proj.get("fields") or {}).get("nodes") or []) if f and f.get("id")]
             values = {}

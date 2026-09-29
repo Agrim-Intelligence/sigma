@@ -23,7 +23,9 @@ It models GITHUB'S BEHAVIOUR that the tests depend on, not the transport:
   - #233: ONE issue's cards are read over GraphQL (`repository(owner, name) { issue(number) {
     projectItems ... } }`), scoped by REPOSITORY as the real API is: a board may carry cards from
     several repos with the same issue number (`add_item(..., repo="acme/other")`), and field values
-    come back keyed by field ID, never flattened by name.
+    come back keyed by field ID, never flattened by name. The same read carries `viewer { login }`
+    (`self.viewer`; None models a viewer that cannot be read), and `gh project create` makes a fresh
+    board with GitHub's default fields.
 
 Imported as a plain sibling module (`import boardfake`), like gqlfake.
 """
@@ -87,6 +89,7 @@ class GitHub:
         self.ignore = set()         # substring of a gh call -> exit 0, "{}", and NOTHING applied
         self.calls = []             # every argv, as passed (without the leading "gh")
         self.issues = []            # REST issue dicts for the loop's backlog read
+        self.viewer = "someone"     # the token's own login (`gh api user`, GraphQL `viewer`); None = unreadable
         self.labels = {}
 
     # ------------------------------------------------------------ state helpers
@@ -223,7 +226,9 @@ class GitHub:
         path, _, query = full.partition("?")
         per = int(re.search(r"per_page=(\d+)", query).group(1)) if "per_page=" in query else 30
         if path == "user":
-            return "someone\n"
+            if self.viewer is None:
+                raise LookupError(path)
+            return "%s\n" % self.viewer
         m = re.fullmatch(r"users/([^/]+)", path)
         if m:
             login = m.group(1)
@@ -315,7 +320,8 @@ class GitHub:
                  and (it.get("content") or {}).get("repository",
                                                    "%s/%s" % (self.owner, self.repo)) == full]
         if issue is None and not cards:
-            return json.dumps({"data": {"repository": {"issue": None}}})
+            return json.dumps({"data": {"viewer": ({"login": self.viewer} if self.viewer is not None
+                                                   else None), "repository": {"issue": None}}})
         labels = [(lb.get("name") if isinstance(lb, dict) else lb)
                   for lb in ((issue or {}).get("labels") or [])]
 
@@ -340,7 +346,8 @@ class GitHub:
                                               "owner": {"login": b["owner"]},
                                               "fields": {"nodes": [field(f) for f in b["fields"]]}},
                   "fieldValues": {"nodes": values(b, it)}} for b, it in cards]
-        return json.dumps({"data": {"repository": {"issue": {
+        viewer = {"login": self.viewer} if self.viewer is not None else None
+        return json.dumps({"data": {"viewer": viewer, "repository": {"issue": {
             "labels": {"nodes": [{"name": n} for n in labels]},
             "projectItems": {"nodes": nodes}}}}})
 
@@ -425,6 +432,9 @@ class GitHub:
             limit = int(self._arg(a, "--limit") or 30)
             return json.dumps({"projects": [{"number": b["number"], "id": b["id"],
                                              "title": b["title"]} for b in visible[:limit]]})
+        if verb == "create":        # a fresh board: GitHub's own Title + default Status field
+            b = self.add_board(self._arg(a, "--title"), owner=self._arg(a, "--owner"))
+            return json.dumps({"number": b["number"], "id": b["id"], "title": b["title"]})
         if verb == "view":
             b = self.board(number=a[2], owner=self._arg(a, "--owner"))
             if not b:

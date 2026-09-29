@@ -30,7 +30,14 @@ All notable changes to Sigma are recorded here, newest first.
   **Decision:** an unlabelled goal's Priority stays blank, not P3. "No priority" sorts after P4, and
   writing P3 would reorder the queue. Acceptance ran on the in-memory board fake only. The live run
   on board #17 was not executed; it is an owner runbook in
-  [docs/board-fields.md](docs/board-fields.md).
+  [docs/board-fields.md](docs/board-fields.md). **Review fixes:** `project.owner: "@me"` is resolved
+  to the viewer's login in the same GraphQL read and compared like any owner (it used to skip the
+  owner check, so a phase start could write an org's same-numbered board instead of the user's own);
+  an unresolvable viewer writes nothing. `project.setup_created` is now `{"number", "owner"}`
+  (`board_setup.pin` drops it on an owner or number change; the old bare-number form reads as not
+  Sigma's board). Ctrl-C during a board call kills `gh`'s process group before re-raising. An
+  unparseable config on a repo with no board prints nothing. The backlog sync's lone case-variant
+  `PRIORITY` adoption now fills blank cells on adopted boards where it wrote nothing before.
 
 - **Rebase upkeep keeps merge-commit landings instead of flattening them, and a locked unit has
   an exit** (#161, ported from the predecessor's #2756). A goal that landed on `feature/<unit>` as
