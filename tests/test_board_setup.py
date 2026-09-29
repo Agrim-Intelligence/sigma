@@ -7,6 +7,8 @@ import importlib.util
 import json
 import pathlib
 import shlex
+import subprocess
+import sys
 
 import pytest
 
@@ -705,6 +707,41 @@ def test_a_resume_with_the_old_bare_marker_drops_it_and_the_board_stays_a_humans
     assert rc == 0, text
     assert "setup_created" not in _cfg(sdlc)["discovery"]["github"]["project"]
     assert "Ready" not in gh.option_names(gh.board(number=4), "Status")
+
+
+def test_documented_marker_recovery_creates_a_separate_owned_board(tmp_path):
+    """#317: execute the runbook, including its config edit, against the real CLI parser.
+    Dropping the unpin command makes create reuse #4; dropping the unique title refuses the
+    duplicate. Neither outcome is the new owned board the documentation promises."""
+    gh = boardfake.GitHub(boards=[{"title": "widget — SDLC", "number": 4}])
+    old = gh.board(number=4)
+    gh.add_item(old, 11, Status="Todo")
+    before = json.loads(json.dumps(old))
+    sdlc = _sdlc(tmp_path, project={"number": 4, "owner": "acme", "setup_created": 4})
+    doc = (ROOT / "docs" / "board-fields.md").read_text(encoding="utf-8")
+    commands = doc.split("<!-- setup-created-recovery -->", 1)[1].split("```sh", 1)[1].split("```", 1)[0]
+    for line in commands.strip().splitlines():
+        argv = shlex.split(line)
+        assert argv[0] == "python3", line
+        if argv[1] == "-c":
+            subprocess.run([sys.executable, *argv[1:]], cwd=tmp_path, check=True,
+                           capture_output=True, text=True, timeout=10)
+        else:
+            script = pathlib.Path(argv[1].replace("$SIGMA_PLUGIN_ROOT", str(ROOT)))
+            assert script == SCRIPTS / "board_setup.py", line
+            # Same arguments as the docs; only substitute the fixture's project root.
+            assert argv[2:4] == ["create", ".sdlc"], line
+            lines = []
+            rc = bs.main([str(script), *argv[2:3], str(sdlc), *argv[4:]],
+                         runner=gh.gh, out=lines.append)
+            assert rc == 0, "\n".join(lines)
+
+    proj = _cfg(sdlc)["discovery"]["github"]["project"]
+    assert proj["number"] != 4
+    assert proj["setup_created"] == {"number": proj["number"], "owner": "acme"}
+    assert "Ready" in gh.option_names(gh.board(number=proj["number"]), "Status")
+    assert len(gh.boards) == 2
+    assert old == before, "the previous board and its cards must be untouched"
 
 
 def test_the_reviewers_sequence_a_bare_marker_left_by_an_owner_change_is_not_ours(tmp_path):
