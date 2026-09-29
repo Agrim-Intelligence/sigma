@@ -25,6 +25,16 @@
 
 case "${1:-}" in -h|--help) echo "usage: risk-detect.sh   (no args; scans the current change)"; exit 0 ;; esac
 set -uo pipefail
+# Pin the locale ONCE, here, in the unforked main shell, and never assign a locale variable again —
+# not even per command (`LC_ALL=C cmd`). sigma#244: bash calls setlocale() on every locale-variable
+# assignment, including a temporary one (set, then restore). A libintl-linked bash (Homebrew's, on
+# macOS) reaches CoreFoundation from setlocale(), and CoreFoundation is not fork-safe: in a forked,
+# not-exec'd subshell (process/command substitution, pipeline element) it intermittently SIGSEGVs.
+# The per-file `LC_ALL=C grep` in the content-scan subshell did exactly that under load (26 crash
+# reports, one stack), and FAIL-OPEN turned the dead subshell into "nothing detected". C is also
+# the deterministic choice for everything below (byte-wise awk/grep/sort/glob). Guarded by
+# tests/test_risk_detect.py::test_locale_is_pinned_once_and_never_changed_in_a_forked_shell.
+export LC_ALL=C
 
 SCHEMA="risk-detect/v1"
 
@@ -57,7 +67,7 @@ add_cat() { case " $CATS " in *" $1 "*) return ;; esac; CATS="${CATS:+$CATS }$1"
 cats_json() {
   local first=1 c
   printf '['
-  for c in $(printf '%s\n' $CATS | LC_ALL=C sort); do
+  for c in $(printf '%s\n' $CATS | sort); do   # LC_ALL=C is pinned at the top
     [ "$first" -eq 1 ] && first=0 || printf ','
     json_string "$c"
   done
@@ -140,20 +150,27 @@ emit_combined_diff() {
   git -C "$PROJECT_DIR" diff --cached --no-color -U0 "${EXCL[@]}" 2>/dev/null
   while IFS= read -r -d '' f; do
     [ -f "$PROJECT_DIR/$f" ] || continue
-    LC_ALL=C grep -Iq . -- "$PROJECT_DIR/$f" 2>/dev/null || continue   # skip binary
+    grep -Iq . -- "$PROJECT_DIR/$f" 2>/dev/null || continue   # skip binary (C locale, pinned at top)
     # Prefix a synthetic "diff --git" header so the awk's inhunk reset fires for this
     # block too — an untracked file gets exactly one hunk, all-added.
     printf 'diff --git a/%s b/%s\n+++ b/%s\n@@ -0,0 +1 @@\n' "$f" "$f" "$f"
     awk '{ print "+" $0 }' "$PROJECT_DIR/$f" 2>/dev/null
   done < <(git -C "$PROJECT_DIR" ls-files --others --exclude-standard -z "${EXCL[@]}" 2>/dev/null)
+  # Completion marker (sigma#244). No diff line can be a bare "#..." (git headers never start with
+  # "#", content lines carry a +/-/space prefix), so this can only come from here. If it never
+  # reaches the reader, a process in this pipeline DIED, and that must not read as "nothing found".
+  printf '# risk-detect:end\n'
 }
 
+CONTENT_SCAN_DONE=0
 while IFS= read -r hline; do
   [ -n "$hline" ] || continue
   cat="${hline%%$'\t'*}"; obj="${hline#*$'\t'}"
+  [ "$cat" = "__end__" ] && { CONTENT_SCAN_DONE=1; continue; }
   add_cat "$cat"; append HITS "$obj"
 done < <(
   emit_combined_diff | awk '
+    /^# risk-detect:end$/ { print "__end__\t"; next }
     function jesc(s,  i,c,cr) {
       gsub(/\\/,"\\\\",s); gsub(/"/,"\\\"",s)
       cr = sprintf("%c",13); if (index(s,cr)) gsub(cr,"\\r",s)
@@ -210,5 +227,9 @@ done < <(
   '
 )
 
+# Still FAIL-OPEN (valid JSON, exit 0), but never SILENT: a dead content scan is named on stderr so
+# a missing category can be told apart from an absent one. Location-free: no path, no diff text.
+[ "$CONTENT_SCAN_DONE" -eq 1 ] || \
+  echo "risk-detect: content scan incomplete (a scan process died before end-of-stream); matched/hits may be missing content-scan categories" >&2
 printf '{"schema":%s,"matched":%s,"hits":[%s]}\n' "$(json_string "$SCHEMA")" "$(cats_json)" "$HITS"
 exit 0
