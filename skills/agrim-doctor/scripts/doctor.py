@@ -877,6 +877,47 @@ def _unmapped_board_fields(gh_cfg, run):
             and f.get("name") not in mapped]
 
 
+def _board_columns_unmatched(gh_cfg, run):
+    """#280: the loop's columns (`project.columns`, defaults `sources.BOARD_COLUMNS`) that match NO
+    option of the pinned board's Status field -- a card move to one of them writes nothing (the
+    loop now warns once per run; before #280 it said nothing at all). Matching is the loop's own
+    `_match_option`: exact, else the one option equal ignoring case and whitespace. Returns
+    ["<key> '<name>'", ...], [] when every column matches, or None when the board cannot be read
+    (nothing pinned, no scope, an API error) -- a can't-tell is never a false all-clear.
+
+    Not counted: `ready` (a board without it is the designed label queue, `_ready_lane`), and
+    `parked` while `blocked` matches (the loop parks into Blocked then). READ-ONLY: one
+    `gh project field-list`, the same read `_unmapped_board_fields` makes; the caller keeps it out
+    of `cheap_only`."""
+    proj = _block(gh_cfg, "project")
+    repo = gh_cfg.get("repo") or ""
+    owner = proj.get("owner") or (repo.split("/")[0] if "/" in repo else "")
+    number = proj.get("number")
+    if not owner or not number:
+        return None
+    try:
+        src = _load_loop_script("sources")
+        raw = run(["gh", "project", "field-list", str(number), "--owner", owner, "--format", "json",
+                   "--limit", "100"])
+        if not raw:
+            return None
+        data = json.loads(raw)
+    except Exception:
+        return None
+    fields = (data.get("fields") if isinstance(data, dict) else data) or []
+    status_field = proj.get("status_field") or "Status"
+    fld = next((f for f in fields if isinstance(f, dict) and f.get("name") == status_field), None)
+    names = [o.get("name") for o in ((fld or {}).get("options") or []) if isinstance(o, dict)]
+    cfg_cols = proj.get("columns") if isinstance(proj.get("columns"), dict) else {}
+    match = src.GitHubSource._match_option
+    missing = {k: n for k, n in ((k, cfg_cols.get(k, d)) for k, d in src.BOARD_COLUMNS)
+               if match(names, n)[0] is None}
+    missing.pop("ready", None)
+    if "blocked" not in missing:
+        missing.pop("parked", None)
+    return [f"{k} {n!r}" for k, n in missing.items()]
+
+
 _DEFAULT_DOCTOR_MAX_ISSUES = 10            # backlog_check.doctor_scan.max_issues (R6, see docstring below)
 _DEFAULT_DOCTOR_MAX_COMMENTS = 20          # backlog_check.doctor_scan.max_comments (= sources.DEFAULT_COMMENT_LIMIT)
 
@@ -2050,6 +2091,17 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                 if state in ("ok", "gone"):
                     out.append(_chk("pinned board #%s reachable"
                                     % _block(gh_disc, "project").get("number"), state == "ok", gone))
+                # #280: read-only, same gate. A column with no matching Status option makes that
+                # card move a no-op; a case/spacing-only difference already matches.
+                unmatched = _board_columns_unmatched(gh_disc, run) if state == "ok" else None
+                if unmatched is not None:
+                    out.append(_chk(
+                        "board Status options match the loop's columns", not unmatched,
+                        "pinned board #%s's Status field has no option for %s, so the loop cannot "
+                        "move a card there (it warns once per run). Add those options on the board, "
+                        "or set discovery.github.project.columns.<key> to the board's own spelling "
+                        "(case and spacing differences already match)."
+                        % (_block(gh_disc, "project").get("number"), ", ".join(unmatched))))
             stale_cards = _item_closed_workflow_off(gh_disc, run)
             if stale_cards:
                 out.append(_chk("board marks closed items Done", False, stale_cards))

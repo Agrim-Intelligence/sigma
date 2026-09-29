@@ -4,6 +4,21 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A Status option spelled differently from `project.columns` no longer makes a card move a
+  silent no-op** (#280). This was confirmed on the fake with GitHub's default options. A read-only
+  read on 2026-09-29 found both `In progress` and `In Progress` on real default-shaped boards,
+  including one titled `<repo> — SDLC`, the loop's own default title. Before this fix, a board the loop created itself (`_ensure_board`) kept GitHub's
+  `In progress`, while every pick looked up `In Progress`. `mark_in_progress` then wrote nothing
+  and printed nothing. (1) That fresh-board path now renames `In progress` in the same id-preserving
+  update that renames `Todo` to `Backlog`, so the built-in workflows stay on. (2) Status options are
+  matched exact-first. Failing that, the one option that differs only in case or whitespace is used
+  under the board's own spelling, in memory. Adopted boards are never renamed. (3) A column with no
+  matching option prints one warning per run that names the column, its config key and the board's
+  options. `Ready` is exempt, because a board without it is the label queue. So is a park that
+  falls back to `Blocked`. (4) `/agrim-doctor` has a read-only row, **board Status options match
+  the loop's columns**. It is off under `cheap_only`. Details: `docs/board-fields.md`. Tests:
+  `tests/test_board_status_spelling.py`.
+
 - **Done-means-merged hardening** (#255, the review findings on #232). (1) The documented cost is
   now true. A merge-reconcile pass that closed a goal used to read its PR twice over REST and then
   make three `gh pr view` (GraphQL) calls in the checkout release, while the docs said "at most 10
