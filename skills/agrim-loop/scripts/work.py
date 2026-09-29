@@ -128,7 +128,7 @@ ENFORCEMENT_GATES = (
                   "checks nothing; `changes` parks on a Request-changes, an unresolved thread or a "
                   "`sigma:block` comment; `approval` also requires an approval (formal, or a "
                   "`sigma:approve` comment)",
-     "readme": "PR review gate (opt-in)"},
+     "readme": "PR review gate (on by default)"},
     {"control": "Review-to-fix cycle cap", "function": "post_review", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": ("work.max_review_cycles",),
      "mechanism": "parks the goal once its review-to-fix cycles reach `work.max_review_cycles` "

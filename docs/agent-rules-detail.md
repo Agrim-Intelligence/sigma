@@ -5,13 +5,14 @@ rules while the original examples and caveats remain available on demand.
 
 ## Before you run the loop: check the plugin version
 
-**If the installed Sigma plugin is older than 1.3.6, do not start the loop.** 1.3.6 changed what
-the `sdlc:*` labels mean and how they are written; an older install writes the previous non-atomic
-shapes and re-pollutes a board that has just been reconciled. Run `/agrim-doctor` first — it reports
-the installed version against the marketplace's current one — and if it is below 1.3.6, update
-with `claude plugin update sigma@sigma` (then restart the session) before picking any goal.
-The bare plugin name is not enough — `claude plugin update sigma` fails with "not found"; it
-needs the full `plugin@marketplace` id. `claude plugin marketplace update sigma` is a DIFFERENT
+**If the installed Sigma plugin is older than 1.0.0, do not start the loop.** That floor is the
+one `AGENTS.md` states (the only statement `/agrim-doctor` parses), and it never sits above the
+version `.claude-plugin/plugin.json` ships. Mixed versions writing `sdlc:*` labels on one board is
+the configuration to avoid. Run `/agrim-doctor` first — it reports the installed version against
+the marketplace's current one — and if it is below the floor, update with
+`claude plugin update sigma@sigma` (then restart the session) before picking any goal. Use the full
+`plugin@marketplace` id: older Claude Code releases failed the bare `claude plugin update sigma`
+with "not found" (2.1.284 resolves it, measured), and the full id is unambiguous on every release. `claude plugin marketplace update sigma` is a DIFFERENT
 command that only refreshes the marketplace's listing cache — it does not upgrade an
 already-installed plugin. `claude plugin install` on an already-installed plugin is also a no-op
 and will NOT upgrade it.
@@ -99,7 +100,7 @@ issue declares one, how a goal's base is resolved from it, and what `.sdlc/featu
   issue ever ran `/agrim-define`.** This is deliberate: `/agrim-define`/`declare()` is the human path
   for *opening a brand-new* unit and self-declaring it up front; the no-dangling-goal machinery is
   the *safety net* underneath it, catching anything that reaches pick time or filing time with no
-  declaration at all (epic #2260). Two DIFFERENT mechanisms cover two
+  declaration at all. Two DIFFERENT mechanisms cover two
   DIFFERENT moments, and both are needed — relying on everyone remembering to declare a unit by
   hand is exactly the gap this exists to close:
   - **Classification (pick-time and filing-time):** `feature_classify.classify_at_pick`/
@@ -120,7 +121,7 @@ issue declares one, how a goal's base is resolved from it, and what `.sdlc/featu
     the intended division of labor (classification decides WHICH unit, the sync keeps the
     unit's OWN membership record current once real work begins on it), not a gap where the label
     and the registry can silently disagree forever.
-  - **The side-job ensure (every later trigger, #2435):** `feature_sync.sync_at_pick` is
+  - **The side-job ensure (every later trigger):** `feature_sync.sync_at_pick` is
     deliberately not reached on a resume ("a resume is the same pass continuing... the next PICK
     reconciles it") — so a label attached or corrected AFTER a goal's own pick (a late
     classification, or a human editing the issue) would otherwise sit unrecorded until some OTHER

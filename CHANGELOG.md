@@ -32,6 +32,24 @@ All notable changes to Sigma are recorded here, newest first.
   - `tests/test_public_bootstrap_control.py` runs one goal end to end on the defaults, against a
     fake `gh` and a bare origin. It was red on the old code, and each guard was broken once and
     seen red.
+- The README's first-run path is now executable as written (#231). The "older plugin" callout
+  named a floor from the previous name's version numbering, which the shipped 1.0.0 plugin could never meet; it now states the 1.0.0
+  floor that `AGENTS.md` sets and `/agrim-doctor` enforces, and the upgrade command
+  `claude plugin update sigma@sigma` (the old `marketplace update` line only refreshed the
+  listing). The Quickstart has one install per host (Claude Code, Codex, Cursor) behind a single
+  `<SIGMA_REPO>` placeholder, names `/agrim-init` as the next step (with one line on when to add
+  `/agrim-setup`), and adds "What `/agrim-init` will ask you" and "If `/agrim-init` says you lack
+  access" with the exact commands the preflight prints. `--github` is no longer described as
+  setting up the Projects board: it copies `.github/` templates and creates labels, and the loop
+  creates the board. Rows marked "(opt-in)" that are on by default are relabelled, internal issue
+  references are removed from the README, and no shipped file names the previous name's
+  label-model version any more. `examples/hello-sdlc/README.md` no longer tells you to install a companion. The new
+  `tests/test_readme_first_run.py` checks that every `/agrim-*` skill, repo script and
+  `/agrim-init` flag the README names exists, and that the floor never exceeds the shipped version.
+  Measured: a clean-HOME install from a local-path marketplace (`claude plugin marketplace add`,
+  `claude plugin install sigma@sigma`, Claude Code 2.1.284) and the `/agrim-init` script gestures
+  in a fresh repository. The Codex install lines follow Codex's published plugin CLI and were not
+  run here.
 
 - `tests/test_risk_detect.py` is no longer flaky on macOS (#244, #145). The root cause was in
   `skills/agrim-loop/scripts/risk-detect.sh`. It ran a per-command `LC_ALL=C grep` inside a
