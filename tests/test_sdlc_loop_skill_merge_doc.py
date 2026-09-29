@@ -96,3 +96,26 @@ def test_documents_that_a_close_that_failed_is_still_done_but_owes_a_human_one_a
         "landed, `record done` is still right, and retries the close itself before a human ever "
         "needs to"
     )
+
+
+# --- #258: the plan-review verdict is recorded against the brief written at DISPATCH time ---------
+
+def test_plan_review_docs_record_the_verdict_gesture():
+    """#258 B-new: the brief a reviewer is handed is written to a file at DISPATCH time, and the
+    record gesture only READS that file's first `Plan sha256:` line. A record-time rebuild of the
+    brief would hash the edited plan, so the sha check could never fail (rev 1 of the plan did
+    exactly that). SKILL.md carries a second copy of the dispatch gesture, so it is read DIRECTLY:
+    `skill_corpus` concatenates the references and would pass on running.md's copy alone."""
+    scripts = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop"
+    brief_file = '/tmp/brief-$(basename "$goal" .md).md'
+    dispatch = '[--artifact <path|PR#>] > "' + brief_file + '"'
+    running = (scripts / "references" / "running.md").read_text(encoding="utf-8")
+    skill = (scripts / "SKILL.md").read_text(encoding="utf-8")
+    assert dispatch in _flat(running), "running.md's dispatch gesture does not write the brief file"
+    assert dispatch in _flat(skill), "SKILL.md's copy of the dispatch gesture lost the redirect"
+    assert "re-run the dispatch gesture above for that gate, redirect included" in _flat(running)
+    record = _flat(running.split("**Record the plan-review verdict before Implement**", 1)[1]
+                   .split("\n\n**", 1)[0])
+    assert 'work.py" record-plan-review .sdlc "$goal" --verdict' in record, record
+    assert "awk '/^Plan sha256: /{print $3; exit}' \"" + brief_file + "\"" in record, record
+    assert 'review_context.py" brief' not in record, record

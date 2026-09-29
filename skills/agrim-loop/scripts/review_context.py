@@ -444,6 +444,53 @@ def phase_doc_file(sdlc_dir, goal, subdir):
     return None
 
 
+def plan_sha256(path):
+    """sha256 hex of a plan file's RAW bytes: #258's one plan identity.
+
+    Three sites must agree on it, so all three call this: the plan-review brief names it (`Plan
+    sha256:`, `_plan_identity` below), `work.record_plan_review` refuses a verdict whose sha no copy
+    of the plan still holds, and `work._plan_review_refusal` refuses `work.py pr` once the published
+    plan no longer hashes to the recorded one. It takes a PATH and hashes bytes, never decoded or
+    stripped text: `work._run` returns `stdout.strip()`, so a hash of `git show` output would lose the
+    trailing newline and could never match a file's hash."""
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+_PLAN_IDENTITY_NOTE = ("This is the file to review. The dispatcher records your verdict against this "
+                       "sha256; the PR gate (gates.plan_review) accepts it only for exactly these bytes.")
+
+
+def _plan_identity(sdlc_dir, goal):
+    """The plan-review brief's `Plan file:` / `Plan sha256:` section, or "" (#258).
+
+    Names the REVIEWED copy (`main or branch`, `work.plan_copies`' rule): the main checkout's copy
+    when it exists (no `work` load, no git call), else the copy committed on the goal's branch. The
+    branch pointer is the runnable `git -C <root> show <branch>:<rel>` that `_branch_doc` already hands
+    a reviewer, NEVER the worktree path: the documented gesture checks the brief with `reviewer.py
+    check --scratch <worktree>`, which refuses any brief whose text names that path. The copy is
+    committed and unmodified, so those `git show` bytes are the hashed bytes.
+
+    Fail-open like the rest of the brief: any exception drops the section rather than the review. A
+    brief with no such line found no plan, and `record-plan-review` then refuses its empty value."""
+    try:
+        plan = phase_doc_file(sdlc_dir, goal, "plans")
+        if plan:
+            pointer = plan.as_posix()
+        else:
+            work = _load("work")
+            rec = work._record(sdlc_dir, goal)
+            _, plan = work.plan_copies(sdlc_dir, goal, rec, work._run)
+            if not plan:
+                return ""
+            rel = pathlib.PurePosixPath(*plan.relative_to(rec["worktree"]).parts).as_posix()
+            pointer = "git -C %s show %s:%s" % (pathlib.Path(sdlc_dir).resolve().parent,
+                                               rec["branch"], rel)
+        return ("## The plan under review, by content\nPlan file: %s\nPlan sha256: %s\n%s"
+                % (pointer, plan_sha256(plan), _PLAN_IDENTITY_NOTE))
+    except Exception:                                 # noqa: BLE001 - the brief is fail-open
+        return ""
+
+
 def _outline(text):
     """A document's markdown heading lines only — its contract, without the prose under it.
 
@@ -623,6 +670,11 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
         "spelling.",
         "## What you are reviewing\n%s" % _artifact_pointer(phase, artifact, artifact_text),
     ]
+    if phase == "plan-review":
+        # #258: the exact bytes under review, so the verdict can be recorded against them.
+        identity = _plan_identity(sdlc_dir, goal)
+        if identity:
+            parts.append(identity)
     if project:
         parts.append("## What the project is for (judge the change against this)\n%s" % project)
     if goal_text:

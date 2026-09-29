@@ -4105,6 +4105,8 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
     # org-lockable, but the three readers agreed before this change and must still agree after it.
     sg = gates.get("stop_gate")
     sg_window = sg if isinstance(sg, dict) else {}
+    # RAW like `stop_gate` (#258): `work._plan_review_on` reads a scalar leaf for its plain intent.
+    pr_gate = gates.get("plan_review")
     par = _block(cfg, "parallel")
     goals_par = _block(par, "goals")           # SIBLING block, slice parallelism's own parent (#1200)
     wk = _block(cfg, "work")
@@ -4142,6 +4144,13 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("Stop gate (refuse to end a session with unplanned source)",
          f"ON ({_effective_window(sg_window)}h window)" if _gate_enabled(sg) else "off",
          'config: "gates": {"stop_gate": {"enabled": true}}'),
+        # #258: enforced only inside `work.py pr`, so work off means ON-in-config but inert here.
+        ("plan-review gate (PR push needs an approving review of the exact plan)",
+         ("off" if not _gate_enabled(pr_gate)
+          else "ON — `work.py pr` refuses a plan with no approving `record-plan-review` record for "
+               "its exact bytes (every host)" if _work_enabled(wk)
+          else "ON in config but NOT ENFORCED here — work.enabled is off, so `work.py pr` never runs"),
+         'config: "gates": {"plan_review": {"enabled": true}}'),
         ("decision gate (deny edits that break a registered invariant)",
          _decision_gate_state(base, cfg),
          "author .sdlc/decisions.json (see /agrim-decide) — authoring it IS the opt-in"),

@@ -75,8 +75,20 @@ def test_sdlc_goal_no_longer_instructs_the_bare_phase_emit():
     assert 'phase_report.py" end' in SDLC_GOAL
 
 
-def test_sdlc_plan_review_instructs_gate_emit():
-    assert 'emit .sdlc "$goal" gate --gate plan_review' in SDLC_PLAN_REVIEW
+def test_sdlc_plan_review_no_longer_instructs_the_gate_emit():
+    """#258: the plan-review verdict is now RECORDED by `work.py record-plan-review`, against the
+    `Plan sha256:` line of the brief written at dispatch, and that verb is the one emitter of the
+    `plan_review` journal gate. Leaving the old hand-typed `loop.py emit` in place too would
+    double-emit one verdict as two events. INVERTED from the old
+    test_sdlc_plan_review_instructs_gate_emit, following the #1626/#1013 precedent
+    (test_sdlc_retro_no_longer_instructs_a_standalone_retro_emit below) -- it guards the removal.
+    And the record reads the dispatch-time brief file; it never rebuilds the brief (a rebuild hashes
+    the edited plan, so the check could never fail)."""
+    assert 'gate --gate plan_review' not in SDLC_PLAN_REVIEW
+    assert 'work.py" record-plan-review .sdlc "<goal>"' in SDLC_PLAN_REVIEW
+    assert "--plan-sha256" in SDLC_PLAN_REVIEW
+    verdict = SDLC_PLAN_REVIEW.split("## Verdict", 1)[1].split("## 5.", 1)[0]
+    assert 'review_context.py" brief' not in verdict
 
 
 def test_sdlc_plan_review_verdict_mapping_is_present():
