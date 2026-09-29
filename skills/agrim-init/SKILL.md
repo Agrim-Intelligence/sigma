@@ -30,7 +30,10 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    `4/5 github` (github mode only: the `sdlc:*` + `priority:P0`-`P3` labels, `assignee: @me`, the
    board OFFER -- 1c below -- and the ledger question), `5/5 summary` and a `Next:` line
    (`/agrim-loop`, or `--demo` first when nothing is queued).
-   Every question not yet answered is ONE `[ask]` line naming the flag that answers it:
+   Every question not yet answered is ONE `[ask]` line naming the flag that answers it, in one
+   machine-readable shape: `[ask] <id>: <prose> -> <answer> ; <answer>`, each answer a bare
+   `--flag` or `--flag VALUE|VALUE` (upper-case values are placeholders you fill in). Everything
+   after the last ` -> ` is the machine part (`tools/onboarding_control.py` parses it):
 
    | Question | Flags |
    |---|---|
