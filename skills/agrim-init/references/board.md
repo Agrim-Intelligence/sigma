@@ -10,7 +10,7 @@ It creates the board the loop mirrors onto, or finishes or adopts one, and pins 
 | auth + scopes | `gh auth status`, preflight's `repo` + `project` check | REFUSED, exit 2, per-host fix lines |
 | resolve | the owner's boards over REST. A pinned number is reused; a same-titled board is refused | REFUSED, exit 2, runbook below |
 | create | `createProjectV2` (links the repo in the same call), or `copyProjectV2` + `linkProjectV2ToRepository` | exit 1, resume command |
-| pin | `project.number` + `project.owner` (+ `project.setup_created` when this run created the board), atomic, written before anything else can fail | `[FAIL]`, the value to set by hand |
+| pin | `project.number` + `project.owner` (+ `project.setup_created` = `{number, owner}` when this run created the board; dropped when another number or owner is pinned), atomic, written before anything else can fail | `[FAIL]`, the value to set by hand |
 | fields | Status options from `project.columns`, id-preserving. Only on OUR EMPTY board (created or copied in this run, or the board an earlier run created that still has no card) are GitHub's `Todo` / `In progress` renamed to Backlog / In Progress and `Ready` added. Priority gets `P0`..`P4` | `[FAIL]`, exit 1, resume command; `[REFUSED]`, exit 2 (below) |
 | verify | reads the fields back; one GraphQL read for the repo link and workflows | `[FAIL]` / `[manual]` |
 
