@@ -263,8 +263,9 @@ def test_reconcile_leaves_an_unreadable_pr_alone():
 
 
 def test_reconcile_retries_a_close_that_failed():
-    """A raising `complete()` downgrades the `done` to `parked` (#1201); the flag must survive so
-    the next pass retries the close rather than stranding a merged goal's issue open."""
+    """A raising `complete()` must keep the flag so the next pass retries the close rather than
+    stranding a merged goal's issue open -- and (#255) it retries QUIETLY: nothing is recorded,
+    nothing is parked in public, on a transient failure."""
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d)
         lp = _load("loop")
@@ -273,8 +274,9 @@ def test_reconcile_retries_a_close_that_failed():
         gh = FakeGh({"7": "merged"})
         lp.work._run = gh
         assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
-                                             min_interval=0) == [("0001", "parked", "7")]
+                                             min_interval=0) == []
         assert lp.work._record(base, "0001").get("awaiting_merge")
+        assert not any(e[0] == "park" for e in src.events)
         src.complete_raises = False
         assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
                                              min_interval=0) == [("0001", "done", "7")]
@@ -467,3 +469,248 @@ def test_merge_under_auto_merge_off_runs_the_review_gate_first(monkeypatch, comm
         if starts != "PARK:":
             assert out.endswith("leaving PR #7 for a human")
         assert not any("pr merge" in c for c in run.calls)    # `off` never merges, whatever the gate
+
+
+# --- #255: hardening after #232 --------------------------------------------------------------------
+
+
+class ReentrantSource(RecordingSource):
+    """`complete()` runs a SECOND pass while the first is mid-record -- the deterministic stand-in
+    for a `next` and a watch tick racing on the same goal (two processes, one flag)."""
+
+    def __init__(self, lp, base, gh):
+        super().__init__()
+        self.lp, self.base, self.gh, self.inner = lp, base, gh, None
+
+    def complete(self, goal):
+        super().complete(goal)
+        if self.inner is None and len([e for e in self.events if e[0] == "complete"]) < 3:
+            self.inner = self.lp._reconcile_awaiting_merges(self.base, WORK_ON, source=self,
+                                                            run=self.gh, min_interval=0)
+
+
+def test_255_1_a_closing_pass_reads_each_pr_once_over_rest_and_never_through_graphql():
+    """(1) The documented cost, measured: a pass that CLOSES goals makes one REST `pulls/<n>` read
+    per goal and no `gh pr view` (GraphQL) at all -- #232 shipped 2 REST reads + 3 `gh pr view`
+    per closed goal while README/landing.md said "<=10 REST reads per pass, never GraphQL"."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        src = _awaiting(lp, base, [("0001", "7"), ("0002", "8")])
+        gh = FakeGh({"7": "merged", "8": "merged"})
+        lp.work._run = gh
+        out = lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0)
+        assert sorted(out) == [("0001", "done", "7"), ("0002", "done", "8")]
+        assert len(gh.pr_reads()) == 2, gh.calls
+        assert not [c for c in gh.calls if "pr view" in c or "graphql" in c], gh.calls
+
+
+def test_255_2_two_passes_racing_record_done_once():
+    """(2) A `next` and the watch tick racing: the second pass must not also record `done`."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+        src = ReentrantSource(lp, base, gh)
+        _awaiting(lp, base, [("0001", "7")], src=src)
+        out = lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0)
+        assert out == [("0001", "done", "7")]
+        assert src.inner == []
+        assert [e for e in src.events if e[0] == "complete"] == [("complete", "0001")]
+        recorded = [l for l in (pathlib.Path(base) / "state" / "STATE.md").read_text().splitlines()
+                    if l.startswith("iteration:")]
+        assert recorded == ["iteration: 2"], recorded     # review + ONE done, never two
+
+
+def test_255_2_a_held_lock_skips_the_pass_without_a_single_call(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        src = _awaiting(lp, base, [("0001", "7")])
+        gh = FakeGh({"7": "merged"})
+        with lp._merge_reconcile_lock(base) as held:
+            assert held is True
+            assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                                 min_interval=0) == []
+        assert gh.calls == []
+        assert "another merge-reconcile pass" in capsys.readouterr().err
+        # Released with its holder: the next pass runs.
+        lp.work._run = gh
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                             min_interval=0) == [("0001", "done", "7")]
+
+
+def test_255_3_a_pass_killed_after_the_record_never_records_done_again():
+    """(3) The watch tick's timeout kills the pass after the issue closed and `done` was recorded
+    but before the slow tail (unit-completion signal, checkout release) finished. SystemExit stands
+    in for the kill: it is a BaseException, so no `except Exception` in the pass absorbs it."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        src = _awaiting(lp, base, [("0001", "7")])
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+        real = lp._signal_unit_completion
+
+        def killed(*a, **k):
+            raise SystemExit("killed by run_with_timeout")
+        lp._signal_unit_completion = killed
+        with pytest.raises(SystemExit):
+            lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0)
+        lp._signal_unit_completion = real
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                             min_interval=0) == []
+        assert [e for e in src.events if e[0] == "complete"] == [("complete", "0001")]
+
+
+def test_255_3_a_pass_stops_starting_goals_once_its_budget_is_spent(monkeypatch):
+    """(3) Bounded under the tick's call timeout: the budget is derived from
+    SIGMA_WATCH_CALL_TIMEOUT (half of it), and no new goal is started once it is spent."""
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "20")
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        assert lp._merge_reconcile_budget() == 10.0
+        src = _awaiting(lp, base, [("0001", "7"), ("0002", "8"), ("0003", "9")])
+        gh = FakeGh({"7": "open", "8": "open", "9": "open"})
+        ticks = iter([0.0, 0.0, 11.0, 11.0, 11.0, 11.0])
+        lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0,
+                                      clock=lambda: next(ticks))
+        assert len(gh.pr_reads()) == 1
+
+
+def test_255_4_awaiting_merge_age_is_reported_by_doctor_and_status():
+    """(4) LIVENESS: a goal stuck awaiting merge (an armed PR whose check fails never lands) and a
+    machine where nothing runs the pass both show their AGE -- an idle wait does not."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        _started(lp, base, "0001", pr="7")
+        lp.work.mark_awaiting_merge(base, "0001", now=1_000_000)
+        lp.work.stamp_merge_check(base, "0001", now=1_000_000 + 3 * 86400)
+        now = 1_000_000 + 3 * 86400 + 60
+        report = lp.work.awaiting_merge_report(base, now=now)
+        assert report[0]["goal"] == "0001" and report[0]["stuck"] and not report[0]["unwatched"]
+        assert lp.work.awaiting_merge_line(base, now=now).startswith("awaiting merge: 1 (")
+        assert "0001 PR #7 for 3d" in lp.work.awaiting_merge_line(base, now=now)
+        doctor = _load_skill("agrim-doctor", "doctor")
+        row = doctor._awaiting_merge_row(base, now=now)
+        assert row["ok"] is False and "for 3d" in row["name"] and "PR #7" in row["fix"]
+        # Nothing reading it for a day is the OTHER death: the pass is not running at all.
+        row = doctor._awaiting_merge_row(base, now=1_000_000 + 3 * 86400 + 2 * 86400)
+        assert row["ok"] is False and "no PR read for" in row["name"]
+        status = _load_skill("agrim-status", "status")
+        assert "awaiting merge: 1" in status._awaiting_merge_segment(base, now=now)
+        # A fresh wait, read a minute ago, is idle, not dead.
+        lp.work.stamp_merge_check(base, "0001", now=now)
+        lp.work._save(base, "0001", dict(lp.work._record(base, "0001"),
+                                         awaiting_merge={"pr": "7", "goal": "0001",
+                                                         "since": now - 3600, "checked_at": now}))
+        assert doctor._awaiting_merge_row(base, now=now + 60)["ok"] is True
+
+
+def _load_skill(skill, name):
+    path = S.parent.parent / skill / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def _log_rows(base, rows):
+    logdir = pathlib.Path(base) / "state" / "log"
+    logdir.mkdir(parents=True, exist_ok=True)
+    with open(logdir / "0001.jsonl", "w", encoding="utf-8") as fh:
+        for ts, kind, extra in rows:
+            fh.write(json.dumps(dict({"ts": ts, "goal": "0001", "kind": kind, "actor": "loop",
+                                      "thread": "main"}, **extra)) + "\n")
+
+
+def test_255_4_log_keeps_a_review_goal_in_flight_and_says_how_long_it_has_waited():
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        log = _load_skill("agrim-log", "log")
+        _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
+                         ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
+                         ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])
+        now = log._epoch("2026-01-04T05:00:00.000Z")
+        rows = log.active(base, now=now)
+        assert [r[0] for r in rows] == ["0001"]
+        entries = log.read_goal(base, "0001")
+        assert log.is_closed(entries) is False
+        assert "awaiting merge for 3d 04h" in log.describe(rows[0][2], rows[0][3])
+        assert "awaiting merge for 3d 04h" in log.status(base, now=now)
+        # A goal recorded DONE is still closed.
+        _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
+                         ("2026-01-01T01:00:00.000Z", "recorded", {"result": "done"})])
+        assert log.active(base, now=now) == []
+
+
+@pytest.mark.parametrize("result", ["parked", "failed"])
+def test_255_5_a_human_park_or_fail_clears_the_flag_so_a_later_merge_does_not_override_it(result):
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        src = _awaiting(lp, base, [("0001", "7")])
+        lp._record(base, src, "0001", result, "the human decided against it")
+        assert "awaiting_merge" not in lp.work._record(base, "0001")
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0) == []
+        assert not any(e[0] == "complete" for e in src.events)
+
+
+def test_255_6_finish_refuses_a_goal_awaiting_merge_even_when_its_pr_is_armed():
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        _awaiting(lp, base, [("0001", "7")])
+
+        def armed(cwd, argv):
+            if "pr view" in " ".join(argv):
+                return json.dumps({"state": "OPEN", "autoMergeRequest": {"enabledAt": "x"}})
+            return ""
+        out = lp.work.finish(base, WORK_ON, "0001", run=armed)
+        assert out.startswith("kept ") and "awaiting merge" in out, out
+        assert lp.work.record_path(base, "0001").exists()
+
+
+def test_255_7_a_transient_close_failure_retries_quietly_and_parks_publicly_once():
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        src = _awaiting(lp, base, [("0001", "7")])
+        src.complete_raises = True
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+
+        def parks():
+            return [e for e in src.events if e[0] == "park"]
+        for attempt in range(1, lp.MERGE_CLOSE_ATTEMPTS):
+            assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                                 min_interval=0) == []
+            assert parks() == [], attempt
+            assert lp.work._record(base, "0001")["awaiting_merge"]["close_failures"] == attempt
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                             min_interval=0) == [("0001", "parked", "7")]
+        assert len(parks()) == 1
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh, min_interval=0) == []
+        assert len(parks()) == 1                          # once, not every pass
+        src.complete_raises = False
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                             min_interval=0) == [("0001", "done", "7")]
+
+
+def test_255_9_run_loop_counts_review_apart_from_parked():
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d, {"work": {"enabled": True}, "budget": {"max_iterations": 1}})
+        (pathlib.Path(base) / "goals" / "0001.md").write_text("---\nid: 0001\nstatus: pending\n---\nx\n")
+        lp = _load("loop")
+        lp.work._run = FakeGh({"7": "open"})
+
+        def run_goal(goal):
+            _started(lp, base, goal)
+            return "done", ""
+        out = lp.run_loop(base, run_goal)
+        assert out["review"] == 1 and out["parked"] == 0, out

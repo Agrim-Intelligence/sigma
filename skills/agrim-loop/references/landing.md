@@ -271,11 +271,36 @@ budget gate) and by the watch daemon's `reconcile_tick.py`. For each goal awaiti
 PR once (REST): **merged** → it records `done` for you (closes the issue, strips the lifecycle labels,
 moves the card to Done, replays the merge observation, releases the checkout) and prints `<goal> done
 (PR #N merged)`; **closed without merging** → `parked` (a human closed it, so a human decides);
-**still open or unreadable** → nothing. It is idempotent (a recorded goal is never recorded twice; a
-close that failed is retried next pass) and bounded: at most **10** PR reads per pass, oldest-checked
-first, and the automatic triggers skip a PR re-read within the last 120 s — a larger backlog costs
-close latency, never more calls. With nothing awaiting it makes no `gh` call at all. Do not close an
-awaiting issue by hand: merge (or close) the PR, and the next pass does the rest.
+**still open or unreadable** → nothing. With nothing awaiting it makes no `gh` call at all.
+
+- **Cost, measured** (`tests/test_merge_reconcile.py`): one REST `pulls/<n>` read per goal, at most
+  **10** per pass, oldest-checked first. There is no `gh pr view` (GraphQL) read on this path: the
+  close reuses that read, and so does the checkout release. Closing a goal adds one more REST read
+  only when the ledger or journal is on, for the merge facts. It also makes the issue writes any
+  `record done` makes (`source.complete()`: close, labels, board), which this count does not
+  include. The automatic triggers skip a PR re-read within the last 120 s, so a larger backlog costs
+  close latency, never more calls.
+- **One pass at a time.** A `next` and the watch tick used to race and could both record `done`.
+  The pass now holds a kernel lock (`.sdlc/state/merge-reconcile.lock`; `flock` on POSIX,
+  `msvcrt.locking` on Windows), and a second pass skips with `another merge-reconcile pass is
+  running (pid N)`. The lock dies with its holder, so it never goes stale. If a pass seems wedged,
+  stop the named pid; never delete the lock file. A host with no lock primitive refuses the pass
+  loudly.
+- **Crash-safe and bounded.** `record` clears the awaiting flag right after the terminal ledger
+  entry, before the slow tail (unit-completion signal, checkout release). A pass killed by the watch
+  tick's timeout therefore never records `done` twice. The pass stops starting goals after half of
+  `SIGMA_WATCH_CALL_TIMEOUT` (60 s by default), and the rest are read on the next pass.
+- **Quiet retries.** A close that fails is retried on the next pass without a public park. The
+  **3rd** consecutive failure parks the goal once, and the retries continue after that. The PR did
+  merge, so the goal closes by itself once GitHub answers.
+- **A human's decision wins.** `record parked` or `record failed` on a goal awaiting merge clears the
+  flag, so a later merge does not record `done` over it.
+- **Age is the tell.** `/agrim-doctor` shows a `goals awaiting merge` row. It is not OK once a goal
+  has waited over 3 days (an armed auto-merge whose required check failed never lands) or no pass
+  has read a waiting PR for a day (nothing is running `next` or the watcher). `/agrim-status` and
+  `log.py slots` show the same wait as `awaiting merge for 3d 04h`.
+
+Do not close an awaiting issue by hand: merge (or close) the PR, and the next pass does the rest.
 
 `work.auto_merge` is `off` | `protected` | `always`, default **off**. `protected` merges only where
 the base branch genuinely REQUIRES checks or reviews — autonomy proportional to the guardrails that
@@ -287,7 +312,9 @@ command leaked the checkout permanently, because nothing ever revisited a closed
 The release deliberately KEEPS a worktree that still holds uncommitted work, so a parked goal
 stays intact for whoever picks it up. Since `done` now always means merged, `finish`'s own
 open-PR refusal (#1202, a `loop: kept …` line on stderr) is reachable only through a hand-run
-`work.py finish` on a goal still awaiting merge; it is not yours to override — merge the PR and
+`work.py finish` on a goal still awaiting merge. It refuses while the goal carries the awaiting flag,
+armed auto-merge included (#255): the work record is the only place the PR number lives. It is not
+yours to override — merge the PR and
 the reconcile pass clears it, or, only once you are certain the PR pointer is expendable, run
 `work.py finish .sdlc "$goal" --force` by hand.
 **If `record done` prints a `sigma: unit-completion:` line, read it and do nothing about it.**

@@ -8,6 +8,7 @@ is enforced by /agrim-loop SKILL.md prose. Claim and outcome are mirrored to the
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
 import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib
+import contextlib
 
 try:
     import fcntl                    # POSIX only — see _try_acquire_claim_lock's docstring
@@ -3481,7 +3482,7 @@ def _mechanical_unknown_detail(detail, reason_class):
     return any(needle in text for needle in _MECHANICAL_UNKNOWN_NEEDLES)
 
 
-def _release_checkout(sdlc_dir, goal):
+def _release_checkout(sdlc_dir, goal, merged=False):
     """Drop a completed goal's worktree, from CODE. Called only from `_record`, only on a real
     `done`, and only after every piece of that goal's own bookkeeping has already landed.
 
@@ -3523,8 +3524,13 @@ def _release_checkout(sdlc_dir, goal):
     `config` is loaded here rather than threaded through `_record`'s eighteen call sites: `finish`
     accepts it but never reads it, and `state.load_config` RAISES on a missing/malformed config --
     which is precisely why the load sits inside the guard."""
+    # #255 (1): `merged` -- the caller confirmed the merge by REST moments ago -- is forwarded only
+    # when true, so `finish` skips its two GraphQL `gh pr view` reads; every other call keeps the
+    # three-argument shape the existing test doubles declare.
     try:
-        outcome = work.finish(sdlc_dir, state.load_config(sdlc_dir), goal)
+        config = state.load_config(sdlc_dir)
+        outcome = (work.finish(sdlc_dir, config, goal, merged=True) if merged
+                   else work.finish(sdlc_dir, config, goal))
     except Exception as exc:                  # noqa: BLE001 - cleanup must never cost a recorded done
         print(f"loop.py record: releasing {goal}'s checkout failed ({exc}) — the goal is still "
               "recorded done; its work record is intact, so `work.py finish` can retry it.",
@@ -3762,29 +3768,141 @@ def _awaiting_merge_skip(sdlc_dir):
     return set(goals) | {work.stem(g) for g in goals}
 
 
+#: #255 (7): consecutive failed closes of a MERGED goal's issue before the pass parks it in public.
+#: Below it a failure is retried quietly (next pass, >= MERGE_RECHECK_SECONDS later); the park lands
+#: exactly once, on this attempt, and the retries continue after it -- the PR did merge, so the goal
+#: still closes by itself the moment the source recovers.
+MERGE_CLOSE_ATTEMPTS = 3
+
+#: #255 (3): the share of the watch tick's per-call bound (`SIGMA_WATCH_CALL_TIMEOUT`, default 120 s,
+#: enforced by `run_with_timeout.py`) one pass may spend STARTING goals. Half, so the goal in hand
+#: when the budget runs out still has the other half to finish its close and release before the
+#: tick's own kill; a goal not reached is read on the next pass (latency, never loss).
+MERGE_PASS_BUDGET_SHARE = 0.5
+_MERGE_PASS_TIMEOUT_DEFAULT = 120.0
+
+#: #255 (2): the pass's mutual-exclusion lock file. See `_merge_reconcile_lock`.
+MERGE_RECONCILE_LOCK = "merge-reconcile.lock"
+
+
+def _merge_reconcile_budget():
+    """Seconds one pass may keep starting goals: MERGE_PASS_BUDGET_SHARE of the tick's call bound.
+    DERIVED from the same env knob `watch_daemon.py` kills by, never a second constant."""
+    try:
+        value = float(str(legacy.getenv("SIGMA_WATCH_CALL_TIMEOUT") or "").strip() or
+                      _MERGE_PASS_TIMEOUT_DEFAULT)
+    except ValueError:
+        value = _MERGE_PASS_TIMEOUT_DEFAULT
+    return (value if value > 0 else _MERGE_PASS_TIMEOUT_DEFAULT) * MERGE_PASS_BUDGET_SHARE
+
+
+@contextlib.contextmanager
+def _merge_reconcile_lock(sdlc_dir):
+    """#255 (2): serialize the merge-reconcile pass across processes -- a `next` and the watch tick
+    racing on one merged goal used to BOTH record `done` (two ledger entries, two close comments,
+    two unit-completion signals). Yields True (held), False (another pass holds it -- skip; that
+    pass is doing this work) or None (this platform offers no lock -- the caller REFUSES the pass
+    loudly rather than run unguarded, AGENTS.md SAFETY).
+
+    NON-BLOCKING, so there is no timeout to derive and no waiter to wedge: the loser skips and its
+    goals are read by the holder or by the next pass. A KERNEL lock (`fcntl.flock` on POSIX,
+    `msvcrt.locking` on Windows -- `state.phase_end_lock`'s pair), so it cannot go stale: it dies
+    with its holder, including the SIGKILL `run_with_timeout.py` sends an overrunning tick. The file
+    itself is never read for state; the holder's pid is written into it only for diagnosis.
+    THE POLITE LEVER for a pass that seems wedged: the busy line names the holder pid -- stop THAT
+    process (the watch tick's own timeout already does, within SIGMA_WATCH_CALL_TIMEOUT). Never
+    delete the lock file: a new inode would admit a second pass beside the live holder."""
+    path = pathlib.Path(sdlc_dir) / "state" / MERGE_RECONCILE_LOCK
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        yield None
+        return
+    held = False
+    try:
+        try:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif os.name == "nt":
+                import msvcrt
+                if os.fstat(fd).st_size == 0:
+                    os.write(fd, b"0")
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                yield None
+                return
+            held = True
+        except OSError:
+            yield False
+            return
+        try:
+            if fcntl is not None:
+                os.ftruncate(fd, 0)
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.write(fd, str(os.getpid()).encode())
+        except OSError:
+            pass
+        yield True
+    finally:
+        if held:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:
+                    import msvcrt
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        os.close(fd)
+
+
+def _merge_lock_holder(sdlc_dir):
+    try:
+        return (pathlib.Path(sdlc_dir) / "state" / MERGE_RECONCILE_LOCK).read_text().strip() or "?"
+    except OSError:
+        return "?"
+
+
 def _reconcile_awaiting_merges(sdlc_dir, config, source=None, run=None, now=None,
-                               min_interval=None, limit=None):
+                               min_interval=None, limit=None, clock=None):
     """#232: finish the goals `record review` left waiting -- the "issue closes when the PR merges"
     half of done-means-merged. -> [(goal, outcome, pr)] for each goal this pass RECORDED.
 
     For each work record flagged `awaiting_merge` (oldest-checked first, at most
     `work.MERGE_RECONCILE_MAX_PER_PASS`, skipping any re-read within `min_interval` seconds):
     one REST read of its PR (`work.pr_landing_state`), then
-      merged          -> `work.done_refusal` (replays the merge receipt: the existing
-                         merge-observation adapter) and `_record(done)`, which closes the issue,
-                         strips the lifecycle labels, moves the card to Done and releases the
-                         checkout -- the same chokepoint a `record done` passes through;
+      merged          -> `work.done_refusal` given THAT read (replays the merge receipt: the
+                         existing merge-observation adapter) and `_record(done, merged_pr=True)`,
+                         which closes the issue, strips the lifecycle labels, moves the card to Done
+                         and releases the checkout -- the same chokepoint a `record done` passes;
       closed unmerged -> `_record(parked, "PR #N was closed without merging")` -- a human closed
                          it, so a human decides;
       open / unknown  -> stamp `checked_at` and leave it.
-    IDEMPOTENT: the flag is cleared only AFTER a recorded `done`/`parked` (and `done` normally
-    unlinks the record anyway), so a crash before the record retries next pass, and a record that
-    landed is never recorded twice. A `done` that `_record` downgraded to `parked` (a raising
-    `complete()`, #1201) keeps the flag, so the close is retried.
 
-    COST: zero `gh` calls when nothing is flagged (one directory listing). Otherwise at most
-    `limit` REST GETs per pass, whatever the backlog -- a larger backlog costs close LATENCY
-    (every PR re-read within ceil(N/limit) passes), never more calls. REST, never GraphQL (#1209).
+    ONE PASS AT A TIME (#255 (2)): the whole pass runs under `_merge_reconcile_lock`; a pass that
+    finds it held skips (stderr names the holder pid) -- the holder is doing this work.
+
+    CRASH-SAFE (#255 (3)): `_record` clears the flag itself, immediately after its ledger terminal
+    entry and BEFORE the slow tail (unit-completion signal, checkout release), so a pass killed in
+    that tail by the watch tick's timeout never records `done` a second time. A kill before the
+    record (during the close) leaves the flag, and the next pass retries; `complete()` is safe on an
+    already-closed issue. And the pass is BOUNDED in time: no goal is started once
+    `_merge_reconcile_budget()` (half of SIGMA_WATCH_CALL_TIMEOUT) is spent.
+
+    QUIET RETRY (#255 (7)): a raising `complete()` records nothing and parks nothing on the first
+    MERGE_CLOSE_ATTEMPTS - 1 failures (counted on the flag); the MERGE_CLOSE_ATTEMPTS-th parks in
+    public, once. A `done` downgraded that way keeps the flag, so the close is still retried.
+
+    COST (#255 (1), measured by tests/test_merge_reconcile.py): zero `gh` calls when nothing is
+    flagged (one directory listing). Otherwise one REST `pulls/<n>` GET per goal read, at most
+    `limit` per pass whatever the backlog, and no `gh pr view` (GraphQL) at all: the confirming read
+    is reused and `finish` is told the merge is confirmed. A goal that closes adds one more REST read
+    only when the ledger or journal is on (the merge facts), plus the issue writes
+    `source.complete()` makes for any `record done`. A larger backlog costs close LATENCY (every PR
+    re-read within ceil(N/limit) passes), never more calls per pass.
 
     Only on `work.enabled` (no PR is ever opened otherwise). FAIL-OPEN per goal and overall: a sweep
     must never cost the caller its pick or its tick."""
@@ -3797,41 +3915,85 @@ def _reconcile_awaiting_merges(sdlc_dir, config, source=None, run=None, now=None
         goals = work.awaiting_merge_goals(sdlc_dir, now=now, min_interval=interval)[:limit]
         if not goals:
             return results
-        source = source if source is not None else sources.get_source(sdlc_dir, config)
-        for goal in goals:
-            try:
-                rec = work._record(sdlc_dir, goal) or {}
-                pr = str(rec.get("pr") or "")
-                landing, _detail = work.pr_landing_state(sdlc_dir, rec, run)
-                work.stamp_merge_check(sdlc_dir, goal, now=now)
-                if landing == work.MERGED:
-                    if work.done_refusal(sdlc_dir, config, goal, run=run):
-                        continue          # the confirming read disagreed -- try again next pass
-                    outcome = _record(sdlc_dir, source, goal, "done",
-                                      f"PR #{pr} merged (observed by the merge-reconcile pass)")
-                elif landing == work.CLOSED_PR:
-                    outcome = _record(sdlc_dir, source, goal, "parked",
-                                      f"PR #{pr} was closed without merging")
-                else:
-                    continue
-                # Cleared only once the outcome this landing called for was actually recorded.
-                if outcome == ("done" if landing == work.MERGED else "parked"):
-                    work.clear_awaiting_merge(sdlc_dir, goal)
-                results.append((goal, outcome, pr))
-            except Exception as exc:              # noqa: BLE001 - one goal never costs the rest
-                print(f"loop.py: merge reconcile skipped {goal} (non-fatal): {exc}", file=sys.stderr)
+        with _merge_reconcile_lock(sdlc_dir) as held:
+            if held is None:
+                print("loop.py: merge reconcile REFUSED -- this platform offers no file lock, and an "
+                      "unguarded pass can record a merged goal done twice; run it on a POSIX or "
+                      "Windows host", file=sys.stderr)
+                return results
+            if not held:
+                print(f"loop.py: another merge-reconcile pass is running (pid "
+                      f"{_merge_lock_holder(sdlc_dir)}) -- skipping; it reads these goals",
+                      file=sys.stderr)
+                return results
+            clock = clock or time.monotonic
+            started, budget = clock(), _merge_reconcile_budget()
+            # Re-listed under the lock: a pass that held it a moment ago may have recorded some.
+            still = set(work.awaiting_merge_goals(sdlc_dir))
+            goals = [g for g in goals if g in still]
+            source = source if source is not None else sources.get_source(sdlc_dir, config)
+            for goal in goals:
+                if clock() - started >= budget:
+                    print(f"loop.py: merge reconcile stopped at its {budget:.0f}s budget -- the "
+                          "rest are read next pass", file=sys.stderr)
+                    break
+                try:
+                    _reconcile_one(sdlc_dir, config, source, goal, run, now, results)
+                except Exception as exc:          # noqa: BLE001 - one goal never costs the rest
+                    print(f"loop.py: merge reconcile skipped {goal} (non-fatal): {exc}",
+                          file=sys.stderr)
     except Exception as exc:                      # noqa: BLE001 - fail-open; see docstring
         print(f"loop.py: merge reconcile failed non-fatally ({exc}) — continuing", file=sys.stderr)
     return results
 
 
-def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transition="park"):
+def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
+    rec = work._record(sdlc_dir, goal) or {}
+    flag = rec.get("awaiting_merge")
+    if not isinstance(flag, dict):
+        return                                   # recorded by an earlier pass meanwhile
+    pr = str(rec.get("pr") or "")
+    landing = work.pr_landing_state(sdlc_dir, rec, run)
+    work.stamp_merge_check(sdlc_dir, goal, now=now)
+    if landing[0] == work.MERGED:
+        if work.done_refusal(sdlc_dir, config, goal, run=run, landing=landing):
+            return                               # not confirmed after all -- next pass
+        failures = int(flag.get("close_failures") or 0)
+        outcome = _record(sdlc_dir, source, goal, "done",
+                          f"PR #{pr} merged (observed by the merge-reconcile pass)",
+                          merged_pr=True,
+                          retry_close=failures + 1 != MERGE_CLOSE_ATTEMPTS)
+        if outcome == "retry":
+            n = work.note_close_failure(sdlc_dir, goal)
+            print(f"loop.py: closing {goal} failed ({n} of {MERGE_CLOSE_ATTEMPTS} before it is "
+                  "parked) -- retried quietly next pass", file=sys.stderr)
+            return
+        if outcome != "done":
+            work.note_close_failure(sdlc_dir, goal)
+    elif landing[0] == work.CLOSED_PR:
+        outcome = _record(sdlc_dir, source, goal, "parked", f"PR #{pr} was closed without merging")
+    else:
+        return
+    results.append((goal, outcome, pr))
+
+
+def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transition="park",
+            merged_pr=False, retry_close=False):
+    """`merged_pr` (#255 (1)): the caller confirmed the goal's PR merged by a REST read just now;
+    forwarded to the checkout release so it does not ask GitHub again. `retry_close` (#255 (7)):
+    a raising `complete()` returns "retry" having written NOTHING (no park, no ledger, no cursor) --
+    only the merge-reconcile pass passes it, and it counts the failure and retries."""
     if result == "review":
         return _record_awaiting_merge(sdlc_dir, source, goal, detail, retro_grade)
+    requested = result
     if result == "done":
         try:
             source.complete(goal)
         except Exception as exc:
+            if retry_close:
+                print(f"loop.py record: source.complete() failed for {goal} ({exc}) — nothing "
+                      "recorded; the merge-reconcile pass retries it", file=sys.stderr)
+                return "retry"
             # #1201: `source.complete()` raising here (the reported case: `gh issue close` failing
             # on an exhausted GitHub GraphQL quota) used to propagate straight out of `_record` —
             # this was the CLI `record` verb's ONLY call to `_record`, with no try/except anywhere
@@ -3912,6 +4074,19 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
     # process's own terminal entry apart from a stale one written by a different concurrent
     # process of the same actor.
     ledger.safe_append(sdlc_dir, outcome, goal, why=detail or None, run_id=state.run_identity())
+    # #255 (3)/(5): the `awaiting_merge` flag ends HERE, right after the terminal ledger entry and
+    # before the slow tail below (unit-completion signal, checkout release, KG hops) -- so a pass
+    # killed in that tail by the watch tick's timeout never finds the flag and records `done` again.
+    # Cleared on a real `done`, and on a REQUESTED `parked`/`failed`: that is a human's (or the
+    # loop's own) decision about the goal, and a later merge must not record `done` over it. A
+    # `done` that the #1201 handler above downgraded to `parked` KEEPS the flag -- the PR merged and
+    # only the close failed, so the pass retries it.
+    if outcome == "done" or requested in ("parked", "failed"):
+        try:
+            work.clear_awaiting_merge(sdlc_dir, goal)
+        except Exception as exc:                  # noqa: BLE001 - the record already landed
+            print(f"loop.py record: clearing {goal}'s awaiting-merge flag failed ({exc})",
+                  file=sys.stderr)
     if outcome == "parked":
         ledger.safe_append(sdlc_dir, "park", goal, stream=ledger.EVENTS,
                            reason_class=reason_class, why=detail or None, decision_tier=tier)
@@ -3959,7 +4134,7 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
     # on purpose — this surfaces, and a human decides.
     if outcome == "done":
         _signal_unit_completion(sdlc_dir, goal)
-        _release_checkout(sdlc_dir, goal)
+        _release_checkout(sdlc_dir, goal, merged=merged_pr)
     # #1562: LAST, for the reason #1478 gives one block up -- every piece of this goal's own
     # bookkeeping has already landed, so a builder that hangs, fails or is missing is structurally
     # incapable of costing any of it.
@@ -5085,7 +5260,7 @@ def run_loop(sdlc_dir, run_goal):
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own
     _ensure_ledger_delivery(sdlc_dir, config)        # ...and notices when that flow has stalled (#2393)
     source = sources.get_source(sdlc_dir, config)   # one source per run (e.g. github labels ensured once)
-    done = parked = failed = 0
+    done = parked = failed = review = 0
     poisoned = set()      # F4: goals neither record attempt below could record — skipped for the
                           # REST OF THIS RUN so a doubly-failing source can't spin on one goal forever
     while True:
@@ -5142,8 +5317,9 @@ def run_loop(sdlc_dir, run_goal):
                 outcome = "parked"
         done += (outcome == "done")
         failed += (outcome == "failed")
-        parked += (outcome not in ("done", "failed"))
-    result = {"done": done, "parked": parked, "failed": failed,
+        review += (outcome == "review")          # #255 (9): awaiting merge is not a park
+        parked += (outcome not in ("done", "failed", "review"))
+    result = {"done": done, "parked": parked, "failed": failed, "review": review,
               "iterations": state.load_cursor(sdlc_dir)["iteration"], "stopped": stopped}
     session_end(sdlc_dir, session_pid)
     return result
@@ -5896,11 +6072,14 @@ def _dispatch(argv):
         # (owner decision on #232): with `work.enabled` and a PR on record, `done` passes only on a
         # PR confirmed merged -- whatever `work.auto_merge` says. Open / unreadable -> record
         # `review`; closed unmerged -> `parked`. See `work.done_refusal`'s docstring. Never raises.
+        merged_pr = False
         if argv[4] == "done" and work.enabled(config):
             refusal = work.done_refusal(argv[2], config, argv[3])
             if refusal:
                 print(f"REFUSED: {refusal}", file=sys.stderr)
                 return 4
+            # #255 (1): no refusal with a PR on record means the REST read just confirmed MERGED.
+            merged_pr = bool((work._record(argv[2], argv[3]) or {}).get("pr"))
         if argv[4] == "review":
             # #232: the non-terminal "PR awaiting merge" outcome. Meaningless without a PR the loop
             # opened -- refuse rather than silently park (the pre-#232 fall-through for any
@@ -5919,6 +6098,9 @@ def _dispatch(argv):
                       f"for {argv[3]} -- run `work.py pr` first, or record done/parked/failed",
                       file=sys.stderr)
                 return 2
+        if merged_pr:
+            _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],
+                    reason, retro_grade=retro_grade, merged_pr=True); return 0
         _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],
                 reason, retro_grade=retro_grade); return 0
     if len(argv) >= 4 and argv[1] == "claim":       # #1962: claim a goal you already chose

@@ -11,7 +11,8 @@ Answers, from the log alone, no live agent inspection needed:
   slots <dir>              -- the same ACTIVE-goal derivation as Block A of docs/output-contract.md
 
 A goal counts as ACTIVE (for `status`) iff its file has a `claimed` entry and its last entry,
-across every thread, is not `recorded` — purely log-derived, no ledger read, no liveness probe
+across every thread, is not `recorded` (a `recorded result=review` — PR awaiting merge, #255 — is
+still active: done means merged) — purely log-derived, no ledger read, no liveness probe
 (that is a different, deliberately out-of-scope watcher). `status` prints "last activity: <N> ago"
 precisely so a human can judge staleness themselves, never a liveness claim this tool can't back
 up. An empty/absent `.sdlc/state/log/` is a legitimate, obviously-off state, reported as a one-line
@@ -169,11 +170,33 @@ def _format_ago(delta_seconds):
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d} ago"
 
 
-def _describe(entry):
+def _awaiting_age(ago):
+    """`3d 04h` / `5h 02m` / `12m` -- how long a goal has waited on its merge. The same format as
+    agrim-loop's `work._age` (#255); copied, not imported, because this skill imports nothing from
+    agrim-loop (see the module docstring)."""
+    s = max(0, int(ago or 0))
+    if s >= 86400:
+        return f"{s // 86400}d {(s % 86400) // 3600:02d}h"
+    if s >= 3600:
+        return f"{s // 3600}h {(s % 3600) // 60:02d}m"
+    return f"{s // 60}m"
+
+
+def is_awaiting_merge(entry):
+    """#255: `recorded result=review` -- the loop finished its work and the goal's PR is awaiting a
+    merge. It is NOT closed: done means merged, and until the merge-reconcile pass records `done`
+    the goal is still in flight, however quiet. The row's own age is how long it has waited, which
+    is the only tell that tells a stuck PR (an armed auto-merge whose check failed) from a fresh one."""
+    return entry is not None and entry.get("kind") == "recorded" and entry.get("result") == "review"
+
+
+def _describe(entry, ago=None):
     """A short, one-line rendering of a single entry's own fields (everything but the envelope
     fields ts/goal/thread/actor/kind), e.g. `worktree_start branch=sdlc/158` or
     `file src/bar.py (edit)`."""
     kind = entry.get("kind", "?")
+    if is_awaiting_merge(entry) and ago is not None:
+        return f"awaiting merge for {_awaiting_age(ago)} (recorded result=review)"
     if kind == "file":
         return f"file {entry.get('path', '?')} ({entry.get('op', '?')})"
     extra = " ".join(f"{k}={v}" for k, v in entry.items()
@@ -194,7 +217,7 @@ def active(sdlc_dir, now=None):
         kinds = {e.get("kind") for e in entries}
         if "claimed" not in kinds:
             continue
-        if entries[-1].get("kind") == "recorded":
+        if entries[-1].get("kind") == "recorded" and not is_awaiting_merge(entries[-1]):
             continue                        # this goal has finished — not "active" anymore
         for thread, entry in sorted(_last_by_thread(entries).items()):
             epoch = _epoch(entry.get("ts"))
@@ -217,7 +240,7 @@ def status(sdlc_dir, now=None):
     for goal, thread, entry, ago in rows:
         left = f"  {goal} [{thread}]"
         ago_text = _format_ago(ago) if ago is not None else "? ago"
-        lines.append(f"{left:<20}{_describe(entry):<45} — {ago_text}")
+        lines.append(f"{left:<20}{_describe(entry, ago):<45} — {ago_text}")
     return "\n".join(lines)
 
 
@@ -503,7 +526,7 @@ def is_closed(entries):
     on from them either way. They are never hidden — they take a free slot when one is free, and
     they are counted in the tail when none is."""
     entry = newest_code_written(entries)
-    return entry is not None and entry.get("kind") == "recorded"
+    return entry is not None and entry.get("kind") == "recorded" and not is_awaiting_merge(entry)
 
 
 
@@ -541,6 +564,9 @@ def describe(entry, ago, extra_threads=0):
     NO ARROW — see the module docstring. Over the word cap the field values are dropped and the
     reduction is announced, rather than letting one odd value cost the whole block its shape."""
     kind = str(entry.get("kind") or "?")
+    if is_awaiting_merge(entry) and ago is not None:
+        # #255 LIVENESS: age is the tell -- a goal awaiting merge for 3d reads as exactly that.
+        return f"awaiting merge for {_awaiting_age(ago)}, PR not merged yet"
     thread = entry.get("thread") or "main"
     fields = [f"{name}={_value(entry[name])}"
               for name in BOUNDED_FIELDS.get(kind, ())
