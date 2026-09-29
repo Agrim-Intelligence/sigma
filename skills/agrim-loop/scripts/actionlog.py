@@ -144,7 +144,9 @@ INTERNAL_GATE_KINDS = ("merge", "code_review", "post_review", "test_trust",
 #: test_risk_gate_events.py::test_the_gate_also_reaches_the_action_log caught it. The two the kit
 #: has no detector for -- `risk_release`, `risk_debug` -- stay out, because nothing writes them.
 
-#: Agent-emitted kinds — reachable only via the new `loop.py log` CLI verb.
+#: Agent-emitted kinds — reachable via the new `loop.py log` CLI verb. One exception (#2828):
+#: `loop.py escalate` writes a `model_choice` row itself, as actor `agent`, because the tier it
+#: escalates from is agent-supplied (`tier_escalation.record`).
 AGENT_KINDS = ("file", "model_choice", "agent_dispatch", "agent_done", "note")
 AGENT_FIELDS = {
     "file": ("path", "op"),

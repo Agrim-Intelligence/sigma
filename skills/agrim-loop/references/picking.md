@@ -69,8 +69,9 @@ not necessarily adjacent to `b`'s own entry in `$goals`. The later solo refill b
 both shapes. If the line is missing (`model_selection` isn't `"auto"`, or `journal.enabled` is
 off — the shipped default), **fall back to resolving it yourself**, the exact fallback
 `references/running.md` already documents for phase dispatch: in local mode `predict.py resolve
-"$goal" .sdlc`; in github mode, fetch the issue's real text first (`gh issue view "$goal" --json
-title,body`) and pass that combined text, never the bare `"$goal"`. Under the default selection
+"$goal" .sdlc`; in github mode, fetch the issue's real text first, title on the first line
+(`gh issue view "$goal" --json title,body --jq '.title + "\n\n" + (.body // "")'`, POSIX
+shell) and pass that text, never the bare `"$goal"`. Under the default selection
 setting that fallback prints `off`; retain it as the explicit no-auto-selection state and give it to
 Codex's host resolver, which selects its versioned ordinary-work mapping. (A host with
 no subagent capability never reaches this step at all — goal-slot dispatch has always required
@@ -89,7 +90,10 @@ needed beyond what `work.py start` already does for a single goal), runs its own
 records its own outcome, **never above the tier you handed it** — the same ceiling
 `references/running.md` has that subagent read back out of ITS OWN pick's stderr for its own phase
 dispatches a moment later; passing it in here does not change what the ceiling IS, only who
-resolves it first. **Never** dispatch with an unattended `claude -p` (same reason as 3b: uncapped spend,
+resolves it first. The one exception is a review send-back that tier cannot converge: the slot
+runs `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
+and re-dispatches that phase at the tier its `ESCALATE` answer names — never a park for "budget" or
+"tier too small" (#2828; `references/running.md`). **Never** dispatch with an unattended `claude -p` (same reason as 3b: uncapped spend,
 and a second unmanaged worker on one `.sdlc` breaks state) — and **never** hand a subagent's own
 scratch/comparison work a `cp`/`rsync` of another goal's live worktree; a worktree's `.git` is a file
 pointing at shared metadata, and copying it can corrupt the real one.

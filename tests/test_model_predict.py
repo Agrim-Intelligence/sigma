@@ -1094,7 +1094,7 @@ def test_why_reports_what_the_loop_would_actually_choose(tmp_path, capsys):
     tuned = _sdlc_cfg(tmp_path, {"model_selection_max_tier": "fable",
                                  "model_selection_signal_excludes": ["vision"]}, ".tuned")
     assert m.main(["predict.py", "why", goal, plain]) == 0
-    assert capsys.readouterr().out.strip() == "model=fable signal=vision"
+    assert capsys.readouterr().out.strip() == "model=fable in=title signal=vision"
     assert m.main(["predict.py", "why", goal, tuned]) == 0
     assert capsys.readouterr().out.strip() == "model=sonnet signal="
 
@@ -1122,18 +1122,18 @@ def test_the_cli_survives_a_missing_or_unreadable_sdlc_dir(tmp_path, capsys):
     m = _mod()
     missing = str(tmp_path / "nope")
     assert m.main(["predict.py", "why", "draft the product vision", missing]) == 0
-    assert capsys.readouterr().out.strip() == "model=sonnet signal=vision"
+    assert capsys.readouterr().out.strip() == "model=sonnet in=title signal=vision"
     broken = tmp_path / ".broken"; broken.mkdir()
     (broken / "config.json").write_text("{not json")
     assert m.main(["predict.py", "why", "draft the product vision", str(broken)]) == 0
-    assert capsys.readouterr().out.strip() == "model=sonnet signal=vision"
+    assert capsys.readouterr().out.strip() == "model=sonnet in=title signal=vision"
     # valid JSON that is not an OBJECT: `.get` would not exist on it, so this reaches further into
     # the reader than a parse error does -- and `resolve`, which calls `.get` for the gate before
     # excludes are ever consulted, would traceback on every goal the loop picks.
     listy = tmp_path / ".listy"; listy.mkdir()
     (listy / "config.json").write_text("[1, 2]")
     assert m.main(["predict.py", "why", "draft the product vision", str(listy)]) == 0
-    assert capsys.readouterr().out.strip() == "model=sonnet signal=vision"
+    assert capsys.readouterr().out.strip() == "model=sonnet in=title signal=vision"
     assert m.resolve("draft the product vision", str(listy)) is None
     assert m.main(["predict.py", "resolve", "draft the product vision", str(listy)]) == 0
     assert capsys.readouterr().out.strip() == "off"
@@ -1588,7 +1588,7 @@ def test_all_four_documented_cli_gestures_honour_the_cap(tmp_path, capsys, monke
     assert m.main(["predict.py", goal, plain]) == 0                          # bare verb
     assert capsys.readouterr().out.strip() == "sonnet"
     assert m.main(["predict.py", "why", goal, plain]) == 0                   # why
-    assert capsys.readouterr().out.strip() == "model=sonnet signal=vision"
+    assert capsys.readouterr().out.strip() == "model=sonnet in=title signal=vision"
     assert m.main(["predict.py", "resolve", goal, plain]) == 0               # resolve
     assert capsys.readouterr().out.strip() == "sonnet"
     assert m.main(["predict.py", "resolve-step",                             # resolve-step
@@ -1601,7 +1601,7 @@ def test_all_four_documented_cli_gestures_honour_the_cap(tmp_path, capsys, monke
     assert m.main(["predict.py", goal, up]) == 0
     assert capsys.readouterr().out.strip() == "fable"
     assert m.main(["predict.py", "why", goal, up]) == 0
-    assert capsys.readouterr().out.strip() == "model=fable signal=vision"
+    assert capsys.readouterr().out.strip() == "model=fable in=title signal=vision"
     assert m.main(["predict.py", "resolve", goal, up]) == 0
     assert capsys.readouterr().out.strip() == "fable"
     assert m.main(["predict.py", "resolve-step", "render the narrative stage", up, "2564"]) == 0

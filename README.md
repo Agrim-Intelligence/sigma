@@ -679,7 +679,8 @@ A one-line rename doesn't need Opus; a schema migration shouldn't run on Haiku. 
 **`model_selection: auto`** in `.sdlc/config.json` and `/agrim-loop` **predicts a tier per goal** —
 `haiku · sonnet · opus · fable` — from the goal text (deterministic regex, zero-dep), then runs that
 goal's phases at it inside a subagent (the session can't switch its own model). Conflicts resolve
-**upward**, so a hard goal is never under-powered. Off by default; run **`/agrim-model "<goal>"`** any
+**upward**, so a hard goal is never under-powered, and a review send-back a tier cannot converge raises it one
+rung (`loop.py escalate`) instead of parking. Off by default; run **`/agrim-model "<goal>"`** any
 time to see the recommended tier. `/agrim-goal` also dispatches each phase at the selected tier
 when subagents are available. Claude accepts the tier alias; Codex resolves it to an exact model ID
 and reasoning effort before dispatch, checks the observed phase rollout, and uses a plugin-versioned
