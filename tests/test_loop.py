@@ -2220,6 +2220,43 @@ def test_next_writes_a_real_model_choice_ledger_event_at_pick_time(capsys):
     assert "signal=migrat" in err
 
 
+def test_next_pick_ignores_a_haiku_stem_that_is_only_in_the_body(capsys):
+    """#2827: a body-only `comment` must not route a goal to haiku at pick time. The title here
+    alone routes sonnet; the body word alone used to win. Also pins the `why` line's new
+    `in=<where>` field being PARSED, not swallowed into the recorded signal."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _model_choice_base(d)
+        title_body = {"title": "Fence the shared write sites",
+                      "body": "The S2 comment in the writer is wrong."}
+        kind, goal = lp._next(base, _QueueWithTitleBody(["a"], title_body),
+                              lp.state.load_config(base))
+        assert (kind, goal) == ("goal", "a")
+        events = _model_choice_events(base)
+    assert [(e["model"], e.get("signal")) for e in events] == [("sonnet", None)]
+    assert "model tier for a resolved to sonnet" in capsys.readouterr().err
+
+
+def test_next_pick_with_an_empty_title_never_promotes_the_body_first_line(capsys):
+    """#2827: the combined text used to be `.strip()`ped, so an empty title made the body's first
+    line the title and a body `fix typo` routed haiku."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _model_choice_base(d)
+        kind, goal = lp._next(base, _QueueWithTitleBody(["a"], {"title": "", "body": "fix typo"}),
+                              lp.state.load_config(base))
+        events = _model_choice_events(base)
+    assert [e["model"] for e in events] == ["sonnet"]
+
+
+def test_why_line_parser_keeps_a_spaced_signal_and_drops_the_location():
+    lp = _loop()
+    m = lp._WHY_LINE.match("model=opus in=body signal=race condition")
+    assert m and m.group("model") == "opus" and m.group("signal") == "race condition"
+    m = lp._WHY_LINE.match("model=sonnet signal=")
+    assert m and m.group("model") == "sonnet" and m.group("signal") == ""
+
+
 def test_next_pick_skips_prediction_entirely_when_model_selection_is_not_auto():
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:

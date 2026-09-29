@@ -32,8 +32,10 @@ path, so `predict.py resolve "$goal" .sdlc` there still resolves correctly — b
 already-printed stderr line works in EITHER mode and needs no branching. If the stderr line is
 missing (`model_selection` isn't `"auto"`, or the pick predates this line reaching stdout in your
 log), fall back to running `resolve` yourself: in local mode `resolve "$goal" .sdlc` as before; in
-github mode, fetch the issue's real text FIRST (`gh issue view "$goal" --json title,body`) and
-pass that combined text as the argument, never the bare `"$goal"`. Whatever tier you end up with
+github mode, fetch the issue's real text FIRST, title on the first line
+(`gh issue view "$goal" --json title,body --jq '.title + "\n\n" + (.body // "")'`, POSIX
+shell — a haiku signal counts only in the title, #2827) and pass that text as the argument, never
+the bare `"$goal"`. Whatever tier you end up with
 (`haiku`/`sonnet`/`opus`/`fable`) is the GOAL's ceiling; `signal` (from either the stderr line or
 your own fallback `why`/`resolve` call) is the literal text the regex matched (`migrat`, `secur`)
 — WHY it's that tier, which no reader can check without it (#880). You do not need to separately
@@ -123,8 +125,9 @@ ceiling. Before a Codex step dispatch, resolve the `resolve-step` result's `<tie
 pass its returned model ID and effort to Codex. On other hosts, pass the tier and, where supported,
 the resolve-step effort. For that step's `phase_report.py step` banner, pass the exact dispatched
 model ID with `--host-model <id>` instead of the ordinary `--phase-model`, as well as its portable
-`--model <tier>`; otherwise the banner honestly reports the host model as unrecorded. Never run a
-step ABOVE the goal ceiling. Then read the goal and
+`--model <tier>`; otherwise the banner honestly reports the host model as unrecorded.
+Never run a step ABOVE the goal ceiling — except the tier a `loop.py escalate` answer names
+(below), which becomes the new ceiling. Then read the goal and
 run it through the full SDLC (research → plan → plan-review →
 implement → review) — each phase via its **executor** (the `superpowers`/`code-review` companion on
 Claude if installed, else Sigma's portable `agrim-brainstorm`/`agrim-research`/`agrim-plan`/
@@ -211,8 +214,44 @@ re-reviewed plan's verdict is recorded against); for `pr-review`, publish a fres
 generation, whose brief already resolves to the live `gh pr diff <PR#>` — never the earlier
 review's transcript pasted in by hand. Step 6's worked example (the
 post-PR cycle) carries a code-enforced cap (`work.max_review_cycles`); plan-review and
-pre-PR/code-review have no equivalent counter, so a fix that does not resolve after a couple of
-rounds is "a failure you cannot resolve" (above) — park it rather than cycling indefinitely. **On
+pre-PR/code-review have no equivalent counter.
+
+**A send-back the tier cannot converge escalates the tier; it never parks on "budget" (#2828).**
+Token budget and tier size are not park reasons: neither is a human decision. The trigger is
+mechanical, not a judgment the struggling tier makes about itself: run the verb **before any park
+or fail after a review send-back, and at the latest on the second send-back at the same tier**:
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
+(`--after code-review` or `--after pr-review` for those gates; `--after` is required). Read the
+first word of its stdout:
+
+- `ESCALATE <next> effort=<e>` (exit 0) — re-dispatch the SAME phase fresh at `<next>` (haiku →
+  sonnet → opus) and effort `<e>`, with the reviewer's findings, the plan path and the worktree
+  path, exactly like any fix above. The verb has already recorded `model_choice` with the signal
+  `escalated: <gate> send-back at <T>` in the action log when that is on (it ships on from
+  `/agrim-init`) and in the journal when that is on (it ships off); pass `<next>` to
+  `phase_report.py start --model` and `agent_dispatch --role phase --model`. `<next>` is this goal's
+  ceiling from here on, for every later phase too — the router under-estimated the goal. Before
+  each later phase dispatch (and on any resume), take the higher of the pick-time tier and
+  `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" escalate .sdlc "$goal" --show` (prints the
+  escalated tier clamped to the current `model_selection_max_tier`, or `none`). The verb itself also reads that floor back, so passing the pick-time
+  tier again still climbs rather than repeating a rung.
+- `CEILING <T>` (exit 3) — no tier above `<T>` within `model_selection_max_tier` (`fable` is never
+  an escalation target). Keep the existing fix → re-review cycle at `<T>`; only a fix that still
+  does not resolve after a couple of rounds is "a failure you cannot resolve" (above) — park or
+  fail it rather than cycling indefinitely.
+- `OFF` (exit 3) — `model_selection` is not `"auto"`, so no tier is routed and there is none to
+  raise (Claude phases inherit the session model; Codex maps `off` to its ordinary-work model, as
+  above); the same fix → re-review cycle, then the same rule, applies.
+
+The ladder has two rungs, so a goal escalates at most twice: the floor lives in
+`.sdlc/state/escalation/<goal>.json`, control state written whatever the ledger, journal and
+action-log settings are. A `model_host_overrides.codex` entry the resolver refuses (checked before
+anything is written, as `resolve` does) makes the verb exit 2 with nothing recorded: fix it, re-run. On the
+post-PR cycle `work.max_review_cycles` still parks at its cap whatever the tier. **Per host:**
+Claude passes `<next>` as the Task tool's `model` (and `<e>` as its effort); Codex maps it with
+`host-model codex` as described above and uses that resolver's effort, not `<e>`. A host with no per-subagent model override (Cursor)
+cannot re-dispatch at another tier: the verb still decides and records, and the operator switches
+the session model, or the goal is handled as at `CEILING`. The escalation is a real decision there; the re-dispatch is not enforceable. **On
 Codex, a redispatched fix or re-review also sets `fork_turns="none"`** — the default copies the
 parent's own conversation into the child, which is exactly the large, stale context this rule
 exists to avoid — and passes the goal, phase, worktree and the artifact paths above in the prompt

@@ -36,6 +36,18 @@ for the full reasoning, and why this is the one place in this module that is NOT
 `predict`/`predict_with_reason`/`predict_effort` remain exactly that). `why` (below) is the
 deliberate exception: still pure, still writes nothing, on purpose.
 
+A HAIKU SIGNAL COUNTS ONLY IN THE TITLE (#2827). The upward-resolution premise has a mirror image
+one tier down: a real issue body almost always quotes a code comment, names a docstring or cites a
+lint, so scanning the body for haiku stems routed non-trivial goals DOWN to the cheapest tier on one
+body word (a P1 multi-module fix ran at haiku on `comment` alone; the predecessor's census of its own
+two boards found 24 open goals routed that way -- not measured on Sigma's). Under-powering is the
+costly error, so haiku is the one tier read from the TITLE only; opus/fable stems keep scanning
+title+body. The title is the text's FIRST LINE -- the shape `loop.py` builds at pick time
+(`"<title>\n\n<body>"`) and the one fallback gesture the skills document prints -- so a single-line
+string is all title and routes exactly as before. A goal FILE path is read by `_read_goal`, which
+puts the file's own title on that first line. `resolve_step` keeps whole-text haiku scanning: a
+mechanical step's downgrade is what that verb is for.
+
 PER-REPO SIGNAL EXCLUDES (issue #1601). A signal can be a creative term on most repos and an
 ordinary DOMAIN NOUN on a few: a storytelling pipeline has a "narrative stage" and a "prose
 renderer", and `vision` collides with Sigma's OWN vision-first vocabulary (`/agrim-vision`, the
@@ -477,8 +489,9 @@ def predict_with_reason(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT):
     own expected table, and sends "rewrite the marketing copy for the pricing page and rename the
     CTA constant" to HAIKU -- a 10x capability drop, two tiers below `_DEFAULT`. The router cannot
     distinguish that from "fix the typo in the blog post title": both are one fable stem plus one
-    haiku stem, and since the loop classifies title+body, a haiku stem is present in almost any real
-    issue body. Clamping keeps this module's own upward-resolution invariant true, erring at 2x on a
+    haiku stem, and a haiku stem in the TITLE -- the only place one counts since #2827 -- is still
+    common enough on a real goal that fall-through would misroute. Clamping keeps this module's
+    own upward-resolution invariant true, erring at 2x on a
     trivial goal instead of at 0.5x on a hard one.
 
     `_PATTERNS` is ordered high-to-low, so on a mixed goal ("fix the typo in the security module"
@@ -499,14 +512,40 @@ def predict_with_reason(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT):
     removes a reason to stop. With no excludes, `finditer`'s first match IS `re.search`'s match and
     every call returns on it, which is what makes the unconfigured default byte-identical.
     """
+    return predict_with_location(goal_text, excludes, max_tier)[:2]
+
+
+#: The one tier whose stems count only inside the title (#2827) -- see the module docstring.
+_TITLE_ONLY_TIERS = ("haiku",)
+
+
+def predict_with_location(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT, *,
+                          haiku_anywhere=False):
+    """`(tier, signal, where)` -- `predict_with_reason`'s pair plus WHERE the signal was found:
+    `"title"` (the text's first line) or `"body"` (everything after it), `None` with no signal.
+
+    A `_TITLE_ONLY_TIERS` match counts only when it lies wholly inside the title (#2827); one found
+    only in the body is skipped exactly as an excluded signal is, so the scan falls through to the
+    default. `haiku_anywhere=True` restores whole-text scanning, for `resolve_step` alone.
+
+    The title is the text up to the first `\n`, taken LITERALLY: a leading blank line is an empty
+    title, never stripped, because stripping would promote the body's first line to title (the very
+    bug #2827 removed from `loop.py`'s own pick-time call). Spans are computed on the LOWERCASED
+    text, the one the patterns scan, so a case fold that changes length cannot misalign them."""
     t = (goal_text or "").lower()
+    nl = t.find("\n")
+    title_end = len(t) if nl < 0 else nl
     cap = _price_rank(max_tier)
     floor = _TIER_PRICE_ORDER[min(_price_rank(_DEFAULT), cap)]
     for tier, pat in _PATTERNS:
+        title_only = tier in _TITLE_ONLY_TIERS and not haiku_anywhere
         for m in re.finditer(pat, t):
+            if title_only and m.end() > title_end:
+                break               # finditer is left-to-right: every later match is body too
             if not _is_excluded(m.group(0), excludes):
-                return (floor if _price_rank(tier) > cap else tier), m.group(0)
-    return floor, None
+                where = "title" if m.start() < title_end else "body"
+                return (floor if _price_rank(tier) > cap else tier), m.group(0), where
+    return floor, None, None
 
 
 def predict(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT):
@@ -608,7 +647,8 @@ def resolve_step(step_text, sdlc_dir=".sdlc", goal=None):
     cfg = _cfg(sdlc_dir)
     if (cfg.get("model_selection") or "off") != "auto":
         return None
-    tier, signal = predict_with_reason(step_text, signal_excludes(cfg), max_tier(cfg))
+    tier, signal, _ = predict_with_location(step_text, signal_excludes(cfg), max_tier(cfg),
+                                            haiku_anywhere=True)   # #2827: step semantics kept
     resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir))
     if goal is not None:
         _emit_model_choice(sdlc_dir, goal, tier, signal)
@@ -635,6 +675,41 @@ def _read(arg):
         return p.read_text(encoding="utf-8", errors="ignore") if p.exists() else arg
     except (OSError, ValueError):
         return arg
+
+
+#: Mirrors `skills/agrim-loop/scripts/frontmatter.py`'s `_FENCE` byte for byte (this module cannot
+#: import it -- skills do not import each other's Python), CRLF included.
+_FM_FENCE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
+_FM_TITLE = re.compile(r"^[ \t]*title[ \t]*:(.*)$", re.MULTILINE)
+
+
+def _read_goal(arg):
+    """`_read` for the GOAL verbs (`resolve`, `why`, the bare verb): a real goal FILE comes back as
+    `"<title>\n\n<raw file text>"`, so the title sits on the first line where #2827 looks for
+    it.
+
+    The title is taken exactly as `sources.LocalSource.fetch_title_body` takes it -- the frontmatter
+    `title:` value (the LAST such line, as `frontmatter.parse` keeps it; `.strip()` then
+    `.strip('"')`), else the file's stem when there is no fence, no key or an empty value -- so the
+    documented local fallback (`resolve "$goal"`) and the tier the pick recorded cannot disagree on
+    the TITLE (lines split on `\n` only, where `frontmatter.parse` uses `splitlines()` -- a
+    difference only a U+2028-style separator inside the fence can reach). The BODY still differs, as
+    it did before #2827: the raw text, frontmatter included, stays the body here, so opus/fable scan
+    every byte they scanned before (and now the stem too), while the pick-time read strips the
+    frontmatter -- an opus stem only in, say, `done_when:` reaches opus here and not at pick.
+    Anything that is not a readable file -- prose, a long string that raises ENAMETOOLONG, a
+    directory -- is returned unchanged, exactly as `_read` returns it."""
+    try:
+        p = pathlib.Path(arg)
+        if not p.is_file():
+            return _read(arg)
+        text = p.read_text(encoding="utf-8", errors="ignore")
+    except (OSError, ValueError):
+        return arg
+    fence = _FM_FENCE.match(text)
+    keys = _FM_TITLE.findall(fence.group(1)) if fence else []
+    title = keys[-1].strip().strip('"') if keys else ""
+    return f"{title or p.stem}\n\n{text}"
 
 
 USAGE = ("usage: predict.py '<goal>' [sdlc_dir] | resolve '<goal>' [sdlc_dir] | "
@@ -671,7 +746,7 @@ def main(argv):
         sdlc_dir = argv[3] if len(argv) > 3 else ".sdlc"
         goal_id = argv[4] if len(argv) > 4 else argv[2]
         try:
-            tier = resolve(_read(argv[2]), sdlc_dir, goal=goal_id)
+            tier = resolve(_read_goal(argv[2]), sdlc_dir, goal=goal_id)
         except ValueError as exc:
             print(f"predict.py: {exc}", file=sys.stderr)
             return 2
@@ -704,8 +779,11 @@ def main(argv):
     # and still side-effect-free: this reads config, it still records nothing.
     if len(argv) >= 3 and argv[1] == "why":
         _c = _cfg(argv[3] if len(argv) > 3 else ".sdlc")
-        tier, signal = predict_with_reason(_read(argv[2]), signal_excludes(_c), max_tier(_c))
-        print(f"model={tier} signal={signal}" if signal else f"model={tier} signal=")
+        # #2827: `in=<title|body>` sits BEFORE `signal=` so the signal stays the free-text tail a
+        # repo copies (signals contain spaces: `dead code`, `race condition`).
+        tier, signal, where = predict_with_location(_read_goal(argv[2]), signal_excludes(_c),
+                                                    max_tier(_c))
+        print(f"model={tier} in={where} signal={signal}" if signal else f"model={tier} signal=")
         return 0
     if len(argv) < 2 or argv[1] in ("resolve", "resolve-step", "why"):
         print(USAGE, file=sys.stderr)
@@ -715,7 +793,7 @@ def main(argv):
     # by the loop moments later. Config-gating is still none of its business: like `why`, it answers
     # "what would be chosen", not "what is switched on".
     _c = _cfg(argv[2] if len(argv) > 2 else ".sdlc")
-    print(predict(_read(argv[1]), signal_excludes(_c), max_tier(_c)))
+    print(predict(_read_goal(argv[1]), signal_excludes(_c), max_tier(_c)))
     return 0
 
 

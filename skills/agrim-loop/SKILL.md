@@ -25,7 +25,7 @@ that step:**
 - `references/running.md` — 3: model tier, phase subagents, maker≠checker, lanes, worktree, slices.
 - `references/filing.md` — 3: hand-offs, follow-up issues, kit findings.
 - `references/progress.md` — 3-5: phase notes, banners and costs, QC, retro.
-- `references/landing.md` — 6: verify, commit, PR, review, merge, record.
+- `references/landing.md` — 6: verify, commit, PR, review, merge, record, pipeline card.
 - `references/stopping.md` — 7: spare-iteration gap work, the STOP report.
 
 Reset the per-run budget: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
@@ -120,6 +120,11 @@ Then repeat until the helper says stop:
      run one unattended,
    - a failure you cannot resolve — record THIS one as `failed` (see step 6): parked means
      "needs a human decision", failed means "needs a fix"; the queue separates the two.
+
+   **"Budget" or "tier too small" is not a park reason.** Before any park after a review send-back
+   (at the latest, the 2nd send-back at one tier) run
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
+   → `ESCALATE <next>`: re-dispatch at `<next>`. `CEILING`/`OFF`: keep fixing. `references/running.md`.
 
    **3a. Register this goal, THEN cut the worktree if enabled.** Regardless of
    `config.work.enabled`, first register its worker:
@@ -235,10 +240,6 @@ Then repeat until the helper says stop:
    means merged; `record done` is REFUSED until then). Every ending, and why **`record done`
    releases the checkout itself — do not run `work.py finish`**: `references/landing.md`. **Read it before the first merge of a run.**
 
-   Declared a pipeline (`.sdlc/pipeline.json`)? Run the bidirectional report card between goals —
-   `pipeline.py card .sdlc` — and treat its findings as inputs, not gates. `pipeline.py propose
-   .sdlc` turns the card's FAILING signals into `proposed` goal files; the loop NEVER runs a
-   `proposed` goal — a human promotes it to `pending` first.
    With `config.ledger.enabled` on, the claim and the outcome are mirrored to the **team ledger**
    automatically — never record those by hand. `loop.py next` prints a **LEDGER INBOX** block on
    stderr when a teammate needs you: read it and answer each item with `handoff.py ack` — the inbox
@@ -253,9 +254,8 @@ Parking is always correct over forcing an irreversible action to "finish" a goal
 The self-improving path — closing a knowledge-graph gap instead of stopping when the backlog is
 empty but budget remains — and `supervise_daemon.py`: `references/stopping.md`.
 
-**Wake-and-work setup (optional).** `ledger.autowatch` — the ledger-triggered tick that starts a
-scoped run when a teammate tags you while nobody's loop is running — is one-time operator setup,
-not something you invoke mid-loop: [`AUTOWATCH.md`](AUTOWATCH.md).
+**Wake-and-work setup (optional).** `ledger.autowatch` is one-time operator setup, not something
+you invoke mid-loop: [`AUTOWATCH.md`](AUTOWATCH.md).
 
 **Inbound Slack commands (optional).** One-time setup for `slack_commands`:
 [`SLACK_COMMANDS.md`](SLACK_COMMANDS.md).

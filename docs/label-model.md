@@ -1197,7 +1197,8 @@ goal's **text**, gated on `"model_selection": "auto"` in `.sdlc/config.json`. It
 `model_selection` off (the default) portable prediction is disabled. Inline work runs at the
 session model; a dispatched Codex phase passes `off` to the host resolver, which selects its
 versioned ordinary-work mapping. A label cannot influence either outcome, because the predictor takes the goal text and
-nothing else.
+nothing else. (The one later change to a goal's tier is a review send-back raising it one rung through
+`loop.py escalate`; that reads no label either.)
 
 So what *is* a `model:*` label? An annotation, in whatever vocabulary you choose, that `/agrim-triage`
 will display in its survey and carry through a plan you write. That is the whole contract. Because

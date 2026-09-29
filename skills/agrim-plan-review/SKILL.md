@@ -175,6 +175,12 @@ Carry the dispositions with the revised plan so the next review round starts fro
 settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
 the evidence, and record the reversal — don't flip-flop.
 
+**Under `/agrim-loop`, a revision the current model tier cannot finish is escalated, not parked** —
+token budget and tier size are not park reasons (#2828). Run
+`python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
+and re-dispatch the plan revision at the tier its `ESCALATE <next>` names; on `CEILING`/`OFF` the
+revision loop above continues at the current tier. Interactive runs have a human at every send-back.
+
 Record the rejections in the goal's audit trail —
 `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" note .sdlc "<goal>" "plan-review: <what was rejected and why>"`
 — which comments the issue in github mode and appends to `.sdlc/journey/` locally. A *rejected*
