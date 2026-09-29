@@ -216,10 +216,58 @@ whole-board read (`_sync_backlog` does not run here).
   one Priority writer), and any `board_setup.py create` re-pin drops it. It is never upgraded: the
   pre-#233 `pin()` kept it when only the owner changed, and so does a hand edit of `project.owner`,
   so the owner beside it cannot vouch for it (#308 review). To make that board's Priority column
-  Sigma's, set `mirror_priority: true`. Otherwise run `board_setup.py create` without `--number`,
-  so it creates a board itself and writes the full marker. Not for hand editing.
+  Sigma's, set `mirror_priority: true`. To create a separate board instead, use the recovery
+  procedure below. Omitting `--number` alone still reuses `project.number`; it does not create
+  a board or restore the marker. Not for hand editing.
 - `enabled` off, or no `number`: nothing runs. A phase start makes zero `gh` calls and does not load
   the board code.
+
+## Recovering a dropped board-ownership marker
+
+To keep the existing board and let Sigma manage its Priority field, set
+`discovery.github.project.mirror_priority` to `true`. This does not restore `setup_created`
+or add a Ready lane; use the board migration procedure to change the queue deliberately.
+
+To create a **separate** board with a full ownership marker, first save the current board's
+owner and number so you can re-pin it if creation fails. Stop any loop writing this project's
+config while making this change. In `.sdlc/config.json`, remove
+`discovery.github.project.number`; keep the other settings. Then run `create` without
+`--number`, with a title that does not already exist under that owner. Leaving the pin in place
+reuses that board even if `--title` names a different one. Removing only the pin while reusing
+the old board's title is refused as a duplicate.
+
+From the project root, set `SIGMA_PLUGIN_ROOT` to the installed Sigma plugin directory. Choose
+an unused title in the second command (the example uses `Sigma recovery board`). The first command
+writes a temporary sibling and replaces the config only after that write succeeds; `&&` prevents
+board setup from running if the config edit fails:
+
+<!-- setup-created-recovery -->
+```sh
+python3 - <<'PY' &&
+import json, os, pathlib, tempfile
+
+p = pathlib.Path(".sdlc/config.json")
+c = json.loads(p.read_text(encoding="utf-8"))
+c["discovery"]["github"]["project"].pop("number", None)
+fd, name = tempfile.mkstemp(dir=p.parent, prefix=".config-recovery-", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump(c, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(name, p)
+finally:
+    pathlib.Path(name).unlink(missing_ok=True)
+PY
+python3 "$SIGMA_PLUGIN_ROOT/skills/agrim-init/scripts/board_setup.py" create .sdlc --title "Sigma recovery board" --yes
+```
+
+Successful creation pins the new board and writes `setup_created` with its number and owner.
+The existing board and its cards remain where they were; this is not a card migration. A failed
+run may already have created and pinned the new board: follow its printed resume instructions
+instead of clearing that new pin and creating another board. If no new board was pinned, restore
+the saved owner and number to keep using the existing board.
 
 ## Owner runbook: acceptance on a live board
 

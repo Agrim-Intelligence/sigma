@@ -985,34 +985,41 @@ def test_a_stale_config_on_a_board_without_our_cards_adds_under_the_current_name
     assert len([c for c in gh.calls if c[:2] == ["api", "repos/acme/old"]]) == 1
 
 
-def test_a_failed_repo_resolve_is_retried_after_its_ttl_not_cached_forever(tmp_path):
+def test_a_failed_repo_resolve_is_retried_after_its_ttl_not_cached_forever(tmp_path, monkeypatch):
     """#308 review (b): a long-lived GitHubSource must not keep one failed resolve for its whole
     life. Within `_REPO_RETRY_S` the failure is cached (bounded: no read per card); after it, the
     next need reads again and the recovered name counts."""
     gh, _board = _world()
     gh.renames = {"acme/old": "acme/widget"}
     down = [True]
+    now = [1000.0]
+    monkeypatch.setattr(src_mod.time, "monotonic", lambda: now[0])
+    attempts = []
 
     def run(args):
-        if args[:2] == ["api", "repos/acme/old"] and down[0]:
-            raise RuntimeError("gh: HTTP 502")
+        if args[:2] == ["api", "repos/acme/old"]:
+            attempts.append(now[0])
+            if down[0]:
+                raise RuntimeError("gh: HTTP 502")
         return gh.loop_run(args)
 
     cfg = _cfg()
     cfg["discovery"]["github"]["repo"] = "acme/old"
     src = src_mod.GitHubSource(cfg, run=run, sdlc_dir=str(_sdlc(tmp_path, cfg)))
     src._RETRY_BASE = 0
-    reads = lambda: len([c for c in gh.calls if c[:2] == ["api", "repos/acme/old"]])  # noqa: E731
     assert src._resolved_repo() == ""
+    failed_attempts = len(attempts)
+    assert failed_attempts > 0
     down[0] = False
+    now[0] = 1299.0
     assert src._resolved_repo() == ""                  # inside the TTL: cached, no second read
-    assert reads() == 0                                # (the failing reads never reached the fake)
-    src._REPO_RETRY_S = 0                              # the TTL has run out
+    assert len(attempts) == failed_attempts
+    now[0] = 1300.0                                    # the documented five minutes have elapsed
     assert src._resolved_repo() == "acme/widget"
-    assert reads() == 1
-    src._REPO_RETRY_S = 10 ** 9
+    assert attempts[failed_attempts:] == [1300.0]
+    now[0] = 1900.0
     assert src._resolved_repo() == "acme/widget"       # a success is kept
-    assert reads() == 1
+    assert attempts[failed_attempts:] == [1300.0]
 
 
 def test_concurrent_first_starts_the_loser_adopts_the_winners_phase_field(

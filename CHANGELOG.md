@@ -169,8 +169,10 @@ All notable changes to Sigma are recorded here, newest first.
   `project.owner`, so the owner beside it cannot vouch for it. An upgrade would have made a
   hand-made board of another owner, reusing the number, read as Sigma's. The docs now say the truth:
   the bare form reads as not Sigma's and any re-pin drops it. To make that board's Priority column
-  Sigma's, set `project.mirror_priority: true`, or run `board_setup.py create` without `--number`
-  so it creates a board itself. (3) When two first phase starts both create the Phase field, the
+  Sigma's, set `project.mirror_priority: true`. To create a separate board, first remove
+  `project.number`, then run `board_setup.py create` without `--number` and with an unused
+  `--title`; omitting the flag alone reuses the pin (#317). Existing cards are not migrated.
+  (3) When two first phase starts both create the Phase field, the
   loser's create is refused ("Name has already been taken" on the fake; not measured on a live
   board). The loser now re-reads the card once and writes Phase into the winner's field, where
   before it printed a warning and skipped the write. Tests: `tests/test_board_phase.py`,
