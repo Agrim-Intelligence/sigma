@@ -1,0 +1,29 @@
+{
+  "goal": 338,
+  "commit": "bd969b48018a",
+  "recorded_at": "2026-10-01",
+  "scope": "supported CI workflow matrix",
+  "workflow": ".github/workflows/ci.yml",
+  "supported_cells": [
+    {"os": "ubuntu-latest", "python": "3.10"},
+    {"os": "ubuntu-latest", "python": "3.11"},
+    {"os": "ubuntu-latest", "python": "3.12"},
+    {"os": "ubuntu-latest", "python": "3.13"},
+    {"os": "macos-latest", "python": "3.12"}
+  ],
+  "controls": [
+    {
+      "command": "$HOME/.sigma-venv312/bin/python -m pytest tests/test_ci_matrix.py tests/test_docs.py -q",
+      "result": "129 passed in 0.57s"
+    },
+    {
+      "command": "validate a temporary workflow copy with the macOS 3.12 include entry removed",
+      "result": "RED CONTROL: missing supported CI cell: macos-latest / 3.12"
+    },
+    {
+      "command": "$HOME/.sigma-ops/venv313/bin/python -m pytest tests -q -n 4 -p no:cacheprovider",
+      "result": "10279 passed, 21 skipped, 2 xfailed, 7 warnings in 269.26s (0:04:29)"
+    }
+  ],
+  "github_workflow_runs": "not run: PR creation and remote CI follow independent review"
+}
