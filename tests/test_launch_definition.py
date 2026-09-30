@@ -7,14 +7,20 @@ decisions for code. Every readiness threshold points at them, so they must not d
   - `status` is `proposed` or `signed`; a signed page names who signed it (`signed_by`), when
     (`signed_on`, YYYY-MM-DD) and the public repository (`public_repo`, owner/name);
   - `public_repo`, whenever it is set, is an `owner/name` slug;
-  - every `supported` host/OS pair is a `supported` row of the Markdown's "Supported cells" table,
-    with the same Python versions and modes, and every `experimental` entry is an `experimental` row;
-  - the Markdown `## Status` line agrees with the JSON `status` (and, when signed, with who and when).
+  - both directions, each field: `artifact`, `public_repo`, `version` (and its `v` tag) and
+    `audience` equal the first backticked value of their `- **Label:**` bullet; the `supported` and
+    `experimental` entries equal the table rows with that cell (a row in only one copy fails); the
+    `out_of_scope` list equals the backticked ids ending the Out of scope bullets, in order;
+  - the Markdown `## Status` line agrees with the JSON `status` (and, when signed, with who and when);
+    every date is a real calendar day (2026-02-30 fails), as #331's
+    tools/readiness/decide.py checks.
 
 Stdlib + pytest only; no network. Control (seen red, recorded in
 `docs/launch/evidence/330-control.md`): change one supported OS in the JSON to "windows" without
-touching the Markdown, or set status "signed" with `signed_by: null` -- each must fail here.
+touching the Markdown, or set status "signed" with `signed_by: null`, or change any one field in
+only one of the two files -- each must fail here.
 """
+import datetime
 import json
 import pathlib
 import re
@@ -29,6 +35,7 @@ HEADINGS = [
     "# Launch definition",
     "## Status",
     "## What ships",
+    "## What the rename changes",
     "## To whom",
     "## Supported cells",
     "## Out of scope",
@@ -38,6 +45,17 @@ PROPOSED_LINE = "Proposed — not yet signed by the owner"
 SIGNED_LINE = re.compile(r"Signed by (\S+) on (\d{4}-\d{2}-\d{2})")
 SLUG = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _is_date(value):
+    """YYYY-MM-DD and a real calendar day (2026-02-30 is not), as #331's decide.py checks."""
+    if not (isinstance(value, str) and DATE.fullmatch(value)):
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _definition():
@@ -54,7 +72,7 @@ def _section(md, heading):
     start = lines.index(heading) + 1
     body = []
     for line in lines[start:]:
-        if line.startswith("#"):
+        if re.match(r"#+ ", line):  # a heading; "#302" at line start is an issue ref, not one
             break
         body.append(line)
     return body
@@ -86,8 +104,8 @@ def test_status_is_proposed_or_signed_and_a_signature_is_complete():
     assert d["status"] in ("proposed", "signed"), d["status"]
     if d["status"] == "signed":
         assert d.get("signed_by"), "status is signed but signed_by is empty"
-        assert d.get("signed_on") and DATE.fullmatch(d["signed_on"]), \
-            "status is signed but signed_on is not YYYY-MM-DD: %r" % d.get("signed_on")
+        assert _is_date(d.get("signed_on")), \
+            "status is signed but signed_on is not a real YYYY-MM-DD date: %r" % d.get("signed_on")
         assert d.get("public_repo") and SLUG.fullmatch(d["public_repo"]), \
             "status is signed but public_repo is not owner/name: %r" % d.get("public_repo")
 
@@ -104,35 +122,61 @@ def test_markdown_headings_are_present_in_order():
     assert found == HEADINGS, found
 
 
-def test_every_supported_pair_is_a_supported_row_with_the_same_python_and_modes():
+def _bullet_value(md, heading, label):
+    """The first backticked value on the one `- **<label>:**` bullet under `heading`."""
+    hits = [l for l in _section(md, heading) if l.startswith("- **%s:**" % label)]
+    assert len(hits) == 1, "expected one '- **%s:**' bullet under %s, found %d" % (label, heading, len(hits))
+    m = re.search(r"`([^`]+)`", hits[0])
+    assert m, "the %s bullet has no backticked value: %r" % (label, hits[0])
+    return m.group(1)
+
+
+@pytest.mark.parametrize("key,heading,label", [
+    ("artifact", "## What ships", "Artifact"),
+    ("public_repo", "## What ships", "Public repository"),
+    ("version", "## What ships", "Version"),
+    ("audience", "## To whom", "Audience"),
+])
+def test_scalar_decisions_agree(key, heading, label):
+    assert _bullet_value(_markdown(), heading, label) == _definition()[key]
+
+
+def test_version_tag_matches_version():
+    line = [l for l in _section(_markdown(), "## What ships") if l.startswith("- **Version:**")][0]
+    assert "git-tagged `v%s`" % _definition()["version"] in line, line
+
+
+def _row_entry(r):
+    """A table row as the JSON would write it: `any` columns dropped, lists split."""
+    out = {}
+    for k in ("host", "os", "python", "modes"):
+        if r[k] != "any":
+            out[k] = _split(r[k]) if k in ("python", "modes") else r[k]
+    return out
+
+
+def _canon(entries):
+    return sorted(json.dumps(e, sort_keys=True) for e in entries)
+
+
+@pytest.mark.parametrize("cell", ["supported", "experimental"])
+def test_cells_agree_both_ways(cell):
+    """Every JSON entry is a row with that cell, and every such row is a JSON entry -- a row in
+    prose only, or an entry in JSON only, is the drift this file exists to stop."""
     rows = _cell_rows(_markdown())
-    for entry in _definition()["supported"]:
-        match = [r for r in rows if r["host"] == entry["host"] and r["os"] == entry["os"]]
-        assert match, "supported %s/%s has no row in the Markdown table" % (entry["host"], entry["os"])
-        for r in match:
-            assert r["cell"] == "supported", \
-                "%s/%s is supported in the JSON but %r in the Markdown" % (entry["host"], entry["os"], r["cell"])
-            assert _split(r["python"]) == entry["python"], (r["python"], entry["python"])
-            assert _split(r["modes"]) == entry["modes"], (r["modes"], entry["modes"])
+    assert all(r["cell"] in ("supported", "experimental") for r in rows), rows
+    md = _canon(_row_entry(r) for r in rows if r["cell"] == cell)
+    assert md == _canon(_definition()[cell]), "Markdown %s rows %r != JSON %r" % (cell, md, _canon(_definition()[cell]))
 
 
-def test_every_experimental_entry_is_an_experimental_row():
-    rows = _cell_rows(_markdown())
-    for entry in _definition()["experimental"]:
-        match = [r for r in rows if all(r[k] == v for k, v in entry.items())]
-        assert match, "experimental %r has no row in the Markdown table" % entry
-        assert all(r["cell"] == "experimental" for r in match), (entry, match)
-
-
-def test_every_markdown_row_is_backed_by_the_json():
-    """The reverse direction: a `supported` row the JSON does not list would be a claim made in prose
-    only, which is exactly the drift this file exists to stop."""
-    d = _definition()
-    supported = {(e["host"], e["os"]) for e in d["supported"]}
-    for r in _cell_rows(_markdown()):
-        assert r["cell"] in ("supported", "experimental"), r
-        if r["cell"] == "supported":
-            assert (r["host"], r["os"]) in supported, "Markdown row %r is not in the JSON" % r
+def test_out_of_scope_agrees_both_ways():
+    items = []
+    for l in _section(_markdown(), "## Out of scope"):
+        if l.startswith("- "):
+            m = re.search(r"\(`([^`]+)`\)[;.]$", l)
+            assert m, "out-of-scope bullet does not end with its (`id`): %r" % l
+            items.append(m.group(1))
+    assert items == _definition()["out_of_scope"], (items, _definition()["out_of_scope"])
 
 
 def test_markdown_status_line_agrees_with_json():
@@ -145,6 +189,7 @@ def test_markdown_status_line_agrees_with_json():
     else:
         m = SIGNED_LINE.fullmatch(first)
         assert m, "status is signed but the Markdown says %r" % first
+        assert _is_date(m.group(2)), "the Markdown's signing date is not a real date: %r" % m.group(2)
         assert (m.group(1), m.group(2)) == (d["signed_by"], d["signed_on"]), (m.groups(), d)
 
 

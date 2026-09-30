@@ -8,13 +8,21 @@ All notable changes to Sigma are recorded here, newest first.
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
   fresh public snapshot repository named `Agrim-Intelligence/sigma` (the current private repository
-  is renamed first, by the owner), version `1.0.0`; supported = Claude Code on macOS and Linux,
-  Python 3.10-3.13, `local-goals` and `github` modes; experimental = Codex, Cursor, Windows;
+  is renamed first, by the owner, and stays private), version `1.0.0`; supported = Claude Code on
+  macOS and Linux, Python 3.10-3.13, `local-goals` and `github` modes (launch-blocking
+  requirements, not verified today: CI gates Ubuntu on 3.10 and 3.12 only until #338);
+  experimental = Codex, Cursor, Windows (no recorded end-to-end run; Codex and Windows have the
+  partial validation the page states);
   audience = individual developers and small teams on GitHub; out of scope = Slack listener,
   cross-repo units, managed settings. Status is `proposed`; merging the pull request is the owner's
-  signature. `tests/test_launch_definition.py` keeps the two files in sync (supported and
-  experimental cells, Status line, a complete signature, `owner/name` repository); its control is
-  in `docs/launch/evidence/330-control.md`.
+  signature. The page lists what the rename repoints (clones' `origin`, the loop's `gh` calls,
+  the publish runbook's `--repo`, `docs/board.md`, `contract/golden/config.json`, the CI badge,
+  doctor's fallback `_MARKETPLACE_REPO`) and the runbook's stale visibility-flip assumption as
+  work for the release goal (#359). `tests/test_launch_definition.py` checks every field in both
+  directions (artifact, public repository, version and tag, audience, supported and experimental
+  cells, out-of-scope list, Status line), a complete signature with real calendar dates and an
+  `owner/name` repository; its controls, including a one-copy change of each field, are in
+  `docs/launch/evidence/330-control.md`.
 
 - **`tools/leak_refs.py`: find, and plan the removal of, private-repository references before the
   visibility flip** (#282). A patterns file (`--patterns` or `SIGMA_LEAK_PATTERNS`, no default,

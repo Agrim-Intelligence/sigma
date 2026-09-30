@@ -15,28 +15,64 @@ it.
 
 ## What ships
 
-- **Artifact:** a fresh public snapshot repository, built from a reviewed tree. The snapshot does not
-  carry this repository's issue and pull-request history or its other branches.
+- **Artifact:** `public-snapshot` — a fresh public snapshot repository, built from a reviewed tree.
+  The snapshot does not carry this repository's issue and pull-request history or its other
+  branches.
 - **Public repository:** `Agrim-Intelligence/sigma`. That is the name the current private
-  repository has today, so the current private repository is renamed first and the new public
-  snapshot repository then takes this name. The rename is the owner's action, done by hand; no
-  Sigma tool, goal or agent creates, renames or changes a repository. The name matches the
-  repository `/agrim-doctor` reads for its version check.
+  repository has today, so the current private repository is renamed first, and stays private,
+  and the new public snapshot repository then takes this name. The rename is the owner's action,
+  done by hand; no Sigma tool, goal or agent creates, renames or changes a repository.
 - **Install channel:** the Claude Code plugin marketplace, pointing at the public repository. It is
   the only channel with a recorded end-to-end run.
 - **Version:** `1.0.0`, git-tagged `v1.0.0` in the public repository. `.claude-plugin/plugin.json`
   and `.claude-plugin/marketplace.json` already say `1.0.0`.
 
+## What the rename changes
+
+Once the private repository is renamed, GitHub redirects its old name to the new one — until the
+new public repository takes `Agrim-Intelligence/sigma`. From then on the redirect is gone, and
+everything that names `Agrim-Intelligence/sigma` points at the public repository, not the private
+one. The release goal (#359) must handle each of these before the public repository takes the name:
+
+- existing clones' `origin` remote;
+- the loop's `gh` calls, which address `{owner}/{repo}` from the checkout's configuration;
+- `docs/publish-runbook.md`'s `tools/leak_refs.py scan` and `rewrite` commands, which pass
+  `--repo Agrim-Intelligence/sigma`;
+- `docs/board.md`'s board-copy commands;
+- `contract/golden/config.json`;
+- the README's CI badge;
+- `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py`. `/agrim-doctor`'s version
+  check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
+  only as a fallback when that record cannot be read.
+
+`docs/publish-runbook.md` (its opening paragraph and its "Before the visibility flip" section)
+still assumes this repository's visibility flips to public. That contradicts the artifact above,
+a fresh snapshot while this repository stays private; it is a known contradiction for #359 to fix.
+
 ## To whom
 
-Individual developers and small teams who keep their work on GitHub. The board and the label model
-assume GitHub.
+- **Audience:** `github-individuals-and-small-teams` — individual developers and small teams who
+  keep their work on GitHub. The board and the label model assume GitHub.
 
 ## Supported cells
 
-A `supported` cell is launch-blocking: it must work at launch. An `experimental` cell ships, is
-labelled experimental wherever it is documented, and does not block launch; none of them has a
-recorded live run yet.
+A `supported` cell is launch-blocking: it must work at launch. An `experimental` cell ships, does
+not block launch, and is to be labelled experimental in the README; that labelling belongs to the
+README-claims goal and is not claimed here as done.
+
+The supported cells are launch-blocking REQUIREMENTS, not a statement of what is verified today:
+CI (`.github/workflows/ci.yml`) runs Ubuntu with Python 3.10 and 3.12 only, and macOS, Python 3.11
+and Python 3.13 are not CI-gated until #338.
+
+No experimental cell has a recorded END-TO-END run. Two have partial validation:
+
+- **Codex:** the first `loop.py start` gesture succeeded in a disposable real Codex CLI session,
+  and Codex phase usage was checked against real rollout records (README, "Codex (partial live
+  validation)"). A complete Codex goal through pull-request merge has not been measured.
+- **Windows:** four successful `windows-latest` runs of `.github/workflows/windows.yml`, which
+  covers the watcher primitives only (`tests/test_windows_real.py`), not a goal.
+
+The goals that would close these gaps are #302, #303 and #305.
 
 | Host | OS | Python | Modes | Cell |
 |---|---|---|---|---|
@@ -61,4 +97,8 @@ launch threshold covers them:
 
 Any change, including signing it, is a pull request that the owner merges. Change
 `definition.md` and `definition.json` in the same pull request; `tests/test_launch_definition.py`
-fails when they disagree.
+fails when they disagree on the artifact, public repository, version, audience, status, supported
+cells, experimental cells or out-of-scope list. It reads the page from fixed spots: the
+`**Artifact:**`, `**Public repository:**`, `**Version:**` and `**Audience:**` bullets (the first
+backticked value), the first line under Status, the table rows, and the backticked id ending each
+out-of-scope bullet. Keep those shapes.
