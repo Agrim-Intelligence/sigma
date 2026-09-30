@@ -2027,6 +2027,9 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
     See `_pick_dependency_hold` for what it reads, what it costs, and the three states it fails
     open on."""
     session_pid = os.getppid() if session_pid is None else session_pid
+    # Every picker pass is a loop tick, including an empty backlog.  Refresh before any remote
+    # read so a stalled source cannot leave a healthy manager looking dead.
+    write_session_heartbeat(sdlc_dir, session_pid)
     # #1445: the reconciliation sweep runs here TOO, not only in `next_batch`'s prologue. It was
     # placed there alone to avoid paying it once per goal in a batch -- but that amplification is
     # already prevented by its own TTL watermark (gate 2), which makes a not-due call one file read.
@@ -2644,9 +2647,12 @@ def session_end(sdlc_dir, session_pid=None):
     try:
         pid = os.getppid() if session_pid is None else int(session_pid)
         path = _session_marker_path(sdlc_dir, pid)
-        _session_locked(sdlc_dir, pid, lambda: path.unlink(missing_ok=True),
+        heartbeat = session_heartbeat_path(sdlc_dir, pid)
+        # Keep registry and heartbeat cleanup in the SAME critical section.  A successor start
+        # cannot publish its marker, then have this old cleanup unlink its fresh heartbeat.
+        _session_locked(sdlc_dir, pid,
+                        lambda: (path.unlink(missing_ok=True), heartbeat.unlink(missing_ok=True)),
                         path=path, require_lock=True)
-        session_heartbeat_path(sdlc_dir, pid).unlink(missing_ok=True)
     except (OSError, TypeError, ValueError):
         pass
 

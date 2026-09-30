@@ -7503,6 +7503,34 @@ def test_session_heartbeat_age_distinguishes_idle_from_dead_without_signalling_a
         assert lp.session_heartbeat_liveness(base, dead, now=5000.0)[0] == "dead"
 
 
+def test_next_refreshes_the_managing_session_heartbeat_even_when_the_backlog_is_idle():
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0)
+        pid = os.getpid(); lp.session_start(base, pid)
+        lp.write_session_heartbeat(base, pid, now=1.0)
+        lp._next(base, lp.sources.get_source(base, lp.state.load_config(base)), lp.state.load_config(base),
+                 session_pid=pid)
+        assert json.loads(lp.session_heartbeat_path(base, pid).read_text())["last_seen"] > 1.0
+
+
+def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkeypatch):
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid(); lp.session_start(base, pid)
+        calls = []
+        real = lp._session_locked
+        def locked(sdlc_dir, session_pid, fn, **kwargs):
+            def probe():
+                calls.append(lp.session_heartbeat_path(base, pid).exists())
+                return fn()
+            return real(sdlc_dir, session_pid, probe, **kwargs)
+        monkeypatch.setattr(lp, "_session_locked", locked)
+        lp.session_end(base, pid)
+        assert calls == [True]
+        assert not lp.session_heartbeat_path(base, pid).exists()
+
+
 # --- #1391 step 5e: the throttled, opt-in reconciliation sweep -----------------------------------
 # Runs ONCE per batch in next_batch's PROLOGUE, deliberately not inside _next() where
 # _auto_unpark_sweep sits -- next_batch calls _next() up to max_concurrent times, so anything there

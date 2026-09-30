@@ -210,6 +210,7 @@ watch = ledger.get("watch") if isinstance(ledger.get("watch"), dict) else {}
 interval = watch.get("interval_seconds", 900)
 if isinstance(interval, bool) or not isinstance(interval, (int, float)) or interval <= 0: interval = 900
 stale_after = max(3 * interval, 180)
+newest = None
 for marker in sorted(sessions.glob("*.active")) if sessions.is_dir() else []:
     hb = heartbeats / (marker.stem + ".json")
     try:
@@ -218,11 +219,16 @@ for marker in sorted(sessions.glob("*.active")) if sessions.is_dir() else []:
         age = max(0, time.time() - seen)
     except Exception:
         age = None
-    if age is None or age >= stale_after:
-        ago = "unknown" if age is None else (f"{int(age // 3600)}h ago" if age >= 3600 else f"{int(age // 60)}m ago")
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
-            "Sigma loop died (last heartbeat %s) while a managing session was recorded; run /agrim-doctor for detail." % ago)}}))
-        sys.exit(0)
+    # A stale abandoned session may coexist with a newer live one.  Only the newest VALID
+    # heartbeat describes the current loop; malformed/absent evidence remains a dead candidate.
+    rank = float("-inf") if age is None else -age
+    if newest is None or rank > newest[0]: newest = (rank, age)
+if newest is not None and (newest[1] is None or newest[1] >= stale_after):
+    age = newest[1]
+    ago = "unknown" if age is None else (f"{int(age // 3600)}h ago" if age >= 3600 else f"{int(age // 60)}m ago")
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+        "Sigma loop died (last heartbeat %s) while a managing session was recorded; run /agrim-doctor for detail." % ago)}}))
+    sys.exit(0)
 sys.exit(1)
 PY
 then

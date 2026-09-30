@@ -232,6 +232,14 @@ def test_dead_loop_warns_with_its_age_using_the_real_session_start_gesture(tmp_p
     assert "loop died" in ctx and "1h ago" in ctx and "/agrim-doctor" in ctx
 
 
+def test_fresh_newer_loop_heartbeat_suppresses_an_old_stale_session(tmp_path):
+    _dead_loop(tmp_path, heartbeat_age=3600, pid=99999999)
+    state = tmp_path / ".sdlc" / "state"
+    (state / "sessions" / "99999998.active").write_text(json.dumps({"in_flight": [], "settled_admissions": 0}))
+    (state / "heartbeat" / "99999998.json").write_text(json.dumps({"pid": 99999998, "last_seen": time.time()}))
+    assert _run(tmp_path) == ""
+
+
 def test_never_run_watcher_warns(tmp_path):
     # RED today, same reason as above. This is the state Q1 resolved to also warn on.
     ctx = _context(_run(_ledger(tmp_path)))                      # neither heartbeat nor pid file
