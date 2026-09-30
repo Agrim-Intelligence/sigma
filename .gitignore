@@ -17,6 +17,7 @@ __pycache__/
 .sdlc/plans/triage/
 .sdlc/plans/scope/
 !.sdlc/research/
+!.sdlc/acceptance/
 
 # Python build and virtual-environment trees.
 .venv/

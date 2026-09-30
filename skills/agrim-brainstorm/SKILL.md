@@ -49,3 +49,11 @@ into the conversation.
 ## Hand off
 The terminal step is **`agrim-plan`** (write the implementation plan). Do not jump to any other
 implementation action from here.
+
+### Record P1 acceptance before handing off
+
+Run `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/acceptance.py" record .sdlc "<goal>"`.
+For an absent `## Done when`, write a draft containing 3–7 checkable statements and add
+`--draft <file>`; capture posts drafted GitHub criteria back as a comment. An optional
+`--verify-command '<command>'` records the focused check. Refusal means repair the
+source/draft and retry before code. Preserve the record and commit a copy in the goal worktree.

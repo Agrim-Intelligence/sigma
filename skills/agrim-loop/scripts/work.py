@@ -2927,6 +2927,10 @@ def pr(sdlc_dir, config, goal, run=None):
     rec = _record(sdlc_dir, goal)
     if not rec:
         return "not started — run `work.py start` first (nothing pushed)"
+    if state.enforce_enabled(config.get("verify")):
+        acceptance_refusal = _load("acceptance").refusal(sdlc_dir, goal)
+        if acceptance_refusal:
+            return acceptance_refusal
     path, remote, base = rec["worktree"], rec["remote"], rec["base"]
     refused = _push_refused(path, rec["branch"])    # #278: a lossy replay could not be put back
     if refused:
@@ -5215,10 +5219,14 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # `state.verify_required` states for this gate and `record done` alike). With enforce off and
     # no command declared there is nothing `loop.py verify` could run, so there is no evidence to
     # demand; the review / CI / clean-state gates below still decide the merge.
-    required = state.verify_required(config, goal)
+    try:
+        required = state.verify_required(config, goal, sdlc_dir)
+        command = state.declared_verify_command(goal, config, sdlc_dir)
+    except (OSError, ValueError) as exc:
+        return f"PARK: invalid acceptance record: {exc}; repair it and re-run verify"
     refusal = state.done_refusal(sdlc_dir, goal) if required else None
     if refusal:
-        if state.declared_verify_command(goal, config) is None:
+        if command is None:
             # enforce on, nothing to run: "run verify" would be the wrong advice (#228's lesson).
             return (f"PARK: no fresh verify evidence for this run ({refusal}; {required} but no "
                     f"verify command is declared) — {state.verify_set_hint()}")

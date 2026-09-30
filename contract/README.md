@@ -15,7 +15,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 
 ## Versioning
 
-**Contract Version:** 1.2.0 (defined in `VERSION` file)
+**Contract Version:** 1.3.0 (defined in `VERSION` file)
 
 **Versioning Rules:**
 
@@ -23,9 +23,9 @@ The contract enables downstream readers to read, validate, and ingest core recor
 - **MINOR version bump:** Addition of a new record kind OR a new field added to an existing kind (backward-compatible; old readers still work)
 - **PATCH version bump:** Documentation or validation improvements with no schema change
 
-**Freeze Point 1 (this contract):** The nine record kinds listed below are frozen in v1.0.0. No new kinds or breaking field changes without a major version bump.
+**Freeze Point 1 (this contract):** The nine record kinds listed below are frozen in v1.0.0. Breaking field changes require a major bump; additive kinds require a minor bump.
 
-## The Nine Record Kinds
+## Record Kinds
 
 | Kind | Path | When Written | Written by | Schema |
 |------|------|--------------|-----------|--------|
@@ -33,6 +33,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 | **events** | `.sdlc/events/*.jsonl` | `journal.enabled`, or a managed-settings lock | Core | `{id, actor, ts, kind, goal, ...per-kind}` |
 | **verify** | `.sdlc/state/verify/*.json` | Always | Core | `{goal_id, result, ...}` |
 | **witness** | `.sdlc/state/witness/*.jsonl` | Always | Core | `{goal_id, witness_line, ...}` |
+| **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command}` plus 3–7 checklist statements |
 | **plans** | `.sdlc/plans/*.md` | Always (hash only, body excluded) | Core | `{id, hash, frontmatter, ...}` |
 | **goal_frontmatter** | `.sdlc/goals/*.md` | Always (frontmatter only) | Core | `{id, title, phase, ...}` |
 | **config** | `.sdlc/config.json` | Always | User/operator | `{goal_default_model, ledger, ...}` |
@@ -54,7 +55,7 @@ reading them:
 
 ### Entries Kind Vocabulary
 
-The entries stream carries 10 record kinds:
+The entries stream carries 11 record kinds:
 
 1. `claimed` — a goal claimed by a worker
 2. `done` — a goal completed
@@ -69,6 +70,40 @@ The entries stream carries 10 record kinds:
    that field remain valid under this minor contract version; a present key must be lowercase
    64-hex.
 10. `merge-armed` — a PR auto-merge was armed (distinct from merged; see ledger.py line 49)
+
+11. `acceptance` — captured P1 intent, with `ref` to the Markdown record and `acceptance_sha256`
+    (64 lowercase hexadecimal characters). Ledger opt-in controls this metadata only; the local
+    Markdown record is written regardless. Commands and criteria are never copied into the ledger.
+
+### Acceptance records (1.3.0)
+
+Run `python3 skills/agrim-loop/scripts/acceptance.py record .sdlc <goal>` before code.
+`<goal>` is an issue number or a local goal Markdown path. The source must contain a
+`## Done when` section with 3–7 single-line checklist statements. If absent, the P1 agent writes
+a draft file with that section and adds `--draft <file>`; for a GitHub goal the capture posts
+the draft back as a comment before publishing the local record. `--verify-command` optionally
+records a project-trusted proving command; local frontmatter is inherited when omitted.
+Never put credentials in a command or criterion. Existing records are returned unchanged.
+
+Each statement is at most 1024 characters and the whole UTF-8 file at most 32 KiB, including
+frontmatter. `kind` is `"acceptance"`, `goal` is the filename stem, and `verify_command` is null
+or a nonempty string. Values in the flat frontmatter are JSON literals. See
+`golden/acceptance/42.md`; validate with `python3 contract/validate.py contract/golden/acceptance/42.md`.
+The writer uses atomic create-only hard links; a filesystem without that support refuses.
+Retry the same capture after an outage or crash. Draft-comment retries first check the complete
+comment for an identical marker and body; concurrent captures or an ambiguous acknowledgement
+inside the source's bounded retry can still produce duplicate comments. The record remains unique.
+
+PR publication requires a valid record when `verify.enforce` is on. `loop.py verify` runs the
+repository command and recorded goal command through its existing evidence path; the second
+runs only if the first passes. A local frontmatter command remains the fallback if the record
+has no command. Both run in the goal worktree. Records are verbatim in PR/retro briefs; retro
+grades each criterion with evidence. Changing or deleting the record invalidates green evidence. Multiple commands are recorded
+as an ordered JSON array in the evidence `command` string; one command retains its literal string.
+Keep the record with plan/research when committing a goal so future clones retain its intent.
+If the main-checkout copy is lost, restore that file from the goal branch before verification
+or publication; do not redraft from a subsequently edited issue. Review briefs can read the
+committed local/remote goal branch directly when the main-checkout file is absent.
 
 ### Events Kind Vocabulary
 

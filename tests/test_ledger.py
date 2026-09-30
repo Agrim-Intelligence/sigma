@@ -1287,7 +1287,7 @@ def test_vocabulary_constants_match_spec_table():
     `resolve`/`resolve_step` shelling out to `loop.py emit`, not by a SKILL.md instruction -- see
     `loop.py`'s own `_EMIT_KINDS` for why it stays reliability class 2 downstream despite being code-driven."""
     assert ledger.KINDS == (
-        "claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed")
+        "claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed", "acceptance")
     assert ledger.EVENT_KINDS == (
         "phase", "gate", "verify", "slice", "spend", "retro", "park", "scan", "run_stop",
         "model_choice", "merge_observed", "review_posted", "ci_observed")

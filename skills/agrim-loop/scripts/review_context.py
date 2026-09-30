@@ -357,14 +357,18 @@ def _branch_doc(sdlc_dir, goal, subdir):
     mechanisms have and an operator's `command` reviewer may not — better than today's silence,
     not parity with a local file.
 
-    COST, measured on this repo: 2 git calls per artifact resolved off a branch, 1 per ref that does
+    Historical plan/research COST (before acceptance), measured on this repo:
+    2 git calls per artifact resolved off a branch, 1 per ref that does
     not resolve — so a `pr-review` brief adds 6 when both plan and dossier come off the branch, 4
     when no ref exists, and 0 when both are on disk. ~10ms each against a 0.76s brief. The `ls-tree`
     is linear in the ref's tracked artifacts for that subdir (50 plan files here), so 100x that tree
     is still one listing, not 100 calls. Deliberately UN-memoised: the two subdirs repeat the same
     two `ls-tree`s, and a cache would have to be invalidated across a long-lived process for ~20ms.
     The ceiling to know is the timeout: it is PER CALL, so a wedged git costs up to 40-80s per
-    brief, not 10."""
+    brief, not 10. Acceptance adds a size check before reading the blob: at most four calls
+    across the local/remote refs (40s timeout ceiling), no calls when its local file exists.
+    Its listing cost is linear in that ref's acceptance filenames; its body is capped at 32 KiB.
+    Acceptance lookup wall time has not been measured here."""
     root = pathlib.Path(sdlc_dir).resolve().parent
     rel = pathlib.PurePosixPath(pathlib.Path(sdlc_dir).resolve().name) / subdir
     try:
@@ -400,9 +404,13 @@ def _branch_doc(sdlc_dir, goal, subdir):
         if hit is None:
             continue
         path = (rel / hit).as_posix()
+        if subdir == "acceptance":
+            size = _git_out(root, ["cat-file", "-s", "%s:%s" % (ref, path)])
+            if not size or not size.strip().isdigit() or int(size) > _load("acceptance").MAX_BYTES:
+                return None, ""
         text = _git_out(root, ["show", "%s:%s" % (ref, path)])
         if text and text.strip():
-            return "git -C %s show %s:%s" % (root, ref, path), text.strip()
+            return "git -C %s show %s:%s" % (root, ref, path), (text if subdir == "acceptance" else text.strip())
     return None, ""
 
 
@@ -679,6 +687,20 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
         parts.append("## What the project is for (judge the change against this)\n%s" % project)
     if goal_text:
         parts.append("## The goal this change serves\n%s" % goal_text)
+
+    if phase in ("pr-review", "retro"):
+        try:
+            reader = _load("acceptance")
+            try:
+                acceptance = reader.read(sdlc_dir, goal)["text"]
+            except FileNotFoundError:
+                _, recorded = _branch_doc(sdlc_dir, goal, "acceptance")
+                acceptance = reader.parse(recorded, reader.path(sdlc_dir, goal).stem)["text"]
+        except (OSError, ValueError):
+            acceptance = "MISSING OR INVALID: original acceptance was not recorded; do not claim achieved."
+        parts.append("## Recorded acceptance (P1 intent)\nGrade each criterion against evidence "
+                     "as achieved, partial, or diverged. Do not substitute the current issue text.\n\n"
+                     + acceptance)
 
     parent = _parent(sdlc_dir, goal_body, source)
     if parent:
