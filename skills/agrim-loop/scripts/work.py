@@ -2588,7 +2588,7 @@ def _staged_added_diff(path):
     network, no shell, and no mutation.  At 10 changed files it remains one linear Git patch read;
     at 100 it remains the same single read, rather than one fork per file.
     """
-    proc = subprocess.run(["git", "diff", "--cached", "--no-ext-diff", "--unified=0"],
+    proc = subprocess.run(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
                           cwd=str(path), capture_output=True, text=True, check=False)
     return proc.stdout
 

@@ -1317,6 +1317,22 @@ def test_real_git_refuses_a_content_shaped_key_in_an_ordinary_filename(tmp_path)
     assert "settings.py" not in committed()
 
 
+def test_staged_content_scan_reads_bytes_without_running_git_textconv(tmp_path):
+    """`--no-ext-diff` alone leaves configured textconv commands executable."""
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / ".gitattributes").write_text("*.fixture diff=demo\n")
+    subprocess.run(["git", "-C", str(repo), "add", ".gitattributes"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "attributes"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "diff.demo.textconv", "printf TRANSFORMED"],
+                   check=True)
+    (repo / "input.fixture").write_text("SOURCE_BYTES\n")
+    subprocess.run(["git", "-C", str(repo), "add", "input.fixture"], check=True)
+
+    diff = work._staged_added_diff(repo)
+    assert "+SOURCE_BYTES" in diff
+    assert "TRANSFORMED" not in diff
+
+
 def test_real_git_refuses_content_in_a_non_ascii_path(tmp_path):
     """Git C-quotes patch headers, but their identity must still join the raw status path."""
     repo, d, _committed = _real_repo(tmp_path)
