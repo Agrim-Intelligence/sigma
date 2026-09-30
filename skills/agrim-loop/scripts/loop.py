@@ -4986,8 +4986,10 @@ _declared_verify_command = state.declared_verify_command
 
 def verify_goal(sdlc_dir, goal):
     """Run the goal's proving command and persist MACHINE evidence (agrim-verify's
-    prose gate, made checkable). Command source: goal frontmatter `verify_command`
-    (local mode), else config `verify.command`.
+    prose gate, made checkable). With an acceptance record, run the repository command then
+    the recorded goal command (local frontmatter fallback), each in its own shell. Without a
+    record retain local-frontmatter-over-repository precedence. Evidence's command label is
+    an ordered JSON array for multiple commands; single-command labels remain unchanged.
     Exit: 0 verified · 1 the command failed · 2 unsafe goal (refused before running anything) ·
     3 no command declared (honest absence) · 4 worktree behind its base and the auto-rebase could
     not apply cleanly (refused before running anything -- #1890)."""
@@ -5001,7 +5003,13 @@ def verify_goal(sdlc_dir, goal):
         print(f"loop.py verify: unsafe goal {goal!r}: {reason}", file=sys.stderr)
         return 2
     config = state.load_config(sdlc_dir)
-    cmd = _declared_verify_command(goal, config)
+    try:
+        acceptance_hash = state.acceptance_module().digest(sdlc_dir, goal)
+        commands = state.declared_verify_commands(goal, config, sdlc_dir)
+        cmd = state.verify_command_label(commands)
+    except (OSError, ValueError) as exc:
+        print("loop.py verify: invalid acceptance record: " + str(exc), file=sys.stderr)
+        return 2
     if not cmd:
         print("NO-COMMAND (set goal frontmatter `verify_command` or config `verify.command`; "
               f"{_VERIFY_SET_HINT})", file=sys.stderr)
@@ -5051,11 +5059,16 @@ def verify_goal(sdlc_dir, goal):
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
     start = time.perf_counter()
-    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=root)
+    outputs = []
+    for command in commands:
+        proc = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=root)
+        outputs.append(proc.stdout + proc.stderr)
+        if proc.returncode != 0:
+            break
     ms = int((time.perf_counter() - start) * 1000)
     ev = _evidence_path(sdlc_dir, goal)
     ev.parent.mkdir(parents=True, exist_ok=True)
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-5:]
+    tail = "\n".join(outputs).strip().splitlines()[-5:]
     this_run = state.run_identity()          # #498: this run's id (SIGMA_RUN_ID) or None
     # #498 (suggestion 2): warn loudly before clobbering an evidence file a DIFFERENT run wrote
     # whose writer process is STILL LIVE — i.e. a genuinely concurrent verify on one goal, the setup
@@ -5112,6 +5125,7 @@ def verify_goal(sdlc_dir, goal):
     _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
                  if _wrec.get("remote") and _wrec.get("base") else None)
     ev.write_text(_json.dumps({"command": cmd, "exit": proc.returncode,
+                               "acceptance_sha256": acceptance_hash,
                                "verify_state": "pass" if proc.returncode == 0 else "fail",
                                "at": time.time(), "run": this_run, "pid": os.getpid(),
                                "root": root, "head": head,
@@ -6056,7 +6070,12 @@ def _dispatch(argv):
                 print(f"loop.py record: {exc}", file=sys.stderr)
                 return 2
             if refusal:
-                if _declared_verify_command(argv[3], config) is None:
+                try:
+                    command = _declared_verify_command(argv[3], config, argv[2])
+                except (OSError, ValueError) as exc:
+                    print(f"loop.py record: invalid acceptance record: {exc}", file=sys.stderr)
+                    return 2
+                if command is None:
                     # #228: "run verify first" is the wrong advice when there is nothing to run --
                     # verify would print NO-COMMAND. Name the real cause and the one-line fix.
                     print("REFUSED: no verify command declared for this goal (config "

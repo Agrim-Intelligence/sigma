@@ -128,11 +128,21 @@ model ID with `--host-model <id>` instead of the ordinary `--phase-model`, as we
 `--model <tier>`; otherwise the banner honestly reports the host model as unrecorded.
 Never run a step ABOVE the goal ceiling — except the tier a `loop.py escalate` answer names
 (below), which becomes the new ceiling. Then read the goal and
-run it through the full SDLC (research → plan → plan-review →
+run it through the full SDLC (goal → research → plan → plan-review →
 implement → review) — each phase via its **executor** (the `superpowers`/`code-review` companion on
 Claude if installed, else Sigma's portable `agrim-brainstorm`/`agrim-research`/`agrim-plan`/
 `agrim-implement`/`agrim-review`/`agrim-verify`; each skill's resolution header picks). `$goal` is a **file path** in local mode (read the file) or a **GitHub issue
 number** in github mode (`gh issue view "$goal"` to read it).
+
+**P1 GOAL records acceptance before Research or code.** Run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/acceptance.py" record .sdlc "$goal"`.
+It captures 3–7 checkable statements from `## Done when`. If the section is absent,
+draft a file with that section and repeat with `--draft <file>`; the command posts drafted
+GitHub criteria as an issue comment before writing the record. Optionally supply
+`--verify-command '<command>'` (local frontmatter is inherited). Never put secrets in it.
+A refusal stops P1 until the source/draft is repaired. Keep the resulting
+`.sdlc/acceptance/<goal-stem>.md` unchanged; copy it into the goal worktree and commit it
+with plan/research. This step applies regardless of companion or portable executor.
 
 **The maker is never the checker (`config.review.independent`, default on).** Every review gate —
 plan-review, the pre-PR code review, and the post-PR review at step 6 — runs as a **fresh subagent

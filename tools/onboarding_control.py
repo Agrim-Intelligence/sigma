@@ -77,11 +77,13 @@ FAKE_GH_SOURCE = pathlib.Path("tests") / "test_public_bootstrap_control.py"
 FAKE_REPO = "acme/onboarding-demo"
 SCHEMA = "sigma.onboarding-control/1"
 #: The one trivial goal the control files, and the file its "work" writes. The Makefile's test
-#: target checks that file, so the confirmed verify command genuinely fails before the work and
-#: passes after it -- evidence that depends on the change, not a `true`.
+#: target checks existing output; the goal acceptance command requires that output to exist.
+#: Together they fail before the work and pass after it, while the earlier demo has a green baseline.
 GOAL_TITLE = "Add hello.txt"
 WORK_FILE = "hello.txt"
-MAKEFILE = "test:\n\ttest -s hello.txt\n"
+# The demo precedes the hello goal. Repository checks must be green before that future
+# feature exists; its acceptance command below separately requires the feature's output.
+MAKEFILE = "test:\n\ttest ! -e hello.txt || test -s hello.txt\n"
 #: The work each known goal takes. Local mode with --demo queues the demo goal too (its own
 #: frontmatter verify_command); a goal the control does not know is a red, never guessed at.
 DEMO_FILE = "sigma-demo.md"
@@ -659,6 +661,15 @@ def _drive_local_goal(run, loop, repo, env, goal, pid):
     name = pathlib.Path(goal).name
     run.step(f"agent-start {name}", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid],
              repo, env)
+    draft = repo / ".sdlc" / "onboarding-acceptance.md"
+    draft.write_text("## Done when\n- [ ] The goal's declared output is created.\n"
+                     "- [ ] Verification succeeds when configured.\n"
+                     "- [ ] The goal is recorded done through the loop.\n", encoding="utf-8")
+    capture = [py, loop / "acceptance.py", "record", ".sdlc", goal, "--draft", draft]
+    cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+    if is_file and _frontmatter(repo / goal).get("title") == GOAL_TITLE and (cfg.get("verify") or {}).get("command"):
+        capture += ["--verify-command", "test -s " + WORK_FILE]
+    run.step(f"record acceptance {name}", capture, repo, env)
     run.step(f"phase_report start {name}", [py, loop / "phase_report.py", "start", ".sdlc", goal,
                                             "implement", "--model", "haiku", "--pid", pid], repo, env)
     if is_file:
@@ -738,7 +749,10 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
             return json.loads(state_path.read_text(encoding="utf-8"))
 
         gh_(["issue", "create", "--repo", FAKE_REPO, "--label", "sdlc:goal", "--assignee",
-             "@me", "--title", GOAL_TITLE, "--body", f"Create {WORK_FILE} with one line."],
+             "@me", "--title", GOAL_TITLE, "--body", f"Create {WORK_FILE} with one line.\n\n"
+             f"## Done when\n- [ ] {WORK_FILE} contains hi.\n"
+             "- [ ] Verification passes when configured.\n"
+             "- [ ] The goal can be recorded done after its PR merges.\n"],
             "file goal (gh issue create, labelled sdlc:goal, assigned @me)")
         pid = str(os.getpid())
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
@@ -750,6 +764,15 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
             raise Red("loop next", f"expected issue 1, got {goal!r}")
         run.step("agent-start", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid], repo, env)
         run.step("work start", [py, loop / "work.py", "start", ".sdlc", goal, "--session-pid", pid], repo, env)
+        capture = [py, loop / "acceptance.py", "record", ".sdlc", goal]
+        cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+        if (cfg.get("verify") or {}).get("command"):
+            capture += ["--verify-command", "test -s " + WORK_FILE]
+        run.step("record acceptance", capture, repo, env)
+        acceptance = repo / ".sdlc" / "acceptance" / (goal + ".md")
+        target = repo / ".sdlc" / "work" / goal / ".sdlc" / "acceptance" / acceptance.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(acceptance, target)
         run.step("phase_report start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement",
                                         "--model", "haiku", "--pid", pid], repo, env)
         (repo / ".sdlc" / "work" / goal / WORK_FILE).write_text("hi\n", encoding="utf-8")

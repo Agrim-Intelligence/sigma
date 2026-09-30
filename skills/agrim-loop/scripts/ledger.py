@@ -56,7 +56,7 @@ import time
 #: receipt confirms the PR landed, carrying the stable key that prevents duplicate observations.
 #: Sibling pin: tests/test_ledger.py::test_vocabulary_constants_match_spec_table (this file) and
 #: contract/vocabulary.json's "entries_kinds" -- issue #298. Update both by hand.
-KINDS = ("claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed")
+KINDS = ("claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed", "acceptance")
 
 #: Lifecycle of a hand-off, from the point of view of the person it is addressed TO.
 STATES = ("open", "accepted", "deferred", "declined", "resolved")
@@ -111,7 +111,7 @@ SHARED_KINDS = ("claimed", "done", "parked", "failed", "handoff", "ack", "releas
 #: `_sanitize_free_text(..., cap=BOUNDED_ID_CAP)` treatment in `append()` below, not the raw-write
 #: path the fully-internal enum/id fields get.
 OPTIONAL_FIELDS = ("area", "to", "issue", "priority", "why", "state", "ref", "pr", "reclaimed_actor",
-                    "run_id", "reclaimed_run", "autowatch_hop", "merged_entry_key")
+                    "run_id", "reclaimed_run", "autowatch_hop", "merged_entry_key", "acceptance_sha256")
 
 ENTRIES, EVENTS = "entries", "events"
 STREAMS = (ENTRIES, EVENTS)
@@ -191,6 +191,9 @@ EVENT_SCHEMAS = {
 ENTRY_SCHEMAS = {"merged": {"fields": {"merged_entry_key": {
     "type": "string", "pattern": "^[0-9a-f]{64}$",
     "error": "merged_entry_key must be 64 lowercase hexadecimal characters",
+}}}, "acceptance": {"fields": {"acceptance_sha256": {
+    "type": "string", "pattern": "^[0-9a-f]{64}$",
+    "error": "acceptance_sha256 must be 64 lowercase hexadecimal characters",
 }}}}
 
 #: Every EVENT_KINDS value must have a whitelist entry — append() indexes EVENT_FIELDS[kind]
@@ -1359,6 +1362,10 @@ def append(sdlc_dir, config, kind, goal, run=None, now=None, stream=ENTRIES, **f
             key = fields.get("merged_entry_key")
             if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key):
                 raise ValueError("merged_entry_key must be 64 lowercase hexadecimal characters")
+        if kind == "acceptance" and "acceptance_sha256" in fields:
+            key = fields["acceptance_sha256"]
+            if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key):
+                raise ValueError("acceptance_sha256 must be 64 lowercase hexadecimal characters")
         # #1319: fill `autowatch_hop` from the process environment when the caller didn't pass one
         # explicitly — mirrors `state.run_identity()`'s own `SIGMA_RUN_ID` precedent (see
         # OPTIONAL_FIELDS' own comment above). autowatch.py sets `SIGMA_AUTOWATCH_HOP` on the

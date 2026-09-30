@@ -821,6 +821,10 @@ def _delete_label(world, name, check=True):
 
 
 def _file_goal(world, title, body="body text", labels="sdlc:goal,priority:P1", assignee="@me", check=True):
+    if body == "body text":
+        body += ("\n\n## Done when\n- [ ] The feature output contains hello.\n"
+                 "- [ ] The configured verification succeeds.\n"
+                 "- [ ] The PR lands before the goal is recorded done.\n")
     return _fakegh(world, ["issue", "create", "--repo", world["repo"], "--label", labels,
                            "--assignee", assignee, "--title", title, "--body", body], check=check)
 
@@ -901,6 +905,10 @@ def _run_sequence(world, run_probe):
     _cli([WORK, "start", sdlc, "1", "--session-pid", pid], clone_dir, env)
 
     worktree = sdlc / "work" / "1"
+    _cli([LOOP_DIR / "acceptance.py", "record", sdlc, "1"], clone_dir, env)
+    target = worktree / ".sdlc" / "acceptance" / "1.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sdlc / "acceptance" / "1.md", target)
     _cli([PHASE_REPORT, "start", sdlc, "1", "implement", "--model", "sonnet"], clone_dir, env)
     _cli([PHASE_REPORT, "end", sdlc, "1", "implement"], clone_dir, env)
 

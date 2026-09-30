@@ -58,6 +58,17 @@ counterpart to the autonomous `/agrim-loop`).
    companion installed, the `superpowers` / `code-review` skill; otherwise Sigma's **portable
    executor** (`agrim-brainstorm` → Goal, `agrim-research` → Research, `agrim-plan` → Plan,
    `agrim-implement` → Implement, `agrim-review` + `agrim-verify` → Review, `agrim-retro` → Retrospective).
+
+   **Before Research or code, capture P1 acceptance for every goal:** run
+   `python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/acceptance.py" record .sdlc "<goal>"`.
+   This records the issue/local `## Done when` section (3–7 checkable statements).
+   If absent, draft that section in a file and rerun with `--draft <file>`; capture posts
+   drafted GitHub criteria back as a comment. Add `--verify-command '<command>'` when a
+   focused proving command is known (local frontmatter is inherited). Never include secrets.
+   Keep the resulting `.sdlc/acceptance/<goal-stem>.md` unchanged through implementation;
+   copy it into the goal worktree and commit it with plan/research. If existing criteria
+   are malformed, repair the source before capture; do not silently drop criteria.
+   This applies to both companion and portable executors. Refusal stops P1 until repaired.
    **After Research, route the rest by the lane it measured** — `python3
    "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/discovery.py" lane "<goal-path>"` in local mode, or read it
    from Research's note on the issue timeline in github mode — see *Lane routing* below.

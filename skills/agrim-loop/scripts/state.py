@@ -914,9 +914,18 @@ def enforce_enabled(verify):
     return bool(value)
 
 
-def declared_verify_command(goal, config):
-    """The proving command `loop.py verify` would run for this goal, or None: goal frontmatter
+def acceptance_module():
+    spec = importlib.util.spec_from_file_location("acceptance", _HERE / "acceptance.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def declared_verify_commands(goal, config, sdlc_dir=None):
+    """The ordered proving commands `loop.py verify` runs, each in its own shell: goal frontmatter
     `verify_command` (local mode, goal given as a `.md` path), else config `verify.command`.
+    With acceptance context, the repository command runs first, then the recorded command
+    (or local fallback) in a separate subprocess. Without a record, retain legacy precedence.
     Shared by `verify_goal`, the `record done` refusal and the merge gate so none of them can
     disagree about whether there is anything to run (#228, #312)."""
     cmd = None
@@ -927,10 +936,31 @@ def declared_verify_command(goal, config):
         # only `"`, so `''` would otherwise reach the shell as a command (#228).
         if cmd is not None and not cmd.strip().strip("'\"").strip():
             cmd = None
-    return cmd or ((config or {}).get("verify") or {}).get("command") or None
+    repo_cmd = ((config or {}).get("verify") or {}).get("command") or None
+    if sdlc_dir is not None:
+        try:
+            acceptance = acceptance_module().read(sdlc_dir, goal)
+        except FileNotFoundError:
+            acceptance = None
+        if acceptance is not None:
+            goal_cmd = acceptance["verify_command"] or cmd
+            commands = list(dict.fromkeys(c for c in (repo_cmd, goal_cmd) if c))
+            return commands
+    return [cmd or repo_cmd] if cmd or repo_cmd else []
 
 
-def verify_required(config, goal):
+def verify_command_label(commands):
+    """Legacy single-command label; ordered JSON array when there are multiple commands.
+    The label is evidence, not executable shell syntax. Separate shell invocations preserve
+    `set -e`, `exit`, and platform-native command semantics for every proving command."""
+    return commands[0] if len(commands) == 1 else json.dumps(commands) if commands else None
+
+
+def declared_verify_command(goal, config, sdlc_dir=None):
+    return verify_command_label(declared_verify_commands(goal, config, sdlc_dir))
+
+
+def verify_required(config, goal, sdlc_dir=None):
     """#312: THE one rule for "must this goal carry THIS run's passing verify evidence before it may
     land?" -> the reason it must (a short phrase), or None when there is nothing to prove.
 
@@ -948,7 +978,7 @@ def verify_required(config, goal):
     `record done` does."""
     if enforce_enabled((config or {}).get("verify")):
         return "verify.enforce is on"
-    if declared_verify_command(goal, config):
+    if declared_verify_command(goal, config, sdlc_dir):
         return "a verify command is declared"
     return None
 
@@ -1032,6 +1062,12 @@ def done_refusal(sdlc_dir, goal):
     # verify`") had nothing enforcing its second half: a green verify, an edit, and a later verify
     # that refused WITHOUT writing evidence (#1890's exit 4 is exactly that shape) left the earlier
     # green on disk, still fresh, still correctly attributed, and still sufficient.
+    try:
+        acceptance_hash = acceptance_module().digest(sdlc_dir, goal)
+    except (OSError, ValueError):
+        return "acceptance record is unreadable or invalid; re-run verify after repair"
+    if data.get("acceptance_sha256") != acceptance_hash:
+        return "acceptance record changed since verify; re-run verify against the recorded intent"
     content = data.get("content") or {}
     ev_fp = content.get("fingerprint")
     if not ev_fp:

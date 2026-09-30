@@ -35,7 +35,10 @@ Locate evidence with `rg --files` and `rg -n` before opening it. Read only the
 relevant lines for the retrospective; direct bulky command output to a scratch file
 and inspect a bounded excerpt rather than carrying it in the conversation.
 
-- **The original intent** — the goal's own text: the `.sdlc/goals/NNNN-*.md` file (local mode) or the
+- **The original intent** — read `.sdlc/acceptance/<goal-stem>.md` verbatim; the supplied
+  PR-review/retro context pack also includes it. This P1 record is
+  authoritative even if the issue changed. If missing/invalid, report that original acceptance
+  is unavailable and do not claim achieved. The goal's current text supplies context: the `.sdlc/goals/NNNN-*.md` file (local mode) or the
   issue body (`gh issue view "$goal"`, github mode).
 - **What shipped** — the diff for this goal's work (`git diff` / `git log` over its branch or commits).
 - **The journey** — `.sdlc/journey/<goal>.md` (local) or the issue timeline (github): the phase notes
@@ -65,7 +68,9 @@ and inspect a bounded excerpt rather than carrying it in the conversation.
 - **Negative space** — what should the run have produced but didn't?
 
 ## 3. Intent-vs-shipped + the three-store learning harvest
-**Intent-vs-shipped** — compare what actually shipped (the diff) to the goal's original text. Grade it:
+**Intent-vs-shipped** — grade each criterion in the recorded acceptance against the shipped
+diff and verification evidence; cite the evidence or name the gap for every item. The overall
+grade is achieved only if every criterion is achieved; otherwise explain partial/diverged:
 - **achieved** — the intent is realized;
 - **partial** — realized for some of it; *name the residual gaps* and confirm each has a tracking item;
 - **diverged** — what shipped differs from the intent; say how and why.
