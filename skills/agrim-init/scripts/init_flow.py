@@ -593,7 +593,14 @@ def main(argv):
               "was written.", file=sys.stderr)
         return 2
 
-    # scaffold (skip-if-exists) -----------------------------------------------------------------
+    # hook path + scaffold (skip-if-exists) -----------------------------------------------------
+    # This must precede both the owner marker and template writes: a differing local hook path is
+    # an explicit user decision, so refusal leaves adoption entirely untouched.
+    try:
+        _si.install_hook_path(target)
+    except _si.HookPathInstallFailed as exc:
+        print(f"agrim-init: REFUSED - hook path: {exc}", file=sys.stderr)
+        return 2
     if coexist is not None:
         # BEFORE the scaffold: a `.sdlc/` whose scaffold is interrupted is still recognisably
         # Sigma's, so the session wizard can say "re-run /agrim-init" there (and only there).

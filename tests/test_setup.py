@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
+import sys
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-setup" / "scripts" / "setup.py"
 
@@ -36,6 +38,30 @@ def test_detect_repo_handles_ssh_https_and_host_alias():
 
 def test_detect_repo_empty_without_a_remote():
     assert setup.detect_repo(".", run=lambda _r, _a: "") == ""
+
+
+# ------------------------------------------------------------------ hook path
+
+def test_hook_path_command_uses_the_named_repo_despite_an_exported_git_dir(tmp_path):
+    """A real external GIT_DIR must not redirect a supposedly local adoption write."""
+    target, other = tmp_path / "target", tmp_path / "other"
+    target.mkdir(); other.mkdir()
+    for repo in (target, other):
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    env = dict(os.environ, GIT_DIR=str(other / ".git"))
+    result = subprocess.run([sys.executable, str(S), "hooks", str(target)],
+                            capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr
+    repeat = subprocess.run([sys.executable, str(S), "hooks", str(target)],
+                            capture_output=True, text=True, env=env)
+    assert repeat.returncode == 0 and "already configured" in repeat.stdout, repeat.stderr
+    expected = "." + "git" + "hooks"
+    target_value = subprocess.run(["git", "-C", str(target), "config", "--local", "--get",
+                                   "core.hooksPath"], capture_output=True, text=True, check=True)
+    other_value = subprocess.run(["git", "-C", str(other), "config", "--local", "--get",
+                                  "core.hooksPath"], capture_output=True, text=True)
+    assert target_value.stdout.strip() == expected
+    assert other_value.returncode != 0
 
 
 # ------------------------------------------------------------------ configure

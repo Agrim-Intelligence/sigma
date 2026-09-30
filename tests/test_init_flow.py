@@ -594,6 +594,16 @@ def test_setup_init_is_an_alias_of_the_flow():
     assert "init_flow.py" in p.stdout
 
 
+@posix_only
+def test_setup_init_alias_installs_the_same_local_hook_path(tmp_path):
+    """`/agrim-setup` is an init-flow alias, so this is an end-to-end pin of that promise."""
+    w = _world(tmp_path, origin=None)
+    p = _run(w, [SETUP, "init", ".", "--mode", "local-goals", "--local-only", "--no-verify"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    got = _git(w["repo"], "config", "--local", "--get", "core.hooksPath", env=w["env"])
+    assert got.returncode == 0 and got.stdout.strip() == "." + "git" + "hooks"
+
+
 # ---------------------------------------------------------------- doctor points at init
 
 
