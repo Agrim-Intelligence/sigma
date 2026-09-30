@@ -2362,6 +2362,11 @@ def _session_dir(sdlc_dir):
     return pathlib.Path(sdlc_dir) / "state" / "sessions"
 
 
+def _session_heartbeat_dir(sdlc_dir):
+    """The loop's liveness evidence, separate from admission state and safe to leave on a crash."""
+    return pathlib.Path(sdlc_dir) / "state" / "heartbeat"
+
+
 _CODEX_THREAD_ID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
     re.IGNORECASE,
@@ -2389,6 +2394,54 @@ def _session_marker_path(sdlc_dir, session_pid):
     pid = int(session_pid)
     thread = _session_codex_thread()
     return _session_dir(sdlc_dir) / (f"{pid}-{thread}.active" if thread else f"{pid}.active")
+
+
+def session_heartbeat_path(sdlc_dir, session_pid):
+    """One JSON heartbeat per managing-session identity, matching its registry filename exactly."""
+    return _session_heartbeat_dir(sdlc_dir) / (_session_marker_path(sdlc_dir, session_pid).stem + ".json")
+
+
+def write_session_heartbeat(sdlc_dir, session_pid, now=None):
+    """Atomically refresh a loop heartbeat. A write failure is diagnostic-only, never a run stop."""
+    try:
+        pid = int(session_pid)
+        path = session_heartbeat_path(sdlc_dir, pid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        seen = time.time() if now is None else float(now)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
+        try:
+            with os.fdopen(fd, "w") as stream:
+                json.dump({"pid": pid, "last_seen": seen}, stream)
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(tmp, path)
+        finally:
+            pathlib.Path(tmp).unlink(missing_ok=True)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def session_heartbeat_liveness(sdlc_dir, session_pid, config=None, now=None):
+    """`idle` means fresh even when no goal moved; `dead` is stale or absent evidence with a marker.
+
+    The bound deliberately shares the watcher's configuration-free rule, `max(3 * interval, 180)`.
+    This probe never signals or otherwise alters the recorded process.
+    """
+    cfg = config if isinstance(config, dict) else {}
+    ledger_cfg = cfg.get("ledger") if isinstance(cfg.get("ledger"), dict) else {}
+    watch = ledger_cfg.get("watch") if isinstance(ledger_cfg.get("watch"), dict) else {}
+    interval = watch.get("interval_seconds", 900)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)) or interval <= 0:
+        interval = 900
+    try:
+        data = json.loads(session_heartbeat_path(sdlc_dir, session_pid).read_text())
+        seen = data.get("last_seen")
+        if isinstance(seen, bool) or not isinstance(seen, (int, float)):
+            raise ValueError("invalid heartbeat")
+        age = max(0.0, (time.time() if now is None else now) - seen)
+    except (OSError, ValueError, TypeError):
+        return ("dead", None)
+    return ("idle" if age < max(3 * interval, 180) else "dead", age)
 
 
 def _session_lock_path(sdlc_dir, entry_path):
@@ -2580,6 +2633,7 @@ def session_start(sdlc_dir, session_pid):
         _session_write(path, data)
 
     _session_locked(sdlc_dir, pid, _write, path=path, require_lock=True)
+    write_session_heartbeat(sdlc_dir, pid)
 
 
 def session_end(sdlc_dir, session_pid=None):
@@ -2592,6 +2646,7 @@ def session_end(sdlc_dir, session_pid=None):
         path = _session_marker_path(sdlc_dir, pid)
         _session_locked(sdlc_dir, pid, lambda: path.unlink(missing_ok=True),
                         path=path, require_lock=True)
+        session_heartbeat_path(sdlc_dir, pid).unlink(missing_ok=True)
     except (OSError, TypeError, ValueError):
         pass
 

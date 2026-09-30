@@ -57,6 +57,19 @@ def _ledger(root, *, enabled=True, interval=900, heartbeat_age=None, pid=False):
     return root
 
 
+def _dead_loop(root, *, heartbeat_age=3600, pid=99999999):
+    sdlc = pathlib.Path(root) / ".sdlc"
+    state = sdlc / "state"
+    sessions = state / "sessions"
+    heartbeat = state / "heartbeat"
+    sessions.mkdir(parents=True, exist_ok=True); heartbeat.mkdir(parents=True, exist_ok=True)
+    (sdlc / "config.json").write_text("{}")
+    (sessions / f"{pid}.active").write_text(json.dumps({"in_flight": ["265"], "settled_admissions": 0}))
+    hb = heartbeat / f"{pid}.json"
+    hb.write_text(json.dumps({"pid": pid, "last_seen": time.time() - heartbeat_age}))
+    return root
+
+
 def _path_without_gh(tmp_path):
     """A PATH that still resolves `bash` (the caller's own `subprocess.run(["bash", HOOK], ...)`
     needs to find it there too, since `env=` replaces rather than extends PATH), `python3` and
@@ -211,6 +224,12 @@ def test_dead_watcher_warns(tmp_path):
     # RED today, same reason as above.
     ctx = _context(_run(_ledger(tmp_path, pid=True)))            # pid file, no heartbeat at all
     assert "looks dead" in ctx and "/agrim-doctor" in ctx
+
+
+def test_dead_loop_warns_with_its_age_using_the_real_session_start_gesture(tmp_path):
+    """A stale heartbeat plus the recorded session is the polite, deterministic dead-loop control."""
+    ctx = _context(_run(_dead_loop(tmp_path, heartbeat_age=3600)))
+    assert "loop died" in ctx and "1h ago" in ctx and "/agrim-doctor" in ctx
 
 
 def test_never_run_watcher_warns(tmp_path):

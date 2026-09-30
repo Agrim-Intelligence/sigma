@@ -7477,6 +7477,32 @@ def test_end_to_end_a_sibling_green_cannot_satisfy_this_runs_record_done():
         assert rec_b.returncode == 0, (rec_b.returncode, rec_b.stderr)
 
 
+# --- #265: a managing loop has its own age-based heartbeat -----------------
+
+def test_session_heartbeat_is_written_at_start_and_removed_on_clean_end():
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0)
+        lp.session_start(base, os.getpid())
+        hb = lp.session_heartbeat_path(base, os.getpid())
+        assert json.loads(hb.read_text())["pid"] == os.getpid()
+        lp.session_end(base, os.getpid())
+        assert not hb.exists()
+
+
+def test_session_heartbeat_age_distinguishes_idle_from_dead_without_signalling_a_process():
+    """The dead-loop control uses an impossible PID and an old timestamp, never SIGSTOP/SIGKILL."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0)
+        dead = 99999999
+        lp.session_start(base, dead)
+        hb = lp.session_heartbeat_path(base, dead)
+        lp.write_session_heartbeat(base, dead, now=1000.0)
+        assert lp.session_heartbeat_liveness(base, dead, now=1001.0) == ("idle", 1.0)
+        assert lp.session_heartbeat_liveness(base, dead, now=5000.0)[0] == "dead"
+
+
 # --- #1391 step 5e: the throttled, opt-in reconciliation sweep -----------------------------------
 # Runs ONCE per batch in next_batch's PROLOGUE, deliberately not inside _next() where
 # _auto_unpark_sweep sits -- next_batch calls _next() up to max_concurrent times, so anything there
