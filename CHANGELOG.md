@@ -775,7 +775,7 @@ All notable changes to Sigma are recorded here, newest first.
   prints a bare `DONE` on stdout and now says `0 issues carry sdlc:goal — label one to start` on
   stderr.
 
-## 1.0.0 — the first public release
+## 1.0.0 — 2026-09-29 — the first public release
 
 The first release of the public core: a gated software development lifecycle for coding agents,
 run from GitHub issues, with every phase reviewed before the next one starts.
