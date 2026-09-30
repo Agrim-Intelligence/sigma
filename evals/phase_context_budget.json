@@ -6,9 +6,9 @@
     "after the corresponding prompt/reference reduction is measured. Do not raise it to absorb growth."
   ],
   "measured_at": "2026-09-30",
-  "commit": "9c94ab94d5fd90078839c49fe7ee8be6babd2112",
+  "commit": "2b8cba127b5e86c4b7e49b05c614c74aef9c590d",
   "phases": {
-    "orchestrator": {"ceiling": {"words": 19332, "est_tokens": 31985}},
+    "orchestrator": {"ceiling": {"words": 19517, "est_tokens": 32289}},
     "goal-slot": {"ceiling": {"words": 7456, "est_tokens": 12437}},
     "research": {"ceiling": {"words": 1949, "est_tokens": 2997}},
     "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
