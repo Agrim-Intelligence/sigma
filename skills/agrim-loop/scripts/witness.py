@@ -142,13 +142,16 @@ def classify(output):
     return "other"
 
 
-def record(sdlc_dir, goal, test, kind, hash_, detail=None, now=None):
+def record(sdlc_dir, goal, test, kind, hash_, detail=None, now=None, *,
+           provenance=None, file_hash=None, observed_at=None):
     """Append one witness. Never raises -- a bookkeeping write must not break a verify."""
     if kind not in KINDS:
         return None
     entry = {"test": str(test), "hash": hash_, "kind": kind,
              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now if now is not None else time.time())),
              "detail": detail}
+    if provenance is not None:
+        entry.update(provenance=provenance, file_hash=file_hash, observed_at=observed_at)
     try:
         p = path(sdlc_dir, goal)
         p.parent.mkdir(parents=True, exist_ok=True)

@@ -184,16 +184,14 @@ def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
     rc, lines, blob, proc = _cli("--mode", "both", "--sigma", str(sigma), workdir=tmp_path)
     assert rc == 1, proc.stdout[-3000:]
     assert lines == {"local": "GREEN", "github": "GREEN", "local/no-command": "RED at record done",
-                     "github/no-command": "RED at assert:init left verify.enforce OFF with no "
-                                          "command confirmed"}, lines
+                     "github/no-command": "RED at work pr"}, lines
     mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
     assert mine["scaffolded_verify"] == {"command": "", "enforce": True}
-    gh_obs = blob["modes"]["github/no-command"]["observations"]
-    # enforce ON with nothing to run: the merge still demands evidence (the safety half of #312),
-    # and its park names the verify-command fix rather than "run verify".
-    assert gh_obs["merge"].startswith("PARK: no fresh verify evidence"), gh_obs["merge"]
-    assert "verify_detect.py" in gh_obs["merge"], gh_obs["merge"]
+    # #267 refuses the broken enforce-on/no-command profile before publication, earlier
+    # than the merge gate. The exception must never bypass ordinary verify freshness.
+    pr_step = next(x for x in blob["modes"]["github/no-command"]["steps"] if x["step"] == "work pr")
+    assert pr_step["rc"] == 4 and "no verify evidence" in pr_step["stdout_tail"]
 
 
 def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):

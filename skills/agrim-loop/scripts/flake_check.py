@@ -102,7 +102,7 @@ def _failed_ids(output):
     return sorted(out)
 
 
-def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None):
+def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=None):
     """Run `test_files` `runs` times with varied order and a fresh basetemp; judge agreement.
 
     -> {"verdict": "verified"|"unverified"|"absent", "runs": [...], "disagreement": str|None, "ms"}
@@ -133,7 +133,7 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None):
               % (len(test_files), MAX_SCOPED_FILES), file=sys.stderr)
         return dict(absent, reason="scope bound: %d changed test files > %d"
                                      % (len(test_files), MAX_SCOPED_FILES))
-    ids = _collect(root, test_files, run)
+    ids = list(node_ids) if node_ids is not None else _collect(root, test_files, run)
     if not ids:
         return dict(absent, ms=int((time.perf_counter() - started) * 1000))
 

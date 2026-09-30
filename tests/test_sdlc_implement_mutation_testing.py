@@ -197,3 +197,5 @@ def test_where_these_rules_come_from_section_exists_and_names_beck_and_fowler():
         "SKILL.md does not credit Martin Fowler for the refactor-smell vocabulary (Long Method, "
         "Feature Envy, etc.) it lists as if self-evident"
     )
+    assert "Test-Driven Development: By Example" in SKILL
+    assert "Refactoring: Improving the Design of Existing Code" in SKILL

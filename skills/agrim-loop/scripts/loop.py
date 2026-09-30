@@ -4928,6 +4928,9 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
     if not passed:
         return empty
     try:
+        planned = _planned_tests(sdlc_dir, goal, root)
+        if planned is not None:
+            return flake_check.check(root, sorted({n.split("::")[0] for n in planned}), node_ids=planned)
         rec = work._record(sdlc_dir, goal) or {}
         base = rec.get("base") or "HEAD"
         diff = subprocess.run(["git", "diff", "%s...HEAD" % base], cwd=root,
@@ -4937,6 +4940,15 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
     except Exception as exc:              # noqa: BLE001 - advisory; must never break a verify
         print(f"loop: flake check skipped (non-fatal): {exc}", file=sys.stderr)
         return empty
+
+
+def _planned_tests(sdlc_dir, goal, root):
+    """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
+    plan = work.verification_plan(sdlc_dir, goal, root)
+    if plan is None or "## Tests" not in plan.read_text().splitlines():
+        return None
+    proof = _load("red_green")
+    return proof.collect(root, proof.selectors(plan))
 
 
 def _changed_tests(sdlc_dir, goal, root):
@@ -4956,6 +4968,9 @@ def _changed_tests(sdlc_dir, goal, root):
     every file changed by whatever landed on the real base since -- the live incident that
     mis-attributed another goal's own test file into this goal's witness scope, writing 574 wrong
     records on #1810."""
+    planned = _planned_tests(sdlc_dir, goal, root)
+    if planned is not None:
+        return planned
     rec = work._record(sdlc_dir, goal) or {}
     base, remote = rec.get("base"), rec.get("remote")
     ref = f"{remote}/{base}" if remote and base else (base or "HEAD")
@@ -5189,6 +5204,10 @@ def verify_goal(sdlc_dir, goal):
         print(f"loop.py verify: goal {goal!r} has no work record — verifying the PROJECT ROOT "
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
+    _wrec = work._record(sdlc_dir, goal) or {}
+    _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
+                 if _wrec.get("remote") and _wrec.get("base") else None)
+    content_before = state.content_fingerprint(root, _base_ref, pathlib.Path(sdlc_dir).name)
     start = time.perf_counter()
     outputs = []
     for command in commands:
@@ -5196,6 +5215,17 @@ def verify_goal(sdlc_dir, goal):
         outputs.append(proc.stdout + proc.stderr)
         if proc.returncode != 0:
             break
+    # #267: an explicit per-node run proves planned tests actually executed, even when the
+    # configured shell command only prints success. Missing scope remains advisory at verify;
+    # work.pr fails closed unless the operator supplies the published exception reason.
+    try:
+        test_first = _load("red_green").observe(
+            sdlc_dir, goal, root, work.verification_plan(sdlc_dir, goal, root))
+    except (OSError, ValueError) as exc:
+        test_first = {"passed": False, "error": str(exc)}
+    if test_first.get("provenance") and not test_first.get("passed") and proc.returncode == 0:
+        proc.returncode = test_first.get("exit") or 1
+        outputs.append(test_first.get("error", "planned tests failed"))
     ms = int((time.perf_counter() - start) * 1000)
     ev = _evidence_path(sdlc_dir, goal)
     ev.parent.mkdir(parents=True, exist_ok=True)
@@ -5252,17 +5282,19 @@ def verify_goal(sdlc_dir, goal):
     # `work.py commit` only after verify is green), so `head` is the shared base. See
     # `state.content_fingerprint`. Fails open into an honest `detail` -- a repo with no work record
     # (`work.enabled: false`) writes a null fingerprint and the gate stays exactly as it was.
-    _wrec = work._record(sdlc_dir, goal) or {}
-    _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
-                 if _wrec.get("remote") and _wrec.get("base") else None)
+    content_after = state.content_fingerprint(root, _base_ref, pathlib.Path(sdlc_dir).name)
+    if (test_first.get("passed") and content_before.get("fingerprint")
+            and content_before.get("fingerprint") != content_after.get("fingerprint")):
+        test_first.update(passed=False, error="repository content changed during verify")
+        proc.returncode = proc.returncode or 1
     ev.write_text(_json.dumps({"command": cmd, "exit": proc.returncode,
                                "acceptance_sha256": acceptance_hash,
                                "verify_state": "pass" if proc.returncode == 0 else "fail",
                                "at": time.time(), "run": this_run, "pid": os.getpid(),
                                "root": root, "head": head,
-                               "content": state.content_fingerprint(
-                                   root, _base_ref, pathlib.Path(sdlc_dir).name),
+                               "content": content_after,
                                "flake": flake,
+                               "test_first": test_first,
                                "witness": {"verdict": seen_red["verdict"],
                                            "unverified": seen_red["unverified"],
                                            "detail": seen_red["detail"]},

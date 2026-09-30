@@ -20,9 +20,7 @@ keep secrets out of the scratch file. This is guidance, not a measured savings c
 - **Claude Code + `superpowers` installed** → prefer **`superpowers:writing-plans`** (its richer version).
 - **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable.
 
-Write the plan **before touching code**, for a reader with **zero context and questionable taste** —
-spell out exactly what to do. DRY, YAGNI, TDD, small verifiable increments. Then hand it to
-`agrim-plan-review`.
+Write plans before code: concrete, testable steps; `agrim-plan-review`.
 
 ## 1. Scope check
 If the spec spans multiple independent subsystems, split it into **separate plans** — one per
@@ -45,8 +43,12 @@ codebase's existing patterns** — don't unilaterally restructure.
   the worktree uncommitted between steps.
 
 ## 4. Definition of done
-State, per task and for the whole plan, the **checkable condition** that proves it's finished (the
-command + expected output). This is what `agrim-verify` checks and what the goal's `done_when` maps to.
+State each task's proof: command, expected output, and the goal's `done_when`.
+
+Include `## Tests`: 1–25 backticked repo-relative pytest selectors, one per bullet and no prose.
+
+A file selector covers every collected test. With `verify.enforce`, no applicable tests require
+`work.py pr --no-tests <reason>`.
 
 ## 5. Write it to disk — `.sdlc/plans/<goal-stem>.md`
 The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal

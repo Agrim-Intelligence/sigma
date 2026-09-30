@@ -61,7 +61,7 @@ LIBRARY_ONLY = {
     "feature_judge", "feature_labels", "feature_registry", "feature_stamp", "features",
     "flake_check", "frontmatter", "gh_session", "goal_size", "managed_settings", "mutation",
     "scrub", "sources", "state", "tamper_scan", "timing_store", "watch_classify", "witness",
-    "merge_queue", "tier_escalation", "board_spec",
+    "merge_queue", "tier_escalation", "board_spec", "red_green",
 }
 
 

@@ -9,10 +9,8 @@ For bulky tests or diagnostics, save full output to a scratch file, then inspect
 its exit status and focused matches or a bounded tail. Do not hide failures, and
 keep secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-The detail behind step 6 of [`../SKILL.md`](../SKILL.md): the required pattern for any
-long-running blocking call, fresh verify evidence, committing without a bare `git`, the
-secret refusal, the post-PR review cycle, `work.py merge`'s patience budget, and how to
-read every line it can return.
+Details behind step 6 of [`../SKILL.md`](../SKILL.md): blocking calls, fresh verification,
+safe commits, secret refusal, review, and `work.py merge`.
 
 ---
 
@@ -55,11 +53,8 @@ verdict and nothing else is happening meanwhile, so dispatch it foreground/block
 Code's `Agent`/Task tool `run_in_background: false`) — no separate "wait" step, and no response to
 read either way: the call itself does not return until the review is done.
 
-**Honest limit**: this is self-applied, not externally enforced (per this project's own "a claim
-in prose is not evidence" rule) — you are the one judging whether the response named a real id.
-Get it wrong in either direction and it costs something: assuming a kill when work is still alive
-races a live process; assuming survival when it was actually killed just wastes a turn on a
-notification that was never coming. Read the response; don't assume either way.
+**Honest limit**: this is self-applied. Read the response: treating a live process as killed races
+it; treating a kill as live wastes a turn.
 
 With `config.verify.enforce` on, a `done` needs FRESH machine evidence first —
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` runs the goal's proving
@@ -96,6 +91,11 @@ two paragraphs below never counts as a change.
 `git` command (the loop has no general git tool on purpose, and no dispatched phase subagent gets
 one either — see the no-phase-commits rule, step 3):
 `work.py commit .sdlc "$goal" --message "<type: what changed>"` → `work.py pr .sdlc "$goal"`.
+With `verify.enforce`, `work.py pr` exits **4** without planned-node assertion-red then fresh-green
+proof. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` at both stages.
+Only `--no-tests <reason>` bypasses that proof; its verbatim PR-body reason never bypasses
+verification, acceptance, or plan review.
+
 **Put the plan on the branch before that first `commit`** — copy `.sdlc/plans/<goal-stem>.md` from
 the main checkout to the SAME relative path inside the worktree (`commit`'s `git add -A` runs in
 the worktree and cannot see the main checkout's copy, which is why plans were silently missing

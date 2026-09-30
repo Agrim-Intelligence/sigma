@@ -67,15 +67,21 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-Skip TDD only for throwaway prototypes / generated code / config — and say so.
+After writing the plan's `## Tests` entries, record both stages through Sigma:
 
-## Where these rules come from
-Two names worth knowing, so these read as citable practice, not asserted opinion: the
-red-green-refactor cycle and "no production code without a failing test" are Kent Beck's TDD
-discipline (*Test-Driven Development: By Example*). The refactor-smell names above — Long Method,
-Feature Envy, Primitive Obsession and the rest — are Martin Fowler's own vocabulary (*Refactoring:
-Improving the Design of Existing Code*). Neither citation changes what the rules ask of you; it
-means you can check them against the source instead of taking this file's word for it.
+```sh
+python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" verify .sdlc "$goal"
+```
+
+Record assertion-red then green. Plain commands do not; changed tests need red again.
+Refactors: break, red, restore, green.
+
+Skip TDD for prototypes, generated code, or config; say so. With
+`verify.enforce`, `work.py pr --no-tests <reason>` is a PR-body exception;
+it bypasses only test-first proof, never other gates.
+
+## Sources
+Kent Beck's *Test-Driven Development: By Example* defines TDD; Martin Fowler's *Refactoring: Improving the Design of Existing Code* names refactor smells.
 
 ## Test behavior, not plumbing (anti-patterns to avoid)
 - **Don't test the mock** — assert real behavior/output, not that a stub was called.

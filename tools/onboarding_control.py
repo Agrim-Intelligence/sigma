@@ -785,7 +785,8 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         obs["evidence"] = json.loads(ev.read_text(encoding="utf-8")) if ev.is_file() else None
         run.step("work commit", [py, loop / "work.py", "commit", ".sdlc", goal, "--message",
                                  f"sdlc: {GOAL_TITLE.lower()}"], repo, env)
-        run.step("work pr", [py, loop / "work.py", "pr", ".sdlc", goal], repo, env)
+        run.step("work pr", [py, loop / "work.py", "pr", ".sdlc", goal, "--no-tests",
+                             "Bootstrap fixture writes text only; shell verification is retained."], repo, env)
         pr = next(iter(state()["prs"]), None)
         if pr is None:
             raise Red("work pr", "no PR was opened")
