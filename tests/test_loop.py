@@ -7556,6 +7556,23 @@ def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkey
         assert not lp.session_heartbeat_path(base, pid).exists()
 
 
+def test_session_start_cannot_write_an_orphan_heartbeat_after_an_interleaved_end(monkeypatch):
+    """The interleave runs immediately after start releases its lock, the old orphan window."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid(); real = lp._session_locked; ending = [False]
+        def interleaved(sdlc_dir, session_pid, fn, **kwargs):
+            result = real(sdlc_dir, session_pid, fn, **kwargs)
+            if not ending[0]:
+                ending[0] = True
+                lp.session_end(base, pid, generation="owner")
+            return result
+        monkeypatch.setattr(lp, "_session_locked", interleaved)
+        lp.session_start(base, pid, generation="owner")
+        assert not lp._session_marker_path(base, pid).exists()
+        assert not lp.session_heartbeat_path(base, pid).exists()
+
+
 def test_prior_session_end_cannot_delete_a_successor_generation():
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:

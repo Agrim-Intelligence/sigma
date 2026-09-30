@@ -2659,9 +2659,11 @@ def session_start(sdlc_dir, session_pid, generation=None):
         else:
             data = {"in_flight": [], "settled_admissions": 0, "generation": selected_generation}
         _session_write(path, data)
+        # Publish both halves before releasing the lifecycle lock.  Otherwise a clean end can
+        # remove the new marker between these two writes and this delayed heartbeat becomes orphaned.
+        write_session_heartbeat(sdlc_dir, pid, generation=selected_generation)
 
     _session_locked(sdlc_dir, pid, _write, path=path, require_lock=True)
-    write_session_heartbeat(sdlc_dir, pid, generation=selected_generation)
     return selected_generation
 
 
