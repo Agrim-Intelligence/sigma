@@ -2451,7 +2451,7 @@ def session_heartbeat_liveness(sdlc_dir, session_pid, config=None, now=None):
         age = max(0.0, (time.time() if now is None else now) - seen)
     except (OSError, ValueError, TypeError):
         return ("dead", None)
-    return ("idle" if age < max(3 * interval, 180) else "dead", age)
+    return ("idle" if age < _load("sync").stale_after_seconds(interval) else "dead", age)
 
 
 def _session_lock_path(sdlc_dir, entry_path):
@@ -2540,6 +2540,16 @@ def _session_read(path, strict=False):
 
 def _session_write(path, data):
     """Publish a load-bearing session marker atomically, inside its caller's file lock."""
+    # Admission/claim/release writers predate heartbeat ownership and intentionally pass only
+    # their fields. Preserve an existing generation here so any of those routine updates cannot
+    # silently turn a later owner-checked `session_end` into a no-op.
+    if "generation" not in data:
+        try:
+            existing_generation = json.loads(path.read_text()).get("generation")
+            if isinstance(existing_generation, str) and existing_generation:
+                data = {**data, "generation": existing_generation}
+        except (OSError, ValueError, AttributeError):
+            pass
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
     try:
         with os.fdopen(fd, "w") as stream:
