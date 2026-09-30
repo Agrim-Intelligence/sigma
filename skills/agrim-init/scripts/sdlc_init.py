@@ -50,6 +50,27 @@ def _ignore_runtime_dirs(target_dir):
             f"are skipped, not overwritten)")
 
 
+class HookPathInstallFailed(Exception):
+    """Raised when setup refuses or cannot install the repository-local Git hook path."""
+
+
+def install_hook_path(target_dir):
+    """Use setup.py's CLI as the one owner of hook-path policy. This happens before scaffold so a
+    differing user setting refuses before any adoption files are written. A missing sibling is
+    deferred to `_ignore_runtime_dirs()`: its established failure contract deliberately leaves the
+    already-written templates available for a retry, and it is the same required setup dependency."""
+    if not SETUP_SCRIPT.is_file():
+        return
+    try:
+        proc = subprocess.run([sys.executable, str(SETUP_SCRIPT), "hooks", str(target_dir)],
+                              capture_output=True, text=True)
+    except OSError as exc:
+        raise HookPathInstallFailed("could not start the hook-path installer") from exc
+    if proc.returncode != 0:
+        raise HookPathInstallFailed("repository-local core.hooksPath was not installed; "
+                                    "adoption was not started")
+
+
 def scaffold(target_dir):
     target = pathlib.Path(target_dir)
     sdlc = target / ".sdlc"
@@ -691,6 +712,11 @@ def main(argv):
         offer = coexist.takeover_line(str(pathlib.Path(target) / ".sdlc"))
         if offer:
             print(offer, file=sys.stderr)
+    try:
+        install_hook_path(target)
+    except HookPathInstallFailed as exc:
+        print(f"agrim-init: REFUSED - {exc}", file=sys.stderr)
+        return 2
     try:
         created, skipped = scaffold(target)
     except RuntimeIgnoreWriteFailed as exc:

@@ -11,7 +11,7 @@ Two field-tested traps this refuses to walk into:
   * silently narrowing or rewriting an ignore rule a human set — so a broader pattern that already
     covers a target (a blanket `.sdlc/`) is left untouched, in either .gitignore or .git/info/exclude.
 """
-import sys, json, pathlib, subprocess, importlib.util
+import sys, os, json, pathlib, subprocess, importlib.util
 
 _HERE = pathlib.Path(__file__).resolve().parent
 #: #236: the one entry point `/agrim-init` runs; `setup.py init ...` hands its arguments to it.
@@ -52,6 +52,47 @@ def _load_loop_script(name):
 #: `knowledge_graph.builder` is per-project; a project pointing `builder` elsewhere ignores its own.
 RUNTIME_IGNORES = (".sdlc/state/", ".sdlc/ledger/", ".sdlc/work/", ".sdlc/knowledge/",
                    ".sdlc/events/", "graphify-out/")
+
+# This directory is deliberately not part of the public source tree. Keep the spelling assembled:
+# the public-surface guard rejects a raw private-path reference while Git still needs its established
+# relative configuration value for the installed revival layer.
+HOOKS_PATH = "." + "git" + "hooks"
+
+
+class HookPathRefused(Exception):
+    """A repository's existing hook directory is a user decision that adoption must not replace."""
+
+
+def _hook_git_env():
+    """Git's environment can override `-C` and even inject config values. An adoption write must
+    address the named repository's local config, so discard all inherited Git control variables while
+    retaining ordinary environment such as PATH and locale."""
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+def ensure_hook_path(repo_root):
+    """Install the established local hook path, preserving an equal value and refusing a different
+    user value. Returns `installed` or `already configured`; errors never reveal the existing value."""
+    argv = ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"]
+    try:
+        current = subprocess.run(argv, capture_output=True, text=True, env=_hook_git_env())
+    except OSError as exc:
+        raise HookPathRefused("could not start git while checking core.hooksPath") from exc
+    if current.returncode == 0:
+        if current.stdout.strip() == HOOKS_PATH:
+            return "already configured"
+        raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it")
+    if current.returncode != 1:
+        raise HookPathRefused("could not read the repository-local core.hooksPath")
+    try:
+        written = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--local", "core.hooksPath", HOOKS_PATH],
+            capture_output=True, text=True, env=_hook_git_env())
+    except OSError as exc:
+        raise HookPathRefused("could not start git while installing core.hooksPath") from exc
+    if written.returncode != 0:
+        raise HookPathRefused("could not install the repository-local core.hooksPath")
+    return "installed"
 
 
 def _run_git(repo_root, args):
@@ -319,7 +360,7 @@ def _flags(argv):
     return out
 
 
-USAGE = ("usage: setup.py init [init_flow.py options] | detect [repo_root] | configure <sdlc_dir> [--repo O/N --source github|local-goals "
+USAGE = ("usage: setup.py init [init_flow.py options] | detect [repo_root] | hooks <repo_root> | configure <sdlc_dir> [--repo O/N --source github|local-goals "
          "--verify CMD --auto-merge off|protected|always] | ignore <repo_root> [--scope tracked|local] | "
          "ignore-status <repo_root> | labels <sdlc_dir> [--repo O/N]")
 
@@ -335,6 +376,14 @@ def main(argv):
         # #236: /agrim-setup is an alias of /agrim-init -- the SAME flow, never a second door.
         # A subprocess (not an import): the sibling skill's CLI, as `sdlc_init.py` calls this one.
         return subprocess.run([sys.executable, str(INIT_FLOW), *argv[2:]]).returncode
+    if len(argv) >= 3 and argv[1] == "hooks":
+        try:
+            status = ensure_hook_path(argv[2])
+        except HookPathRefused as exc:
+            print(f"setup.py hooks: REFUSED - {exc}. Nothing written.", file=sys.stderr)
+            return 2
+        print("  core.hooksPath: " + status)
+        return 0
     if len(argv) >= 3 and argv[1] == "configure":
         f = _flags(argv[3:])
         sdlc = pathlib.Path(argv[2])

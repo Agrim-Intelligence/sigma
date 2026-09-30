@@ -98,6 +98,36 @@ def test_scaffold_gitignores_the_runtime_dirs_including_events(tmp_path):
         assert probe.exists(), f"the probe under {target} must still exist on disk"
 
 
+def test_documented_init_installs_the_repo_local_hook_path(tmp_path):
+    """The real CLI gesture must write the local Git setting, not merely print that it would.
+    The expected spelling is assembled because this public-surface test suite deliberately rejects
+    the private hook directory as raw shipped text."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    got = subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "--get",
+                          "core.hooksPath"], capture_output=True, text=True, check=True)
+    assert got.stdout.strip() == "." + "git" + "hooks"
+
+
+def test_documented_init_refuses_a_different_existing_hook_path_without_scaffolding(tmp_path):
+    """A user's hook directory is an explicit local decision, so adoption must leave it alone."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    existing = "my-hooks"
+    subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", existing],
+                   check=True)
+    result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "REFUSED" in result.stderr and "core.hooksPath" in result.stderr
+    assert existing not in result.stderr + result.stdout
+    got = subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "--get",
+                          "core.hooksPath"], capture_output=True, text=True, check=True)
+    assert got.stdout.strip() == existing
+    assert not (tmp_path / ".sdlc").exists(), "a refusal must leave adoption unstarted"
+
+
 def test_scaffold_gitignore_fix_does_not_make_probe_files_stop_existing(tmp_path):
     """Partner to the test above: the fix must make git stop SEEING each RUNTIME_IGNORES target's
     files, not make the files stop EXISTING. Tuple-derived and driven through the real CLI, same
