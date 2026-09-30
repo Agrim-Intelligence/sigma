@@ -15,11 +15,6 @@
       "command": "python3 skills/agrim-doctor/scripts/doctor.py check <local-goals-scratch>/.sdlc",
       "summary": "egress-doctor-local.json",
       "finding": "codex plugin, git, and gh api launches were recorded; the hook cannot inspect gh's own connection"
-    },
-    {
-      "command": "$HOME/.sigma-venv312/bin/python -m pytest tests -q -n 4 -p no:cacheprovider",
-      "summary": "egress-full-suite.json",
-      "finding": "only loopback socket and urllib events were recorded; no non-loopback Python socket event was captured"
     }
   ]
 }
