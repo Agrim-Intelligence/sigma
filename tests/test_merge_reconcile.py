@@ -47,7 +47,7 @@ class FakeGh:
                 raise st
             return json.dumps({"number": int(n), "state": "closed" if st != "open" else "open",
                                "merged": st == "merged",
-                               "merged_at": "2026-01-02T00:00:00Z" if st == "merged" else None})
+                               "merged_at": "2026-01-02T00:00:00.000Z" if st == "merged" else None})
         if "pr view" in line:
             st = self.prs.get(line.split("pr view", 1)[1].split()[0], "open")
             return json.dumps({"state": {"open": "OPEN", "merged": "MERGED"}.get(st, "CLOSED"),
@@ -631,6 +631,9 @@ def test_255_4_log_keeps_a_review_goal_in_flight_and_says_how_long_it_has_waited
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d)
         log = _load_skill("agrim-log", "log")
+        lp = _load("loop")
+        _started(lp, base, "0001")
+        lp.work.mark_awaiting_merge(base, "0001")
         _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
                          ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
                          ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])
@@ -714,3 +717,245 @@ def test_255_9_run_loop_counts_review_apart_from_parked():
             return "done", ""
         out = lp.run_loop(base, run_goal)
         assert out["review"] == 1 and out["parked"] == 0, out
+
+
+# #324: deterministic controls for the follow-up seams.
+@pytest.mark.parametrize("code,busy", [(11, True), (13, True), (37, False), (45, False)])
+def test_324_lock_errors_are_not_all_contention(monkeypatch, capsys, code, busy):
+    import errno
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        src = _awaiting(lp, base, [("0001", "7")])
+        if lp.fcntl is None:
+            pytest.skip("POSIX flock error injection; Windows PID path is covered separately")
+        actual = [errno.EAGAIN, errno.EACCES, errno.ENOLCK, errno.EOPNOTSUPP][[11, 13, 37, 45].index(code)]
+        def fail(*args):
+            raise OSError(actual, "injected lock failure")
+        monkeypatch.setattr(lp.fcntl, "flock", fail)
+        gh = FakeGh({"7": "merged"})
+        monkeypatch.setattr(lp.sources, "get_source", lambda *a: src)
+        lp.work._run = gh
+        # The exact documented gesture, without stronger test-only flags.
+        assert lp.main(["loop.py", "reconcile-merges", base]) == 0
+        output = capsys.readouterr().err
+        assert ("another merge-reconcile pass" in output) is busy
+        if not busy:
+            assert "REFUSED" in output and "injected lock failure" in output
+        assert gh.calls == []
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_324_owner_pid_exists_only_while_lock_is_held(monkeypatch, windows):
+    import os
+    import sys
+    import types
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        if windows:
+            monkeypatch.setattr(lp, "fcntl", None)
+            # Patch the module's os proxy, not pathlib's process-wide platform selection.
+            monkeypatch.setattr(lp, "os", types.SimpleNamespace(**dict(vars(os), name="nt")))
+            monkeypatch.setitem(sys.modules, "msvcrt", types.SimpleNamespace(
+                LK_NBLCK=1, LK_UNLCK=0, locking=lambda *args: None))
+        with lp._merge_reconcile_lock(base) as held:
+            assert held is True
+            assert lp._merge_lock_holder(base) == str(os.getpid())
+        assert lp._merge_lock_holder(base) == "?"
+
+
+def test_324_failed_reads_do_not_refresh_liveness_but_are_throttled():
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        _started(lp, base, "0001")
+        lp.work.mark_awaiting_merge(base, "0001", now=1000)
+        lp.work.stamp_merge_check(base, "0001", now=2000)
+        gh = FakeGh({"7": RuntimeError("auth broken")})
+        now = 2000 + 2 * 86400
+        lp._reconcile_awaiting_merges(base, WORK_ON, source=RecordingSource(), run=gh, now=now)
+        flag = lp.work._record(base, "0001")["awaiting_merge"]
+        assert flag["checked_at"] == now
+        assert flag["read_at"] == 2000
+        row = lp.work.awaiting_merge_report(base, now=now)[0]
+        assert row["unwatched"] and row["unread"] == 2 * 86400
+        lp._reconcile_awaiting_merges(base, WORK_ON, source=RecordingSource(), run=gh, now=now + 1)
+        assert len(gh.pr_reads()) == 1
+
+
+def test_324_policy_thresholds_are_configurable_and_doctor_uses_them():
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d, {"work": {"enabled": True, "merge_stuck_seconds": 7 * 86400,
+                                  "merge_unread_seconds": 4 * 86400}})
+        _started(lp, base, "0001")
+        lp.work.mark_awaiting_merge(base, "0001", now=1000)
+        row = lp.work.awaiting_merge_report(base, now=1000 + 3 * 86400)[0]
+        assert not row["stuck"] and not row["unwatched"]
+        doctor = _load_skill("agrim-doctor", "doctor")
+        row = doctor._awaiting_merge_row(base, now=1000 + 8 * 86400)
+        assert not row["ok"] and "waiting over 7d" in row["name"]
+
+
+def test_324_cli_done_cannot_race_a_merge_pass(monkeypatch, capsys):
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+        src = RecordingSource()
+        _awaiting(lp, base, [("0001", "7")], src=src)
+        monkeypatch.setattr(lp.sources, "get_source", lambda *a: src)
+        original = src.complete
+        cli_results = []
+        def complete(goal):
+            original(goal)
+            if len(src.events) < 10:
+                cli_results.append(lp.main(["loop.py", "record", base, goal, "done"]))
+        src.complete = complete
+        assert lp._reconcile_awaiting_merges(base, WORK_ON, source=src, run=gh,
+                                             min_interval=0) == [("0001", "done", "7")]
+        assert cli_results == [4]
+        assert [e for e in src.events if e[0] == "complete"] == [("complete", "0001")]
+        assert "REFUSED" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("problem", ["missing", "disabled"])
+def test_324_log_orphaned_review_is_blocked_not_forever_in_flight(problem):
+    with tempfile.TemporaryDirectory() as d:
+        config = {"work": {"enabled": problem != "disabled"}, "action_log": {"enabled": True}}
+        base = _sdlc(d, config)
+        lp = _load("loop")
+        if problem == "disabled":
+            _started(lp, base, "0001")
+            lp.work.mark_awaiting_merge(base, "0001")
+        log = _load_skill("agrim-log", "log")
+        _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
+                         ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
+                         ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])
+        text = log.slots(base, now=log._epoch("2026-01-02T00:00:00.000Z"))
+        assert "nothing in flight" in text
+        assert "🔴" in text and "reconciliation unavailable" in text
+        assert "PR not merged yet" not in text
+
+
+def test_324_complete_cost_names_issue_graphql_in_both_public_docs():
+    calls = []
+    def run(args):
+        calls.append(args)
+        if args[:2] == ["issue", "view"]:
+            return "I_1" if "id" in args else "OPEN"
+        if args[:2] == ["api", "graphql"]:
+            return json.dumps({"data": {"repository": {
+                "issue": {"id": "I_1"},
+                "a0": {"id": "LA_1", "name": "sdlc:in-progress"},
+                "a1": {"id": "LA_2", "name": "sdlc:goal"}}}})
+        return ""
+    src = _load("sources").GitHubSource({"discovery": {"github": {"repo": "o/r"}}}, run=run)
+    src.complete("1")
+    assert len([c for c in calls if c[:2] == ["issue", "view"]]) == 1, calls
+    assert len([c for c in calls if c[:2] == ["api", "graphql"]]) == 3, calls
+    assert len(calls) == 5, calls  # state + close + id + label ids + label mutation, no board
+    root = S.parents[2]
+    for path in (root / "README.md", S.parent / "references" / "landing.md"):
+        assert "`gh issue view` state probe" in path.read_text(), path
+
+
+def test_324_cli_done_holds_lock_against_a_pass(monkeypatch):
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        gh = FakeGh({"7": "merged"})
+        lp.work._run = gh
+        src = ReentrantSource(lp, base, gh)
+        _awaiting(lp, base, [("0001", "7")], src=src)
+        monkeypatch.setattr(lp.sources, "get_source", lambda *a: src)
+        assert lp.main(["loop.py", "record", base, "0001", "done"]) == 0
+        assert src.inner == []
+        assert [e for e in src.events if e[0] == "complete"] == [("complete", "0001")]
+
+
+@pytest.mark.parametrize("value", [0, -1, "NaN", "inf", True, None, {}, []])
+def test_324_invalid_policy_values_use_defaults(value):
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d, {"work": {"enabled": True, "merge_stuck_seconds": value,
+                                  "merge_unread_seconds": value}})
+        work = _load("work")
+        assert work.merge_liveness_policy(base) == (3 * 86400, 86400)
+
+
+def test_324_legacy_attempt_is_not_a_success_and_a_good_read_recovers():
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        _started(lp, base, "0001")
+        lp.work.mark_awaiting_merge(base, "0001", now=1000)
+        now = 1000 + 2 * 86400
+        rec = lp.work._record(base, "0001")
+        rec["awaiting_merge"]["checked_at"] = now - 200
+        lp.work._save(base, "0001", rec)
+        report = lp.work.awaiting_merge_report(base, now=now)[0]
+        assert report["unread"] is None and report["unwatched"]
+        lp._reconcile_awaiting_merges(base, WORK_ON, source=RecordingSource(),
+                                      run=FakeGh({"7": "open"}), now=now)
+        report = lp.work.awaiting_merge_report(base, now=now + 1)[0]
+        assert report["unread"] == 1 and not report["unwatched"]
+
+
+def test_324_real_process_lock_recovers_after_holder_is_killed():
+    """Actual OS lock/crash control on this platform; bounded reads/waits, no daemon pause."""
+    import subprocess
+    import sys
+    with tempfile.TemporaryDirectory() as d:
+        lp = _load("loop")
+        base = _sdlc(d)
+        ready = pathlib.Path(d) / "ready"
+        code = ("import importlib.util,sys,time,pathlib; "
+                "s=importlib.util.spec_from_file_location('loop',sys.argv[1]); "
+                "m=importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+                "lock=m._merge_reconcile_lock(sys.argv[2]); "
+                "held=lock.__enter__(); ready=pathlib.Path(sys.argv[3]); "
+                "tmp=ready.with_suffix('.tmp'); tmp.write_text(str(held)); tmp.replace(ready); time.sleep(30)")
+        child = subprocess.Popen([sys.executable, "-c", code, str(S / "loop.py"), base, str(ready)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            import time
+            deadline = time.monotonic() + 10
+            while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready.exists() and ready.read_text() == "True", "child did not acquire lock"
+            assert lp._merge_lock_holder(base) == str(child.pid)
+            with lp._merge_reconcile_lock(base) as held:
+                assert held is False
+            child.kill()
+            child.communicate(timeout=10)
+            with lp._merge_reconcile_lock(base) as held:
+                assert held is True
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.communicate(timeout=10)
+
+
+@pytest.mark.parametrize("running", [1, 6])
+def test_324_orphan_remains_visible_alongside_running_goals(running):
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d, {"work": {"enabled": True}, "action_log": {"enabled": True}})
+        log = _load_skill("agrim-log", "log")
+        _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
+                         ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
+                         ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])
+        directory = pathlib.Path(base) / "state" / "log"
+        for n in range(2, running + 2):
+            rows = [{"ts": "2026-01-02T00:00:00.000Z", "goal": str(n), "kind": kind,
+                     "actor": "loop", "thread": "main", "phase": "implement"}
+                    for kind in ("claimed", "agent_dispatch")]
+            (directory / f"{n}.jsonl").write_text("\n".join(map(json.dumps, rows)) + "\n")
+        text = log.slots(base)
+        assert f"{running} goal(s) in flight" in text
+        assert "finished" not in text
+        if running == 1:
+            assert "merge reconciliation unavailable" in text
+        else:
+            assert "1 blocked merge reconciliation, not shown" in text

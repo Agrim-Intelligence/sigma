@@ -3137,7 +3137,7 @@ MERGE_RECHECK_SECONDS = 120
 #: #255 LIVENESS: how long a goal may wait on a merge before doctor calls it STUCK (an armed PR whose
 #: required check failed never lands, and nothing else would ever say so), and how old the newest
 #: PR read may be before doctor calls the PASS dead (no `next`, no watcher, nothing reading it). A
-#: policy age, not a resource limit: three days covers a weekend without a false alarm, and a day
+#: policy age, not a resource limit: three days and one day are configurable operator policy defaults, not measured safety bounds; a day
 #: without a single read is ~720 missed re-check intervals (MERGE_RECHECK_SECONDS).
 MERGE_STUCK_SECONDS = 3 * 86400
 MERGE_UNREAD_SECONDS = 86400
@@ -3250,10 +3250,14 @@ def clear_awaiting_merge(sdlc_dir, goal):
         _save(sdlc_dir, goal, rec)
 
 
-def stamp_merge_check(sdlc_dir, goal, now=None):
+def stamp_merge_check(sdlc_dir, goal, now=None, *, successful=True):
+    """Stamp attempts for throttling, and recognized PR responses separately for liveness."""
     rec = _record(sdlc_dir, goal)
     if rec and isinstance(rec.get("awaiting_merge"), dict):
-        rec["awaiting_merge"]["checked_at"] = int(now if now is not None else time.time())
+        stamp = int(now if now is not None else time.time())
+        rec["awaiting_merge"]["checked_at"] = stamp  # attempts throttle even when auth fails
+        if successful:
+            rec["awaiting_merge"]["read_at"] = stamp
         _save(sdlc_dir, goal, rec)
 
 
@@ -3282,16 +3286,32 @@ def _age(seconds):
     return f"{s}s"
 
 
+def merge_liveness_policy(sdlc_dir):
+    """Positive finite seconds; absent/invalid policy values use the documented defaults."""
+    import math
+    config = state.load_config(sdlc_dir).get("work") or {}
+    def seconds(key, default):
+        value = config.get(key, default)
+        try:
+            number = float(value)
+            return number if not isinstance(value, bool) and math.isfinite(number) and number > 0 else default
+        except (TypeError, ValueError, OverflowError):
+            return default
+    return (seconds("merge_stuck_seconds", MERGE_STUCK_SECONDS),
+            seconds("merge_unread_seconds", MERGE_UNREAD_SECONDS))
+
+
 def awaiting_merge_report(sdlc_dir, now=None):
     """#255 LIVENESS: one dict per goal awaiting merge, oldest wait first -- `goal`, `pr`, `waited`
-    (seconds since `record review`), `unread` (seconds since the last PR read, or None if never
-    read), `close_failures`, and the two death verdicts: `stuck` (waited past
-    MERGE_STUCK_SECONDS -- the PR is not landing) and `unwatched` (no read for MERGE_UNREAD_SECONDS
-    -- nothing is running the pass). AGE IS THE TELL: a stuck wait reports zero errors forever, so
+    (seconds since `record review`), `unread` (seconds since the last SUCCESSFUL PR read, or None
+    if never confirmed), `close_failures`, and policy verdicts `stuck` and `unwatched` from
+    merge_liveness_policy. Unwatched can mean a stopped pass OR repeated failed reads.
+    AGE IS THE TELL: a stuck wait reports zero errors forever, so
     these are read off timestamps, never off an error state. Local directory listing, no `gh`."""
     wdir = pathlib.Path(sdlc_dir) / "state" / "work"
     now = int(now if now is not None else time.time())
     out = []
+    stuck_after, unread_after = merge_liveness_policy(sdlc_dir)
     for path in sorted(wdir.glob("*.json")) if wdir.is_dir() else ():
         try:
             rec = json.loads(path.read_text(encoding="utf-8"))
@@ -3301,14 +3321,15 @@ def awaiting_merge_report(sdlc_dir, now=None):
         if not isinstance(flag, dict):
             continue
         since = int(flag.get("since") or 0)
-        checked = int(flag.get("checked_at") or 0)
+        # Legacy checked_at was an attempt, never evidence of a successful read.
+        checked = int(flag.get("read_at") or 0)
         waited = now - since if since else 0
         unread = now - checked if checked else None
         out.append({"goal": str(flag.get("goal") or path.stem), "pr": str(flag.get("pr") or rec.get("pr")),
                     "waited": waited, "unread": unread,
                     "close_failures": int(flag.get("close_failures") or 0),
-                    "stuck": waited >= MERGE_STUCK_SECONDS,
-                    "unwatched": (unread if unread is not None else waited) >= MERGE_UNREAD_SECONDS})
+                    "stuck": waited >= stuck_after,
+                    "unwatched": (unread if unread is not None else waited) >= unread_after})
     return sorted(out, key=lambda r: -r["waited"])
 
 
@@ -3319,7 +3340,7 @@ def awaiting_merge_line(sdlc_dir, now=None):
     if not rows:
         return ""
     top = rows[0]
-    read = ("never read" if top["unread"] is None else f"last PR read {_age(top['unread'])} ago")
+    read = ("never successfully read" if top["unread"] is None else f"last successful PR read {_age(top['unread'])} ago")
     extra = f", {top['close_failures']} failed close(s)" if top["close_failures"] else ""
     return (f"awaiting merge: {len(rows)} (oldest {stem(top['goal'])} PR #{top['pr']} for "
             f"{_age(top['waited'])}, {read}{extra})")

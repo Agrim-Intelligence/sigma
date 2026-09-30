@@ -9,6 +9,7 @@ is enforced by /agrim-loop SKILL.md prose. Claim and outcome are mirrored to the
 stop a run."""
 import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib
 import contextlib
+import errno
 
 try:
     import fcntl                    # POSIX only — see _try_acquire_claim_lock's docstring
@@ -3794,7 +3795,7 @@ def _merge_reconcile_lock(sdlc_dir):
     """#255 (2): serialize the merge-reconcile pass across processes -- a `next` and the watch tick
     racing on one merged goal used to BOTH record `done` (two ledger entries, two close comments,
     two unit-completion signals). Yields True (held), False (another pass holds it -- skip; that
-    pass is doing this work) or None (this platform offers no lock -- the caller REFUSES the pass
+    pass is doing this work) or None (locking is unavailable -- the caller REFUSES the pass
     loudly rather than run unguarded, AGENTS.md SAFETY).
 
     NON-BLOCKING, so there is no timeout to derive and no waiter to wedge: the loser skips and its
@@ -3809,7 +3810,8 @@ def _merge_reconcile_lock(sdlc_dir):
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
-    except OSError:
+    except OSError as exc:
+        print(f"loop.py: merge lock REFUSED -- cannot open {path}: {exc}", file=sys.stderr)
         yield None
         return
     held = False
@@ -3827,19 +3829,30 @@ def _merge_reconcile_lock(sdlc_dir):
                 yield None
                 return
             held = True
-        except OSError:
-            yield False
+        except OSError as exc:
+            if exc.errno in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES):
+                yield False
+            else:
+                print(f"loop.py: merge lock REFUSED -- {path}: {exc}; "
+                      "use a filesystem that supports exclusive locks", file=sys.stderr)
+                yield None
             return
         try:
-            if fcntl is not None:
-                os.ftruncate(fd, 0)
-                os.lseek(fd, 0, os.SEEK_SET)
-                os.write(fd, str(os.getpid()).encode())
+            # Windows locks byte zero; keep that byte and store diagnostics after it.
+            offset = 0 if fcntl is not None else 1
+            os.lseek(fd, offset, os.SEEK_SET)
+            os.write(fd, str(os.getpid()).encode())
+            os.ftruncate(fd, os.lseek(fd, 0, os.SEEK_CUR))
         except OSError:
             pass
         yield True
     finally:
         if held:
+            try:
+                # Clear diagnostics while still owning the lock, never after the next owner.
+                os.ftruncate(fd, 0 if fcntl is not None else 1)
+            except OSError:
+                pass
             try:
                 if fcntl is not None:
                     fcntl.flock(fd, fcntl.LOCK_UN)
@@ -3854,7 +3867,10 @@ def _merge_reconcile_lock(sdlc_dir):
 
 def _merge_lock_holder(sdlc_dir):
     try:
-        return (pathlib.Path(sdlc_dir) / "state" / MERGE_RECONCILE_LOCK).read_text().strip() or "?"
+        with (pathlib.Path(sdlc_dir) / "state" / MERGE_RECONCILE_LOCK).open() as handle:
+            if fcntl is None and os.name == "nt":
+                handle.seek(1)  # byte zero is mandatory-locked on Windows
+            return handle.read().strip() or "?"
     except OSError:
         return "?"
 
@@ -3893,7 +3909,7 @@ def _reconcile_awaiting_merges(sdlc_dir, config, source=None, run=None, now=None
     flagged (one directory listing). Otherwise one REST `pulls/<n>` GET per goal read, at most
     `limit` per pass whatever the backlog, and no `gh pr view` (GraphQL) at all: the confirming read
     is reused and `finish` is told the merge is confirmed. A goal that closes adds one more REST read
-    only when the ledger or journal is on (the merge facts), plus the issue writes
+    only when the ledger or journal is on (the merge facts), plus the issue GraphQL reads and writes
     `source.complete()` makes for any `record done`. A larger backlog costs close LATENCY (every PR
     re-read within ceil(N/limit) passes), never more calls per pass.
 
@@ -3910,12 +3926,11 @@ def _reconcile_awaiting_merges(sdlc_dir, config, source=None, run=None, now=None
             return results
         with _merge_reconcile_lock(sdlc_dir) as held:
             if held is None:
-                print("loop.py: merge reconcile REFUSED -- this platform offers no file lock, and an "
-                      "unguarded pass can record a merged goal done twice; run it on a POSIX or "
-                      "Windows host", file=sys.stderr)
+                print("loop.py: merge reconcile REFUSED -- exclusive file locking is unavailable; "
+                      "an unguarded pass can record a merged goal done twice", file=sys.stderr)
                 return results
             if not held:
-                print(f"loop.py: another merge-reconcile pass is running (pid "
+                print(f"loop.py: another merge-reconcile pass or record done is running (pid "
                       f"{_merge_lock_holder(sdlc_dir)}) -- skipping; it reads these goals",
                       file=sys.stderr)
                 return results
@@ -3947,7 +3962,7 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
         return                                   # recorded by an earlier pass meanwhile
     pr = str(rec.get("pr") or "")
     landing = work.pr_landing_state(sdlc_dir, rec, run)
-    work.stamp_merge_check(sdlc_dir, goal, now=now)
+    work.stamp_merge_check(sdlc_dir, goal, now=now, successful=landing[0] != work.UNKNOWN)
     if landing[0] == work.MERGED:
         if work.done_refusal(sdlc_dir, config, goal, run=run, landing=landing):
             return                               # not confirmed after all -- next pass
@@ -5695,7 +5710,7 @@ def _escalate(sdlc_dir, goal, current, rest):
     return 3
 
 
-def main(argv):
+def main(argv, *, _merge_lock_held=False):
     """Thin wrapper around `_dispatch` — the ONE place a never-`/agrim-init`'d `.sdlc` dir (no
     config.json at all) turns into a clear one-line stderr message instead of a raw traceback
     (#403). Every verb below calls `state.load_config` at some point before its own logic runs;
@@ -5708,6 +5723,20 @@ def main(argv):
         print(USAGE)
         return 0
     try:
+        # #324: with work enabled (the pass's scope), lock before any done side effect.
+        # Work-disabled local recorders keep their existing concurrent cursor-update contract.
+        # Re-entry is lexical, not a process-global exemption that would let another caller through.
+        if (not _merge_lock_held and len(argv) >= 5 and argv[1] == "record"
+                and argv[4] == "done" and work.enabled(state.load_config(argv[2]))):
+            with _merge_reconcile_lock(argv[2]) as held:
+                if held is not True:
+                    why = (f"another merge-reconcile pass or record done holds the lock "
+                           f"(pid {_merge_lock_holder(argv[2])})" if held is False
+                           else "exclusive file locking is unavailable")
+                    print(f"REFUSED: record done -- {why}; check the goal status and retry "
+                          "after the holder finishes or locking is restored", file=sys.stderr)
+                    return 4
+                return main(argv, _merge_lock_held=True)
         return _dispatch(argv)
     except state.ConfigMissing as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
