@@ -762,6 +762,21 @@ def test_claim_and_record_proceed_with_one_notice_per_run(tmp_path):
 
 @pytest.mark.parametrize("host", [
     lambda tmp: _host(tmp, claude=ENABLED),
+    lambda tmp: _host(tmp, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID),
+])
+def test_record_first_announces_admission_on_each_supported_host(tmp_path, host):
+    """#251 control: record must itself enter coexistence admission before mutation."""
+    repo = _scaffolded(tmp_path)
+    goal = _claimable(repo)
+    record = _run([LOOP / "loop.py", "record", repo / ".sdlc", goal, "done"],
+                  _env(**host(tmp_path)))
+    assert record.returncode == 0, record.stdout + record.stderr
+    assert len(_notices(record.stderr)) == 1
+    assert "status: done" in goal.read_text()
+
+
+@pytest.mark.parametrize("host", [
+    lambda tmp: _host(tmp, claude=ENABLED),
     lambda tmp: _host(tmp, codex='[plugins."%s"]\\nenabled = true\\n' % OLD_ID),
 ])
 def test_claim_and_record_override_is_quiet_on_each_supported_host(tmp_path, host):
