@@ -60,7 +60,9 @@ def scan_paths(root, paths):
 
 def _paths(root):
     root = Path(root)
-    result = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=True)
+    result = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True)
+    if result.returncode:
+        return [p for p in root.rglob("*") if p.suffix in {".py", ".sh"} and "tests" not in p.parts]
     return [root / raw.decode() for raw in result.stdout.split(b"\0") if raw and Path(raw.decode()).suffix in {".py", ".sh"} and not raw.decode().startswith("tests/")]
 
 
