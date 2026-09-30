@@ -2597,9 +2597,15 @@ def _staged_added_diff(path):
     # mask an actual Git failure below: once a repository is present, an unreadable diff refuses.
     if not (pathlib.Path(path) / ".git").exists():
         return ""
+    # A caller can inherit GIT_DIR/GIT_WORK_TREE (or an alternate index) from an unrelated shell.
+    # `cwd` does not override those variables: Git would scan that other repository and return a
+    # clean diff while this goal's staged credential remains unseen.  The scan's authority is its
+    # recorded worktree, so discard every Git-specific override rather than trying to maintain an
+    # incomplete denylist as Git adds new environment controls.
+    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     proc = subprocess.Popen(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
                             cwd=str(path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            text=True)
+                            text=True, env=clean_env)
     out, _ = proc.communicate()
     if proc.returncode:
         raise RuntimeError("staged-diff scan failed")
@@ -2674,7 +2680,7 @@ def _secret_refusal(path, staged, config, run):
         content_hits = _added_secret_hits(path)
     except Exception:                   # never render scanner failures: they can contain a secret
         return ("REFUSED — added staged content could not be scanned, so nothing was committed. "
-                "The index is unchanged; resolve the scanner failure and re-run `work.py commit`.")
+                "The index has not been reset; resolve the scanner failure and re-run `work.py commit`.")
     if not any(_is_offender(line, allowed) for line in staged.splitlines()) and not content_hits:
         return ""                       # the ordinary path: no extra git call, byte-identical
     rows = _staged_rows(path, run)

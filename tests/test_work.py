@@ -1010,7 +1010,7 @@ def test_documented_work_commit_refuses_when_the_added_content_scan_is_unavailab
     out = work.commit(d, ON, goal, run=run, message="test: scan unavailable")
     assert out.startswith("REFUSED")
     assert "could not be scanned" in out
-    assert "index is unchanged" in out
+    assert "index has not been reset" in out
     assert fixture not in out
     assert not any(c.startswith("git commit") for c in run.calls)
 
@@ -1351,6 +1351,29 @@ def test_staged_content_scan_reads_bytes_without_running_git_textconv(tmp_path):
     diff = work._staged_added_diff(repo)
     assert "+SOURCE_BYTES" in diff
     assert "TRANSFORMED" not in diff
+
+
+def test_content_scan_ignores_external_git_directory_and_worktree_overrides(tmp_path, monkeypatch):
+    """The scanner must inspect this goal's index even if its caller inherited another repo."""
+    repo, d, _committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    (repo / "settings.py").write_text("ACCESS_KEY = " + fixture + "\n")
+    subprocess.run(["git", "-C", str(repo), "add", "settings.py"], check=True)
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    run = _runner([
+        ("--name-status -z", "A\0settings.py\0"),
+        ("diff --cached --name-only", "settings.py"),
+    ])
+
+    refusal = work.commit(d, ON, "0001-x.md", run=run, message="test: environment isolation")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key at settings.py:1:" in refusal
+    assert fixture not in refusal
+    assert not any(c.startswith("git commit") for c in run.calls)
 
 
 def test_real_git_refuses_content_in_a_non_ascii_path(tmp_path):
