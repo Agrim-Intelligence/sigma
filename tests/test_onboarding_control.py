@@ -134,7 +134,8 @@ def test_local_goals_mode_reaches_done_from_the_readme(local_run):
     assert set(goals) == {oc.DEMO_FILE, oc.WORK_FILE}
     mine = goals[oc.WORK_FILE]
     assert mine["status"] == "done"
-    assert mine["evidence"]["command"] == "make test" and mine["evidence"]["exit"] == 0
+    assert json.loads(mine["evidence"]["command"]) == ["make test", "test -s hello.txt"]
+    assert mine["evidence"]["exit"] == 0
     assert "cost" in mine["cost_line"]                    # phase_report's honest line, recorded
     assert all(s.get("seconds") is not None for s in local_run["steps"])
 
@@ -449,3 +450,17 @@ def test_the_gh_summary_folds_numbers_and_flags(tmp_path):
     empty = oc._surface_hash(str(tmp_path))
     (tmp_path / ".claude" / "plugins" / "installed_plugins.json").write_text("{}", encoding="utf-8")
     assert re.fullmatch(r"[0-9a-f]{16}", empty) and oc._surface_hash(str(tmp_path)) != empty
+
+
+def test_acceptance_still_rejects_missing_feature_after_green_repository_baseline(tmp_path, monkeypatch):
+    """#272: letting the repository baseline precede a future feature must not weaken its check."""
+    implement = oc._local_goal_work
+    def omit_feature(goal_path, repo):
+        output = implement(goal_path, repo)
+        if output == oc.WORK_FILE:
+            (repo / output).unlink()
+        return output
+    monkeypatch.setattr(oc, '_local_goal_work', omit_feature)
+    result = oc.run_local(ROOT, README_TEXT, tmp_path / 'missing-feature')
+    assert not result['ok']
+    assert result['failed_step'] == 'record done'

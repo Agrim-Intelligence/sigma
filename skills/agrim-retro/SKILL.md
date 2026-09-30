@@ -35,8 +35,8 @@ Locate evidence with `rg --files` and `rg -n` before opening it. Read only the
 relevant lines for the retrospective; direct bulky command output to a scratch file
 and inspect a bounded excerpt rather than carrying it in the conversation.
 
-- **The original intent** — read `.sdlc/acceptance/<goal-stem>.md` verbatim, or use
-  `review_context.py brief .sdlc "$goal" --for retro`, which includes it. This P1 record is
+- **The original intent** — read `.sdlc/acceptance/<goal-stem>.md` verbatim; the supplied
+  PR-review/retro context pack also includes it. This P1 record is
   authoritative even if the issue changed. If missing/invalid, report that original acceptance
   is unavailable and do not claim achieved. The goal's current text supplies context: the `.sdlc/goals/NNNN-*.md` file (local mode) or the
   issue body (`gh issue view "$goal"`, github mode).
