@@ -3,6 +3,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,3 +49,44 @@ def test_live_path_selection_uses_tracked_files(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.py"], check=True)
     assert _module()._paths(tmp_path) == [tmp_path / "tracked.py"]
+
+
+def test_scanner_ignores_documented_force_and_finds_real_destructive_calls(tmp_path):
+    source = tmp_path / "writes.py"
+    source.write_text('''"""Use --force only as a documented option."""
+
+from pathlib import Path
+import os
+
+def clear(path):
+    Path(path).unlink()
+    os.rmdir(path)
+''')
+    got = {(row["function"], row["rule"]) for row in _module().scan_paths(tmp_path, [source])}
+    assert got == {("clear", "fs-remove")}
+
+
+def test_scan_output_renders_and_check_rejects_bad_inventory(tmp_path):
+    source = tmp_path / "a.py"
+    source.write_text('import subprocess\nsubprocess.run(["git", "push"])\n')
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "a.py"], check=True)
+    inventory = tmp_path / "inventory.json"
+    scanned = subprocess.run([sys.executable, str(SCRIPT), "scan", str(tmp_path), "--json", str(inventory)],
+                             capture_output=True, text=True)
+    assert scanned.returncode == 0, scanned.stderr
+    rendered = subprocess.run([sys.executable, str(SCRIPT), "render", str(inventory)],
+                              capture_output=True, text=True)
+    assert rendered.returncode == 0, rendered.stderr
+    assert "| a.py | <module> | git-push | 1 | ungated | high |" in rendered.stdout
+    data = json.loads(inventory.read_text())
+    data["entries"][0].pop("risk")
+    inventory.write_text(json.dumps(data))
+    checked = subprocess.run([sys.executable, str(SCRIPT), "check", str(tmp_path), str(inventory)],
+                             capture_output=True, text=True)
+    assert checked.returncode == 1
+    assert "missing risk" in checked.stdout
+
+
+def test_committed_inventory_matches_the_tracked_write_surface():
+    assert _module().ratchet(ROOT, ROOT / "docs" / "launch" / "write-surface.json") == []
