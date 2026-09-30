@@ -1,0 +1,21 @@
+{
+  "_comment": [
+    "Instruction payloads measured by evals/phase_context_budget.py against examples/hello-sdlc/.",
+    "Each ceiling is a down-only ratchet: measured values cannot exceed it, and it may be no more",
+    "than five percent above the current measurement. To shrink a ceiling, change this record only",
+    "after the corresponding prompt/reference reduction is measured. Do not raise it to absorb growth."
+  ],
+  "measured_at": "2026-09-30",
+  "commit": "9c94ab94d5fd90078839c49fe7ee8be6babd2112",
+  "phases": {
+    "orchestrator": {"ceiling": {"words": 19332, "est_tokens": 31985}},
+    "goal-slot": {"ceiling": {"words": 7456, "est_tokens": 12437}},
+    "research": {"ceiling": {"words": 1949, "est_tokens": 2997}},
+    "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
+    "plan-review": {"ceiling": {"words": 2246, "est_tokens": 3645}},
+    "implement": {"ceiling": {"words": 2123, "est_tokens": 3448}},
+    "review-pre-pr": {"ceiling": {"words": 3924, "est_tokens": 6243}},
+    "review-post-pr": {"ceiling": {"words": 3958, "est_tokens": 6305}},
+    "retro": {"ceiling": {"words": 2456, "est_tokens": 3919}}
+  }
+}

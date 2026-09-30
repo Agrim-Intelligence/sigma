@@ -16,6 +16,23 @@ python3 evals/skill_structure.py            # report + gate (exit 1 on a finding
 python3 evals/skill_structure.py --table    # the measurement table only, never fails
 ```
 
+## Phase context budget — instruction bill by agent
+
+`phase_context_budget.py` measures the files each phase is told to load, plus the real review
+briefs rendered against `examples/hello-sdlc/`.  It is a measurement, not a prompt change and not
+a claim about a consumer repository whose own project documents may be larger.
+
+```bash
+python3 evals/phase_context_budget.py          # table + down-only ceiling gate
+python3 evals/phase_context_budget.py --table  # table only
+```
+
+The committed JSON records the date and source commit of the measurement.  A phase's current
+measurement may not exceed its ceiling, and a ceiling may be no more than five percent above the
+current measurement.  That makes prompt reductions easy to ratchet into the record while refusing
+to silently absorb later growth.  The test suite deliberately appends 500 words to
+`agrim-loop/references/running.md` and runs the documented command to prove that this gate fails.
+
 It asserts three things:
 
 1. **Nothing important falls off the compaction cliff.** Claude Code re-attaches only the **first
