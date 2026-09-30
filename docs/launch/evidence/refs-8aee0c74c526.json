@@ -1,0 +1,63 @@
+{
+  "local_only_tags": [
+    "backup/public-snapshot-a7af2cb"
+  ],
+  "owner_checklist": [
+    "enable secret scanning and push protection on the public repository",
+    "delete or keep backup/public-snapshot-* tag",
+    "decide the fate of remote branches"
+  ],
+  "remote": [
+    {
+      "kind": "branch",
+      "name": "claude/vigorous-proskuriakova-55e409",
+      "sha": "e16cc2eb1ec4792d6460763599ebeca3b4d4b33a"
+    },
+    {
+      "kind": "branch",
+      "name": "fix/release-surfaces-gh-failures",
+      "sha": "5ec5c0e3bb3f55ad00dfd516192ebe2ba9f4f5b4"
+    },
+    {
+      "kind": "branch",
+      "name": "main",
+      "sha": "a5c615062313791a86fca8d8b14d7a4ad0713f7f"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/112",
+      "sha": "29e35e752039d359d8d2107eef7f7d85a32b071c"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/144",
+      "sha": "6a16269317307cdffda671b5f63b545a3bd2f05c"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/277",
+      "sha": "4c967a15701a5369f5263472259bdeea98c7c572"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/314",
+      "sha": "670e3120cd8b878bb47b2d5cf2fbb8ff3f4b397c"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/317",
+      "sha": "d73cd1ef1c88acef126af472dd32444424e83226"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/330",
+      "sha": "fd766580480838c0b1485c34f20e1415cce3a51f"
+    },
+    {
+      "kind": "branch",
+      "name": "sdlc/331",
+      "sha": "502e33b239459f81fee74874b5f464b51a7c235f"
+    }
+  ],
+  "schema": "sigma.launch-exposure-refs/v1"
+}
