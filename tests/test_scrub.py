@@ -47,6 +47,7 @@ def test_commit_secret_hits_returns_only_rule_and_column_and_exempts_known_fixtu
     synthetic = "AKIA" + "Z" * 16
     assert module.commit_secret_hits("x=" + synthetic) == [("aws-key", 3)]
     assert module.commit_secret_hits("x=AKIAIOSFODNN7EXAMPLE") == []
+    assert module.commit_secret_hits('SECRET = "AKIAIOSFODNN7EXAMPLE"') == []
 
 
 # --- the unterminated private-key fallback (#534) -----------------------------------------------

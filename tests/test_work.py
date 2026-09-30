@@ -1318,6 +1318,44 @@ def test_real_git_refuses_a_content_shaped_key_in_an_ordinary_filename(tmp_path)
     assert "settings.py" not in committed()
 
 
+def test_real_git_refuses_content_in_a_non_ascii_path(tmp_path):
+    """Git C-quotes patch headers, but their identity must still join the raw status path."""
+    repo, d, _committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    name = "é.py"
+    (repo / name).write_text("ACCESS_KEY = " + fixture + "\n")
+
+    refusal = work.commit(d, ON, "0001-x.md", message="test: quoted path")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key" in refusal and fixture not in refusal
+
+
+def test_content_refusal_does_not_echo_a_credential_shaped_filename(tmp_path):
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    raw = fixture + ".py"
+    run = _runner([
+        ("--name-status -z", "A\0" + raw + "\0"),
+        ("diff --cached --name-only", raw),
+        ("diff --cached --no-ext-diff --unified=0", "+++ b/" + raw + "\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n"),
+    ])
+    refusal = work.commit(d, ON, goal, run=run, message="test: safe diagnostic")
+    assert refusal.startswith("REFUSED")
+    assert fixture not in refusal and "[REDACTED:aws-key]" in refusal
+
+
+def test_documented_work_commit_allows_a_fixture_assignment(tmp_path):
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
+    run = _runner([
+        ("diff --cached --name-only", "tests/test_fixture.py"),
+        ("diff --cached --no-ext-diff --unified=0", "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+SECRET = " + fixture + "\n"),
+    ])
+    assert work.commit(d, ON, goal, run=run, message="test: fixture assignment") == "committed on sdlc/0001-x"
+
+
 def test_real_git_refuses_an_unignored_dotenv_and_the_named_remedy_then_clears_it(tmp_path):
     """The end-to-end claim. Refuse; then perform exactly the remedy the refusal names — add the
     path to `.gitignore` and re-run `work.py commit` — and it must go green with the secret absent

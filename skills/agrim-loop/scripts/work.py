@@ -38,6 +38,7 @@ merge, so it is stated here rather than left to be found: without it every issue
 feature branch stays open, and every goal declaring `Blocked by: #N` stays held behind it.
 """
 import contextlib
+import ast
 import importlib.util
 import hashlib
 import io
@@ -2553,6 +2554,31 @@ def _unstage(path, raw_paths, run):
         return False
 
 
+def _diff_header_path(header):
+    """Decode Git's C-quoted `+++ b/<path>` identity to the raw `-z` path form.
+
+    Patch headers quote tabs, quotes, backslashes and non-ASCII names while `--name-status -z`
+    returns the raw pathname.  The commit control joins the two reads, so treating the display
+    spelling as identity would create a content-scan bypass.  Git's octal byte escapes are decoded
+    through a Latin-1 byte preservation step before UTF-8 decoding.
+    """
+    if not (header.startswith('"') and header.endswith('"')):
+        return header
+    try:
+        decoded = ast.literal_eval(header)
+        try:
+            return decoded.encode("latin1").decode("utf-8")
+        except UnicodeError:
+            return decoded
+    except (SyntaxError, ValueError):
+        return header
+
+
+def _diagnostic_path(raw):
+    """A pathname fit for diagnostics, never a channel for a credential-shaped filename."""
+    return scrub(raw)
+
+
 def _added_secret_hits(path, run):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
@@ -2567,8 +2593,9 @@ def _added_secret_hits(path, run):
         return {}
     hits, current, line = {}, "", 0
     for row in diff.splitlines():
-        if row.startswith("+++ b/"):
-            current = row[6:]
+        if row.startswith("+++ "):
+            header = _diff_header_path(row[4:])
+            current = header[2:] if header.startswith("b/") else ""
             continue
         if row.startswith("@@"):
             match = re.search(r"\+(\d+)(?:,(\d+))?", row)
@@ -2639,24 +2666,30 @@ def _secret_refusal(path, staged, config, run):
         # Prefer that remedy even when its content also matches; once ignored it will no longer be
         # staged, whereas asking to edit a file the user may merely be removing leaves the loop stuck.
         if hits and not _is_offender(raw, allowed):
-            locations = ", ".join("%s at %s:%d:%d" % (rule, raw, line, column)
+            shown = _diagnostic_path(raw)
+            locations = ", ".join("%s at %s:%d:%d" % (rule, shown, line, column)
                                   for rule, line, column in hits)
             lines.append("  * %s — added content matched %s; no matched value is shown. Remove or "
-                         "replace it, then re-run `work.py commit`." % (raw, locations))
+                         "replace it, then re-run `work.py commit`." % (shown, locations))
             continue
         pattern = _gitignore_pattern(raw)
-        allow = ("name its exact path in `work.allow_secret_paths` (below)" if not pattern
-                 else "add a line `%s` to .gitignore (or .git/info/exclude)" % pattern)
+        shown = _diagnostic_path(raw)
+        # A path can itself carry a token.  A paste-ready ignore rule would repeat it, so the
+        # safe diagnostic deliberately trades that convenience for a non-leaking remediation.
+        allow = ("remove or rename this credential-shaped path, then add its exact path to "
+                 "`work.allow_secret_paths` only when it is a deliberate fixture" if shown != raw else
+                 ("name its exact path in `work.allow_secret_paths` (below)" if not pattern
+                  else "add a line `%s` to .gitignore (or .git/info/exclude)" % pattern))
         if status.startswith("A") or status == "?":
             lines.append("  * %s — new to this branch. Ignore it: %s, then re-run `work.py commit`."
-                         % (raw, allow))
+                         % (shown, allow))
         else:
             lines.append("  * %s — ALREADY TRACKED here, so an ignore rule alone changes nothing "
                          "(`git add -A` re-stages a tracked path whatever .gitignore says). Untrack "
                          "it AND ignore it: `git -C %s rm --cached -- %s`, then %s, then re-run "
                          "`work.py commit`. If this file is committed ON PURPOSE and is not a "
                          "secret, use the allowlist below instead."
-                         % (raw, path, raw, allow))
+                         % (shown, path, shown, allow))
     state_line = ("Nothing was committed and those index entries were reset; every file is still on "
                   "disk, untouched." if unstaged else
                   "Nothing was committed. The index could NOT be cleaned up, so those paths are "
@@ -2670,7 +2703,7 @@ def _secret_refusal(path, staged, config, run):
             "rather than warns because a wedged run costs minutes and a pushed credential must be "
             "rotated."
             % (len(offenders), state_line, "\n".join(lines),
-               ", ".join(json.dumps(raw) for _, raw, _hits in offenders)))
+               ", ".join(json.dumps(_diagnostic_path(raw)) for _, raw, _hits in offenders)))
 
 
 #: #910: risk-detect.sh's own three category names -> the `gate` vocabulary value each records

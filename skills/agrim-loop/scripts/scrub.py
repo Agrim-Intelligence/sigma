@@ -138,7 +138,10 @@ def commit_secret_hits(text):
     hits = []
     for name, rx in COMMIT_SHAPE_RULES:
         for match in rx.finditer(text):
-            if match.group(0) in COMMIT_FIXTURE_VALUES:
+            # Assignment rules capture the key name before the credential value; checking every
+            # captured span makes the exemption apply to the documented value, never its context.
+            if any(re.search(r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9])" % re.escape(value),
+                             match.group(0)) for value in COMMIT_FIXTURE_VALUES):
                 continue
             hits.append((name, match.start() + 1))
     return hits
