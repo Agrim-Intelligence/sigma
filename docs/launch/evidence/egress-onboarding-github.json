@@ -1,0 +1,36 @@
+{
+  "destinations": {
+    "program:gh:issue": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:gh:pr": {
+      "count": 6,
+      "loopback": false
+    },
+    "program:git:--git-dir": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:add": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:clone": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:commit": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:init": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:push": {
+      "count": 2,
+      "loopback": false
+    }
+  }
+}
