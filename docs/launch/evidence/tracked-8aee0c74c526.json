@@ -1,0 +1,994 @@
+{
+  "counts": {
+    "legacy_issue_references": 5745
+  },
+  "findings": [
+    {
+      "blob": "b98df5673b6f6f37e4455540436fc864402f9198",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1062,
+      "matches": 1,
+      "path": ".sdlc/plans/258.md",
+      "paths": [
+        ".sdlc/plans/258.md"
+      ],
+      "preview": "- **Trimmed:** Decision (b)'s [REDACTED:auth], Decision 1's caveat and (d)'s #174 text now point at",
+      "rule": "auth"
+    },
+    {
+      "blob": "13379746e7f79250dd563b873383014984a56fc9",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 16,
+      "matches": 1,
+      "path": ".sdlc/research/258.md",
+      "paths": [
+        ".sdlc/research/258.md"
+      ],
+      "preview": "| Reuse the digest `review_context.publish_generation` computes as `plan_hash` | **corrected: unsuitable** | `review_context.py:857-884`: `brief_sha256` = sha256 of the whole BRIEF text; `generation_id` mixes `created_at` + `os.urandom` non",
+      "rule": "auth"
+    },
+    {
+      "blob": "fe60224ca35926315803be55af599551854b1662",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 268,
+      "matches": 1,
+      "path": "skills/agrim-doctor/scripts/migrate.py",
+      "paths": [
+        "skills/agrim-doctor/scripts/migrate.py"
+      ],
+      "preview": "                                   \"(body and [REDACTED:auth])\", path.stem))",
+      "rule": "auth"
+    },
+    {
+      "blob": "ca08faf00b51b1a8b8aa0d241669f1dfd56c581f",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 130,
+      "matches": 3,
+      "path": "skills/agrim-loop/scripts/feature_classify.py",
+      "paths": [
+        "skills/agrim-loop/scripts/feature_classify.py"
+      ],
+      "preview": "TIER1_[REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "1854734c4d6db468d10a5b37ac093fced007e9f6",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 148,
+      "matches": 2,
+      "path": "skills/agrim-loop/scripts/feature_doc.py",
+      "paths": [
+        "skills/agrim-loop/scripts/feature_doc.py"
+      ],
+      "preview": "#: The [REDACTED:auth], and how much of it is written. See the module docstring for why 16 hex",
+      "rule": "auth"
+    },
+    {
+      "blob": "6ef658e6b0574f74aec8a74fa0189566be5e98e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 339,
+      "matches": 6,
+      "path": "skills/agrim-loop/scripts/feature_labels.py",
+      "paths": [
+        "skills/agrim-loop/scripts/feature_labels.py"
+      ],
+      "preview": "BLOCK_[REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "6aa1544e914297b94e5caf29f8fa28b2d4bcb9c5",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 501,
+      "matches": 1,
+      "path": "skills/agrim-loop/scripts/merge_observation.py",
+      "paths": [
+        "skills/agrim-loop/scripts/merge_observation.py"
+      ],
+      "preview": "    # it could never match a real \"[REDACTED:email-address]:...\" URL. Every caller mocks",
+      "rule": "email-address"
+    },
+    {
+      "blob": "b783fc7230ce02dbc37b9c0b85b2c0004a8f90ca",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 31,
+      "matches": 2,
+      "path": "skills/agrim-loop/scripts/north_star.py",
+      "paths": [
+        "skills/agrim-loop/scripts/north_star.py"
+      ],
+      "preview": "`[REDACTED:absolute-home-path]sigma/.git`, `--show-toplevel` -> `[REDACTED:absolute-home-path]sigma/.sdlc/work/1778`. A SUBMODULE's",
+      "rule": "absolute-home-path"
+    },
+    {
+      "blob": "5abcccad92d00e2bca0062efcf23115a4f8cfe17",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 129,
+      "matches": 1,
+      "path": "skills/agrim-loop/scripts/scrub.py",
+      "paths": [
+        "skills/agrim-loop/scripts/scrub.py"
+      ],
+      "preview": "COMMIT_FIXTURE_VALUES = frozenset({\"[REDACTED:aws-key]\"})",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "69b07ee445520eb473c7a372ab55e69fe50eb4db",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 656,
+      "matches": 1,
+      "path": "skills/agrim-loop/scripts/upstream.py",
+      "paths": [
+        "skills/agrim-loop/scripts/upstream.py"
+      ],
+      "preview": "    # owner mask ahead of the address mask, `[REDACTED:email-address]` became",
+      "rule": "email-address"
+    },
+    {
+      "blob": "c7b063b44e631ed23b257269e6c42688cd395a67",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 619,
+      "matches": 2,
+      "path": "skills/agrim-loop/scripts/work.py",
+      "paths": [
+        "skills/agrim-loop/scripts/work.py"
+      ],
+      "preview": "        raise ValueError(\"manifest brief [REDACTED:auth]\")",
+      "rule": "auth"
+    },
+    {
+      "blob": "816d4f230bcd99db50f4ba5bc9b0aefb4367fce5",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 110,
+      "matches": 1,
+      "path": "skills/agrim-setup/scripts/setup.py",
+      "paths": [
+        "skills/agrim-setup/scripts/setup.py"
+      ],
+      "preview": "#: equal by tests/test_setup.py). A GitLab `[REDACTED:email-address]:o/r.git` origin used to read as `o/r`.",
+      "rule": "email-address"
+    },
+    {
+      "blob": "47632a548ba7a335c8a228497ceb7575ee5d96e1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 51,
+      "matches": 1,
+      "path": "tests/boardfake.py",
+      "paths": [
+        "tests/boardfake.py"
+      ],
+      "preview": "FAKE_[REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "3a1dd050c5b5cd9d99b52b30dafe6d8b31fd44e9",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 386,
+      "matches": 1,
+      "path": "tests/test_actionlog.py",
+      "paths": [
+        "tests/test_actionlog.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "3a1dd050c5b5cd9d99b52b30dafe6d8b31fd44e9",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 386,
+      "matches": 1,
+      "path": "tests/test_actionlog.py",
+      "paths": [
+        "tests/test_actionlog.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "9273e5c8ec151eaf99e50fbf56dbafad6cfb18a1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 184,
+      "matches": 4,
+      "path": "tests/test_alignment_collect.py",
+      "paths": [
+        "tests/test_alignment_collect.py"
+      ],
+      "preview": "    _commit(repo, \"cfg.py\", '[REDACTED:credential-assignment]\\n[REDACTED:credential-assignment]\\n', \"add cfg\")",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "9273e5c8ec151eaf99e50fbf56dbafad6cfb18a1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 202,
+      "matches": 2,
+      "path": "tests/test_alignment_collect.py",
+      "paths": [
+        "tests/test_alignment_collect.py"
+      ],
+      "preview": "            '++ [REDACTED:credential-assignment]\\n[REDACTED:credential-assignment]\\n', \"add notes\")",
+      "rule": "gh-token"
+    },
+    {
+      "blob": "2110eb9c462dd6490b2feb15a8a3614bd2b196e1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 331,
+      "matches": 2,
+      "path": "tests/test_backlog_check.py",
+      "paths": [
+        "tests/test_backlog_check.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "2110eb9c462dd6490b2feb15a8a3614bd2b196e1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 331,
+      "matches": 2,
+      "path": "tests/test_backlog_check.py",
+      "paths": [
+        "tests/test_backlog_check.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "1427049357aff8c0aac1a5d8eef40d06413ff8ec",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 213,
+      "matches": 4,
+      "path": "tests/test_coexist.py",
+      "paths": [
+        "tests/test_coexist.py"
+      ],
+      "preview": "    (\"bash [REDACTED:absolute-home-path]%s_backup/run.sh\" % OLD, []),",
+      "rule": "absolute-home-path"
+    },
+    {
+      "blob": "1427049357aff8c0aac1a5d8eef40d06413ff8ec",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 705,
+      "matches": 1,
+      "path": "tests/test_coexist.py",
+      "paths": [
+        "tests/test_coexist.py"
+      ],
+      "preview": "    subprocess.run([\"git\", \"-C\", str(repo), \"-c\", \"user.name=t\", \"-c\", \"user.email=[REDACTED:email-address]\",",
+      "rule": "email-address"
+    },
+    {
+      "blob": "9486badc38fa622ce9b32de6050b400e81d2c666",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 208,
+      "matches": 1,
+      "path": "tests/test_comment_watch.py",
+      "paths": [
+        "tests/test_comment_watch.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "9486badc38fa622ce9b32de6050b400e81d2c666",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 208,
+      "matches": 1,
+      "path": "tests/test_comment_watch.py",
+      "paths": [
+        "tests/test_comment_watch.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "f60d8634c8e1d4c197ebca8a2875e8027b0baefb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 462,
+      "matches": 1,
+      "path": "tests/test_decision_gate.py",
+      "paths": [
+        "tests/test_decision_gate.py"
+      ],
+      "preview": "        [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "f60d8634c8e1d4c197ebca8a2875e8027b0baefb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 462,
+      "matches": 1,
+      "path": "tests/test_decision_gate.py",
+      "paths": [
+        "tests/test_decision_gate.py"
+      ],
+      "preview": "        [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "1d6e4fb5fe9d1a4d76c63cb8dedacbfecf95eeee",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 53,
+      "matches": 2,
+      "path": "tests/test_discovery_scan.py",
+      "paths": [
+        "tests/test_discovery_scan.py"
+      ],
+      "preview": "    (repo / \"a.py\").write_text(\"# TODO: rotate [REDACTED:aws-key]6 before launch\\n\")",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "1d6e4fb5fe9d1a4d76c63cb8dedacbfecf95eeee",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 39,
+      "matches": 1,
+      "path": "tests/test_discovery_scan.py",
+      "paths": [
+        "tests/test_discovery_scan.py"
+      ],
+      "preview": "    (repo / \"test_a.py\").write_text(\"import pytest\\[REDACTED:email-address]\\ndef test_x(): pass\\n\")",
+      "rule": "email-address"
+    },
+    {
+      "blob": "fabb1f848a620907ad765f97f3e6e3c65b1c059b",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1017,
+      "matches": 1,
+      "path": "tests/test_docs.py",
+      "paths": [
+        "tests/test_docs.py"
+      ],
+      "preview": "                else \"[REDACTED:email-address]:acme/app.git\")",
+      "rule": "email-address"
+    },
+    {
+      "blob": "117d9d9addeb7e0bcf334e97f9850d7a2f69c1a7",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 611,
+      "matches": 3,
+      "path": "tests/test_doctor.py",
+      "paths": [
+        "tests/test_doctor.py"
+      ],
+      "preview": "    ({\"sourceType\": \"git\", \"source\": \"[REDACTED:email-address]:Acme/sigma-ssh.git\"}, \"Acme/sigma-ssh\"),",
+      "rule": "email-address"
+    },
+    {
+      "blob": "824d14dddb43bc2fc5424bc8d15d9ad615bcad6d",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1043,
+      "matches": 1,
+      "path": "tests/test_feature_owner.py",
+      "paths": [
+        "tests/test_feature_owner.py"
+      ],
+      "preview": "        return \"[REDACTED:email-address]:%s.git\" % HERE",
+      "rule": "email-address"
+    },
+    {
+      "blob": "9419fbbe29f8efec32cd88cd1827b7056596f4fe",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 258,
+      "matches": 2,
+      "path": "tests/test_feature_propagate.py",
+      "paths": [
+        "tests/test_feature_propagate.py"
+      ],
+      "preview": "def _sheet_runner(branches=(\"feature/int-contract\",), url=\"[REDACTED:email-address]:org/here.git\"):",
+      "rule": "email-address"
+    },
+    {
+      "blob": "153dc3c42fc1a830e55e7a70800de386064d4fc1",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 122,
+      "matches": 1,
+      "path": "tests/test_feature_sync.py",
+      "paths": [
+        "tests/test_feature_sync.py"
+      ],
+      "preview": "def _runner(branches=(\"feature/int-contract\",), handlers=(), url=\"[REDACTED:email-address]:org/repo.git\"):",
+      "rule": "email-address"
+    },
+    {
+      "blob": "ab518d7c694ee44bf10e35ab2e3eda59bc6b7114",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 218,
+      "matches": 1,
+      "path": "tests/test_init_flow.py",
+      "paths": [
+        "tests/test_init_flow.py"
+      ],
+      "preview": "    _git(repo, \"config\", \"user.email\", \"[REDACTED:email-address]\", env=env)",
+      "rule": "email-address"
+    },
+    {
+      "blob": "05d0ae05dced4384e3e3db85ab86593058d373e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1614,
+      "matches": 12,
+      "path": "tests/test_ledger.py",
+      "paths": [
+        "tests/test_ledger.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "05d0ae05dced4384e3e3db85ab86593058d373e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1604,
+      "matches": 1,
+      "path": "tests/test_ledger.py",
+      "paths": [
+        "tests/test_ledger.py"
+      ],
+      "preview": "    secret = \"[REDACTED:private-key]\"",
+      "rule": "private-key"
+    },
+    {
+      "blob": "05d0ae05dced4384e3e3db85ab86593058d373e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1614,
+      "matches": 17,
+      "path": "tests/test_ledger.py",
+      "paths": [
+        "tests/test_ledger.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "05d0ae05dced4384e3e3db85ab86593058d373e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1623,
+      "matches": 2,
+      "path": "tests/test_ledger.py",
+      "paths": [
+        "tests/test_ledger.py"
+      ],
+      "preview": "    [REDACTED:credential-assignment]",
+      "rule": "gh-token"
+    },
+    {
+      "blob": "05d0ae05dced4384e3e3db85ab86593058d373e4",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 1641,
+      "matches": 1,
+      "path": "tests/test_ledger.py",
+      "paths": [
+        "tests/test_ledger.py"
+      ],
+      "preview": "    SECRET = \"[REDACTED:auth]\"",
+      "rule": "auth"
+    },
+    {
+      "blob": "1ecd49140ec1f21caf708ba79767e574bb74beb7",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 5707,
+      "matches": 3,
+      "path": "tests/test_loop.py",
+      "paths": [
+        "tests/test_loop.py"
+      ],
+      "preview": "        [REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "1ecd49140ec1f21caf708ba79767e574bb74beb7",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 5707,
+      "matches": 4,
+      "path": "tests/test_loop.py",
+      "paths": [
+        "tests/test_loop.py"
+      ],
+      "preview": "        [REDACTED:credential-assignment]",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "1ecd49140ec1f21caf708ba79767e574bb74beb7",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 6956,
+      "matches": 1,
+      "path": "tests/test_loop.py",
+      "paths": [
+        "tests/test_loop.py"
+      ],
+      "preview": "_LEAK_SECRET_2 = \"[REDACTED:gh-token]\"",
+      "rule": "gh-token"
+    },
+    {
+      "blob": "235c12ae3e6430eade1307961f8ada41ed748fca",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 548,
+      "matches": 2,
+      "path": "tests/test_merge_observation.py",
+      "paths": [
+        "tests/test_merge_observation.py"
+      ],
+      "preview": "        (\"[REDACTED:email-address]:owner/repo.git\", \"owner/repo\"),",
+      "rule": "email-address"
+    },
+    {
+      "blob": "84b9a8dd85893927ec7abe67999e5133676e6dc2",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 48,
+      "matches": 5,
+      "path": "tests/test_mirror.py",
+      "paths": [
+        "tests/test_mirror.py"
+      ],
+      "preview": "        \"number\": 42, \"title\": \"Fix the [REDACTED:aws-key] leak\", \"state\": \"OPEN\",",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "8a0956828c6285304bb8099817f441d937f246c5",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 92,
+      "matches": 1,
+      "path": "tests/test_no_autonomous_feature_branch_deletion.py",
+      "paths": [
+        "tests/test_no_autonomous_feature_branch_deletion.py"
+      ],
+      "preview": "REMOTE_URL = \"[REDACTED:email-address]:acme/app.git\"",
+      "rule": "email-address"
+    },
+    {
+      "blob": "0a33a8b76a63c07c89d5f3f99a4b6b8cfb1e0d14",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 565,
+      "matches": 2,
+      "path": "tests/test_preflight.py",
+      "paths": [
+        "tests/test_preflight.py"
+      ],
+      "preview": "                                            \"'[REDACTED:url-password]/a/b.git/': 403\"))]",
+      "rule": "url-password"
+    },
+    {
+      "blob": "0a33a8b76a63c07c89d5f3f99a4b6b8cfb1e0d14",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 50,
+      "matches": 14,
+      "path": "tests/test_preflight.py",
+      "paths": [
+        "tests/test_preflight.py"
+      ],
+      "preview": "            url=\"[REDACTED:email-address]:alice/app.git\", ls_remote=\"abc\\trefs/heads/main\\n\"):",
+      "rule": "email-address"
+    },
+    {
+      "blob": "960d46426a38f20a3c86cfc70eecff017eb706cb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 92,
+      "matches": 2,
+      "path": "tests/test_readiness_exposure_scan.py",
+      "paths": [
+        "tests/test_readiness_exposure_scan.py"
+      ],
+      "preview": "    (repo / \"path.txt\").write_text(\"[REDACTED:absolute-home-path]x\", encoding=\"utf-8\")",
+      "rule": "absolute-home-path"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 53,
+      "matches": 2,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"pw_json\": '\"[REDACTED:credential-assignment]',",
+      "rule": "sk-key"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 53,
+      "matches": 2,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"pw_json\": '\"[REDACTED:credential-assignment]',",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 126,
+      "matches": 1,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "                                    {\"text\": \"[REDACTED:private-key]\\n\")",
+      "rule": "private-key"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 49,
+      "matches": 9,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"aws\": \"[REDACTED:aws-key]\",",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 50,
+      "matches": 6,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"gh\": \"[REDACTED:gh-token]\",",
+      "rule": "gh-token"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 51,
+      "matches": 1,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"jwt\": \"[REDACTED:jwt]\",",
+      "rule": "jwt"
+    },
+    {
+      "blob": "c8a97a9b666e6a33380fa5563368aa668639bc77",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 54,
+      "matches": 2,
+      "path": "tests/test_research_capture.py",
+      "paths": [
+        "tests/test_research_capture.py"
+      ],
+      "preview": "    \"bearer\": \"[REDACTED:auth]\",",
+      "rule": "auth"
+    },
+    {
+      "blob": "c441374aa35aa8a671b2e67b87e1b44b0d85a0bb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 87,
+      "matches": 6,
+      "path": "tests/test_risk_detect.py",
+      "paths": [
+        "tests/test_risk_detect.py"
+      ],
+      "preview": "    (repo / \"notes.txt\").write_text('++ aws_key = \"[REDACTED:aws-key]KE\"\\n[REDACTED:credential-assignment]\\n')",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "c441374aa35aa8a671b2e67b87e1b44b0d85a0bb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 87,
+      "matches": 9,
+      "path": "tests/test_risk_detect.py",
+      "paths": [
+        "tests/test_risk_detect.py"
+      ],
+      "preview": "    (repo / \"notes.txt\").write_text('++ aws_key = \"[REDACTED:aws-key]KE\"\\n[REDACTED:credential-assignment]\\n')",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "d5c97165dfbd2ca1065dddb6c0b44416d82cba82",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 50,
+      "matches": 1,
+      "path": "tests/test_scrub.py",
+      "paths": [
+        "tests/test_scrub.py"
+      ],
+      "preview": "    assert module.commit_secret_hits('[REDACTED:credential-assignment]') == []",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "d5c97165dfbd2ca1065dddb6c0b44416d82cba82",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 63,
+      "matches": 2,
+      "path": "tests/test_scrub.py",
+      "paths": [
+        "tests/test_scrub.py"
+      ],
+      "preview": "    out = scrub(\"intro\\n[REDACTED:private-key]\\ntrailer\")",
+      "rule": "private-key"
+    },
+    {
+      "blob": "d5c97165dfbd2ca1065dddb6c0b44416d82cba82",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 16,
+      "matches": 5,
+      "path": "tests/test_scrub.py",
+      "paths": [
+        "tests/test_scrub.py"
+      ],
+      "preview": "    for secret in (\"[REDACTED:aws-key]\", \"ghp_\" + \"a\" * 30,",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "d5c97165dfbd2ca1065dddb6c0b44416d82cba82",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 17,
+      "matches": 1,
+      "path": "tests/test_scrub.py",
+      "paths": [
+        "tests/test_scrub.py"
+      ],
+      "preview": "                   \"[REDACTED:jwt]\"):",
+      "rule": "jwt"
+    },
+    {
+      "blob": "dc3f21c51675c80ea6459e98c8b6347ea87ea406",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 55,
+      "matches": 1,
+      "path": "tests/test_sdlc_init.py",
+      "paths": [
+        "tests/test_sdlc_init.py"
+      ],
+      "preview": "    subprocess.run([\"git\", \"-C\", str(tmp_path), \"config\", \"user.email\", \"[REDACTED:email-address]\"], check=True)",
+      "rule": "email-address"
+    },
+    {
+      "blob": "baf1e7f68807aa5d02fe73148f7cebd4b68e14cb",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 30,
+      "matches": 4,
+      "path": "tests/test_setup.py",
+      "paths": [
+        "tests/test_setup.py"
+      ],
+      "preview": "        \"[REDACTED:email-address]:acme/widget.git\": \"acme/widget\",",
+      "rule": "email-address"
+    },
+    {
+      "blob": "43de5d6aacee49746686e05a5c77b14ef9b53049",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 59,
+      "matches": 19,
+      "path": "tests/test_slack_client.py",
+      "paths": [
+        "tests/test_slack_client.py"
+      ],
+      "preview": "    monkeypatch.setenv(TOKEN_ENV, \"[REDACTED:slack-token]\")",
+      "rule": "slack-token"
+    },
+    {
+      "blob": "0ebeac1c2ad2d13e02bb2c29340fe7fcd87fadfe",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 95,
+      "matches": 1,
+      "path": "tests/test_test_first_gate.py",
+      "paths": [
+        "tests/test_test_first_gate.py"
+      ],
+      "preview": "    f.write_text('import pytest\\[REDACTED:email-address]\\n' + f.read_text())",
+      "rule": "email-address"
+    },
+    {
+      "blob": "f8c813e839c79031c3374cbf99dc8997bef5225e",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 129,
+      "matches": 1,
+      "path": "tests/test_unit_completion.py",
+      "paths": [
+        "tests/test_unit_completion.py"
+      ],
+      "preview": "BACKLOG_[REDACTED:credential-assignment]",
+      "rule": "credential-assignment"
+    },
+    {
+      "blob": "6c3aefea04c6bcdc08dce80e3e04b29b7fb91e64",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 526,
+      "matches": 2,
+      "path": "tests/test_upstream.py",
+      "paths": [
+        "tests/test_upstream.py"
+      ],
+      "preview": "    \"lib/pay.py workaround is at [REDACTED:absolute-home-path]secretproj/lib/pay.py. Contact @bob-acme or \"",
+      "rule": "absolute-home-path"
+    },
+    {
+      "blob": "6c3aefea04c6bcdc08dce80e3e04b29b7fb91e64",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 527,
+      "matches": 4,
+      "path": "tests/test_upstream.py",
+      "paths": [
+        "tests/test_upstream.py"
+      ],
+      "preview": "    \"[REDACTED:email-address]. \"",
+      "rule": "email-address"
+    },
+    {
+      "blob": "8e301cf0e18b87daa612c11c4b4a23c33932ad33",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 46,
+      "matches": 1,
+      "path": "tests/test_verify_detect.py",
+      "paths": [
+        "tests/test_verify_detect.py"
+      ],
+      "preview": "    for cmd in ([\"init\", \"-q\"], [\"config\", \"user.email\", \"[REDACTED:email-address]\"], [\"config\", \"user.name\", \"t\"]):",
+      "rule": "email-address"
+    },
+    {
+      "blob": "ae35f3c10edbcfa48e1863414746cedbcf42e78c",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 4948,
+      "matches": 2,
+      "path": "tests/test_work.py",
+      "paths": [
+        "tests/test_work.py"
+      ],
+      "preview": "                 \"leaked [REDACTED:aws-key] and acme.example.com KEY-123\")",
+      "rule": "aws-key"
+    },
+    {
+      "blob": "ae35f3c10edbcfa48e1863414746cedbcf42e78c",
+      "commits": [
+        "8aee0c74c526e22b62865915579012026ff8846e"
+      ],
+      "line": 66,
+      "matches": 3,
+      "path": "tests/test_work.py",
+      "paths": [
+        "tests/test_work.py"
+      ],
+      "preview": "REMOTE_URL = \"[REDACTED:email-address]:acme/app.git\"",
+      "rule": "email-address"
+    }
+  ],
+  "mode": "tracked",
+  "schema": "sigma.launch-exposure/v1",
+  "skipped": {
+    "binary": 0,
+    "oversized": 0
+  },
+  "stale_allowlist": []
+}

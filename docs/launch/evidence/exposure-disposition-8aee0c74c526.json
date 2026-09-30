@@ -1,0 +1,32 @@
+{
+  "schema": "sigma.launch-exposure-disposition/v1",
+  "measured_sha": "8aee0c74c526",
+  "source_evidence": "exposure-8aee0c74c526.json",
+  "rule": "absolute-home-path",
+  "class_b2_issue": 400,
+  "disposition": "launch:blocker",
+  "records": [
+    {
+      "paths": [
+        ".sdlc/plans/258.md",
+        ".sdlc/research/277.md"
+      ],
+      "reason": "Historical repository records containing owner-specific host paths; #400 owns the public-history disposition."
+    },
+    {
+      "paths": [
+        "skills/agrim-loop/scripts/north_star.py",
+        "tests/test_coexist.py",
+        "tests/test_leak_scan.py",
+        "tests/test_readiness_exposure_scan.py",
+        "tests/test_upstream.py",
+        "tools/leak_scan.py"
+      ],
+      "reason": "Detector and hermetic-control literals remain visible to the scanner; #400 owns their public-launch review without recording a matched value."
+    }
+  ],
+  "dedup": {
+    "command": "python3 skills/agrim-scope/scripts/dedup.py .sdlc <secret-safe B2 summary>",
+    "candidates": []
+  }
+}
