@@ -202,6 +202,19 @@ def test_flags_missing_kg_builder():
         assert "pip install graphifyy" in c["graphify installed"]["fix"]
 
 
+def test_flags_graphify_skill_package_version_mismatch_with_the_repair_command():
+    """#132: a zero exit is not healthy when graphify itself names a stale installed skill."""
+    d = _doc()
+    observed = ("warning: skill is from graphify 0.8.14, package is 0.8.39. "
+                "Run 'graphify install' to update.\ngraphify 0.8.39\n")
+    with tempfile.TemporaryDirectory() as t:
+        base = _sdlc(t, {"knowledge_graph": {"enabled": True, "builder": "graphify"}})
+        c = _by_name(d.check(base, run=_runner(builder=observed)))
+        row = c["graphify skill/package versions match"]
+        assert row["ok"] is False
+        assert "graphify install" in row["fix"]
+
+
 # --------------------------------------------------------------------------- issue #1562
 # `auto_refresh: true` used to be completely inert AND completely silent. The state this repo was
 # measured in on 2026-09-02 -- auto_refresh on, a 526-document corpus, `graph: not built` -- produced
