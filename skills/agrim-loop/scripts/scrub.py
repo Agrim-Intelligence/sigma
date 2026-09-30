@@ -72,8 +72,8 @@ def _replacement(name, rx):
 #: stand alone, and a leading \b would let a secret GLUED to a preceding word char (e.g. "id=AKIA…")
 #: slip through. Bare "token" is deliberately absent (it over-redacts ordinary prose like "token
 #: budget"); a real `token: <value>` assignment is caught by the key:value rule instead.
-_SECRET_PATTERNS = (
-    (re.compile(r"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----.*?-----END[ A-Z]*PRIVATE KEY(?: BLOCK)?-----", re.DOTALL),
+_SECRET_PATTERN_SPECS = (
+    ("private-key", re.compile(r"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----.*?-----END[ A-Z]*PRIVATE KEY(?: BLOCK)?-----", re.DOTALL),
      "[REDACTED:private-key]"),
     #: Fallback for a key whose END marker never arrives — truncated at the source, or cut mid-capture.
     #: It has to consume the BODY, not just the header: replacing the header alone published every line
@@ -102,22 +102,46 @@ _SECRET_PATTERNS = (
     #: bound. Widening the run rule, or opening the header list, is a deliberate decision with its own
     #: false-positive price — not a typo to fix in passing.
     #: No possessive/atomic groups: those are 3.11+, and CI still runs 3.10.
-    (re.compile(r"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----"
+    ("private-key", re.compile(r"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----"
                 r"(?:(?:\\[rn]|\s)*(?:Proc-Type|DEK-Info):[^\n]{0,120})*"
                 r"(?:(?:\\[rn]|\s)*[A-Za-z0-9+/=]{16,})*"
                 r"(?:(?:\\[rn]|\s)*[A-Za-z0-9+/=]{1,15}(?=(?:\\[rn]|\s)*$))?"),
      "[REDACTED:private-key]"),
-    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED:aws-key]"),
-    (re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"), "[REDACTED:gh-token]"),
-    (re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
-    (re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),
+    ("aws-key", re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED:aws-key]"),
+    ("gh-token", re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"), "[REDACTED:gh-token]"),
+    ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
+    ("auth", re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),
     #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
-    *((rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
-    (re.compile(r"(?i)\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|"
+    *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
+    ("credential-assignment", re.compile(r"(?i)\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|"
                 r"access[_-]?token|authorization|token|secret|password|passwd|pwd)\b[\"']?\s*[:=]\s*"
                 r"[\"']?[^\s\"'<>&]{4,}"),
      r"\1: [REDACTED]"),
 )
+
+# Public only to the commit boundary: rule and regular expression, never a matching span/value.
+# `scrub()` below still owns the text-redaction behaviour.
+COMMIT_SHAPE_RULES = tuple((name, rx) for name, rx, _replacement_ in _SECRET_PATTERN_SPECS)
+_SECRET_PATTERNS = tuple((rx, replacement) for _name, rx, replacement in _SECRET_PATTERN_SPECS)
+
+# These are public synthetic values deliberately used in Sigma's own redaction tests.  The list is
+# exact rather than prefix/path based: it cannot become a general bypass for a real credential.
+COMMIT_FIXTURE_VALUES = frozenset({"AKIAIOSFODNN7EXAMPLE"})
+
+
+def commit_secret_hits(text):
+    """Return value-free `(rule, column)` hits for one added source line.
+
+    The commit gate must say why and where it refused without echoing a credential.  Matches in the
+    exact synthetic fixture list are excluded so the repository can maintain its redaction controls.
+    """
+    hits = []
+    for name, rx in COMMIT_SHAPE_RULES:
+        for match in rx.finditer(text):
+            if match.group(0) in COMMIT_FIXTURE_VALUES:
+                continue
+            hits.append((name, match.start() + 1))
+    return hits
 
 
 def scrub(text):

@@ -921,7 +921,8 @@ def test_commit_only_ever_touches_this_goals_worktree(tmp_path):
     wt = work._record(d, goal)["worktree"]
     run = _runner([("diff --cached", "a.py")])
     assert work.commit(d, ON, goal, run=run, message="feat: x") == "committed on sdlc/0001-x"
-    assert run.calls == ["git add -A", "git diff --cached --name-only", "git commit -m feat: x"]
+    assert run.calls == ["git add -A", "git diff --cached --name-only",
+                         "git diff --cached --no-ext-diff --unified=0", "git commit -m feat: x"]
 
 
 def test_commit_is_a_noop_when_nothing_changed(tmp_path):
@@ -964,7 +965,8 @@ def test_commit_makes_exactly_the_same_calls_when_nothing_staged_is_secret_shape
     goal = _started(d)
     run = _staged(["a.py", "docs/readme.md", ".env.example", "keys/id_rsa.pub"])
     assert work.commit(d, ON, goal, run=run, message="feat: x") == "committed on sdlc/0001-x"
-    assert run.calls == ["git add -A", "git diff --cached --name-only", "git commit -m feat: x"]
+    assert run.calls == ["git add -A", "git diff --cached --name-only",
+                         "git diff --cached --no-ext-diff --unified=0", "git commit -m feat: x"]
 
 
 def test_commit_refuses_when_add_A_staged_a_dotenv(tmp_path):
@@ -975,6 +977,35 @@ def test_commit_refuses_when_add_A_staged_a_dotenv(tmp_path):
     assert out.startswith("REFUSED")
     assert ".env" in out
     assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(tmp_path):
+    """The public `work.py commit` gesture must inspect additions, not only filenames."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    run = _runner([
+        ("--name-status -z", "A\0src/settings.py\0"),
+        ("diff --cached --name-only", "src/settings.py"),
+        ("diff --cached --no-ext-diff --unified=0", "+++ b/src/settings.py\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n"),
+    ])
+    out = work.commit(d, ON, goal, run=run, message="test: content gate")
+    assert out.startswith("REFUSED")
+    assert "aws-key" in out and "src/settings.py:1" in out
+    assert fixture not in out
+    assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_documented_work_commit_allows_the_explicit_synthetic_fixture_value(tmp_path):
+    """A narrow known fake used by Sigma's tests must not wedge fixture maintenance."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
+    run = _runner([
+        ("diff --cached --name-only", "tests/test_fixture.py"),
+        ("diff --cached --no-ext-diff --unified=0", "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+fixture = " + fixture + "\n"),
+    ])
+    assert work.commit(d, ON, goal, run=run, message="test: fixture") == "committed on sdlc/0001-x"
 
 
 def test_commit_refusal_names_every_offending_path_not_just_the_first(tmp_path):
@@ -1049,7 +1080,8 @@ def test_commit_commits_a_path_named_exactly_in_the_allowlist(tmp_path):
     goal = _started(d)
     run = _staged(["a.py", "tests/fixtures/rsa_test.key"])
     assert work.commit(d, cfg, goal, run=run, message="test: fixture") == "committed on sdlc/0001-x"
-    assert run.calls == ["git add -A", "git diff --cached --name-only", "git commit -m test: fixture"]
+    assert run.calls == ["git add -A", "git diff --cached --name-only",
+                         "git diff --cached --no-ext-diff --unified=0", "git commit -m test: fixture"]
 
 
 def test_the_allowlist_is_exact_paths_not_globs_and_not_an_off_switch(tmp_path):
@@ -1271,6 +1303,19 @@ def test_real_git_an_already_ignored_dotenv_never_trips_the_guard(tmp_path):
     assert work.commit(d, ON, "0001-x.md", message="feat: b") == "committed on sdlc/0001-x"
     assert committed() == {"b.py"}
     assert (repo / ".env").read_text() == "TOKEN=live-secret\n"      # still on disk, untouched
+
+
+def test_real_git_refuses_a_content_shaped_key_in_an_ordinary_filename(tmp_path):
+    """Exercise the exact staged-diff parser used by the documented commit gesture."""
+    repo, d, committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    (repo / "settings.py").write_text("ACCESS_KEY = " + fixture + "\n")
+
+    refusal = work.commit(d, ON, "0001-x.md", message="test: content")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key at settings.py:1:" in refusal
+    assert fixture not in refusal
+    assert "settings.py" not in committed()
 
 
 def test_real_git_refuses_an_unignored_dotenv_and_the_named_remedy_then_clears_it(tmp_path):

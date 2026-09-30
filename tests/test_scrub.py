@@ -42,6 +42,13 @@ def test_scrub_empty_is_passthrough():
     assert scrub("") == "" and scrub(None) is None
 
 
+def test_commit_secret_hits_returns_only_rule_and_column_and_exempts_known_fixture():
+    module = _mod("scrub")
+    synthetic = "AKIA" + "Z" * 16
+    assert module.commit_secret_hits("x=" + synthetic) == [("aws-key", 3)]
+    assert module.commit_secret_hits("x=AKIAIOSFODNN7EXAMPLE") == []
+
+
 # --- the unterminated private-key fallback (#534) -----------------------------------------------
 # The well-formed BEGIN..END form belongs to the FIRST pattern; everything below pins the SECOND one,
 # the fallback for a key whose END marker never arrived (truncated at the source, or a body that was

@@ -73,7 +73,8 @@ def _load(name):
 state = _load("state")
 ledger = _load("ledger")
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
-scrub = _load("scrub").scrub
+scrub_module = _load("scrub")
+scrub = scrub_module.scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
                                       # auth failure — see that module's own docstring for the two
                                       # confirmed shapes and why one shared classifier, not a copy here
@@ -144,12 +145,14 @@ ENFORCEMENT_GATES = (
                   "reconcile-merges` records `done` and closes the issue once the PR merges; a goal "
                   "with no PR is unaffected",
      "readme": "Done means merged"},
-    {"control": "Secret-shaped filename refused at commit", "function": "_secret_refusal",
+    {"control": "Secret-shaped paths and added content refused at work.py commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
      "settings": ("work.allow_secret_paths",),
-     "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename "
-                  "(`.env`, `*.pem`, `id_rsa`, `credentials.json`, ...); a basename denylist only, "
-                  "no content scan; `work.allow_secret_paths` lists exact repo-relative exceptions"},
+     "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename or an "
+                  "added staged line matches scrub.py's credential shapes; diagnostics name only rule "
+                  "and file position, never a matched value; `work.allow_secret_paths` lists exact "
+                  "repo-relative filename exceptions and a small explicit synthetic-fixture list "
+                  "exempts known test values"},
     {"control": "Plan must be on the goal branch before PR", "function": "_plan_missing_from_branch",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py pr` while the goal's plan exists on disk but is not committed "
@@ -2550,8 +2553,37 @@ def _unstage(path, raw_paths, run):
         return False
 
 
+def _added_secret_hits(path, run):
+    """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
+
+    `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
+    branch, while the commit boundary is responsible only for newly-added credential material.
+    The returned metadata is location-only; a diagnostic can never accidentally interpolate a
+    matched value.
+    """
+    try:
+        diff = run(path, ["git", "diff", "--cached", "--no-ext-diff", "--unified=0"])
+    except Exception:
+        return {}
+    hits, current, line = {}, "", 0
+    for row in diff.splitlines():
+        if row.startswith("+++ b/"):
+            current = row[6:]
+            continue
+        if row.startswith("@@"):
+            match = re.search(r"\+(\d+)(?:,(\d+))?", row)
+            line = int(match.group(1)) if match else 0
+            continue
+        if current and line and row.startswith("+") and not row.startswith("+++"):
+            found = scrub_module.commit_secret_hits(row[1:])
+            if found:
+                hits.setdefault(current, []).extend((rule, line, column) for rule, column in found)
+            line += 1
+    return hits
+
+
 def _secret_refusal(path, staged, config, run):
-    """The refusal string when `git add -A` staged a secret-shaped path — "" when it did not.
+    """The refusal string when staged names or added lines look secret-shaped — "" when they do not.
 
     IT FAILS CLOSED, and that is the OPPOSITE of `_phase_doc_missing_from_branch`'s call below. Not an
     inconsistency: the two harms differ in REVERSIBILITY, which is the only thing that should decide
@@ -2587,20 +2619,31 @@ def _secret_refusal(path, staged, config, run):
     rather than one this commit is creating, and refusing every future commit over it would wedge
     the repo with no reachable remedy."""
     allowed = _allowed_secret_paths(config)
-    if not any(_is_offender(line, allowed) for line in staged.splitlines()):
+    content_hits = _added_secret_hits(path, run)
+    if not any(_is_offender(line, allowed) for line in staged.splitlines()) and not content_hits:
         return ""                       # the ordinary path: no extra git call, byte-identical
     rows = _staged_rows(path, run)
     if rows:
-        offenders = [(st, raw) for st, raw in rows
-                     if not st.startswith("D") and _is_offender(raw, allowed)]
+        offenders = [(st, raw, content_hits.get(raw, ())) for st, raw in rows
+                     if not st.startswith("D") and (_is_offender(raw, allowed) or raw in content_hits)]
     else:                               # git would not say: fall back to the list already in hand
-        offenders = [("?", _unquoted(line)) for line in staged.splitlines()
-                     if _is_offender(line, allowed)]
+        offenders = [("?", _unquoted(line), content_hits.get(_unquoted(line), ()))
+                     for line in staged.splitlines()
+                     if _is_offender(line, allowed) or _unquoted(line) in content_hits]
     if not offenders:
         return ""                       # every candidate was a deletion, or was allowed outright
-    unstaged = _unstage(path, [raw for _, raw in offenders], run) if rows else False
+    unstaged = _unstage(path, [raw for _, raw, _hits in offenders], run) if rows else False
     lines = []
-    for status, raw in offenders:
+    for status, raw, hits in offenders:
+        # A secret-shaped filename already has a concrete, satisfiable ignore/untrack remedy.
+        # Prefer that remedy even when its content also matches; once ignored it will no longer be
+        # staged, whereas asking to edit a file the user may merely be removing leaves the loop stuck.
+        if hits and not _is_offender(raw, allowed):
+            locations = ", ".join("%s at %s:%d:%d" % (rule, raw, line, column)
+                                  for rule, line, column in hits)
+            lines.append("  * %s — added content matched %s; no matched value is shown. Remove or "
+                         "replace it, then re-run `work.py commit`." % (raw, locations))
+            continue
         pattern = _gitignore_pattern(raw)
         allow = ("name its exact path in `work.allow_secret_paths` (below)" if not pattern
                  else "add a line `%s` to .gitignore (or .git/info/exclude)" % pattern)
@@ -2627,7 +2670,7 @@ def _secret_refusal(path, staged, config, run):
             "rather than warns because a wedged run costs minutes and a pushed credential must be "
             "rotated."
             % (len(offenders), state_line, "\n".join(lines),
-               ", ".join(json.dumps(raw) for _, raw in offenders)))
+               ", ".join(json.dumps(raw) for _, raw, _hits in offenders)))
 
 
 #: #910: risk-detect.sh's own three category names -> the `gate` vocabulary value each records
