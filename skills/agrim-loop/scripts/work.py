@@ -166,6 +166,14 @@ ENFORCEMENT_GATES = (
                   "Python, so it is the one plan gate that holds on every host",
      "condition": "an organisation can lock it on through managed settings",
      "readme": "Hard plan-gate (opt-in)"},
+    {"control": "Test-first implementation", "function": "_test_first_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "verify.enforce"),
+     "settings": (), "mechanism": "refuses `work.py pr` (exit 4) unless the published plan's "
+                  "pytest nodes have matching whole-file assertion-red evidence preceding fresh "
+                  "observed green; an explicit `--no-tests <reason>` bypasses only this test-first "
+                  "proof and carries the reason verbatim into the PR body",
+     "condition": "local evidence is not tamper-proof; legacy advisory witnesses do not qualify; "
+                  "external fixture/helper bytes are not part of red's test-file identity"},
     {"control": "Plan review before implementation", "function": "_plan_review_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.plan_review.enabled"), "settings": (),
@@ -2886,6 +2894,49 @@ def plan_copies(sdlc_dir, goal, rec, run):
     return main, branch
 
 
+def verification_plan(sdlc_dir, goal, root):
+    """Current plan for pre-commit TDD; PR uses #258's published-copy resolver instead."""
+    rc = _load("review_context")
+    main = rc.phase_doc_file(sdlc_dir, goal, "plans")
+    branch = rc.phase_doc_file(pathlib.Path(root) / pathlib.Path(sdlc_dir).name, goal, "plans")
+    if main and branch and main.read_bytes() != branch.read_bytes():
+        raise ValueError("main and worktree plans differ; synchronize them before verify")
+    return branch or main
+
+
+def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None):
+    """#267: gate only proof/exemption, leaving #258 and acceptance checks independent."""
+    if no_tests is not None and (not isinstance(no_tests, str) or not no_tests.strip()):
+        return "TEST-FIRST REFUSED: --no-tests requires a nonempty reason (nothing pushed)"
+    if not state.enforce_enabled(config.get("verify")):
+        return ""
+    refused = state.done_refusal(sdlc_dir, goal)
+    if not refused and no_tests is None:
+        try:
+            main, branch = plan_copies(sdlc_dir, goal, rec, run)
+            evidence = json.loads(state.evidence_path(sdlc_dir, goal).read_text())
+            # Unlike legacy done bookkeeping, PR publication cannot accept an unmeasured tree.
+            if (pathlib.Path(evidence.get("root", "")).resolve() != pathlib.Path(rec["worktree"]).resolve()
+                    or not (evidence.get("content") or {}).get("fingerprint")):
+                refused = "verify did not measure this worktree's content"
+            else:
+                refused = _load("red_green").refusal(sdlc_dir, goal, rec["worktree"],
+                                                      branch or main, evidence.get("test_first"))
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            refused = "planned test proof is unavailable: " + str(exc)
+    if refused:
+        return ("TEST-FIRST REFUSED: " + refused + "; run `loop.py verify` on the planned tests "
+                "while red, then green; or supply --no-tests <reason> for an explicit exception (nothing pushed)")
+    return ""
+
+
+def _no_tests_body(body, reason):
+    if reason is None:
+        return body
+    section = "\n\n## Test-first exception\n\n" + reason + "\n"
+    return body if section in body else body + section
+
+
 def _plan_missing_from_branch(sdlc_dir, rec, goal, run):
     """The refusal line when this goal's plan is on disk but not on its branch — "" otherwise.
     #1548. See `_phase_doc_missing_from_branch` for the shared reasoning; this is the `plans`/`plan`
@@ -2989,7 +3040,7 @@ def _pr_body(path, run, remote, base, goal, config):
     return (header + body).strip() + "\n"
 
 
-def pr(sdlc_dir, config, goal, run=None):
+def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     """Push the branch and open (or re-find) its PR. Refuses on an unclean or empty branch — or one
     missing the plan or research dossier it is meant to be read against (#1548, #1801) — rather than
     opening a PR that says nothing, or one a reviewer cannot check.
@@ -3071,16 +3122,26 @@ def pr(sdlc_dir, config, goal, run=None):
     if missing_research:
         return missing_research
 
+    test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests)
+    if test_first_refusal:
+        return test_first_refusal
+
     run(path, ["git", "push", "-u", remote, rec["branch"]])
     number = run(path, ["gh", "api",
                         f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
                         "--jq", ".[0].number"])
     if not number:
         title = run(path, ["git", "log", "-1", "--format=%s"]) or f"sdlc: {stem(goal)}"
-        body = _pr_body(path, run, remote, base, goal, config)
+        body = _no_tests_body(_pr_body(path, run, remote, base, goal, config), no_tests)
         number = run(path, ["gh", "api", "repos/{owner}/{repo}/pulls",
                             "-f", f"title={title}", "-f", f"body={body}", "-f", f"base={base}",
                             "-f", f"head={rec['branch']}", "--jq", ".number"])
+    elif no_tests is not None:
+        endpoint = f"repos/{{owner}}/{{repo}}/pulls/{number}"
+        current = json.loads(run(path, ["gh", "api", endpoint])).get("body") or ""
+        body = _no_tests_body(current, no_tests)
+        if body != current:
+            run(path, ["gh", "api", endpoint, "--method", "PATCH", "-f", f"body={body}"])
     if _receipt_sharing_enabled(config):
         try:
             raw = json.loads(run(path, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{number}"]))
@@ -6337,6 +6398,8 @@ def main(argv):
             kwargs["session_pid"] = named or None
         if argv[1] == "finish" and "--force" in argv:
             kwargs["force"] = True
+        if argv[1] == "pr" and "--no-tests" in argv:
+            kwargs["no_tests"] = _flag(argv, "--no-tests")
         if argv[1] == "commit":
             kwargs["message"] = _flag(argv, "--message")
         if argv[1] == "post-review":
@@ -6373,7 +6436,7 @@ def main(argv):
         # specifically, NEVER on the bare `REFUSED — ` that three other refusals in this file use:
         # those change no state, so they correctly stay exit 0, and no test would have caught the
         # difference (they all assert the string, never the code).
-        if str(result).startswith(_STALE_RESUME_REFUSAL_PREFIX):
+        if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:")):
             return 4
         return 0
     print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"

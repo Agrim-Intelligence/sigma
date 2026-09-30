@@ -48,6 +48,22 @@ codebase's existing patterns** — don't unilaterally restructure.
 State, per task and for the whole plan, the **checkable condition** that proves it's finished (the
 command + expected output). This is what `agrim-verify` checks and what the goal's `done_when` maps to.
 
+Include a literal `## Tests` section with 1–25 backticked repo-relative pytest selectors,
+one per bullet and no prose in that section, for example:
+
+```markdown
+## Tests
+- `tests/test_retry.py::test_recovers_after_disconnect`
+- `tests/test_retry.py::TestBounds::test_stops_at_limit`
+```
+
+A file selector includes **every collected test** in that file; each needs its own assertion red.
+Prefer node selectors for a narrow change. `loop.py verify` uses this same scope for its planned
+observation, flake check and witness reporting. With `verify.enforce` on, `work.py pr` requires
+matching red-before-green proof for these nodes. Non-pytest projects and changes with no applicable
+tests must use the explicit `--no-tests <reason>` exception at PR publication; the reason is public
+in the PR body. Repository verification and plan review remain required under their own settings.
+
 ## 5. Write it to disk — `.sdlc/plans/<goal-stem>.md`
 The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal
 (`0007-fix-retry.md` → `.sdlc/plans/0007-fix-retry.md`). Four things downstream read the file, not the

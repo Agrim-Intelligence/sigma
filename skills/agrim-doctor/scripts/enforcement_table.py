@@ -125,10 +125,6 @@ EXTERNAL_CONTROLS = (
      "mechanism": "`agrim-plan-review` asks the reviewer to send back a plan that contradicts the "
                   "north-star; no code checks it",
      "readme": "Strategy-alignment check"},
-    {"control": "Test-first implementation", "kind": "advice", "hosts": "all",
-     "enabled_by": (), "settings": (),
-     "mechanism": "`agrim-implement` asks the agent to write the failing test first; no code "
-                  "compares test and source order"},
     {"control": "Independent review", "kind": "advice", "hosts": "all",
      "enabled_by": ("review.independent",), "settings": (),
      "mechanism": "The skills ask the agent to dispatch it. An independent reviewer subagent is "

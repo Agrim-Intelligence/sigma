@@ -96,6 +96,20 @@ two paragraphs below never counts as a change.
 `git` command (the loop has no general git tool on purpose, and no dispatched phase subagent gets
 one either — see the no-phase-commits rule, step 3):
 `work.py commit .sdlc "$goal" --message "<type: what changed>"` → `work.py pr .sdlc "$goal"`.
+With `verify.enforce` on, the PR gesture exits **4** before push unless every node in the published
+plan's `## Tests` section has a matching assertion red before a fresh observed green. Use
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` at both red and green stages.
+For docs-only work (or another explicit test-first exception), publish with:
+
+```sh
+python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" pr .sdlc "$goal" --no-tests "Documentation only; no executable behavior changed."
+```
+
+The nonempty reason is copied verbatim to the PR body, including an existing PR on retry. Supply
+it again on each publication; it bypasses only test-first proof. Fresh repository verification,
+acceptance and enabled plan-review gates still apply. Missing or stale proof requires re-verification;
+partial witness writes are ignored and cannot manufacture a pass. No hooks are needed on any host.
+
 **Put the plan on the branch before that first `commit`** — copy `.sdlc/plans/<goal-stem>.md` from
 the main checkout to the SAME relative path inside the worktree (`commit`'s `git add -A` runs in
 the worktree and cannot see the main checkout's copy, which is why plans were silently missing

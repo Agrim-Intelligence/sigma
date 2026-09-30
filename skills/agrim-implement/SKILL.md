@@ -67,7 +67,26 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-Skip TDD only for throwaway prototypes / generated code / config — and say so.
+After writing the plan's `## Tests` entries, record both stages through Sigma:
+
+```sh
+python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" verify .sdlc "$goal"
+```
+
+Run that gesture while the planned tests fail by assertion, then again after implementation makes
+them pass. It executes the configured proving commands and one explicit planned pytest run.
+A plain test command alone does not write the machine witness. Import errors, unrelated failures,
+skips, legacy advisory witnesses, and red observed after green do not qualify for `work.py pr`.
+The observer hashes whole test files, including decorators and fixtures in those files: editing
+one requires earning red again. External fixtures/helpers are not part of red's file identity;
+review still checks whether the assertion failed for the intended behavioral reason. For a
+refactor, deliberately break the relevant behavior, run the gesture, restore it, then run green.
+Old automatic diff-revert mutation records remain advisory because they may include import errors.
+
+Skip TDD only for throwaway prototypes / generated code / config — and say so. When publishing
+with `verify.enforce` on, pass an explicit `--no-tests <reason>` to `work.py pr`; the reason is
+preserved verbatim in its PR body. This bypasses only test-first proof, never repository verification,
+acceptance capture or plan review.
 
 ## Where these rules come from
 Two names worth knowing, so these read as citable practice, not asserted opinion: the

@@ -916,7 +916,8 @@ def _run_sequence(world, run_probe):
 
     _cli([LOOP, "verify", sdlc, "1"], clone_dir, env)
     _cli([WORK, "commit", sdlc, "1", "--message", "sdlc: test goal 1"], clone_dir, env)
-    _cli([WORK, "pr", sdlc, "1"], clone_dir, env)
+    _cli([WORK, "pr", sdlc, "1", "--no-tests",
+          "Bootstrap fixture writes text only; shell verification is retained."], clone_dir, env)
     pr_number = _only_pr_number(world)
     obs["pr_number"] = pr_number
 
