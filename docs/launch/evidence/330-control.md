@@ -1,11 +1,13 @@
 # #330 control: the launch-definition sync test, seen red
 
-Measured on branch `sdlc/330` at commit `0c0ddf326a6a261fbe7936e7d349c03ea9c81c61`, with the
-review-block-1 edits uncommitted in the working tree (sha256 of the tree measured):
+Controls 1-4 were measured on branch `sdlc/330` at commit
+`0c0ddf326a6a261fbe7936e7d349c03ea9c81c61` with the review-block-1 edits uncommitted; Control 5
+and the unplanted run on commit `b311890c3d1c5e1393323eb03d5858d5689b3502` with the
+review-block-2 edits uncommitted. sha256 of the files as last measured:
 
 - `docs/launch/definition.json` `9bf8cd5426d6e2d5d47b71b123006900f935a229098590b54208eb0a7d5fe2d2`
-- `docs/launch/definition.md` `097f6351b3cb72b434bdc0e8a08b726a133326699378410cd53adba6cb725e3e`
-- `tests/test_launch_definition.py` `747a0de019707349aa4c23b778d5a7195c0a2e5b9a003b8f0d5172d5c25a9c6e`
+- `docs/launch/definition.md` `32dd54ddc712ce009982eaae630e637d9056e2551ec04e662e7c328e10a85299`
+- `tests/test_launch_definition.py` `f10e8d7cc7506708ab6beb0b5fce5cfa7cd846c614157478bbc970f5ac6cd3c9`
 
 Gesture (the one the test's docstring and the issue give): `python -m pytest
 tests/test_launch_definition.py -q`, run on Python 3.10.20 and on Python 3.12, with identical
@@ -87,6 +89,27 @@ plants that stayed green: 0
 `json signed_on 2026-02-30` is a signed JSON with a date that matches YYYY-MM-DD but is not a
 calendar day: the signature check fails on the date, and the Status-line sync fails too.
 
+## Control 5: signature rules shared with decide.py, and the configured-repo hazard (review block 2)
+
+Review block 2 found the rename list omitted `discovery.github.repo`, and that this test accepted
+signatures #331's readiness decider (`decide.py`) rejects. The new rename-section test was written
+first and was red against the unfixed page on both Pythons (`1 failed, 15 passed`). Each plant
+below was run against the new test and against the block-1 test (`HEAD`); the signed plants also
+set the Markdown Status line to match, so only the rule under test can fail:
+
+```
+plant                                new test            block-1 test
+json duplicate key                   RED  12 failed, 4 passed   green 15 passed
+signed_by '@swapnil-agrim'           RED  1 failed, 15 passed   green 15 passed
+signed_by 'a/b'                      RED  1 failed, 15 passed   green 15 passed
+signed_by 40 chars                   RED  1 failed, 15 passed   green 15 passed
+signed_on future 2099-01-01          RED  2 failed, 14 passed   green 15 passed
+md drops discovery.github.repo       RED  1 failed, 15 passed   green 15 passed
+valid signature (must stay green)    green 16 passed            green 15 passed
+```
+
+Identical on Python 3.10.20 and 3.12.13.
+
 ## Unplanted
 
-The working tree itself: `15 passed` on Python 3.12 and on Python 3.10.
+The working tree itself: `16 passed` on Python 3.12 and on Python 3.10.

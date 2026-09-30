@@ -15,13 +15,19 @@ All notable changes to Sigma are recorded here, newest first.
   partial validation the page states);
   audience = individual developers and small teams on GitHub; out of scope = Slack listener,
   cross-repo units, managed settings. Status is `proposed`; merging the pull request is the owner's
-  signature. The page lists what the rename repoints (clones' `origin`, the loop's `gh` calls,
-  the publish runbook's `--repo`, `docs/board.md`, `contract/golden/config.json`, the CI badge,
-  doctor's fallback `_MARKETPLACE_REPO`) and the runbook's stale visibility-flip assumption as
+  signature. The page lists what the rename repoints, led by a safety hazard: the loop's own
+  `discovery.github.repo` in every `.sdlc/config.json`, which after the name takeover would point a
+  running loop's reads, labels and comments at the public repository, so #359 must ship a
+  stop-repoint-verify step before the rename. The rest: `ledger.handoff.upstream_repo`, clones'
+  `origin` (and the `origin`-named remotes that follow it), `gh`'s `{owner}/{repo}` calls, the
+  publish runbook's `--repo`, `docs/board.md`'s milestone-assignment commands,
+  `contract/golden/config.json`, the CI badge, doctor's fallback `_MARKETPLACE_REPO`, and existing
+  plugin installs' recorded marketplace source; and the runbook's stale visibility-flip assumption as
   work for the release goal (#359). `tests/test_launch_definition.py` checks every field in both
   directions (artifact, public repository, version and tag, audience, supported and experimental
-  cells, out-of-scope list, Status line), a complete signature with real calendar dates and an
-  `owner/name` repository; its controls, including a one-copy change of each field, are in
+  cells, out-of-scope list, Status line), the same signature #331's `decide.py` accepts (no
+  duplicated JSON key, a plain-login `signed_by`, a real `signed_on` no later than today), an
+  `owner/name` repository, and that the rename list names `discovery.github.repo`; its controls, including a one-copy change of each field, are in
   `docs/launch/evidence/330-control.md`.
 
 - **`tools/leak_refs.py`: find, and plan the removal of, private-repository references before the

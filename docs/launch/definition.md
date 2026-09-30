@@ -34,16 +34,45 @@ new public repository takes `Agrim-Intelligence/sigma`. From then on the redirec
 everything that names `Agrim-Intelligence/sigma` points at the public repository, not the private
 one. The release goal (#359) must handle each of these before the public repository takes the name:
 
+- **Safety hazard — the loop's own configured repository.** `/agrim-setup` writes
+  `discovery.github.repo` into every adopter's `.sdlc/config.json`
+  (`skills/agrim-setup/scripts/setup.py:149`, `:214`; `/agrim-init` fills the same key,
+  `skills/agrim-init/scripts/init_flow.py:309`), and this repository's own `.sdlc/config.json`
+  holds `Agrim-Intelligence/sigma` there. The loop addresses GitHub by that slug directly, not by
+  the git remote: it reads goals from it (`skills/agrim-loop/scripts/sources.py:88`) and passes it
+  as `--repo` (`sources.py:1253`) to every label edit, comment, close, body edit and issue create
+  (for example `:2819`, `:2838`, `:3608`). After the name takeover a
+  running loop reads goals from, and writes labels and comments to, the PUBLIC repository, while
+  its pushes go wherever `origin` points; repointing `origin` (below) does not fix it. #359 must
+  ship a pre-rename step: stop every loop and watcher, repoint or blank `discovery.github.repo`,
+  and verify it with a read-only `gh api repos/<slug> --jq .full_name`. The same step covers
+  `discovery.github.project.owner` / `number` if the board moves, and `ledger.handoff.upstream_repo`
+  (`skills/agrim-loop/scripts/upstream.py:332`; opt-in, empty by default, but an adopter who set it
+  to this slug files kit findings on the public repository). The other remote settings —
+  `work.remote`, `ledger.remote`, `knowledge_graph.sync.remote` — name a git remote (`origin`),
+  not a slug, so they follow `origin`'s URL: until `origin` is repointed, pull requests, the ledger
+  ops branch and the knowledge branch are pushed to the public repository too;
 - existing clones' `origin` remote;
-- the loop's `gh` calls, which address `{owner}/{repo}` from the checkout's configuration;
+- the loop's `gh` calls that have no configured slug and address `{owner}/{repo}`, which `gh`
+  fills from the checkout's git remote;
 - `docs/publish-runbook.md`'s `tools/leak_refs.py scan` and `rewrite` commands, which pass
   `--repo Agrim-Intelligence/sigma`;
-- `docs/board.md`'s board-copy commands;
-- `contract/golden/config.json`;
-- the README's CI badge;
-- `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py`. `/agrim-doctor`'s version
+- `docs/board.md`'s milestone-assignment commands (`REPO=` at `docs/board.md:162`, `$Repo` at
+  `:183`), which PATCH the milestone on issues in the named repository;
+- `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
+- the README's CI badge (`README.md:3`);
+- `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py:1515`. `/agrim-doctor`'s version
   check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
   only as a fallback when that record cannot be read.
+- existing plugin installs: each recorded `Agrim-Intelligence/sigma` as its marketplace source, so
+  after the takeover they update from the public snapshot. Whether that is intended is the owner's
+  decision, in #359.
+
+This list is from a grep of the whole tree for the slug and for every configuration key that
+holds one (`skills/agrim-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,
+`sync.py`, the board settings). Tests that use the slug as a fixture are not listed; they do not
+address GitHub. `.claude-plugin/marketplace.json` names no repository (its source is `./`), and
+`.github/CODEOWNERS` names an organisation team, which the rename does not touch.
 
 `docs/publish-runbook.md` (its opening paragraph and its "Before the visibility flip" section)
 still assumes this repository's visibility flips to public. That contradicts the artifact above,

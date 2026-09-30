@@ -3,17 +3,20 @@
 `docs/launch/definition.md` is the page a human reads; `docs/launch/definition.json` is the same
 decisions for code. Every readiness threshold points at them, so they must not disagree:
 
-  - the JSON parses and carries `schema == "launch-definition/v1"`;
-  - `status` is `proposed` or `signed`; a signed page names who signed it (`signed_by`), when
-    (`signed_on`, YYYY-MM-DD) and the public repository (`public_repo`, owner/name);
+  - the JSON parses, with no key given twice, and carries `schema == "launch-definition/v1"`;
+  - `status` is `proposed` or `signed`; a signed page names who signed it (`signed_by`, a plain
+    login: letters, digits, `-`, at most 39), when (`signed_on`, YYYY-MM-DD) and the public
+    repository (`public_repo`, owner/name);
   - `public_repo`, whenever it is set, is an `owner/name` slug;
   - both directions, each field: `artifact`, `public_repo`, `version` (and its `v` tag) and
     `audience` equal the first backticked value of their `- **Label:**` bullet; the `supported` and
     `experimental` entries equal the table rows with that cell (a row in only one copy fails); the
     `out_of_scope` list equals the backticked ids ending the Out of scope bullets, in order;
   - the Markdown `## Status` line agrees with the JSON `status` (and, when signed, with who and when);
-    every date is a real calendar day (2026-02-30 fails), as #331's
-    tools/readiness/decide.py checks.
+    when status is signed, `signed_on` is a real calendar day (2026-02-30 fails) no later than
+    today -- the same signature #331's tools/readiness/decide.py accepts, so the two cannot
+    disagree on what a valid signature is;
+  - the rename-hazard section names `discovery.github.repo`, the loop's own configured repository.
 
 Stdlib + pytest only; no network. Control (seen red, recorded in
 `docs/launch/evidence/330-control.md`): change one supported OS in the JSON to "windows" without
@@ -45,21 +48,29 @@ PROPOSED_LINE = "Proposed — not yet signed by the owner"
 SIGNED_LINE = re.compile(r"Signed by (\S+) on (\d{4}-\d{2}-\d{2})")
 SLUG = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+LOGIN = re.compile(r"[A-Za-z0-9-]{1,39}")  # decide.py's LOGIN_RE
 
 
 def _is_date(value):
-    """YYYY-MM-DD and a real calendar day (2026-02-30 is not), as #331's decide.py checks."""
+    """YYYY-MM-DD, a real calendar day (2026-02-30 is not) and not later than today, as #331's
+    decide.py checks a signing date."""
     if not (isinstance(value, str) and DATE.fullmatch(value)):
         return False
     try:
-        datetime.date.fromisoformat(value)
+        return datetime.date.fromisoformat(value) <= datetime.date.today()
     except ValueError:
         return False
-    return True
+
+
+def _unique_pairs(pairs):
+    keys = [k for k, _ in pairs]
+    dupes = sorted({k for k in keys if keys.count(k) > 1})
+    assert not dupes, "definition.json gives a key twice: %r" % dupes
+    return dict(pairs)
 
 
 def _definition():
-    return json.loads(JSON_PATH.read_text(encoding="utf-8"))
+    return json.loads(JSON_PATH.read_text(encoding="utf-8"), object_pairs_hook=_unique_pairs)
 
 
 def _markdown():
@@ -103,9 +114,12 @@ def test_status_is_proposed_or_signed_and_a_signature_is_complete():
     d = _definition()
     assert d["status"] in ("proposed", "signed"), d["status"]
     if d["status"] == "signed":
-        assert d.get("signed_by"), "status is signed but signed_by is empty"
+        signed_by = d.get("signed_by")
+        assert isinstance(signed_by, str) and LOGIN.fullmatch(signed_by), \
+            "status is signed but signed_by is not a plain login: %r" % signed_by
         assert _is_date(d.get("signed_on")), \
-            "status is signed but signed_on is not a real YYYY-MM-DD date: %r" % d.get("signed_on")
+            "status is signed but signed_on is not a real YYYY-MM-DD date on or before today: %r" \
+            % d.get("signed_on")
         assert d.get("public_repo") and SLUG.fullmatch(d["public_repo"]), \
             "status is signed but public_repo is not owner/name: %r" % d.get("public_repo")
 
@@ -196,3 +210,10 @@ def test_markdown_status_line_agrees_with_json():
 @pytest.mark.parametrize("path", [MD_PATH, JSON_PATH])
 def test_both_files_exist(path):
     assert path.is_file(), path
+
+
+def test_rename_hazard_names_the_loops_configured_repo():
+    """The loop reads goals from, and writes labels and comments to, `discovery.github.repo`, not
+    the git remote -- the hazard a rename list most easily drops (#384 review block 2)."""
+    section = "\n".join(_section(_markdown(), "## What the rename changes"))
+    assert "`discovery.github.repo`" in section, "the rename-hazard list omits discovery.github.repo"
