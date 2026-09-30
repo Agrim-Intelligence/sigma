@@ -276,16 +276,22 @@ moves the card to Done, replays the merge observation, releases the checkout) an
 - **Cost, measured** (`tests/test_merge_reconcile.py`): one REST `pulls/<n>` read per goal, at most
   **10** per pass, oldest-checked first. There is no `gh pr view` (GraphQL) read on this path: the
   close reuses that read, and so does the checkout release. Closing a goal adds one more REST read
-  only when the ledger or journal is on, for the merge facts. It also makes the issue writes any
-  `record done` makes (`source.complete()`: close, labels, board), which this count does not
-  include. The automatic triggers skip a PR re-read within the last 120 s, so a larger backlog costs
+  only when the ledger or journal is on, for the merge facts. This bound is for **PR reads**.
+  Issue completion uses GraphQL too: a cold-cache, board-disabled `GitHubSource.complete()`
+  dispatches five gh commands: one `gh issue view` state probe, one issue close, two GraphQL
+  queries (issue node and label ids), and one GraphQL label mutation. This count is measured
+  through the real complete method with an injected runner, not live quota or latency. Board
+  operations, retries, and comment fallback for an already-closed issue add calls. The automatic triggers skip a PR re-read within the last 120 s, so a larger backlog costs
   close latency, never more calls.
 - **One pass at a time.** A `next` and the watch tick used to race and could both record `done`.
-  The pass now holds a kernel lock (`.sdlc/state/merge-reconcile.lock`; `flock` on POSIX,
+  With work enabled, the pass and CLI `record done` share a kernel lock (`.sdlc/state/merge-reconcile.lock`; `flock` on POSIX,
   `msvcrt.locking` on Windows), and a second pass skips with `another merge-reconcile pass is
   running (pid N)`. The lock dies with its holder, so it never goes stale. If a pass seems wedged,
-  stop the named pid; never delete the lock file. A host with no lock primitive refuses the pass
-  loudly.
+  stop the named pid; never delete the lock file or pause a watcher. The pid is cleared before
+  release (on Windows byte zero stays reserved for locking). A busy CLI `record done` exits 4;
+  check the goal status before retrying after the holder finishes. Only EWOULDBLOCK/EAGAIN/EACCES
+  mean contention; other lock errors refuse loudly with the OS error and do no merge work.
+  Move state to a filesystem with exclusive-lock support before retrying an unsupported lock.
 - **Crash-safe and bounded.** `record` clears the awaiting flag right after the terminal ledger
   entry, before the slow tail (unit-completion signal, checkout release). A pass killed by the watch
   tick's timeout therefore never records `done` twice. The pass stops starting goals after half of
@@ -297,8 +303,17 @@ moves the card to Done, replays the merge observation, releases the checkout) an
   flag, so a later merge does not record `done` over it.
 - **Age is the tell.** `/agrim-doctor` shows a `goals awaiting merge` row. It is not OK once a goal
   has waited over 3 days (an armed auto-merge whose required check failed never lands) or no pass
-  has read a waiting PR for a day (nothing is running `next` or the watcher). `/agrim-status` and
-  `log.py slots` show the same wait as `awaiting merge for 3d 04h`.
+  has **successfully** read a waiting PR for a day. These are policy defaults, not measured
+  service guarantees or a promise to cover a weekend. Set positive finite seconds in
+  `work.merge_stuck_seconds` (default 259200) and `work.merge_unread_seconds` (default 86400);
+  invalid values use the defaults. Read attempts retain the 120-second throttle; only a recognized
+  PR response updates successful-read freshness. Legacy attempt-only flags are treated as never
+  successfully read until the next successful pass. Auth failures therefore cannot keep the alarm
+  green: check gh authentication/connectivity as well as the watcher. `/agrim-status` and
+  `log.py slots` show the wait as `awaiting merge for 3d 04h`. If `finish --force` removed merge
+  tracking, or work is disabled, the log shows a blocked reconciliation-unavailable row outside
+  the in-flight slots; it never claims the PR merged. Restore the work record/enable work to
+  resume reconciliation, or explicitly record parked if abandoning the goal.
 
 Do not close an awaiting issue by hand: merge (or close) the PR, and the next pass does the rest.
 

@@ -240,7 +240,9 @@ def status(sdlc_dir, now=None):
     for goal, thread, entry, ago in rows:
         left = f"  {goal} [{thread}]"
         ago_text = _format_ago(ago) if ago is not None else "? ago"
-        lines.append(f"{left:<20}{_describe(entry, ago):<45} — {ago_text}")
+        problem = merge_tracking_problem(sdlc_dir, goal, read_goal(sdlc_dir, goal))
+        description = f"merge reconciliation unavailable: {problem}" if problem else _describe(entry, ago)
+        lines.append(f"{left:<20}{description:<45} — {ago_text}")
     return "\n".join(lines)
 
 
@@ -607,6 +609,32 @@ def slot_rows(sdlc_dir, now=None):
     return out
 
 
+def merge_tracking_problem(sdlc_dir, stem, entries, config=None):
+    """Local context for a recorded review, never a claim that its PR merged.
+
+    One work-record read per review row; no network and no loop imports. Missing tracking or
+    disabled work cannot self-reconcile. Keep it visible as blocked outside the active slots.
+    An unreadable config/record is also an explicit diagnostic, not inferred success.
+    """
+    if not is_awaiting_merge(newest_code_written(entries)):
+        return ""
+    if config is None:
+        try:
+            config = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text())
+        except (OSError, ValueError):
+            return "config unreadable; restore config"
+    work = config.get("work") if isinstance(config, dict) else None
+    if not isinstance(work, dict) or not work.get("enabled"):
+        return "work disabled; enable work"
+    try:
+        record = json.loads((pathlib.Path(sdlc_dir) / "state" / "work" / f"{stem}.json").read_text())
+    except (OSError, ValueError):
+        return "tracking missing; restore tracking or record parked"
+    if not isinstance(record, dict) or not isinstance(record.get("awaiting_merge"), dict) or not record.get("pr"):
+        return "tracking missing; restore tracking or record parked"
+    return ""
+
+
 def slot_facts(sdlc_dir, config, stem, entries, entry, ago, extra_threads):
     """render.py's closed Block A fact set for one goal, or `None` when §2 forbids a slot line for
     it (no nameable phase). Every key render.py requires is present; `url` and `model_tier` are the
@@ -614,13 +642,15 @@ def slot_facts(sdlc_dir, config, stem, entries, entry, ago, extra_threads):
     phase = phase_kind(entries)
     if phase is None:
         return None
+    problem = merge_tracking_problem(sdlc_dir, stem, entries, config)
     return {
-        "marker": marker_state(entries),
+        "marker": "blocked" if problem else marker_state(entries),
         "ref": goal_ref(stem),
         "url": issue_url(config, stem),
         "phase": phase,
         "title": title_from_mirror(sdlc_dir, stem) or TITLE_UNAVAILABLE,
-        "description": describe(entry, ago, extra_threads),
+        "description": (f"merge reconciliation unavailable: {problem}" if problem
+                        else describe(entry, ago, extra_threads)),
         "model_tier": model_tier(entries),
     }
 
@@ -678,22 +708,28 @@ def select(renderable):
     never hidden even here — the tail counts it, and `log.py status` still lists every row.
 
     Returns `(shown, collapsed, finished_not_shown, in_flight_count)`."""
-    in_flight = [row for row in renderable if not row[1]]
-    closed = [row for row in renderable if row[1]]
-    considered = in_flight or closed
+    # Optional third field: an unresolved review whose merge tracking cannot run.
+    # It is neither live work nor finished; keep it visible in spare slots and in the tail.
+    blocked = [row for row in renderable if len(row) > 2 and row[2]]
+    ordinary = [row for row in renderable if not (len(row) > 2 and row[2])]
+    in_flight = [row for row in ordinary if not row[1]]
+    closed = [row for row in ordinary if row[1]]
+    considered = (in_flight + blocked) or closed
     shown = considered[:MAX_SLOTS]
-    finished_not_shown = len(closed) - (0 if in_flight else len(shown))
+    finished_not_shown = len(closed) - (0 if in_flight or blocked else len(shown))
     return shown, len(considered) - len(shown), finished_not_shown, len(in_flight)
 
 
-def _headline(in_flight, active):
+def _headline(in_flight, active, blocked=0):
     if in_flight:
         return f"Status — {in_flight} goal(s) in flight, of {active} active in the action log"
+    if blocked:
+        return f"Status — nothing in flight; {blocked} blocked merge reconciliation goal(s)"
     return (f"Status — nothing in flight; showing the most recently finished, of {active} active "
             "in the action log")
 
 
-def _tail(shown, collapsed, stale, withheld):
+def _tail(shown, collapsed, stale, withheld, blocked_hidden=0):
     """§3: "Tail is exactly one line." It carries the accounting a capped block owes its reader —
     how many were dropped and, for each, why — and the one standing caveat: no arrow, because the
     log knows only the past."""
@@ -702,6 +738,8 @@ def _tail(shown, collapsed, stale, withheld):
         parts.append(f"{collapsed} more collapsed at the {MAX_SLOTS}-slot cap")
     if stale:
         parts.append(f"{stale} finished, not shown")
+    if blocked_hidden:
+        parts.append(f"{blocked_hidden} blocked merge reconciliation, not shown (run log.py status)")
     if withheld:
         parts.append(f"{withheld} withheld (no SDLC phase recorded)")
     return "; ".join(parts) + " — the action log records what happened, never what unblocks next."
@@ -738,7 +776,8 @@ def slots(sdlc_dir, now=None, render_py=None):
         if facts is None:
             withheld.append(stem)
         else:
-            renderable.append((facts, is_closed(entries)))
+            blocked = is_awaiting_merge(newest_code_written(entries)) and facts["marker"] == "blocked"
+            renderable.append((facts, is_closed(entries), blocked))
     if not renderable:
         return (f"action log on -- {len(rows)} active goal(s), none renderable as a slot: no SDLC "
                 f"phase is recorded for any of {', '.join(withheld)} "
@@ -746,10 +785,12 @@ def slots(sdlc_dir, now=None, render_py=None):
 
     chosen, collapsed, stale, in_flight = select(renderable)
     shown = [row[0] for row in chosen]
+    blocked = sum(bool(row[2]) for row in renderable)
+    blocked_hidden = blocked - sum(bool(row[2]) for row in chosen)
     block = {
-        "headline": _headline(in_flight, len(rows)),
+        "headline": _headline(in_flight, len(rows), blocked),
         "slots": shown,
-        "tail": _tail(len(shown), collapsed, stale, len(withheld)),
+        "tail": _tail(len(shown), collapsed, stale, len(withheld), blocked_hidden),
     }
     ok, rendered, why = render_block_a(block, render_py=render_py)
     if ok:

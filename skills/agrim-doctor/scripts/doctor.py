@@ -976,9 +976,9 @@ def _awaiting_merge_row(sdlc_dir, now=None):
     """#255 LIVENESS: one row for every goal awaiting a merge. A goal that waits reports no error,
     ever -- an armed auto-merge whose required check failed never lands, a PR that can no longer be
     read stays `unknown`, and a machine where nothing runs `next` or the watcher never reads it --
-    so AGE is what this row reads: not OK once the oldest wait passes `work.MERGE_STUCK_SECONDS`
-    (the PR is not landing) or no pass has read a waiting PR for `work.MERGE_UNREAD_SECONDS` (the
-    pass is dead, not idle). The numbers come from `work.awaiting_merge_report`, the one source of
+    so AGE is what this row reads: not OK after the configured wait or successful-read age.
+    A missing successful read can mean failed authentication as well as a stopped pass.
+    The numbers come from `work.awaiting_merge_report`, the one source of
     both verdicts; this only words them. Never raises."""
     try:
         work = _load_loop_script("work")
@@ -994,18 +994,18 @@ def _awaiting_merge_row(sdlc_dir, now=None):
         return _chk(f"goals {line}", True, "")
     parts = []
     if stuck:
-        parts.append(f"{len(stuck)} waiting over {work._age(work.MERGE_STUCK_SECONDS)}")
+        parts.append(f"{len(stuck)} waiting over {work._age(work.merge_liveness_policy(sdlc_dir)[0])}")
     if unwatched:
         oldest = max(unwatched, key=lambda r: r["unread"] if r["unread"] is not None else r["waited"])
         gap = oldest["unread"] if oldest["unread"] is not None else oldest["waited"]
-        parts.append(f"no PR read for {work._age(gap)}")
+        parts.append(f"no PR read for {work._age(gap)} (successful reads only)")
     prs = ", ".join(f"PR #{r['pr']}" for r in (stuck or unwatched)[:5])
     fix = (f"merge or close {prs} (an armed auto-merge whose required check failed never lands; a "
            "closed PR parks the goal), then run `python3 skills/agrim-loop/scripts/loop.py "
            "reconcile-merges .sdlc`")
     if unwatched:
-        fix += ("; nothing has read a waiting PR recently -- no `loop.py next` and no watcher is "
-                "running the merge-reconcile pass, so start the watcher or run that command")
+        fix += ("; no successful PR read recently -- check gh authentication/connectivity and "
+                "whether the watcher or `loop.py next` is running, then run that command")
     return _chk(f"goals {line} -- {'; '.join(parts)}", False, fix)
 
 
