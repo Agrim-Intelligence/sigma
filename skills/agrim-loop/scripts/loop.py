@@ -5357,7 +5357,9 @@ def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None):
 
 def run_loop(sdlc_dir, run_goal):
     session_pid = os.getpid()
-    session_generation = session_start(sdlc_dir, session_pid)
+    # A new in-process run can reuse a PID after a prior run has not yet cleaned up.  Give this
+    # invocation its own ownership token, so its eventual cleanup cannot erase that successor.
+    session_generation = session_start(sdlc_dir, session_pid, generation=uuid.uuid4().hex)
     state.start_run(sdlc_dir)                       # reset per-run budget (resume-safe)
     config = state.load_config(sdlc_dir)
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own

@@ -7575,6 +7575,27 @@ def test_cli_start_end_generation_prevents_a_prior_owner_from_clearing_a_success
         assert not lp._session_marker_path(base, pid).exists()
 
 
+def test_run_loop_cleanup_cannot_clear_an_overlapping_same_pid_successor(monkeypatch):
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); real_start = lp.session_start; first = []
+        def interleaved(sdlc_dir, pid, generation=None):
+            owned = real_start(sdlc_dir, pid, generation=generation)
+            first.append(owned)
+            real_start(sdlc_dir, pid, generation="successor")
+            return owned
+        monkeypatch.setattr(lp, "session_start", interleaved)
+        lp.run_loop(base, lambda _: ("done", ""))
+        marker = json.loads(lp._session_marker_path(base, os.getpid()).read_text())
+        assert first and marker["generation"] == "successor"
+
+
+def test_readme_session_end_gesture_captures_and_returns_the_generation_token():
+    readme = (pathlib.Path(__file__).resolve().parent.parent / "README.md").read_text()
+    assert "session_generation=$(python3 <sigma>/skills/agrim-loop/scripts/loop.py start" in readme
+    assert '--session-generation "$session_generation"' in readme
+
+
 # --- #1391 step 5e: the throttled, opt-in reconciliation sweep -----------------------------------
 # Runs ONCE per batch in next_batch's PROLOGUE, deliberately not inside _next() where
 # _auto_unpark_sweep sits -- next_batch calls _next() up to max_concurrent times, so anything there
