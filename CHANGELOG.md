@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
+  `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
+  (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
+  fresh public snapshot repository named `Agrim-Intelligence/sigma` (the current private repository
+  is renamed first, by the owner), version `1.0.0`; supported = Claude Code on macOS and Linux,
+  Python 3.10-3.13, `local-goals` and `github` modes; experimental = Codex, Cursor, Windows;
+  audience = individual developers and small teams on GitHub; out of scope = Slack listener,
+  cross-repo units, managed settings. Status is `proposed`; merging the pull request is the owner's
+  signature. `tests/test_launch_definition.py` keeps the two files in sync (supported and
+  experimental cells, Status line, a complete signature, `owner/name` repository); its control is
+  in `docs/launch/evidence/330-control.md`.
+
 - **`tools/leak_refs.py`: find, and plan the removal of, private-repository references before the
   visibility flip** (#282). A patterns file (`--patterns` or `SIGMA_LEAK_PATTERNS`, no default,
   refused inside any git work tree) drives four verbs: `scan` reads every issue and PR in every
