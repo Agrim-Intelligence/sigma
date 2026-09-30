@@ -1,0 +1,7 @@
+[
+  {
+    "path": "tests/boardfake.py",
+    "rule": "gh-token",
+    "reason": "fake token used by tests"
+  }
+]
