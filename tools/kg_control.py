@@ -35,7 +35,12 @@ def _write_builder(directory):
         "if '--version' in sys.argv:\n"
         " print('sigma-kg-control-builder 1.0'); raise SystemExit(0)\n"
         "if len(sys.argv) >= 2 and sys.argv[1] == 'query':\n"
-        " print('source_location: analysis/seed.md'); raise SystemExit(0)\n"
+        f" graph = pathlib.Path.cwd() / '{BUILDER}-out' / 'graph.json'\n"
+        " try:\n"
+        "  print('source_location: ' + json.loads(graph.read_text())['source_location'])\n"
+        " except (OSError, ValueError, KeyError):\n"
+        "  print('graph unavailable', file=sys.stderr); raise SystemExit(1)\n"
+        " raise SystemExit(0)\n"
         "if len(sys.argv) < 2 or sys.argv[1] != 'extract':\n"
         " print('unsupported invocation', file=sys.stderr); raise SystemExit(2)\n"
         "out = pathlib.Path(sys.argv[sys.argv.index('--out') + 1])\n"
@@ -62,8 +67,8 @@ def _repo(base, *, enabled=True):
     return root, sdlc, goal
 
 
-def _run(argv, *, env):
-    return subprocess.run(argv, text=True, capture_output=True, env=env, timeout=60)
+def _run(argv, *, env, cwd=None):
+    return subprocess.run(argv, text=True, capture_output=True, env=env, cwd=cwd, timeout=60)
 
 
 def run(workdir):
@@ -79,7 +84,7 @@ def run(workdir):
     status = _run([sys.executable, str(KG), "status", str(sdlc)], env=env)
     doctor = _run([sys.executable, str(DOCTOR), "check", str(sdlc)], env=env)
     graph = root / f"{BUILDER}-out" / "graph.json"
-    query = _run([BUILDER, "query", "seed"], env=env)
+    query = _run([BUILDER, "query", "seed"], env=env, cwd=root)
 
     _, disabled_sdlc, _ = _repo(workdir, enabled=False)
     disabled = _run([sys.executable, str(KG), "refresh", str(disabled_sdlc), str(workdir / "disabled")], env=env)
