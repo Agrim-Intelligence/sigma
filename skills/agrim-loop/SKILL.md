@@ -28,8 +28,12 @@ that step:**
 - `references/landing.md` — 6: verify, commit, PR, review, merge, record, pipeline card.
 - `references/stopping.md` — 7: spare-iteration gap work, the STOP report.
 
-Reset the per-run budget: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
---session-pid "$PPID"`. **Pass `--session-pid "$PPID"`** to every `next`/`next-batch` call. Read
+Capture one owning session generation while resetting the per-run budget:
+`session_generation=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
+--session-pid "$PPID")`. On clean exit, pass that exact token back with
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" session-end .sdlc --session-pid "$PPID"
+--session-generation "$session_generation"`; an older owner therefore cannot clear a successor's
+marker. **Pass `--session-pid "$PPID"`** to every `next`/`next-batch` call. Read
 `$PPID` from your own shell each time; omitting it can re-dispatch a goal already claimed by this
 run.
 

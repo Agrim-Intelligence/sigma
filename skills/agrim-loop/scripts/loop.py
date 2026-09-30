@@ -2026,10 +2026,6 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
     same blocked goal and the loop could not reach the pickable issue behind it (measured live).
     See `_pick_dependency_hold` for what it reads, what it costs, and the three states it fails
     open on."""
-    session_pid = os.getppid() if session_pid is None else session_pid
-    # Every picker pass is a loop tick, including an empty backlog.  Refresh before any remote
-    # read so a stalled source cannot leave a healthy manager looking dead.
-    write_session_heartbeat(sdlc_dir, session_pid)
     # #1445: the reconciliation sweep runs here TOO, not only in `next_batch`'s prologue. It was
     # placed there alone to avoid paying it once per goal in a batch -- but that amplification is
     # already prevented by its own TTL watermark (gate 2), which makes a not-due call one file read.
@@ -5361,7 +5357,7 @@ def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None):
 
 def run_loop(sdlc_dir, run_goal):
     session_pid = os.getpid()
-    session_start(sdlc_dir, session_pid)
+    session_generation = session_start(sdlc_dir, session_pid)
     state.start_run(sdlc_dir)                       # reset per-run budget (resume-safe)
     config = state.load_config(sdlc_dir)
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own
@@ -5428,7 +5424,7 @@ def run_loop(sdlc_dir, run_goal):
         parked += (outcome not in ("done", "failed", "review"))
     result = {"done": done, "parked": parked, "failed": failed, "review": review,
               "iterations": state.load_cursor(sdlc_dir)["iteration"], "stopped": stopped}
-    session_end(sdlc_dir, session_pid)
+    session_end(sdlc_dir, session_pid, generation=session_generation)
     return result
 
 
@@ -5438,7 +5434,7 @@ def run_loop(sdlc_dir, run_goal):
 #: `thread`, `session-pid`, `skip`). Computed from `ledger.EVENT_FIELDS`/`actionlog.AGENT_FIELDS`
 #: themselves, not re-listed, so this set can never drift from the real field vocabulary.
 _VALUE_FLAGS = frozenset(
-    {"pid", "thread", "session-pid", "skip", "feature"}
+    {"pid", "thread", "session-pid", "session-generation", "skip", "feature"}
     | {f for fields in ledger.EVENT_FIELDS.values() for f in fields}
     | {f for fields in actionlog.AGENT_FIELDS.values() for f in fields}
 )
@@ -5921,11 +5917,18 @@ def _dispatch(argv):
         # mechanism the shipped skill relies on. SKILL.md always passes `--session-pid "$PPID"`
         # explicitly on this call (its shell's own `$PPID`, captured fresh — no cross-call
         # persistence needed since re-reading it keeps giving the same stable value).
-        session_pid = _flags(argv[3:]).get("session-pid")
+        start_flags = _flags(argv[3:])
+        session_pid = start_flags.get("session-pid")
         _arm_run_id(session_pid)        # #889: BEFORE the fallback below -- os.getppid() is not stable
         if session_pid is None or session_pid == "true":
             session_pid = os.getppid()
-        session_start(argv[2], session_pid)
+        generation = session_start(argv[2], session_pid,
+                                   generation=start_flags.get("session-generation") or uuid.uuid4().hex)
+        # A separate `session-end` invocation cannot infer an earlier owner's random token from
+        # disk without reopening the successor-deletion race.  Return it for the documented shell
+        # gesture and retain it for same-process library callers.
+        os.environ["SIGMA_SESSION_GENERATION"] = generation
+        print(generation)
         state.start_run(argv[2])
         # #1239 review round 3, finding B: `start` is the OTHER real chokepoint the registry grows
         # through (alongside `_next()`/`next_batch()`, pruned in `_session_in_flight_goals`) — sweep
@@ -5946,8 +5949,11 @@ def _dispatch(argv):
         # `os.getppid()` fallback when `--session-pid` is absent — the same last-resort caveat
         # applies (see `start`'s own comment above): the README's recommended routine prompt passes
         # `--session-pid "$PPID"` explicitly here too, the same value it captured for `start`.
-        session_pid = _flags(argv[3:]).get("session-pid")
-        session_end(argv[2], None if session_pid in (None, "true") else session_pid)
+        end_flags = _flags(argv[3:])
+        session_pid = end_flags.get("session-pid")
+        generation = end_flags.get("session-generation") or os.environ.get("SIGMA_SESSION_GENERATION")
+        session_end(argv[2], None if session_pid in (None, "true") else session_pid,
+                    generation=None if generation == "true" else generation)
         return 0
     if len(argv) >= 3 and argv[1] == "session-active":       # F10.5-4/#377: routine pre-flight check
         config = state.load_config(argv[2])

@@ -7557,6 +7557,24 @@ def test_prior_session_end_cannot_delete_a_successor_generation():
         assert second == "second" and marker["generation"] == heartbeat["generation"] == "second"
 
 
+def test_cli_start_end_generation_prevents_a_prior_owner_from_clearing_a_successor(capsys):
+    """The documented separate-process lifecycle has to carry the token, not merely the helper."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getppid()
+        assert lp.main(["loop.py", "start", base, "--session-pid", str(pid)]) == 0
+        first = capsys.readouterr().out.strip()
+        assert lp.main(["loop.py", "start", base, "--session-pid", str(pid)]) == 0
+        second = capsys.readouterr().out.strip()
+        assert first and second and first != second
+        assert lp.main(["loop.py", "session-end", base, "--session-pid", str(pid),
+                        "--session-generation", first]) == 0
+        assert lp._session_marker_path(base, pid).exists()
+        assert lp.main(["loop.py", "session-end", base, "--session-pid", str(pid),
+                        "--session-generation", second]) == 0
+        assert not lp._session_marker_path(base, pid).exists()
+
+
 # --- #1391 step 5e: the throttled, opt-in reconciliation sweep -----------------------------------
 # Runs ONCE per batch in next_batch's PROLOGUE, deliberately not inside _next() where
 # _auto_unpark_sweep sits -- next_batch calls _next() up to max_concurrent times, so anything there
