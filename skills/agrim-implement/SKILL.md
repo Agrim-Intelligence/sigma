@@ -73,13 +73,15 @@ After writing the plan's `## Tests` entries, record both stages through Sigma:
 python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" verify .sdlc "$goal"
 ```
 
-Run it while planned tests fail by assertion and again after green. It records proof; plain test
-commands do not. Invalid proof cannot publish. Changed tests earn red again.
-For refactors: break, record red, restore, record green.
+Run it while planned tests fail by assertion and again after green. Plain commands do not record
+proof; changed tests earn red again. For refactors: break, red, restore, green.
 
-Skip TDD only for throwaway prototypes, generated code, or config, and say so. With
-`verify.enforce`, `work.py pr --no-tests <reason>` is the explicit, verbatim PR-body exception;
-it bypasses only test-first proof, never verification, acceptance, or plan review.
+Skip TDD only for prototypes, generated code, or config; say so. With
+`verify.enforce`, `work.py pr --no-tests <reason>` is a verbatim PR-body exception;
+it bypasses only test-first proof, never other gates.
+
+## Sources
+Kent Beck defines TDD; Martin Fowler names refactor smells.
 
 ## Test behavior, not plumbing (anti-patterns to avoid)
 - **Don't test the mock** — assert real behavior/output, not that a stub was called.
