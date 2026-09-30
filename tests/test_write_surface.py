@@ -38,3 +38,12 @@ def test_ratchet_rejects_an_empty_gate(tmp_path):
     inventory = tmp_path / "inventory.json"
     inventory.write_text(json.dumps({"entries": [{"path": "a.py", "function": "erase", "rule": "gh-issue", "count": 1, "gate": "", "risk": "high"}]}))
     assert _module().ratchet(tmp_path, inventory) == ["empty gate a.py:erase gh-issue"]
+
+
+def test_live_path_selection_uses_tracked_files(tmp_path):
+    (tmp_path / "tracked.py").write_text("x = 1\n")
+    (tmp_path / "untracked.py").write_text("x = 2\n")
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.py"], check=True)
+    assert _module()._paths(tmp_path) == [tmp_path / "tracked.py"]

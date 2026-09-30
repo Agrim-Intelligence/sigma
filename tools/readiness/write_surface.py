@@ -10,6 +10,7 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -20,7 +21,7 @@ RULES = {
     "gh-project": re.compile(r'["\']project["\']\s*,\s*["\'](?:item-edit|item-add|item-archive|item-delete|field-create|create|link|copy|edit|delete)["\']'),
     "gh-api-write": re.compile(r'(?:["\']api["\']|\bgh\s+api).*?(?:-X|--method)\s*["\']?(?:POST|PATCH|PUT|DELETE)', re.I),
     "graphql-mutation": re.compile(r'mutation\s*[\({]'),
-    "git-push": re.compile(r'["\']push["\']|--force(?:-with-lease)?'),
+    "git-push": re.compile(r'["\']git["\'].*?["\']push["\']|--force(?:-with-lease)?'),
     "git-destructive": re.compile(r'["\']branch["\']\s*,\s*["\']-D["\']|["\']reset["\']\s*,\s*["\']--hard["\']|["\']worktree["\']\s*,\s*["\']remove["\']|["\']tag["\']'),
     "fs-rmtree": re.compile(r'shutil\.rmtree\('),
 }
@@ -58,7 +59,9 @@ def scan_paths(root, paths):
 
 
 def _paths(root):
-    return [p for p in Path(root).rglob("*") if p.suffix in {".py", ".sh"} and "tests" not in p.parts and ".git" not in p.parts]
+    root = Path(root)
+    result = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=True)
+    return [root / raw.decode() for raw in result.stdout.split(b"\0") if raw and Path(raw.decode()).suffix in {".py", ".sh"} and not raw.decode().startswith("tests/")]
 
 
 def ratchet(root, inventory):
