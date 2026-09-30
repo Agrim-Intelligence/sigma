@@ -7,7 +7,7 @@ for any of the three, so a config without it behaves exactly as before. The irre
 is enforced by /agrim-loop SKILL.md prose. Claim and outcome are mirrored to the team ledger
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
-import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib
+import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid
 import contextlib
 import errno
 
@@ -2035,6 +2035,9 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
     # already prevented by its own TTL watermark (gate 2), which makes a not-due call one file read.
     # The cost of leaving it out was total: an operator who uses `next` rather than `next-batch`
     # NEVER swept, so a repo could sit ~23h past a 60-minute TTL while `next` ran repeatedly.
+    session_pid = os.getppid() if session_pid is None else session_pid
+    # Every picker pass is a loop tick, including an empty backlog. Refresh before any remote read.
+    write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
     just_unparked = _auto_unpark_sweep(sdlc_dir, config)
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
@@ -2328,6 +2331,9 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # NOT inside `_next()` where `_auto_unpark_sweep` sits. `next_batch` calls `_next()` up to
     # `max_concurrent` times, so anything placed there is paid 8x per batch on this repo's own
     # config; that amplification is an existing cost this must not copy.
+    session_pid = os.getppid() if session_pid is None else session_pid
+    # This prologue can be the only tick when reconciliation blocks or drains the batch.
+    write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
     if max_concurrent is None:
         enabled, cap = goals_parallel(config)
@@ -2335,7 +2341,6 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # Keep the old batch shape (only the remaining number of goal lines, with the
     # terminal reported on the next call) using the SAME session-local count that
     # `_next` reserves atomically. The reservation remains the final race guard.
-    session_pid = os.getppid() if session_pid is None else session_pid
     ceilings = [n for n in (_handoff_ceiling(config.get("handoff") or {}),
                              (config.get("budget") or {}).get("max_iterations")) if n]
     if ceilings:
@@ -2404,7 +2409,7 @@ def session_heartbeat_path(sdlc_dir, session_pid):
     return _session_heartbeat_dir(sdlc_dir) / (_session_marker_path(sdlc_dir, session_pid).stem + ".json")
 
 
-def write_session_heartbeat(sdlc_dir, session_pid, now=None):
+def write_session_heartbeat(sdlc_dir, session_pid, now=None, generation=None):
     """Atomically refresh a loop heartbeat. A write failure is diagnostic-only, never a run stop."""
     try:
         pid = int(session_pid)
@@ -2414,7 +2419,10 @@ def write_session_heartbeat(sdlc_dir, session_pid, now=None):
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
         try:
             with os.fdopen(fd, "w") as stream:
-                json.dump({"pid": pid, "last_seen": seen}, stream)
+                data = {"pid": pid, "last_seen": seen}
+                if generation:
+                    data["generation"] = generation
+                json.dump(data, stream)
                 stream.flush(); os.fsync(stream.fileno())
             os.replace(tmp, path)
         finally:
@@ -2580,7 +2588,7 @@ def _session_pid_live(pid, path, config):
         return True                          # can't even stat it — fail toward "still active"
 
 
-def session_start(sdlc_dir, session_pid):
+def session_start(sdlc_dir, session_pid, generation=None):
     """Record that a managing session — a routine/cron firing, or a manual overnight run — is now
     driving `.sdlc` (F10.5-4/#377), so a routine firing again before this one finishes can tell NOT
     to launch a redundant one — the same class of risk F10.5/#374 already closes one level down (a
@@ -2626,20 +2634,29 @@ def session_start(sdlc_dir, session_pid):
     path = _session_marker_path(sdlc_dir, pid)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    selected_generation = generation or uuid.uuid4().hex
     def _write():
+        nonlocal selected_generation
         if path.exists():
             existing = _session_read(path, strict=True)
+            try:
+                raw_generation = json.loads(path.read_text()).get("generation")
+                if generation is None and isinstance(raw_generation, str) and raw_generation:
+                    selected_generation = raw_generation
+            except (OSError, ValueError, AttributeError):
+                pass
             data = {"in_flight": existing["in_flight"],
-                    "settled_admissions": existing["settled_admissions"]}
+                    "settled_admissions": existing["settled_admissions"], "generation": selected_generation}
         else:
-            data = {"in_flight": [], "settled_admissions": 0}
+            data = {"in_flight": [], "settled_admissions": 0, "generation": selected_generation}
         _session_write(path, data)
 
     _session_locked(sdlc_dir, pid, _write, path=path, require_lock=True)
-    write_session_heartbeat(sdlc_dir, pid)
+    write_session_heartbeat(sdlc_dir, pid, generation=selected_generation)
+    return selected_generation
 
 
-def session_end(sdlc_dir, session_pid=None):
+def session_end(sdlc_dir, session_pid=None, generation=None):
     """Clear only the caller's own registry entry. Claude/legacy identity is the PID; Codex adds
     its thread ID, so ending one of two tasks under the same host PID leaves the other registered.
     Best-effort and a safe no-op if that entry was never created. Defaults to `os.getppid()` when
@@ -2650,9 +2667,16 @@ def session_end(sdlc_dir, session_pid=None):
         heartbeat = session_heartbeat_path(sdlc_dir, pid)
         # Keep registry and heartbeat cleanup in the SAME critical section.  A successor start
         # cannot publish its marker, then have this old cleanup unlink its fresh heartbeat.
-        _session_locked(sdlc_dir, pid,
-                        lambda: (path.unlink(missing_ok=True), heartbeat.unlink(missing_ok=True)),
-                        path=path, require_lock=True)
+        def _end_if_owner():
+            if generation is not None:
+                try:
+                    if json.loads(path.read_text()).get("generation") != generation:
+                        return False
+                except (OSError, ValueError, AttributeError):
+                    return False
+            path.unlink(missing_ok=True); heartbeat.unlink(missing_ok=True)
+            return True
+        _session_locked(sdlc_dir, pid, _end_if_owner, path=path, require_lock=True)
     except (OSError, TypeError, ValueError):
         pass
 

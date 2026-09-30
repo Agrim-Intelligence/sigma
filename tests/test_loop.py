@@ -7514,6 +7514,20 @@ def test_next_refreshes_the_managing_session_heartbeat_even_when_the_backlog_is_
         assert json.loads(lp.session_heartbeat_path(base, pid).read_text())["last_seen"] > 1.0
 
 
+def test_next_batch_refreshes_before_a_blocked_reconciliation_sweep(monkeypatch):
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid(); lp.session_start(base, pid)
+        lp.write_session_heartbeat(base, pid, now=1.0)
+        seen = []
+        def blocked(sdlc_dir, config):
+            seen.append(json.loads(lp.session_heartbeat_path(base, pid).read_text())["last_seen"])
+        monkeypatch.setattr(lp, "_reconcile_sweep", blocked)
+        lp.next_batch(base, lp.sources.get_source(base, lp.state.load_config(base)), lp.state.load_config(base),
+                      session_pid=pid)
+        assert seen and seen[0] > 1.0
+
+
 def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkeypatch):
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
@@ -7529,6 +7543,18 @@ def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkey
         lp.session_end(base, pid)
         assert calls == [True]
         assert not lp.session_heartbeat_path(base, pid).exists()
+
+
+def test_prior_session_end_cannot_delete_a_successor_generation():
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid()
+        first = lp.session_start(base, pid, generation="first")
+        second = lp.session_start(base, pid, generation="second")
+        lp.session_end(base, pid, generation=first)
+        marker = json.loads(lp._session_marker_path(base, pid).read_text())
+        heartbeat = json.loads(lp.session_heartbeat_path(base, pid).read_text())
+        assert second == "second" and marker["generation"] == heartbeat["generation"] == "second"
 
 
 # --- #1391 step 5e: the throttled, opt-in reconciliation sweep -----------------------------------
