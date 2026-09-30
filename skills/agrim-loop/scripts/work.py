@@ -2588,9 +2588,14 @@ def _staged_added_diff(path):
     network, no shell, and no mutation.  At 10 changed files it remains one linear Git patch read;
     at 100 it remains the same single read, rather than one fork per file.
     """
-    proc = subprocess.run(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
-                          cwd=str(path), capture_output=True, text=True, check=False)
-    return proc.stdout
+    # Do not use `subprocess.run`: risk-event tests deliberately replace that call to model the
+    # later risk detector.  This independent read must neither consume that fixture nor reorder
+    # the detector's observable commit-after-scan lifecycle.
+    proc = subprocess.Popen(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
+                            cwd=str(path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True)
+    out, _ = proc.communicate()
+    return out
 
 
 def _added_secret_hits(path):
