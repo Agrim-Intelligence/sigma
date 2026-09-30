@@ -38,6 +38,7 @@ merge, so it is stated here rather than left to be found: without it every issue
 feature branch stays open, and every goal declaring `Blocked by: #N` stays held behind it.
 """
 import contextlib
+import ast
 import importlib.util
 import hashlib
 import io
@@ -73,7 +74,8 @@ def _load(name):
 state = _load("state")
 ledger = _load("ledger")
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
-scrub = _load("scrub").scrub
+scrub_module = _load("scrub")
+scrub = scrub_module.scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
                                       # auth failure — see that module's own docstring for the two
                                       # confirmed shapes and why one shared classifier, not a copy here
@@ -144,12 +146,14 @@ ENFORCEMENT_GATES = (
                   "reconcile-merges` records `done` and closes the issue once the PR merges; a goal "
                   "with no PR is unaffected",
      "readme": "Done means merged"},
-    {"control": "Secret-shaped filename refused at commit", "function": "_secret_refusal",
+    {"control": "Secret-shaped paths and added content refused at work.py commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
      "settings": ("work.allow_secret_paths",),
-     "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename "
-                  "(`.env`, `*.pem`, `id_rsa`, `credentials.json`, ...); a basename denylist only, "
-                  "no content scan; `work.allow_secret_paths` lists exact repo-relative exceptions"},
+     "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename or an "
+                  "added staged line matches scrub.py's credential shapes; diagnostics name only rule "
+                  "and file position, never a matched value; `work.allow_secret_paths` lists exact "
+                  "repo-relative filename exceptions and a small explicit synthetic-fixture list "
+                  "exempts known test values"},
     {"control": "Plan must be on the goal branch before PR", "function": "_plan_missing_from_branch",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py pr` while the goal's plan exists on disk but is not committed "
@@ -2550,8 +2554,93 @@ def _unstage(path, raw_paths, run):
         return False
 
 
+def _diff_header_path(header):
+    """Decode Git's C-quoted `+++ b/<path>` identity to the raw `-z` path form.
+
+    Patch headers quote tabs, quotes, backslashes and non-ASCII names while `--name-status -z`
+    returns the raw pathname.  The commit control joins the two reads, so treating the display
+    spelling as identity would create a content-scan bypass.  Git's octal byte escapes are decoded
+    through a Latin-1 byte preservation step before UTF-8 decoding.
+    """
+    if not (header.startswith('"') and header.endswith('"')):
+        return header
+    try:
+        decoded = ast.literal_eval(header)
+        try:
+            return decoded.encode("latin1").decode("utf-8")
+        except UnicodeError:
+            return decoded
+    except (SyntaxError, ValueError):
+        return header
+
+
+def _diagnostic_path(raw):
+    """A pathname fit for diagnostics, never a channel for a credential-shaped filename."""
+    return scrub(raw)
+
+
+def _staged_added_diff(path):
+    """Read the staged zero-context patch outside the injected git-operation channel.
+
+    The injected `run` channel is the public work lifecycle's ordered mutation/evidence trace.
+    Content scanning is an internal read, like `_risk_categories`; routing it through `run` changes
+    that trace and can consume a caller's next expected response.  This local subprocess has no
+    network, no shell, and no mutation.  At 10 changed files it remains one linear Git patch read;
+    at 100 it remains the same single read, rather than one fork per file.
+    """
+    # Do not use `subprocess.run`: risk-event tests deliberately replace that call to model the
+    # later risk detector.  This independent read must neither consume that fixture nor reorder
+    # the detector's observable commit-after-scan lifecycle.
+    # Direct unit callers can supply a synthetic `run` trace without creating a repository.  Their
+    # fake worktree has no `.git`, so there is no staged diff to inspect; the real CLI reaches this
+    # function only after `git add -A` succeeded and therefore always has Git metadata.  Do not
+    # mask an actual Git failure below: once a repository is present, an unreadable diff refuses.
+    if not (pathlib.Path(path) / ".git").exists():
+        return ""
+    # A caller can inherit GIT_DIR/GIT_WORK_TREE (or an alternate index) from an unrelated shell.
+    # `cwd` does not override those variables: Git would scan that other repository and return a
+    # clean diff while this goal's staged credential remains unseen.  The scan's authority is its
+    # recorded worktree, so discard every Git-specific override rather than trying to maintain an
+    # incomplete denylist as Git adds new environment controls.
+    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    proc = subprocess.Popen(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
+                            cwd=str(path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, env=clean_env)
+    out, _ = proc.communicate()
+    if proc.returncode:
+        raise RuntimeError("staged-diff scan failed")
+    return out
+
+
+def _added_secret_hits(path):
+    """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
+
+    `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
+    branch, while the commit boundary is responsible only for newly-added credential material.
+    The returned metadata is location-only; a diagnostic can never accidentally interpolate a
+    matched value.
+    """
+    diff = _staged_added_diff(path)
+    hits, current, line = {}, "", 0
+    for row in diff.splitlines():
+        if row.startswith("+++ "):
+            header = _diff_header_path(row[4:])
+            current = header[2:] if header.startswith("b/") else ""
+            continue
+        if row.startswith("@@"):
+            match = re.search(r"\+(\d+)(?:,(\d+))?", row)
+            line = int(match.group(1)) if match else 0
+            continue
+        if current and line and row.startswith("+") and not row.startswith("+++"):
+            found = scrub_module.commit_secret_hits(row[1:])
+            if found:
+                hits.setdefault(current, []).extend((rule, line, column) for rule, column in found)
+            line += 1
+    return hits
+
+
 def _secret_refusal(path, staged, config, run):
-    """The refusal string when `git add -A` staged a secret-shaped path — "" when it did not.
+    """The refusal string when staged names or added lines look secret-shaped — "" when they do not.
 
     IT FAILS CLOSED, and that is the OPPOSITE of `_phase_doc_missing_from_branch`'s call below. Not an
     inconsistency: the two harms differ in REVERSIBILITY, which is the only thing that should decide
@@ -2587,47 +2676,69 @@ def _secret_refusal(path, staged, config, run):
     rather than one this commit is creating, and refusing every future commit over it would wedge
     the repo with no reachable remedy."""
     allowed = _allowed_secret_paths(config)
-    if not any(_is_offender(line, allowed) for line in staged.splitlines()):
+    try:
+        content_hits = _added_secret_hits(path)
+    except Exception:                   # never render scanner failures: they can contain a secret
+        return ("REFUSED — added staged content could not be scanned, so nothing was committed. "
+                "The index has not been reset; resolve the scanner failure and re-run `work.py commit`.")
+    if not any(_is_offender(line, allowed) for line in staged.splitlines()) and not content_hits:
         return ""                       # the ordinary path: no extra git call, byte-identical
     rows = _staged_rows(path, run)
     if rows:
-        offenders = [(st, raw) for st, raw in rows
-                     if not st.startswith("D") and _is_offender(raw, allowed)]
+        offenders = [(st, raw, content_hits.get(raw, ())) for st, raw in rows
+                     if not st.startswith("D") and (_is_offender(raw, allowed) or raw in content_hits)]
     else:                               # git would not say: fall back to the list already in hand
-        offenders = [("?", _unquoted(line)) for line in staged.splitlines()
-                     if _is_offender(line, allowed)]
+        offenders = [("?", _unquoted(line), content_hits.get(_unquoted(line), ()))
+                     for line in staged.splitlines()
+                     if _is_offender(line, allowed) or _unquoted(line) in content_hits]
     if not offenders:
         return ""                       # every candidate was a deletion, or was allowed outright
-    unstaged = _unstage(path, [raw for _, raw in offenders], run) if rows else False
+    unstaged = _unstage(path, [raw for _, raw, _hits in offenders], run) if rows else False
     lines = []
-    for status, raw in offenders:
+    for status, raw, hits in offenders:
+        # A secret-shaped filename already has a concrete, satisfiable ignore/untrack remedy.
+        # Prefer that remedy even when its content also matches; once ignored it will no longer be
+        # staged, whereas asking to edit a file the user may merely be removing leaves the loop stuck.
+        if hits and not _is_offender(raw, allowed):
+            shown = _diagnostic_path(raw)
+            locations = ", ".join("%s at %s:%d:%d" % (rule, shown, line, column)
+                                  for rule, line, column in hits)
+            lines.append("  * %s — added content matched %s; no matched value is shown. Remove or "
+                         "replace it, then re-run `work.py commit`." % (shown, locations))
+            continue
         pattern = _gitignore_pattern(raw)
-        allow = ("name its exact path in `work.allow_secret_paths` (below)" if not pattern
-                 else "add a line `%s` to .gitignore (or .git/info/exclude)" % pattern)
+        shown = _diagnostic_path(raw)
+        # A path can itself carry a token.  A paste-ready ignore rule would repeat it, so the
+        # safe diagnostic deliberately trades that convenience for a non-leaking remediation.
+        allow = ("remove or rename this credential-shaped path, then add its exact path to "
+                 "`work.allow_secret_paths` only when it is a deliberate fixture" if shown != raw else
+                 ("name its exact path in `work.allow_secret_paths` (below)" if not pattern
+                  else "add a line `%s` to .gitignore (or .git/info/exclude)" % pattern))
         if status.startswith("A") or status == "?":
             lines.append("  * %s — new to this branch. Ignore it: %s, then re-run `work.py commit`."
-                         % (raw, allow))
+                         % (shown, allow))
         else:
             lines.append("  * %s — ALREADY TRACKED here, so an ignore rule alone changes nothing "
                          "(`git add -A` re-stages a tracked path whatever .gitignore says). Untrack "
                          "it AND ignore it: `git -C %s rm --cached -- %s`, then %s, then re-run "
                          "`work.py commit`. If this file is committed ON PURPOSE and is not a "
                          "secret, use the allowlist below instead."
-                         % (raw, path, raw, allow))
+                         % (shown, path, shown, allow))
     state_line = ("Nothing was committed and those index entries were reset; every file is still on "
                   "disk, untouched." if unstaged else
                   "Nothing was committed. The index could NOT be cleaned up, so those paths are "
                   "STILL STAGED — unstage them yourself before the ignore rule can take effect. "
                   "Every file is still on disk, untouched.")
-    return ("REFUSED — `git add -A` staged %d secret-shaped file(s) in this goal's worktree. %s\n%s\n"
+    return ("REFUSED — `git add -A` staged %d path(s) or added-content match(es) requiring attention "
+            "in this goal's worktree. %s\n%s\n"
             "  Deliberate (a fixture, a test key, a certificate)? Add the EXACT path to "
             "`work.allow_secret_paths` in .sdlc/config.json — e.g. \"work\": "
             "{\"allow_secret_paths\": [%s]} — then re-run. Exact paths only: a glob would be an off "
-            "switch, not an allowlist.\n  This matched NAMES only; no file was read. It refuses "
-            "rather than warns because a wedged run costs minutes and a pushed credential must be "
-            "rotated."
+            "switch, not an allowlist.\n  Added-content checks read only added staged-diff lines; "
+            "diagnostics never show matched values. It refuses rather than warns because a wedged "
+            "run costs minutes and a pushed credential must be rotated."
             % (len(offenders), state_line, "\n".join(lines),
-               ", ".join(json.dumps(raw) for _, raw in offenders)))
+               ", ".join(json.dumps(_diagnostic_path(raw)) for _, raw, _hits in offenders)))
 
 
 #: #910: risk-detect.sh's own three category names -> the `gate` vocabulary value each records

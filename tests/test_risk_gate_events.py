@@ -141,7 +141,7 @@ def test_every_detectable_category_records_its_own_gate(tmp_path):
     d = _commit(tmp_path, {
         "db/001_migration.sql": "ALTER TABLE users ADD COLUMN age int;\n",
         "src/routes.js": 'app.post("/pay", handler)\n',
-        "auth.py": "api_key = configure()\n",
+        "auth.py": "def login():\n    pass\n",
     })
     assert {e["gate"] for e in _gates(d)} == {"risk_migration", "risk_contract", "risk_security"}
 
@@ -151,7 +151,7 @@ def test_a_risk_gate_is_never_verdicted_pass_or_block(tmp_path):
     and cannot verify they ran". A `pass` off that signal claims a review that never happened."""
     d = _commit(tmp_path, {
         "db/001_migration.sql": "ALTER TABLE users ADD COLUMN age int;\n",
-        "auth.py": "api_key = configure()\n",
+        "auth.py": "def login():\n    pass\n",
     })
     rows = [e for e in _gates(d) if e["gate"].startswith("risk_")]
     assert rows, "no risk gate emitted at all — this guard would pass vacuously"
@@ -160,7 +160,7 @@ def test_a_risk_gate_is_never_verdicted_pass_or_block(tmp_path):
 
 def test_the_gate_also_reaches_the_action_log(tmp_path):
     """Both write sites, the same pair `post_review`/`merge`/`test_trust` already use."""
-    d = _commit(tmp_path, {"auth.py": "api_key = configure()\n"})
+    d = _commit(tmp_path, {"auth.py": "def login():\n    pass\n"})
     entries = _load("actionlog").read_goal(d, "0001-x.md")
     rows = [e for e in entries if e.get("kind") == "gate"]
     assert [e["gate"] for e in rows] == ["risk_security"]
@@ -179,7 +179,7 @@ def test_a_category_that_did_not_fire_emits_nothing(tmp_path):
 
 def test_only_the_categories_that_fired_are_recorded(tmp_path):
     """The sharper half of the same call: one matched category must not drag its two siblings in."""
-    d = _commit(tmp_path, {"auth.py": "api_key = configure()\n"})
+    d = _commit(tmp_path, {"auth.py": "def login():\n    pass\n"})
     assert [e["gate"] for e in _gates(d) if e["gate"].startswith("risk_")] == ["risk_security"]
 
 

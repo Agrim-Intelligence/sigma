@@ -977,6 +977,57 @@ def test_commit_refuses_when_add_A_staged_a_dotenv(tmp_path):
     assert not any(c.startswith("git commit") for c in run.calls)
 
 
+def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(tmp_path, monkeypatch):
+    """The public `work.py commit` gesture must inspect additions, not only filenames."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    run = _runner([
+        ("--name-status -z", "A\0src/settings.py\0"),
+        ("diff --cached --name-only", "src/settings.py"),
+    ])
+    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
+                        "+++ b/src/settings.py\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n")
+    out = work.commit(d, ON, goal, run=run, message="test: content gate")
+    assert out.startswith("REFUSED")
+    assert "aws-key" in out and "src/settings.py:1" in out
+    assert fixture not in out
+    assert "Added-content checks read only added staged-diff lines" in out
+    assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_documented_work_commit_refuses_when_the_added_content_scan_is_unavailable(tmp_path, monkeypatch):
+    """A failed safety read is not evidence that staged content is safe to commit."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    run = _runner([("diff --cached --name-only", "src/settings.py")])
+
+    def unavailable(_path):
+        raise RuntimeError("scanner failed near " + fixture)
+
+    monkeypatch.setattr(work, "_staged_added_diff", unavailable)
+    out = work.commit(d, ON, goal, run=run, message="test: scan unavailable")
+    assert out.startswith("REFUSED")
+    assert "could not be scanned" in out
+    assert "index has not been reset" in out
+    assert fixture not in out
+    assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_documented_work_commit_allows_the_explicit_synthetic_fixture_value(tmp_path, monkeypatch):
+    """A narrow known fake used by Sigma's tests must not wedge fixture maintenance."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
+    run = _runner([
+        ("diff --cached --name-only", "tests/test_fixture.py"),
+    ])
+    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
+                        "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+fixture = " + fixture + "\n")
+    assert work.commit(d, ON, goal, run=run, message="test: fixture") == "committed on sdlc/0001-x"
+
+
 def test_commit_refusal_names_every_offending_path_not_just_the_first(tmp_path):
     """A refusal that names one of three sends the operator round the loop three times."""
     d = _sdlc(tmp_path)
@@ -1271,6 +1322,98 @@ def test_real_git_an_already_ignored_dotenv_never_trips_the_guard(tmp_path):
     assert work.commit(d, ON, "0001-x.md", message="feat: b") == "committed on sdlc/0001-x"
     assert committed() == {"b.py"}
     assert (repo / ".env").read_text() == "TOKEN=live-secret\n"      # still on disk, untouched
+
+
+def test_real_git_refuses_a_content_shaped_key_in_an_ordinary_filename(tmp_path):
+    """Exercise the exact staged-diff parser used by the documented commit gesture."""
+    repo, d, committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    (repo / "settings.py").write_text("ACCESS_KEY = " + fixture + "\n")
+
+    refusal = work.commit(d, ON, "0001-x.md", message="test: content")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key at settings.py:1:" in refusal
+    assert fixture not in refusal
+    assert "settings.py" not in committed()
+
+
+def test_staged_content_scan_reads_bytes_without_running_git_textconv(tmp_path):
+    """`--no-ext-diff` alone leaves configured textconv commands executable."""
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / ".gitattributes").write_text("*.fixture diff=demo\n")
+    subprocess.run(["git", "-C", str(repo), "add", ".gitattributes"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "attributes"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "diff.demo.textconv", "printf TRANSFORMED"],
+                   check=True)
+    (repo / "input.fixture").write_text("SOURCE_BYTES\n")
+    subprocess.run(["git", "-C", str(repo), "add", "input.fixture"], check=True)
+
+    diff = work._staged_added_diff(repo)
+    assert "+SOURCE_BYTES" in diff
+    assert "TRANSFORMED" not in diff
+
+
+def test_content_scan_ignores_external_git_directory_and_worktree_overrides(tmp_path, monkeypatch):
+    """The scanner must inspect this goal's index even if its caller inherited another repo."""
+    repo, d, _committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    (repo / "settings.py").write_text("ACCESS_KEY = " + fixture + "\n")
+    subprocess.run(["git", "-C", str(repo), "add", "settings.py"], check=True)
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    run = _runner([
+        ("--name-status -z", "A\0settings.py\0"),
+        ("diff --cached --name-only", "settings.py"),
+    ])
+
+    refusal = work.commit(d, ON, "0001-x.md", run=run, message="test: environment isolation")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key at settings.py:1:" in refusal
+    assert fixture not in refusal
+    assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_real_git_refuses_content_in_a_non_ascii_path(tmp_path):
+    """Git C-quotes patch headers, but their identity must still join the raw status path."""
+    repo, d, _committed = _real_repo(tmp_path)
+    fixture = "AKIA" + "Z" * 16
+    name = "é.py"
+    (repo / name).write_text("ACCESS_KEY = " + fixture + "\n")
+
+    refusal = work.commit(d, ON, "0001-x.md", message="test: quoted path")
+    assert refusal.startswith("REFUSED")
+    assert "aws-key" in refusal and fixture not in refusal
+
+
+def test_content_refusal_does_not_echo_a_credential_shaped_filename(tmp_path, monkeypatch):
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    raw = fixture + ".py"
+    run = _runner([
+        ("--name-status -z", "A\0" + raw + "\0"),
+        ("diff --cached --name-only", raw),
+    ])
+    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
+                        "+++ b/" + raw + "\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n")
+    refusal = work.commit(d, ON, goal, run=run, message="test: safe diagnostic")
+    assert refusal.startswith("REFUSED")
+    assert fixture not in refusal and "[REDACTED:aws-key]" in refusal
+
+
+def test_documented_work_commit_allows_a_fixture_assignment(tmp_path, monkeypatch):
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
+    run = _runner([
+        ("diff --cached --name-only", "tests/test_fixture.py"),
+    ])
+    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
+                        "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+SECRET = " + fixture + "\n")
+    assert work.commit(d, ON, goal, run=run, message="test: fixture assignment") == "committed on sdlc/0001-x"
 
 
 def test_real_git_refuses_an_unignored_dotenv_and_the_named_remedy_then_clears_it(tmp_path):
