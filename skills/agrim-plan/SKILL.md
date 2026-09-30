@@ -53,8 +53,8 @@ one per bullet and no prose in that section, for example:
 
 ```markdown
 ## Tests
-- `tests/test_retry.py::test_recovers_after_disconnect`
-- `tests/test_retry.py::TestBounds::test_stops_at_limit`
+- `tests/test_test_first_gate.py`
+- `tests/test_witness.py`
 ```
 
 A file selector includes **every collected test** in that file; each needs its own assertion red.
