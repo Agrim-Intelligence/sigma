@@ -992,6 +992,26 @@ def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(t
     assert out.startswith("REFUSED")
     assert "aws-key" in out and "src/settings.py:1" in out
     assert fixture not in out
+    assert "Added-content checks read only added staged-diff lines" in out
+    assert not any(c.startswith("git commit") for c in run.calls)
+
+
+def test_documented_work_commit_refuses_when_the_added_content_scan_is_unavailable(tmp_path, monkeypatch):
+    """A failed safety read is not evidence that staged content is safe to commit."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    fixture = "AKIA" + "Z" * 16
+    run = _runner([("diff --cached --name-only", "src/settings.py")])
+
+    def unavailable(_path):
+        raise RuntimeError("scanner failed near " + fixture)
+
+    monkeypatch.setattr(work, "_staged_added_diff", unavailable)
+    out = work.commit(d, ON, goal, run=run, message="test: scan unavailable")
+    assert out.startswith("REFUSED")
+    assert "could not be scanned" in out
+    assert "index is unchanged" in out
+    assert fixture not in out
     assert not any(c.startswith("git commit") for c in run.calls)
 
 

@@ -2591,10 +2591,18 @@ def _staged_added_diff(path):
     # Do not use `subprocess.run`: risk-event tests deliberately replace that call to model the
     # later risk detector.  This independent read must neither consume that fixture nor reorder
     # the detector's observable commit-after-scan lifecycle.
+    # Direct unit callers can supply a synthetic `run` trace without creating a repository.  Their
+    # fake worktree has no `.git`, so there is no staged diff to inspect; the real CLI reaches this
+    # function only after `git add -A` succeeded and therefore always has Git metadata.  Do not
+    # mask an actual Git failure below: once a repository is present, an unreadable diff refuses.
+    if not (pathlib.Path(path) / ".git").exists():
+        return ""
     proc = subprocess.Popen(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
                             cwd=str(path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True)
     out, _ = proc.communicate()
+    if proc.returncode:
+        raise RuntimeError("staged-diff scan failed")
     return out
 
 
@@ -2606,10 +2614,7 @@ def _added_secret_hits(path):
     The returned metadata is location-only; a diagnostic can never accidentally interpolate a
     matched value.
     """
-    try:
-        diff = _staged_added_diff(path)
-    except Exception:
-        return {}
+    diff = _staged_added_diff(path)
     hits, current, line = {}, "", 0
     for row in diff.splitlines():
         if row.startswith("+++ "):
@@ -2665,7 +2670,11 @@ def _secret_refusal(path, staged, config, run):
     rather than one this commit is creating, and refusing every future commit over it would wedge
     the repo with no reachable remedy."""
     allowed = _allowed_secret_paths(config)
-    content_hits = _added_secret_hits(path)
+    try:
+        content_hits = _added_secret_hits(path)
+    except Exception:                   # never render scanner failures: they can contain a secret
+        return ("REFUSED — added staged content could not be scanned, so nothing was committed. "
+                "The index is unchanged; resolve the scanner failure and re-run `work.py commit`.")
     if not any(_is_offender(line, allowed) for line in staged.splitlines()) and not content_hits:
         return ""                       # the ordinary path: no extra git call, byte-identical
     rows = _staged_rows(path, run)
@@ -2714,13 +2723,14 @@ def _secret_refusal(path, staged, config, run):
                   "Nothing was committed. The index could NOT be cleaned up, so those paths are "
                   "STILL STAGED — unstage them yourself before the ignore rule can take effect. "
                   "Every file is still on disk, untouched.")
-    return ("REFUSED — `git add -A` staged %d secret-shaped file(s) in this goal's worktree. %s\n%s\n"
+    return ("REFUSED — `git add -A` staged %d path(s) or added-content match(es) requiring attention "
+            "in this goal's worktree. %s\n%s\n"
             "  Deliberate (a fixture, a test key, a certificate)? Add the EXACT path to "
             "`work.allow_secret_paths` in .sdlc/config.json — e.g. \"work\": "
             "{\"allow_secret_paths\": [%s]} — then re-run. Exact paths only: a glob would be an off "
-            "switch, not an allowlist.\n  This matched NAMES only; no file was read. It refuses "
-            "rather than warns because a wedged run costs minutes and a pushed credential must be "
-            "rotated."
+            "switch, not an allowlist.\n  Added-content checks read only added staged-diff lines; "
+            "diagnostics never show matched values. It refuses rather than warns because a wedged "
+            "run costs minutes and a pushed credential must be rotated."
             % (len(offenders), state_line, "\n".join(lines),
                ", ".join(json.dumps(_diagnostic_path(raw)) for _, raw, _hits in offenders)))
 
