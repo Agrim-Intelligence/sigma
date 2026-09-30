@@ -90,3 +90,54 @@ def test_scan_output_renders_and_check_rejects_bad_inventory(tmp_path):
 
 def test_committed_inventory_matches_the_tracked_write_surface():
     assert _module().ratchet(ROOT, ROOT / "docs" / "launch" / "write-surface.json") == []
+
+
+def test_each_python_write_rule_has_a_positive_and_a_nonexecuting_lookalike(tmp_path):
+    source = tmp_path / "writes.py"
+    source.write_text('''"""gh label delete; git push; rm -rf are documentation only."""
+import shutil
+import os
+import subprocess
+from pathlib import Path
+
+def writes(path):
+    subprocess.run(["gh", "issue", "delete", "1"])
+    subprocess.run(["gh", "pr", "merge", "1"])
+    subprocess.run(["gh", "label", "delete", "x"])
+    subprocess.run(["gh", "project", "item-delete", "x"])
+    subprocess.run(["gh", "api", "-X", "POST", "x"])
+    _graphql("mutation { x }")
+    subprocess.run(["git", "push"])
+    subprocess.run(["git", "reset", "--hard"])
+    shutil.rmtree(path)
+    os.unlink(path)
+    Path(path).write_text("x")
+''')
+    got = {row["rule"] for row in _module().scan_paths(tmp_path, [source])}
+    assert got == {"gh-issue", "gh-pr", "gh-label", "gh-project", "gh-api-write",
+                   "graphql-mutation", "git-push", "git-destructive", "fs-rmtree",
+                   "fs-remove", "fs-write"}
+
+
+def test_shell_write_sites_include_label_delete_and_ignore_comments(tmp_path):
+    source = tmp_path / "writes.sh"
+    source.write_text('''#!/bin/sh
+# gh label delete docs-only
+printf '%s\\n' 'git push docs-only'
+gh label delete legacy
+git push origin topic
+git reset --hard HEAD
+rm -rf scratch
+''')
+    got = {row["rule"] for row in _module().scan_paths(tmp_path, [source])}
+    assert got == {"gh-label", "git-push", "git-destructive", "fs-rmtree"}
+
+
+def test_documented_shell_label_delete_control_fails_the_ratchet(tmp_path):
+    source = tmp_path / "control.sh"
+    source.write_text("gh label delete legacy\\n")
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(json.dumps({"entries": []}))
+    assert _module().ratchet(tmp_path, inventory) == [
+        "new write site control.sh:<script> gh-label -- add it to docs/launch/write-surface.json with its gate"
+    ]

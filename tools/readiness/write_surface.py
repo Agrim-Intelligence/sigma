@@ -9,6 +9,7 @@ EXIT: 0 = inventory rendered; 1 = ratchet findings; 2 = bad arguments.
 import argparse
 import ast
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,48 @@ _GH_ACTIONS = {"issue": {"close", "reopen", "edit", "comment", "create", "delete
                "project": {"item-edit", "item-add", "item-archive", "item-delete", "field-create", "create", "link", "copy", "edit", "delete"}}
 _REMOVE_METHODS = {"unlink", "rmdir"}
 _WRITE_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
+
+
+def _gate(path):
+    """Known runtime gates; every other entry states the absence of one explicitly."""
+    if path == "skills/agrim-loop/scripts/work.py":
+        return "work.enabled; merge requires fresh verify evidence and CLEAN PR"
+    if path == "skills/agrim-loop/scripts/feature_rebase.py":
+        return "work.rebase_upkeep"
+    if path == "skills/agrim-loop/scripts/sources.py":
+        return "discovery.source == github; board writes require project.enabled"
+    if path == "skills/agrim-rebase/scripts/verify_merge.py":
+        return "human input() confirmation"
+    return "ungated"
+
+
+def _shell_rules(line):
+    """Classify one executable shell command; comments and quoted examples are not commands."""
+    if not line.strip() or line.lstrip().startswith("#"):
+        return set()
+    try:
+        words = shlex.split(line, comments=True)
+    except ValueError:
+        return set()
+    if not words:
+        return set()
+    if words[:3] == ["gh", "label", "delete"]:
+        return {"gh-label"}
+    if len(words) >= 3 and words[:2] == ["gh", "issue"] and words[2] in _GH_ACTIONS["issue"]:
+        return {"gh-issue"}
+    if len(words) >= 3 and words[:2] == ["gh", "pr"] and words[2] in _GH_ACTIONS["pr"]:
+        return {"gh-pr"}
+    if len(words) >= 3 and words[:2] == ["gh", "project"] and words[2] in _GH_ACTIONS["project"]:
+        return {"gh-project"}
+    if words[:2] == ["gh", "api"] and any(w.upper() in {"POST", "PATCH", "PUT", "DELETE"} for w in words):
+        return {"gh-api-write"}
+    if words[:2] == ["git", "push"]:
+        return {"git-push"}
+    if words and words[0] == "git" and any(w in {"-D", "--hard", "remove", "rm", "tag"} for w in words[1:]):
+        return {"git-destructive"}
+    if words and words[0] == "rm" and any(w.startswith("-r") or w.startswith("-R") for w in words[1:]):
+        return {"fs-rmtree"}
+    return set()
 
 
 def _call_name(node):
@@ -114,20 +157,24 @@ def scan_paths(root, paths):
         text = path.read_text(encoding="utf-8", errors="replace")
         groups = {}
         owners = _functions(path, text)
-        tree = ast.parse(text, filename=str(path)) if path.suffix == ".py" else None
-        if tree is None:
-            continue
-        values = _values(tree)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
-            function = max(matching, default=(0, "<module>"))[1]
-            for rule in _rules_for_call(node, values):
-                key = (path.relative_to(root).as_posix(), function, rule)
-                groups[key] = groups.get(key, 0) + 1
+        if path.suffix == ".sh":
+            for line in text.splitlines():
+                for rule in _shell_rules(line):
+                    key = (path.relative_to(root).as_posix(), "<script>", rule)
+                    groups[key] = groups.get(key, 0) + 1
+        else:
+            tree = ast.parse(text, filename=str(path))
+            values = _values(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
+                function = max(matching, default=(0, "<module>"))[1]
+                for rule in _rules_for_call(node, values):
+                    key = (path.relative_to(root).as_posix(), function, rule)
+                    groups[key] = groups.get(key, 0) + 1
         found.extend({"path": path, "function": function, "rule": rule, "count": count,
-                      "gate": "ungated", "risk": RISK[rule]}
+                      "gate": _gate(path), "risk": RISK[rule]}
                      for (path, function, rule), count in groups.items())
     return sorted(found, key=lambda item: (item["path"], item["function"], item["rule"]))
 
@@ -183,7 +230,11 @@ def main(argv=None):
         print("\n".join(messages))
         return 1 if messages else 0
     entries = json.loads(Path(args.inventory).read_text()).get("entries", [])
-    print("| Path | Function | Rule | Count | Gate | Risk |\n|---|---|---|---:|---|---|")
+    print("# Write-surface inventory\n\n"
+          "The `check` command ratchets tracked Python and shell write sites. Control: in a temporary "
+          "tracked shell file add `gh label delete legacy`, run `python3 tools/readiness/write_surface.py "
+          "check . docs/launch/write-surface.json`, and see it fail as a new `gh-label` site; remove the "
+          "line before the green run.\n\n| Path | Function | Rule | Count | Gate | Risk |\n|---|---|---|---:|---|---|")
     for e in entries: print("| {path} | {function} | {rule} | {count} | {gate} | {risk} |".format(**e))
     return 0
 

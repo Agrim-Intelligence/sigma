@@ -1,3 +1,7 @@
+# Write-surface inventory
+
+The `check` command ratchets tracked Python and shell write sites. Control: in a temporary tracked shell file add `gh label delete legacy`, run `python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json`, and see it fail as a new `gh-label` site; remove the line before the green run.
+
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
@@ -58,17 +62,17 @@
 | skills/agrim-loop/scripts/feature_judge.py | _record_spend | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/feature_propagate.py | _store | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | ungated | high |
-| skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | ungated | high |
-| skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | ungated | high |
-| skills/agrim-loop/scripts/feature_rebase.py | _mark_blocked | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | _pushed | git-push | 1 | ungated | high |
-| skills/agrim-loop/scripts/feature_rebase.py | _rebase_feature | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | _remember | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | _upkeep | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | ack | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | mark_push_refused | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_rebase.py | push_refused | fs-remove | 1 | ungated | high |
+| skills/agrim-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | work.rebase_upkeep | high |
+| skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | work.rebase_upkeep | high |
+| skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | work.rebase_upkeep | high |
+| skills/agrim-loop/scripts/feature_rebase.py | _mark_blocked | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | _pushed | git-push | 1 | work.rebase_upkeep | high |
+| skills/agrim-loop/scripts/feature_rebase.py | _rebase_feature | fs-write | 1 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | _remember | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | _upkeep | fs-write | 1 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | ack | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | mark_push_refused | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | push_refused | fs-remove | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
@@ -122,38 +126,38 @@
 | skills/agrim-loop/scripts/slack_commands_listen.py | acquire_single_instance | fs-write | 3 | ungated | medium |
 | skills/agrim-loop/scripts/slack_commands_listen.py | cut_worktree | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/slack_commands_listen.py | release_single_instance | fs-remove | 2 | ungated | high |
-| skills/agrim-loop/scripts/sources.py | _apply_custom_fields | gh-project | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _archive_card | graphql-mutation | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _create_issue | gh-label | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _ensure_board | gh-project | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _ensure_labels | gh-label | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _ensure_priority_field | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _ensure_status_field | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _gh_json | gh-label | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _graphql | graphql-mutation | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _item_id | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _read_card | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _run | gh-label | 3 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _run_gh | gh-label | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _set_board_status | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _swap_labels | graphql-mutation | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _sync_backlog | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _warn_unmatched_column | gh-issue | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _write_board_phase | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _write_priority_field | gh-project | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | _write_priority_label | gh-label | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | append_to_body | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | append_to_body | gh-issue | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | complete | gh-issue | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | create_dependency | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | create_dependency | gh-issue | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | create_dependency | gh-label | 2 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | ensure_labels_report | gh-label | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | fetch_issues_rest | gh-label | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | note | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | note | gh-api-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | note | gh-issue | 1 | ungated | medium |
-| skills/agrim-loop/scripts/sources.py | release | gh-issue | 2 | ungated | medium |
+| skills/agrim-loop/scripts/sources.py | _apply_custom_fields | gh-project | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _archive_card | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _create_issue | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _ensure_board | gh-project | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _ensure_labels | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _ensure_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _ensure_status_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _gh_json | gh-label | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _graphql | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _item_id | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _read_card | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _run | gh-label | 3 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _run_gh | gh-label | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _set_board_status | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _swap_labels | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _sync_backlog | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _warn_unmatched_column | gh-issue | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _write_board_phase | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _write_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | _write_priority_label | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | append_to_body | fs-write | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | append_to_body | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | complete | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | create_dependency | fs-write | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | create_dependency | gh-issue | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | create_dependency | gh-label | 2 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | ensure_labels_report | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | fetch_issues_rest | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | note | fs-write | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | note | gh-api-write | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | note | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/agrim-loop/scripts/sources.py | release | gh-issue | 2 | discovery.source == github; board writes require project.enabled | medium |
 | skills/agrim-loop/scripts/state.py | _cursor_lock | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/state.py | _patch_cursor | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/state.py | _queue | fs-write | 1 | ungated | medium |
@@ -200,37 +204,37 @@
 | skills/agrim-loop/scripts/watch_daemon.py | take_over | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/watch_daemon.py | touch_heartbeat | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/witness.py | record | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _emit_test_trust | gh-pr | 2 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _reconcile_behind | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _review_post_request | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | ungated | high |
-| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | close_design | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | finish | fs-remove | 2 | ungated | high |
-| skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | main | gh-pr | 3 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | merge | gh-pr | 4 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | normalise_ci_rollup | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | post_review | gh-pr | 3 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
-| skills/agrim-loop/scripts/work.py | record_plan_review | gh-pr | 3 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | record_subagent_review | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | review_evidence | gh-pr | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | run_resolved_review | gh-pr | 5 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _emit_test_trust | gh-pr | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _reconcile_behind | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _review_post_request | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | close_design | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | finish | fs-remove | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | main | gh-pr | 3 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | merge | gh-pr | 4 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | normalise_ci_rollup | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | post_review | gh-pr | 3 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | pr | git-push | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | record_plan_review | gh-pr | 3 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | record_subagent_review | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | review_evidence | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | run_resolved_review | gh-pr | 5 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
 | skills/agrim-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
 | skills/agrim-rebase/scripts/conflict_walk.py | _resolve_to_stage | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
@@ -238,11 +242,11 @@
 | skills/agrim-rebase/scripts/rebase_brief.py | attempt_rebase | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | clear_context_snapshots | fs-remove | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | push_branch | git-push | 1 | ungated | high |
-| skills/agrim-rebase/scripts/verify_merge.py | _parse_created_pr_number | gh-pr | 1 | ungated | medium |
-| skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-remove | 1 | ungated | high |
-| skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-write | 1 | ungated | medium |
-| skills/agrim-rebase/scripts/verify_merge.py | ensure_landing_pr | gh-pr | 3 | ungated | medium |
-| skills/agrim-rebase/scripts/verify_merge.py | merge_pr | gh-pr | 1 | ungated | medium |
+| skills/agrim-rebase/scripts/verify_merge.py | _parse_created_pr_number | gh-pr | 1 | human input() confirmation | medium |
+| skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-remove | 1 | human input() confirmation | high |
+| skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-write | 1 | human input() confirmation | medium |
+| skills/agrim-rebase/scripts/verify_merge.py | ensure_landing_pr | gh-pr | 3 | human input() confirmation | medium |
+| skills/agrim-rebase/scripts/verify_merge.py | merge_pr | gh-pr | 1 | human input() confirmation | medium |
 | skills/agrim-scope/scripts/assign.py | _apply_assignment | gh-issue | 1 | ungated | medium |
 | skills/agrim-scope/scripts/assign.py | execute | fs-write | 2 | ungated | medium |
 | skills/agrim-scope/scripts/scope.py | main | fs-write | 2 | ungated | medium |

@@ -469,7 +469,7 @@
       "function": "_clear_blocked",
       "rule": "fs-remove",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -477,7 +477,7 @@
       "function": "_drop_worktree",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -485,7 +485,7 @@
       "function": "_drop_worktree",
       "rule": "git-destructive",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -493,7 +493,7 @@
       "function": "_mark_blocked",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -501,7 +501,7 @@
       "function": "_pushed",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -509,7 +509,7 @@
       "function": "_rebase_feature",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -517,7 +517,7 @@
       "function": "_remember",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -525,7 +525,7 @@
       "function": "_upkeep",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -533,7 +533,7 @@
       "function": "ack",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -541,7 +541,7 @@
       "function": "mark_push_refused",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "medium"
     },
     {
@@ -549,7 +549,7 @@
       "function": "push_refused",
       "rule": "fs-remove",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -981,7 +981,7 @@
       "function": "_apply_custom_fields",
       "rule": "gh-project",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -989,7 +989,7 @@
       "function": "_archive_card",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -997,7 +997,7 @@
       "function": "_create_issue",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1005,7 +1005,7 @@
       "function": "_ensure_board",
       "rule": "gh-project",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1013,7 +1013,7 @@
       "function": "_ensure_labels",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1021,7 +1021,7 @@
       "function": "_ensure_priority_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1029,7 +1029,7 @@
       "function": "_ensure_status_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1037,7 +1037,7 @@
       "function": "_gh_json",
       "rule": "gh-label",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1045,7 +1045,7 @@
       "function": "_graphql",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1053,7 +1053,7 @@
       "function": "_item_id",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1061,7 +1061,7 @@
       "function": "_read_card",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1069,7 +1069,7 @@
       "function": "_run",
       "rule": "gh-label",
       "count": 3,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1077,7 +1077,7 @@
       "function": "_run_gh",
       "rule": "gh-label",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1085,7 +1085,7 @@
       "function": "_set_board_status",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1093,7 +1093,7 @@
       "function": "_swap_labels",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1101,7 +1101,7 @@
       "function": "_sync_backlog",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1109,7 +1109,7 @@
       "function": "_warn_unmatched_column",
       "rule": "gh-issue",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1117,7 +1117,7 @@
       "function": "_write_board_phase",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1125,7 +1125,7 @@
       "function": "_write_priority_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1133,7 +1133,7 @@
       "function": "_write_priority_label",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1141,7 +1141,7 @@
       "function": "append_to_body",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1149,7 +1149,7 @@
       "function": "append_to_body",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1157,7 +1157,7 @@
       "function": "complete",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1165,7 +1165,7 @@
       "function": "create_dependency",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1173,7 +1173,7 @@
       "function": "create_dependency",
       "rule": "gh-issue",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1181,7 +1181,7 @@
       "function": "create_dependency",
       "rule": "gh-label",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1189,7 +1189,7 @@
       "function": "ensure_labels_report",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1197,7 +1197,7 @@
       "function": "fetch_issues_rest",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1205,7 +1205,7 @@
       "function": "note",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1213,7 +1213,7 @@
       "function": "note",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1221,7 +1221,7 @@
       "function": "note",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1229,7 +1229,7 @@
       "function": "release",
       "rule": "gh-issue",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1605,7 +1605,7 @@
       "function": "_clear_completed_merge_deliveries",
       "rule": "fs-remove",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1613,7 +1613,7 @@
       "function": "_close_issue_the_base_cannot",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1621,7 +1621,7 @@
       "function": "_create_exclusive",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1629,7 +1629,7 @@
       "function": "_delete_remote_branch",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1637,7 +1637,7 @@
       "function": "_emit_test_trust",
       "rule": "gh-pr",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1645,7 +1645,7 @@
       "function": "_reconcile_behind",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1653,7 +1653,7 @@
       "function": "_repair_review_post_effects",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1661,7 +1661,7 @@
       "function": "_review_post_request",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1669,7 +1669,7 @@
       "function": "_save",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1677,7 +1677,7 @@
       "function": "_try_union_changelog",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1685,7 +1685,7 @@
       "function": "_write_merge_delivery",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1693,7 +1693,7 @@
       "function": "_write_merge_delivery",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1701,7 +1701,7 @@
       "function": "close_design",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1709,7 +1709,7 @@
       "function": "finish",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1717,7 +1717,7 @@
       "function": "finish",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1725,7 +1725,7 @@
       "function": "finish",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1733,7 +1733,7 @@
       "function": "finish",
       "rule": "git-destructive",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1741,7 +1741,7 @@
       "function": "main",
       "rule": "gh-pr",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1749,7 +1749,7 @@
       "function": "merge",
       "rule": "gh-pr",
       "count": 4,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1757,7 +1757,7 @@
       "function": "merge_design",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1765,7 +1765,7 @@
       "function": "normalise_ci_rollup",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1773,7 +1773,7 @@
       "function": "post_review",
       "rule": "gh-pr",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1781,7 +1781,7 @@
       "function": "pr",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1789,7 +1789,7 @@
       "function": "pr",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1797,7 +1797,7 @@
       "function": "rebase",
       "rule": "git-destructive",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1805,7 +1805,7 @@
       "function": "rebase",
       "rule": "git-push",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -1813,7 +1813,7 @@
       "function": "record_plan_review",
       "rule": "gh-pr",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1821,7 +1821,7 @@
       "function": "record_subagent_review",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1829,7 +1829,7 @@
       "function": "review_evidence",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1837,7 +1837,7 @@
       "function": "review_evidence",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1845,7 +1845,7 @@
       "function": "run_resolved_review",
       "rule": "gh-pr",
       "count": 5,
-      "gate": "ungated",
+      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
     {
@@ -1909,7 +1909,7 @@
       "function": "_parse_created_pr_number",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "human input() confirmation",
       "risk": "medium"
     },
     {
@@ -1917,7 +1917,7 @@
       "function": "_write_delivery",
       "rule": "fs-remove",
       "count": 1,
-      "gate": "ungated",
+      "gate": "human input() confirmation",
       "risk": "high"
     },
     {
@@ -1925,7 +1925,7 @@
       "function": "_write_delivery",
       "rule": "fs-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "human input() confirmation",
       "risk": "medium"
     },
     {
@@ -1933,7 +1933,7 @@
       "function": "ensure_landing_pr",
       "rule": "gh-pr",
       "count": 3,
-      "gate": "ungated",
+      "gate": "human input() confirmation",
       "risk": "medium"
     },
     {
@@ -1941,7 +1941,7 @@
       "function": "merge_pr",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
+      "gate": "human input() confirmation",
       "risk": "medium"
     },
     {
