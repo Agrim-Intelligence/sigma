@@ -1,6 +1,6 @@
 # Privacy
 
-Sigma sends no telemetry. The captured `local-goals` onboarding run launched only local `git` commands. The local-goals doctor capture also launched `gh api`; this hook records that launch but cannot inspect the CLI's own connection. Your agent host may communicate with its model provider under that host's own policy, rather than through Sigma.
+Sigma does not report usage data. The captured `local-goals` onboarding run launched only local `git` commands. The local-goals doctor capture also launched `gh api`; this hook records that launch but cannot inspect the CLI's own connection. Your agent host may communicate with its model provider under that host's own policy, rather than through Sigma.
 
 The checked-in evidence records scripted local and GitHub-mode onboarding captures. Use `python3 tools/readiness/egress_capture.py run --log egress.jsonl -- <command>` to capture destinations and launch intent; it never records request paths, bodies, or field values.
 
