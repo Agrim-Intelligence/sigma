@@ -1,7 +1,7 @@
 """Read-only backlog status: counts by goal status + run cursor + queue state. Zero-dep.
 (A 3-line frontmatter read is duplicated from agrim-loop's frontmatter.py on purpose — the two
 skills are independently installable units; sharing a lib across them would over-couple them.)"""
-import sys, pathlib, re, json, importlib.util
+import sys, pathlib, re, json, importlib.util, time
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -91,6 +91,24 @@ def _config(base):
         return json.loads((base / "config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def _loop_heartbeat_segment(sdlc_dir, now=None):
+    """Newest loop heartbeat age for the status tail; empty means no managing loop evidence."""
+    now = time.time() if now is None else now
+    latest = None
+    directory = pathlib.Path(sdlc_dir) / "state" / "heartbeat"
+    for path in directory.glob("*.json") if directory.is_dir() else ():
+        try:
+            seen = json.loads(path.read_text()).get("last_seen")
+            if isinstance(seen, (int, float)) and not isinstance(seen, bool):
+                latest = seen if latest is None else max(latest, seen)
+        except (OSError, ValueError, TypeError):
+            pass
+    if latest is None:
+        return ""
+    age = max(0, int(now - latest))
+    return f"loop heartbeat: {age // 3600:02d}:{(age % 3600) // 60:02d}:{age % 60:02d} ago"
 
 
 def _github_counts(gh_cfg, run, config=None):
@@ -413,6 +431,9 @@ def main(argv):
     awaiting = _awaiting_merge_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if awaiting:                                # #255: silent unless a goal is awaiting a merge
         line += f" | {awaiting}"
+    heartbeat = _loop_heartbeat_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if heartbeat:
+        line += f" | {heartbeat}"
     deltas = _legacy_delta_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if deltas:                                  # #327: silent unless a legacy delta record is live
         line += f" | {deltas}"

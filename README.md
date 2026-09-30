@@ -2039,8 +2039,7 @@ the operator must remove that damaged marker after confirming no worker is live.
 > Run `python3 <sigma>/skills/agrim-loop/scripts/loop.py session-active .sdlc`. If it prints `ACTIVE`,
 > stop here — a session is already running, nothing to do.
 >
-> If it prints `FREE`: run `python3 <sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid
-> "$PPID"` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
+> If it prints `FREE`: capture `session_generation=$(python3 <sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid "$PPID")` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
 > shell on THIS call and on every `next`/`next-batch`/`session-end` call below, rather than trying to
 > remember a value captured earlier — it stays the same stable value every time you read it during
 > this one routine firing, which is exactly what makes it safe to use as this firing's own session
@@ -2053,7 +2052,7 @@ the operator must remove that damaged marker after confirming no worker is live.
 > pick, or the whole point of the marker (knowing precisely what's still live) is undermined by the
 > one thing it can't see. Let it run to backlog-empty or budget, exactly as `/agrim-loop` already does
 > unattended. When it stops, run `python3 <sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
-> --session-pid "$PPID"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
+> --session-pid "$PPID" --session-generation "$session_generation"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
 > next firing correctly sees `FREE` again.
 
 Not zero-flag at the `loop.py` CLI level — `--session-pid "$PPID"` appears on every call above, and

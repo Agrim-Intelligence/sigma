@@ -24,6 +24,7 @@ def _mod(name):
 
 
 pr = _mod("phase_report")
+loop = _mod("loop")
 #: #2112: the module `phase_report.py` SHELLS OUT to. Loaded here only to read its constants, so a
 #: sentence this file asserts is the renderer's own text, never a copy that can drift from it.
 render = _mod("render")
@@ -48,6 +49,21 @@ def _sdlc(tmp_path, config=None):
     cfg = config or {"journal": {"enabled": True}}
     (sdlc / "config.json").write_text(json.dumps(cfg))
     return sdlc
+
+
+def test_documented_phase_start_cannot_recreate_a_closed_session_heartbeat(tmp_path):
+    """A delayed phase gesture is a no-op for loop liveness after its session has ended."""
+    sdlc = _sdlc(tmp_path)
+    pid = os.getpid()
+    generation = loop.session_start(sdlc, pid)
+    loop.session_end(sdlc, pid, generation=generation)
+
+    result = _run("start", str(sdlc), "42", "research", "--model", "sonnet",
+                  "--pid", str(pid))
+
+    assert result.returncode == 0, result.stderr
+    assert not loop._session_marker_path(sdlc, pid).exists()
+    assert not loop.session_heartbeat_path(sdlc, pid).exists()
 
 
 def _write_transcript(path, lines):

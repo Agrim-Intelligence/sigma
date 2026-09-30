@@ -147,6 +147,19 @@ def _load(name):
     return m
 
 
+def _refresh_loop_heartbeat(sdlc_dir, pid):
+    """A phase boundary refreshes an extant loop; it never recreates a closed session."""
+    if pid is None:
+        return
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("loop_heartbeat", _HERE / "loop.py")
+        loop = importlib.util.module_from_spec(spec); spec.loader.exec_module(loop)
+        loop.refresh_registered_session_heartbeat(sdlc_dir, pid)
+    except Exception:
+        pass
+
+
 # --------------------------------------------------------------------------- pricing
 
 
@@ -1686,6 +1699,7 @@ def cmd_start(argv):
         # there is no banner or ledger event a refusal here could be dropping.
         print(f"phase_report.py: {pid_err}", file=sys.stderr)
         return 2
+    _refresh_loop_heartbeat(sdlc_dir, pid)
     model = flags.get("model", "")
     host_model = flags.get("host-model", "")
     requested_model = flags.get("requested-model", "")
@@ -2027,6 +2041,7 @@ def cmd_end(argv):
               f"(falling back to the dead-writer/lease check rather than refusing)",
               file=sys.stderr)
         caller_pid = None
+    _refresh_loop_heartbeat(sdlc_dir, caller_pid)
     codex_thread = _caller_codex_thread()
     claude_session = _session_id() or None
 

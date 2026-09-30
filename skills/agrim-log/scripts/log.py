@@ -745,6 +745,25 @@ def _tail(shown, collapsed, stale, withheld, blocked_hidden=0):
     return "; ".join(parts) + " — the action log records what happened, never what unblocks next."
 
 
+def loop_heartbeat_tail(sdlc_dir, now=None):
+    """The newest managing-loop age, or an honest empty string when no loop has registered.
+
+    This reader deliberately does not infer life from a PID: a fresh heartbeat says an idle loop is
+    still checking, while an old one is the visible evidence a human needs to investigate.
+    """
+    now = time.time() if now is None else now
+    directory = pathlib.Path(sdlc_dir) / "state" / "heartbeat"
+    newest = None
+    for path in directory.glob("*.json") if directory.is_dir() else ():
+        try:
+            seen = json.loads(path.read_text()).get("last_seen")
+            if isinstance(seen, (int, float)) and not isinstance(seen, bool):
+                newest = max(newest, seen) if newest is not None else seen
+        except (OSError, ValueError, TypeError):
+            pass
+    return "" if newest is None else "loop heartbeat: " + _format_ago(now - newest)
+
+
 def slots(sdlc_dir, now=None, render_py=None):
     """The rendered `slots` output — a string, ready to print, in every state including the ones
     where it has nothing to render.
@@ -790,7 +809,8 @@ def slots(sdlc_dir, now=None, render_py=None):
     block = {
         "headline": _headline(in_flight, len(rows), blocked),
         "slots": shown,
-        "tail": _tail(len(shown), collapsed, stale, len(withheld), blocked_hidden),
+        "tail": _tail(len(shown), collapsed, stale, len(withheld), blocked_hidden)
+                + (("; " + loop_heartbeat_tail(sdlc_dir, now)) if loop_heartbeat_tail(sdlc_dir, now) else ""),
     }
     ok, rendered, why = render_block_a(block, render_py=render_py)
     if ok:

@@ -484,6 +484,13 @@ def test_slots_renders_a_contract_shaped_block_for_a_real_goal(tmp_path):
     assert out.rstrip().endswith("never what unblocks next.")
 
 
+def test_loop_heartbeat_tail_reports_age_without_calling_an_idle_loop_dead(tmp_path):
+    d = _sdlc(tmp_path)
+    hb = pathlib.Path(d) / "state" / "heartbeat"; hb.mkdir(parents=True)
+    (hb / "42.json").write_text(json.dumps({"pid": 42, "last_seen": 1000.0}))
+    assert log.loop_heartbeat_tail(d, now=1061.0) == "loop heartbeat: 00:01:01 ago"
+
+
 def test_the_description_never_claims_what_unblocks_next(tmp_path):
     """§3's arrow is a requirement WITH exceptions (#2124), and this producer is squarely in one:
     the action log records what happened and holds no record of what unblocks anything. So no

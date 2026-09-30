@@ -7,7 +7,7 @@ for any of the three, so a config without it behaves exactly as before. The irre
 is enforced by /agrim-loop SKILL.md prose. Claim and outcome are mirrored to the team ledger
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
-import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib
+import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid
 import contextlib
 import errno
 
@@ -1924,7 +1924,7 @@ def _ensure_unit_tracking(sdlc_dir, goal, cooldown_s=300):
         print(f"loop: unit-tracking not checked (non-fatal): {exc}", file=sys.stderr)
 
 
-def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
+def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
     the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
     short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
@@ -2026,12 +2026,16 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
     same blocked goal and the loop could not reach the pickable issue behind it (measured live).
     See `_pick_dependency_hold` for what it reads, what it costs, and the three states it fails
     open on."""
-    session_pid = os.getppid() if session_pid is None else session_pid
     # #1445: the reconciliation sweep runs here TOO, not only in `next_batch`'s prologue. It was
     # placed there alone to avoid paying it once per goal in a batch -- but that amplification is
     # already prevented by its own TTL watermark (gate 2), which makes a not-due call one file read.
     # The cost of leaving it out was total: an operator who uses `next` rather than `next-batch`
     # NEVER swept, so a repo could sit ~23h past a 60-minute TTL while `next` ran repeatedly.
+    session_pid = os.getppid() if session_pid is None else session_pid
+    # A standalone picker pass is a loop tick, including an empty backlog. `next_batch` already
+    # refreshed immediately before its one prologue sweep, so its slot calls opt out explicitly.
+    if refresh_heartbeat:
+        write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
     just_unparked = _auto_unpark_sweep(sdlc_dir, config)
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
@@ -2325,6 +2329,9 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # NOT inside `_next()` where `_auto_unpark_sweep` sits. `next_batch` calls `_next()` up to
     # `max_concurrent` times, so anything placed there is paid 8x per batch on this repo's own
     # config; that amplification is an existing cost this must not copy.
+    session_pid = os.getppid() if session_pid is None else session_pid
+    # This prologue can be the only tick when reconciliation blocks or drains the batch.
+    write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
     if max_concurrent is None:
         enabled, cap = goals_parallel(config)
@@ -2332,7 +2339,6 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # Keep the old batch shape (only the remaining number of goal lines, with the
     # terminal reported on the next call) using the SAME session-local count that
     # `_next` reserves atomically. The reservation remains the final race guard.
-    session_pid = os.getppid() if session_pid is None else session_pid
     ceilings = [n for n in (_handoff_ceiling(config.get("handoff") or {}),
                              (config.get("budget") or {}).get("max_iterations")) if n]
     if ceilings:
@@ -2349,7 +2355,8 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     picks = []
     skip = set(extra_skip)
     for _ in range(max(1, max_concurrent)):
-        kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid)
+        kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
+                           refresh_heartbeat=False)
         if kind != "goal":
             picks.append((kind, goal))
             break
@@ -2360,6 +2367,11 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
 
 def _session_dir(sdlc_dir):
     return pathlib.Path(sdlc_dir) / "state" / "sessions"
+
+
+def _session_heartbeat_dir(sdlc_dir):
+    """The loop's liveness evidence, separate from admission state and safe to leave on a crash."""
+    return pathlib.Path(sdlc_dir) / "state" / "heartbeat"
 
 
 _CODEX_THREAD_ID = re.compile(
@@ -2389,6 +2401,86 @@ def _session_marker_path(sdlc_dir, session_pid):
     pid = int(session_pid)
     thread = _session_codex_thread()
     return _session_dir(sdlc_dir) / (f"{pid}-{thread}.active" if thread else f"{pid}.active")
+
+
+def session_heartbeat_path(sdlc_dir, session_pid):
+    """One JSON heartbeat per managing-session identity, matching its registry filename exactly."""
+    return _session_heartbeat_dir(sdlc_dir) / (_session_marker_path(sdlc_dir, session_pid).stem + ".json")
+
+
+def write_session_heartbeat(sdlc_dir, session_pid, now=None, generation=None):
+    """Atomically refresh a loop heartbeat. A write failure is diagnostic-only, never a run stop."""
+    try:
+        pid = int(session_pid)
+        path = session_heartbeat_path(sdlc_dir, pid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        seen = time.time() if now is None else float(now)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
+        try:
+            with os.fdopen(fd, "w") as stream:
+                data = {"pid": pid, "last_seen": seen}
+                if generation:
+                    data["generation"] = generation
+                json.dump(data, stream)
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(tmp, path)
+        finally:
+            pathlib.Path(tmp).unlink(missing_ok=True)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def refresh_registered_session_heartbeat(sdlc_dir, session_pid):
+    """Refresh a heartbeat only while its session marker is still registered.
+
+    Phase-boundary reporters run in short-lived processes.  They may arrive after a clean
+    ``session-end`` has removed the managing session, so their liveness update must not recreate
+    a heartbeat with no corresponding registry marker.  Read the owner generation and publish
+    under the same stripe lock as ``session_end``; an end either happens before this no-op or
+    after it and removes both files.
+    """
+    try:
+        pid = int(session_pid)
+        path = _session_marker_path(sdlc_dir, pid)
+
+        def _refresh_if_registered():
+            if not path.is_file():
+                return False
+            data = _session_read(path, strict=True)
+            generation = data.get("generation")
+            return write_session_heartbeat(
+                sdlc_dir, pid,
+                generation=generation if isinstance(generation, str) and generation else None,
+            )
+
+        return _session_locked(sdlc_dir, pid, _refresh_if_registered, path=path,
+                               require_lock=True)
+    except (OSError, TypeError, ValueError, RuntimeError):
+        return False
+
+
+def session_heartbeat_liveness(sdlc_dir, session_pid, config=None, now=None):
+    """`idle` means fresh even when no goal moved; `dead` is stale or absent evidence with a marker.
+
+    The bound deliberately shares the watcher's configuration-free rule, `max(3 * interval, 180)`.
+    This probe never signals or otherwise alters the recorded process.
+    """
+    cfg = config if isinstance(config, dict) else {}
+    ledger_cfg = cfg.get("ledger") if isinstance(cfg.get("ledger"), dict) else {}
+    watch = ledger_cfg.get("watch") if isinstance(ledger_cfg.get("watch"), dict) else {}
+    interval = watch.get("interval_seconds", 900)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)) or interval <= 0:
+        interval = 900
+    try:
+        data = json.loads(session_heartbeat_path(sdlc_dir, session_pid).read_text())
+        seen = data.get("last_seen")
+        if isinstance(seen, bool) or not isinstance(seen, (int, float)):
+            raise ValueError("invalid heartbeat")
+        age = max(0.0, (time.time() if now is None else now) - seen)
+    except (OSError, ValueError, TypeError):
+        return ("dead", None)
+    return ("idle" if age < _load("sync").stale_after_seconds(interval) else "dead", age)
 
 
 def _session_lock_path(sdlc_dir, entry_path):
@@ -2477,6 +2569,16 @@ def _session_read(path, strict=False):
 
 def _session_write(path, data):
     """Publish a load-bearing session marker atomically, inside its caller's file lock."""
+    # Admission/claim/release writers predate heartbeat ownership and intentionally pass only
+    # their fields. Preserve an existing generation here so any of those routine updates cannot
+    # silently turn a later owner-checked `session_end` into a no-op.
+    if "generation" not in data:
+        try:
+            existing_generation = json.loads(path.read_text()).get("generation")
+            if isinstance(existing_generation, str) and existing_generation:
+                data = {**data, "generation": existing_generation}
+        except (OSError, ValueError, AttributeError):
+            pass
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
     try:
         with os.fdopen(fd, "w") as stream:
@@ -2524,7 +2626,7 @@ def _session_pid_live(pid, path, config):
         return True                          # can't even stat it — fail toward "still active"
 
 
-def session_start(sdlc_dir, session_pid):
+def session_start(sdlc_dir, session_pid, generation=None):
     """Record that a managing session — a routine/cron firing, or a manual overnight run — is now
     driving `.sdlc` (F10.5-4/#377), so a routine firing again before this one finishes can tell NOT
     to launch a redundant one — the same class of risk F10.5/#374 already closes one level down (a
@@ -2570,28 +2672,57 @@ def session_start(sdlc_dir, session_pid):
     path = _session_marker_path(sdlc_dir, pid)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    selected_generation = generation or uuid.uuid4().hex
     def _write():
+        nonlocal selected_generation
         if path.exists():
             existing = _session_read(path, strict=True)
+            try:
+                raw_generation = json.loads(path.read_text()).get("generation")
+                if generation is None and isinstance(raw_generation, str) and raw_generation:
+                    selected_generation = raw_generation
+            except (OSError, ValueError, AttributeError):
+                pass
             data = {"in_flight": existing["in_flight"],
-                    "settled_admissions": existing["settled_admissions"]}
+                    "settled_admissions": existing["settled_admissions"], "generation": selected_generation}
         else:
-            data = {"in_flight": [], "settled_admissions": 0}
+            data = {"in_flight": [], "settled_admissions": 0, "generation": selected_generation}
         _session_write(path, data)
+        # Publish both halves before releasing the lifecycle lock.  Otherwise a clean end can
+        # remove the new marker between these two writes and this delayed heartbeat becomes orphaned.
+        write_session_heartbeat(sdlc_dir, pid, generation=selected_generation)
 
     _session_locked(sdlc_dir, pid, _write, path=path, require_lock=True)
+    return selected_generation
 
 
-def session_end(sdlc_dir, session_pid=None):
+def session_end(sdlc_dir, session_pid=None, generation=None):
     """Clear only the caller's own registry entry. Claude/legacy identity is the PID; Codex adds
     its thread ID, so ending one of two tasks under the same host PID leaves the other registered.
-    Best-effort and a safe no-op if that entry was never created. Defaults to `os.getppid()` when
-    no PID was passed, matching the CLI's existing fallback."""
+    A generation-bearing entry also requires its matching generation token; a bare cleanup is a
+    safe no-op rather than risking deletion of a successor. Best-effort and a safe no-op if that
+    entry was never created. Defaults to `os.getppid()` when no PID was passed, matching the CLI's
+    existing fallback."""
     try:
         pid = os.getppid() if session_pid is None else int(session_pid)
         path = _session_marker_path(sdlc_dir, pid)
-        _session_locked(sdlc_dir, pid, lambda: path.unlink(missing_ok=True),
-                        path=path, require_lock=True)
+        heartbeat = session_heartbeat_path(sdlc_dir, pid)
+        # Keep registry and heartbeat cleanup in the SAME critical section.  A successor start
+        # cannot publish its marker, then have this old cleanup unlink its fresh heartbeat.
+        def _end_if_owner():
+            try:
+                owner_generation = json.loads(path.read_text()).get("generation")
+            except (OSError, ValueError, AttributeError):
+                return False
+            # A generation-bearing marker has an owner token.  A bare session-end cannot know
+            # whether it belongs to that owner or to a predecessor, so it must leave it alone.
+            # Old unversioned registry entries retain their best-effort cleanup behavior.
+            if isinstance(owner_generation, str) and owner_generation:
+                if generation != owner_generation:
+                    return False
+            path.unlink(missing_ok=True); heartbeat.unlink(missing_ok=True)
+            return True
+        _session_locked(sdlc_dir, pid, _end_if_owner, path=path, require_lock=True)
     except (OSError, TypeError, ValueError):
         pass
 
@@ -5276,7 +5407,9 @@ def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None):
 
 def run_loop(sdlc_dir, run_goal):
     session_pid = os.getpid()
-    session_start(sdlc_dir, session_pid)
+    # A new in-process run can reuse a PID after a prior run has not yet cleaned up.  Give this
+    # invocation its own ownership token, so its eventual cleanup cannot erase that successor.
+    session_generation = session_start(sdlc_dir, session_pid, generation=uuid.uuid4().hex)
     state.start_run(sdlc_dir)                       # reset per-run budget (resume-safe)
     config = state.load_config(sdlc_dir)
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own
@@ -5343,7 +5476,7 @@ def run_loop(sdlc_dir, run_goal):
         parked += (outcome not in ("done", "failed", "review"))
     result = {"done": done, "parked": parked, "failed": failed, "review": review,
               "iterations": state.load_cursor(sdlc_dir)["iteration"], "stopped": stopped}
-    session_end(sdlc_dir, session_pid)
+    session_end(sdlc_dir, session_pid, generation=session_generation)
     return result
 
 
@@ -5353,7 +5486,7 @@ def run_loop(sdlc_dir, run_goal):
 #: `thread`, `session-pid`, `skip`). Computed from `ledger.EVENT_FIELDS`/`actionlog.AGENT_FIELDS`
 #: themselves, not re-listed, so this set can never drift from the real field vocabulary.
 _VALUE_FLAGS = frozenset(
-    {"pid", "thread", "session-pid", "skip", "feature"}
+    {"pid", "thread", "session-pid", "session-generation", "skip", "feature"}
     | {f for fields in ledger.EVENT_FIELDS.values() for f in fields}
     | {f for fields in actionlog.AGENT_FIELDS.values() for f in fields}
 )
@@ -5836,11 +5969,18 @@ def _dispatch(argv):
         # mechanism the shipped skill relies on. SKILL.md always passes `--session-pid "$PPID"`
         # explicitly on this call (its shell's own `$PPID`, captured fresh — no cross-call
         # persistence needed since re-reading it keeps giving the same stable value).
-        session_pid = _flags(argv[3:]).get("session-pid")
+        start_flags = _flags(argv[3:])
+        session_pid = start_flags.get("session-pid")
         _arm_run_id(session_pid)        # #889: BEFORE the fallback below -- os.getppid() is not stable
         if session_pid is None or session_pid == "true":
             session_pid = os.getppid()
-        session_start(argv[2], session_pid)
+        generation = session_start(argv[2], session_pid,
+                                   generation=start_flags.get("session-generation") or uuid.uuid4().hex)
+        # A separate `session-end` invocation cannot infer an earlier owner's random token from
+        # disk without reopening the successor-deletion race.  Return it for the documented shell
+        # gesture and retain it for same-process library callers.
+        os.environ["SIGMA_SESSION_GENERATION"] = generation
+        print(generation)
         state.start_run(argv[2])
         # #1239 review round 3, finding B: `start` is the OTHER real chokepoint the registry grows
         # through (alongside `_next()`/`next_batch()`, pruned in `_session_in_flight_goals`) — sweep
@@ -5861,8 +6001,11 @@ def _dispatch(argv):
         # `os.getppid()` fallback when `--session-pid` is absent — the same last-resort caveat
         # applies (see `start`'s own comment above): the README's recommended routine prompt passes
         # `--session-pid "$PPID"` explicitly here too, the same value it captured for `start`.
-        session_pid = _flags(argv[3:]).get("session-pid")
-        session_end(argv[2], None if session_pid in (None, "true") else session_pid)
+        end_flags = _flags(argv[3:])
+        session_pid = end_flags.get("session-pid")
+        generation = end_flags.get("session-generation") or os.environ.get("SIGMA_SESSION_GENERATION")
+        session_end(argv[2], None if session_pid in (None, "true") else session_pid,
+                    generation=None if generation == "true" else generation)
         return 0
     if len(argv) >= 3 and argv[1] == "session-active":       # F10.5-4/#377: routine pre-flight check
         config = state.load_config(argv[2])
