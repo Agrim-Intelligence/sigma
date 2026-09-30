@@ -1924,7 +1924,7 @@ def _ensure_unit_tracking(sdlc_dir, goal, cooldown_s=300):
         print(f"loop: unit-tracking not checked (non-fatal): {exc}", file=sys.stderr)
 
 
-def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
+def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
     the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
     short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
@@ -2032,8 +2032,10 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None):
     # The cost of leaving it out was total: an operator who uses `next` rather than `next-batch`
     # NEVER swept, so a repo could sit ~23h past a 60-minute TTL while `next` ran repeatedly.
     session_pid = os.getppid() if session_pid is None else session_pid
-    # Every picker pass is a loop tick, including an empty backlog. Refresh before any remote read.
-    write_session_heartbeat(sdlc_dir, session_pid)
+    # A standalone picker pass is a loop tick, including an empty backlog. `next_batch` already
+    # refreshed immediately before its one prologue sweep, so its slot calls opt out explicitly.
+    if refresh_heartbeat:
+        write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
     just_unparked = _auto_unpark_sweep(sdlc_dir, config)
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
@@ -2353,7 +2355,8 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     picks = []
     skip = set(extra_skip)
     for _ in range(max(1, max_concurrent)):
-        kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid)
+        kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
+                           refresh_heartbeat=False)
         if kind != "goal":
             picks.append((kind, goal))
             break

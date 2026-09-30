@@ -7528,6 +7528,17 @@ def test_next_batch_refreshes_before_a_blocked_reconciliation_sweep(monkeypatch)
         assert seen and seen[0] > 1.0
 
 
+def test_next_batch_writes_one_heartbeat_for_its_prologue_and_not_each_slot(monkeypatch):
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 2); pid = os.getpid(); lp.session_start(base, pid)
+        writes = []
+        monkeypatch.setattr(lp, "write_session_heartbeat", lambda *args, **kwargs: writes.append(args[1]) or True)
+        lp.next_batch(base, lp.sources.get_source(base, lp.state.load_config(base)), lp.state.load_config(base),
+                      max_concurrent=2, session_pid=pid)
+        assert writes == [pid]
+
+
 def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkeypatch):
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
