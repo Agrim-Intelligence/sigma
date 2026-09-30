@@ -2579,7 +2579,21 @@ def _diagnostic_path(raw):
     return scrub(raw)
 
 
-def _added_secret_hits(path, run):
+def _staged_added_diff(path):
+    """Read the staged zero-context patch outside the injected git-operation channel.
+
+    The injected `run` channel is the public work lifecycle's ordered mutation/evidence trace.
+    Content scanning is an internal read, like `_risk_categories`; routing it through `run` changes
+    that trace and can consume a caller's next expected response.  This local subprocess has no
+    network, no shell, and no mutation.  At 10 changed files it remains one linear Git patch read;
+    at 100 it remains the same single read, rather than one fork per file.
+    """
+    proc = subprocess.run(["git", "diff", "--cached", "--no-ext-diff", "--unified=0"],
+                          cwd=str(path), capture_output=True, text=True, check=False)
+    return proc.stdout
+
+
+def _added_secret_hits(path):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
     `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
@@ -2588,7 +2602,7 @@ def _added_secret_hits(path, run):
     matched value.
     """
     try:
-        diff = run(path, ["git", "diff", "--cached", "--no-ext-diff", "--unified=0"])
+        diff = _staged_added_diff(path)
     except Exception:
         return {}
     hits, current, line = {}, "", 0
@@ -2646,7 +2660,7 @@ def _secret_refusal(path, staged, config, run):
     rather than one this commit is creating, and refusing every future commit over it would wedge
     the repo with no reachable remedy."""
     allowed = _allowed_secret_paths(config)
-    content_hits = _added_secret_hits(path, run)
+    content_hits = _added_secret_hits(path)
     if not any(_is_offender(line, allowed) for line in staged.splitlines()) and not content_hits:
         return ""                       # the ordinary path: no extra git call, byte-identical
     rows = _staged_rows(path, run)
