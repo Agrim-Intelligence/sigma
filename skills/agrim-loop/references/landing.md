@@ -228,11 +228,25 @@ its board card sits in **QC**. `loop.py record … review` records that state, a
 pass records the `done` later — see below.
 
 **Read its first word and record accordingly — never merge past it by hand:**
+- `REPAIR: implement CI fix cycle N/C on PR #P — check NAME; log excerpt: …` → start the normal
+  **Implement** phase with that exact bounded brief, fix the named check, run verify, commit and
+  `work.py pr`, then re-run the fresh review and merge gestures. `N/C` is persisted and shares
+  `work.max_review_cycles` (default 3) with the review anti-thrash cap. A repeated red head parks
+  instead of spending a second cycle. The host must call `phase_report.py start/end` around this
+  Implement phase, so its model cost is measured in the ordinary phase report; dispatch preparation
+  is also recorded locally as a `ci-repair` timing interval.
+- `RERUN: infrastructure flake CI fix cycle N/C on PR #P — reran Actions run R` → GitHub has already
+  rerun the only classified infrastructure failure (`TIMED_OUT`, `CANCELLED`, or `STARTUP_FAILURE`).
+  Wait for its result and re-run merge. It counts against the same cap: a repeating infrastructure
+  failure cannot spin forever. A missing run ID, unreadable log, or malformed check is fail-closed
+  as `PARK:`; never dispatch a blind repair.
 - `PARK: …` → `record parked "<that reason>"` (a conflict, a stale read, no evidence, a review
   verdict that blocks — `sigma:block`, Request-changes, an unresolved thread — or a direct merge
   GitHub genuinely refused, e.g. a check that flipped between gate() and the merge attempt). A
-  **failing required check** is a fix, not a decision → `record failed "<the check>"` instead — a
-  check that is merely still `pending` (not yet answered) is a different case, covered below.
+  **failing required check** first returns the bounded `REPAIR:`/`RERUN:` outcome above. Once its
+  cap is exhausted it returns `PARK: CI fix cycles exhausted … — failing: <check>`; record that as
+  `failed "<the check>"`. A check that is merely still `pending` (not yet answered) is a different
+  case, covered below.
 - `PR #N merged (<method>) — …` → **`record done`**. The PR landed right here, in this call. The line
   sometimes ends `… — #N was still open after the merge; sent a close request, which succeeded`:
   right after the landing, the kit reads the ISSUE's own state (#2615) — never a base — and sends a

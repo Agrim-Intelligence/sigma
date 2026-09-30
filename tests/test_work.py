@@ -99,6 +99,82 @@ def test_ci_observation_key_changes_when_the_observed_gate_payload_changes():
     assert work.ci_observation_key("2577", 7, later, "pass") == work.ci_observation_key("2577", 7, later, "pass")
 
 
+def test_red_required_check_dispatches_one_bounded_implement_cycle_with_its_log(tmp_path):
+    """Control: a planted lint red produces a repair handoff before the old failed path."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec["pr"] = 7; work._save(d, goal, rec)
+    data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [
+        {"name": "lint", "conclusion": "FAILURE", "detailsUrl": "https://github.com/acme/app/actions/runs/42/jobs/9"}]}
+    run = _runner([("gh run view 42 --log-failed", "flake8: E999 planted lint failure")])
+    out = work.ci_repair(d, ON, goal, data, run=run)
+    assert out.startswith("REPAIR: implement CI fix cycle 1/3")
+    assert "lint" in out and "E999 planted lint failure" in out
+    assert work._record(d, goal)["ci_fix_cycles"] == 1
+
+
+def test_infrastructure_flake_reruns_once_and_counts_against_the_same_cap(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec["pr"] = 7; work._save(d, goal, rec)
+    data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [
+        {"name": "CI", "conclusion": "TIMED_OUT", "detailsUrl": "https://github.com/acme/app/actions/runs/42/jobs/9"}]}
+    run = _runner([("gh run rerun 42", "")])
+    out = work.ci_repair(d, ON, goal, data, run=run)
+    assert out.startswith("RERUN: infrastructure flake CI fix cycle 1/3")
+    assert "gh run rerun 42" in run.calls
+    assert work._record(d, goal)["ci_fix_cycles"] == 1
+
+
+def test_repeated_infrastructure_flakes_spend_the_cap_on_the_same_head(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec["pr"] = 7; work._save(d, goal, rec)
+    data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [
+        {"name": "CI", "conclusion": "TIMED_OUT", "detailsUrl": "https://github.com/acme/app/actions/runs/42/jobs/9"}]}
+    run = _runner([("gh run rerun 42", "")])
+    assert "cycle 1/2" in work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run)
+    assert "cycle 2/2" in work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run)
+    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run) == (
+        "PARK: CI fix cycles exhausted after 2 cycles — failing: CI")
+
+
+def test_ci_fix_and_review_cycles_share_one_anti_thrash_cap(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec.update({"pr": 7, "review_cycles": 2}); work._save(d, goal, rec)
+    data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [{"name": "lint", "conclusion": "FAILURE"}]}
+    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=_runner([])) == (
+        "PARK: CI fix cycles exhausted after 2 cycles — failing: lint")
+
+
+def test_ci_repair_fails_closed_when_the_log_cannot_be_read(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec["pr"] = 7; work._save(d, goal, rec)
+    data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [
+        {"name": "lint", "conclusion": "FAILURE", "detailsUrl": "https://github.com/acme/app/actions/runs/42/jobs/9"}]}
+    out = work.ci_repair(d, ON, goal, data, run=_runner([("gh run view", RuntimeError("network"))]))
+    assert out.startswith("PARK:") and "log" in out
+    assert "ci_fix_cycles" not in work._record(d, goal)
+
+
+def test_ci_repair_cap_falls_back_to_the_existing_failed_outcome_with_the_check_named(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec.update({"pr": 7, "ci_fix_cycles": 1}); work._save(d, goal, rec)
+    data = {"headRefOid": "a" * 40, "statusCheckRollup": [{"name": "lint", "conclusion": "FAILURE"}]}
+    out = work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 1}}, goal, data, run=_runner([]))
+    assert out == "PARK: CI fix cycles exhausted after 1 cycles — failing: lint"
+
+
+def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dispatch(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner([
+        ("gh pr view 7 --json isCrossRepository", "{}"),
+        ("gh repo view --json viewerPermission", "ADMIN"),
+        ("gh pr view 7 --json mergeable", _view(status="BLOCKED", checks=(("lint", "FAILURE"),))),
+    ])
+    # The base gate response deliberately lacks a details URL; its fail-closed repair fallback
+    # preserves the named failed outcome instead of issuing an agent a blind instruction.
+    out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert out == "PARK: failing required check lint has no readable Actions log"
+
+
 def test_review_paths_refuses_tampered_manifest_and_emits_safe_assignments(tmp_path):
     root = tmp_path / ".sdlc" / "state"
     generation = root / "review-generations" / "gen"
@@ -2753,16 +2829,14 @@ def test_merge_arms_auto_merge_when_required_checks_are_still_pending_past_the_b
 
 
 def test_merge_parks_not_arms_on_a_genuinely_failing_required_check(tmp_path):
-    """Regression pin, the counterweight to the test above: a FAILING check (answered, and the
-    answer was no) must still PARK, never arm -- guards against the new pending-exhausted arm
-    branch over-matching a different not-ok reason it must never touch."""
+    """A red check never arms; absent a readable Actions log its repair path fails closed."""
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
     run = _runner(_rights() + [("pr view", _mixed(("ci", "SUCCESS"), ("tests", "FAILURE"),
                                                    status="UNSTABLE"))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PARK: not safe to merge") and "failing: tests" in out
+    assert out.startswith("PARK: failing required check tests has no readable Actions log")
     assert not any("pr merge" in c for c in run.calls)
 
 
@@ -3399,7 +3473,7 @@ def test_behind_reconcile_does_not_poll_past_a_failing_check(tmp_path):
                   + [("pr view", _sequence(_view(status="BEHIND"),
                                            _mixed(("ci", "FAILURE"), status="UNSTABLE")))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PARK: not safe to merge") and "failing: ci" in out
+    assert out.startswith("PARK: failing required check ci has no readable Actions log")
     assert not any("pr merge" in c for c in run.calls)
     assert sum("mergeStateStatus" in c for c in run.calls) == 2   # initial + ONE post-rebase, not the budget
 

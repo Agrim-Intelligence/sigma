@@ -399,6 +399,117 @@ def ci_observation_key(goal, pr, ci, gate_verdict):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+# A CI repair is deliberately bounded by the same operator setting as a review repair.  Two
+# independent counters make the audit truthful (a review block is not a CI failure), while one cap
+# keeps a bad goal from consuming an unbounded night through either path.
+_CI_INFRASTRUCTURE_CONCLUSIONS = frozenset(("TIMED_OUT", "CANCELLED", "STARTUP_FAILURE"))
+_CI_LOG_EXCERPT_BYTES = 4096
+_CI_RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
+
+
+def _ci_cap(config):
+    cap = int(settings(config).get("max_review_cycles", DEFAULTS["max_review_cycles"]) or 0)
+    return cap if cap >= 1 else DEFAULTS["max_review_cycles"]
+
+
+def _ci_failed_check(data):
+    """The first answered-red check, or ``None`` for an untrusted rollup.
+
+    The gate already makes its decision from this very response.  Reusing it instead of reading
+    GitHub again prevents a repair request from naming a check on a different PR revision.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("statusCheckRollup"), list):
+        return None
+    for check in data["statusCheckRollup"]:
+        if isinstance(check, dict) and _check_verdict(check) == "failing":
+            name = check.get("name") or check.get("context")
+            if isinstance(name, str) and name.strip():
+                return check, name.strip()[:256]
+    return None
+
+
+def _ci_run_id(check):
+    """Extract a numeric Actions run id from the public check URL; never guess one."""
+    url = check.get("detailsUrl") or check.get("details_url")
+    match = _CI_RUN_URL.search(str(url or ""))
+    return match.group(1) if match else None
+
+
+def _ci_excerpt(text):
+    """One bounded, single-line-safe failed-log excerpt for the next implement brief."""
+    cleaned = " ".join(str(text or "").split())
+    if not cleaned:
+        return ""
+    return cleaned[:_CI_LOG_EXCERPT_BYTES]
+
+
+def ci_repair(sdlc_dir, config, goal, final_data, run=None):
+    """Turn this gate's red required check into one bounded repair or infrastructure rerun.
+
+    A returned ``REPAIR:`` is a host-agnostic dispatch receipt: the caller starts the normal
+    Implement phase with that exact, bounded brief, fixes, verifies, commits and pushes before it
+    calls merge again.  A returned ``RERUN:`` has already issued one GitHub Actions rerun.  Every
+    other outcome is ``PARK:`` so callers retain the established failed-goal fallback.
+    """
+    run = run or _run
+    started = time.perf_counter()
+    rec = _record(sdlc_dir, goal)
+    if not rec or not rec.get("pr"):
+        return "PARK: no PR for this goal — cannot prepare a CI fix cycle"
+    selected = _ci_failed_check(final_data)
+    if not selected:
+        return "PARK: required CI failure could not be identified safely"
+    check, name = selected
+    cap = _ci_cap(config)
+    cycles = int(rec.get("ci_fix_cycles", 0) or 0)
+    review_cycles = int(rec.get("review_cycles", 0) or 0)
+    if cycles < 0:
+        cycles = 0
+    if review_cycles < 0:
+        review_cycles = 0
+    # One anti-thrash budget, not two adjacent ones: a review fix followed by a CI fix is still a
+    # repair loop.  Keep the separate fields only so the audit can say which gate spent each slot.
+    spent = cycles + review_cycles
+    if spent >= cap:
+        return f"PARK: CI fix cycles exhausted after {spent} cycles — failing: {name}"
+    head = final_data.get("headRefOid") if isinstance(final_data, dict) else ""
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", head):
+        return f"PARK: required CI failure {name} has no trustworthy PR head"
+    # A repeated merge against the same red head has no new repair to perform.  Counting it again
+    # would burn the budget while the previous implement dispatch is still in flight.
+    conclusion = str(check.get("conclusion") or check.get("status") or check.get("state") or "").upper()
+    # A code fix must push a new head.  An infrastructure rerun intentionally does not, so it is
+    # allowed to retry the same head until the shared cap is spent.
+    if rec.get("ci_repair_head") == head and conclusion not in _CI_INFRASTRUCTURE_CONCLUSIONS:
+        return f"PARK: CI fix cycle {spent}/{cap} for {name} awaits a new pushed PR head"
+    run_id = _ci_run_id(check)
+    try:
+        if conclusion in _CI_INFRASTRUCTURE_CONCLUSIONS:
+            if not run_id:
+                return f"PARK: infrastructure failure {name} has no rerunnable Actions run"
+            run(rec["worktree"], ["gh", "run", "rerun", run_id])
+            kind = "RERUN: infrastructure flake"
+            detail = f"reran Actions run {run_id}"
+        else:
+            if not run_id:
+                return f"PARK: failing required check {name} has no readable Actions log"
+            excerpt = _ci_excerpt(run(rec["worktree"], ["gh", "run", "view", run_id, "--log-failed"]))
+            if not excerpt:
+                return f"PARK: failing required check {name} produced no readable log excerpt"
+            kind = "REPAIR: implement"
+            detail = f"check {name}; log excerpt: {excerpt}"
+    except Exception as exc:  # A missing log/rerun answer must not create a blind repair dispatch.
+        return f"PARK: CI {('rerun' if conclusion in _CI_INFRASTRUCTURE_CONCLUSIONS else 'log')} unavailable for {name} ({exc})"
+    cycles += 1
+    rec["ci_fix_cycles"] = cycles
+    rec["ci_repair_head"] = head
+    rec["ci_repair_check"] = name
+    _save(sdlc_dir, goal, rec)
+    elapsed = int((time.perf_counter() - started) * 1000)
+    _load("timing_store").safe_append(sdlc_dir, goal, "ci-repair", "rerun" if kind.startswith("RERUN") else "dispatch", elapsed)
+    return f"{kind} CI fix cycle {spent + 1}/{cap} on PR #{rec['pr']} — {detail}"
+
+
 def _merge_delivery_path(sdlc_dir, entry_key):
     return pathlib.Path(sdlc_dir) / "state" / "merge-deliveries" / (entry_key + ".json")
 
@@ -5272,6 +5383,11 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     actionlog.safe_append(sdlc_dir, goal, "gate", gate="merge", verdict=gate_verdict,
                           why=None if ok else verdict)
     if not ok and not pending_arm:
+        # An answered red check is the one landing refusal that has a bounded self-healing path.
+        # Every other gate verdict remains the existing PARK contract.  `ci_repair()` consumes the
+        # exact response gate just read, so it cannot silently repair a different head/check.
+        if _ci_failed_check(final_data):
+            return ci_repair(sdlc_dir, config, goal, final_data, run=run)
         return f"PARK: {verdict}"
 
     chosen = policy(config)
