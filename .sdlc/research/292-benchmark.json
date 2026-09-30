@@ -1,0 +1,71 @@
+{
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "logical_cpus": 12,
+  "samples_per_case": 3,
+  "cache": "not flushed; sequential runs",
+  "rows": [
+    {
+      "history_commits": 100,
+      "operation": "rollback_detection",
+      "seconds": [
+        0.013412250000000014,
+        0.011419082999999997,
+        0.011093750000000013
+      ],
+      "median_seconds": 0.011419082999999997
+    },
+    {
+      "history_commits": 100,
+      "operation": "deletion_attribution",
+      "seconds": [
+        0.027893999999999974,
+        0.027950874999999986,
+        0.026125874999999965
+      ],
+      "median_seconds": 0.027893999999999974
+    },
+    {
+      "history_commits": 1000,
+      "operation": "rollback_detection",
+      "seconds": [
+        0.015755832999999997,
+        0.016861666000000053,
+        0.017906124999999995
+      ],
+      "median_seconds": 0.016861666000000053
+    },
+    {
+      "history_commits": 1000,
+      "operation": "deletion_attribution",
+      "seconds": [
+        0.030742500000000006,
+        0.028945290999999984,
+        0.029979959000000056
+      ],
+      "median_seconds": 0.029979959000000056
+    },
+    {
+      "history_commits": 10000,
+      "operation": "rollback_detection",
+      "seconds": [
+        0.06697083299999995,
+        0.074494375,
+        0.07612574999999999
+      ],
+      "median_seconds": 0.074494375
+    },
+    {
+      "history_commits": 10000,
+      "operation": "deletion_attribution",
+      "seconds": [
+        0.06460587500000003,
+        0.07201766700000001,
+        0.06303375
+      ],
+      "median_seconds": 0.06460587500000003
+    }
+  ],
+  "git": "git version 2.55.0",
+  "history_build_seconds": 0.181901833
+}

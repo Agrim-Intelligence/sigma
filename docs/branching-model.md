@@ -242,8 +242,8 @@ the pre-rebase head is let through **only when it is the branch's own deliberate
 (`feature_rebase.own_losses`; narrowed by review block #2 on #278). A path `P` is exempt ONLY IF
 all three hold: **(a)** the loss is a pure deletion — `P` is in the remote tip and absent from the
 pre-rebase head; **(b)** a non-merge commit unique to the branch — reachable from the pre-rebase
-head, from neither the remote tip nor the base (`git log <pre> --not <remote>/<branch> <base> --
-<P>`, full history) — has a `D` status for exactly `P` in its own diff; **(c)** the base left `P`
+head, from neither the remote tip nor the base nor **any remote-tracking ref**
+(`git log --no-merges <pre> --not <remote>/<branch> <base> --remotes -- <P>`, full history) — has a `D` status for exactly `P` in its own diff; **(c)** the base left `P`
 alone since the remote tip — no commit in `git log -m <base> --not <remote>/<branch> -- <P>`
 touches it, so the deletion cannot be a base revert replayed. A local, unpushed `git rm` / "drop
 obsolete" commit passes, and still does when amended or squashed (the `D` survives in a unique
@@ -278,6 +278,13 @@ reflogs off, something newer on the branch, a caller that passes no base — no 
 loss is exempt: that can refuse a healthy local deletion, and does not pass a loss the attribution
 rule would refuse. With no remote-tracking ref and no pre-rebase head there is nothing to compare, so
 nothing is refused.
+
+The refusal separates **undoing this rebase** from **recovering content already lost before it**.
+`git reset --keep <pre-rebase head>` does only the first; a prior lossy rebase can leave that head
+missing the same paths. The message names the exact retained remote-tip commit as a recovery
+source for paths it still contains (`git show <remote-tip-sha>:<path>`). Inspect and restore the
+chosen content while preserving unpushed local commits; resetting the whole branch to the remote
+tip would discard those commits.
 
 When a refusal cannot put the branch back — `git reset --keep` itself fails, typically because
 uncommitted edits are in the way — the local branch still holds the lossy replay, and a later run
@@ -1801,13 +1808,25 @@ Two things about it that are easy to get wrong:
   goal whose PR has merged is not a flow the loop takes.
   The `agrim-rebase` pushes exempt a loss between the remote tip and the pre-rebase head only when
   it is a pure deletion the branch's own non-merge commit made, of a path the base has not touched
-  since the remote tip (§3b). That costs something on purpose: a deliberate local **rollback**
+  since the remote tip (§3b). **Fork/upstream shape:** a hand rebase onto `upstream/main` can import
+  a deletion, followed by upkeep onto `origin/main`, which never touched the file. That deletion
+  is now refused because (b) excludes every locally available remote-tracking ref (`--remotes`
+  after `--not`), including upstream's history. No implicit fetch of other remotes is added; this
+  evidence is only as complete as the refs held locally. A deliberate deletion already published
+  to another remote is conservatively refused too: it is no longer unique local work.
+  Each attribution history read also enumerates fetched remote refs: 10x/100x refs means
+  10x/100x references to enumerate, with overlapping histories shared by Git's traversal;
+  the same per-read and total deadlines still apply.
+  That costs something on purpose: a deliberate local **rollback**
   pushed after a rebase is always refused and needs the human's `git push --force-with-lease
   <remote> HEAD:<branch>`. It is only as good as the base ref it is told: a base **rewritten**
   (force-pushed) after an earlier lossy local rebase no longer reaches the revert that caused it,
-  so a DELETION that revert made reads as a unique branch commit's `D` and is exempt if the
-  rewritten base does not touch that path. A caller with no base, or no pre-rebase head, exempts
-  nothing instead.
+  so a DELETION that revert made can still read as a unique branch commit's `D` and be exempt
+  once **no other remote-tracking ref reaches that deletion**, if the rewritten base does not
+  touch that path. `test_292_known_limit_force_rewritten_upstream_erases_deletion_provenance`
+  pins that remaining gap as a strict expected failure. No loss detector based on these current
+  refs can establish that disappeared remote provenance. A caller with no base, or no
+  pre-rebase head, exempts nothing instead.
   **Shallow clones.** Both the rollback detection (`dropped_paths`' history read) and the
   deletion attribution are history-dependent, and a shallow clone cuts that history off: a rollback
   to a version held only below the shallow boundary is NOT SEEN by `dropped_paths` there. The
@@ -1818,7 +1837,12 @@ Two things about it that are easy to get wrong:
   `SIGMA_REBASE_GUARD_TIMEOUT`; all of one push's reads together are bounded by
   `SIGMA_WATCH_CALL_TIMEOUT` (default `120`s), and exceeding it refuses the push rather than
   passing it. At 10x/100x the losing paths that is 10x/100x batches inside the same budget, so a
-  very large loss on a slow disk refuses (safe) rather than stalls.
+  very large loss on a slow disk refuses (safe) rather than stalls. **Measured history cost:**
+  the local real-Git benchmark in `.sdlc/research/292-benchmark.py` measures 100/1,000/10,000-commit
+  synthetic linear histories (1x/10x/100x), one affected path, three sequential samples per case,
+  without flushing caches. See `.sdlc/research/292.md` and `292-benchmark.json` for timings,
+  environment and raw samples. These measurements do not establish production or fleet latency:
+  merge-heavy histories, many refs, cold disks and additional path chunks remain unmeasured.
 
 - **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that
