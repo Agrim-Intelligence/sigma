@@ -17,9 +17,8 @@ Detailed selection triggers: [selection](references/selection.md).
 Drive the backlog. Python owns state, budget, and the configured source: local goal files by default,
 or GitHub issues when `discovery.source: github` (requires `gh` authentication).
 
-**Every rule that applies on every pass is in this file. The procedure behind each step sits beside
-it, under `${CLAUDE_SKILL_DIR}/references/` — open the one for the step you are in, before you run
-that step:**
+**Shared rules are here. Step procedures are under `${CLAUDE_SKILL_DIR}/references/`; open yours
+before running it:**
 
 - `references/picking.md` — 1-2: batch dispatch, `DONE`/`BUDGET`, dependency gate, `--feature`, pre-checks.
 - `references/running.md` — 3: model tier, phase subagents, maker≠checker, lanes, worktree, slices.
@@ -29,9 +28,8 @@ that step:**
 - `references/stopping.md` — 7: spare-iteration gap work, the STOP report.
 
 Start: `g=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc --session-pid "$PPID")`; exit: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" session-end .sdlc --session-pid "$PPID" --session-generation "$g"`.
-**Pass `--session-pid "$PPID"`** to every pick. Read
-`$PPID` from your own shell each time; omitting it can re-dispatch a goal already claimed by this
-run.
+**Pass `--session-pid "$PPID"` every pick. Read `$PPID` from your shell each time; omission
+duplicates claims.**
 
 Then repeat until the helper says stop:
 
