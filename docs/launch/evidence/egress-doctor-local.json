@@ -1,14 +1,14 @@
 {
   "destinations": {
-    "program:git:add": {
+    "program:codex:plugin": {
       "count": 1,
       "loopback": false
     },
-    "program:git:commit": {
+    "program:gh:api": {
       "count": 1,
       "loopback": false
     },
-    "program:git:init": {
+    "program:git:-C": {
       "count": 1,
       "loopback": false
     }
