@@ -55,6 +55,19 @@ def test_inventory_uses_the_selected_tree_not_untracked_files(tmp_path):
     assert payload["skills"] == 0
 
 
+def test_inventory_reproduces_the_same_selected_commit_after_later_tracked_changes(tmp_path):
+    """Evidence for a SHA must not drift when the shared checkout later advances."""
+    repo = _repo(tmp_path)
+    baseline = _module()
+    sha = _git(repo, "rev-parse", "HEAD")
+    before = baseline.inventory(repo, sha)
+    (repo / "tests" / "later.py").write_text("\n".join(["x = 1"] * 50) + "\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "later tracked change")
+
+    assert baseline.inventory(repo, sha) == before
+
+
 def test_snapshot_is_detached_without_remote_and_hook_rejects_push(tmp_path):
     repo = _repo(tmp_path)
     bare = tmp_path / "bare.git"
