@@ -15,7 +15,7 @@ def test_public_knowledge_graph_control_builds_and_exercises_opt_in_boundaries(t
     assert result.returncode == 0, result.stderr + result.stdout
     report = json.loads(result.stdout)
     assert report["schema"] == "sigma.kg-control/1"
-    assert report["checks"] == {"refresh": True, "status": True, "doctor": True,
+    assert report["checks"] == {"refresh": True, "status": True, "query": True, "doctor": True,
                                 "disabled": True, "missing_builder": True}
     assert report["measurement"]["corpus_documents"] == 1
     assert report["measurement"]["live_backend_cost"] == "unavailable: no backend selected"
