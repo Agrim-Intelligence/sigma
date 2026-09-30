@@ -73,28 +73,13 @@ After writing the plan's `## Tests` entries, record both stages through Sigma:
 python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" verify .sdlc "$goal"
 ```
 
-Run that gesture while the planned tests fail by assertion, then again after implementation makes
-them pass. It executes the configured proving commands and one explicit planned pytest run.
-A plain test command alone does not write the machine witness. Import errors, unrelated failures,
-skips, legacy advisory witnesses, and red observed after green do not qualify for `work.py pr`.
-The observer hashes whole test files, including decorators and fixtures in those files: editing
-one requires earning red again. External fixtures/helpers are not part of red's file identity;
-review still checks whether the assertion failed for the intended behavioral reason. For a
-refactor, deliberately break the relevant behavior, run the gesture, restore it, then run green.
-Old automatic diff-revert mutation records remain advisory because they may include import errors.
+Run it while planned tests fail by assertion and again after green. It records proof; plain test
+commands do not. Invalid proof cannot publish. Changed tests earn red again.
+For refactors: break, record red, restore, record green.
 
-Skip TDD only for throwaway prototypes / generated code / config — and say so. When publishing
-with `verify.enforce` on, pass an explicit `--no-tests <reason>` to `work.py pr`; the reason is
-preserved verbatim in its PR body. This bypasses only test-first proof, never repository verification,
-acceptance capture or plan review.
-
-## Where these rules come from
-Two names worth knowing, so these read as citable practice, not asserted opinion: the
-red-green-refactor cycle and "no production code without a failing test" are Kent Beck's TDD
-discipline (*Test-Driven Development: By Example*). The refactor-smell names above — Long Method,
-Feature Envy, Primitive Obsession and the rest — are Martin Fowler's own vocabulary (*Refactoring:
-Improving the Design of Existing Code*). Neither citation changes what the rules ask of you; it
-means you can check them against the source instead of taking this file's word for it.
+Skip TDD only for throwaway prototypes, generated code, or config, and say so. With
+`verify.enforce`, `work.py pr --no-tests <reason>` is the explicit, verbatim PR-body exception;
+it bypasses only test-first proof, never verification, acceptance, or plan review.
 
 ## Test behavior, not plumbing (anti-patterns to avoid)
 - **Don't test the mock** — assert real behavior/output, not that a stub was called.
