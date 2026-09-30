@@ -40,6 +40,19 @@ def test_redacts_field_values(tmp_path: Path) -> None:
     assert any(event.get("args") == ["api", "-f"] for event in events)
 
 
+def test_captures_shell_form_without_recording_the_command_or_field_value(tmp_path: Path) -> None:
+    fake = tmp_path / "gh"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(tmp_path) + os.pathsep + env["PATH"]
+    events = capture(tmp_path, "import subprocess; subprocess.run('gh api -f body=SECRET', shell=True)", env=env)
+    rendered = json.dumps(events)
+    assert "SECRET" not in rendered and "gh api" not in rendered
+    assert any(event.get("program") == "shell" and event.get("args") == ["shell-form"]
+               for event in events)
+
+
 def test_hook_is_off_without_log(tmp_path: Path) -> None:
     hook = ROOT / "tools" / "readiness" / "egress"
     env = os.environ.copy()

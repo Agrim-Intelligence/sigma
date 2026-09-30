@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 _LOG = os.environ.get("SIGMA_EGRESS_LOG")
 _PROGRAMS = {"gh", "git", "codex", "claude", "cursor-agent", "pip", "curl", "wget"}
+_SHELLS = {"sh", "bash", "zsh", "dash", "fish", "cmd", "cmd.exe", "powershell", "pwsh"}
 
 
 def _safe_arg(value: object) -> str:
@@ -49,6 +50,11 @@ def _audit(event: str, args: tuple[object, ...]) -> None:
             program = posixpath.basename(argv[0]) if argv else ""
             if program in _PROGRAMS:
                 _write({"event": event, "program": program, "args": [_safe_arg(x) for x in argv[1:3]]})
+            elif program.lower() in _SHELLS:
+                # `shell=True` makes the audit event name the shell, not the command.  Recording
+                # the launch proves the blind spot is observable without writing the shell source,
+                # which may contain credentials or request bodies.
+                _write({"event": event, "program": "shell", "args": ["shell-form"]})
     except Exception:
         pass
 
