@@ -19,8 +19,8 @@ import sys
 MAX_BLOB_BYTES = 2 * 1024 * 1024
 DEFAULT_ALLOWLIST = "docs/launch/exposure-allowlist.json"
 PRIVATE_RULES = (
-    ("absolute-home-path", re.compile(r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|/private/tmp/claude-[A-Za-z0-9._-]+|[A-Za-z]:\\\\Users\\[A-Za-z0-9._-]+\\)")),
-    ("email-address", re.compile(r"(?i)\b[A-Z0-9._%+-]+@(?!(?:example\.com|example\.invalid|users\.noreply\.github\.com)\b)[A-Z0-9.-]+\.[A-Z]{2,}\b")),
+    ("absolute-home-path", re.compile(r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|/private/tmp/claude-[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+\\)")),
+    ("email-address", re.compile(r"(?i)\b(?!(?:[A-Z0-9._%+-]+@(?:example\.com|example\.invalid|users\.noreply\.github\.com)|noreply@anthropic\.com)\b)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")),
     ("legacy-issue-reference", re.compile(r"#\d{4,}\b")),
 )
 
@@ -97,18 +97,31 @@ def _matches(text, rules):
             yield rule, line, preview
 
 
-def _blob_paths(repo):
-    rows = _run("git", "rev-list", "--objects", "--all", cwd=repo).splitlines()
-    result = {}
-    for row in rows:
-        sha, _, path = row.partition(" ")
-        if path:
-            result.setdefault(sha, set()).add(path)
-    return result
-
-
 def _history_blobs(repo):
-    return _blob_paths(repo).items()
+    """Return every reachable blob with every path and commit that contains it.
+
+    ``rev-list --objects`` identifies the reachable object universe, but deliberately
+    de-duplicates an object and can therefore retain only its first path.  Walk every
+    reachable commit tree as well so an identical blob at renamed or copied paths is
+    reported completely.
+    """
+    object_ids = {row.split(" ", 1)[0] for row in
+                  _run("git", "rev-list", "--objects", "--all", cwd=repo).splitlines()}
+    result = {}
+    for commit in _run("git", "rev-list", "--all", cwd=repo).splitlines():
+        for entry in _run("git", "ls-tree", "-r", "-z", commit, cwd=repo).split("\0"):
+            if not entry:
+                continue
+            metadata, _, path = entry.partition("\t")
+            fields = metadata.split()
+            if len(fields) != 3 or fields[1] != "blob" or fields[2] not in object_ids:
+                continue
+            sha = fields[2]
+            record = result.setdefault(sha, {"paths": set(), "commits": []})
+            record["paths"].add(path)
+            if commit not in record["commits"]:
+                record["commits"].append(commit)
+    return result.items()
 
 
 def _tracked_blobs(repo):
@@ -116,7 +129,10 @@ def _tracked_blobs(repo):
     result = {}
     for path in filter(None, paths):
         sha = _run("git", "rev-parse", "HEAD:" + path, cwd=repo).strip()
-        result.setdefault(sha, set()).add(path)
+        result.setdefault(sha, {"paths": set(), "commits": []})["paths"].add(path)
+    head = _run("git", "rev-parse", "HEAD", cwd=repo).strip()
+    for record in result.values():
+        record["commits"] = [head]
     return result.items()
 
 
@@ -133,7 +149,8 @@ def scan(repo, mode, allowlist=None, patterns=None):
     findings, skipped, counts = [], {"oversized": 0, "binary": 0}, {"legacy_issue_references": 0}
     rules = _patterns(patterns, repo)
     blobs = _history_blobs(repo) if mode == "history" else _tracked_blobs(repo)
-    for sha, paths in blobs:
+    for sha, record in blobs:
+        paths, commits = record["paths"], record["commits"]
         if _run("git", "cat-file", "-t", sha, cwd=repo).strip() != "blob":
             continue
         size = int(_run("git", "cat-file", "-s", sha, cwd=repo).strip())
@@ -143,7 +160,6 @@ def scan(repo, mode, allowlist=None, patterns=None):
         if b"\0" in data:
             skipped["binary"] += 1; continue
         text = data.decode("utf-8", "replace")
-        commits = _commits_for_blob(repo, sha) if mode == "history" else [ _run("git", "rev-parse", "HEAD", cwd=repo).strip() ]
         # A (rule, blob) is one finding even where Git has multiple paths to that content.  This
         # avoids multiplying a secret exposure while preserving every reachable path and commit.
         # The output identity is (rule, blob), never one finding per repeated token.  The only
