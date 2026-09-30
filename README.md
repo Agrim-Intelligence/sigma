@@ -1,5 +1,9 @@
 # Sigma
 
+## Privacy
+
+Sigma does not report usage data. Its measured egress behavior, opt-in integrations, local data, and capture limits are documented in [docs/privacy.md](docs/privacy.md).
+
 [![CI](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml)
 
 **Guardrails + an overnight autopilot for your AI coding agent — one that plans before it codes, has every plan reviewed against your strategy, and gets sharper every run.**

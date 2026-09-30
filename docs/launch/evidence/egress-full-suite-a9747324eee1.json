@@ -1,0 +1,204 @@
+{
+  "destinations": {
+    "program:claude:plugin": {
+      "count": 6,
+      "loopback": false
+    },
+    "program:codex:plugin": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:cursor-agent:-p": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:gh:api": {
+      "count": 136,
+      "loopback": false
+    },
+    "program:gh:auth": {
+      "count": 38,
+      "loopback": false
+    },
+    "program:gh:issue": {
+      "count": 35,
+      "loopback": false
+    },
+    "program:gh:pr": {
+      "count": 15,
+      "loopback": false
+    },
+    "program:git:--git-dir": {
+      "count": 9,
+      "loopback": false
+    },
+    "program:git:-C": {
+      "count": 5754,
+      "loopback": false
+    },
+    "program:git:-c": {
+      "count": 584,
+      "loopback": false
+    },
+    "program:git:add": {
+      "count": 1037,
+      "loopback": false
+    },
+    "program:git:branch": {
+      "count": 4,
+      "loopback": false
+    },
+    "program:git:cat-file": {
+      "count": 126,
+      "loopback": false
+    },
+    "program:git:checkout": {
+      "count": 972,
+      "loopback": false
+    },
+    "program:git:cherry-pick": {
+      "count": 16,
+      "loopback": false
+    },
+    "program:git:clone": {
+      "count": 104,
+      "loopback": false
+    },
+    "program:git:commit": {
+      "count": 1118,
+      "loopback": false
+    },
+    "program:git:config": {
+      "count": 239,
+      "loopback": false
+    },
+    "program:git:diff": {
+      "count": 516,
+      "loopback": false
+    },
+    "program:git:diff-tree": {
+      "count": 17,
+      "loopback": false
+    },
+    "program:git:fetch": {
+      "count": 332,
+      "loopback": false
+    },
+    "program:git:for-each-ref": {
+      "count": 49,
+      "loopback": false
+    },
+    "program:git:init": {
+      "count": 1516,
+      "loopback": false
+    },
+    "program:git:log": {
+      "count": 267,
+      "loopback": false
+    },
+    "program:git:ls-files": {
+      "count": 85,
+      "loopback": false
+    },
+    "program:git:ls-remote": {
+      "count": 489,
+      "loopback": false
+    },
+    "program:git:ls-tree": {
+      "count": 24,
+      "loopback": false
+    },
+    "program:git:merge": {
+      "count": 14,
+      "loopback": false
+    },
+    "program:git:merge-base": {
+      "count": 164,
+      "loopback": false
+    },
+    "program:git:mv": {
+      "count": 6,
+      "loopback": false
+    },
+    "program:git:patch-id": {
+      "count": 17,
+      "loopback": false
+    },
+    "program:git:pull": {
+      "count": 7,
+      "loopback": false
+    },
+    "program:git:push": {
+      "count": 1061,
+      "loopback": false
+    },
+    "program:git:rebase": {
+      "count": 245,
+      "loopback": false
+    },
+    "program:git:reflog": {
+      "count": 37,
+      "loopback": false
+    },
+    "program:git:remote": {
+      "count": 402,
+      "loopback": false
+    },
+    "program:git:reset": {
+      "count": 26,
+      "loopback": false
+    },
+    "program:git:rev-list": {
+      "count": 177,
+      "loopback": false
+    },
+    "program:git:rev-parse": {
+      "count": 1100,
+      "loopback": false
+    },
+    "program:git:revert": {
+      "count": 55,
+      "loopback": false
+    },
+    "program:git:rm": {
+      "count": 46,
+      "loopback": false
+    },
+    "program:git:show": {
+      "count": 94,
+      "loopback": false
+    },
+    "program:git:stash": {
+      "count": 11,
+      "loopback": false
+    },
+    "program:git:status": {
+      "count": 105,
+      "loopback": false
+    },
+    "program:git:update-index": {
+      "count": 2,
+      "loopback": false
+    },
+    "program:git:update-ref": {
+      "count": 5,
+      "loopback": false
+    },
+    "program:git:worktree": {
+      "count": 444,
+      "loopback": false
+    },
+    "program:shell:shell-form": {
+      "count": 570,
+      "loopback": false
+    },
+    "socket:127.0.0.1:1": {
+      "count": 2,
+      "loopback": true
+    },
+    "urllib:POST:127.0.0.1": {
+      "count": 1,
+      "loopback": true
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "commit": "a9747324eee1",
+  "captures": [
+    {
+      "command": "$HOME/.sigma-venv312/bin/python -m pytest tests -q -n 4 -p no:cacheprovider",
+      "summary": "egress-full-suite-a9747324eee1.json",
+      "finding": "only loopback socket and urllib events were recorded; no non-loopback Python socket event was captured"
+    }
+  ]
+}

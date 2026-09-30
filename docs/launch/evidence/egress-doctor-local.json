@@ -1,0 +1,16 @@
+{
+  "destinations": {
+    "program:codex:plugin": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:gh:api": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:git:-C": {
+      "count": 1,
+      "loopback": false
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "commit": "dc79750ab8d6",
+  "captures": [
+    {
+      "command": "python3 tools/onboarding_control.py --mode local --variant confirm --json <result>",
+      "summary": "egress-onboarding-local.json",
+      "finding": "only local git launches were recorded"
+    },
+    {
+      "command": "python3 tools/onboarding_control.py --mode github --json <result>",
+      "summary": "egress-onboarding-github.json",
+      "finding": "fake gh and git launches were recorded"
+    },
+    {
+      "command": "python3 skills/agrim-doctor/scripts/doctor.py check <local-goals-scratch>/.sdlc",
+      "summary": "egress-doctor-local.json",
+      "finding": "codex plugin, git, and gh api launches were recorded; the hook cannot inspect gh's own connection"
+    }
+  ]
+}

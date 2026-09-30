@@ -1,0 +1,16 @@
+{
+  "destinations": {
+    "program:git:add": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:git:commit": {
+      "count": 1,
+      "loopback": false
+    },
+    "program:git:init": {
+      "count": 1,
+      "loopback": false
+    }
+  }
+}
