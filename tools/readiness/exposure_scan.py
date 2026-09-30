@@ -136,8 +136,44 @@ def _tracked_blobs(repo):
     return result.items()
 
 
-def _commits_for_blob(repo, sha):
-    return _run("git", "log", "--all", "--format=%H", "--find-object=" + sha, cwd=repo).splitlines()
+def _batch_metadata(repo, shas):
+    """Read Git object metadata in one process instead of one process per blob."""
+    process = subprocess.run(["git", "cat-file", "--batch-check"], cwd=repo,
+                             input="".join(sha + "\n" for sha in shas).encode(), capture_output=True)
+    if process.returncode:
+        raise ValueError(process.stderr.decode("utf-8", "replace").strip() or "git cat-file metadata failed")
+    rows = process.stdout.splitlines()
+    if len(rows) != len(shas):
+        raise ValueError("cannot inspect reachable Git object")
+    meta = {}
+    for sha, row in zip(shas, rows):
+        fields = row.decode("ascii", "replace").split()
+        if len(fields) != 3 or fields[0] != sha:
+            raise ValueError("cannot inspect reachable Git object")
+        meta[sha] = (fields[1], int(fields[2]))
+    return meta
+
+
+def _batch_contents(repo, shas):
+    """Read selected text blobs in one batch, after their size limit was checked."""
+    process = subprocess.run(["git", "cat-file", "--batch"], cwd=repo,
+                             input="".join(sha + "\n" for sha in shas).encode(), capture_output=True)
+    if process.returncode:
+        raise ValueError(process.stderr.decode("utf-8", "replace").strip() or "git cat-file batch failed")
+    output = process.stdout
+    offset = 0
+    contents = {}
+    for sha in shas:
+        end = output.find(b"\n", offset)
+        fields = output[offset:end].decode("ascii", "replace").split()
+        offset = end + 1
+        if len(fields) != 3 or fields[0] != sha or fields[1] != "blob":
+            raise ValueError("cannot read reachable Git blob")
+        size = int(fields[2])
+        data = output[offset:offset + size]
+        offset += size + 1
+        contents[sha] = data
+    return contents
 
 
 def scan(repo, mode, allowlist=None, patterns=None):
@@ -149,14 +185,19 @@ def scan(repo, mode, allowlist=None, patterns=None):
     findings, skipped, counts = [], {"oversized": 0, "binary": 0}, {"legacy_issue_references": 0}
     rules = _patterns(patterns, repo)
     blobs = _history_blobs(repo) if mode == "history" else _tracked_blobs(repo)
-    for sha, record in blobs:
+    blob_records = dict(blobs)
+    metadata = _batch_metadata(repo, list(blob_records))
+    readable = [sha for sha, (kind, size) in metadata.items()
+                if kind == "blob" and size <= MAX_BLOB_BYTES]
+    contents = _batch_contents(repo, readable)
+    for sha, record in blob_records.items():
         paths, commits = record["paths"], record["commits"]
-        if _run("git", "cat-file", "-t", sha, cwd=repo).strip() != "blob":
+        kind, size = metadata[sha]
+        if kind != "blob":
             continue
-        size = int(_run("git", "cat-file", "-s", sha, cwd=repo).strip())
         if size > MAX_BLOB_BYTES:
             skipped["oversized"] += 1; continue
-        data = _run("git", "cat-file", "blob", sha, cwd=repo, text=False)
+        data = contents[sha]
         if b"\0" in data:
             skipped["binary"] += 1; continue
         text = data.decode("utf-8", "replace")
