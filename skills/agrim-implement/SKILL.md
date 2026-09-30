@@ -73,15 +73,15 @@ After writing the plan's `## Tests` entries, record both stages through Sigma:
 python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" verify .sdlc "$goal"
 ```
 
-Run it while planned tests fail by assertion and again after green. Plain commands do not record
-proof; changed tests earn red again. For refactors: break, red, restore, green.
+Record assertion-red then green. Plain commands do not; changed tests need red again.
+Refactors: break, red, restore, green.
 
-Skip TDD only for prototypes, generated code, or config; say so. With
-`verify.enforce`, `work.py pr --no-tests <reason>` is a verbatim PR-body exception;
+Skip TDD for prototypes, generated code, or config; say so. With
+`verify.enforce`, `work.py pr --no-tests <reason>` is a PR-body exception;
 it bypasses only test-first proof, never other gates.
 
 ## Sources
-Kent Beck defines TDD; Martin Fowler names refactor smells.
+Kent Beck's *Test-Driven Development: By Example* defines TDD; Martin Fowler's *Refactoring: Improving the Design of Existing Code* names refactor smells.
 
 ## Test behavior, not plumbing (anti-patterns to avoid)
 - **Don't test the mock** — assert real behavior/output, not that a stub was called.
