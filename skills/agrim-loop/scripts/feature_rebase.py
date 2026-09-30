@@ -1055,7 +1055,8 @@ def own_losses(cwd, remote_tip, pre_head, base_ref, paths, deadline=None):
     "drop obsolete" commit -- and a path P is exempt ONLY IF all three hold:
       (a) the loss is a pure DELETION: P is in `remote_tip`'s tree and absent from `pre_head`'s;
       (b) a commit unique to the branch -- reachable from `pre_head`, from neither `remote_tip`
-          nor `base_ref`, not a merge -- has a `D` status for exactly P in its own diff;
+          nor `base_ref` nor ANY remote-tracking ref, not a merge -- has a `D` status for
+          exactly P in its own diff;
       (c) the base left P alone since the remote tip: no commit reachable from `base_ref` and not
           from `remote_tip` (merges read against every parent) touches P at all, so the deletion
           cannot be a base revert replayed onto the branch.
@@ -1068,8 +1069,9 @@ def own_losses(cwd, remote_tip, pre_head, base_ref, paths, deadline=None):
     FAIL CLOSED: a missing `remote_tip`, `pre_head` or `base_ref` exempts nothing (the documented
     cost: a healthy local deletion refused, `docs/branching-model.md` §3b). A SHALLOW repository
     RAISES (the history (b) and (c) read is cut off, so their answer is not known) and says so.
-    Residual (§15): a base force-pushed since the lossy rebase no longer reaches its revert, which
-    then reads as a unique branch commit -- (b) can pass, and (c) sees only the rewritten base.
+    Residual (§15): when every remote-tracking ref that reached the offending deletion has been
+    force-rewritten or removed, it can still read as a unique branch commit. No implicit fetch:
+    this check knows only the refs held locally. Excluding them adds no network operation.
 
     COST, only when there is a remote -> pre_head pure deletion: one `rev-parse`, two `ls-tree` and
     two `git log --raw` per `_HISTORY_CHUNK` paths, config-pinned, `--literal-pathspecs`, each bounded
@@ -1092,7 +1094,10 @@ def own_losses(cwd, remote_tip, pre_head, base_ref, paths, deadline=None):
     deleted = sorted(p for p in paths if p in remote_held and p not in pre_held)       # (a)
     if not deleted:
         return set()
-    branch = _touched(cwd, [pre_head, "--not", remote_tip, base_ref], deleted, deadline, False)
+    # #292: an earlier rebase onto upstream/main can import a deletion absent from origin/main.
+    # Exclude every fetched remote's history; --remotes MUST follow --not to subtract it.
+    branch = _touched(cwd, [pre_head, "--not", remote_tip, base_ref, "--remotes"],
+                      deleted, deadline, False)
     deleted = [p for p in deleted if "D" in branch.get(p, ())]                         # (b)
     if not deleted:
         return set()

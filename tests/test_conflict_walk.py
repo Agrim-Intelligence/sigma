@@ -2058,3 +2058,90 @@ def test_278_b2_the_guard_has_one_wall_clock_budget_across_its_reads(tmp_path, m
     push = m.rebase_brief.push_branch(_run, str(local), "origin", BRANCH, pre_head=head,
                                       base_ref="origin/%s" % BASE)
     assert push["ok"] is False and "SIGMA_WATCH_CALL_TIMEOUT" in push["why"], push
+
+
+# --------------------------------------------------------------------------- #292 review follow-ups
+
+def _fork_upstream_loss_world(tmp_path):
+    """A fork base never touched old.txt, but the fetched upstream base deleted it."""
+    local = _pushed_then_local(tmp_path)
+    upstream = tmp_path / "upstream.git"
+    _git(tmp_path, "init", "-q", "--bare", str(upstream))
+    _git(local, "remote", "add", "upstream", str(upstream))
+    _git(local, "checkout", "-q", "-b", "upstream-base", "origin/%s" % BASE)
+    seed = _git(local, "rev-parse", "HEAD")
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "upstream removes old.txt")
+    _git(local, "push", "-q", "upstream", "HEAD:refs/heads/main")
+    _git(local, "checkout", "-q", BRANCH)
+    _git(local, "rebase", "-q", "upstream/main")
+    assert not (local / "old.txt").exists()
+    _main_moves(local)
+    return local, seed
+
+
+def test_292_fork_upstream_loss_is_refused_before_upkeep_can_push_it(tmp_path):
+    m = _mod()
+    local, _ = _fork_upstream_loss_world(tmp_path)
+    before = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.WOULD_DROP, report
+    assert report["files"] == ["old.txt"]
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == before
+    assert _git(local, "show", "%s:old.txt" % before) == "obsolete"
+
+
+def test_292_a_merge_only_deletion_cannot_supply_condition_b(tmp_path):
+    """Unlike #278's fixture, the base never touched old.txt, so (c) cannot mask broken (b)."""
+    m = _mod()
+    local = _pushed_then_local(tmp_path)
+    _git(local, "checkout", "-q", "-b", "local-sibling")
+    _write(local / "side.txt", "side\n")
+    _git(local, "add", "side.txt")
+    _git(local, "commit", "-qm", "side work")
+    _git(local, "checkout", "-q", BRANCH)
+    _write(local / "own.txt", "own\n")
+    _git(local, "add", "own.txt")
+    _git(local, "commit", "-qm", "own work")
+    _git(local, "merge", "--no-ff", "--no-commit", "local-sibling")
+    _git(local, "rm", "-q", "old.txt")
+    _git(local, "commit", "-qm", "merge result alone deletes old.txt")
+    tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    head = _git(local, "rev-parse", "HEAD")
+    assert m.feature_rebase.dropped_paths(str(local), tip, head) == ["old.txt"]
+    assert m.feature_rebase._touched(str(local), ["origin/%s" % BASE, "--not", tip],
+                                    ["old.txt"], None, True) == {}
+    assert m.feature_rebase.own_losses(str(local), tip, head, "origin/%s" % BASE,
+                                       ["old.txt"]) == set()
+    push = m.rebase_brief.push_branch(_run, str(local), "origin", BRANCH,
+                                      pre_head=head, base_ref="origin/%s" % BASE)
+    assert not push["ok"] and push["dropped"] == ["old.txt"], push
+    assert _git(local, "ls-remote", "origin", "refs/heads/%s" % BRANCH).split()[0] == tip
+
+
+def test_292_mixed_loss_advice_distinguishes_undo_from_content_recovery(tmp_path):
+    m = _mod()
+    local = _lossy_local_rebase_world(tmp_path)
+    pre = _git(local, "rev-parse", "HEAD")
+    tip = _git(local, "rev-parse", "origin/%s" % BRANCH)
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.WOULD_DROP, report
+    assert "reset --keep %s" % pre in report["why"]
+    assert "does not recover losses already present" in report["why"]
+    assert tip in report["why"] and "retained remote tip" in report["why"]
+    assert "reset --keep %s" % tip not in report["why"]
+    # Run the advertised reset: it really only undoes the latest replay.
+    _git(local, "reset", "--keep", pre)
+    assert not (local / "w.txt").exists()
+    assert len(_git(local, "show", "%s:w.txt" % tip).splitlines()) == 300
+
+
+@pytest.mark.xfail(strict=True, reason="DOCUMENTED LIMIT (§15): after every remote-tracking ref "
+                   "to the upstream deletion is force-rewritten away, it resembles a local deletion")
+def test_292_known_limit_force_rewritten_upstream_erases_deletion_provenance(tmp_path):
+    m = _mod()
+    local, seed = _fork_upstream_loss_world(tmp_path)
+    _git(local, "push", "-q", "--force", "upstream", "%s:refs/heads/main" % seed)
+    _git(local, "fetch", "-q", "upstream")
+    report = m.rebase_brief.attempt_rebase(_run, str(local), "origin", BRANCH, BASE)
+    assert report["outcome"] == m.rebase_brief.WOULD_DROP, report

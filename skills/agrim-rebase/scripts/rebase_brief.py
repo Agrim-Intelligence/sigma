@@ -547,8 +547,9 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
     itself loses (`pre_head` -> HEAD) is always measured. A loss already present between the remote
     tip and `pre_head` is exempt ONLY when it is the branch's own deliberate local DELETION --
     `feature_rebase.own_losses` against `base_ref` (a local, unpushed `git rm` commit of a path the
-    base left alone: exempt; a ROLLBACK or any modification in that range, and anything an earlier,
-    unpushed LOCAL rebase lost: refused -- review blocks #1 and #2). No `base_ref`, or a shallow
+    base left alone: exempt; a ROLLBACK or any modification in that range, and losses attributable
+    to a fetched upstream after an earlier LOCAL rebase: refused -- review blocks #1 and #2,
+    subject to the current-ref provenance limits in branching-model §15). No `base_ref`, or a shallow
     clone, exempts nothing. All the guard's reads for one push share one wall-clock budget
     (`feature_rebase.guard_deadline`, `SIGMA_WATCH_CALL_TIMEOUT`); running out refuses.
     `None` derives `pre_head` from git's own record: when the branch reflog's newest entry is a
@@ -559,7 +560,8 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
     remote never had, with no pre-rebase head to measure from, is not seen -- `_would_lose` and the
     refused-push marker cover the paths this skill itself rebases). The undo advice names
     `pre_head` when known, never the remote tip, because resetting to the remote tip would throw
-    the unpushed local commits away.
+    the unpushed local commits away. That reset only undoes the latest rebase. The refusal also
+    names the retained remote commit as a content-recovery source for losses predating it.
 
     A branch a refused replay could not put back (`feature_rebase.push_refused`'s marker) is refused
     before anything is measured.
@@ -593,17 +595,22 @@ def push_branch(run, cwd, remote, branch, accepted=(), pre_head=None, base_ref=N
     if refusal is not None:
         dropped, why = refusal
         if pre_head:
-            undo = ("`git reset --keep %s` (the head it had before the rebase) puts it back"
-                    % pre_head)
+            undo = ("`git reset --keep %s` undoes only this rebase; it does not recover losses "
+                    "already present in that pre-rebase head" % pre_head)
         else:
             undo = ("the head it had before the rebase is in `git reflog %s`; `git reset --keep "
-                    "<that sha>` puts it back (not the remote tip %s -- that would also discard "
+                    "<that sha>` undoes that rebase but may not recover earlier losses "
+                    "(not the remote tip %s -- that would also discard "
                     "any local commits not yet pushed)" % (branch, overwritten[:12]))
+        recovery = (". The retained remote tip %s (%s/%s) is a recovery source for the "
+                    "paths it still contains; inspect it with `git show %s:<path>` and restore chosen "
+                    "content without discarding unpushed local commits"
+                    % (overwritten, remote, branch, overwritten)) if overwritten else ""
         return {"ok": False, "dropped": dropped,
-                "why": "%s/%s: %s. The local branch still holds the rewritten history -- %s; if "
+                "why": "%s/%s: %s. The local branch still holds the rewritten history -- %s%s; if "
                        "losing or rolling back those paths IS intended (only a plain local "
                        "deletion is ever let through without you), push it yourself with `git push "
-                       "--force-with-lease %s HEAD:%s`" %(remote, branch, why, undo, remote, branch)}
+                       "--force-with-lease %s HEAD:%s`" %(remote, branch, why, undo, recovery, remote, branch)}
     try:
         run(cwd, ["git", "push", "--force-with-lease", remote, "HEAD:%s" % branch])
     except Exception as exc:                    # noqa: BLE001 - a refused lease is an outcome, not a crash
