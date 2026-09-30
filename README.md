@@ -2039,8 +2039,7 @@ the operator must remove that damaged marker after confirming no worker is live.
 > Run `python3 <sigma>/skills/agrim-loop/scripts/loop.py session-active .sdlc`. If it prints `ACTIVE`,
 > stop here — a session is already running, nothing to do.
 >
-> If it prints `FREE`: capture `session_generation=$(python3 <sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid
-> "$PPID"` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
+> If it prints `FREE`: capture `session_generation=$(python3 <sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid "$PPID")` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
 > shell on THIS call and on every `next`/`next-batch`/`session-end` call below, rather than trying to
 > remember a value captured earlier — it stays the same stable value every time you read it during
 > this one routine firing, which is exactly what makes it safe to use as this firing's own session
