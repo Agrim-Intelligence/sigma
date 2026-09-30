@@ -62,7 +62,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-init/scripts/board_layout.py",
@@ -126,21 +126,13 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/coexist.py",
       "function": "backup_features",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/cross_repo.py",
-      "function": "check_access",
-      "rule": "git-push",
-      "count": 2,
       "gate": "ungated",
       "risk": "high"
     },
@@ -182,14 +174,14 @@
       "rule": "gh-api-write",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/feature_rebase.py",
       "function": "<module>",
       "rule": "git-push",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -197,7 +189,7 @@
       "function": "_aftermath",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -205,7 +197,7 @@
       "function": "_drop_worktree",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -213,7 +205,7 @@
       "function": "_drop_worktree",
       "rule": "git-destructive",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -221,7 +213,7 @@
       "function": "_drop_worktree",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -229,7 +221,7 @@
       "function": "_pushed",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -237,7 +229,7 @@
       "function": "_rebase_feature",
       "rule": "git-push",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -245,7 +237,7 @@
       "function": "_replay_goals",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -253,7 +245,7 @@
       "function": "own_losses",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.rebase_upkeep",
       "risk": "high"
     },
     {
@@ -310,15 +302,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/release_manifest.py",
-      "function": "publish_to_ledger_branch",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
@@ -333,7 +317,7 @@
       "function": "_apply_custom_fields",
       "rule": "gh-project",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -341,7 +325,7 @@
       "function": "_archive_card",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -349,7 +333,7 @@
       "function": "_create_field_mutation",
       "rule": "graphql-mutation",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -357,7 +341,7 @@
       "function": "_ensure_board",
       "rule": "gh-project",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -365,7 +349,7 @@
       "function": "_ensure_labels",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -373,7 +357,7 @@
       "function": "_ensure_labels",
       "rule": "git-push",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "high"
     },
     {
@@ -381,7 +365,7 @@
       "function": "_ensure_priority_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -389,7 +373,7 @@
       "function": "_ensure_status_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -397,7 +381,7 @@
       "function": "_ensure_status_field",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -405,7 +389,7 @@
       "function": "_item_id",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -413,7 +397,7 @@
       "function": "_options_mutation",
       "rule": "graphql-mutation",
       "count": 2,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -421,15 +405,15 @@
       "function": "_run",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "_set_board_status",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -437,7 +421,7 @@
       "function": "_swap_labels",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -445,7 +429,7 @@
       "function": "_sync_backlog",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -453,7 +437,7 @@
       "function": "_write_board_phase",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -461,7 +445,7 @@
       "function": "_write_priority_field",
       "rule": "gh-project",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -469,39 +453,39 @@
       "function": "_write_priority_label",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "append_to_body",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "complete",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "create_dependency",
       "rule": "gh-issue",
       "count": 3,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "create_dependency",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -509,7 +493,7 @@
       "function": "create_dependency",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "high"
     },
     {
@@ -517,7 +501,7 @@
       "function": "ensure_labels",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "high"
     },
     {
@@ -525,7 +509,7 @@
       "function": "ensure_labels_report",
       "rule": "gh-label",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -533,7 +517,7 @@
       "function": "ensure_labels_report",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "high"
     },
     {
@@ -541,7 +525,7 @@
       "function": "mark_needs_triage",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "high"
     },
     {
@@ -549,23 +533,23 @@
       "function": "note",
       "rule": "gh-issue",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "release",
       "rule": "gh-issue",
       "count": 2,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "set_board_phase",
       "rule": "graphql-mutation",
       "count": 1,
-      "gate": "ungated",
+      "gate": "discovery.source == \"github\"; board writes also project.enabled",
       "risk": "medium"
     },
     {
@@ -578,31 +562,7 @@
     },
     {
       "path": "skills/agrim-loop/scripts/sync.py",
-      "function": "_ahead",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sync.py",
-      "function": "_push_with_retry",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sync.py",
       "function": "init",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sync.py",
-      "function": "publish_receipt",
       "rule": "git-push",
       "count": 1,
       "gate": "ungated",
@@ -630,7 +590,7 @@
       "rule": "gh-issue",
       "count": 3,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/triage.py",
@@ -646,7 +606,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/unpark.py",
@@ -654,14 +614,14 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "_open_pr_refusal",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -669,15 +629,15 @@
       "function": "close_design",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "finish",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -685,7 +645,7 @@
       "function": "finish",
       "rule": "git-destructive",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -693,7 +653,7 @@
       "function": "finish",
       "rule": "git-push",
       "count": 6,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -701,7 +661,7 @@
       "function": "main",
       "rule": "git-push",
       "count": 2,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -709,31 +669,31 @@
       "function": "merge",
       "rule": "gh-pr",
       "count": 2,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "merge_design",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "post_review",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "pr",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -741,7 +701,7 @@
       "function": "rebase",
       "rule": "git-destructive",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -749,7 +709,7 @@
       "function": "rebase",
       "rule": "git-push",
       "count": 3,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -757,7 +717,7 @@
       "function": "start",
       "rule": "git-push",
       "count": 1,
-      "gate": "ungated",
+      "gate": "work.enabled; merge paths also require fresh verify evidence and CLEAN PR",
       "risk": "high"
     },
     {
@@ -789,16 +749,16 @@
       "function": "ensure_landing_pr",
       "rule": "gh-pr",
       "count": 2,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "human input() confirmation",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-rebase/scripts/verify_merge.py",
       "function": "merge_pr",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "gate": "human input() confirmation",
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-scope/scripts/assign.py",
@@ -806,7 +766,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "skills/agrim-setup/scripts/setup.py",
@@ -830,7 +790,7 @@
       "rule": "gh-pr",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "tools/onboarding_control.py",
@@ -846,7 +806,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "tools/onboarding_control.py",
@@ -854,15 +814,7 @@
       "rule": "gh-pr",
       "count": 3,
       "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "tools/onboarding_control.py",
-      "function": "run_github",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
+      "risk": "medium"
     },
     {
       "path": "tools/readiness/write_surface.py",
