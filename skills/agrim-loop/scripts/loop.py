@@ -2431,6 +2431,35 @@ def write_session_heartbeat(sdlc_dir, session_pid, now=None, generation=None):
         return False
 
 
+def refresh_registered_session_heartbeat(sdlc_dir, session_pid):
+    """Refresh a heartbeat only while its session marker is still registered.
+
+    Phase-boundary reporters run in short-lived processes.  They may arrive after a clean
+    ``session-end`` has removed the managing session, so their liveness update must not recreate
+    a heartbeat with no corresponding registry marker.  Read the owner generation and publish
+    under the same stripe lock as ``session_end``; an end either happens before this no-op or
+    after it and removes both files.
+    """
+    try:
+        pid = int(session_pid)
+        path = _session_marker_path(sdlc_dir, pid)
+
+        def _refresh_if_registered():
+            if not path.is_file():
+                return False
+            data = _session_read(path, strict=True)
+            generation = data.get("generation")
+            return write_session_heartbeat(
+                sdlc_dir, pid,
+                generation=generation if isinstance(generation, str) and generation else None,
+            )
+
+        return _session_locked(sdlc_dir, pid, _refresh_if_registered, path=path,
+                               require_lock=True)
+    except (OSError, TypeError, ValueError, RuntimeError):
+        return False
+
+
 def session_heartbeat_liveness(sdlc_dir, session_pid, config=None, now=None):
     """`idle` means fresh even when no goal moved; `dead` is stale or absent evidence with a marker.
 
@@ -2670,8 +2699,10 @@ def session_start(sdlc_dir, session_pid, generation=None):
 def session_end(sdlc_dir, session_pid=None, generation=None):
     """Clear only the caller's own registry entry. Claude/legacy identity is the PID; Codex adds
     its thread ID, so ending one of two tasks under the same host PID leaves the other registered.
-    Best-effort and a safe no-op if that entry was never created. Defaults to `os.getppid()` when
-    no PID was passed, matching the CLI's existing fallback."""
+    A generation-bearing entry also requires its matching generation token; a bare cleanup is a
+    safe no-op rather than risking deletion of a successor. Best-effort and a safe no-op if that
+    entry was never created. Defaults to `os.getppid()` when no PID was passed, matching the CLI's
+    existing fallback."""
     try:
         pid = os.getppid() if session_pid is None else int(session_pid)
         path = _session_marker_path(sdlc_dir, pid)
@@ -2679,11 +2710,15 @@ def session_end(sdlc_dir, session_pid=None, generation=None):
         # Keep registry and heartbeat cleanup in the SAME critical section.  A successor start
         # cannot publish its marker, then have this old cleanup unlink its fresh heartbeat.
         def _end_if_owner():
-            if generation is not None:
-                try:
-                    if json.loads(path.read_text()).get("generation") != generation:
-                        return False
-                except (OSError, ValueError, AttributeError):
+            try:
+                owner_generation = json.loads(path.read_text()).get("generation")
+            except (OSError, ValueError, AttributeError):
+                return False
+            # A generation-bearing marker has an owner token.  A bare session-end cannot know
+            # whether it belongs to that owner or to a predecessor, so it must leave it alone.
+            # Old unversioned registry entries retain their best-effort cleanup behavior.
+            if isinstance(owner_generation, str) and owner_generation:
+                if generation != owner_generation:
                     return False
             path.unlink(missing_ok=True); heartbeat.unlink(missing_ok=True)
             return True

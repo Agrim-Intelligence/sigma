@@ -3435,12 +3435,12 @@ def test_codex_threads_with_same_live_pid_keep_separate_session_claims(monkeypat
         lp = _loop()
         pid = os.getpid()
         monkeypatch.setenv("CODEX_THREAD_ID", thread_a)
-        lp.session_start(sdlc, pid)
+        generation_a = lp.session_start(sdlc, pid)
         lp._session_claim(sdlc, pid, "goal-a")
         path_a = lp._session_marker_path(sdlc, pid)
 
         monkeypatch.setenv("CODEX_THREAD_ID", thread_b)
-        lp.session_start(sdlc, pid)
+        generation_b = lp.session_start(sdlc, pid)
         lp._session_claim(sdlc, pid, "goal-b")
         path_b = lp._session_marker_path(sdlc, pid)
 
@@ -3454,7 +3454,7 @@ def test_codex_threads_with_same_live_pid_keep_separate_session_claims(monkeypat
         lp._session_release(sdlc, "goal-a")
         assert lp._session_read(path_a)["in_flight"] == []
         assert lp._session_read(path_b)["in_flight"] == ["goal-b"]
-        lp.session_end(sdlc, pid)
+        lp.session_end(sdlc, pid, generation=generation_b)
         assert path_a.exists() and not path_b.exists()
 
 
@@ -3553,9 +3553,9 @@ def test_session_end_clears_a_live_marker():
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
         sdlc = d + "/.sdlc"
-        lp.session_start(sdlc, os.getpid())
+        generation = lp.session_start(sdlc, os.getpid())
         assert lp.session_active(sdlc, {}) is True
-        lp.session_end(sdlc, os.getpid())
+        lp.session_end(sdlc, os.getpid(), generation=generation)
         assert lp.session_active(sdlc, {}) is False
 
 
@@ -3666,9 +3666,9 @@ def test_session_end_from_one_session_leaves_the_other_registered():
     with tempfile.TemporaryDirectory() as d:
         sdlc = d + "/.sdlc"
         pid_a, pid_b = os.getpid(), os.getppid()
-        lp.session_start(sdlc, pid_a)
+        generation_a = lp.session_start(sdlc, pid_a)
         lp.session_start(sdlc, pid_b)
-        lp.session_end(sdlc, pid_a)
+        lp.session_end(sdlc, pid_a, generation=generation_a)
         registered = {pid for pid, _, _ in lp._session_entries(sdlc)}
         assert registered == {pid_b}
         assert lp.session_active(sdlc, {}) is True     # B is still live and registered
@@ -7483,10 +7483,10 @@ def test_session_heartbeat_is_written_at_start_and_removed_on_clean_end():
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 0)
-        lp.session_start(base, os.getpid())
+        generation = lp.session_start(base, os.getpid())
         hb = lp.session_heartbeat_path(base, os.getpid())
         assert json.loads(hb.read_text())["pid"] == os.getpid()
-        lp.session_end(base, os.getpid())
+        lp.session_end(base, os.getpid(), generation=generation)
         assert not hb.exists()
 
 
@@ -7542,7 +7542,7 @@ def test_next_batch_writes_one_heartbeat_for_its_prologue_and_not_each_slot(monk
 def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkeypatch):
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
-        base = _backlog(d, 0); pid = os.getpid(); lp.session_start(base, pid)
+        base = _backlog(d, 0); pid = os.getpid(); generation = lp.session_start(base, pid)
         calls = []
         real = lp._session_locked
         def locked(sdlc_dir, session_pid, fn, **kwargs):
@@ -7551,7 +7551,7 @@ def test_session_end_removes_its_heartbeat_while_holding_its_session_lock(monkey
                 return fn()
             return real(sdlc_dir, session_pid, probe, **kwargs)
         monkeypatch.setattr(lp, "_session_locked", locked)
-        lp.session_end(base, pid)
+        lp.session_end(base, pid, generation=generation)
         assert calls == [True]
         assert not lp.session_heartbeat_path(base, pid).exists()
 
@@ -7583,6 +7583,31 @@ def test_prior_session_end_cannot_delete_a_successor_generation():
         marker = json.loads(lp._session_marker_path(base, pid).read_text())
         heartbeat = json.loads(lp.session_heartbeat_path(base, pid).read_text())
         assert second == "second" and marker["generation"] == heartbeat["generation"] == "second"
+
+
+def test_bare_session_end_cannot_delete_a_successor_generation():
+    """The old no-token cleanup must not guess it owns a generation-bearing marker."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid()
+        lp.session_start(base, pid, generation="first")
+        lp.session_start(base, pid, generation="second")
+        lp.session_end(base, pid)
+        marker = json.loads(lp._session_marker_path(base, pid).read_text())
+        heartbeat = json.loads(lp.session_heartbeat_path(base, pid).read_text())
+        assert marker["generation"] == heartbeat["generation"] == "second"
+
+
+def test_registered_session_refresh_never_recreates_an_orphan_after_clean_end():
+    """A delayed phase-report refresh after session-end leaves neither lifecycle file behind."""
+    lp = _loop()
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0); pid = os.getpid()
+        generation = lp.session_start(base, pid)
+        lp.session_end(base, pid, generation=generation)
+        assert lp.refresh_registered_session_heartbeat(base, pid) is False
+        assert not lp._session_marker_path(base, pid).exists()
+        assert not lp.session_heartbeat_path(base, pid).exists()
 
 
 def test_cli_start_end_generation_prevents_a_prior_owner_from_clearing_a_successor(capsys):

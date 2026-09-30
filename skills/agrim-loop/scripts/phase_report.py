@@ -148,14 +148,14 @@ def _load(name):
 
 
 def _refresh_loop_heartbeat(sdlc_dir, pid):
-    """A phase boundary is a loop tick for liveness purposes; failure must not hide its report."""
+    """A phase boundary refreshes an extant loop; it never recreates a closed session."""
     if pid is None:
         return
     try:
         import importlib.util
         spec = importlib.util.spec_from_file_location("loop_heartbeat", _HERE / "loop.py")
         loop = importlib.util.module_from_spec(spec); spec.loader.exec_module(loop)
-        loop.write_session_heartbeat(sdlc_dir, pid)
+        loop.refresh_registered_session_heartbeat(sdlc_dir, pid)
     except Exception:
         pass
 
