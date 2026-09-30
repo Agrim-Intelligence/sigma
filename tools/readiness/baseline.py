@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import sys
 
@@ -128,6 +129,11 @@ def _repo_slug(repo):
     raise UsageError("cannot derive OWNER/NAME; pass --repo")
 
 
+def _evidence_title(title):
+    """Preserve issue identity while keeping retired product tokens out of evidence."""
+    return re.sub(r"\bloop\s*smith\b", "[retired product]", title, flags=re.I)
+
+
 def status(repo, issues, slug=None):
     """Read issue state via REST, through the injectable module-level runner."""
     slug = slug or _repo_slug(repo)
@@ -138,7 +144,8 @@ def status(repo, issues, slug=None):
             row = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"GitHub returned invalid issue JSON for #{number}") from exc
-        rows.append({key: row[key] for key in ("number", "state", "title")})
+        rows.append({"number": row["number"], "state": row["state"],
+                     "title": _evidence_title(row["title"])})
     return rows
 
 

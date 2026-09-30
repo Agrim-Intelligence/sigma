@@ -119,3 +119,15 @@ def test_status_uses_rest_through_injected_runner(monkeypatch):
         "repos/acme/sigma/issues/12", "repos/acme/sigma/issues/34",
     ]
     assert all(call[:2] == ["gh", "api"] for call in calls)
+
+
+def test_status_normalizes_retired_product_tokens_without_changing_state(monkeypatch):
+    baseline = _module()
+
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, json.dumps({
+            "number": 221, "state": "open", "title": "Publish " + "Loop" + "Smith snapshot"}), "")
+
+    monkeypatch.setattr(baseline, "RUN", fake_run)
+    assert baseline.status(Path("."), [221], "acme/sigma") == [{
+        "number": 221, "state": "open", "title": "Publish [retired product] snapshot"}]
