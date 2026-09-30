@@ -249,6 +249,13 @@ def scan_refs(repo):
             "owner_checklist": ["enable secret scanning and push protection on the public repository", "delete or keep backup/public-snapshot-* tag", "decide the fate of remote branches"]}
 
 
+def _display_path(path):
+    """Keep public evidence free of paths absent from the shipped snapshot."""
+    if path.startswith(("tests/", "tools/")):
+        return "[historical non-shipped path]"
+    return path
+
+
 def _write(report, path):
     """Write paired machine and human evidence without ever reconstructing a matched value."""
     path = pathlib.Path(path)
@@ -257,7 +264,7 @@ def _write(report, path):
     lines = ["# Launch exposure scan", "", "Mode: `%s`" % report.get("mode", "refs"), ""]
     if "findings" in report:
         lines += ["| Rule | Path | Line | Blob |", "| --- | --- | ---: | --- |"]
-        lines += ["| %s | `%s` | %s | `%s` |" % (x["rule"], x["path"], x["line"], x["blob"][:12])
+        lines += ["| %s | `%s` | %s | `%s` |" % (x["rule"], _display_path(x["path"]), x["line"], x["blob"][:12])
                   for x in report["findings"]]
         lines += ["", "Skipped: oversized=%d, binary=%d." %
                   (report["skipped"]["oversized"], report["skipped"]["binary"])]

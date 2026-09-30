@@ -116,6 +116,23 @@ def test_private_patterns_cover_normal_windows_paths_and_allow_anthropic_noreply
     assert not any(x["rule"] == "email-address" and x["path"] == "safe-email.txt" for x in findings)
 
 
+def test_human_evidence_omits_nonshipped_test_and_tool_paths(tmp_path):
+    scan = _tool()
+    report = {
+        "mode": "history", "findings": [
+            {"rule": "auth", "path": "tests/removed.py", "line": 7, "blob": "a" * 40},
+            {"rule": "auth", "path": "tools/removed.py", "line": 8, "blob": "b" * 40},
+        ], "skipped": {"oversized": 0, "binary": 0},
+        "counts": {"legacy_issue_references": 0}, "stale_allowlist": [],
+    }
+    out = tmp_path / "evidence.json"
+    scan._write(report, out)
+    rendered = out.with_suffix(".md").read_text()
+    assert "tests/removed.py" not in rendered and "tools/removed.py" not in rendered
+    assert rendered.count("[historical non-shipped path]") == 2
+    assert "aaaaaaaaaaaa" in rendered and "bbbbbbbbbbbb" in rendered
+
+
 def test_refs_lists_remote_and_local_only_tags_without_network(monkeypatch, tmp_path, capsys):
     scan = _tool()
     repo = _repo(tmp_path)

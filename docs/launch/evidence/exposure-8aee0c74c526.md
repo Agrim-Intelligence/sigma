@@ -16,227 +16,227 @@ Mode: `history`
 | email-address | `skills/agrim-loop/scripts/upstream.py` | 656 | `69b07ee44552` |
 | auth | `skills/agrim-loop/scripts/work.py` | 619 | `c7b063b44e63` |
 | email-address | `skills/agrim-setup/scripts/setup.py` | 110 | `816d4f230bcd` |
-| credential-assignment | `tests/boardfake.py` | 51 | `47632a548ba7` |
-| credential-assignment | `tests/test_actionlog.py` | 386 | `3a1dd050c5b5` |
-| aws-key | `tests/test_actionlog.py` | 386 | `3a1dd050c5b5` |
-| credential-assignment | `tests/test_alignment_collect.py` | 184 | `9273e5c8ec15` |
-| gh-token | `tests/test_alignment_collect.py` | 202 | `9273e5c8ec15` |
-| credential-assignment | `tests/test_backlog_check.py` | 331 | `2110eb9c462d` |
-| aws-key | `tests/test_backlog_check.py` | 331 | `2110eb9c462d` |
-| absolute-home-path | `tests/test_coexist.py` | 213 | `1427049357af` |
-| email-address | `tests/test_coexist.py` | 705 | `1427049357af` |
-| credential-assignment | `tests/test_comment_watch.py` | 208 | `9486badc38fa` |
-| aws-key | `tests/test_comment_watch.py` | 208 | `9486badc38fa` |
-| credential-assignment | `tests/test_decision_gate.py` | 462 | `f60d8634c8e1` |
-| aws-key | `tests/test_decision_gate.py` | 462 | `f60d8634c8e1` |
-| aws-key | `tests/test_discovery_scan.py` | 53 | `1d6e4fb5fe9d` |
-| email-address | `tests/test_discovery_scan.py` | 39 | `1d6e4fb5fe9d` |
-| email-address | `tests/test_docs.py` | 1017 | `fabb1f848a62` |
-| email-address | `tests/test_doctor.py` | 611 | `117d9d9addeb` |
-| email-address | `tests/test_feature_owner.py` | 1043 | `824d14dddb43` |
-| email-address | `tests/test_feature_propagate.py` | 258 | `9419fbbe29f8` |
-| email-address | `tests/test_feature_sync.py` | 122 | `153dc3c42fc1` |
-| email-address | `tests/test_init_flow.py` | 218 | `ab518d7c694e` |
-| credential-assignment | `tests/test_ledger.py` | 1614 | `05d0ae05dced` |
-| private-key | `tests/test_ledger.py` | 1604 | `05d0ae05dced` |
-| aws-key | `tests/test_ledger.py` | 1614 | `05d0ae05dced` |
-| gh-token | `tests/test_ledger.py` | 1623 | `05d0ae05dced` |
-| auth | `tests/test_ledger.py` | 1641 | `05d0ae05dced` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `1ecd49140ec1` |
-| aws-key | `tests/test_loop.py` | 5707 | `1ecd49140ec1` |
-| gh-token | `tests/test_loop.py` | 6956 | `1ecd49140ec1` |
-| email-address | `tests/test_merge_observation.py` | 548 | `235c12ae3e64` |
-| aws-key | `tests/test_mirror.py` | 48 | `84b9a8dd8589` |
-| email-address | `tests/test_no_autonomous_feature_branch_deletion.py` | 92 | `8a0956828c62` |
-| url-password | `tests/test_preflight.py` | 565 | `0a33a8b76a63` |
-| email-address | `tests/test_preflight.py` | 50 | `0a33a8b76a63` |
-| absolute-home-path | `tests/test_readiness_exposure_scan.py` | 92 | `960d46426a38` |
-| sk-key | `tests/test_research_capture.py` | 53 | `c8a97a9b666e` |
-| credential-assignment | `tests/test_research_capture.py` | 53 | `c8a97a9b666e` |
-| private-key | `tests/test_research_capture.py` | 126 | `c8a97a9b666e` |
-| aws-key | `tests/test_research_capture.py` | 49 | `c8a97a9b666e` |
-| gh-token | `tests/test_research_capture.py` | 50 | `c8a97a9b666e` |
-| jwt | `tests/test_research_capture.py` | 51 | `c8a97a9b666e` |
-| auth | `tests/test_research_capture.py` | 54 | `c8a97a9b666e` |
-| credential-assignment | `tests/test_risk_detect.py` | 87 | `c441374aa35a` |
-| aws-key | `tests/test_risk_detect.py` | 87 | `c441374aa35a` |
-| credential-assignment | `tests/test_scrub.py` | 50 | `d5c97165dfbd` |
-| private-key | `tests/test_scrub.py` | 63 | `d5c97165dfbd` |
-| aws-key | `tests/test_scrub.py` | 16 | `d5c97165dfbd` |
-| jwt | `tests/test_scrub.py` | 17 | `d5c97165dfbd` |
-| email-address | `tests/test_sdlc_init.py` | 55 | `dc3f21c51675` |
-| email-address | `tests/test_setup.py` | 30 | `baf1e7f68807` |
-| slack-token | `tests/test_slack_client.py` | 59 | `43de5d6aacee` |
-| email-address | `tests/test_test_first_gate.py` | 95 | `0ebeac1c2ad2` |
-| credential-assignment | `tests/test_unit_completion.py` | 129 | `f8c813e839c7` |
-| absolute-home-path | `tests/test_upstream.py` | 526 | `6c3aefea04c6` |
-| email-address | `tests/test_upstream.py` | 527 | `6c3aefea04c6` |
-| email-address | `tests/test_verify_detect.py` | 46 | `8e301cf0e18b` |
-| aws-key | `tests/test_work.py` | 4948 | `ae35f3c10edb` |
-| email-address | `tests/test_work.py` | 66 | `ae35f3c10edb` |
+| credential-assignment | `[historical non-shipped path]` | 51 | `47632a548ba7` |
+| credential-assignment | `[historical non-shipped path]` | 386 | `3a1dd050c5b5` |
+| aws-key | `[historical non-shipped path]` | 386 | `3a1dd050c5b5` |
+| credential-assignment | `[historical non-shipped path]` | 184 | `9273e5c8ec15` |
+| gh-token | `[historical non-shipped path]` | 202 | `9273e5c8ec15` |
+| credential-assignment | `[historical non-shipped path]` | 331 | `2110eb9c462d` |
+| aws-key | `[historical non-shipped path]` | 331 | `2110eb9c462d` |
+| absolute-home-path | `[historical non-shipped path]` | 213 | `1427049357af` |
+| email-address | `[historical non-shipped path]` | 705 | `1427049357af` |
+| credential-assignment | `[historical non-shipped path]` | 208 | `9486badc38fa` |
+| aws-key | `[historical non-shipped path]` | 208 | `9486badc38fa` |
+| credential-assignment | `[historical non-shipped path]` | 462 | `f60d8634c8e1` |
+| aws-key | `[historical non-shipped path]` | 462 | `f60d8634c8e1` |
+| aws-key | `[historical non-shipped path]` | 53 | `1d6e4fb5fe9d` |
+| email-address | `[historical non-shipped path]` | 39 | `1d6e4fb5fe9d` |
+| email-address | `[historical non-shipped path]` | 1017 | `fabb1f848a62` |
+| email-address | `[historical non-shipped path]` | 611 | `117d9d9addeb` |
+| email-address | `[historical non-shipped path]` | 1043 | `824d14dddb43` |
+| email-address | `[historical non-shipped path]` | 258 | `9419fbbe29f8` |
+| email-address | `[historical non-shipped path]` | 122 | `153dc3c42fc1` |
+| email-address | `[historical non-shipped path]` | 218 | `ab518d7c694e` |
+| credential-assignment | `[historical non-shipped path]` | 1614 | `05d0ae05dced` |
+| private-key | `[historical non-shipped path]` | 1604 | `05d0ae05dced` |
+| aws-key | `[historical non-shipped path]` | 1614 | `05d0ae05dced` |
+| gh-token | `[historical non-shipped path]` | 1623 | `05d0ae05dced` |
+| auth | `[historical non-shipped path]` | 1641 | `05d0ae05dced` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `1ecd49140ec1` |
+| aws-key | `[historical non-shipped path]` | 5707 | `1ecd49140ec1` |
+| gh-token | `[historical non-shipped path]` | 6956 | `1ecd49140ec1` |
+| email-address | `[historical non-shipped path]` | 548 | `235c12ae3e64` |
+| aws-key | `[historical non-shipped path]` | 48 | `84b9a8dd8589` |
+| email-address | `[historical non-shipped path]` | 92 | `8a0956828c62` |
+| url-password | `[historical non-shipped path]` | 565 | `0a33a8b76a63` |
+| email-address | `[historical non-shipped path]` | 50 | `0a33a8b76a63` |
+| absolute-home-path | `[historical non-shipped path]` | 92 | `960d46426a38` |
+| sk-key | `[historical non-shipped path]` | 53 | `c8a97a9b666e` |
+| credential-assignment | `[historical non-shipped path]` | 53 | `c8a97a9b666e` |
+| private-key | `[historical non-shipped path]` | 126 | `c8a97a9b666e` |
+| aws-key | `[historical non-shipped path]` | 49 | `c8a97a9b666e` |
+| gh-token | `[historical non-shipped path]` | 50 | `c8a97a9b666e` |
+| jwt | `[historical non-shipped path]` | 51 | `c8a97a9b666e` |
+| auth | `[historical non-shipped path]` | 54 | `c8a97a9b666e` |
+| credential-assignment | `[historical non-shipped path]` | 87 | `c441374aa35a` |
+| aws-key | `[historical non-shipped path]` | 87 | `c441374aa35a` |
+| credential-assignment | `[historical non-shipped path]` | 50 | `d5c97165dfbd` |
+| private-key | `[historical non-shipped path]` | 63 | `d5c97165dfbd` |
+| aws-key | `[historical non-shipped path]` | 16 | `d5c97165dfbd` |
+| jwt | `[historical non-shipped path]` | 17 | `d5c97165dfbd` |
+| email-address | `[historical non-shipped path]` | 55 | `dc3f21c51675` |
+| email-address | `[historical non-shipped path]` | 30 | `baf1e7f68807` |
+| slack-token | `[historical non-shipped path]` | 59 | `43de5d6aacee` |
+| email-address | `[historical non-shipped path]` | 95 | `0ebeac1c2ad2` |
+| credential-assignment | `[historical non-shipped path]` | 129 | `f8c813e839c7` |
+| absolute-home-path | `[historical non-shipped path]` | 526 | `6c3aefea04c6` |
+| email-address | `[historical non-shipped path]` | 527 | `6c3aefea04c6` |
+| email-address | `[historical non-shipped path]` | 46 | `8e301cf0e18b` |
+| aws-key | `[historical non-shipped path]` | 4948 | `ae35f3c10edb` |
+| email-address | `[historical non-shipped path]` | 66 | `ae35f3c10edb` |
 | auth | `.sdlc/plans/258.md` | 1062 | `95410bc9a4ec` |
 | absolute-home-path | `.sdlc/plans/258.md` | 803 | `95410bc9a4ec` |
-| absolute-home-path | `tests/test_readiness_exposure_scan.py` | 75 | `51a8e6392fdc` |
+| absolute-home-path | `[historical non-shipped path]` | 75 | `51a8e6392fdc` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `e3dd60e31e6d` |
 | auth | `skills/agrim-loop/scripts/work.py` | 615 | `ad30401cf763` |
 | email-address | `skills/agrim-setup/scripts/setup.py` | 69 | `b44fdcc1b1ea` |
-| email-address | `tests/test_init_flow.py` | 218 | `d7fdfb19969e` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `0762982c6e5e` |
-| aws-key | `tests/test_loop.py` | 5707 | `0762982c6e5e` |
-| gh-token | `tests/test_loop.py` | 6956 | `0762982c6e5e` |
-| private-key | `tests/test_scrub.py` | 55 | `fbe7e8817695` |
-| aws-key | `tests/test_scrub.py` | 16 | `fbe7e8817695` |
-| jwt | `tests/test_scrub.py` | 17 | `fbe7e8817695` |
-| email-address | `tests/test_sdlc_init.py` | 55 | `3315106b4517` |
-| email-address | `tests/test_setup.py` | 28 | `9696bc9a8dfc` |
-| aws-key | `tests/test_work.py` | 4805 | `f28ae98b0bfe` |
-| email-address | `tests/test_work.py` | 66 | `f28ae98b0bfe` |
+| email-address | `[historical non-shipped path]` | 218 | `d7fdfb19969e` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `0762982c6e5e` |
+| aws-key | `[historical non-shipped path]` | 5707 | `0762982c6e5e` |
+| gh-token | `[historical non-shipped path]` | 6956 | `0762982c6e5e` |
+| private-key | `[historical non-shipped path]` | 55 | `fbe7e8817695` |
+| aws-key | `[historical non-shipped path]` | 16 | `fbe7e8817695` |
+| jwt | `[historical non-shipped path]` | 17 | `fbe7e8817695` |
+| email-address | `[historical non-shipped path]` | 55 | `3315106b4517` |
+| email-address | `[historical non-shipped path]` | 28 | `9696bc9a8dfc` |
+| aws-key | `[historical non-shipped path]` | 4805 | `f28ae98b0bfe` |
+| email-address | `[historical non-shipped path]` | 66 | `f28ae98b0bfe` |
 | auth | `skills/agrim-loop/scripts/work.py` | 607 | `da6e4dc49775` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `c26104549929` |
-| aws-key | `tests/test_work.py` | 4925 | `babac2213e81` |
-| email-address | `tests/test_work.py` | 66 | `babac2213e81` |
+| aws-key | `[historical non-shipped path]` | 4925 | `babac2213e81` |
+| email-address | `[historical non-shipped path]` | 66 | `babac2213e81` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `d39fdfe54a91` |
-| aws-key | `tests/test_work.py` | 4905 | `dba925464627` |
-| email-address | `tests/test_work.py` | 66 | `dba925464627` |
+| aws-key | `[historical non-shipped path]` | 4905 | `dba925464627` |
+| email-address | `[historical non-shipped path]` | 66 | `dba925464627` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `a134014a2eae` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `f21a3f14edf8` |
-| aws-key | `tests/test_work.py` | 4889 | `44ec21fd111a` |
-| email-address | `tests/test_work.py` | 66 | `44ec21fd111a` |
+| aws-key | `[historical non-shipped path]` | 4889 | `44ec21fd111a` |
+| email-address | `[historical non-shipped path]` | 66 | `44ec21fd111a` |
 | auth | `skills/agrim-loop/scripts/work.py` | 611 | `cca2af306b32` |
-| aws-key | `tests/test_work.py` | 4888 | `1cc2647dea74` |
-| email-address | `tests/test_work.py` | 66 | `1cc2647dea74` |
+| aws-key | `[historical non-shipped path]` | 4888 | `1cc2647dea74` |
+| email-address | `[historical non-shipped path]` | 66 | `1cc2647dea74` |
 | aws-key | `skills/agrim-loop/scripts/scrub.py` | 129 | `dc3f7e129aef` |
 | auth | `skills/agrim-loop/scripts/work.py` | 610 | `1f7dc2aa5e3d` |
-| private-key | `tests/test_scrub.py` | 62 | `ea45b073daf5` |
-| aws-key | `tests/test_scrub.py` | 16 | `ea45b073daf5` |
-| jwt | `tests/test_scrub.py` | 17 | `ea45b073daf5` |
-| aws-key | `tests/test_work.py` | 4850 | `f380179ee1fd` |
-| email-address | `tests/test_work.py` | 66 | `f380179ee1fd` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `931a920e06d6` |
-| aws-key | `tests/test_loop.py` | 5707 | `931a920e06d6` |
-| gh-token | `tests/test_loop.py` | 6956 | `931a920e06d6` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `46bec4166cdb` |
-| aws-key | `tests/test_loop.py` | 5707 | `46bec4166cdb` |
-| gh-token | `tests/test_loop.py` | 6956 | `46bec4166cdb` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `b79592695612` |
-| aws-key | `tests/test_loop.py` | 5707 | `b79592695612` |
-| gh-token | `tests/test_loop.py` | 6956 | `b79592695612` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `bdbb7f706dae` |
-| aws-key | `tests/test_loop.py` | 5707 | `bdbb7f706dae` |
-| gh-token | `tests/test_loop.py` | 6956 | `bdbb7f706dae` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `5fa513d7e5a8` |
-| aws-key | `tests/test_loop.py` | 5707 | `5fa513d7e5a8` |
-| gh-token | `tests/test_loop.py` | 6956 | `5fa513d7e5a8` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `7c28024b9ee2` |
-| aws-key | `tests/test_loop.py` | 5707 | `7c28024b9ee2` |
-| gh-token | `tests/test_loop.py` | 6956 | `7c28024b9ee2` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `f427f2508c8e` |
-| aws-key | `tests/test_loop.py` | 5707 | `f427f2508c8e` |
-| gh-token | `tests/test_loop.py` | 6956 | `f427f2508c8e` |
-| credential-assignment | `tests/test_loop.py` | 5707 | `b7f2be0ffef3` |
-| aws-key | `tests/test_loop.py` | 5707 | `b7f2be0ffef3` |
-| gh-token | `tests/test_loop.py` | 6956 | `b7f2be0ffef3` |
-| absolute-home-path | `tests/test_coexist.py` | 213 | `48218bf14011` |
-| email-address | `tests/test_coexist.py` | 705 | `48218bf14011` |
-| url-password | `tests/test_readiness_decide.py` | 646 | `d1eb6e2f926b` |
-| email-address | `tests/test_readiness_decide.py` | 624 | `d1eb6e2f926b` |
+| private-key | `[historical non-shipped path]` | 62 | `ea45b073daf5` |
+| aws-key | `[historical non-shipped path]` | 16 | `ea45b073daf5` |
+| jwt | `[historical non-shipped path]` | 17 | `ea45b073daf5` |
+| aws-key | `[historical non-shipped path]` | 4850 | `f380179ee1fd` |
+| email-address | `[historical non-shipped path]` | 66 | `f380179ee1fd` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `931a920e06d6` |
+| aws-key | `[historical non-shipped path]` | 5707 | `931a920e06d6` |
+| gh-token | `[historical non-shipped path]` | 6956 | `931a920e06d6` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `46bec4166cdb` |
+| aws-key | `[historical non-shipped path]` | 5707 | `46bec4166cdb` |
+| gh-token | `[historical non-shipped path]` | 6956 | `46bec4166cdb` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `b79592695612` |
+| aws-key | `[historical non-shipped path]` | 5707 | `b79592695612` |
+| gh-token | `[historical non-shipped path]` | 6956 | `b79592695612` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `bdbb7f706dae` |
+| aws-key | `[historical non-shipped path]` | 5707 | `bdbb7f706dae` |
+| gh-token | `[historical non-shipped path]` | 6956 | `bdbb7f706dae` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `5fa513d7e5a8` |
+| aws-key | `[historical non-shipped path]` | 5707 | `5fa513d7e5a8` |
+| gh-token | `[historical non-shipped path]` | 6956 | `5fa513d7e5a8` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `7c28024b9ee2` |
+| aws-key | `[historical non-shipped path]` | 5707 | `7c28024b9ee2` |
+| gh-token | `[historical non-shipped path]` | 6956 | `7c28024b9ee2` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `f427f2508c8e` |
+| aws-key | `[historical non-shipped path]` | 5707 | `f427f2508c8e` |
+| gh-token | `[historical non-shipped path]` | 6956 | `f427f2508c8e` |
+| credential-assignment | `[historical non-shipped path]` | 5707 | `b7f2be0ffef3` |
+| aws-key | `[historical non-shipped path]` | 5707 | `b7f2be0ffef3` |
+| gh-token | `[historical non-shipped path]` | 6956 | `b7f2be0ffef3` |
+| absolute-home-path | `[historical non-shipped path]` | 213 | `48218bf14011` |
+| email-address | `[historical non-shipped path]` | 705 | `48218bf14011` |
+| url-password | `[historical non-shipped path]` | 646 | `d1eb6e2f926b` |
+| email-address | `[historical non-shipped path]` | 624 | `d1eb6e2f926b` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `868a49c25841` |
-| email-address | `tests/test_doctor.py` | 598 | `8171fe75cfc0` |
-| credential-assignment | `tests/test_ledger.py` | 1614 | `fa8bc78e3a9d` |
-| private-key | `tests/test_ledger.py` | 1604 | `fa8bc78e3a9d` |
-| aws-key | `tests/test_ledger.py` | 1614 | `fa8bc78e3a9d` |
-| gh-token | `tests/test_ledger.py` | 1623 | `fa8bc78e3a9d` |
-| auth | `tests/test_ledger.py` | 1641 | `fa8bc78e3a9d` |
-| aws-key | `tests/test_work.py` | 4731 | `dfe39c8d144c` |
-| email-address | `tests/test_work.py` | 66 | `dfe39c8d144c` |
+| email-address | `[historical non-shipped path]` | 598 | `8171fe75cfc0` |
+| credential-assignment | `[historical non-shipped path]` | 1614 | `fa8bc78e3a9d` |
+| private-key | `[historical non-shipped path]` | 1604 | `fa8bc78e3a9d` |
+| aws-key | `[historical non-shipped path]` | 1614 | `fa8bc78e3a9d` |
+| gh-token | `[historical non-shipped path]` | 1623 | `fa8bc78e3a9d` |
+| auth | `[historical non-shipped path]` | 1641 | `fa8bc78e3a9d` |
+| aws-key | `[historical non-shipped path]` | 4731 | `dfe39c8d144c` |
+| email-address | `[historical non-shipped path]` | 66 | `dfe39c8d144c` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `672e5122c1c7` |
-| email-address | `tests/test_doctor.py` | 611 | `8a2d9169f194` |
-| credential-assignment | `tests/test_loop.py` | 5740 | `6d41d6babeac` |
-| aws-key | `tests/test_loop.py` | 5740 | `6d41d6babeac` |
-| gh-token | `tests/test_loop.py` | 6989 | `6d41d6babeac` |
+| email-address | `[historical non-shipped path]` | 611 | `8a2d9169f194` |
+| credential-assignment | `[historical non-shipped path]` | 5740 | `6d41d6babeac` |
+| aws-key | `[historical non-shipped path]` | 5740 | `6d41d6babeac` |
+| gh-token | `[historical non-shipped path]` | 6989 | `6d41d6babeac` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `225ebe856f24` |
 | auth | `.sdlc/plans/258.md` | 1062 | `7a4055c0abc0` |
 | credential-assignment | `.sdlc/research/277.md` | 25 | `a35f350871b7` |
 | absolute-home-path | `.sdlc/research/277.md` | 25 | `a35f350871b7` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `2a2e4682c46c` |
-| email-address | `tests/test_discovery_scan.py` | 39 | `9f1e04bca09d` |
-| email-address | `tests/test_docs.py` | 1017 | `d45249973ab6` |
-| credential-assignment | `tests/test_leak_scan.py` | 172 | `754b19f29c78` |
-| auth | `tests/test_leak_scan.py` | 175 | `754b19f29c78` |
-| absolute-home-path | `tests/test_leak_scan.py` | 170 | `754b19f29c78` |
-| email-address | `tests/test_leak_scan.py` | 43 | `754b19f29c78` |
-| private-key | `tests/test_ledger.py` | 1604 | `99826c6f75df` |
-| email-address | `tests/test_preflight.py` | 50 | `2056fd01a673` |
-| private-key | `tests/test_research_capture.py` | 126 | `be7e0cffd5cf` |
-| private-key | `tests/test_scrub.py` | 55 | `729699f74c81` |
-| email-address | `tests/test_verify_detect.py` | 46 | `358560bcea50` |
-| email-address | `tests/test_work.py` | 66 | `fad42764e8cd` |
-| absolute-home-path | `tools/leak_scan.py` | 224 | `34eb630923cf` |
-| email-address | `tools/leak_scan.py` | 57 | `34eb630923cf` |
-| credential-assignment | `tests/test_leak_scan.py` | 164 | `4cc87b0b29ba` |
-| auth | `tests/test_leak_scan.py` | 167 | `4cc87b0b29ba` |
-| absolute-home-path | `tests/test_leak_scan.py` | 162 | `4cc87b0b29ba` |
-| email-address | `tests/test_leak_scan.py` | 42 | `4cc87b0b29ba` |
-| absolute-home-path | `tools/leak_scan.py` | 168 | `e1de78703379` |
-| email-address | `tools/leak_scan.py` | 36 | `e1de78703379` |
-| credential-assignment | `tests/test_leak_scan.py` | 71 | `9e5aed2ea555` |
-| absolute-home-path | `tests/test_leak_scan.py` | 70 | `9e5aed2ea555` |
+| email-address | `[historical non-shipped path]` | 39 | `9f1e04bca09d` |
+| email-address | `[historical non-shipped path]` | 1017 | `d45249973ab6` |
+| credential-assignment | `[historical non-shipped path]` | 172 | `754b19f29c78` |
+| auth | `[historical non-shipped path]` | 175 | `754b19f29c78` |
+| absolute-home-path | `[historical non-shipped path]` | 170 | `754b19f29c78` |
+| email-address | `[historical non-shipped path]` | 43 | `754b19f29c78` |
+| private-key | `[historical non-shipped path]` | 1604 | `99826c6f75df` |
+| email-address | `[historical non-shipped path]` | 50 | `2056fd01a673` |
+| private-key | `[historical non-shipped path]` | 126 | `be7e0cffd5cf` |
+| private-key | `[historical non-shipped path]` | 55 | `729699f74c81` |
+| email-address | `[historical non-shipped path]` | 46 | `358560bcea50` |
+| email-address | `[historical non-shipped path]` | 66 | `fad42764e8cd` |
+| absolute-home-path | `[historical non-shipped path]` | 224 | `34eb630923cf` |
+| email-address | `[historical non-shipped path]` | 57 | `34eb630923cf` |
+| credential-assignment | `[historical non-shipped path]` | 164 | `4cc87b0b29ba` |
+| auth | `[historical non-shipped path]` | 167 | `4cc87b0b29ba` |
+| absolute-home-path | `[historical non-shipped path]` | 162 | `4cc87b0b29ba` |
+| email-address | `[historical non-shipped path]` | 42 | `4cc87b0b29ba` |
+| absolute-home-path | `[historical non-shipped path]` | 168 | `e1de78703379` |
+| email-address | `[historical non-shipped path]` | 36 | `e1de78703379` |
+| credential-assignment | `[historical non-shipped path]` | 71 | `9e5aed2ea555` |
+| absolute-home-path | `[historical non-shipped path]` | 70 | `9e5aed2ea555` |
 | auth | `skills/agrim-doctor/scripts/migrate.py` | 220 | `6d2547d77ba8` |
 | credential-assignment | `skills/agrim-loop/scripts/feature_classify.py` | 121 | `d4ea3c0dc10c` |
-| absolute-home-path | `tests/test_coexist.py` | 208 | `4613cef29c93` |
+| absolute-home-path | `[historical non-shipped path]` | 208 | `4613cef29c93` |
 | auth | `skills/agrim-doctor/scripts/migrate.py` | 232 | `cf8e99e9e546` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `d1df954db6e0` |
-| absolute-home-path | `tests/test_coexist.py` | 212 | `160ff6dde470` |
-| email-address | `tests/test_coexist.py` | 704 | `160ff6dde470` |
+| absolute-home-path | `[historical non-shipped path]` | 212 | `160ff6dde470` |
+| email-address | `[historical non-shipped path]` | 704 | `160ff6dde470` |
 | auth | `skills/agrim-doctor/scripts/migrate.py` | 231 | `314cecd95bb0` |
-| absolute-home-path | `tests/test_coexist.py` | 212 | `b5c4c7e39038` |
-| email-address | `tests/test_coexist.py` | 704 | `b5c4c7e39038` |
+| absolute-home-path | `[historical non-shipped path]` | 212 | `b5c4c7e39038` |
+| email-address | `[historical non-shipped path]` | 704 | `b5c4c7e39038` |
 | auth | `skills/agrim-doctor/scripts/migrate.py` | 220 | `5e6011fde973` |
-| absolute-home-path | `tests/test_coexist.py` | 212 | `d940e3c16512` |
-| email-address | `tests/test_coexist.py` | 675 | `d940e3c16512` |
+| absolute-home-path | `[historical non-shipped path]` | 212 | `d940e3c16512` |
+| email-address | `[historical non-shipped path]` | 675 | `d940e3c16512` |
 | auth | `skills/agrim-loop/scripts/work.py` | 496 | `6fa3253799b8` |
-| credential-assignment | `tests/boardfake.py` | 51 | `e08da1c23a52` |
+| credential-assignment | `[historical non-shipped path]` | 51 | `e08da1c23a52` |
 | auth | `skills/agrim-loop/scripts/work.py` | 494 | `ccae2eed6064` |
-| aws-key | `tests/test_work.py` | 4724 | `11d76270a47d` |
-| email-address | `tests/test_work.py` | 66 | `11d76270a47d` |
-| credential-assignment | `tests/boardfake.py` | 41 | `f06a2d8258fa` |
-| email-address | `tests/test_init_flow.py` | 218 | `6979bc5f092e` |
-| credential-assignment | `tests/test_loop.py` | 5670 | `94da33b337c0` |
-| aws-key | `tests/test_loop.py` | 5670 | `94da33b337c0` |
-| gh-token | `tests/test_loop.py` | 6919 | `94da33b337c0` |
-| credential-assignment | `tests/boardfake.py` | 35 | `da87b05c3a80` |
-| email-address | `tests/test_setup.py` | 28 | `18c919607ce4` |
+| aws-key | `[historical non-shipped path]` | 4724 | `11d76270a47d` |
+| email-address | `[historical non-shipped path]` | 66 | `11d76270a47d` |
+| credential-assignment | `[historical non-shipped path]` | 41 | `f06a2d8258fa` |
+| email-address | `[historical non-shipped path]` | 218 | `6979bc5f092e` |
+| credential-assignment | `[historical non-shipped path]` | 5670 | `94da33b337c0` |
+| aws-key | `[historical non-shipped path]` | 5670 | `94da33b337c0` |
+| gh-token | `[historical non-shipped path]` | 6919 | `94da33b337c0` |
+| credential-assignment | `[historical non-shipped path]` | 35 | `da87b05c3a80` |
+| email-address | `[historical non-shipped path]` | 28 | `18c919607ce4` |
 | auth | `skills/agrim-loop/scripts/work.py` | 479 | `d9dd5a9ecae3` |
-| email-address | `tests/test_doctor.py` | 598 | `96635b57c591` |
-| aws-key | `tests/test_work.py` | 4724 | `5410d48e5b01` |
-| email-address | `tests/test_work.py` | 66 | `5410d48e5b01` |
+| email-address | `[historical non-shipped path]` | 598 | `96635b57c591` |
+| aws-key | `[historical non-shipped path]` | 4724 | `5410d48e5b01` |
+| email-address | `[historical non-shipped path]` | 66 | `5410d48e5b01` |
 | auth | `skills/agrim-loop/scripts/work.py` | 470 | `660644de8330` |
-| email-address | `tests/test_docs.py` | 1011 | `88373a90af32` |
-| email-address | `tests/test_doctor.py` | 598 | `55c5b7d36066` |
+| email-address | `[historical non-shipped path]` | 1011 | `88373a90af32` |
+| email-address | `[historical non-shipped path]` | 598 | `55c5b7d36066` |
 | auth | `skills/agrim-loop/scripts/work.py` | 470 | `8dfd10a33898` |
 | auth | `skills/agrim-loop/scripts/work.py` | 467 | `d4a45fdc213a` |
-| aws-key | `tests/test_work.py` | 4784 | `37eb1a9141b3` |
-| email-address | `tests/test_work.py` | 66 | `37eb1a9141b3` |
+| aws-key | `[historical non-shipped path]` | 4784 | `37eb1a9141b3` |
+| email-address | `[historical non-shipped path]` | 66 | `37eb1a9141b3` |
 | auth | `skills/agrim-loop/scripts/work.py` | 467 | `61a26499efe4` |
-| absolute-home-path | `tests/test_coexist.py` | 203 | `cb52cb10c329` |
-| email-address | `tests/test_doctor.py` | 596 | `124fa31f55a4` |
-| email-address | `tests/test_sdlc_init.py` | 32 | `6c2ed1cbdc35` |
-| email-address | `tests/test_verify_detect.py` | 42 | `b545eca863c3` |
-| credential-assignment | `tests/test_risk_detect.py` | 102 | `68144f1d7b51` |
-| aws-key | `tests/test_risk_detect.py` | 102 | `68144f1d7b51` |
-| credential-assignment | `tests/test_alignment_collect.py` | 184 | `b6768239bdd5` |
-| gh-token | `tests/test_alignment_collect.py` | 202 | `b6768239bdd5` |
-| aws-key | `tests/test_discovery_scan.py` | 53 | `103c3bc464db` |
-| email-address | `tests/test_discovery_scan.py` | 39 | `103c3bc464db` |
+| absolute-home-path | `[historical non-shipped path]` | 203 | `cb52cb10c329` |
+| email-address | `[historical non-shipped path]` | 596 | `124fa31f55a4` |
+| email-address | `[historical non-shipped path]` | 32 | `6c2ed1cbdc35` |
+| email-address | `[historical non-shipped path]` | 42 | `b545eca863c3` |
+| credential-assignment | `[historical non-shipped path]` | 102 | `68144f1d7b51` |
+| aws-key | `[historical non-shipped path]` | 102 | `68144f1d7b51` |
+| credential-assignment | `[historical non-shipped path]` | 184 | `b6768239bdd5` |
+| gh-token | `[historical non-shipped path]` | 202 | `b6768239bdd5` |
+| aws-key | `[historical non-shipped path]` | 53 | `103c3bc464db` |
+| email-address | `[historical non-shipped path]` | 39 | `103c3bc464db` |
 | auth | `skills/agrim-doctor/scripts/migrate.py` | 220 | `21c2eeadd45e` |
-| email-address | `tests/test_setup.py` | 28 | `c997e7ce89a5` |
-| email-address | `tests/test_doctor.py` | 596 | `58718a0a1911` |
-| email-address | `tests/test_docs.py` | 1012 | `272dea67f3e5` |
+| email-address | `[historical non-shipped path]` | 28 | `c997e7ce89a5` |
+| email-address | `[historical non-shipped path]` | 596 | `58718a0a1911` |
+| email-address | `[historical non-shipped path]` | 1012 | `272dea67f3e5` |
 | auth | `skills/agrim-loop/scripts/feature_doc.py` | 147 | `8bd84f1eeb4e` |
 | credential-assignment | `skills/agrim-loop/scripts/feature_labels.py` | 338 | `0895db74019a` |
 | email-address | `skills/agrim-loop/scripts/upstream.py` | 651 | `7beef5b67b0c` |
 | auth | `skills/agrim-loop/scripts/work.py` | 466 | `b6dd16cbf01f` |
-| email-address | `tests/test_doctor.py` | 596 | `fc4c42910f74` |
+| email-address | `[historical non-shipped path]` | 596 | `fc4c42910f74` |
 
 Skipped: oversized=0, binary=0.
 Legacy issue references: 35695 (count only).
