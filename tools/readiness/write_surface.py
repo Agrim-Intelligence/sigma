@@ -28,9 +28,26 @@ _WRITE_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
 
 def _metadata(path, function, rule):
     """Return the gate and risk for this specific call site, never just its file."""
-    if path == "skills/agrim-loop/scripts/work.py":
-        gate = "work.enabled; merge requires fresh verify evidence and CLEAN PR"
-    elif path == "skills/agrim-loop/scripts/feature_rebase.py":
+    site = (path, function, rule)
+    known = {
+        ("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write"):
+            ("unit propagation is enabled and sibling repo is declared", "high"),
+        ("skills/agrim-status/scripts/merge_queue_enable.py", "patch_auto_merge", "gh-api-write"):
+            ("exact --yes-enable-merge-queue admin consent", "high"),
+        ("skills/agrim-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
+            ("exact --yes-enable-merge-queue admin consent", "high"),
+        ("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr"):
+            ("work.enabled; confirmed design review", "high"),
+        ("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr"):
+            ("rejected design review; risk-reducing close", "high"),
+        ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"):
+            ("work.enabled; fresh verify evidence and CLEAN PR", "high"),
+        ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"):
+            ("work.enabled; confirmed merged PR", "high"),
+    }
+    if site in known:
+        return known[site]
+    if path == "skills/agrim-loop/scripts/feature_rebase.py":
         gate = "work.rebase_upkeep"
     elif path == "skills/agrim-loop/scripts/sources.py":
         gate = "discovery.source == github; board writes require project.enabled"
@@ -39,9 +56,7 @@ def _metadata(path, function, rule):
     else:
         gate = "ungated"
     risk = RISK[rule]
-    if (path, function, rule) in {
-        ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"),
-        ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"),
+    if site in {
         ("skills/agrim-rebase/scripts/verify_merge.py", "merge_pr", "gh-pr"),
         ("skills/agrim-loop/scripts/sources.py", "complete", "gh-issue"),
         ("skills/agrim-loop/scripts/sources.py", "release", "gh-issue"),
@@ -119,7 +134,7 @@ def _rules_for_call(node, values):
                for s in _strings(arg, values)]
     tokens = [s.lower() for s in strings]
     rules = set()
-    command_call = name in {"subprocess.run", "subprocess.Popen", "run", "git", "_run", "_run_gh", "_gh_json"} or name.endswith("._run")
+    command_call = name in {"subprocess.run", "subprocess.Popen", "run", "git", "_run", "_run_gh", "_retry_gh", "_gh_json"} or name.endswith("._run")
     command = tokens[:]
     if command_call:
         if "gh" in command:

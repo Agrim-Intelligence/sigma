@@ -59,7 +59,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/feature_judge.py | _acquire_spend_lock | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/feature_judge.py | _record_spend | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/feature_propagate.py | _store | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | unit propagation is enabled and sibling repo is declared | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | work.rebase_upkeep | high |
@@ -198,26 +198,28 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/watch_daemon.py | take_over | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/watch_daemon.py | touch_heartbeat | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/witness.py | record | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | finish | fs-remove | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | post_review | gh-pr | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
-| skills/agrim-loop/scripts/work.py | pr | git-push | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | work.enabled; merge requires fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | work.enabled; merge requires fresh verify evidence and CLEAN PR | medium |
+| skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | ungated | high |
+| skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | close_design | gh-pr | 1 | rejected design review; risk-reducing close | high |
+| skills/agrim-loop/scripts/work.py | finish | fs-remove | 2 | ungated | high |
+| skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; confirmed merged PR | high |
+| skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; fresh verify evidence and CLEAN PR | high |
+| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; confirmed design review | high |
+| skills/agrim-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
+| skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
 | skills/agrim-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
 | skills/agrim-rebase/scripts/conflict_walk.py | _resolve_to_stage | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
@@ -234,8 +236,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-scope/scripts/scope.py | main | fs-write | 2 | ungated | medium |
 | skills/agrim-setup/scripts/setup.py | ensure_ignore | fs-write | 2 | ungated | medium |
 | skills/agrim-setup/scripts/setup.py | write_cfg | fs-write | 1 | ungated | medium |
-| skills/agrim-status/scripts/merge_queue_enable.py | create_merge_queue_ruleset | gh-api-write | 1 | ungated | medium |
-| skills/agrim-status/scripts/merge_queue_enable.py | patch_auto_merge | gh-api-write | 1 | ungated | medium |
+| skills/agrim-status/scripts/merge_queue_enable.py | create_merge_queue_ruleset | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
+| skills/agrim-status/scripts/merge_queue_enable.py | patch_auto_merge | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
 | tools/kg_control.py | _repo | fs-write | 7 | ungated | medium |
 | tools/kg_control.py | _write_builder | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | main | fs-write | 2 | ungated | medium |

@@ -170,3 +170,11 @@ def test_call_site_metadata_escalates_merge_risk_without_escalating_comments(tmp
     row = _module().scan_paths(tmp_path, [source])[0]
     assert row["gate"] == "ungated" and row["risk"] == "medium"
     assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr")[1] == "high"
+
+
+def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path):
+    source = tmp_path / "work.py"
+    source.write_text('def merge_design(run, cwd):\n    _retry_gh(run, cwd, ["gh", "pr", "merge", "1"])\n')
+    assert _module().scan_paths(tmp_path, [source])[0]["rule"] == "gh-pr"
+    assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr") == (
+        "work.enabled; confirmed design review", "high")
