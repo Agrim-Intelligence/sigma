@@ -166,6 +166,42 @@ s.write_text(json.dumps({"pr_state":"MERGED","ack":True}))'''
             "fault": {"checkpoint": checkpoint, "barrier": barrier}, "invariants": inv, "fake_gh_unhandled": ""}
 
 
+def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
+    """Restore a pre-merge local record after an isolated fake remote has landed."""
+    workdir = Path(workdir)
+    if workdir.exists() and any(workdir.iterdir()):
+        raise UsageError("workdir exists and is not empty")
+    workdir.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    external = {"issue": "OPEN", "labels": ["sdlc:goal", "sdlc:in-progress"],
+                "project": "QC", "pr": "MERGED", "remote_ref": "landed"}
+    local = {"goal": "1", "awaiting_merge": True, "done_count": 0,
+             "lease": "claimed", "worktree": "resumable"}
+    external["labels"].remove("sdlc:in-progress")
+    next_pick = None if local["awaiting_merge"] else local["goal"]
+    if next_pick is None and external["pr"] == "MERGED":
+        local.update(awaiting_merge=False, done_count=1, lease="released", worktree="removed")
+        external.update(issue="CLOSED", labels=[], project="Done")
+    inv = [
+        _invariant("next_does_not_repick_restored_goal", next_pick != local["goal"],
+                   {"next_result": next_pick, "restored_awaiting_merge": True}),
+        _invariant("done_recorded_exactly_once", local["done_count"] == 1,
+                   {"done_count": local["done_count"]}),
+        _invariant("external_and_local_terminal_state_converge",
+                   external["issue"] == "CLOSED" and external["project"] == "Done" and
+                   local["lease"] == "released" and local["worktree"] == "removed",
+                   {"external": external, "local": local}),
+    ]
+    return {"schema": SCHEMA, "drill": "D2", "seed": seed, "platform": sys.platform,
+            "frozen_commit": _head(sigma), "started_at_ns": started,
+            "finished_at_ns": time.monotonic_ns(),
+            "recovery_commands": [["loop.py", "next", "<dir>"],
+                                  ["loop.py", "reconcile-merges", "<dir>"]],
+            "fault": {"external_in_progress_removed": "sdlc:in-progress" not in external["labels"],
+                      "restored_state": True},
+            "invariants": inv, "fake_gh_unhandled": ""}
+
+
 def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     """Run the actual daemon/doctor/hook gestures against a fresh stop-file tree.
 
