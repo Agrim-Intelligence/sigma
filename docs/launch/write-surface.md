@@ -39,6 +39,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/autowatch.py | _record_spend | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/backlog_check.py | _dense_channel | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/blockers.py | _comment | gh-issue | 1 | ungated | medium |
+| skills/agrim-loop/scripts/channel_notify.py | _real_post | network-post | 1 | http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery | high |
 | skills/agrim-loop/scripts/channel_notify.py | _save_cursor | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/coexist.py | _mark | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/coexist.py | backup_features | fs-remove | 1 | ungated | high |
@@ -208,7 +209,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | work.enabled; base branch cannot close the issue | high |
 | skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merged PR cleanup | high |
+| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merged PR cleanup; non-empty goal prefix; never base/default branch | high |
 | skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | ungated | medium |
@@ -220,10 +221,11 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; confirmed merged PR | high |
 | skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled | high |
+| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; work.auto_merge != off | high |
 | skills/agrim-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | prune_terminal_review_copies | fs-rmtree | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-destructive | 3 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
@@ -263,7 +265,18 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/onboarding_control.py | run_local | fs-write | 3 | ungated | medium |
 | tools/readiness/baseline.py | snapshot | fs-write | 2 | explicit snapshot command; empty destination | medium |
 | tools/readiness/baseline.py | snapshot | git-destructive | 1 | explicit snapshot command; empty destination; detached push-disabled clone | medium |
+| tools/readiness/drills.py | _kill_after_fixture_merge | fs-write | 2 | ungated | medium |
+| tools/readiness/drills.py | _real_fixture | fs-write | 9 | ungated | medium |
+| tools/readiness/drills.py | _scratch_sdlc | fs-write | 2 | ungated | medium |
+| tools/readiness/drills.py | evidence | fs-write | 1 | ungated | medium |
+| tools/readiness/drills.py | main | fs-write | 4 | ungated | medium |
+| tools/readiness/drills.py | run_d1 | fs-write | 1 | ungated | medium |
+| tools/readiness/drills.py | run_d2 | fs-rmtree | 1 | ungated | high |
+| tools/readiness/drills.py | run_d2 | fs-write | 1 | ungated | medium |
+| tools/readiness/drills.py | run_d3 | fs-write | 1 | ungated | medium |
+| tools/readiness/drills.py | run_d4 | fs-write | 2 | ungated | medium |
 | tools/readiness/egress_capture.py | main | fs-write | 1 | explicit summarize command; caller-supplied JSON path | medium |
 | tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
 | tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
+| tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |

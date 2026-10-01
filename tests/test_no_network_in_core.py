@@ -19,8 +19,8 @@ does, including where a docstring promises more than it enforces:
   - agent_watch.py, smtplib: SMTP to the server the user configured.
   - agent_watch.py, socket: `socket.gethostname()` for the default From address; it opens no
     connection (`platform.node()` would remove this pair -- a named follow-up).
-  - channel_notify.py, urllib.request: POSTs to the webhook URL the user configured. Its docstring's
-    loopback-only target is intended, NOT enforced (a named follow-up).
+  - channel_notify.py, urllib.request: POSTs only to an http(s) loopback webhook by default;
+    remote delivery needs the exact allow_remote_webhook boolean opt-in.
   - slack_client.py, urllib.request: the Slack Web API, with the user's token.
   - slack_commands_listen.py, slack_sdk: Slack Socket Mode, with the user's app.
 
@@ -71,8 +71,8 @@ _ALLOWLIST = {
         "socket.gethostname() for the default From address; opens no connection "
         "(platform.node() would remove this pair: a follow-up)",
     ("skills/agrim-loop/scripts/channel_notify.py", "urllib.request"):
-        "POSTs to the webhook URL the user configured; its docstring's loopback-only target is "
-        "intended, not enforced (a follow-up)",
+        "POSTs only to an http(s) loopback webhook by default; remote delivery needs the exact "
+        "allow_remote_webhook boolean opt-in",
     ("skills/agrim-loop/scripts/slack_client.py", "urllib.request"):
         "the Slack Web API, with the user's token",
     ("skills/agrim-loop/scripts/slack_commands_listen.py", "slack_sdk"):
