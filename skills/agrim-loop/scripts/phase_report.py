@@ -561,6 +561,17 @@ def price_transcript(path, rates=None, since_ts=None):
     }
 
 
+def unpriced_budget_warning(result):
+    """Return the phase-boundary budget warning, or None when every turn was priced."""
+    unpriced = int(result.get("unpriced_turns") or 0)
+    if not unpriced:
+        return None
+    turns = int(result.get("turns") or unpriced)
+    model = ",".join(result.get("models") or []) or "unknown"
+    return (f"budget: {unpriced} of {turns} turns in this phase are unpriced "
+            f"(model {model} not in the rate card) -- budget.max_tokens did not count them")
+
+
 # --------------------------------------------------------------------------- host discovery
 
 
@@ -1967,6 +1978,13 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
         # The marker-to-end interval is measured once in cmd_end. Omit it when no matching
         # marker exists; zero would claim an instantaneous phase that was not measured.
         timing = {"ms": interval_ms} if interval_ms is not None else {}
+        # An unpriced phase has no `spend` record (that would fabricate a price), so its observed
+        # model and excluded-turn count must travel with the durable phase boundary. Doctor reads
+        # exactly this record rather than a transient stderr line.
+        rate_coverage = {
+            "unpriced_turns": str(result.get("unpriced_turns") or 0),
+            "model": ",".join(result.get("models") or []),
+        }
         attempt_id = state.phase_attempt_key(attempt) if attempt is not None else None
         if attempt is not None:
             new_end, _, old_run = state.record_phase_end(
@@ -1985,11 +2003,11 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
             ledger.safe_append(
                 sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase, state="end",
                 tokens_in=str(result["tokens_in"]), tokens_out=str(result["tokens_out"]),
-                attempt_id=attempt_id, **timing,
+                attempt_id=attempt_id, **timing, **rate_coverage,
             )
         elif "phase" not in recorded:
             ledger.safe_append(sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase,
-                               state="end", attempt_id=attempt_id, **timing)
+                               state="end", attempt_id=attempt_id, **timing, **rate_coverage)
 
         # #1686: the `phase` event above carries real tokens_in/tokens_out but never the already-built
         # `spend` kind (EVENT_FIELDS["spend"] = ("phase", "model", "tokens_in", "tokens_out",
@@ -2214,6 +2232,10 @@ def cmd_end(argv):
     if not uncredited_codex_budget:
         _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id,
                           interval_ms=interval_ms, stale=bool(stale_reason))
+
+    warning = unpriced_budget_warning(result)
+    if warning:
+        print(warning, file=sys.stderr)
 
     # Read AFTER this phase's own interval was written above, or every banner would be one phase
     # stale. Fail-open: a totals read that cannot complete costs the extra field, never the banner.

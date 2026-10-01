@@ -1820,7 +1820,7 @@ def test_scan_file_and_slice_slice_are_not_in_the_declared_set():
 
 def test_event_free_text_fields_is_the_declared_set():
     assert ledger.EVENT_FREE_TEXT_FIELDS == {
-        "gate": ("why",), "park": ("why",), "spend": ("model",), "run_stop": ("why",),
+        "phase": ("model",), "gate": ("why",), "park": ("why",), "spend": ("model",), "run_stop": ("why",),
         "model_choice": ("model", "signal")}
 
 
