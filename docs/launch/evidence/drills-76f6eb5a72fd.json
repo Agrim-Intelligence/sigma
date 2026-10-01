@@ -1,0 +1,1317 @@
+{
+  "b6": {
+    "disposition": "no-github-write",
+    "issue": 416,
+    "reason": "explicit filing requires a fresh GitHub check"
+  },
+  "command": [
+    "drills.py",
+    "evidence",
+    "--workdir",
+    "<workdir>",
+    "--json",
+    "drills-76f6eb5a72fd.json"
+  ],
+  "frozen_commit": "76f6eb5a72fd79a498ecc3661d8a79bbc1451814",
+  "interpreter": "/Library/Developer/CommandLineTools/usr/bin/python3",
+  "platform": "darwin",
+  "runs": [
+    {
+      "checkpoint": "pre_write",
+      "drill": "D1",
+      "invariants": [
+        {
+          "name": "selected_checkpoint_reached",
+          "observed": {
+            "checkpoint": "pre_write",
+            "entered_at_ns": 131520375
+          },
+          "passed": true
+        },
+        {
+          "name": "isolated_child_process_group",
+          "observed": {
+            "pgid": 61617,
+            "pid": 61617
+          },
+          "passed": true
+        },
+        {
+          "name": "sigkill_at_selected_checkpoint",
+          "observed": {
+            "entered_at_ns": 131520375,
+            "requested_at_ns": 27372969208,
+            "sent_at_ns": 27372994458
+          },
+          "passed": true
+        },
+        {
+          "name": "measured_seeded_delay_is_bounded",
+          "observed": {
+            "delay_ns": 19034063,
+            "merge_duration_ns": 1601129583
+          },
+          "passed": true
+        },
+        {
+          "name": "actual_work_merge_lifecycle_was_killed",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ]
+          },
+          "passed": true
+        },
+        {
+          "name": "no_later_ack_before_recovery",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ],
+            "barrier": {
+              "checkpoint": "pre_write",
+              "entered_at_ns": 131520375
+            },
+            "measured_work_merge_duration_ns": 1601129583,
+            "pgid": 61617,
+            "pid": 61617,
+            "requested_at_ns": 27372969208,
+            "returncode": -9,
+            "seeded_delay_ns": 19034063,
+            "sent_at_ns": 27372994458,
+            "stderr": "",
+            "stdout": ""
+          },
+          "passed": true
+        },
+        {
+          "name": "remote_update_matches_checkpoint",
+          "observed": {
+            "landed": false
+          },
+          "passed": true
+        },
+        {
+          "name": "same_fixture_converged_after_recovery",
+          "observed": {
+            "issue": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "worktree_exists": false
+          },
+          "passed": true
+        }
+      ],
+      "seed": 1
+    },
+    {
+      "checkpoint": "durable_remote_update",
+      "drill": "D1",
+      "invariants": [
+        {
+          "name": "selected_checkpoint_reached",
+          "observed": {
+            "checkpoint": "durable_remote_update",
+            "entered_at_ns": 100037958
+          },
+          "passed": true
+        },
+        {
+          "name": "isolated_child_process_group",
+          "observed": {
+            "pgid": 63459,
+            "pid": 63459
+          },
+          "passed": true
+        },
+        {
+          "name": "sigkill_at_selected_checkpoint",
+          "observed": {
+            "entered_at_ns": 100037958,
+            "requested_at_ns": 64387318833,
+            "sent_at_ns": 64387365541
+          },
+          "passed": true
+        },
+        {
+          "name": "measured_seeded_delay_is_bounded",
+          "observed": {
+            "delay_ns": 8590196,
+            "merge_duration_ns": 1837052958
+          },
+          "passed": true
+        },
+        {
+          "name": "actual_work_merge_lifecycle_was_killed",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ]
+          },
+          "passed": true
+        },
+        {
+          "name": "no_later_ack_before_recovery",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ],
+            "barrier": {
+              "checkpoint": "durable_remote_update",
+              "entered_at_ns": 100037958
+            },
+            "measured_work_merge_duration_ns": 1837052958,
+            "pgid": 63459,
+            "pid": 63459,
+            "requested_at_ns": 64387318833,
+            "returncode": -9,
+            "seeded_delay_ns": 8590196,
+            "sent_at_ns": 64387365541,
+            "stderr": "",
+            "stdout": ""
+          },
+          "passed": true
+        },
+        {
+          "name": "remote_update_matches_checkpoint",
+          "observed": {
+            "landed": true
+          },
+          "passed": true
+        },
+        {
+          "name": "same_fixture_converged_after_recovery",
+          "observed": {
+            "issue": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "worktree_exists": false
+          },
+          "passed": true
+        }
+      ],
+      "seed": 2
+    },
+    {
+      "checkpoint": "post_response_before_ack",
+      "drill": "D1",
+      "invariants": [
+        {
+          "name": "selected_checkpoint_reached",
+          "observed": {
+            "checkpoint": "post_response_before_ack",
+            "entered_at_ns": 87414416
+          },
+          "passed": true
+        },
+        {
+          "name": "isolated_child_process_group",
+          "observed": {
+            "pgid": 65039,
+            "pid": 65039
+          },
+          "passed": true
+        },
+        {
+          "name": "sigkill_at_selected_checkpoint",
+          "observed": {
+            "entered_at_ns": 87414416,
+            "requested_at_ns": 99502098541,
+            "sent_at_ns": 99502124041
+          },
+          "passed": true
+        },
+        {
+          "name": "measured_seeded_delay_is_bounded",
+          "observed": {
+            "delay_ns": 32939071,
+            "merge_duration_ns": 1917987417
+          },
+          "passed": true
+        },
+        {
+          "name": "actual_work_merge_lifecycle_was_killed",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ]
+          },
+          "passed": true
+        },
+        {
+          "name": "no_later_ack_before_recovery",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ],
+            "barrier": {
+              "checkpoint": "post_response_before_ack",
+              "entered_at_ns": 87414416
+            },
+            "measured_work_merge_duration_ns": 1917987417,
+            "pgid": 65039,
+            "pid": 65039,
+            "requested_at_ns": 99502098541,
+            "returncode": -9,
+            "seeded_delay_ns": 32939071,
+            "sent_at_ns": 99502124041,
+            "stderr": "",
+            "stdout": ""
+          },
+          "passed": true
+        },
+        {
+          "name": "remote_update_matches_checkpoint",
+          "observed": {
+            "landed": true
+          },
+          "passed": true
+        },
+        {
+          "name": "same_fixture_converged_after_recovery",
+          "observed": {
+            "issue": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "worktree_exists": false
+          },
+          "passed": true
+        }
+      ],
+      "seed": 3
+    },
+    {
+      "checkpoint": "pre_write",
+      "drill": "D1",
+      "invariants": [
+        {
+          "name": "selected_checkpoint_reached",
+          "observed": {
+            "checkpoint": "pre_write",
+            "entered_at_ns": 81301291
+          },
+          "passed": true
+        },
+        {
+          "name": "isolated_child_process_group",
+          "observed": {
+            "pgid": 65656,
+            "pid": 65656
+          },
+          "passed": true
+        },
+        {
+          "name": "sigkill_at_selected_checkpoint",
+          "observed": {
+            "entered_at_ns": 81301291,
+            "requested_at_ns": 134596124041,
+            "sent_at_ns": 134596150833
+          },
+          "passed": true
+        },
+        {
+          "name": "measured_seeded_delay_is_bounded",
+          "observed": {
+            "delay_ns": 32681838,
+            "merge_duration_ns": 1614405084
+          },
+          "passed": true
+        },
+        {
+          "name": "actual_work_merge_lifecycle_was_killed",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ]
+          },
+          "passed": true
+        },
+        {
+          "name": "no_later_ack_before_recovery",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ],
+            "barrier": {
+              "checkpoint": "pre_write",
+              "entered_at_ns": 81301291
+            },
+            "measured_work_merge_duration_ns": 1614405084,
+            "pgid": 65656,
+            "pid": 65656,
+            "requested_at_ns": 134596124041,
+            "returncode": -9,
+            "seeded_delay_ns": 32681838,
+            "sent_at_ns": 134596150833,
+            "stderr": "",
+            "stdout": ""
+          },
+          "passed": true
+        },
+        {
+          "name": "remote_update_matches_checkpoint",
+          "observed": {
+            "landed": false
+          },
+          "passed": true
+        },
+        {
+          "name": "same_fixture_converged_after_recovery",
+          "observed": {
+            "issue": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "worktree_exists": false
+          },
+          "passed": true
+        }
+      ],
+      "seed": 4
+    },
+    {
+      "checkpoint": "durable_remote_update",
+      "drill": "D1",
+      "invariants": [
+        {
+          "name": "selected_checkpoint_reached",
+          "observed": {
+            "checkpoint": "durable_remote_update",
+            "entered_at_ns": 89683875
+          },
+          "passed": true
+        },
+        {
+          "name": "isolated_child_process_group",
+          "observed": {
+            "pgid": 66423,
+            "pid": 66423
+          },
+          "passed": true
+        },
+        {
+          "name": "sigkill_at_selected_checkpoint",
+          "observed": {
+            "entered_at_ns": 89683875,
+            "requested_at_ns": 170068062250,
+            "sent_at_ns": 170068130666
+          },
+          "passed": true
+        },
+        {
+          "name": "measured_seeded_delay_is_bounded",
+          "observed": {
+            "delay_ns": 84604450,
+            "merge_duration_ns": 1587337250
+          },
+          "passed": true
+        },
+        {
+          "name": "actual_work_merge_lifecycle_was_killed",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ]
+          },
+          "passed": true
+        },
+        {
+          "name": "no_later_ack_before_recovery",
+          "observed": {
+            "argv": [
+              "/Library/Developer/CommandLineTools/usr/bin/python3",
+              "/private/tmp/sigma348-evidence.HaJrF3/checkout/skills/agrim-loop/scripts/work.py",
+              "merge",
+              ".sdlc",
+              "1"
+            ],
+            "barrier": {
+              "checkpoint": "durable_remote_update",
+              "entered_at_ns": 89683875
+            },
+            "measured_work_merge_duration_ns": 1587337250,
+            "pgid": 66423,
+            "pid": 66423,
+            "requested_at_ns": 170068062250,
+            "returncode": -9,
+            "seeded_delay_ns": 84604450,
+            "sent_at_ns": 170068130666,
+            "stderr": "",
+            "stdout": ""
+          },
+          "passed": true
+        },
+        {
+          "name": "remote_update_matches_checkpoint",
+          "observed": {
+            "landed": true
+          },
+          "passed": true
+        },
+        {
+          "name": "same_fixture_converged_after_recovery",
+          "observed": {
+            "issue": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "worktree_exists": false
+          },
+          "passed": true
+        }
+      ],
+      "seed": 5
+    },
+    {
+      "checkpoint": null,
+      "drill": "D2",
+      "invariants": [
+        {
+          "name": "next_does_not_repick_restored_goal",
+          "observed": {
+            "next_result": "DONE",
+            "restored_awaiting_merge": true
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once",
+          "observed": {
+            "done_count": 1
+          },
+          "passed": true
+        },
+        {
+          "name": "external_and_local_terminal_state_converge",
+          "observed": {
+            "convergence": {
+              "action_log_done_count": 1,
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "issue_state": "closed",
+              "labels": [],
+              "pr_state": "MERGED",
+              "work_record_exists": false,
+              "worktree_exists": false
+            },
+            "external": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "local": {
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "done_count": 1,
+              "goal": "1",
+              "lease": "released",
+              "worktree": "removed"
+            }
+          },
+          "passed": true
+        }
+      ],
+      "seed": 1
+    },
+    {
+      "checkpoint": null,
+      "drill": "D2",
+      "invariants": [
+        {
+          "name": "next_does_not_repick_restored_goal",
+          "observed": {
+            "next_result": "DONE",
+            "restored_awaiting_merge": true
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once",
+          "observed": {
+            "done_count": 1
+          },
+          "passed": true
+        },
+        {
+          "name": "external_and_local_terminal_state_converge",
+          "observed": {
+            "convergence": {
+              "action_log_done_count": 1,
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "issue_state": "closed",
+              "labels": [],
+              "pr_state": "MERGED",
+              "work_record_exists": false,
+              "worktree_exists": false
+            },
+            "external": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "local": {
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "done_count": 1,
+              "goal": "1",
+              "lease": "released",
+              "worktree": "removed"
+            }
+          },
+          "passed": true
+        }
+      ],
+      "seed": 2
+    },
+    {
+      "checkpoint": null,
+      "drill": "D2",
+      "invariants": [
+        {
+          "name": "next_does_not_repick_restored_goal",
+          "observed": {
+            "next_result": "DONE",
+            "restored_awaiting_merge": true
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once",
+          "observed": {
+            "done_count": 1
+          },
+          "passed": true
+        },
+        {
+          "name": "external_and_local_terminal_state_converge",
+          "observed": {
+            "convergence": {
+              "action_log_done_count": 1,
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "issue_state": "closed",
+              "labels": [],
+              "pr_state": "MERGED",
+              "work_record_exists": false,
+              "worktree_exists": false
+            },
+            "external": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "local": {
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "done_count": 1,
+              "goal": "1",
+              "lease": "released",
+              "worktree": "removed"
+            }
+          },
+          "passed": true
+        }
+      ],
+      "seed": 3
+    },
+    {
+      "checkpoint": null,
+      "drill": "D2",
+      "invariants": [
+        {
+          "name": "next_does_not_repick_restored_goal",
+          "observed": {
+            "next_result": "DONE",
+            "restored_awaiting_merge": true
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once",
+          "observed": {
+            "done_count": 1
+          },
+          "passed": true
+        },
+        {
+          "name": "external_and_local_terminal_state_converge",
+          "observed": {
+            "convergence": {
+              "action_log_done_count": 1,
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "issue_state": "closed",
+              "labels": [],
+              "pr_state": "MERGED",
+              "work_record_exists": false,
+              "worktree_exists": false
+            },
+            "external": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "local": {
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "done_count": 1,
+              "goal": "1",
+              "lease": "released",
+              "worktree": "removed"
+            }
+          },
+          "passed": true
+        }
+      ],
+      "seed": 4
+    },
+    {
+      "checkpoint": null,
+      "drill": "D2",
+      "invariants": [
+        {
+          "name": "next_does_not_repick_restored_goal",
+          "observed": {
+            "next_result": "DONE",
+            "restored_awaiting_merge": true
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once",
+          "observed": {
+            "done_count": 1
+          },
+          "passed": true
+        },
+        {
+          "name": "external_and_local_terminal_state_converge",
+          "observed": {
+            "convergence": {
+              "action_log_done_count": 1,
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "issue_state": "closed",
+              "labels": [],
+              "pr_state": "MERGED",
+              "work_record_exists": false,
+              "worktree_exists": false
+            },
+            "external": {
+              "assignees": [
+                "readiness-bot"
+              ],
+              "body": "Create hello.txt with one line.\n\n## Done when\n- [ ] hello.txt contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n",
+              "labels": [],
+              "state": "closed",
+              "title": "Add hello.txt"
+            },
+            "local": {
+              "board": {
+                "configured": true,
+                "item_id": "PITEM_1",
+                "mirror_state": "closed",
+                "project_number": 1,
+                "status": "Done"
+              },
+              "cursor": "1 -> done",
+              "done_count": 1,
+              "goal": "1",
+              "lease": "released",
+              "worktree": "removed"
+            }
+          },
+          "passed": true
+        }
+      ],
+      "seed": 5
+    },
+    {
+      "checkpoint": null,
+      "drill": "D3",
+      "invariants": [
+        {
+          "name": "documented_reconcile_gesture_succeeds_twice",
+          "observed": {
+            "first": {
+              "returncode": 0,
+              "stderr": "loop: removed /private/tmp/sigma348-evidence.HaJrF3/runs/d3-seed-1/fixture/github/repo/.sdlc/work/1, deleted branch sdlc/1\n",
+              "stdout": "1 done (PR #100 merged)\n"
+            },
+            "second": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": ""
+            }
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once_after_lost_ack",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        },
+        {
+          "name": "repeat_recovery_is_idempotent",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        }
+      ],
+      "seed": 1
+    },
+    {
+      "checkpoint": null,
+      "drill": "D3",
+      "invariants": [
+        {
+          "name": "documented_reconcile_gesture_succeeds_twice",
+          "observed": {
+            "first": {
+              "returncode": 0,
+              "stderr": "loop: removed /private/tmp/sigma348-evidence.HaJrF3/runs/d3-seed-2/fixture/github/repo/.sdlc/work/1, deleted branch sdlc/1\n",
+              "stdout": "1 done (PR #100 merged)\n"
+            },
+            "second": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": ""
+            }
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once_after_lost_ack",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        },
+        {
+          "name": "repeat_recovery_is_idempotent",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        }
+      ],
+      "seed": 2
+    },
+    {
+      "checkpoint": null,
+      "drill": "D3",
+      "invariants": [
+        {
+          "name": "documented_reconcile_gesture_succeeds_twice",
+          "observed": {
+            "first": {
+              "returncode": 0,
+              "stderr": "loop: removed /private/tmp/sigma348-evidence.HaJrF3/runs/d3-seed-3/fixture/github/repo/.sdlc/work/1, deleted branch sdlc/1\n",
+              "stdout": "1 done (PR #100 merged)\n"
+            },
+            "second": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": ""
+            }
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once_after_lost_ack",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        },
+        {
+          "name": "repeat_recovery_is_idempotent",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        }
+      ],
+      "seed": 3
+    },
+    {
+      "checkpoint": null,
+      "drill": "D3",
+      "invariants": [
+        {
+          "name": "documented_reconcile_gesture_succeeds_twice",
+          "observed": {
+            "first": {
+              "returncode": 0,
+              "stderr": "loop: removed /private/tmp/sigma348-evidence.HaJrF3/runs/d3-seed-4/fixture/github/repo/.sdlc/work/1, deleted branch sdlc/1\n",
+              "stdout": "1 done (PR #100 merged)\n"
+            },
+            "second": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": ""
+            }
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once_after_lost_ack",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        },
+        {
+          "name": "repeat_recovery_is_idempotent",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        }
+      ],
+      "seed": 4
+    },
+    {
+      "checkpoint": null,
+      "drill": "D3",
+      "invariants": [
+        {
+          "name": "documented_reconcile_gesture_succeeds_twice",
+          "observed": {
+            "first": {
+              "returncode": 0,
+              "stderr": "loop: removed /private/tmp/sigma348-evidence.HaJrF3/runs/d3-seed-5/fixture/github/repo/.sdlc/work/1, deleted branch sdlc/1\n",
+              "stdout": "1 done (PR #100 merged)\n"
+            },
+            "second": {
+              "returncode": 0,
+              "stderr": "",
+              "stdout": ""
+            }
+          },
+          "passed": true
+        },
+        {
+          "name": "done_recorded_exactly_once_after_lost_ack",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        },
+        {
+          "name": "repeat_recovery_is_idempotent",
+          "observed": {
+            "ack": true,
+            "done_count": 1,
+            "merge_receipt": true
+          },
+          "passed": true
+        }
+      ],
+      "seed": 5
+    },
+    {
+      "checkpoint": null,
+      "drill": "D4",
+      "expected_failure_states": {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded"
+      },
+      "invariants": [
+        {
+          "name": "daemon_exits_for_stop_file",
+          "observed": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "watch: sigma: notice: the plugin previously published as 'loopsmith' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)\nwatch: stop-file present \u2014 exiting\n"
+          },
+          "passed": true
+        },
+        {
+          "name": "doctor_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "idle/on",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "  [OK ] project layer\n  [OK ] managing session: not registered\n  [OK ] managed settings: absent\n  [OK ] coexistence: WARN -- the plugin previously published as 'loopsmith' is also active here (Claude Code has loopsmith@loopsmith enabled (user settings, /Users/swapnildubey/.claude/settings.json); its hooks and watcher run in every session here; Codex has loopsmith@loopsmith enabled (/Users/swapnildubey/.codex/config.toml)); Sigma is handling this repository  ->  uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; `coexist.py check /tmp/sigma348-evidence.HaJrF3/runs/d4-seed-1/d4-repo/.sdlc` prints the cut-over steps (docs/upgrading.md (Switching over from the previous plugin))\n  [MISSING] team ledger initialized  ->  run /agrim-ledger \u2014 one command creates the ops branch, seeds your file + TEAM.md, and pushes\n  [MISSING] hand-off owner roster configured  ->  no CODEOWNERS and no ledger.owners -- every hand-off resolves to '(unowned)' and is recorded with no recipient, which a hand-off graph or ownership-concentration view discards, so it stays permanently empty. Add .github/CODEOWNERS, or map your areas to handles under ledger.owners in .sdlc/config.json\n  [OK ] superpowers: present\n  [OK ] code-review: present\n  [MISSING] sigma Codex install: absent or disabled  ->  install or enable sigma@sigma in Codex before starting the loop\n\nagrim-doctor: 6/9 ready; 3 need the one-liner shown above.\n\nfeatures (doctor.py features for the enable one-liners):\n  model+effort auto-selection: off\n  model tier price ceiling: opus (default \u2014 fable unreachable)\n  machine-checked done (verify.enforce): off (prose gate only)\n  hard plan-gate (deny source edits w/o fresh plan): off (prompt-gate reminder only)\n  Stop gate (refuse to end a session with unplanned source): off\n  plan-review gate (PR push needs an approving review of the exact plan): off\n  decision gate (deny edits that break a registered invariant): off (no registry \u2014 nothing is enforced)\n  decision tier (advisory park-detail classifier): off\n  pipeline report card + propose: not declared\n  budgets: iterations=off minutes=off tokens=off codex_raw=off\n  budget enforcement (is max_tokens actually being fed? #2515): off (budget.max_tokens not configured \u2014 nothing to enforce)\n  hand-off (context bound, resets the session after N goals): after_goals=20\n  prompt-gate scope: repo-scoped (speaks only where .sdlc/ exists)\n  SessionStart policy brief: off\n  knowledge graph: off\n  backlog source: local-goals\n  pick-path board gating (queue_source): n/a -- backlog source is not github; there is no board/label queue distinction\n  auto-unpark sweep (#1129): n/a \u2014 backlog source is not github\n  blocking-priority picker override (#1352): n/a \u2014 backlog source is not github\n  team ledger: ON but NOT set up \u2014 run /agrim-ledger to create + push the ops branch\n  ledger watcher (keeps the shared ledger pushed): ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)\n  ledger autowatch: off (no ledger-triggered unattended runs)\n  slack-commands listener (inbound Slack commands): off (no inbound Slack commands listener configured)\n  journal (local event records): off (nothing is recorded)\n  local action-log trace (per-goal audit trail, #2741): off\n  dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 phase (not observed host model, #2514): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 slice (not observed host model, #2514/#2521, #2557): off (action_log.enabled is not True \u2014 no dispatch entries are recorded to check)\n  pre-work backlog cross-check: off (a picked goal is worked without a backlog cross-check)\n  pre-work oversized-goal classifier: off (a picked goal is never size-checked)\n  no-dangling-goal unit classification (#2429): off (a goal declaring no unit at all is picked exactly as before this feature existed)\n  slice parallelism: off (a goal's slices run one after another)\n  goal parallelism: off (goals run one after another, no worktree fan-out)\n  per-goal worktree + PR: off \u2014 the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR\n  runtime dirs ignored via: NOT ignored \u2014 runtime dirs may get committed (run /agrim-setup, or setup.py ignore .)\n  auto-merge a clean AND safe PR: off (per-goal worktrees are off)\n  feature-branch rebase upkeep (#144 refuses a replay that would delete content): ON \u2014 feature branches are brought forward on each pick; none is blocked\n  PR review gate (independent of branch protection): off \u2014 auto-merge only respects reviews the base branch's protection REQUIRES\n  independent review (maker is never the checker): ON \u2014 a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo (mechanism: process, host: codex)\n  skill selection vs platform built-ins: advisory \u2014 a plugin can't disable a built-in; Sigma prefers its own skills via sharp descriptions + per-skill resolution headers (no runtime API to detect a live conflict)\n  legacy env-var names in config: none\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "session_start_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "no_diagnosis",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /agrim-doctor for detail.\"}}\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "stop_file_preserved",
+          "observed": {
+            "path": "/tmp/sigma348-evidence.HaJrF3/runs/d4-seed-1/d4-repo/.sdlc/state/watch.stop"
+          },
+          "passed": true
+        }
+      ],
+      "seed": 1
+    },
+    {
+      "checkpoint": null,
+      "drill": "D4",
+      "expected_failure_states": {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded"
+      },
+      "invariants": [
+        {
+          "name": "daemon_exits_for_stop_file",
+          "observed": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "watch: sigma: notice: the plugin previously published as 'loopsmith' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)\nwatch: stop-file present \u2014 exiting\n"
+          },
+          "passed": true
+        },
+        {
+          "name": "doctor_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "idle/on",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "  [OK ] project layer\n  [OK ] managing session: not registered\n  [OK ] managed settings: absent\n  [OK ] coexistence: WARN -- the plugin previously published as 'loopsmith' is also active here (Claude Code has loopsmith@loopsmith enabled (user settings, /Users/swapnildubey/.claude/settings.json); its hooks and watcher run in every session here; Codex has loopsmith@loopsmith enabled (/Users/swapnildubey/.codex/config.toml)); Sigma is handling this repository  ->  uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; `coexist.py check /tmp/sigma348-evidence.HaJrF3/runs/d4-seed-2/d4-repo/.sdlc` prints the cut-over steps (docs/upgrading.md (Switching over from the previous plugin))\n  [MISSING] team ledger initialized  ->  run /agrim-ledger \u2014 one command creates the ops branch, seeds your file + TEAM.md, and pushes\n  [MISSING] hand-off owner roster configured  ->  no CODEOWNERS and no ledger.owners -- every hand-off resolves to '(unowned)' and is recorded with no recipient, which a hand-off graph or ownership-concentration view discards, so it stays permanently empty. Add .github/CODEOWNERS, or map your areas to handles under ledger.owners in .sdlc/config.json\n  [OK ] superpowers: present\n  [OK ] code-review: present\n  [MISSING] sigma Codex install: absent or disabled  ->  install or enable sigma@sigma in Codex before starting the loop\n\nagrim-doctor: 6/9 ready; 3 need the one-liner shown above.\n\nfeatures (doctor.py features for the enable one-liners):\n  model+effort auto-selection: off\n  model tier price ceiling: opus (default \u2014 fable unreachable)\n  machine-checked done (verify.enforce): off (prose gate only)\n  hard plan-gate (deny source edits w/o fresh plan): off (prompt-gate reminder only)\n  Stop gate (refuse to end a session with unplanned source): off\n  plan-review gate (PR push needs an approving review of the exact plan): off\n  decision gate (deny edits that break a registered invariant): off (no registry \u2014 nothing is enforced)\n  decision tier (advisory park-detail classifier): off\n  pipeline report card + propose: not declared\n  budgets: iterations=off minutes=off tokens=off codex_raw=off\n  budget enforcement (is max_tokens actually being fed? #2515): off (budget.max_tokens not configured \u2014 nothing to enforce)\n  hand-off (context bound, resets the session after N goals): after_goals=20\n  prompt-gate scope: repo-scoped (speaks only where .sdlc/ exists)\n  SessionStart policy brief: off\n  knowledge graph: off\n  backlog source: local-goals\n  pick-path board gating (queue_source): n/a -- backlog source is not github; there is no board/label queue distinction\n  auto-unpark sweep (#1129): n/a \u2014 backlog source is not github\n  blocking-priority picker override (#1352): n/a \u2014 backlog source is not github\n  team ledger: ON but NOT set up \u2014 run /agrim-ledger to create + push the ops branch\n  ledger watcher (keeps the shared ledger pushed): ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)\n  ledger autowatch: off (no ledger-triggered unattended runs)\n  slack-commands listener (inbound Slack commands): off (no inbound Slack commands listener configured)\n  journal (local event records): off (nothing is recorded)\n  local action-log trace (per-goal audit trail, #2741): off\n  dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 phase (not observed host model, #2514): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 slice (not observed host model, #2514/#2521, #2557): off (action_log.enabled is not True \u2014 no dispatch entries are recorded to check)\n  pre-work backlog cross-check: off (a picked goal is worked without a backlog cross-check)\n  pre-work oversized-goal classifier: off (a picked goal is never size-checked)\n  no-dangling-goal unit classification (#2429): off (a goal declaring no unit at all is picked exactly as before this feature existed)\n  slice parallelism: off (a goal's slices run one after another)\n  goal parallelism: off (goals run one after another, no worktree fan-out)\n  per-goal worktree + PR: off \u2014 the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR\n  runtime dirs ignored via: NOT ignored \u2014 runtime dirs may get committed (run /agrim-setup, or setup.py ignore .)\n  auto-merge a clean AND safe PR: off (per-goal worktrees are off)\n  feature-branch rebase upkeep (#144 refuses a replay that would delete content): ON \u2014 feature branches are brought forward on each pick; none is blocked\n  PR review gate (independent of branch protection): off \u2014 auto-merge only respects reviews the base branch's protection REQUIRES\n  independent review (maker is never the checker): ON \u2014 a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo (mechanism: process, host: codex)\n  skill selection vs platform built-ins: advisory \u2014 a plugin can't disable a built-in; Sigma prefers its own skills via sharp descriptions + per-skill resolution headers (no runtime API to detect a live conflict)\n  legacy env-var names in config: none\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "session_start_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "no_diagnosis",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /agrim-doctor for detail.\"}}\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "stop_file_preserved",
+          "observed": {
+            "path": "/tmp/sigma348-evidence.HaJrF3/runs/d4-seed-2/d4-repo/.sdlc/state/watch.stop"
+          },
+          "passed": true
+        }
+      ],
+      "seed": 2
+    },
+    {
+      "checkpoint": null,
+      "drill": "D4",
+      "expected_failure_states": {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded"
+      },
+      "invariants": [
+        {
+          "name": "daemon_exits_for_stop_file",
+          "observed": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "watch: sigma: notice: the plugin previously published as 'loopsmith' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)\nwatch: stop-file present \u2014 exiting\n"
+          },
+          "passed": true
+        },
+        {
+          "name": "doctor_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "idle/on",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "  [OK ] project layer\n  [OK ] managing session: not registered\n  [OK ] managed settings: absent\n  [OK ] coexistence: WARN -- the plugin previously published as 'loopsmith' is also active here (Claude Code has loopsmith@loopsmith enabled (user settings, /Users/swapnildubey/.claude/settings.json); its hooks and watcher run in every session here; Codex has loopsmith@loopsmith enabled (/Users/swapnildubey/.codex/config.toml)); Sigma is handling this repository  ->  uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; `coexist.py check /tmp/sigma348-evidence.HaJrF3/runs/d4-seed-3/d4-repo/.sdlc` prints the cut-over steps (docs/upgrading.md (Switching over from the previous plugin))\n  [MISSING] team ledger initialized  ->  run /agrim-ledger \u2014 one command creates the ops branch, seeds your file + TEAM.md, and pushes\n  [MISSING] hand-off owner roster configured  ->  no CODEOWNERS and no ledger.owners -- every hand-off resolves to '(unowned)' and is recorded with no recipient, which a hand-off graph or ownership-concentration view discards, so it stays permanently empty. Add .github/CODEOWNERS, or map your areas to handles under ledger.owners in .sdlc/config.json\n  [OK ] superpowers: present\n  [OK ] code-review: present\n  [MISSING] sigma Codex install: absent or disabled  ->  install or enable sigma@sigma in Codex before starting the loop\n\nagrim-doctor: 6/9 ready; 3 need the one-liner shown above.\n\nfeatures (doctor.py features for the enable one-liners):\n  model+effort auto-selection: off\n  model tier price ceiling: opus (default \u2014 fable unreachable)\n  machine-checked done (verify.enforce): off (prose gate only)\n  hard plan-gate (deny source edits w/o fresh plan): off (prompt-gate reminder only)\n  Stop gate (refuse to end a session with unplanned source): off\n  plan-review gate (PR push needs an approving review of the exact plan): off\n  decision gate (deny edits that break a registered invariant): off (no registry \u2014 nothing is enforced)\n  decision tier (advisory park-detail classifier): off\n  pipeline report card + propose: not declared\n  budgets: iterations=off minutes=off tokens=off codex_raw=off\n  budget enforcement (is max_tokens actually being fed? #2515): off (budget.max_tokens not configured \u2014 nothing to enforce)\n  hand-off (context bound, resets the session after N goals): after_goals=20\n  prompt-gate scope: repo-scoped (speaks only where .sdlc/ exists)\n  SessionStart policy brief: off\n  knowledge graph: off\n  backlog source: local-goals\n  pick-path board gating (queue_source): n/a -- backlog source is not github; there is no board/label queue distinction\n  auto-unpark sweep (#1129): n/a \u2014 backlog source is not github\n  blocking-priority picker override (#1352): n/a \u2014 backlog source is not github\n  team ledger: ON but NOT set up \u2014 run /agrim-ledger to create + push the ops branch\n  ledger watcher (keeps the shared ledger pushed): ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)\n  ledger autowatch: off (no ledger-triggered unattended runs)\n  slack-commands listener (inbound Slack commands): off (no inbound Slack commands listener configured)\n  journal (local event records): off (nothing is recorded)\n  local action-log trace (per-goal audit trail, #2741): off\n  dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 phase (not observed host model, #2514): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 slice (not observed host model, #2514/#2521, #2557): off (action_log.enabled is not True \u2014 no dispatch entries are recorded to check)\n  pre-work backlog cross-check: off (a picked goal is worked without a backlog cross-check)\n  pre-work oversized-goal classifier: off (a picked goal is never size-checked)\n  no-dangling-goal unit classification (#2429): off (a goal declaring no unit at all is picked exactly as before this feature existed)\n  slice parallelism: off (a goal's slices run one after another)\n  goal parallelism: off (goals run one after another, no worktree fan-out)\n  per-goal worktree + PR: off \u2014 the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR\n  runtime dirs ignored via: NOT ignored \u2014 runtime dirs may get committed (run /agrim-setup, or setup.py ignore .)\n  auto-merge a clean AND safe PR: off (per-goal worktrees are off)\n  feature-branch rebase upkeep (#144 refuses a replay that would delete content): ON \u2014 feature branches are brought forward on each pick; none is blocked\n  PR review gate (independent of branch protection): off \u2014 auto-merge only respects reviews the base branch's protection REQUIRES\n  independent review (maker is never the checker): ON \u2014 a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo (mechanism: process, host: codex)\n  skill selection vs platform built-ins: advisory \u2014 a plugin can't disable a built-in; Sigma prefers its own skills via sharp descriptions + per-skill resolution headers (no runtime API to detect a live conflict)\n  legacy env-var names in config: none\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "session_start_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "no_diagnosis",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /agrim-doctor for detail.\"}}\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "stop_file_preserved",
+          "observed": {
+            "path": "/tmp/sigma348-evidence.HaJrF3/runs/d4-seed-3/d4-repo/.sdlc/state/watch.stop"
+          },
+          "passed": true
+        }
+      ],
+      "seed": 3
+    },
+    {
+      "checkpoint": null,
+      "drill": "D4",
+      "expected_failure_states": {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded"
+      },
+      "invariants": [
+        {
+          "name": "daemon_exits_for_stop_file",
+          "observed": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "watch: sigma: notice: the plugin previously published as 'loopsmith' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)\nwatch: stop-file present \u2014 exiting\n"
+          },
+          "passed": true
+        },
+        {
+          "name": "doctor_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "idle/on",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "  [OK ] project layer\n  [OK ] managing session: not registered\n  [OK ] managed settings: absent\n  [OK ] coexistence: WARN -- the plugin previously published as 'loopsmith' is also active here (Claude Code has loopsmith@loopsmith enabled (user settings, /Users/swapnildubey/.claude/settings.json); its hooks and watcher run in every session here; Codex has loopsmith@loopsmith enabled (/Users/swapnildubey/.codex/config.toml)); Sigma is handling this repository  ->  uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; `coexist.py check /tmp/sigma348-evidence.HaJrF3/runs/d4-seed-4/d4-repo/.sdlc` prints the cut-over steps (docs/upgrading.md (Switching over from the previous plugin))\n  [MISSING] team ledger initialized  ->  run /agrim-ledger \u2014 one command creates the ops branch, seeds your file + TEAM.md, and pushes\n  [MISSING] hand-off owner roster configured  ->  no CODEOWNERS and no ledger.owners -- every hand-off resolves to '(unowned)' and is recorded with no recipient, which a hand-off graph or ownership-concentration view discards, so it stays permanently empty. Add .github/CODEOWNERS, or map your areas to handles under ledger.owners in .sdlc/config.json\n  [OK ] superpowers: present\n  [OK ] code-review: present\n  [MISSING] sigma Codex install: absent or disabled  ->  install or enable sigma@sigma in Codex before starting the loop\n\nagrim-doctor: 6/9 ready; 3 need the one-liner shown above.\n\nfeatures (doctor.py features for the enable one-liners):\n  model+effort auto-selection: off\n  model tier price ceiling: opus (default \u2014 fable unreachable)\n  machine-checked done (verify.enforce): off (prose gate only)\n  hard plan-gate (deny source edits w/o fresh plan): off (prompt-gate reminder only)\n  Stop gate (refuse to end a session with unplanned source): off\n  plan-review gate (PR push needs an approving review of the exact plan): off\n  decision gate (deny edits that break a registered invariant): off (no registry \u2014 nothing is enforced)\n  decision tier (advisory park-detail classifier): off\n  pipeline report card + propose: not declared\n  budgets: iterations=off minutes=off tokens=off codex_raw=off\n  budget enforcement (is max_tokens actually being fed? #2515): off (budget.max_tokens not configured \u2014 nothing to enforce)\n  hand-off (context bound, resets the session after N goals): after_goals=20\n  prompt-gate scope: repo-scoped (speaks only where .sdlc/ exists)\n  SessionStart policy brief: off\n  knowledge graph: off\n  backlog source: local-goals\n  pick-path board gating (queue_source): n/a -- backlog source is not github; there is no board/label queue distinction\n  auto-unpark sweep (#1129): n/a \u2014 backlog source is not github\n  blocking-priority picker override (#1352): n/a \u2014 backlog source is not github\n  team ledger: ON but NOT set up \u2014 run /agrim-ledger to create + push the ops branch\n  ledger watcher (keeps the shared ledger pushed): ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)\n  ledger autowatch: off (no ledger-triggered unattended runs)\n  slack-commands listener (inbound Slack commands): off (no inbound Slack commands listener configured)\n  journal (local event records): off (nothing is recorded)\n  local action-log trace (per-goal audit trail, #2741): off\n  dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 phase (not observed host model, #2514): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 slice (not observed host model, #2514/#2521, #2557): off (action_log.enabled is not True \u2014 no dispatch entries are recorded to check)\n  pre-work backlog cross-check: off (a picked goal is worked without a backlog cross-check)\n  pre-work oversized-goal classifier: off (a picked goal is never size-checked)\n  no-dangling-goal unit classification (#2429): off (a goal declaring no unit at all is picked exactly as before this feature existed)\n  slice parallelism: off (a goal's slices run one after another)\n  goal parallelism: off (goals run one after another, no worktree fan-out)\n  per-goal worktree + PR: off \u2014 the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR\n  runtime dirs ignored via: NOT ignored \u2014 runtime dirs may get committed (run /agrim-setup, or setup.py ignore .)\n  auto-merge a clean AND safe PR: off (per-goal worktrees are off)\n  feature-branch rebase upkeep (#144 refuses a replay that would delete content): ON \u2014 feature branches are brought forward on each pick; none is blocked\n  PR review gate (independent of branch protection): off \u2014 auto-merge only respects reviews the base branch's protection REQUIRES\n  independent review (maker is never the checker): ON \u2014 a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo (mechanism: process, host: codex)\n  skill selection vs platform built-ins: advisory \u2014 a plugin can't disable a built-in; Sigma prefers its own skills via sharp descriptions + per-skill resolution headers (no runtime API to detect a live conflict)\n  legacy env-var names in config: none\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "session_start_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "no_diagnosis",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /agrim-doctor for detail.\"}}\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "stop_file_preserved",
+          "observed": {
+            "path": "/tmp/sigma348-evidence.HaJrF3/runs/d4-seed-4/d4-repo/.sdlc/state/watch.stop"
+          },
+          "passed": true
+        }
+      ],
+      "seed": 4
+    },
+    {
+      "checkpoint": null,
+      "drill": "D4",
+      "expected_failure_states": {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded"
+      },
+      "invariants": [
+        {
+          "name": "daemon_exits_for_stop_file",
+          "observed": {
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "watch: sigma: notice: the plugin previously published as 'loopsmith' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)\nwatch: stop-file present \u2014 exiting\n"
+          },
+          "passed": true
+        },
+        {
+          "name": "doctor_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "idle/on",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "  [OK ] project layer\n  [OK ] managing session: not registered\n  [OK ] managed settings: absent\n  [OK ] coexistence: WARN -- the plugin previously published as 'loopsmith' is also active here (Claude Code has loopsmith@loopsmith enabled (user settings, /Users/swapnildubey/.claude/settings.json); its hooks and watcher run in every session here; Codex has loopsmith@loopsmith enabled (/Users/swapnildubey/.codex/config.toml)); Sigma is handling this repository  ->  uninstall it when ready: claude plugin uninstall loopsmith@loopsmith ; remove the [plugins.\"loopsmith@loopsmith\"] table from /Users/swapnildubey/.codex/config.toml; `coexist.py check /tmp/sigma348-evidence.HaJrF3/runs/d4-seed-5/d4-repo/.sdlc` prints the cut-over steps (docs/upgrading.md (Switching over from the previous plugin))\n  [MISSING] team ledger initialized  ->  run /agrim-ledger \u2014 one command creates the ops branch, seeds your file + TEAM.md, and pushes\n  [MISSING] hand-off owner roster configured  ->  no CODEOWNERS and no ledger.owners -- every hand-off resolves to '(unowned)' and is recorded with no recipient, which a hand-off graph or ownership-concentration view discards, so it stays permanently empty. Add .github/CODEOWNERS, or map your areas to handles under ledger.owners in .sdlc/config.json\n  [OK ] superpowers: present\n  [OK ] code-review: present\n  [MISSING] sigma Codex install: absent or disabled  ->  install or enable sigma@sigma in Codex before starting the loop\n\nagrim-doctor: 6/9 ready; 3 need the one-liner shown above.\n\nfeatures (doctor.py features for the enable one-liners):\n  model+effort auto-selection: off\n  model tier price ceiling: opus (default \u2014 fable unreachable)\n  machine-checked done (verify.enforce): off (prose gate only)\n  hard plan-gate (deny source edits w/o fresh plan): off (prompt-gate reminder only)\n  Stop gate (refuse to end a session with unplanned source): off\n  plan-review gate (PR push needs an approving review of the exact plan): off\n  decision gate (deny edits that break a registered invariant): off (no registry \u2014 nothing is enforced)\n  decision tier (advisory park-detail classifier): off\n  pipeline report card + propose: not declared\n  budgets: iterations=off minutes=off tokens=off codex_raw=off\n  budget enforcement (is max_tokens actually being fed? #2515): off (budget.max_tokens not configured \u2014 nothing to enforce)\n  hand-off (context bound, resets the session after N goals): after_goals=20\n  prompt-gate scope: repo-scoped (speaks only where .sdlc/ exists)\n  SessionStart policy brief: off\n  knowledge graph: off\n  backlog source: local-goals\n  pick-path board gating (queue_source): n/a -- backlog source is not github; there is no board/label queue distinction\n  auto-unpark sweep (#1129): n/a \u2014 backlog source is not github\n  blocking-priority picker override (#1352): n/a \u2014 backlog source is not github\n  team ledger: ON but NOT set up \u2014 run /agrim-ledger to create + push the ops branch\n  ledger watcher (keeps the shared ledger pushed): ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)\n  ledger autowatch: off (no ledger-triggered unattended runs)\n  slack-commands listener (inbound Slack commands): off (no inbound Slack commands listener configured)\n  journal (local event records): off (nothing is recorded)\n  local action-log trace (per-goal audit trail, #2741): off\n  dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 phase (not observed host model, #2514): off (the journal is not enabled \u2014 no phase events are recorded to check against)\n  dispatch model log coverage \u2014 slice (not observed host model, #2514/#2521, #2557): off (action_log.enabled is not True \u2014 no dispatch entries are recorded to check)\n  pre-work backlog cross-check: off (a picked goal is worked without a backlog cross-check)\n  pre-work oversized-goal classifier: off (a picked goal is never size-checked)\n  no-dangling-goal unit classification (#2429): off (a goal declaring no unit at all is picked exactly as before this feature existed)\n  slice parallelism: off (a goal's slices run one after another)\n  goal parallelism: off (goals run one after another, no worktree fan-out)\n  per-goal worktree + PR: off \u2014 the loop writes NOTHING to git: a done goal's changes stay in your working tree, no PR\n  runtime dirs ignored via: NOT ignored \u2014 runtime dirs may get committed (run /agrim-setup, or setup.py ignore .)\n  auto-merge a clean AND safe PR: off (per-goal worktrees are off)\n  feature-branch rebase upkeep (#144 refuses a replay that would delete content): ON \u2014 feature branches are brought forward on each pick; none is blocked\n  PR review gate (independent of branch protection): off \u2014 auto-merge only respects reviews the base branch's protection REQUIRES\n  independent review (maker is never the checker): ON \u2014 a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo (mechanism: process, host: codex)\n  skill selection vs platform built-ins: advisory \u2014 a plugin can't disable a built-in; Sigma prefers its own skills via sharp descriptions + per-skill resolution headers (no runtime API to detect a live conflict)\n  legacy env-var names in config: none\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "session_start_explicit_stop_file_reporting",
+          "observed": {
+            "classification": "no_diagnosis",
+            "outcome": "control_failed_and_recorded",
+            "returncode": 0,
+            "stderr": "",
+            "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /agrim-doctor for detail.\"}}\n"
+          },
+          "passed": false
+        },
+        {
+          "name": "stop_file_preserved",
+          "observed": {
+            "path": "/tmp/sigma348-evidence.HaJrF3/runs/d4-seed-5/d4-repo/.sdlc/state/watch.stop"
+          },
+          "passed": true
+        }
+      ],
+      "seed": 5
+    }
+  ],
+  "schema": "readiness-drill-evidence/v1",
+  "windows_skip_reason": null
+}
