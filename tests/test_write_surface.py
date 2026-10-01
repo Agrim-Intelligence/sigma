@@ -177,4 +177,13 @@ def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path)
     source.write_text('def merge_design(run, cwd):\n    _retry_gh(run, cwd, ["gh", "pr", "merge", "1"])\n')
     assert _module().scan_paths(tmp_path, [source])[0]["rule"] == "gh-pr"
     assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr") == (
-        "work.enabled; confirmed design review", "high")
+        "work.enabled", "high")
+
+
+def test_issue_decided_write_gates_and_delete_risks_are_exact():
+    mod = _module()
+    assert mod._metadata("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write") == ("granted verdict", "high")
+    assert mod._metadata("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr") == ("ungated", "high")
+    assert mod._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights", "high")
+    for function, rule in (("_delete_remote_branch", "gh-api-write"), ("_close_issue_the_base_cannot", "gh-api-write")):
+        assert mod._metadata("skills/agrim-loop/scripts/work.py", function, rule)[1] == "high"

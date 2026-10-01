@@ -59,7 +59,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/feature_judge.py | _acquire_spend_lock | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/feature_judge.py | _record_spend | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/feature_propagate.py | _store | fs-write | 2 | ungated | medium |
-| skills/agrim-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | unit propagation is enabled and sibling repo is declared | high |
+| skills/agrim-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | granted verdict | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | work.rebase_upkeep | high |
@@ -199,21 +199,21 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/watch_daemon.py | touch_heartbeat | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/witness.py | record | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _clear_completed_merge_deliveries | fs-remove | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _close_issue_the_base_cannot | gh-api-write | 1 | work.enabled; base branch cannot close the issue | high |
 | skills/agrim-loop/scripts/work.py | _create_exclusive | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merged PR cleanup | high |
 | skills/agrim-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _save | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | ungated | medium |
-| skills/agrim-loop/scripts/work.py | close_design | gh-pr | 1 | rejected design review; risk-reducing close | high |
+| skills/agrim-loop/scripts/work.py | close_design | gh-pr | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | finish | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; confirmed merged PR | high |
 | skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; fresh verify evidence and CLEAN PR | high |
-| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; confirmed design review | high |
+| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights | high |
+| skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled | high |
 | skills/agrim-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |

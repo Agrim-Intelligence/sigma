@@ -31,19 +31,23 @@ def _metadata(path, function, rule):
     site = (path, function, rule)
     known = {
         ("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write"):
-            ("unit propagation is enabled and sibling repo is declared", "high"),
+            ("granted verdict", "high"),
         ("skills/agrim-status/scripts/merge_queue_enable.py", "patch_auto_merge", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/agrim-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr"):
-            ("work.enabled; confirmed design review", "high"),
+            ("work.enabled", "high"),
         ("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr"):
-            ("rejected design review; risk-reducing close", "high"),
+            ("ungated", "high"),
         ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"):
-            ("work.enabled; fresh verify evidence and CLEAN PR", "high"),
+            ("work.enabled; work.auto_merge != off; merge rights", "high"),
         ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
+        ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
+            ("work.enabled; merged PR cleanup", "high"),
+        ("skills/agrim-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
+            ("work.enabled; base branch cannot close the issue", "high"),
     }
     if site in known:
         return known[site]
