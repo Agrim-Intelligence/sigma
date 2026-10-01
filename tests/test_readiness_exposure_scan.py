@@ -87,6 +87,34 @@ def test_allowlist_suppresses_exact_path_rule_and_stale_entry_is_a_finding(tmp_p
     assert report["stale_allowlist"] == [{"path": "gone.txt", "rule": "gh-token"}]
 
 
+def test_blob_scoped_allowlist_does_not_hide_a_changed_fixture_at_the_same_path(tmp_path):
+    repo = _repo(tmp_path)
+    fixture = repo / "fixture.txt"
+    fixture.write_text("/Users/fixture/one", encoding="utf-8")
+    _git(repo, "add", "."); _git(repo, "commit", "-qm", "reviewed fixture")
+    reviewed_blob = _git(repo, "rev-parse", "HEAD:fixture.txt")
+    allow = repo / "allow.json"
+    allow.write_text(json.dumps([{
+        "path": "fixture.txt", "rule": "absolute-home-path", "blob": reviewed_blob,
+        "reason": "reviewed hermetic fixture",
+    }]), encoding="utf-8")
+
+    green_json = tmp_path / "green.json"
+    green = _run("tracked", repo, "--allowlist", allow, "--json", green_json)
+    assert green.returncode == 0
+    assert json.loads(green_json.read_text())["findings"] == []
+
+    fixture.write_text("/Users/fixture/two", encoding="utf-8")
+    _git(repo, "add", "fixture.txt"); _git(repo, "commit", "-qm", "changed fixture")
+    red_json = tmp_path / "red.json"
+    red = _run("tracked", repo, "--allowlist", allow, "--json", red_json)
+    report = json.loads(red_json.read_text())
+    assert red.returncode == 1
+    assert any(x["rule"] == "absolute-home-path" and x["path"] == "fixture.txt"
+               for x in report["findings"])
+    assert report["stale_allowlist"] == [{"path": "fixture.txt", "rule": "absolute-home-path"}]
+
+
 def test_home_path_is_private_reference_and_large_blob_is_counted_without_reading(tmp_path):
     repo = _repo(tmp_path)
     (repo / "path.txt").write_text("/Users/alice/x", encoding="utf-8")

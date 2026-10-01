@@ -3,5 +3,35 @@
     "path": "tests/boardfake.py",
     "rule": "gh-token",
     "reason": "fake token used by tests"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/north_star.py",
+    "rule": "absolute-home-path",
+    "blob": "b783fc7230ce02dbc37b9c0b85b2c0004a8f90ca",
+    "reason": "reviewed host-agnostic documentation literal; exact blob only"
+  },
+  {
+    "path": "tests/test_coexist.py",
+    "rule": "absolute-home-path",
+    "blob": "1427049357aff8c0aac1a5d8eef40d06413ff8ec",
+    "reason": "reviewed hermetic coexistence-control literals; exact blob only"
+  },
+  {
+    "path": "tests/test_readiness_drills.py",
+    "rule": "absolute-home-path",
+    "blob": "50f637a6a26606fc1f71b9f21d91c32329e5f82c",
+    "reason": "reviewed readiness-drill red fixture; exact blob only"
+  },
+  {
+    "path": "tests/test_readiness_exposure_scan.py",
+    "rule": "absolute-home-path",
+    "blob": "75ca3fc05f50003ec3252289526a356d0304c638",
+    "reason": "reviewed exposure-scanner red fixture; exact blob only"
+  },
+  {
+    "path": "tests/test_upstream.py",
+    "rule": "absolute-home-path",
+    "blob": "0b2bc72c0fc8307b289fd8f45db543149acec75b",
+    "reason": "reviewed upstream-scrub control literals; exact blob only"
   }
 ]
