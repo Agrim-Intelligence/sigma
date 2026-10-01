@@ -1,0 +1,7 @@
+[
+  {"file": "docs/output-contract.md", "target": "url", "reason": "renderer grammar placeholder"},
+  {"file": ".sdlc/plans/282.md", "target": "url", "reason": "literal URL placeholder in a historical plan"},
+  {"file": ".sdlc/plans/283.md", "target": "AUTOWATCH.md", "reason": "historical plan names an external runtime document"},
+  {"file": "README.md", "target": "examples/hello-sdlc/", "reason": "published example repository is outside this checkout"},
+  {"file": "skills/agrim-goal-design/references/writing-the-artifact.md", "target": "<n>-in-brief.md", "reason": "artifact filename placeholder"}
+]
