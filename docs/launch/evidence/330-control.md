@@ -113,3 +113,28 @@ Identical on Python 3.10.20 and 3.12.13.
 ## Unplanted
 
 The working tree itself: `16 passed` on Python 3.12 and on Python 3.10.
+
+## Control 6: the owner's rename-first decision, and the rebase (2026-10-01)
+
+Measured on the working tree on top of branch head `093a1a4b299636cadeabd411e058fd3864142f67` (the
+rebase onto `origin/main` `880de21ecebb7b73ec993c9ea7ad8e2323192c82`), with these edits to
+`docs/launch/definition.md` uncommitted: the `**Public repository:**` bullet (the owner's
+rename-first decision), the `setup.py` and README line citations that the rebase moved, and the CI
+coverage sentence that #338 made stale. sha256 as measured:
+
+- `docs/launch/definition.md` `28c00e66938a4ec6f5aa3da5730c96b74d61b35c955c0e83e0a4e0ca0afd495e`
+- `docs/launch/definition.json` `9bf8cd5426d6e2d5d47b71b123006900f935a229098590b54208eb0a7d5fe2d2`
+- `tests/test_launch_definition.py` `f10e8d7cc7506708ab6beb0b5fce5cfa7cd846c614157478bbc970f5ac6cd3c9`
+
+The bullet's prose changed, and the test reads that bullet by its shape (the first backticked
+value). Gesture: `python -m pytest tests/test_launch_definition.py -q`, Python 3.12.13, each plant
+made in the working tree and restored from a copy kept under `~/.sigma-ops/`:
+
+```
+unplanted                                      green  16 passed
+json public_repo -> Agrim-Intelligence/other   RED    1 failed, 15 passed
+md bullet slug un-backticked                   RED    1 failed, 15 passed
+restored                                       green  16 passed
+```
+
+Not re-measured on Python 3.10 here; Controls 1-5 above were.

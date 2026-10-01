@@ -18,10 +18,13 @@ it.
 - **Artifact:** `public-snapshot` — a fresh public snapshot repository, built from a reviewed tree.
   The snapshot does not carry this repository's issue and pull-request history or its other
   branches.
-- **Public repository:** `Agrim-Intelligence/sigma`. That is the name the current private
-  repository has today, so the current private repository is renamed first, and stays private,
-  and the new public snapshot repository then takes this name. The rename is the owner's action,
-  done by hand; no Sigma tool, goal or agent creates, renames or changes a repository.
+- **Public repository:** `Agrim-Intelligence/sigma`. The owner decided on 2026-10-01 that the
+  public repository takes this name, so this private repository is renamed, to a name the owner
+  has not yet chosen, BEFORE the public repository is created, and it stays private. Once a new
+  repository takes the old name, GitHub's redirects from it stop, so any clone whose `origin`
+  still points at the old URL would then point at the public repository. The rename is the
+  owner's action, done by hand (no Sigma tool, goal or agent creates, renames or changes a
+  repository), and its sequence is prepared in #397.
 - **Install channel:** the Claude Code plugin marketplace, pointing at the public repository. It is
   the only channel with a recorded end-to-end run.
 - **Version:** `1.0.0`, git-tagged `v1.0.0` in the public repository. `.claude-plugin/plugin.json`
@@ -29,14 +32,14 @@ it.
 
 ## What the rename changes
 
-Once the private repository is renamed, GitHub redirects its old name to the new one — until the
+Once this private repository is renamed, GitHub redirects its old name to the new one — until the
 new public repository takes `Agrim-Intelligence/sigma`. From then on the redirect is gone, and
 everything that names `Agrim-Intelligence/sigma` points at the public repository, not the private
 one. The release goal (#359) must handle each of these before the public repository takes the name:
 
 - **Safety hazard — the loop's own configured repository.** `/agrim-setup` writes
   `discovery.github.repo` into every adopter's `.sdlc/config.json`
-  (`skills/agrim-setup/scripts/setup.py:149`, `:214`; `/agrim-init` fills the same key,
+  (`skills/agrim-setup/scripts/setup.py:190`, `:255`; `/agrim-init` fills the same key,
   `skills/agrim-init/scripts/init_flow.py:309`), and this repository's own `.sdlc/config.json`
   holds `Agrim-Intelligence/sigma` there. The loop addresses GitHub by that slug directly, not by
   the git remote: it reads goals from it (`skills/agrim-loop/scripts/sources.py:88`) and passes it
@@ -60,7 +63,7 @@ one. The release goal (#359) must handle each of these before the public reposit
 - `docs/board.md`'s milestone-assignment commands (`REPO=` at `docs/board.md:162`, `$Repo` at
   `:183`), which PATCH the milestone on issues in the named repository;
 - `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
-- the README's CI badge (`README.md:3`);
+- the README's CI badge (`README.md:7`);
 - `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py:1515`. `/agrim-doctor`'s version
   check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
   only as a fallback when that record cannot be read.
@@ -90,8 +93,9 @@ not block launch, and is to be labelled experimental in the README; that labelli
 README-claims goal and is not claimed here as done.
 
 The supported cells are launch-blocking REQUIREMENTS, not a statement of what is verified today:
-CI (`.github/workflows/ci.yml`) runs Ubuntu with Python 3.10 and 3.12 only, and macOS, Python 3.11
-and Python 3.13 are not CI-gated until #338.
+CI (`.github/workflows/ci.yml`) runs the full suite on Ubuntu with Python 3.10, 3.11, 3.12 and 3.13,
+and on macOS with Python 3.12 only (#338). The macOS cells on Python 3.10, 3.11 and 3.13 have no CI
+leg, so nothing checks them today.
 
 No experimental cell has a recorded END-TO-END run. Two have partial validation:
 

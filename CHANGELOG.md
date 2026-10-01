@@ -7,10 +7,11 @@ All notable changes to Sigma are recorded here, newest first.
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
-  fresh public snapshot repository named `Agrim-Intelligence/sigma` (the current private repository
-  is renamed first, by the owner, and stays private), version `1.0.0`; supported = Claude Code on
+  fresh public snapshot repository named `Agrim-Intelligence/sigma` (this private repository
+  is renamed first, by the owner, before the public one is created, and stays private; the rename
+  sequence is prepared in #397), version `1.0.0`; supported = Claude Code on
   macOS and Linux, Python 3.10-3.13, `local-goals` and `github` modes (launch-blocking
-  requirements, not verified today: CI gates Ubuntu on 3.10 and 3.12 only until #338);
+  requirements, not verified today: CI gates Ubuntu on 3.10-3.13 and macOS on 3.12 only, #338);
   experimental = Codex, Cursor, Windows (no recorded end-to-end run; Codex and Windows have the
   partial validation the page states);
   audience = individual developers and small teams on GitHub; out of scope = Slack listener,
