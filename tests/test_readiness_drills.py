@@ -38,7 +38,9 @@ def test_mandatory_d1_seed_mapping_covers_every_actual_merge_checkpoint():
 def test_evidence_refuses_filename_body_or_checkout_sha_mismatch(tmp_path):
     drills = _module()
     sha = "a" * 40
-    payload = {"schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "runs": []}
+    payload = {"schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "runs": [],
+               "command": [], "platform": "darwin", "windows_skip_reason": None,
+               "b6": {"issue": 416, "disposition": "filed"}}
     path = tmp_path / "drills-aaaaaaaaaaaa.json"
 
     drills.validate_evidence(path, payload, sha)
@@ -46,6 +48,21 @@ def test_evidence_refuses_filename_body_or_checkout_sha_mismatch(tmp_path):
         drills.validate_evidence(path, {**payload, "frozen_commit": "b" * 40}, sha)
     with pytest.raises(drills.UsageError):
         drills.validate_evidence(tmp_path / "drills-bbbbbbbbbbbb.json", payload, sha)
+
+
+def test_evidence_schema_requires_reproducibility_and_failure_disposition(tmp_path):
+    drills = _module()
+    sha = "a" * 40
+    payload = {
+        "schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "command": ["drills.py", "run"],
+        "platform": "darwin", "windows_skip_reason": None, "b6": {"issue": 416, "disposition": "filed"},
+        "runs": [{"drill": "D4", "seed": 1, "checkpoint": None,
+                  "invariants": [{"name": "doctor", "passed": False}]}],
+    }
+    drills.validate_evidence(tmp_path / "drills-aaaaaaaaaaaa.json", payload, sha)
+    with pytest.raises(drills.UsageError):
+        drills.validate_evidence(tmp_path / "drills-aaaaaaaaaaaa.json",
+                                 {key: value for key, value in payload.items() if key != "b6"}, sha)
 
 
 @pytest.mark.parametrize("seed,checkpoint", [

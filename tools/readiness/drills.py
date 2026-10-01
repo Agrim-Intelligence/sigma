@@ -314,6 +314,17 @@ def validate_evidence(path: Path, payload: dict, checkout_sha: str):
         raise UsageError("unexpected evidence schema")
     if payload.get("frozen_commit") != checkout_sha:
         raise UsageError("evidence body SHA does not match checkout")
+    required = ("command", "platform", "windows_skip_reason", "b6", "runs")
+    if any(key not in payload for key in required):
+        raise UsageError("evidence is missing reproducibility fields")
+    if not isinstance(payload["command"], list) or not isinstance(payload["runs"], list):
+        raise UsageError("evidence command/runs have invalid shape")
+    b6 = payload["b6"]
+    if not isinstance(b6, dict) or "issue" not in b6 or "disposition" not in b6:
+        raise UsageError("evidence B6 disposition is incomplete")
+    for run in payload["runs"]:
+        if not isinstance(run, dict) or not {"drill", "seed", "checkpoint", "invariants"} <= set(run):
+            raise UsageError("evidence run is incomplete")
     expected = "drills-" + checkout_sha[:12] + ".json"
     if Path(path).name != expected:
         raise UsageError("evidence filename SHA does not match checkout")
