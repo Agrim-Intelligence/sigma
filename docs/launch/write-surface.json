@@ -1762,6 +1762,14 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
+      "function": "prune_terminal_review_copies",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
       "function": "rebase",
       "rule": "git-destructive",
       "count": 3,
@@ -2095,6 +2103,14 @@
       "count": 1,
       "gate": "explicit refs scan; local tag listing is read-only",
       "risk": "low"
+    },
+    {
+      "path": "tools/readiness/growth_audit.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
     },
     {
       "path": "tools/readiness/write_surface.py",
