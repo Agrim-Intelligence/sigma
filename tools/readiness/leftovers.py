@@ -38,7 +38,20 @@ def _git(repo, *args):
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
-def find_leftovers(repo, environ=None):
+def _github(owner_repo):
+    """Read GitHub cleanup residue only when the operator explicitly requests it."""
+    try:
+        labels = subprocess.run(["gh", "api", f"repos/{owner_repo}/labels?per_page=100"], text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+                                timeout=15).stdout
+        boards = subprocess.run(["gh", "api", f"repos/{owner_repo}/projects"], text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+                                timeout=15).stdout
+        return json.loads(labels or "[]"), json.loads(boards or "[]")
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return [], []
+
+def find_leftovers(repo, environ=None, github=None):
     """Return deterministic, read-only observations for one repository."""
     repo = Path(repo).resolve()
     rows = []
@@ -74,6 +87,10 @@ def find_leftovers(repo, environ=None):
     for line in _git(repo, "branch", "--format=%(refname:short)").splitlines():
         if line.startswith(("sdlc/", "feature/")) or line == "sdlc-ledger":
             rows.append(_row("local-branch", line))
+    for line in _git(repo, "branch", "-r", "--format=%(refname:short)").splitlines():
+        branch = line.split("/", 1)[-1]
+        if branch.startswith(("sdlc/", "feature/")) or branch == "sdlc-ledger":
+            rows.append(_row("remote-branch", line))
     environment = os.environ if environ is None else environ
     homes = (Path(environment.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")),
              Path(environment.get("CODEX_HOME", Path.home() / ".codex")))
@@ -81,14 +98,22 @@ def find_leftovers(repo, environ=None):
         for path in (home / "plugins" / "sigma", home / "skills" / "sigma"):
             if path.is_dir():
                 rows.append(_row("installed-plugin", path))
+    if github:
+        labels, boards = _github(github)
+        for label in labels:
+            if str(label.get("name", "")).startswith("sdlc:"):
+                rows.append(_row("github-label", label["name"]))
+        for board in boards:
+            rows.append(_row("github-board", board.get("html_url", board.get("name", "unknown"))))
     return sorted(rows, key=lambda row: (row["kind"], row["path"]))
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--github", metavar="OWNER/REPO")
     args = parser.parse_args(argv)
-    rows = find_leftovers(args.repo)
+    rows = find_leftovers(args.repo, github=args.github)
     if args.json:
         print(json.dumps(rows, indent=2))
     else:

@@ -1,6 +1,8 @@
 """#342 — uninstall residue checker controls."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,3 +36,23 @@ def test_checker_detects_owned_agents_and_cursor_rules(tmp_path):
     (rules / "sdlc.mdc").write_text("x")
     got = _mod().find_leftovers(tmp_path)
     assert {row["kind"] for row in got} == {"agents-block", "cursor-rule"}
+
+
+def test_cli_and_remote_branch_and_github_controls(tmp_path, monkeypatch):
+    mod = _mod()
+    monkeypatch.setattr(mod, "_git", lambda _repo, *args: "origin/sdlc/1\\norigin/feature/x\\n"
+                        if args[:2] == ("branch", "-r") else "")
+    monkeypatch.setattr(mod, "_github", lambda _name: ([{"name": "sdlc:goal"}], [{"name": "board"}]))
+    kinds = {row["kind"] for row in mod.find_leftovers(tmp_path, github="owner/repo")}
+    assert {"remote-branch", "github-label", "github-board"} <= kinds
+    proc = subprocess.run([sys.executable, str(SCRIPT), str(tmp_path), "--json"], text=True,
+                          capture_output=True)
+    assert proc.returncode == 0 and proc.stdout.strip() == "[]"
+
+
+def test_copied_markers_match_init_sources():
+    setup = ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
+    init = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+    assert _mod().IGNORE_MARKER in setup.read_text(encoding="utf-8")
+    text = init.read_text(encoding="utf-8")
+    assert all(marker in text for marker in _mod().AGENTS_MARKERS)
