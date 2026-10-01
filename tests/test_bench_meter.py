@@ -98,6 +98,22 @@ def test_unknown_turn_makes_total_cost_null_but_keeps_priced_part(tmp_path):
     assert result["cost_usd_priced_part"] == 2.0
 
 
+def test_missing_or_empty_requested_input_never_presents_partial_amount_as_total(tmp_path):
+    """Control: every explicit input must contribute before the total is usable."""
+    known = tmp_path / "known.jsonl"
+    missing = tmp_path / "missing.jsonl"
+    empty = tmp_path / "empty.jsonl"
+    _write(known, _line("known", input_tokens=1_000_000))
+    empty.touch()
+
+    for unavailable in (missing, empty):
+        result = meter.meter_transcripts([known, unavailable], rates=_rates(tmp_path))
+
+        assert result["cost_usd"] is None
+        assert result["cost_usd_priced_part"] == 2.0
+        assert result["unavailable_inputs"] == [str(unavailable)]
+
+
 def test_duplicate_message_ids_are_counted_once_through_wrapper(tmp_path):
     transcript = tmp_path / "session.jsonl"
     _write(transcript, _line("same", input_tokens=1_000_000, output_tokens=500),

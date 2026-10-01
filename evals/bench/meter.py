@@ -6,7 +6,8 @@ Examples:
     python3 evals/bench/meter.py --session-id <uuid> --projects-dir ~/.claude/projects
 
 The output is one JSON object.  An incomplete price is never presented as a
-total: ``cost_usd`` is null whenever at least one turn was unpriced, while
+total: ``cost_usd`` is null whenever at least one turn was unpriced or an
+explicitly requested transcript was unavailable, while
 ``cost_usd_priced_part`` retains the amount that the rate card can prove.
 """
 import argparse
@@ -53,9 +54,11 @@ def meter_transcripts(paths, rates=None):
     priced_part = 0.0
     priced_any = False
     transcripts = [str(pathlib.Path(path)) for path in paths]
+    unavailable_inputs = []
     for path in transcripts:
         priced = phase_report.price_transcript(path, rates=rates)
         if priced is None:
+            unavailable_inputs.append(path)
             continue
         tokens_in += priced["tokens_in"]
         tokens_out += priced["tokens_out"]
@@ -72,8 +75,10 @@ def meter_transcripts(paths, rates=None):
     return {
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
-        "cost_usd": priced_part if unpriced_turns == 0 else None,
+        "cost_usd": (priced_part
+                     if unpriced_turns == 0 and not unavailable_inputs else None),
         "cost_usd_priced_part": priced_part,
+        "unavailable_inputs": unavailable_inputs,
         "unpriced_turns": unpriced_turns,
         "turns": turns,
         "models": models,
