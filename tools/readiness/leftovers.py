@@ -10,6 +10,8 @@ import subprocess
 
 IGNORE_MARKER = "# Sigma runtime dirs (machine-written)"
 AGENTS_MARKERS = ("<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->")
+# Keep this set source-locked by test_copied_markers_match_init_sources: these are exactly
+# sdlc_init.py's `_CURSOR_RULES`, not every rule an adopter may have written themselves.
 CURSOR_RULES = ("sdlc.mdc", "output-contract.mdc")
 
 def _row(kind, path):
@@ -39,15 +41,20 @@ def _git(repo, *args):
         return ""
 
 def _github(owner_repo):
-    """Read GitHub cleanup residue only when the operator explicitly requests it."""
+    """Read repository-owned REST resources only when explicitly requested.
+
+    The repository projects REST endpoint is already scoped to boards linked to this repository;
+    Projects v2 has no equivalent REST listing, so this deliberately does not spend GraphQL quota.
+    """
     try:
-        labels = subprocess.run(["gh", "api", f"repos/{owner_repo}/labels?per_page=100"], text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
-                                timeout=15).stdout
-        boards = subprocess.run(["gh", "api", f"repos/{owner_repo}/projects"], text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
-                                timeout=15).stdout
-        return json.loads(labels or "[]"), json.loads(boards or "[]")
+        def get(path):
+            output = subprocess.run(["gh", "api", "--paginate", "--slurp", path], text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+                                    timeout=15).stdout
+            pages = json.loads(output or "[]")
+            return [row for page in pages for row in page] if isinstance(pages, list) else []
+        return get(f"repos/{owner_repo}/labels?per_page=100"), \
+            get(f"repos/{owner_repo}/projects?per_page=100")
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return [], []
 
@@ -95,9 +102,14 @@ def find_leftovers(repo, environ=None, github=None):
     homes = (Path(environment.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")),
              Path(environment.get("CODEX_HOME", Path.home() / ".codex")))
     for home in homes:
-        for path in (home / "plugins" / "sigma", home / "skills" / "sigma"):
-            if path.is_dir():
-                rows.append(_row("installed-plugin", path))
+        if not home.is_dir():
+            continue
+        try:
+            for path in home.rglob("sigma"):
+                if path.is_dir() and path.name == "sigma":
+                    rows.append(_row("installed-plugin", path))
+        except OSError:
+            continue
     if github:
         labels, boards = _github(github)
         for label in labels:
