@@ -347,6 +347,17 @@ def test_control_a_key_body_with_no_header_is_red_by_location_never_value(tmp_pa
     assert _KEY_BODY.splitlines()[0] not in proc.stdout + proc.stderr
 
 
+@pytest.mark.parametrize("nearby", [
+    "This guide mentions -----BEGIN PRIVATE KEY----- but contains no PEM block.\n",
+    "Comment: prose about private-key armor, not a PEM header.\n",
+])
+def test_control_nearby_prose_cannot_exempt_a_headerless_key_body(tmp_path, nearby):
+    """The documented gesture must reject the reviewer's exact nearby-prose bypass."""
+    proc = _run(_scratch(tmp_path, nearby + _KEY_BODY.rstrip("\n"), "certs/notes.txt"))
+    assert proc.returncode == 1 and "certs/notes.txt:3: key-body" in proc.stdout, proc.stdout
+    assert _KEY_BODY.splitlines()[0] not in proc.stdout + proc.stderr
+
+
 def test_a_public_certificate_body_and_hash_lists_are_not_key_bodies(tmp_path):
     cert = "-----BEGIN CERTIFICATE-----\n" + _KEY_BODY + "-----END CERTIFICATE-----"
     shas = "\n".join(["0123456789abcdef0123456789abcdef01234567"] * 4)

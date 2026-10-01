@@ -43,8 +43,8 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     redactor is NOT used here: its leading `\\b` cannot match after `_`, so it misses every
     prefixed key. In prose and code the rule would fire on every `token: str` annotation.
   * key-body: three or more consecutive lines that are each a 40+ character base64 run with upper
-    case, lower case and a digit, not under a `-----BEGIN` header -- a private key body whose header
-    was stripped. A certificate or public key body (under its header) is not one.
+    case, lower case and a digit -- a private key body whose header was stripped. A certificate or
+    public-key body is excluded only when its recognized header is immediately adjacent.
   * secret-file: a tracked path whose NAME is a credential container, whatever it holds: `id_rsa` /
     `id_dsa` / `id_ecdsa` / `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
     `*.ppk`, `.netrc` / `_netrc`, `.pgpass`, `credentials.json`, `service-account*.json`, and `.env` /
@@ -255,10 +255,9 @@ def _key_bodies(text):
         if not all(re.search(r"[A-Z]", ln) and re.search(r"[a-z]", ln) and re.search(r"\d", ln)
                    for ln in lines):
             continue
-        before = text[max(0, m.start() - 400):m.start()].rstrip("\r\n").rsplit("\n", 3)
-        if any("-----BEGIN" in ln or re.match(r"(?:Proc-Type|DEK-Info|Comment):", ln)
-               for ln in before):
-            continue                            # under a PEM header: the PEM rule owns it
+        before = text[:m.start()].rstrip("\r\n").rsplit("\n", 1)[-1].strip()
+        if re.fullmatch(r"-----BEGIN (?:CERTIFICATE|(?:[A-Z0-9 ]+ )?PUBLIC KEY)-----", before):
+            continue                            # only an adjacent public/certificate header owns it
         out.append(m.start())
     return out
 

@@ -128,7 +128,7 @@ _SECRET_PATTERNS = tuple((rx, replacement) for _name, rx, replacement in _SECRET
 
 # These are public synthetic values deliberately used in Sigma's own redaction tests.  The list is
 # exact rather than prefix/path based: it cannot become a general bypass for a real credential.
-COMMIT_FIXTURE_VALUES = frozenset({"AKIAIOSFODNN7EXAMPLE"})
+COMMIT_FIXTURE_VALUES = frozenset({"AKIAIOSFODNN7EXAMPLE"})  # leak-scan: allow aws-key public test fixture
 
 
 def commit_secret_hits(text):

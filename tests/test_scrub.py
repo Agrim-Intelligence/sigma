@@ -45,9 +45,10 @@ def test_scrub_empty_is_passthrough():
 def test_commit_secret_hits_returns_only_rule_and_column_and_exempts_known_fixture():
     module = _mod("scrub")
     synthetic = "AKIA" + "Z" * 16
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
     assert module.commit_secret_hits("x=" + synthetic) == [("aws-key", 3)]
-    assert module.commit_secret_hits("x=AKIAIOSFODNN7EXAMPLE") == []
-    assert module.commit_secret_hits('SECRET = "AKIAIOSFODNN7EXAMPLE"') == []
+    assert module.commit_secret_hits("x=" + fixture) == []
+    assert module.commit_secret_hits('SECRET = "' + fixture + '"') == []
 
 
 # --- the unterminated private-key fallback (#534) -----------------------------------------------

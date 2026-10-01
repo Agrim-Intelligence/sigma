@@ -2081,12 +2081,8 @@ the operator must remove that damaged marker after confirming no worker is live.
 > whatever ran before it; ambient conversational continuity must never substitute for a real backlog
 > pick, or the whole point of the marker (knowing precisely what's still live) is undermined by the
 > one thing it can't see. Let it run to backlog-empty or budget, exactly as `/agrim-loop` already does
-<<<<<<< HEAD
 > unattended. When it stops, run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
 > --session-pid "$PPID" --session-generation "$session_generation"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
-> unattended. When it stops, run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
-> --session-pid "$PPID"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
->>>>>>> d6c1b66 (sdlc: 277)
 > next firing correctly sees `FREE` again.
 
 Not zero-flag at the `loop.py` CLI level — `--session-pid "$PPID"` appears on every call above, and
@@ -2138,7 +2134,6 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 - **Companions (optional):** `superpowers` + `code-review` — **auto-used when already installed**,
   otherwise the **parity-reviewed portable `agrim-*` executors run the phases**. Never required; you
   install nothing either way.
-<<<<<<< HEAD
 - **Dev/test:** `pip install pytest pytest-cov`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs
   the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
   quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
@@ -2148,7 +2143,6 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution rules. Ask questions
 or report bugs through [SUPPORT.md](SUPPORT.md) and its GitHub Issue templates. Report security
 vulnerabilities privately under [SECURITY.md](SECURITY.md), never in a public issue.
-=======
 
 ## Other platforms supported
 
