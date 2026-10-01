@@ -342,3 +342,35 @@ def test_public_d4_evidence_redacts_host_configuration_locations(tmp_path):
     assert ".codex/config.toml" not in transcript
     assert ".claude/settings.json" not in transcript
     assert "C:\\Users\\" not in public_stdout
+
+
+def test_public_evidence_redacts_absolute_temporary_paths_in_all_receipt_fields(tmp_path):
+    """Scratch checkout paths must not survive argv, stderr, or D4 observations.
+
+    The frozen drill runner deliberately uses isolated temporary directories.
+    Those locations are machine-specific just like a home directory, and a
+    public evidence record must not expose them while changing neither a
+    control's pass/fail meaning nor its frozen commit identifier.
+    """
+    drills = _module()
+    result = drills.run_d4(tmp_path, ROOT, 1)
+    scratch = "/private/tmp/sigma348-frozen.zfVoLg/checkout"
+    doctor = next(item for item in result["invariants"]
+                  if item["name"] == "doctor_explicit_stop_file_reporting")
+    doctor["observed"].update({
+        "argv": [scratch + "/skills/agrim-loop/scripts/work.py", "merge"],
+        "stderr": "removed " + scratch + "/runs/d4-seed-1/fixture",
+        "path": scratch + "/d4-repo/.sdlc/state/watch.stop",
+    })
+    result["fault"]["daemon"]["stderr"] = "scratch=" + scratch + "/daemon.log"
+
+    public_run = drills._evidence_run(result)
+    transcript = json.dumps(public_run)
+    public_doctor = next(item for item in public_run["invariants"]
+                         if item["name"] == "doctor_explicit_stop_file_reporting")
+
+    assert scratch not in transcript
+    assert "/private/tmp/" not in transcript
+    assert public_doctor["passed"] is False
+    assert public_doctor["observed"]["outcome"] == "control_failed_and_recorded"
+    assert result["frozen_commit"] == drills._head(ROOT)

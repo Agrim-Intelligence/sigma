@@ -40,6 +40,15 @@ HOST_HOME_PATH = re.compile(
     r"(?:/(?:Users|home)/[A-Za-z0-9._-]+(?:/[^\s'\"<>;,\]\)}]*)?"
     r"|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+(?:\\[^\s'\"<>;,\]\)}]*)?)"
 )
+# Frozen drills run in disposable checkouts.  Their absolute locations are as
+# host-specific as a home directory, whether macOS spells them ``/private/tmp``
+# or a runner uses the conventional ``/tmp``/``/var/tmp`` roots.  Keep this
+# separate from ``HOST_HOME_PATH`` so the public-evidence boundary explains
+# both classes of removed location.
+SCRATCH_PATH = re.compile(
+    r"(?:/(?:private/)?tmp|/var/tmp|/(?:private/)?var/folders|/scratch)"
+    r"(?:/[^\s'\"<>;,\]\)}]*)?"
+)
 DRILLS = ("D1", "D2", "D3", "D4")
 EVIDENCE_SEEDS = tuple(SEED_CHECKPOINTS)
 WINDOWS_SKIP_REASON = "Windows is unsupported: readiness drills require POSIX process groups and SIGKILL."
@@ -98,8 +107,8 @@ def _result_command(proc):
 
 
 def _sanitize_public_transcript(text: str) -> str:
-    """Remove machine-specific home/config locations from public evidence streams."""
-    return HOST_HOME_PATH.sub("<host-home>", text)
+    """Remove machine-specific home and disposable-checkout locations from evidence."""
+    return SCRATCH_PATH.sub("<scratch-path>", HOST_HOME_PATH.sub("<host-home>", text))
 
 
 def _sanitize_public_evidence(value):
