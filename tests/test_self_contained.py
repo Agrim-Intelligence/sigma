@@ -7,8 +7,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #: Directories the leakage scan does not walk. ONLY virtualenv names.
 #:
 #: NOT `build`/`dist`/`*.egg-info`: this set is matched against every path COMPONENT, so adding
-#: them would silently stop scanning skills/<x>/build/ — and skills/ is shipped twice over, by
-#: install.sh and by marketplace.json's `source: "./"`. That is the same any-depth name heuristic
+#: them would silently stop scanning skills/<x>/build/ — and skills/ is shipped through the
+#: marketplace's `source: "./"`. That is the same any-depth name heuristic
 #: .gitignore rejects for /build/ and /dist/, and that the private side's licence guard's docstring records
 #: as the first hole it had to close. Build residue is untracked and rare; a missed leak in shipped
 #: surface is neither.
@@ -110,7 +110,7 @@ def test_onshot_guard_ignores_untracked_files(tmp_path, monkeypatch):
 def test_leak_under_a_build_dir_is_still_caught(tmp_path):
     """The exclusion above must never grow to a name that can appear inside shipped surface.
 
-    `skills/` ships via install.sh AND via marketplace.json's `source: "./"`, so a directory named
+    `skills/` ships via marketplace.json's `source: "./"`, so a directory named
     `build` or `dist` under it is shipped surface, not residue. An earlier version of this change
     skipped both at any depth and hid a planted leak; this pins the fix.
 

@@ -204,7 +204,7 @@ def test_only_the_plugins_signature_subtrees_are_eligible_evidence(tmp_path):
         assert (upstream.plugin_root() / eligible).is_file(), eligible
         assert upstream.classify(sdlc, eligible)["origin"] == upstream.KIT, eligible
     for excluded in ("tests/test_docs.py", "docs/label-model.md", "contract/README.md",
-                     "install.sh", "evals/run.py", "examples"):
+                     "evals/run.py", "examples"):
         assert (upstream.plugin_root() / excluded).exists(), excluded
         assert upstream.classify(sdlc, excluded)["origin"] == upstream.PROJECT, excluded
 
