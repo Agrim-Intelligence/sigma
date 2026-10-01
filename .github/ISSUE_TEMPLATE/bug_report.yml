@@ -1,0 +1,60 @@
+name: Bug report
+description: Tell us about a reproducible Sigma problem.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: sigma-version
+    attributes:
+      label: Sigma version and `/agrim-doctor` output
+      description: Paste the relevant output, with secrets removed.
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Agent host and version
+      description: Claude Code, Codex, or Cursor, including its version.
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+    validations:
+      required: true
+  - type: input
+    id: discovery-source
+    attributes:
+      label: discovery.source mode
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: state-log
+    attributes:
+      label: Relevant `.sdlc/state/log/<goal>.jsonl` lines
+      description: Remove secrets, tokens, and personal data before posting.

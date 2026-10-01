@@ -2116,6 +2116,12 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
   quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
 
+## Contributing, support and security
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution rules. Ask questions
+or report bugs through [SUPPORT.md](SUPPORT.md) and its GitHub Issue templates. Report security
+vulnerabilities privately under [SECURITY.md](SECURITY.md), never in a public issue.
+
 ## Other platforms supported
 
 The full pipeline is validated on **Claude Code**. Codex now has a project adapter and measured
