@@ -6,6 +6,9 @@ Please report security vulnerabilities privately through GitHub's **Report a vul
 action on this repository's Security tab. This avoids exposing an exploitable issue in a public
 issue before maintainers can assess it.
 
+For the repository's documented assets, trust boundaries, and known residual
+risks, see the [threat model](docs/threat-model.md).
+
 The repository owner must enable GitHub private vulnerability reporting. If that channel is not
 available, contact <OWNER: security contact e-mail>. Do not include secrets, access tokens, or
 unredacted customer data in a report.
