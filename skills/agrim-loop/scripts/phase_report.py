@@ -560,6 +560,17 @@ def price_transcript(path, rates=None, since_ts=None):
     }
 
 
+def unpriced_budget_warning(result):
+    """Return the phase-boundary budget warning, or None when every turn was priced."""
+    unpriced = int(result.get("unpriced_turns") or 0)
+    if not unpriced:
+        return None
+    turns = int(result.get("turns") or unpriced)
+    model = ",".join(result.get("models") or []) or "unknown"
+    return (f"budget: {unpriced} of {turns} turns in this phase are unpriced "
+            f"(model {model} not in the rate card) -- budget.max_tokens did not count them")
+
+
 # --------------------------------------------------------------------------- host discovery
 
 
@@ -2213,6 +2224,10 @@ def cmd_end(argv):
     if not uncredited_codex_budget:
         _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id,
                           interval_ms=interval_ms, stale=bool(stale_reason))
+
+    warning = unpriced_budget_warning(result)
+    if warning:
+        print(warning, file=sys.stderr)
 
     # Read AFTER this phase's own interval was written above, or every banner would be one phase
     # stale. Fail-open: a totals read that cannot complete costs the extra field, never the banner.

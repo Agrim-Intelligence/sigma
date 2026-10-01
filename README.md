@@ -76,7 +76,9 @@ phase reports or explicit `loop.py spend`), and `max_codex_raw_tokens` (measured
 mix. Codex's token ceiling is a **phase-boundary admission stop**, not a quota or billing cap: it
 checks the next pick after measured phases finish and does not include orchestrator or unmeasured
 turns. Keep `max_minutes` and a goal-count ceiling for those gaps. Each key enforces only when set;
-an absent/zero key enforces nothing. Independently,
+an absent/zero key enforces nothing. When a Claude model is absent from the rate card, every phase
+end warns that `max_tokens` did not count its turns and `/agrim-doctor` reports the same coverage
+gap. Independently,
 a NEW `handoff.after_goals` ceiling (default 20, ON even when the
 key is absent — see `config.json.tmpl`) stops the ORCHESTRATING session itself after that many
 goals and hands off to a fresh one, so its own context never keeps growing across an unattended
