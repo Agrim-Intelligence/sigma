@@ -72,7 +72,9 @@
       "ms",
       "tokens_in",
       "tokens_out",
-      "attempt_id"
+      "attempt_id",
+      "model",
+      "unpriced_turns"
     ],
     "retro": [
       "grade",
