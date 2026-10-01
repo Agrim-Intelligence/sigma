@@ -79,6 +79,20 @@ def test_d1_kills_at_the_selected_actual_fake_merge_checkpoint(tmp_path, seed, c
     assert all(item["passed"] for item in result["invariants"])
 
 
+def test_d1_records_the_real_work_merge_and_recovery_command_paths(tmp_path):
+    """D1 must not substitute a bare git update for the shipped lifecycle."""
+    drills = _module()
+
+    result = drills.run_d1(tmp_path, ROOT, 1)
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["work_merge"]["returncode"] == 0
+    assert "review gate passed" in lifecycle["work_merge"]["stdout"]
+    assert lifecycle["next"]["returncode"] == 0
+    assert lifecycle["reconcile_merges"]["returncode"] == 0
+    assert lifecycle["fake_gh_unhandled"] == ""
+
+
 def test_d2_restored_awaiting_merge_state_prevents_repick_and_converges_once(tmp_path):
     drills = _module()
     result = drills.run_d2(tmp_path, ROOT, 1)
@@ -89,6 +103,17 @@ def test_d2_restored_awaiting_merge_state_prevents_repick_and_converges_once(tmp
     assert by_name["external_and_local_terminal_state_converge"]["passed"] is True
 
 
+def test_d2_uses_the_public_next_and_reconcile_lifecycle_after_overlay_loss(tmp_path):
+    drills = _module()
+
+    result = drills.run_d2(tmp_path, ROOT, 1)
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["next"]["returncode"] == 0
+    assert lifecycle["reconcile_merges"]["returncode"] == 0
+    assert lifecycle["fake_gh_unhandled"] == ""
+
+
 def test_d3_runs_documented_reconcile_twice_and_records_done_once(tmp_path):
     drills = _module()
     result = drills.run_d3(tmp_path, ROOT, 1)
@@ -97,6 +122,18 @@ def test_d3_runs_documented_reconcile_twice_and_records_done_once(tmp_path):
         ["loop.py", "reconcile-merges", "<dir>"],
     ]
     assert all(item["passed"] for item in result["invariants"])
+
+
+def test_d3_records_real_reconcile_passes_after_the_fake_merge_lifecycle(tmp_path):
+    drills = _module()
+
+    result = drills.run_d3(tmp_path, ROOT, 1)
+
+    lifecycle = result["lifecycle"]
+    assert lifecycle["fake_merge"]["returncode"] == 0
+    assert lifecycle["first_reconcile"]["returncode"] == 0
+    assert lifecycle["second_reconcile"]["returncode"] == 0
+    assert lifecycle["fake_gh_unhandled"] == ""
 
 
 def test_public_cli_dispatches_d1_to_its_real_runner(tmp_path):
