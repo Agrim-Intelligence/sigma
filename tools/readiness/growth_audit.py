@@ -24,7 +24,7 @@ _SKILL_PATH = re.compile(r"\.sdlc(?:/[A-Za-z0-9_.<>*${}/-]+)?")
 
 def _placeholder(name):
     """Give every unresolved function argument a stable, reviewable name."""
-    aliases = {"who": "actor", "actor_name": "actor", "run": "writer"}
+    aliases = {"who": "actor", "actor_name": "actor", "run": "writer", "stem": "goal"}
     return "<%s>" % aliases.get(name, name)
 
 
@@ -48,6 +48,16 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
         if constant is not None:
             return _expression_path(constant, env, functions, module, depth + 1)
         return {_placeholder(node.id)}
+    if isinstance(node, ast.Attribute):
+        # Instance state is a common local-source path carrier: constructors
+        # retain ``sdlc_dir`` as ``self.sdlc_dir`` and methods subsequently
+        # construct journey/goal destinations from it.  The class-init
+        # assignments are collected by ``scan`` and made available as stable
+        # aliases here; do not treat arbitrary object attributes as paths.
+        if isinstance(node.value, ast.Name) and node.value.id == "self":
+            value = env.get("self." + node.attr)
+            if value is not None:
+                return set(value)
     if isinstance(node, ast.JoinedStr):
         parts = {""}
         for value in node.values:
@@ -167,6 +177,12 @@ def _scope(path, tree, function, functions, module, seed=None):
     """Resolve local path aliases by the writer's source, not a manual map."""
     env = ({arg.arg: ({".sdlc"} if arg.arg == "sdlc_dir" else {_placeholder(arg.arg)})
             for arg in function.args.args} if seed is None else dict(seed))
+    # These aliases come only from ``self.attr = ...`` assignments in a
+    # class's constructor.  They let method bodies remain real scan targets
+    # without a hand-maintained map of particular classes or store names.
+    for name, values in functions.get(module, {}).get("__self_attrs__", {}).items():
+        env.setdefault("self." + name, set(values))
+    class_method = getattr(function, "_growth_class_method", False)
     for _ in range(4):
         changed = False
         for node in ast.walk(function):
@@ -176,6 +192,16 @@ def _scope(path, tree, function, functions, module, seed=None):
                 value = node.value
             if value is None:
                 continue
+            if class_method:
+                # Class methods often carry API clients and call graph roots
+                # in local aliases.  Their direct writer expressions only
+                # need literal/path composition; following arbitrary calls
+                # here makes a static scan recursively traverse clients.
+                calls = [call for call in ast.walk(value) if isinstance(call, ast.Call)]
+                if any(not ((isinstance(call.func, ast.Name) and call.func.id in {"Path", "str"})
+                            or (isinstance(call.func, ast.Attribute) and call.func.attr == "Path"))
+                           for call in calls):
+                    continue
             values = _expression_path(value, env, functions, module)
             for target in targets:
                 if isinstance(target, ast.Name) and values and env.get(target.id) != values:
@@ -288,8 +314,17 @@ def _helper_destinations(function, env, functions, module, depth=0):
 
 
 def _has_direct_writer(function):
-    return any(isinstance(node, ast.Call) and _write_target(node)[0] is not None
-               for node in ast.walk(function))
+    # This predicate is consulted once for the function itself and again for
+    # every call site that might delegate to it.  Caching on the parsed AST
+    # node keeps a source-wide class-method walk linear instead of repeatedly
+    # walking large methods (notably the GitHub source) for each caller.
+    cached = getattr(function, "_growth_has_direct_writer", None)
+    if cached is not None:
+        return cached
+    value = any(isinstance(node, ast.Call) and _write_target(node)[0] is not None
+                for node in ast.walk(function))
+    function._growth_has_direct_writer = value
+    return value
 
 
 def _has_immediate_writer_helper(function, functions, module):
@@ -343,9 +378,21 @@ def _code_rows(root, path, functions):
     rel = path.relative_to(root).as_posix()
     module = path.stem
     rows = []
-    for function in (node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+    # ``ast.walk(function)`` below intentionally reaches a nested local helper
+    # when its enclosing method invokes it.  Enumerating that helper again
+    # would re-walk the same subtree for every enclosing function, which turns
+    # a real repository scan into quadratic work.  Class methods are the
+    # missing layer here: include them alongside module functions.
+    functions_here = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    functions_here.extend(
+        method for cls in tree.body if isinstance(cls, ast.ClassDef)
+        for method in cls.body if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+    )
+    for function in functions_here:
         calls = list(ast.walk(function))
-        if not (_has_direct_writer(function) or _has_immediate_writer_helper(function, functions, module)):
+        class_method = getattr(function, "_growth_class_method", False)
+        if not (_has_direct_writer(function)
+                or (not class_method and _has_immediate_writer_helper(function, functions, module))):
             continue
         env = _scope(path, tree, function, functions, module)
         for node in calls:
@@ -386,7 +433,12 @@ def _code_rows(root, path, functions):
             elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
                 target_module, helper = node.func.value.id, node.func.attr
             target = functions.get(target_module, {}).get(helper)
-            if target is not None:
+            # The enclosing class method's AST already includes local nested
+            # helpers, so its direct calls are emitted above.  Following every
+            # ``self.method`` as another interprocedural graph edge caused the
+            # repository audit to revisit the same very large class methods at
+            # each call site.  Module-level helper following remains intact.
+            if target is not None and not class_method:
                 for index in _writer_argument_indices(target, functions, target_module):
                     if index < len(node.args):
                         patterns |= _expression_path(node.args[index], env, functions, module)
@@ -420,8 +472,55 @@ def scan(root):
     functions = {}
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
-        functions[path.stem] = {node.name: node for node in tree.body
-                                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        # Keep the callable module surface to module functions.  Class methods
+        # are scanned directly below; registering their unqualified names here
+        # would make an unrelated module call such as ``run()`` resolve to an
+        # arbitrary class's ``run`` method and create a false recursive edge.
+        # A nested helper is likewise walked with its enclosing method.
+        module_functions = {node.name: node for node in tree.body
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        # Resolve class-init instance path aliases once, from their own
+        # constructor arguments.  Methods then get the same symbolic values
+        # (not host paths) no matter which class owns the durable writer.
+        class_attrs = {}
+        for cls in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+            for method in cls.body:
+                if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    method._growth_class_method = True
+            init = next((node for node in cls.body
+                         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                         and node.name == "__init__"), None)
+            if init is None:
+                continue
+            aliases = {arg.arg: ({".sdlc"} if arg.arg == "sdlc_dir" else {_placeholder(arg.arg)})
+                       for arg in init.args.args}
+            for _ in range(4):
+                changed = False
+                for node in ast.walk(init):
+                    if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+                        continue
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    for target in targets:
+                        # Constructor state contains clients, configuration and
+                        # arbitrary expensive calls.  Only path-carrier names
+                        # can participate in a filesystem destination; keeping
+                        # that boundary also prevents a scan from executing an
+                        # unbounded interprocedural resolution of constructors.
+                        if not (isinstance(target, ast.Attribute)
+                                and isinstance(target.value, ast.Name)
+                                and target.value.id == "self"
+                                and target.attr.endswith(("_dir", "_path"))):
+                            continue
+                        values = _expression_path(node.value, aliases,
+                                                  {path.stem: module_functions}, path.stem)
+                        if values and aliases.get("self." + target.attr) != values:
+                            aliases["self." + target.attr] = values
+                            class_attrs[target.attr] = values
+                            changed = True
+                if not changed:
+                    break
+        module_functions["__self_attrs__"] = class_attrs
+        functions[path.stem] = module_functions
         functions[path.stem]["__constants__"] = {
             target.id: node.value for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
             and node.value is not None
@@ -435,7 +534,8 @@ def scan(root):
     if skills.exists():
         for path in sorted(skills.rglob("*.md")):
             rows.extend(_skill_rows(root, path))
-    return sorted(rows, key=lambda row: (row["pattern"], row["writer"], row["source"]))
+    unique = {(row["pattern"], row["source"], row["writer"]): row for row in rows}
+    return sorted(unique.values(), key=lambda row: (row["pattern"], row["writer"], row["source"]))
 
 
 def b6_disposition(rows, issue):
@@ -453,6 +553,54 @@ def b6_disposition(rows, issue):
         "unresolved_patterns": sorted({row["pattern"] for row in rows
                                        if row["pattern"] != resolved}),
     }
+
+
+def _pattern_size(repository, pattern):
+    """Measure files covered by one repository store pattern, without overlap."""
+    if not pattern.startswith(".sdlc/"):
+        return None
+    wildcard = re.sub(r"<[^>]+>", "*", pattern)
+    files = set()
+    for candidate in Path(repository).glob(wildcard):
+        if candidate.is_file():
+            files.add(candidate)
+        elif candidate.is_dir():
+            files.update(path for path in candidate.rglob("*") if path.is_file())
+    return sum(path.stat().st_size for path in files)
+
+
+def store_measurements(repository, rows, issue):
+    """Return an honest size/growth/disposition row for every unique pattern.
+
+    The 10x/100x columns are linear projections of the observed bytes at the
+    bound checkout, not a claimed forecast.  Host-root patterns are deliberately
+    left unmeasured until an operator uses the separate explicit host gesture.
+    """
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["pattern"], []).append(row["writer"])
+    resolved = ".sdlc/evidence/<goal>/rv*/wt"
+    result = []
+    for pattern in sorted(grouped):
+        writers = ", ".join(sorted(set(grouped[pattern])))
+        size = _pattern_size(repository, pattern)
+        proven = pattern == resolved
+        if proven:
+            pruner = "terminal review-copy lifecycle prune"
+            decision = "source-proven prune"
+        else:
+            pruner = "unknown (B6 #%s)" % str(issue).lstrip("#")
+            decision = "B6 #%s disposition required" % str(issue).lstrip("#")
+        result.append({
+            "pattern": pattern,
+            "growth_event": "writer invoked (%s)" % writers,
+            "pruner_or_cap": pruner,
+            "size_now_bytes": size,
+            "size_10x_bytes": size * 10 if size is not None else None,
+            "size_100x_bytes": size * 100 if size is not None else None,
+            "decision": decision,
+        })
+    return result
 
 
 def _size(path):
@@ -521,6 +669,9 @@ def main(argv=None):
         result["repository_measurement"] = measure_repository(args.repository)
     if args.b6_issue:
         result["b6_disposition"] = b6_disposition(result["rows"], args.b6_issue)
+        if args.measure_sdlc:
+            result["store_measurements"] = store_measurements(args.repository, result["rows"],
+                                                                 args.b6_issue)
     payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.json:
         args.json.write_text(payload, encoding="utf-8")

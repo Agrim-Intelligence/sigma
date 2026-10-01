@@ -213,6 +213,41 @@ def test_scan_records_one_argument_path_rename_and_replace_destinations(tmp_path
     ]
 
 
+def test_scan_walks_class_and_nested_method_writers_with_self_path_aliases(tmp_path):
+    """Removing recursive class/method traversal hides real durable stores."""
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "class LocalWriter:\n"
+        "    def __init__(self, sdlc_dir):\n"
+        "        self.sdlc_dir = sdlc_dir\n"
+        "        self.goals_dir = Path(sdlc_dir) / 'goals'\n"
+        "    def note(self, goal):\n"
+        "        journey = Path(self.sdlc_dir) / 'journey'\n"
+        "        def append():\n"
+        "            (journey / f'{goal}.md').write_text('note')\n"
+        "        append()\n"
+        "    def create_goal(self, goal):\n"
+        "        (self.goals_dir / f'{goal}.md').write_text('goal')\n"
+    )
+
+    assert _mod().scan(tmp_path) == [
+        {"pattern": ".sdlc/goals/<goal>.md", "source": "code", "writer": "writer.py:12"},
+        {"pattern": ".sdlc/journey/<goal>.md", "source": "code", "writer": "writer.py:9"},
+    ]
+
+
+def test_repository_scan_includes_localsource_journey_and_goal_file_writers():
+    """The actual LocalSource class must be present, not just a synthetic fixture."""
+    rows = _mod().scan(ROOT)
+
+    assert any(row["source"] == "code" and row["writer"].startswith(
+        "skills/agrim-loop/scripts/sources.py:")
+        and row["pattern"] == ".sdlc/journey/<goal>.md" for row in rows)
+    assert any(row["source"] == "code" and row["writer"].startswith(
+        "skills/agrim-loop/scripts/sources.py:")
+        and row["pattern"].startswith(".sdlc/goals/") for row in rows)
+
+
 def test_b6_disposition_lists_each_pattern_without_a_source_proven_pruner():
     """Only the directly pruned review-copy path may be omitted from a B6 outcome."""
     rows = [
@@ -230,3 +265,36 @@ def test_b6_disposition_lists_each_pattern_without_a_source_proven_pruner():
             "<codex-home>/state/",
         ],
     }
+
+
+def test_store_measurements_give_each_pattern_growth_pruner_size_and_decision(tmp_path):
+    """An aggregate checkout total cannot replace a store-by-store disposition."""
+    (tmp_path / ".sdlc" / "state" / "log").mkdir(parents=True)
+    (tmp_path / ".sdlc" / "state" / "log" / "1.jsonl").write_bytes(b"abc")
+    (tmp_path / ".sdlc" / "evidence" / "1" / "rv7" / "wt").mkdir(parents=True)
+    (tmp_path / ".sdlc" / "evidence" / "1" / "rv7" / "wt" / "receipt").write_bytes(b"abcd")
+    rows = [
+        {"pattern": ".sdlc/evidence/<goal>/rv*/wt", "source": "code", "writer": "work.py:1"},
+        {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code", "writer": "actionlog.py:2"},
+    ]
+
+    assert _mod().store_measurements(tmp_path, rows, "419") == [
+        {
+            "pattern": ".sdlc/evidence/<goal>/rv*/wt",
+            "growth_event": "writer invoked (work.py:1)",
+            "pruner_or_cap": "terminal review-copy lifecycle prune",
+            "size_now_bytes": 4,
+            "size_10x_bytes": 40,
+            "size_100x_bytes": 400,
+            "decision": "source-proven prune",
+        },
+        {
+            "pattern": ".sdlc/state/log/<goal>.jsonl",
+            "growth_event": "writer invoked (actionlog.py:2)",
+            "pruner_or_cap": "unknown (B6 #419)",
+            "size_now_bytes": 3,
+            "size_10x_bytes": 30,
+            "size_100x_bytes": 300,
+            "decision": "B6 #419 disposition required",
+        },
+    ]
