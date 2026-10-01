@@ -368,7 +368,7 @@ def _git(args, cwd, env):
 _ARG_UNSAFE = re.compile(r"[`$;&|<>(){}*?!\\\x00-\x1f\x7f]")
 
 
-def _py_argv(line, sigma, subs, step="readme gesture", *, cwd):
+def _py_argv(line, sigma, subs, step="readme gesture", *, cwd=None):
     """A README/printed `python3 <script> ...` line -> argv, or Red(step) naming what was refused.
 
     PINNED SHAPE, because the text comes from a document and a program's output, not from code:
@@ -388,8 +388,12 @@ def _py_argv(line, sigma, subs, step="readme gesture", *, cwd):
     if len(toks) < 2 or not re.fullmatch(r"python3?|py", toks[0]):
         raise Red(step, f"refused {line!r}: not `python3 <sigma script> ...`")
     sigma = pathlib.Path(sigma).resolve()
+    # Legacy internal callers parse generated `<sigma>/...` commands rather than README text.
+    # Preserve that safe, plugin-root-relative behavior while README callers pass their repository
+    # root explicitly and therefore remain subject to the documented-gesture check.
+    cwd = sigma if cwd is None else pathlib.Path(cwd).resolve()
     script = pathlib.Path(toks[1].replace(INSTALLED_SIGMA, str(sigma)))
-    script = (script if script.is_absolute() else pathlib.Path(cwd).resolve() / script).resolve()
+    script = (script if script.is_absolute() else cwd / script).resolve()
     inside = any(sigma / d in script.parents for d in ("skills", "tools"))
     if script.suffix != ".py" or not inside or not script.is_file():
         raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or "

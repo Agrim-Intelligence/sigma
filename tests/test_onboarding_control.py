@@ -329,8 +329,7 @@ def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
     assert rc == 1, proc.stdout[-3000:]
     assert lines == {"readme-usage": "GREEN", "local": "GREEN", "github": "GREEN",
                      "local/no-command": "RED at record done",
-                     "github/no-command": "RED at assert:init left verify.enforce OFF with no "
-                                          "command confirmed"}, lines
+                     "github/no-command": "RED at work pr"}, lines
     mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
     assert mine["scaffolded_verify"] == {"command": "", "enforce": True}

@@ -7707,7 +7707,7 @@ def test_run_loop_cleanup_cannot_clear_an_overlapping_same_pid_successor(monkeyp
 
 def test_readme_session_end_gesture_captures_and_returns_the_generation_token():
     readme = (pathlib.Path(__file__).resolve().parent.parent / "README.md").read_text()
-    match = re.search(r'`(session_generation=\$\(python3 <sigma>/skills/agrim-loop/scripts/loop\.py '
+    match = re.search(r'`(session_generation=\$\(python3 <installed-sigma>/skills/agrim-loop/scripts/loop\.py '
                       r'start \.sdlc --session-pid "\$PPID"\))`', readme)
     assert match, "README must contain one complete, copyable generation-capture command"
     # Shell parsing is the control: removing the final `)` makes this exact documented gesture red.

@@ -2134,9 +2134,10 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 - **Companions (optional):** `superpowers` + `code-review` — **auto-used when already installed**,
   otherwise the **parity-reviewed portable `agrim-*` executors run the phases**. Never required; you
   install nothing either way.
-- **Dev/test:** `pip install pytest pytest-cov`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs
-  the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
-  quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
+- **Dev/test:** `pip install pytest`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs the full
+  suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1 quality
+  gate** (`evals/run.py`) — on every push/PR, on Python 3.10 + 3.12. CI measures **no** code coverage
+  today (no `--cov` run, no minimum); adding one is issue #194.
 
 ## Contributing, support and security
 
