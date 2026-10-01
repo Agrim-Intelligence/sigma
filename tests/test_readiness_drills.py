@@ -86,8 +86,12 @@ def test_d1_records_the_real_work_merge_and_recovery_command_paths(tmp_path):
     result = drills.run_d1(tmp_path, ROOT, 1)
 
     lifecycle = result["lifecycle"]
-    assert lifecycle["work_merge"]["returncode"] == 0
-    assert "review gate passed" in lifecycle["work_merge"]["stdout"]
+    assert lifecycle["killed_work_merge"]["returncode"] < 0
+    assert lifecycle["killed_work_merge"]["argv"][1].endswith("work.py")
+    # Seed 1 faults before the remote write, so the same fixture recovers by
+    # retrying the real lifecycle, not by directly invoking the fake gh tool.
+    assert lifecycle["retry_work_merge"]["returncode"] == 0
+    assert "merged" in lifecycle["retry_work_merge"]["stdout"]
     assert lifecycle["next"]["returncode"] == 0
     assert lifecycle["reconcile_merges"]["returncode"] == 0
     assert lifecycle["second_reconcile_merges"]["returncode"] == 0
@@ -154,6 +158,29 @@ def test_public_cli_dispatches_d1_to_its_real_runner(tmp_path):
                           text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(output.read_text())["drill"] == "D1"
+
+
+def test_documented_d1_gesture_measures_a_seeded_delay_and_kills_work_merge(tmp_path):
+    """The published ``run D1`` gesture must fault the real work.py merge lifecycle.
+
+    The duration bound is deliberately asserted from the public JSON receipt so a
+    future change cannot retain only a static seed-to-checkpoint mapping while
+    silently dropping the measured fault window.
+    """
+    output = tmp_path / "d1.json"
+    proc = subprocess.run([sys.executable, str(SCRIPT), "run", "D1", "--seed", "2",
+                           "--workdir", str(tmp_path / "run"), "--json", str(output)],
+                          text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(output.read_text())
+
+    fault = result["fault"]
+    assert 0 < fault["measured_work_merge_duration_ns"]
+    assert 0 < fault["seeded_delay_ns"] <= fault["measured_work_merge_duration_ns"]
+    killed = result["lifecycle"]["killed_work_merge"]
+    assert killed["returncode"] < 0
+    assert killed["argv"][1].endswith("work.py")
+    assert result["lifecycle"]["fault_fixture"] == result["lifecycle"]["recovery_fixture"]
 
 
 def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):

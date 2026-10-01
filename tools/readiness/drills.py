@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import random
 import re
 import signal
 import shutil
@@ -128,10 +129,18 @@ def _checkpoint_fake_body(control, sigma: Path):
                         '        _readiness_checkpoint("pre_write")\n        git(state, "update-ref", base_ref, head_sha)\n')
     fake = fake.replace('        save_state(state)\n        print("Merged pull request #%s" % number)\n        return\n',
                         '        save_state(state)\n        _readiness_checkpoint("durable_remote_update")\n        print("Merged pull request #%s" % number, flush=True)\n        _readiness_checkpoint("post_response_before_ack")\n        return\n', 1)
+    # ``work.py merge`` closes an issue and posts its audit note after a direct
+    # merge.  The public onboarding fake predates that direct-merge path, so
+    # extend this *copy* narrowly instead of letting a real gh binary leak in.
+    comments = '''    m = re.match(r"^repos/%s/issues/(\\d+)/comments$" % re.escape(repo), endpoint)
+    if m and method in ("", "POST"):
+        save_state(state); return
+'''
+    fake = fake.replace('    if endpoint == "repos/%s/issues" % repo:\n', comments + '    if endpoint == "repos/%s/issues" % repo:\n')
     return fake
 
 
-def _real_fixture(workdir: Path, sigma: Path):
+def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     """Create one isolated issue/claim/work/PR fixture, stopped before human merge.
 
     Every D1--D3 fault and every subsequent recovery gesture use this *same*
@@ -193,7 +202,17 @@ def _real_fixture(workdir: Path, sigma: Path):
                "log_path": log_path, "unhandled": unhandled, "env": env, "py": py, "loop": loop, "goal": goal,
                "pr": "100", "run": run, "next_argv": nxt}
     _fixture_gh(fixture, ["pr", "comment", "100", "--repo", control.FAKE_REPO, "--body", "sigma:approve"])
-    fixture["work_merge"] = _fixture_cmd(fixture, [py, loop / "work.py", "merge", ".sdlc", goal])
+    if direct_merge:
+        # The normal onboarding fixture intentionally leaves a reviewed PR for
+        # a human.  D1 has to cross *work.py merge*'s own direct-landing path,
+        # so enable that policy inside this disposable fixture only.
+        config_path = repo / ".sdlc" / "config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config.setdefault("work", {})["auto_merge"] = "always"
+        config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
+        fixture["work_merge"] = None
+    else:
+        fixture["work_merge"] = _fixture_cmd(fixture, [py, loop / "work.py", "merge", ".sdlc", goal])
     fixture["record_review"] = _fixture_cmd(fixture, [py, loop / "loop.py", "record", ".sdlc", goal, "review"])
     if fixture["record_review"].returncode:
         raise UsageError("fixture could not record review: " + (fixture["record_review"].stderr or fixture["record_review"].stdout)[-400:])
@@ -215,12 +234,25 @@ def _fixture_state(fixture):
     return json.loads(fixture["state_path"].read_text(encoding="utf-8"))
 
 
-def _kill_fixture_merge(fixture, checkpoint):
-    """SIGKILL the fixture's own fake-GitHub merge process at one named seam."""
+def _measure_work_merge_duration(workdir: Path, sigma: Path):
+    """Measure one un-faulted direct ``work.py merge`` in an isolated fixture."""
+    fixture = _real_fixture(workdir, sigma, direct_merge=True)
+    started = time.monotonic_ns()
+    proc = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "work.py", "merge", ".sdlc", fixture["goal"]])
+    duration = time.monotonic_ns() - started
+    if proc.returncode or _fixture_state(fixture)["prs"][fixture["pr"]]["state"] != "MERGED":
+        raise UsageError("could not measure work.py merge duration: " + (proc.stderr or proc.stdout)[-400:])
+    if fixture["unhandled"].read_text(encoding="utf-8"):
+        raise UsageError("merge duration fixture used an unmodelled fake-gh call")
+    return duration
+
+
+def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns):
+    """SIGKILL an actual ``work.py merge`` process group at a named fake-gh seam."""
     ready = fixture["root"] / "merge-ready.json"
     env = {**fixture["env"], "READINESS_CHECKPOINT": checkpoint, "READINESS_READY": str(ready)}
-    proc = subprocess.Popen([sys.executable, str(fixture["gh"]), "pr", "merge", fixture["pr"], "--repo",
-                             _fixture_state(fixture)["repo"], "--squash"], cwd=fixture["repo"], env=env,
+    argv = [fixture["py"], fixture["loop"] / "work.py", "merge", ".sdlc", fixture["goal"]]
+    proc = subprocess.Popen([str(item) for item in argv], cwd=fixture["repo"], env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     deadline = time.monotonic() + 10
     while not ready.exists() and time.monotonic() < deadline:
@@ -229,10 +261,20 @@ def _kill_fixture_merge(fixture, checkpoint):
         proc.kill(); raise UsageError("fixture merge checkpoint not reached")
     barrier = json.loads(ready.read_text(encoding="utf-8"))
     pgid = os.getpgid(proc.pid)
+    # The deterministic checkpoint mapping gives seam coverage.  This bounded,
+    # seeded delay separately exercises time inside that seam and is never a
+    # race for whether the fault lands.  Cap it at a small fraction of a
+    # measured normal work.py merge so a slow host cannot turn the drill into an
+    # unbounded sleep.
+    upper = max(1_000_000, min(measured_duration_ns, 100_000_000))
+    delay = random.Random(seed).randint(1_000_000, upper)
+    time.sleep(delay / 1_000_000_000)
     requested = time.monotonic_ns(); os.killpg(pgid, signal.SIGKILL); sent = time.monotonic_ns()
     stdout, stderr = proc.communicate(timeout=10)
     return {"barrier": barrier, "pid": proc.pid, "pgid": pgid, "returncode": proc.returncode,
-            "requested_at_ns": requested, "sent_at_ns": sent, "stdout": stdout, "stderr": stderr}
+            "requested_at_ns": requested, "sent_at_ns": sent, "stdout": stdout, "stderr": stderr,
+            "argv": [str(item) for item in argv], "seeded_delay_ns": delay,
+            "measured_work_merge_duration_ns": measured_duration_ns}
 
 
 def _kill_after_fixture_merge(fixture):
@@ -275,8 +317,10 @@ def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         raise UsageError("workdir exists and is not empty")
     workdir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
-    fixture = _real_fixture(workdir, sigma)
-    observed = _kill_fixture_merge(fixture, checkpoint)
+    measured_duration = _measure_work_merge_duration(workdir / "calibration", sigma)
+    fixture = _real_fixture(workdir / "fault", sigma, direct_merge=True)
+    observed = _kill_fixture_work_merge(fixture, checkpoint, seed=seed,
+                                         measured_duration_ns=measured_duration)
     barrier, pgid = observed["barrier"], observed["pgid"]
     state_after_fault = _fixture_state(fixture)
     landed = state_after_fault["prs"][fixture["pr"]]["state"] == "MERGED"
@@ -287,21 +331,25 @@ def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     next_proc = _fixture_cmd(fixture, fixture["next_argv"])
     retry = None
     if not landed:
-        retry = _fixture_gh(fixture, ["pr", "merge", fixture["pr"], "--repo", state_after_fault["repo"], "--squash"])
+        retry = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "work.py", "merge", ".sdlc", fixture["goal"]])
     first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
     second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
     lifecycle = _fixture_recover(fixture)
     # _fixture_recover intentionally repeats the public gestures for a stable
     # receipt.  Preserve the first recovery calls as the fault-adjacent facts.
     lifecycle.update({"next": _result_command(next_proc), "reconcile_merges": _result_command(first),
-                      "second_reconcile_merges": _result_command(second), "work_merge": _result_command(fixture["work_merge"]),
-                      "retry_merge": _result_command(retry) if retry is not None else None,
+                      "second_reconcile_merges": _result_command(second), "killed_work_merge": observed,
+                      "retry_work_merge": _result_command(retry) if retry is not None else None,
                       "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
     inv = [
         _invariant("selected_checkpoint_reached", barrier["checkpoint"] == checkpoint, barrier),
         _invariant("isolated_child_process_group", pgid != os.getpgrp(), {"pid": observed["pid"], "pgid": pgid}),
         _invariant("sigkill_at_selected_checkpoint", observed["returncode"] == -signal.SIGKILL,
                    {"entered_at_ns": barrier["entered_at_ns"], "requested_at_ns": observed["requested_at_ns"], "sent_at_ns": observed["sent_at_ns"]}),
+        _invariant("measured_seeded_delay_is_bounded", 0 < observed["seeded_delay_ns"] <= measured_duration,
+                   {"delay_ns": observed["seeded_delay_ns"], "merge_duration_ns": measured_duration}),
+        _invariant("actual_work_merge_lifecycle_was_killed", observed["argv"][1].endswith("work.py"),
+                   {"argv": observed["argv"]}),
         _invariant("no_later_ack_before_recovery", observed["returncode"] == -signal.SIGKILL, observed),
         _invariant("remote_update_matches_checkpoint", landed is expected_landed, {"landed": landed}),
         _invariant("same_fixture_converged_after_recovery", lifecycle["fake_github"]["issues"]["1"]["state"] == "closed" and
@@ -311,7 +359,9 @@ def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     return {"schema": SCHEMA, "drill": "D1", "seed": seed, "platform": sys.platform,
             "frozen_commit": _head(sigma), "started_at_ns": started, "finished_at_ns": time.monotonic_ns(),
             "recovery_commands": [["loop.py","next","<dir>"],["loop.py","reconcile-merges","<dir>"]],
-            "fault": {"checkpoint": checkpoint, "barrier": barrier, "fake_gh_merge": observed}, "invariants": inv,
+            "fault": {"checkpoint": checkpoint, "barrier": barrier, "fake_gh_merge": observed,
+                      "measured_work_merge_duration_ns": measured_duration,
+                      "seeded_delay_ns": observed["seeded_delay_ns"]}, "invariants": inv,
             "lifecycle": lifecycle, "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
 
 
