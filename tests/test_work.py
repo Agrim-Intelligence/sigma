@@ -519,6 +519,9 @@ def test_verify_runs_in_the_worktree_not_the_main_checkout(tmp_path):
     loop = _load("loop")
     d = _sdlc(tmp_path, {**ON, "verify": {"command": "pwd > where.txt"}})
     goal = _started(d)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     assert loop.verify_goal(d, goal) == 0
     wt = pathlib.Path(work._record(d, goal)["worktree"])
     assert (wt / "where.txt").read_text().strip() == str(wt)

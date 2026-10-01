@@ -5610,6 +5610,9 @@ def test_next_ignores_the_lease_when_the_ledger_is_off():
 
 
 def _telemetry_backlog(d, verify_command=None):
+    subprocess.run(["git", "init", "-q", str(d)], check=True)
+    subprocess.run(["git", "-C", str(d), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     base = pathlib.Path(d) / ".sdlc"
     (base / "goals").mkdir(parents=True); (base / "state").mkdir()
     cfg = {"budget": {"max_iterations": 10}, "verify": {"command": ""},
@@ -7309,6 +7312,9 @@ def test_record_done_emits_recorded_with_no_detail():
 
 
 def _verify_base(d, command="true"):
+    subprocess.run(["git", "init", "-q", str(d)], check=True)
+    subprocess.run(["git", "-C", str(d), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     base = pathlib.Path(d) / ".sdlc"; (base / "goals").mkdir(parents=True); (base / "state").mkdir()
     (base / "config.json").write_text(json.dumps({"verify": {"command": command}}))
     (base / "state" / "STATE.md").write_text("iteration: 0\nrun_iteration: 0\nlast_run: none\n")

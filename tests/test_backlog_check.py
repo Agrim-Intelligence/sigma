@@ -1,6 +1,6 @@
 """Pre-work backlog cross-check engine (backlog_check.py, slice 0.9.21): LLM-free TF-IDF retrieval +
 explicit `#N` graph + ledger signals over the board mirror / local goals. Hermetic, deterministic, $0."""
-import hashlib, json, pathlib, importlib.util, tempfile, calendar, time
+import hashlib, json, pathlib, importlib.util, tempfile, calendar, time, subprocess
 
 from skill_corpus import skill_corpus
 
@@ -1420,6 +1420,9 @@ def test_embed_via_real_subprocess_command():
            "print(json.dumps([1.0,0.0] if 'widget' in t else [0.0,1.0]))\"")
     para = "relocate persistence subsystem for the widget engine"   # shares no token but embeds same
     with tempfile.TemporaryDirectory() as d:
+        subprocess.run(["git", "init", "-q", d], check=True)
+        subprocess.run(["git", "-C", d, "config", "--local",
+                        "sigma.allowRepositoryShellCommands", "true"], check=True)
         base = _gh_base(d, [_rec(1, _GOAL), _rec(2, para)],
                         embed={"enabled": True, "command": cmd, "weight": 1.0},
                         dup_threshold=0.4, closed_window_days=3650)

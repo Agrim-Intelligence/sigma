@@ -275,6 +275,9 @@ def test_overlapping_red_does_not_precede_green(case):
 
 def test_verify_observes_planned_nodes_even_when_configured_command_is_green(case, monkeypatch):
     root, sdlc, plan = case
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), 'config', '--local',
+                    'sigma.allowRepositoryShellCommands', 'true'], check=True)
     (sdlc / 'config.json').write_text(json.dumps({'verify': {'command': 'true'}}))
     (root / 'tests/test_x.py').write_text("from pathlib import Path\ndef test_a():\n    assert Path('ready').exists()\n")
     lp = load('loop')

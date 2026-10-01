@@ -40,7 +40,7 @@ and E (elevation of privilege).
 | TM-01 | T1 | Prompt injection (E) | An issue asks a phase agent to execute a command or edit labels. | none | high | #362 |
 | TM-02 | T1 | Phantom blocker write (T) | A confident `_BLOCK_RE` match writes a blocker edge to a third issue. | none | high | #362 |
 | TM-03 | T1 | Parser confusion (T) | A hostile `Feature:` marker or Slack argument changes routing. | none | med | #362 |
-| TM-04 | T2 | Command injection (E) | A cloned repository configures a check containing arbitrary shell syntax. | none | high | #422 |
+| TM-04 | T2 | Command injection (E) | A cloned repository configures a check containing arbitrary shell syntax. | `shell_policy.py` refuses repository-configured shell strings until an operator sets the Git-local opt-in | med | #422 |
 | TM-05 | T3 | Hook-triggered command execution (E) | A host invokes a configured hook on a prompt or tool call. | `hooks/agrim_gate.sh:20` | med | — |
 | TM-06 | T4 | Credential exposure in logs (I) | A token-shaped value reaches a command or comment diagnostic. Coverage of every `gh` comment site is unverified. | `skills/agrim-loop/scripts/scrub.py:150` | med | — |
 | TM-07 | T4 | Remote webhook egress (I) | `channel_webhook_url` names an Internet host instead of the documented local adapter. | none | high | #358 |
@@ -60,3 +60,19 @@ watcher restart and stale detection reduce a liveness gap but do not make a
 stopped process healthy. The linked follow-ups retain the owning acceptance
 criteria and must be independently verified before this document can describe
 their mitigation as present.
+
+## Repository-configured shell commands
+
+Pipeline checks, backlog embedders, and verification commands are repository
+input. Sigma refuses them by default, including in a freshly cloned or adopted
+checkout. After inspecting a project an operator may enable the trusted-project
+compatibility path with:
+
+```sh
+git -C <trusted-project> config --local sigma.allowRepositoryShellCommands true
+```
+
+The setting is Git-local rather than `.sdlc/config.json`, so it is neither
+committed nor supplied by a clone. It intentionally restores shell semantics
+for every linked worktree of that trusted project; do not set it for a checkout
+whose repository configuration you have not reviewed.

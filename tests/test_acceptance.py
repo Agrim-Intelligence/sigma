@@ -36,7 +36,11 @@ class Source:
         self.comments.append({'body': text})
 
 
-def capture(tmp_path, command=None, source=None):
+def capture(tmp_path, command=None, source=None, allow_shell_commands=False):
+    if allow_shell_commands:
+        subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+        subprocess.run(['git', '-C', str(tmp_path), 'config', '--local',
+                        'sigma.allowRepositoryShellCommands', 'true'], check=True)
     sdlc = tmp_path / '.sdlc'
     sdlc.mkdir(exist_ok=True)
     a = load('acceptance')
@@ -155,7 +159,7 @@ def test_contract_acceptance_entry_and_golden(tmp_path):
     ('echo repo >> ran', 'echo goal >> ran', 0, ['repo', 'goal']),
 ])
 def test_verify_preserves_each_commands_shell_semantics(tmp_path, repo, goal, expected, lines):
-    sdlc, a = capture(tmp_path, goal)
+    sdlc, a = capture(tmp_path, goal, allow_shell_commands=True)
     (sdlc / 'config.json').write_text(json.dumps({'verify': {'command': repo}}))
     loop = load('loop')
     assert loop.verify_goal(sdlc, '42') == (1 if expected else 0)

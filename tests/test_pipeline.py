@@ -13,6 +13,9 @@ def _mod(name):
 
 def _project(d, stages):
     root = pathlib.Path(d)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     base = root / ".sdlc"
     (base / "goals").mkdir(parents=True); (base / "state").mkdir()
     (base / "config.json").write_text(json.dumps({"budget": {"max_iterations": 10}}))
@@ -181,6 +184,9 @@ def test_no_pipeline_json_exits_3():
 
 def _goal_backlog(d, verify_command=None, enforce=False):
     base = pathlib.Path(d) / ".sdlc"
+    subprocess.run(["git", "init", "-q", str(pathlib.Path(d))], check=True)
+    subprocess.run(["git", "-C", str(pathlib.Path(d)), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     (base / "goals").mkdir(parents=True); (base / "state").mkdir()
     cfg = {"budget": {"max_iterations": 10},
            "verify": {"command": "", "enforce": enforce}}

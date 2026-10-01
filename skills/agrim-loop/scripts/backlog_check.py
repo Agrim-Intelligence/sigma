@@ -38,6 +38,9 @@ def _load(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+shell_policy = _load("shell_policy")
+
+
 def _load_velocity():
     vp = _HERE.parent.parent / "agrim-velocity" / "scripts" / "velocity.py"
     spec = importlib.util.spec_from_file_location("velocity", vp)
@@ -783,13 +786,15 @@ def _embed_enabled(config):
     return ((config.get("backlog_check") or {}).get("embed") or {}).get("enabled") is True
 
 
-def _run_embedder(text, command):
+def _run_embedder(text, command, cwd=None):
     """Run the provider-agnostic embedder: `command` reads the text on stdin and prints a JSON array
     (the vector). Returns a list[float], or None on any failure (missing tool, bad JSON, non-zero exit,
     timeout) so the dense channel fails open to lexical-only."""
+    if not shell_policy.repository_shell_commands_allowed(cwd or pathlib.Path.cwd()):
+        return None
     try:
         proc = subprocess.run(command, shell=True, input=text or "", capture_output=True,
-                              text=True, timeout=30)
+                              text=True, timeout=30, cwd=cwd)
         if proc.returncode != 0:
             return None
         v = json.loads(proc.stdout)
@@ -798,10 +803,11 @@ def _run_embedder(text, command):
         return None
 
 
-def _embedder_from_config(config):
+def _embedder_from_config(config, sdlc_dir=None):
     command = ((config.get("backlog_check") or {}).get("embed") or {}).get("command") or ""
     command = command.strip()
-    return (lambda text: _run_embedder(text, command)) if command else None
+    root = pathlib.Path(sdlc_dir).resolve().parent if sdlc_dir else pathlib.Path.cwd()
+    return (lambda text: _run_embedder(text, command, cwd=root)) if command else None
 
 
 def _dense_channel(sdlc_dir, config, docs, goal_ref, embed_fn):
@@ -833,7 +839,7 @@ def _dense_channel(sdlc_dir, config, docs, goal_ref, embed_fn):
         converging, so raise the cap rather than let an oversized corpus thrash forever."""
     if not _embed_enabled(config):
         return None, 0.0
-    fn = embed_fn or _embedder_from_config(config)
+    fn = embed_fn or _embedder_from_config(config, sdlc_dir)
     if fn is None:
         return None, 0.0                                     # enabled but no command -> lexical-only
     embed_cfg = (config.get("backlog_check") or {}).get("embed") or {}

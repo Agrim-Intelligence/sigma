@@ -37,7 +37,7 @@ def _git(cwd, *args):
     return proc.stdout.strip()
 
 
-def _repo_pair(tmp_path, initial_content="line1\nline2\nline3\n"):
+def _repo_pair(tmp_path, initial_content="line1\nline2\nline3\n", allow_shell_commands=False):
     """A bare `origin` plus a `goal` clone of it at one initial commit on `main`, then checked out
     onto its own `sdlc/test` branch -- the state right after `work.py start` would have cut this
     goal's worktree from `<remote>/<base>`."""
@@ -47,6 +47,8 @@ def _repo_pair(tmp_path, initial_content="line1\nline2\nline3\n"):
     _git(tmp_path, "clone", "-q", str(origin), str(goal_wt))
     _git(goal_wt, "config", "user.email", "a@example.com")
     _git(goal_wt, "config", "user.name", "a")
+    if allow_shell_commands:
+        _git(goal_wt, "config", "--local", "sigma.allowRepositoryShellCommands", "true")
     (goal_wt / "file.txt").write_text(initial_content)
     _git(goal_wt, "add", "file.txt")
     _git(goal_wt, "commit", "-q", "-m", "base")
@@ -159,7 +161,7 @@ def _verify_config():
 
 
 def test_verify_goal_runs_the_suite_after_a_clean_auto_rebase(tmp_path):
-    origin, goal_wt = _repo_pair(tmp_path)
+    origin, goal_wt = _repo_pair(tmp_path, allow_shell_commands=True)
     new_tip = _advance_origin(tmp_path, origin,
                                lambda o: (o / "unrelated.txt").write_text("x"))
 
@@ -763,7 +765,7 @@ def _verified(tmp_path, stem, mutate=_goal_change):
     The goal is a REAL local-mode goal file, not a bare id, so `loop.py record ... done` can run its
     whole documented path (`source.complete` writes this file's frontmatter) instead of dying in
     unrelated bookkeeping before the assertion means anything."""
-    _, wt = _repo_pair(tmp_path)
+    _, wt = _repo_pair(tmp_path, allow_shell_commands=True)
     mutate(wt)
     sdlc_dir = _sdlc(tmp_path, _verify_config())
     goals = pathlib.Path(sdlc_dir) / "goals"; goals.mkdir(parents=True, exist_ok=True)

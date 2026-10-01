@@ -45,6 +45,7 @@ actionlog = _load("actionlog")      # local-only action trace (config-gated, def
 timing_store = _load("timing_store")  # working time; the ONLY store here that is never config-gated
 decision_tier = _load("decision_tier")   # #953: needs_decision-park tier classifier (config-gated, #952)
 feature_labels = _load("feature_labels") # #1468: attach a declared unit's label at pick, never create one
+shell_policy = _load("shell_policy")
 
 
 def _coexist_notice(sdlc_dir, surface, once=False):
@@ -5212,6 +5213,11 @@ def verify_goal(sdlc_dir, goal):
         print(f"loop.py verify: goal {goal!r} has no work record — verifying the PROJECT ROOT "
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
+    if not shell_policy.repository_shell_commands_allowed(root):
+        print("loop.py verify: " + shell_policy.refusal_message(), file=sys.stderr)
+        ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
+        actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
+        return 2
     _wrec = work._record(sdlc_dir, goal) or {}
     _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
                  if _wrec.get("remote") and _wrec.get("base") else None)
