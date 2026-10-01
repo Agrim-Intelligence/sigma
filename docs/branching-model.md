@@ -1372,8 +1372,9 @@ fully reachable and ungranted, or granted and unreachable.
 ## 13. Completion, and branch protection
 
 **Completion is human-only by default.** A person raises the `feature/<name>` → integration-branch
-PR. Sigma's own merges are `sdlc/<goal-id>` → `feature/<name>`, inside one repo — it never merges
-a feature branch anywhere.
+PR. The loop's own merges are `sdlc/<goal-id>` → `feature/<name>`, inside one repo. Human-confirmed
+landing through `verify_merge.py` and the Slack `--unsafe-merge` path may merge `feature/<name>` onto
+`work.base`; the loop does not initiate those feature-branch landings.
 
 Marking a unit finished is a registry edit, not a branch deletion: **`open: false` is how a finished
 unit is marked**, because feature labels are never deleted and the entry, the shard and the `.md` are

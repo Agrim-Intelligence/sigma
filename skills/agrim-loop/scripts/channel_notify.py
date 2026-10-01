@@ -2,8 +2,9 @@
 """One channel-notify tick (#1322): the CLI/Channels adapter's Python half. On detecting the SAME
 candidate `autowatch.py` itself would pick up on its next tick (the oldest unactioned mention/
 assignment/blocker addressed to `me`, matching `ledger.autowatch.scope`), POST a small JSON payload
-to `ledger.autowatch.channel_webhook_url`. That URL is a local, `127.0.0.1`-only sigma-autowatch
-channel server (`skills/agrim-loop/channels/sigma-autowatch/webhook.ts`, run inside an already-
+to `ledger.autowatch.channel_webhook_url`. That URL is intended for a local sigma-autowatch
+listener; its host is not validated. The channel server
+(`skills/agrim-loop/channels/sigma-autowatch/webhook.ts`, run inside an already-
 open `claude --dangerously-load-development-channels server:sigma-autowatch` session — see that
 plugin's own SKILL.md for the one-time setup). The channel server forwards the payload into the
 session as a `<channel>` event; the session's own instructions (declared by the channel server, not

@@ -344,7 +344,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Two ways to start** | **Drop-in** (existing repo) or **vision-first** (start from a product vision) | `/agrim-init`, `/agrim-vision` |
 | **One-command adoption** | Detects the repo + board, scaffolds `.sdlc/`, writes a safe config (github discovery scoped to `@me`, ledger on, PRs on) and creates the core `sdlc:*` lifecycle labels — avoiding the verify-trap, never clobbering an ignore rule you already set, and never touching `priority:*` labels or any issue | `/agrim-setup` |
 | **Two ways to run** | **Interactive** (approve each gate) or **autonomous** (park-and-continue over a backlog) | `/agrim-goal`, `/agrim-loop` |
-| **Hard plan-gate (opt-in)** | With `gates.hard_plan_gate.enabled`, unplanned source is refused at two points. **On every host** (Claude Code, Cursor, Codex): `work.py pr` refuses to PUSH a branch whose goal has no plan under `.sdlc/plans/` — plain Python, and the only enforcement an org lock can rely on. The org-lock lookup behind it is memoised on the goal's work record, so it runs **at most once per goal** however many review cycles `pr` runs through. **On Claude Code additionally**: the `PreToolUse` hook denies the EDIT itself, earlier, when no plan is fresher than `plan_freshness_hours`. Both honour `touch .sdlc/.allow-direct-edits` **only when the key is not org-locked ON** — under an org lock (`.sdlc/managed-settings.json`) the sentinel does not apply at either point and neither refusal offers it — and both skip `.sdlc/`, `docs/` and non-source extensions. Since 1.0.9 a Jupyter notebook counts as source in **both** gates. **With `work.enabled` off** only the hook applies, so the lock is Claude-Code-only there — `/agrim-doctor` and `loop.py record done` say so | `skills/agrim-loop/scripts/work.py`, `hooks/plan_gate.sh` · [enforcement](docs/enforcement.md) |
+| **Hard plan-gate (opt-in)** | With `gates.hard_plan_gate.enabled`, unplanned source is refused at two points. **On every host** (Claude Code, Cursor, Codex): `work.py pr` refuses to PUSH a branch whose goal has no plan under `.sdlc/plans/` — plain Python, and the only enforcement an org lock can rely on. The org-lock lookup behind it is memoised on the goal's work record, so it runs **at most once per goal** however many review cycles `pr` runs through. **On Claude Code additionally**: the `PreToolUse` hook denies the EDIT itself, earlier, when no plan is fresher than `plan_freshness_hours`. Both honour `touch .sdlc/.allow-direct-edits` **only when the key is not org-locked ON** — under an org lock (`.sdlc/managed-settings.json`) the sentinel does not apply at either point and neither refusal offers it — and both skip `.sdlc/`, `docs/` and non-source extensions. A Jupyter notebook counts as source in **both** gates. **With `work.enabled` off** only the hook applies, so the lock is Claude-Code-only there — `/agrim-doctor` and `loop.py record done` say so | `skills/agrim-loop/scripts/work.py`, `hooks/plan_gate.sh` · [enforcement](docs/enforcement.md) |
 | **Stop gate (opt-in)** | On Claude Code, with `gates.stop_gate.enabled`, a session can't END with source changed but no fresh plan — the Stop-time counterpart to the plan-gate, so an interactive session doesn't quietly finish unplanned work | `hooks/completion_gate.sh` · [enforcement](docs/enforcement.md) |
 | **SessionStart brief (opt-in)** | With `session_start.enabled`, injects the SDLC policy + a doctor-lite install self-check at session start, so the conventions are in context before the first prompt | `hooks/session_start.sh` · [enforcement](docs/enforcement.md) |
 | **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On once `/agrim-init` records a confirmed command; never on with an empty one | `loop.py verify` · [enforcement](docs/enforcement.md) |
@@ -576,7 +576,7 @@ not a second, independent one.
 
 ## How it works
 
-Sigma installs one hook (`hooks/agrim_gate.sh`, wired as a `UserPromptSubmit` hook). It is
+Sigma registers 10 hook commands (see `hooks/hooks.json`); each is fail-open. The prompt gate (`hooks/agrim_gate.sh`, wired as a `UserPromptSubmit` hook) is
 **scoped per repo**: it only speaks in a project that has adopted the spine (an `.sdlc/` directory
 exists — i.e. you ran `/agrim-init`); in any other repo it is a silent no-op, so installing the
 plugin machine-wide never injects policy into unrelated projects. Set `SIGMA_GATE_GLOBAL=1`
@@ -2112,7 +2112,7 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   install nothing either way.
 - **Dev/test:** `pip install pytest pytest-cov`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs
   the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
-  quality gate** (`evals/run.py`) — with an **85% coverage floor** on every push/PR, on Python 3.10 + 3.12.
+  quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
 
 ## Other platforms supported
 
@@ -2184,7 +2184,7 @@ If this checkout carries a `NOTICE` file, it lists any path under a different li
 install path puts on your disk.
 
 A marketplace install (`/plugin install sigma`) clones the whole repository, so every *tracked*
-file is shipped surface: CI has failed since 1.0.9 on any
+file is shipped surface: CI fails on any
 tracked zero-byte file that isn't a known empty marker — a stray had shipped unnoticed for over a
 month before anyone looked.
 
