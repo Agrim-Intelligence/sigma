@@ -4,6 +4,40 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The launch GO/NO-GO rule and the `launch:blocker` classes are pre-registered, with a checker
+  that computes the verdict** (#331). `docs/launch/decision-rule.md` fixes the eight blocker
+  classes (B1–B8; everything else is `launch:next`), the promote/demote rules, which dimensions
+  gate (D12 Market is informational and blocks only through B3), and the rule: GO only when every
+  gating dimension scores >= 3 with evidence, no open issue carries `launch:blocker`,
+  `docs/launch/definition.json` is signed, and the named benchmark results file is on `main`.
+  Its status is Proposed: the owner's merge is the sign-off. `docs/launch/scorecard.json` is
+  the unscored skeleton.
+  `tools/readiness/decide.py <repo_root> [--blockers-json PATH] [--repo OWNER/NAME]` (stdlib only)
+  prints one line per reason and `GO`/`NO-GO`; exit 0 GO, 1 NO-GO, 2 malformed. The gating set is pinned in the checker, so a scorecard that flips a `gating` flag, drops or adds a
+  dimension is refused (exit 2), not re-weighted; a missing definition is NO-GO (`definition
+  missing`), and a blocker list that cannot be read is exit 2, never "zero blockers". Open
+  blockers are read with one read-only REST call (`gh api ... --paginate`), pull requests
+  dropped. The `launch:blocker` and `launch:next` labels now exist on the repository. On today's
+  `main` the checker prints NO-GO (nothing scored, no definition). Control: with the blocker list
+  ignored, `test_one_open_blocker_is_nogo_naming_its_number` goes red. Review hardening:
+  an evidence entry counts only as an `http(s)://` URL with a host (shape only; never fetched) or
+  a repository file that is a non-empty regular file tracked at `origin/main` (no `.`/`..`, no
+  absolute path, no symlink escape) — `TODO`/`n/a` at score 3 is NO-GO naming the entry; an
+  unnamed (`null`/blank) benchmark file is NO-GO; `signed` needs a plain-login `signed_by` and a
+  real, not-future `signed_on`; the benchmark file must sit under `docs/launch/evidence/`, be a
+  non-empty regular file at `origin/main`, and match it byte for byte in the checkout. There is no
+  checkout-only fallback: when `main` cannot be read (no git, not the work-tree top, no
+  `origin/main`) the benchmark clause and repository-path evidence are NO-GO `cannot verify on
+  main (<why>)`, never GO. Without `--repo`, `OWNER/NAME` and the host are derived from the single
+  `origin` URL (https, ssh, scp-like) and passed to `gh` explicitly, with `GH_REPO`/`GH_HOST`
+  removed from its environment, so `GH_REPO=other/repo` cannot redirect the read; `--repo` must be
+  exactly `OWNER/NAME` (`../..`, `a/.`, a trailing newline are refused). Exit 2: duplicate JSON
+  keys, unknown scorecard keys and renamed dimensions, blocker entries without an integer
+  `number`, a known `state` and a `labels` list carrying `launch:blocker` (or with a non-object
+  `pull_request`), `gh` exiting 0 with no output, remotes other than exactly one `origin` URL,
+  unreadable paths or over-deep JSON (no traceback), and `--help`. Process rules the checker
+  cannot see (a blocker names its class; removing the label is a demotion) are listed under their
+  own heading. 39 controls seen red on 3.10 and 3.12 (`docs/launch/evidence/331-gesture.md`).
 - **`tools/leak_refs.py`: find, and plan the removal of, private-repository references before the
   visibility flip** (#282). A patterns file (`--patterns` or `SIGMA_LEAK_PATTERNS`, no default,
   refused inside any git work tree) drives four verbs: `scan` reads every issue and PR in every
