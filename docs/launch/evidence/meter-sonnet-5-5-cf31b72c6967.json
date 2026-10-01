@@ -1,0 +1,23 @@
+{
+  "schema": "sigma.benchmark-transcript-meter/v1",
+  "goal": 345,
+  "meter_commit": "cf31b72c6967",
+  "recorded_at": "2026-10-01",
+  "command": "python3 evals/bench/meter.py --paths <redacted-local-sonnet-5-5-transcript>",
+  "transcript": {
+    "sha256": "6d4cda8e9e4b385dfc045192107debd32f35fcf8163c6527bc6d7021a60b5c94",
+    "bytes": 631078,
+    "location": "not recorded; local transcript path and content are private"
+  },
+  "result": {
+    "models": ["claude-sonnet-5-5"],
+    "tokens_in": 36,
+    "tokens_out": 12467,
+    "turns": 18,
+    "unpriced_turns": 0,
+    "unavailable_inputs": [],
+    "cost_usd": 0.645964,
+    "cost_usd_priced_part": 0.645964
+  },
+  "privacy": "This evidence records only aggregate meter output and a content hash; it contains no transcript text or local path."
+}
