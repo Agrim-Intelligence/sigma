@@ -76,3 +76,8 @@ The setting is Git-local rather than `.sdlc/config.json`, so it is neither
 committed nor supplied by a clone. It intentionally restores shell semantics
 for every linked worktree of that trusted project; do not set it for a checkout
 whose repository configuration you have not reviewed.
+
+`/agrim-init`'s explicit `verify_detect.py confirm` and `set` gestures record
+the same Git-local setting only after the operator confirms or supplies the
+command. They refuse to enable a command outside a Git worktree. `decline` and
+initial scaffolding never grant it.

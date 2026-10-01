@@ -900,6 +900,15 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
         _git(["add", "-A"], repo, env)
         _git(["commit", "-qm", "fresh repository"], repo, env)
         init_out, scaffolded = _init_and_verify(run, qs, sigma, repo, env, "local", variant)
+        if variant == "no-command":
+            # The fixture still exercises the packaged demo's frontmatter
+            # command before it reaches the no-command goal that tests the
+            # scaffold default.  Model the operator's separate, explicit
+            # trusted-project choice for that known demo; config remains
+            # commandless, so the target control is unchanged.
+            run.step("operator trusts packaged demo verification",
+                     ["git", "-C", str(repo), "config", "--local",
+                      "sigma.allowRepositoryShellCommands", "true"], repo, env)
         (repo / ".sdlc" / "goals" / "0002-onboarding-hello.md").write_text(
             f'---\nid: "0002"\ntitle: {GOAL_TITLE}\nstatus: pending\n---\n\n'
             f"Create {WORK_FILE} with one line. Filed by the onboarding control.\n", encoding="utf-8")
