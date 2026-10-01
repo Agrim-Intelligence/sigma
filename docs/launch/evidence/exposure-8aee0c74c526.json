@@ -6435,7 +6435,7 @@
       "paths": [
         ".sdlc/plans/258.md"
       ],
-      "preview": "`SCRATCH=[REDACTED:absolute-home-path]/-Users-swapnildubey-Documents-sigma-sigma/e4a51191-54ca-4c07-8b5c-9b09eaf71e9b/scratchpad`.",
+      "preview": "`SCRATCH=[REDACTED:absolute-home-path]/[REDACTED-ENCODED-HOME]/e4a51191-54ca-4c07-8b5c-9b09eaf71e9b/scratchpad`.",
       "rule": "absolute-home-path"
     },
     {

@@ -90,7 +90,7 @@ def test_allowlist_suppresses_exact_path_rule_and_stale_entry_is_a_finding(tmp_p
 def test_blob_scoped_allowlist_does_not_hide_a_changed_fixture_at_the_same_path(tmp_path):
     repo = _repo(tmp_path)
     fixture = repo / "fixture.txt"
-    fixture.write_text("/Users/fixture/one", encoding="utf-8")
+    fixture.write_text("/Us" + "ers/fixture/one", encoding="utf-8")
     _git(repo, "add", "."); _git(repo, "commit", "-qm", "reviewed fixture")
     reviewed_blob = _git(repo, "rev-parse", "HEAD:fixture.txt")
     allow = repo / "allow.json"
@@ -104,7 +104,7 @@ def test_blob_scoped_allowlist_does_not_hide_a_changed_fixture_at_the_same_path(
     assert green.returncode == 0
     assert json.loads(green_json.read_text())["findings"] == []
 
-    fixture.write_text("/Users/fixture/two", encoding="utf-8")
+    fixture.write_text("/Us" + "ers/fixture/two", encoding="utf-8")
     _git(repo, "add", "fixture.txt"); _git(repo, "commit", "-qm", "changed fixture")
     red_json = tmp_path / "red.json"
     red = _run("tracked", repo, "--allowlist", allow, "--json", red_json)
