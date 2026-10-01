@@ -73,6 +73,9 @@ def _parked(*_a, **_k):
 
 
 def main(argv):
+    if "--help" in argv or "-h" in argv:
+        print("usage: run.py [--live]")
+        return 0
     fixtures = load_fixtures()
     score, misses = run_tier1(fixtures)
     floor = json.loads(BASELINE.read_text())["tier1_min"]

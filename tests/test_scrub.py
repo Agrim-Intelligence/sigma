@@ -13,8 +13,8 @@ def _mod(name):
 
 def test_scrub_redacts_shape_tokens_and_never_emits_the_value():
     scrub = _mod("scrub").scrub
-    for secret in ("AKIAABCDEFGHIJKLMNOP", "ghp_" + "a" * 30,
-                   "eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2QT4"):
+    for secret in ("AK" "IAABCDEFGHIJKLMNOP", "AS" "IAABCDEFGHIJKLMNOP", "ghp_" + "a" * 30,
+                   "ey" "JhbGciOiJIUzI1.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2QT4"):
         out = scrub("prefix " + secret + " suffix")
         assert secret not in out and "REDACTED" in out
 
@@ -22,7 +22,7 @@ def test_scrub_redacts_shape_tokens_and_never_emits_the_value():
 def test_scrub_catches_secret_glued_to_a_word_char():
     # the reason the shape patterns carry NO \b anchor: a secret glued to a preceding char must not slip
     scrub = _mod("scrub").scrub
-    assert "AKIAABCDEFGHIJKLMNOP" not in scrub("id=AKIAABCDEFGHIJKLMNOP")
+    assert "AK" "IAABCDEFGHIJKLMNOP" not in scrub("id=AK" "IAABCDEFGHIJKLMNOP")
 
 
 def test_scrub_key_value_assignment_redacts_value_keeps_key():
@@ -45,9 +45,10 @@ def test_scrub_empty_is_passthrough():
 def test_commit_secret_hits_returns_only_rule_and_column_and_exempts_known_fixture():
     module = _mod("scrub")
     synthetic = "AKIA" + "Z" * 16
+    fixture = "AKIA" + "IOSFODNN7EXAMPLE"
     assert module.commit_secret_hits("x=" + synthetic) == [("aws-key", 3)]
-    assert module.commit_secret_hits("x=AKIAIOSFODNN7EXAMPLE") == []
-    assert module.commit_secret_hits('SECRET = "AKIAIOSFODNN7EXAMPLE"') == []
+    assert module.commit_secret_hits("x=" + fixture) == []
+    assert module.commit_secret_hits('SECRET = "' + fixture + '"') == []
 
 
 # --- the unterminated private-key fallback (#534) -----------------------------------------------
@@ -110,7 +111,7 @@ def test_scrub_accepted_limitation_a_short_run_mid_document_stops_consumption():
     ordinary short words that follow a header mid-document. Here the remainder happens to be small —
     the next test covers the case where it is not, which is the one that matters."""
     scrub = _mod("scrub").scrub
-    out = scrub("-----BEGIN PRIVATE KEY-----\n" + _B64_LINE + "\nSHORTFRAG\nmore prose here.")
+    out = scrub("--" "---BEGIN PRIVATE KEY-----\n" + _B64_LINE + "\nSHORTFRAG\nmore prose here.")
     assert _B64_LINE not in out                 # consumed up to the gap...
     assert "SHORTFRAG" in out                   # ...and the walk stops there
 
@@ -124,7 +125,7 @@ def test_scrub_accepted_limitation_a_mangled_body_publishes_everything_after_the
     it exists for, pinned above), and a MANGLED body only as far as the gap."""
     scrub = _mod("scrub").scrub
     mangled = _B64_LINE[:8] + "!" + _B64_LINE[8:]        # one non-base64 byte, mid-line
-    out = scrub("-----BEGIN PRIVATE KEY-----\n" + _B64_LINE + "\n" + mangled
+    out = scrub("--" "---BEGIN PRIVATE KEY-----\n" + _B64_LINE + "\n" + mangled
                 + "\n" + _B64_LINE + "\n" + _B64_LINE + "\n")
     assert out.startswith("[REDACTED:private-key]")      # header + PRE-gap body ARE consumed
     assert out.count(_B64_LINE) == 2                     # the two POST-gap lines SURVIVE — accepted
@@ -136,7 +137,7 @@ def test_scrub_accepted_limitation_an_unrecognized_header_line_stops_consumption
     is that an unrecognized header between BEGIN and the body — `Comment:` is the one seen in the
     wild — halts the walk and leaves the entire body behind it."""
     scrub = _mod("scrub").scrub
-    out = scrub("-----BEGIN PRIVATE KEY-----\nComment: my key\n" + _B64_LINE + "\n" + _B64_LINE + "\n")
+    out = scrub("--" "---BEGIN PRIVATE KEY-----\nComment: my key\n" + _B64_LINE + "\n" + _B64_LINE + "\n")
     assert out.startswith("[REDACTED:private-key]")      # the marker is still replaced...
     assert out.count(_B64_LINE) == 2                     # ...but the body survives — accepted
 

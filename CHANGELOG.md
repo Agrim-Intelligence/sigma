@@ -121,6 +121,84 @@ All notable changes to Sigma are recorded here, newest first.
   `tests/test_coexist.py` cover the reviewer's race on the stand-in and on the real previous plugin,
   the symlink case, a record created during the run, a clean run, and repair. Each guard was broken
   once and its test went red on 3.10 and 3.12.
+- **The README is checked against what ships, and its init gestures are run** (#277, the review
+  notes on #231). (1) Every `python3` gesture the README shows now reads `python3
+  <installed-sigma>/...` -- after review this also covers the Cursor Quickstart (`~/sigma/...`), the
+  `log.py` / `ledger.py` / keep-parked `loop.py note` gestures (`"${CLAUDE_PLUGIN_ROOT}/..."`, a
+  variable only a host's skill or hook context sets), the watcher's bare `python3 watch_daemon.py`
+  and `evals/run.py`, each of which exited 2 when copied from a user's repository. A test flags any
+  `python3 <path>.py` in a code span whose path is not `<installed-sigma>/...`, absolute, or a
+  `$VAR` path the same span assigns. The placeholder is defined once in the Quickstart, and the init
+  subsections say to run them from the repository root. `tools/onboarding_control.py` reads a
+  gesture's script path from the repository root, as a shell would, and runs every gesture under
+  "What `/agrim-init` will ask you" and "If `/agrim-init` says you lack access". Run against the
+  previous README, both confirm variants went RED at `verify confirm (README gesture)`. (2) The
+  fine-grained token row shows `-s <required scopes>` and states the rule `preflight.py` applies
+  (`repo`; `workflow` when work is on; `read:org` for an organization; `project` with a board). A
+  test drives `preflight()` over every combination to derive that rule. (3) The `work.auto_merge` row
+  no longer says a fork or read-only repository records `done`. It records `review`, and the goal
+  is `done` once the PR merges. A test keeps any README or docs sentence from pairing a no-merge path
+  with "records `done`". Also corrected: the `"auto_merge": false` example (now `"off"`), and the
+  claim in the README and config template that a merge arms `--auto`. It lands with a direct
+  `gh pr merge`. (4) Version numbers from the plugin's previous name are gone from shipped prose
+  (`Since 1.0.9`, `pre-0.6`, `1.3.7`, `1.3.8`, `1.4.1`, `1.4.2`, `1.4.5`, `1.1.2`). The version
+  control now covers any release-shaped version above `plugin.json`, and any lower one introduced
+  by a release phrase. Exceptions need a stated reason in `VERSION_ALLOW`. (5) Only verified host
+  claims remain. `codex-cli 0.154.0-alpha.6.2` installed `sigma@sigma` from
+  `.claude-plugin/marketplace.json` into an isolated profile. Cursor plugin support is marked
+  unverified. (6) `examples/hello-sdlc/README.md` shows the real `status.py` line, and a test
+  checks it. The stale `.gitignore` tip is gone because init ignores runtime directories itself.
+  (7) `tests/test_readme_first_run.py` also checks `/agrim-*` names in plain prose, and checks
+  `claude plugin` / `codex plugin` syntax against the CLIs' help. (8) The `loop.py start` nag after
+  `--local-only` was already fixed by #236 and has its own control, so nothing changed. (9) New
+  `tools/leak_scan.py` is the leak gate that #231's acceptance and `scrub.py` name. It reports
+  locations only, never values: 0 findings over all 614 tracked files, and each plant is red
+  (`tests/test_leak_scan.py`). After review it scans EVERY tracked file (`.sdlc/` and `tests/`
+  ship too; a first draft skipped them and missed a real home path in `.sdlc/plans/258.md`, now
+  `<home>/…`); its secret rules are scrub.py's `SHAPE_RULES` plus `_SECRET_PATTERNS` (PEM keys, AWS
+  `AKIA`/`ASIA` -- `ASIA` added to scrub.py itself -- classic `gh[pousr]_` tokens, JWTs, bearer
+  auth) plus its own `config-credential` rule for config-like files (see below); the home rule also catches a
+  bare `/Users/<name>`, `~<name>/` and the host-encoded `-Users-<name>-`; the owner-link rule
+  catches ssh, `git@`, `raw.githubusercontent.com`, `api.github.com/repos` and userinfo spellings,
+  allowing this repository and doctor.py's public slug. 98 lines of token-shaped test fixtures in 16
+  files are now built from fragments, and a line may opt out of one rule only with an in-file
+  allow marker that names the rule and a reason (the syntax is in the tool's docstring; a malformed
+  marker is itself a finding). Measured: 4.1-4.3 s
+  for the whole tree on Python 3.10 and 3.12. Second review: the credential rule borrowed from
+  scrub.py began with `\b`, which cannot match after `_`, so `GITHUB_TOKEN=`, `OPENAI_API_KEY=`,
+  `DB_PASSWORD=`, `aws_secret_access_key =` and every other prefixed key were missed. The gate's own
+  `config-credential` rule now matches any key that ENDS in a credential word, quoted or not, in
+  `.env*`, `.ini`, `.cfg`, `.conf`, `.toml`, YAML, JSON, `.properties`, `.npmrc`, Dockerfile
+  `ENV`/`ARG` and shell scripts, with placeholders (`${VAR}`, `<...>`, `your-...`, `changeme`)
+  allowed. New rules scrub.py's comment had claimed and the gate lacked: `secret-file` (`id_rsa`,
+  `*.pem`, `*.key`, `*.p12`, `.netrc`, `credentials.json`, a non-example `.env`, ...), `key-body` (a
+  private key body with its header stripped), and a named, exit-1 finding for any file it cannot
+  scan (`opaque-binary`, `oversize`, `unreadable`) unless `ALLOW_PATHS` gives a reason. Latin-1 and
+  UTF-16 text is decoded and scanned. A symlink is scanned as the target path git ships and never
+  followed. Home paths now include WSL's `/mnt/c/Users/`, macOS's `/System/Volumes/Data/Users/`
+  and lower-case `c:\users\`; owner links include `ssh.github.com:443` and `github.com:443`. A
+  missing `git` exits 2, the summary counts allow-marked lines, and the docstring lists what is out
+  of scope. scrub.py's comment now names only rules that exist, and a test keeps it that way. (10) The README's two blocker escapes are corrected:
+  `backlog_check.py dismiss-text` only prints the marker, which `loop.py note` must post, and it
+  downgrades one cross-check finding to advisory (GitHub mode only); the keep-parked opt-out is a
+  `<!-- sigma:keep-parked -->` comment, not an `auto_unpark.py` command (that line exited 2). The
+  onboarding control gains a `readme-usage` mode that checks every `python3 <installed-sigma>/...`
+  README gesture against its script's `--help` usage, and asserts each executed init gesture's
+  effect, not just its exit code. (11) The README no longer claims an "85% coverage floor": CI
+  measures no coverage (#194); a test keeps a coverage claim out of shipped prose unless CI
+  enforces one. `verify_detect.py` / `preflight.py` / `state.py` now print `<installed-sigma>`, the
+  README's placeholder, instead of `<sigma>`. (12) The README's auto-unpark section said the
+  sweep was opt-in and off by default, and that it drops `sdlc:parked` from a goal whose blocker
+  closed. The scaffolded config ships `"mode": "on"` (`sources.DEFAULT_AUTO_UNPARK_MODE`), and since
+  #1394 the sweep lifts only the `sdlc:blocked` overlay and never resumes a park. The section is
+  rewritten from `auto_unpark.py`, and a test pins its stated default to the template's and the
+  code's, so the two cannot drift again. The blocker-chain paragraph that said a goal is "parked"
+  while the sweep resumes it now names the `sdlc:blocked` overlay. The `readme-usage` mode of
+  `tools/onboarding_control.py` now finds a `python3 <script>.py` gesture in any spelling and is
+  red for one whose path is not `<installed-sigma>/<shipped script>`. Its usage parser also reads a
+  nested optional group (`[--apply [--replace-old-plugin]]`, `migrate.py` since #326) as one flag
+  group, and `VERSION_ALLOW` gives a reason for `docs/upgrading.md`'s `1.4.25` (#326).
+
 - **A Status option spelled differently from `project.columns` no longer makes a card move a
   silent no-op** (#280). This was confirmed on the fake with GitHub's default options. A read-only
   read on 2026-09-29 found both `In progress` and `In Progress` on real default-shaped boards,

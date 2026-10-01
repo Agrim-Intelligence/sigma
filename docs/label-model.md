@@ -716,7 +716,7 @@ So there is now a reconciler with **three tiers**, and the tiering is the import
   │ 2. AUTOMATIC  — fixed with no human. Two cases, TWO SEPARATE       │
   │    off-by-default gates:                                           │
   │      a) a CLOSED issue still carrying a stale label — an ACTIVITY  │
-  │         overlay, or `sdlc:goal` (1.3.8). NEVER `sdlc:parked` or    │
+  │         overlay, or `sdlc:goal`.        NEVER `sdlc:parked` or    │
   │         `sdlc:needs-confirmation`: those are a human's decision.   │
   │         Safe because a closed issue can never be picked, has no    │
   │         worker, and waking nothing up. `reconcile.mode`.           │
@@ -1006,7 +1006,7 @@ re-examines it, and it returns to `Ready` on its own the moment the last issue i
 A `Parked` card has left the machine's world entirely; it is in a human's review queue and stays
 there until a person decides otherwise.
 
-Before 1.3.7 both wrote the single `Blocked` column, so on a board with both options the card
+Before `Parked` existed, both wrote the single `Blocked` column, so on a board with both options the card
 contradicted the labels, and a person reading the board to find what needed them saw self-clearing
 blocks mixed in with real decisions. A park now writes `Parked`, falling back to `Blocked` on a board
 that has no such option — so nothing changes for a board that predates it.
@@ -1075,7 +1075,7 @@ only ever legitimate alongside `sdlc:goal`.
 
 Just close it. There is no done-label.
 
-**Since 1.3.8 the loop strips `sdlc:goal` itself** when it completes a goal, and the reconciler
+**The loop strips `sdlc:goal` itself** when it completes a goal, and the reconciler
 treats a leftover `sdlc:goal` on a closed issue as stale and removes it. So a Done issue reaches
 "no lifecycle label" on its own, and you no longer have to remember.
 

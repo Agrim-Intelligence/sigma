@@ -1991,8 +1991,8 @@ def _reattach_base(sdlc_dir, config, goal, run, base_root, s, branch, base, base
     a wrong guess retargets a PR or rebases unit work onto the integration branch.
 
     THE PRECONDITION IS ROUTINE. `finish()` removes the worktree and unlinks the record but KEEPS the
-    branch — the documented `auto_merge: off` / fork / read-only path where a goal records `done`
-    with its PR still open. A later start on that goal lands here.
+    branch — the documented `auto_merge: off` / fork / read-only path where a goal records `review`
+    with its PR still open (`done` only once it merges, #232). A later start on that goal lands here.
 
     WHY THIS WAS NOT A BUG BEFORE #1467, which is also the shape of the fix: the old base was
     `s["base"] or HEAD`, deterministic from config, so re-resolving reproduced the same answer and

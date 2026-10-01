@@ -43,12 +43,16 @@ scripts turns the control red:
 | every init flag the Quickstart shows (`/agrim-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/agrim-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
 | `/agrim-init --demo` (the `### Claude Code` block) | its flags |
 | `python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . ...` | the script `/agrim-init` runs |
+| every `python3 <installed-sigma>/...` gesture under "What `/agrim-init` will ask you" and "If `/agrim-init` says you lack access" (fenced lines and the access table's inline code; #277) | github mode, confirm variant, after the goal is done: each run from the repository root, `<file>` = a file holding `make test`, `<remote>` = `origin`; `preflight.py check` may exit 1 (its report), every other gesture must exit 0 -- and the exit code is not trusted alone: `GESTURE_EFFECTS` asserts each one's effect (`set` wrote `make test` with enforce ON, `decline` left enforce OFF, `check` printed exactly one preflight report header consistent with its exit code, `use-remote` wrote `work.remote`, `local-only` wrote `work.enabled: false`) |
+| every OTHER `python3 <script>.py ...` gesture anywhere in the README (fenced, inline, a table cell, inside `$(...)`; the path spelled any way -- `<installed-sigma>/`, `"${VAR}/"`, `~/dir/`, absolute, repository-relative, a bare name; #277 review) | mode `readme-usage`, every run: a path that is not `<installed-sigma>/<shipped script>` is red (it exits 2 when copied from the user's repository); the rest are not executed (most need a live board or loop) but checked against the script's own usage -- `<script> --help` must exit 0 with a usage, the gesture's verb must be one it lists, its positional count must fit that alternative (`<x>` required, `[x]` optional, `...`/`(...)`/`[options]` open), and every `--flag` must appear in the usage. Limit: a gesture that parses but does something other than its prose claims is not caught; that stays a prose review |
 | `/agrim-loop` (the `### Claude Code` block) | must be present; the loop is then driven by the scripts the agrim-loop skill names |
-| `python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate (confirm variant) |
+| `python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate (confirm variant) |
 
 A README or printed command runs only in one pinned shape: first token `python3` (or the `python` /
 `py` that init itself prints), run as the control's own interpreter; second token a `.py` script
-that exists under the Sigma directory's `skills/` or `tools/`; no argument carrying shell syntax
+that exists under the Sigma directory's `skills/` or `tools/`, read from the repository root as a
+shell reads it (`<installed-sigma>` is the Sigma directory; any other relative path resolves against
+the repository, so a path relative to the plugin directory is refused, #277); no argument carrying shell syntax
 (`` ` `` `$` `;` `&` `|` `<` `>` parentheses, braces, globs, control characters). Anything else is
 refused before it runs. Nothing goes through a shell.
 
@@ -137,6 +141,14 @@ GREEN 9.22s (`loop verify` exit 3, no evidence, approved merge "review gate pass
 refused while open, reconcile `1 done (PR #100 merged)`, issue closed, 86 gh calls -- the same
 count as the confirm variant). The #312 guard reverted: `github/no-command` RED at its review-gate
 assertion (the merge parked on evidence first), `github` GREEN, exit 1.
+
+2026-09-29, macOS (Darwin 25.6), Python 3.12.13, after #277 (the README's init gestures executed),
+`/opt/homebrew/bin/python3.12 tools/onboarding_control.py`: exit 0, 14.8s wall. `local` GREEN 2.27s,
+`github` GREEN 5.51s (its five README init gestures 0.03-0.13s each, all exit 0), `local/no-command`
+GREEN 2.18s, `github/no-command` GREEN 4.72s. The control: the pre-#277 README (`git show
+HEAD:README.md`, plugin-relative paths) through `--mode both --variant confirm --readme <that copy>`:
+exit 1, `local` and `github` both RED at `verify confirm (README gesture)`, "not a script under
+<sigma>/skills or /tools, read from the repository root".
 
 The run below predates the variants and the `[ask]` parsing; its install and per-step numbers are
 still the only measured `--install` run.
@@ -228,6 +240,9 @@ Each was run through the CLI gesture above, not only through pytest, and each is
 | README drift: `verify_detect.py confirm` renamed `accept` | `--mode local --readme <copy>` | exit 1, RED at `verify confirm (README gesture)` |
 | README drift: `init_flow.py` renamed `init.py` | `--mode local --readme <copy>` | exit 1, RED at `readme` (the README names a script that does not ship) |
 | README drift: `/agrim-loop`, `/agrim-init` or `claude plugin install` renamed | pytest (parse) | RED at `readme` |
+| #277: an init gesture written relative to the plugin directory (the pre-#277 README's `python3 skills/agrim-init/scripts/preflight.py use-remote ...`), a renamed verb (`decline` -> `refuse`), or a placeholder nothing fills | `--mode github --variant confirm --readme <copy>` | exit 1, RED at `README gesture: ...`; the same drift in the confirm gesture is RED at `verify confirm (README gesture)`, "read from the repository root" |
+| #277 review: the pre-fix README line `python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py   # see KEEP_PARKED_MARKER ...` (exit 2, usage) | `--mode local --variant confirm --readme <copy>` | exit 1, RED at `README usage`: "positionals [] fit no usage alternative"; also red in pytest: a missing `<ref>` on `dismiss-text`, an unknown verb, an unknown `--flag`, an extra positional, a script that does not ship |
+| #277 review: each `GESTURE_EFFECTS` predicate fed a wrong effect (enforce left ON after `decline`, a usage line or an rc/report mismatch from `preflight.py check`) | pytest | each one false |
 | Every assertion in `check_local` (5), `check_github` (11), `check_no_command` (5) and `check_github_no_command` (13) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
 
 Each guard the controls above rely on was itself broken once (the variant removed, the offered-flag

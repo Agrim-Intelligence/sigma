@@ -10,7 +10,7 @@ set -uo pipefail   # (no -e on purpose: the script MUST always reach the JSON em
 # (an .sdlc/ directory exists). In any other repo this hook is a silent no-op —
 # a machine-wide plugin install must not inject policy into unrelated projects
 # or fight a repo's own discipline. SIGMA_GATE_GLOBAL=1 restores the
-# pre-0.6 always-on behavior for anyone who relied on the universal reminder.
+# always-on behavior (every repository) for anyone who relies on the universal reminder.
 # Same guard pattern as research_capture.py (absent config == off, fail-open).
 # #239: the same switch under the plugin's previous env prefix still works; SIGMA_ wins when set.
 # The old name is spelled from two fragments (a guarded private name in this tree); `${!name}` is

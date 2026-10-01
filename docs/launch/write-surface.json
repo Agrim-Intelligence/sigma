@@ -2073,6 +2073,14 @@
       "risk": "medium"
     },
     {
+      "path": "tools/onboarding_control.py",
+      "function": "run_readme_gestures",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/baseline.py",
       "function": "snapshot",
       "rule": "fs-write",

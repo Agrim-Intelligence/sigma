@@ -186,7 +186,7 @@ untouched, still `sdlc:goal`, never claimed and never parked, and becomes pickab
 the blocker closes (`discovery.dependency_gate`, on by default, github mode only). When that is
 why a pass came back empty, stderr says so: `nothing pickable — N goal(s) are waiting on an open
 prerequisite (...)`. Report that line rather than "the backlog is drained", and do NOT `--skip`
-past it — skipping is what the pre-1.4.2 loop needed and it is no longer the right gesture.
+past it — skipping is what an older loop needed and it is no longer the right gesture.
 
 Once someone closes the blocker, the very next `next`/`next-batch` releases its dependents: the
 gate re-reads the blocker's live state before it reports a hold, rather than trusting the board

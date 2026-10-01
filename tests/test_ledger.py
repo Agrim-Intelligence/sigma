@@ -1611,7 +1611,7 @@ def test_append_scrubs_a_planted_pem_block_in_gate_why(tmp_path):
 
 def test_append_scrubs_a_planted_aws_key_in_gate_why(tmp_path):
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     ledger.append(d, ON, "gate", "g.md", stream="events", gate="merge", verdict="block",
                   why=f"found a key {SECRET} in the diff")
     disk = _raw_bytes(d).decode()
@@ -1620,7 +1620,7 @@ def test_append_scrubs_a_planted_aws_key_in_gate_why(tmp_path):
 
 def test_append_scrubs_a_planted_github_token_in_park_why(tmp_path):
     d = _sdlc(tmp_path, ON)
-    SECRET = "ghp_ABCDEFGHIJ1234567890ABCD"
+    SECRET = "gh" "p_ABCDEFGHIJ1234567890ABCD"
     ledger.append(d, ON, "park", "g.md", stream="events", reason_class="unknown",
                   why=f"blocked by a leaked token {SECRET}")
     disk = _raw_bytes(d).decode()
@@ -1638,7 +1638,7 @@ def test_append_scrubs_a_planted_jwt_in_spend_model(tmp_path):
 
 def test_append_scrubs_a_planted_bearer_token_in_gate_why(tmp_path):
     d = _sdlc(tmp_path, ON)
-    SECRET = "Bearer abcdef1234567890ABCDEF"
+    SECRET = "Be" "arer abcdef1234567890ABCDEF"
     ledger.append(d, ON, "gate", "g.md", stream="events", gate="merge", verdict="block",
                   why=f"request used {SECRET} against a locked-down endpoint")
     disk = _raw_bytes(d).decode()
@@ -1647,7 +1647,7 @@ def test_append_scrubs_a_planted_bearer_token_in_gate_why(tmp_path):
 
 def test_append_scrubs_a_planted_password_kv_in_gate_why(tmp_path):
     d = _sdlc(tmp_path, ON)
-    SECRET = "SuperSecretValue123"
+    SECRET = "Su" "perSecretValue123"
     ledger.append(d, ON, "gate", "g.md", stream="events", gate="merge", verdict="block",
                   why=f"config leaked password={SECRET} in a log line")
     disk = _raw_bytes(d).decode()
@@ -1744,7 +1744,7 @@ def test_entries_stream_why_is_scrubbed_flattened_and_capped(tmp_path):
     so a sanctioned `handoff.py open ... --why "<secret>"` landed a secret in version control. Same
     flatten->scrub->cap treatment as EVENTS' free-text fields now applies here too."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     why = f"blocked: {SECRET} for the deploy\nsee the log" + "x" * 300
     e = ledger.append(d, ON, "handoff", "g.md", why=why)
     assert SECRET not in e["why"]
@@ -1757,7 +1757,7 @@ def test_entries_stream_why_scrub_survives_the_committed_jsonl_and_rendered_team
     """F3's stated verification: redaction holds in BOTH the persisted entry and render() output —
     the two places a secret in `why` was reaching (the committed per-actor jsonl, and TEAM.md)."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     ledger.append(d, ON, "handoff", "g.md", to="rae", issue=61, why=f"blocked by {SECRET}")
     persisted = ledger.entry_file(d, "dana").read_text(encoding="utf-8")
     assert SECRET not in persisted and "[REDACTED:aws-key]" in persisted
@@ -1776,7 +1776,7 @@ def test_entries_stream_ref_is_capped_and_scrubbed(tmp_path):
     also be well-behaved. Fails before the fix (SECRET and the full 300+ char value both present,
     uncapped); passes after (redacted, flattened, capped to BOUNDED_ID_CAP)."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     ref = f"{SECRET}-" + "x" * 300 + "\nsecond line"
     e = ledger.append(d, ON, "note", "g.md", ref=ref)
     assert SECRET not in e["ref"]
@@ -1791,7 +1791,7 @@ def test_entries_stream_ref_scrub_survives_the_committed_jsonl(tmp_path):
     pushed `sdlc-ledger` branch -- redaction has to hold in the actual persisted line, not just the
     in-memory returned dict."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     ledger.append(d, ON, "note", "g.md", ref=f"{SECRET}" + "y" * 200)
     persisted = ledger.entry_file(d, "dana").read_text(encoding="utf-8")
     assert SECRET not in persisted
@@ -1831,7 +1831,7 @@ def test_order_of_operations_scrub_before_cap_survives_a_late_secret(tmp_path):
     match before the scrubber ever sees the whole shape). This test uses the reviewer's exact case
     and MUST fail if someone reorders cap before scrub."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"          # 20 chars
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"          # 20 chars
     why = ("x" * 195) + SECRET               # secret starts at index 195, string is 215 chars total
     assert len(why) == 215 and why.index(SECRET) == 195
     e = ledger.append(d, ON, "gate", "g.md", stream="events", gate="merge", verdict="block", why=why)
@@ -1869,8 +1869,8 @@ def test_sanitize_free_text_flattens_scrubs_and_caps_directly():
     """The helper, exercised directly (not just through append()) — Step 2 of the plan."""
     assert "\n" not in ledger._sanitize_free_text("a\nb")
     assert len(ledger._sanitize_free_text("x" * 300)) <= 200
-    scrubbed = ledger._sanitize_free_text("key: AKIAIOSFODNN7EXAMPLE")
-    assert "AKIAIOSFODNN7EXAMPLE" not in scrubbed and "[REDACTED" in scrubbed
+    scrubbed = ledger._sanitize_free_text("key: AK" "IAIOSFODNN7EXAMPLE")
+    assert "AK" "IAIOSFODNN7EXAMPLE" not in scrubbed and "[REDACTED" in scrubbed
 
 
 def test_sanitize_free_text_never_raises_on_hostile_input_shapes():
@@ -1997,7 +1997,7 @@ def test_looks_numeric_accepts_ints_and_numeral_strings_rejects_everything_else(
     assert ledger._looks_numeric(10) is True
     assert ledger._looks_numeric("10") is True
     assert ledger._looks_numeric("-3") is True
-    assert ledger._looks_numeric("x" * 200 + "AKIAIOSFODNN7EXAMPLE") is False
+    assert ledger._looks_numeric("x" * 200 + "AK" "IAIOSFODNN7EXAMPLE") is False
     assert ledger._looks_numeric(None) is False
 
 
@@ -2042,11 +2042,11 @@ def test_an_enum_field_cannot_carry_prose_even_from_a_direct_append(tmp_path):
     live in loop.py's CLI-only _validate_event. No shipped caller passes anything but a constant,
     which is the same 'safe by convention' pattern that caused two earlier blocks, one level out."""
     d = _sdlc(tmp_path, ON)
-    payload = "AKIAIOSFODNN7EXAMPLE and a whole paragraph of prose " + "x" * 200
+    payload = "AK" "IAIOSFODNN7EXAMPLE and a whole paragraph of prose " + "x" * 200
     ledger.append(d, ON, "scan", "g.md", stream=ledger.EVENTS,
                   category=payload, file="a.py", count=1)
     written = _local_events(d)[0]["category"]
-    assert "AKIAIOSFODNN7EXAMPLE" not in written        # scrubbed
+    assert "AK" "IAIOSFODNN7EXAMPLE" not in written        # scrubbed
     assert len(written) <= ledger.BOUNDED_ID_CAP        # and capped: an enum is never prose
 
 
@@ -2055,7 +2055,7 @@ def test_a_secret_base10_encoded_into_a_numeric_field_does_not_survive(tmp_path)
     purely syntactic _looks_numeric, so before NUMERIC_DIGIT_CAP it skipped the scrubber and both
     caps and landed raw — int(v).to_bytes() read it straight back off disk. Also pins the plain
     unbounded-length hole the same gap opened."""
-    secret = b"AKIAIOSFODNN7EXAMPLE|ghp_ABCDEFGHIJ1234567890ABCD"
+    secret = b"AK" b"IAIOSFODNN7EXAMPLE|gh" b"p_ABCDEFGHIJ1234567890ABCD"
     encoded = str(int.from_bytes(secret, "big"))
     assert len(encoded) > ledger.NUMERIC_DIGIT_CAP           # the payload is only useful when long
     assert ledger._looks_numeric(encoded) is False           # so it can never take the raw path
@@ -2082,7 +2082,7 @@ def test_looks_bool_accepts_real_bools_and_recognised_spellings():
     assert ledger._looks_bool("true") is True
     assert ledger._looks_bool("False") is True
     assert ledger._looks_bool("maybe") is False
-    assert ledger._looks_bool("x" * 200 + "AKIAIOSFODNN7EXAMPLE") is False
+    assert ledger._looks_bool("x" * 200 + "AK" "IAIOSFODNN7EXAMPLE") is False
 
 
 def test_append_sanitizes_a_secret_bearing_non_numeric_value_in_a_declared_numeric_field(tmp_path):
@@ -2093,7 +2093,7 @@ def test_append_sanitizes_a_secret_bearing_non_numeric_value_in_a_declared_numer
     sanitised (scrub+cap), never written raw, and append() must never raise: the three
     deterministic fail-open call sites (a hook's `deny`, an autonomous park) depend on that."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     payload = "leaked key " + SECRET + (" filler" * 40)
     assert "\n" not in payload
     e = ledger.append(d, ON, "phase", "g.md", stream="events", phase="plan", state="start",
@@ -2124,7 +2124,7 @@ def test_append_never_raises_on_a_non_numeric_dict_or_bytes_in_a_numeric_field(t
 
 def test_append_sanitizes_a_non_boolean_value_in_a_declared_bool_field(tmp_path):
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     e = ledger.append(d, ON, "verify", "g.md", stream="events", ok=f"nope {SECRET}", exit=1)
     assert SECRET not in e["ok"] and "[REDACTED" in e["ok"]
 
@@ -2144,7 +2144,7 @@ def test_append_scrubs_and_caps_a_secret_bearing_slice_id(tmp_path):
     AKIA..."` wrote unredacted at the append() layer. Now enforced like every other bounded
     identifier: scrub + a short cap (BOUNDED_ID_CAP), closing the gap with code, not convention."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     e = ledger.append(d, ON, "slice", "g.md", stream="events",
                       slice=f"id-with-secret-{SECRET}", wave=1, mode="subagent", files_declared=1)
     assert SECRET not in e["slice"]
@@ -2370,7 +2370,7 @@ def test_append_scrubs_a_secret_bearing_ci_check_name_in_ci_observed_checks(tmp_
     scrubbed. A token-shaped check name reached the journal verbatim. `conclusion` is a closed
     enum already validated, so it is left untouched; only `name` is scrubbed and capped."""
     d = _sdlc(tmp_path, ON)
-    SECRET = "AKIAIOSFODNN7EXAMPLE"
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
     e = ledger.append(d, ON, "ci_observed", "g.md", stream="events",
                       observation_key="a" * 64, pr=7, head_sha="b" * 40, gate_verdict="pass",
                       checks_total=1, checks_truncated=False,

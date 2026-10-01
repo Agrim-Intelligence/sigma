@@ -280,7 +280,7 @@ def test_record_done_names_the_missing_command_not_run_verify_first(tmp_path):
     assert _loop(sdlc, "verify", ".sdlc", ".sdlc/goals/0000-demo.md").returncode == 3
     d = _loop(sdlc, "record", ".sdlc", ".sdlc/goals/0000-demo.md", "done")
     assert d.returncode == 4 and "no verify command declared" in d.stderr
-    assert "confirm .sdlc <n> <id>" in d.stderr and f"{vd.python_command()} <sigma>" in d.stderr
+    assert "confirm .sdlc <n> <id>" in d.stderr and f"{vd.python_command()} <installed-sigma>" in d.stderr
 
 
 def test_the_shipped_template_itself_never_holds_the_trap():

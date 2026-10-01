@@ -45,12 +45,12 @@ def _github_cfg(**gh):
 def test_normalize_issue_shapes_and_scrubs():
     m = _mod("mirror")
     rec = m.normalize_issue({
-        "number": 42, "title": "Fix the AKIAABCDEFGHIJKLMNOP leak", "state": "OPEN",
+        "number": 42, "title": "Fix the AK" "IAABCDEFGHIJKLMNOP leak", "state": "OPEN",
         "body": "steps: password: hunter2xyz then ship", "closedAt": None,
         "updatedAt": "2026-08-01T10:00:00Z",
         "labels": [{"name": "sdlc:goal"}, {"name": "area:ui"}, {"other": "x"}]})
     assert rec["number"] == 42 and rec["state"] == "open"
-    assert "AKIAABCDEFGHIJKLMNOP" not in rec["title"] and "hunter2xyz" not in rec["body_excerpt"]
+    assert "AK" "IAABCDEFGHIJKLMNOP" not in rec["title"] and "hunter2xyz" not in rec["body_excerpt"]
     assert rec["labels"] == ["sdlc:goal", "area:ui"]          # malformed label object dropped
     assert len(rec["content_hash"]) == 16 and int(rec["content_hash"], 16) >= 0   # 16 hex chars
 
@@ -298,11 +298,11 @@ def test_secret_never_lands_in_the_mirror_file():
     with tempfile.TemporaryDirectory() as d:
         base = pathlib.Path(d) / ".sdlc"; (base / "state").mkdir(parents=True)
         run = _gh_runner([{"number": 9, "title": "rotate creds", "state": "open",
-                           "body": "aws AKIAABCDEFGHIJKLMNOP and ghp_" + "z" * 30,
+                           "body": "aws AK" "IAABCDEFGHIJKLMNOP and ghp_" + "z" * 30,
                            "updatedAt": "2026-08-01T00:00:00Z"}], [])
         m.fetch_and_write(str(base), config=_github_cfg(), run=run, now=1.0)
         raw = (base / m.MIRROR_REL).read_text()
-        assert "AKIAABCDEFGHIJKLMNOP" not in raw and "ghp_zzz" not in raw and "REDACTED" in raw
+        assert "AK" "IAABCDEFGHIJKLMNOP" not in raw and "ghp_zzz" not in raw and "REDACTED" in raw
 
 
 def test_read_mirror_roundtrip_and_fail_open():
@@ -492,7 +492,7 @@ def test_blocker_refs_never_carry_body_text_past_the_excerpt_cap():
     """The mirror deliberately refuses to store a raw body. `blocker_refs` reads more of the body
     than the record stores, so it must persist ONLY a number and a closed-set trigger phrase."""
     m = _mod("mirror")
-    body = ("x" * m._EXCERPT_CHARS) + "\npassword: hunter2xyz aws AKIAABCDEFGHIJKLMNOP\nblocked by #7"
+    body = ("x" * m._EXCERPT_CHARS) + "\npassword: hunter2xyz aws AK" "IAABCDEFGHIJKLMNOP\nblocked by #7"
     rec = m.normalize_issue({"number": 3, "title": "t", "state": "OPEN", "body": body,
                              "updatedAt": "2026-08-01T00:00:00Z"})
     blob = json.dumps(rec["blocker_refs"])

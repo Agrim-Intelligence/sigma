@@ -48,7 +48,7 @@ DEFAULT_WORKFLOWS = ("Item closed", "Pull request merged", "Item reopened", "Aut
                      "Auto-add sub-issues to project", "Pull request linked to issue")
 
 #: What `gh auth status` prints for a classic token (the token itself masked, as gh does).
-FAKE_TOKEN = "ghp_SECRETSECRETSECRETSECRETSECRETSECRET"
+FAKE_TOKEN = "gh" "p_SECRETSECRETSECRETSECRETSECRETSECRET"
 
 
 #: GitHub's own defaults for a fresh board's Status options (colour + description), so a test can

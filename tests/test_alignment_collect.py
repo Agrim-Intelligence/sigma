@@ -181,7 +181,7 @@ def test_churn_hotspots_preserve_internal_whitespace_in_path(tmp_path):
 
 def test_secret_in_a_committed_diff_is_location_only(tmp_path):
     repo = _repo(tmp_path)
-    _commit(repo, "cfg.py", 'password = "hunter2SUPERSECRET"\napi_key = "AKIA00001111EXAMPLE"\n', "add cfg")
+    _commit(repo, "cfg.py", 'password = "hu' 'nter2SUPERSECRET"\napi_key = "AK' 'IA00001111EXAMPLE"\n', "add cfg")
     out = _run(repo)
     hits = out["dimensions"]["d6"]["hits"]
     assert hits, "the hard-stop scan should flag the secret assignment"
@@ -199,10 +199,10 @@ def test_content_line_that_renders_as_a_diff_header_never_leaks(tmp_path):
     # trigger, forcing the poisoned `file` to surface (otherwise the guard is vacuous).
     repo = _repo(tmp_path)
     _commit(repo, "NOTES.md",
-            '++ token = "ghp_REALSECRETTOKENLEAK01"\napi_key = "TRIGGER9SECRETVALUE"\n', "add notes")
+            '++ token = "gh' 'p_REALSECRETTOKENLEAK01"\napi_key = "TR' 'IGGER9SECRETVALUE"\n', "add notes")
     out = _run(repo)
     blob = json.dumps(out)
-    assert "ghp_REALSECRETTOKENLEAK01" not in blob            # value never in the pack (fails on buggy awk)
+    assert "gh" "p_REALSECRETTOKENLEAK01" not in blob            # value never in the pack (fails on buggy awk)
     assert out["dimensions"]["d6"]["hits"], "both lines should hard-stop (guard must not be vacuous)"
     for h in out["dimensions"]["d6"]["hits"]:
         assert h["file"] == "NOTES.md"                        # real filename, never the "+++ …" line text

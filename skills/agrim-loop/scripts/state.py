@@ -989,7 +989,7 @@ def verify_set_hint():
     `py` -- a PATH lookup, never an execution -- so the printed gesture runs where it is read."""
     import shutil
     py = next((n for n in ("python3", "python", "py") if shutil.which(n)), "python3")
-    return (f"set one: {py} <sigma>/skills/agrim-init/scripts/verify_detect.py "
+    return (f"set one: {py} <installed-sigma>/skills/agrim-init/scripts/verify_detect.py "
             "detect . lists candidates with ids, `... confirm .sdlc <n> <id>` sets candidate n if "
             "its id still matches (enforce ON), "
             "or put your command in config verify.command; or `... decline .sdlc` to turn "

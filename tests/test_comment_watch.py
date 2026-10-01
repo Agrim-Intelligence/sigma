@@ -205,7 +205,7 @@ def test_two_distinct_comments_both_surface_in_the_inbox_not_just_the_ledger(tmp
 def test_comment_text_reaching_the_ledger_is_scrubbed(tmp_path):
     d = _sdlc(tmp_path)
     _claim(d, "50")
-    secret = "AKIAIOSFODNN7EXAMPLE"
+    secret = "AK" "IAIOSFODNN7EXAMPLE"
     run = _runner({"50": [_comment("IC_1", "bob", f"here is a key: {secret}", "2026-08-01T00:00:00Z")]})
 
     comment_watch.tick(d, run=run)

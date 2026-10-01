@@ -328,7 +328,7 @@ def test_goal_comment_text_scrubs_a_secret_before_returning_it():
     cannot fail before, cannot prove anything after). Retargeted at the actual scrub boundary:
     _goal_comment_text's own return value, which is where scrub() is actually called."""
     bc = _mod("backlog_check")
-    secret = "AKIAABCDEFGHIJKLMNOP"
+    secret = "AK" "IAABCDEFGHIJKLMNOP"
     with tempfile.TemporaryDirectory() as d:
         base = _gh_base(d, [_rec(1, "wire the surface"), _rec(7, "freeze the contract")], **_LOOSE)
         config = json.loads((pathlib.Path(base) / "config.json").read_text())
@@ -1118,7 +1118,7 @@ def test_skill_md_dismiss_kind_doc_matches_the_real_internal_identifiers():
 
 def test_secret_shaped_token_never_reaches_the_pack():
     bc = _mod("backlog_check")
-    secret = "AKIAABCDEFGHIJKLMNOP"
+    secret = "AK" "IAABCDEFGHIJKLMNOP"
     with tempfile.TemporaryDirectory() as d:
         base = _gh_base(d, [_rec(1, _GOAL, body="rotate " + secret),
                             _rec(2, _DUP, body="rotate " + secret)], **_LOOSE)

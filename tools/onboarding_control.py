@@ -13,14 +13,31 @@ script path (the Codex/Cursor script-form line), the `/agrim-init` flags (the Cl
 the `verify_detect.py confirm .sdlc <n> <id>` gesture, and the `claude plugin ...` / `codex plugin
 ...` install lines. A README that drifts from the shipped scripts (a renamed script, a renamed
 verb, a dropped line) therefore turns this control red; a README the control does not read could
-drift silently. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
+drift silently. Since #277 every `python3` gesture under "What /agrim-init will ask you" and "If
+/agrim-init says you lack access" is also EXECUTED (github mode, confirm variant, after the goal is
+done), from the repository root, `<installed-sigma>` standing for the Sigma directory -- so a
+gesture a user could not copy from their repository (a path relative to the plugin directory), a
+renamed verb, or a placeholder nothing fills is red. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
 `.claude-plugin/marketplace.json` declares, and every init flag the Quickstart shows must be one
 init_flow.py's parser accepts. Everything else comes from what /agrim-init PRINTS: the `[ask]`
 lines (parsed in init_flow.ask_line's shape, `[ask] <id>: <prose> -> --flag VALUE|VALUE ; ...`,
 and answered through ASK_POLICY, keyed by the flag NAME the line offers -- a renamed or new flag
 is "unanswerable [ask]", red), the verify candidate number and id, and the `Next:` line's
 `loop.py next` command. A README or printed command runs only in the pinned shape
-`python3 <existing script under skills/ or tools/> <args without shell syntax>` (see _py_argv).
+`python3 <existing script under skills/ or tools/> <args without shell syntax>`, the script path
+read from the repository root as a shell would (see _py_argv).
+
+EVERY OTHER README GESTURE IS USAGE-CHECKED (#277 review). The two init subsections are executed;
+every other `python3 <script> ...` line ANYWHERE in the README (fenced, inline, in a table or a
+`$(...)`, the script path spelled any way: `<installed-sigma>/`, `"${VAR}/"`, `~/dir/`, absolute,
+repository-relative or a bare name) cannot be -- most of them need a live board or a running loop.
+A path that is not `<installed-sigma>/<shipped script>` is red at once (it exits 2 when copied
+from the user's repository); every other one is
+checked against the script's OWN usage instead: `<script> --help` runs (a pure print in every
+shipped script; exit 0 required), and the gesture's verb, positional count and `--flags` must match
+one of the usage alternatives it prints (see `usage_problems`). That is the decision, and its limit:
+a gesture that PARSES but then does something other than its prose claims is not caught here --
+that stays a prose review. Mode line `readme-usage`; red names the gesture and the usage it missed.
 
 TWO VARIANTS per mode. `confirm`: a Makefile test target, confirmed by the README gesture
 (enforce ON). `no-command`: a repository with nothing to confirm, the verify question left open,
@@ -92,6 +109,43 @@ DEMO_FILE = "sigma-demo.md"
 #: SCAFFOLD writes is what `record done` sees. The confirm variant overwrites whatever default
 #: init scaffolded, so only this variant sees a bad default (review of PR #306).
 VARIANTS = ("confirm", "no-command")
+#: The README's one placeholder for the directory Sigma's scripts live in (#277): defined once in the
+#: Quickstart, and every `python3` gesture a user copies starts with it.
+INSTALLED_SIGMA = "<installed-sigma>"
+#: The README subsections whose `python3` gestures the control EXECUTES from the repository root.
+GESTURE_SECTIONS = ("### What `/agrim-init` will ask you", "### If `/agrim-init` says you lack access")
+#: Exit codes a README gesture may return: `preflight.py check` exits 1 on a blocking failure (the
+#: fake world has no real token), which is its documented report, not a broken gesture. Everything
+#: else must exit 0; a usage error is 2. The exit code alone is not trusted: GESTURE_EFFECTS below
+#: asserts what each gesture DID.
+GESTURE_OK_RC = {("preflight.py", "check"): (0, 1)}
+
+
+def _cfg(repo):
+    return json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+
+
+def _preflight_report(proc, repo):
+    """A preflight REPORT, never a usage line: exactly one header, `OK - ...` or `N problem(s)`.
+    rc 1 (blocking) needs the problems header; rc 0 takes either (a non-blocking problem, e.g. a
+    non-github.com origin, is reported at exit 0)."""
+    ok = re.search(r"(?m)^sigma: preflight OK - ", proc.stdout)
+    bad = re.search(r"(?m)^sigma: preflight - \d+ problem\(s\)", proc.stdout)
+    if bool(ok) == bool(bad):
+        return False
+    return proc.returncode == 0 or (proc.returncode == 1 and bool(bad))
+
+
+#: (script, verb) -> predicate(proc, repo): the observable effect of each executed README gesture
+#: (#277 review: "assert the effect, not just the code"). A gesture with no entry here is red.
+GESTURE_EFFECTS = {
+    ("verify_detect.py", "set"): lambda p, r: _cfg(r)["verify"].get("command") == "make test"
+    and _cfg(r)["verify"].get("enforce") is True,
+    ("verify_detect.py", "decline"): lambda p, r: _cfg(r)["verify"].get("enforce") is False,
+    ("preflight.py", "check"): _preflight_report,
+    ("preflight.py", "use-remote"): lambda p, r: _cfg(r)["work"].get("remote") == "origin",
+    ("preflight.py", "local-only"): lambda p, r: _cfg(r)["work"].get("enabled") is False,
+}
 
 
 class Red(Exception):
@@ -223,8 +277,30 @@ def parse_quickstart(text, sigma=ROOT):
                   "\"What /agrim-init will ask you\"")
     out["verify_confirm"] = confirm[0]
     for rel in [out["init_script"]] + [t for t in shlex.split(confirm[0]) if t.endswith(".py")]:
-        if not (pathlib.Path(sigma) / rel).is_file():
+        if not (pathlib.Path(sigma) / rel.replace(INSTALLED_SIGMA + "/", "")).is_file():
             raise Red("readme", f"the README names {rel}, which {sigma} does not ship")
+    out["gestures"] = readme_gestures(text)
+    if not out["gestures"]:
+        raise Red("readme", f"no `python3` gesture under {GESTURE_SECTIONS}")
+    return out
+
+
+def readme_gestures(text):
+    """Every `python3 ...` gesture in the two init subsections (fenced lines and inline code, e.g.
+    the access table's), in README order -- the commands the README tells a user to copy. Pure."""
+    out = []
+    for heading in GESTURE_SECTIONS:
+        start = text.find(heading)
+        if start < 0:
+            raise Red("readme", f"no {heading!r} subsection")
+        body = text[start + len(heading):]
+        end = re.search(r"(?m)^##+ ", body)
+        body = body[:end.start()] if end else body
+        spans = _FENCE.findall(body) + re.findall(r"`([^`\n]+)`", _FENCE.sub("", body))
+        for span in spans:
+            for line in _lines(span):
+                if re.match(r"python3?\s", line) and line not in out:
+                    out.append(line)
     return out
 
 
@@ -292,16 +368,19 @@ def _git(args, cwd, env):
 _ARG_UNSAFE = re.compile(r"[`$;&|<>(){}*?!\\\x00-\x1f\x7f]")
 
 
-def _py_argv(line, sigma, subs, step="readme gesture"):
+def _py_argv(line, sigma, subs, step="readme gesture", *, cwd=None):
     """A README/printed `python3 <script> ...` line -> argv, or Red(step) naming what was refused.
 
     PINNED SHAPE, because the text comes from a document and a program's output, not from code:
     the first token must be `python3` / `python` / `py` (what `verify_detect.python_command()`
     prints) and becomes THIS interpreter (so a 3.10 CI leg tests 3.10); the second must be a
-    `.py` script that EXISTS under the Sigma directory's `skills/` or `tools/` (relative, resolved
-    against it -- "Paths above are relative to the Sigma plugin directory" -- or absolute inside
-    it); every remaining argument, after each `<placeholder>` in `subs` is replaced, must be free
-    of shell syntax. Anything else is refused before anything runs. Nothing goes through a shell."""
+    `.py` script that EXISTS under the Sigma directory's `skills/` or `tools/`. The script path is
+    read the way a shell reads it from `cwd` -- the user's repository root, where the README says
+    to run every gesture (#277): `<installed-sigma>` becomes the Sigma directory, and any other
+    relative path resolves against `cwd`, so a README path relative to the plugin directory (which
+    a user could not copy from their repository) is refused as "not a script under ...". Every
+    remaining argument, after each `<placeholder>` in `subs` is replaced, must be free of shell
+    syntax. Anything else is refused before anything runs. Nothing goes through a shell."""
     try:
         toks = shlex.split(line)
     except ValueError as exc:
@@ -309,11 +388,16 @@ def _py_argv(line, sigma, subs, step="readme gesture"):
     if len(toks) < 2 or not re.fullmatch(r"python3?|py", toks[0]):
         raise Red(step, f"refused {line!r}: not `python3 <sigma script> ...`")
     sigma = pathlib.Path(sigma).resolve()
-    script = pathlib.Path(toks[1])
-    script = (script if script.is_absolute() else sigma / script).resolve()
+    # Legacy internal callers parse generated `<sigma>/...` commands rather than README text.
+    # Preserve that safe, plugin-root-relative behavior while README callers pass their repository
+    # root explicitly and therefore remain subject to the documented-gesture check.
+    cwd = sigma if cwd is None else pathlib.Path(cwd).resolve()
+    script = pathlib.Path(toks[1].replace(INSTALLED_SIGMA, str(sigma)))
+    script = (script if script.is_absolute() else cwd / script).resolve()
     inside = any(sigma / d in script.parents for d in ("skills", "tools"))
     if script.suffix != ".py" or not inside or not script.is_file():
-        raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or /tools")
+        raise Red(step, f"refused {line!r}: {toks[1]} is not a script under {sigma}/skills or "
+                  f"/tools, read from the repository root {cwd}")
     out = [sys.executable, str(script)]
     for t in toks[2:]:
         for k, v in subs.items():
@@ -450,13 +534,206 @@ def _init_and_verify(run, qs, sigma, repo, env, mode, variant):
         return out.stdout, scaffolded
     n, ident = _candidate(out.stdout)
     argv = _py_argv(qs["verify_confirm"], sigma, {"<n>": n, "<id>": ident},
-                    step="verify confirm (README gesture)")
+                    step="verify confirm (README gesture)", cwd=repo)
     run.step("verify confirm (README gesture)", argv, repo, env)
     cfg = json.loads((repo / ".sdlc" / "config.json").read_text(encoding="utf-8"))
     run.assertions.append(_check("verify confirmed: enforce ON with a command",
                                  bool(cfg["verify"].get("enforce")) and bool(cfg["verify"].get("command")),
                                  cfg["verify"]))
     return out.stdout, scaffolded
+
+
+#: What the README's own placeholders stand for when the control runs a gesture (#277). `<n>`/`<id>`
+#: belong to the confirm gesture, which `verify confirm (README gesture)` runs with init's printed
+#: candidate; the file holds the Makefile target that variant confirms.
+GESTURE_FILE = "verify-command.txt"
+GESTURE_SUBS = {"<file>": GESTURE_FILE, "<remote>": "origin"}
+
+
+def run_readme_gestures(run, qs, sigma, repo, env):
+    """Every README `python3` gesture from the two init subsections, run as the README says: from
+    the repository root, `<installed-sigma>` = the Sigma directory. -> [(gesture, rc)]. A gesture
+    whose script path is not copyable from the repository root is refused by `_py_argv` (red at
+    this step); one exiting outside GESTURE_OK_RC is red; a placeholder the control cannot fill is
+    red. Runs last in github mode (confirm variant): `decline` and `local-only` change config."""
+    (repo / GESTURE_FILE).write_text("make test\n", encoding="utf-8")
+    ran = []
+    for line in qs["gestures"]:
+        if line == qs["verify_confirm"]:
+            continue                                   # already run, with init's printed <n> <id>
+        filled = line
+        for k, v in GESTURE_SUBS.items():
+            filled = filled.replace(k, v)
+        left = [t for t in re.findall(r"<[\w -]+>", filled) if t != INSTALLED_SIGMA]
+        if left:
+            raise Red("README gesture", f"{line!r}: the control cannot fill {left}")
+        argv = _py_argv(filled, sigma, {}, step="README gesture", cwd=repo)
+        toks = shlex.split(filled)
+        ok = GESTURE_OK_RC.get((pathlib.Path(toks[1]).name, toks[2] if len(toks) > 2 else ""), (0,))
+        proc = run.step("README gesture: " + line, argv, repo, env, ok_rc=ok)
+        key = (pathlib.Path(toks[1]).name, toks[2] if len(toks) > 2 else "")
+        effect = GESTURE_EFFECTS.get(key)
+        if effect is None or not effect(proc, repo):
+            raise Red("README gesture", f"{line!r}: exit {proc.returncode} but "
+                      + ("no effect is defined for it (GESTURE_EFFECTS)" if effect is None
+                         else "its effect is not observable: " + proc.stdout.strip()[-300:]))
+        ran.append((line, proc.returncode))
+    return ran
+
+
+#: A `python3 <script>.py <args>` gesture anywhere in the README, in EVERY spelling of the script
+#: path (#277 review): `<installed-sigma>/...`, quoted or not, `${VAR}/...` / `$VAR/...`,
+#: `~/<dir>/...`, an absolute path, a repository-relative `skills/...`, or a bare `watch_daemon.py`.
+#: Group 1 is the quote, 2 the script path as written, 3 the args (to the end of the code span / line,
+#: a `)` closing a `$(...)`, a table `|`, a `#` comment, or a shell `;` / `&`).
+_README_GESTURE = re.compile(r"python3?\s+([\"']?)([^\s\"'`|()]+?\.py)\1(?![\w.])([^`\n)|#;&]*)")
+_SHIPPED_REL = re.compile(r"(?:^|/)((?:skills|hooks|evals|tools)/[\w./-]+\.py)$")
+#: `[...]` may nest one level (`[--apply [--replace-old-plugin]]`): one token, never a `[...` group
+#: followed by a stray required `]`.
+_USAGE_TOKEN = re.compile(r"\[(?:[^\[\]]|\[[^\]]*\])*\]|\([^)]*\)|<[^>]*>|\S+")
+
+
+def _shipped_rel(script, sigma):
+    """The shipped path (under the Sigma dir) a gesture's script path names, or None. A bare name
+    resolves only when exactly one shipped script (outside tests/ and .sdlc/) carries it."""
+    m = _SHIPPED_REL.search(script)
+    if m:
+        return m.group(1)
+    if "/" in script or sigma is None:
+        return None
+    hits = [q for q in pathlib.Path(sigma).rglob(script)
+            if not {"tests", ".sdlc", ".git"} & set(q.relative_to(sigma).parts)]
+    return hits[0].relative_to(sigma).as_posix() if len(hits) == 1 else None
+
+
+def readme_script_gestures(text, sigma=None):
+    """[(script path under the Sigma dir, [args], script path as written)] for every
+    `python3 <script>.py` gesture anywhere in the README, in any spelling (see `_README_GESTURE`),
+    deduplicated, in README order. The first item is the path as written when it names no shipped
+    script. Pure except for the bare-name lookup under `sigma`."""
+    out = []
+    for m in _README_GESTURE.finditer(text):
+        try:
+            args = shlex.split(m.group(3), comments=True)
+        except ValueError:
+            args = m.group(3).split()
+        written = m.group(2)
+        item = (_shipped_rel(written, sigma) or written, args, written)
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def _split_top(body):
+    """`a | b (c | d) | e` -> ['a', 'b (c | d)', 'e']: split on ` | ` outside brackets/parens."""
+    parts, depth, cur, i = [], 0, "", 0
+    while i < len(body):
+        ch = body[i]
+        depth += ch in "[(<"
+        depth -= ch in "])>"
+        if depth == 0 and body.startswith(" | ", i):
+            parts.append(cur)
+            cur, i = "", i + 3
+            continue
+        cur += ch
+        i += 1
+    return parts + [cur]
+
+
+def usage_alternatives(help_text):
+    """A script's `--help` text -> [{"required": [set of literals | None], "extras": n}]: one per
+    usage alternative. `<x>` is a required placeholder (None), `a|b` a literal set, `[x]` one
+    optional positional, `[--flag]` none, `(...)` / `...` / `[options]` any number (lenient: a
+    grouped alternative is not modelled), `--flag VALUE` a flag and its value. Pure."""
+    alts = []
+    for line in help_text.splitlines():
+        m = re.match(r"\s*(?:usage:\s*)?[\w-]+\.py\b(.*)$", line)
+        if not m:
+            continue
+        for alt in _split_top(m.group(1)):
+            alt = re.sub(r"^\s*[\w-]+\.py\b", "", alt)
+            toks, req, extras, i = _USAGE_TOKEN.findall(alt), [], 0, 0
+            while i < len(toks):
+                t = toks[i]
+                if t[0] == "(" or "..." in t or t == "[options]":
+                    extras = float("inf")                         # open-ended: lenient on purpose
+                elif t[0] == "[":
+                    extras += not t[1:].lstrip().startswith("-")  # `[x]` one optional slot, `[--f]` none
+                elif t.startswith("-") and len(t) > 1:
+                    if i + 1 < len(toks) and toks[i + 1][0] not in "-[(":
+                        i += 1                                    # the flag's value
+                elif t.startswith("<"):
+                    req.append(None)
+                else:
+                    req.append(set(t.split("|")))
+                i += 1
+            alts.append({"required": req, "extras": extras})
+    return alts
+
+
+def usage_problems(args, help_text):
+    """Why `args` fits none of the usage alternatives in `help_text`, or [] when one fits. A
+    `--flag` the help never names is a problem; a flag the help shows with a value takes the next
+    argument; the rest are positionals, matched verb-first (a first positional that is a verb of
+    some alternative is only matched against the alternatives starting with that verb). Pure."""
+    problems, pos, i = [], [], 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-") and len(a) > 1:
+            flag = a.split("=", 1)[0]
+            if flag not in help_text:
+                problems.append(f"flag {flag} is not in the script's usage")
+            elif "=" not in a and re.search(re.escape(flag) + r"[ =](?![-\[\]|)])\S", help_text):
+                i += 1
+        else:
+            pos.append(a)
+        i += 1
+    alts = usage_alternatives(help_text)
+    verbs = set().union(*[a["required"][0] for a in alts if a["required"] and a["required"][0]])
+    if pos and pos[0] in verbs:
+        alts = [a for a in alts if a["required"] and a["required"][0] and pos[0] in a["required"][0]]
+
+    def fits(alt):
+        req = alt["required"]
+        if not len(req) <= len(pos) <= len(req) + alt["extras"]:
+            return False
+        return all(r is None or p in r for p, r in zip(pos, req))
+    if not any(fits(a) for a in alts):
+        problems.append(f"positionals {pos} fit no usage alternative")
+    return problems
+
+
+def check_readme_usage(text, sigma, cwd):
+    """The `readme-usage` mode (#277 review): every README script gesture against its script's own
+    `--help` usage. -> a mode result like run_local's. `--help` runs from `cwd` (a scratch dir)."""
+    t0, checked, bad, helps = time.monotonic(), [], [], {}
+    gestures = readme_script_gestures(text, sigma)
+    for rel, args, written in gestures:
+        script = pathlib.Path(sigma) / rel
+        line = f"python3 {written} {' '.join(args)}".strip()
+        if not script.is_file():
+            bad.append({"gesture": line, "problems": [f"{rel} is not shipped"]})
+            continue
+        if not written.startswith(INSTALLED_SIGMA + "/"):
+            bad.append({"gesture": line, "problems": [
+                f"not copyable from the user's repository: `{written}` is not "
+                f"`{INSTALLED_SIGMA}/{rel}`"]})
+            continue
+        if rel not in helps:
+            proc = subprocess.run([sys.executable, str(script), "--help"], cwd=str(cwd),
+                                  capture_output=True, text=True, timeout=60)
+            helps[rel] = proc.stdout if proc.returncode == 0 and "usage" in proc.stdout else None
+        if helps[rel] is None:
+            bad.append({"gesture": line, "problems": ["`--help` did not exit 0 with a usage"]})
+            continue
+        problems = usage_problems(args, helps[rel])
+        checked.append({"gesture": line, "problems": problems})
+        if problems:
+            bad.append({"gesture": line, "problems": problems, "usage": helps[rel].strip()[:600]})
+    ok = bool(gestures) and not bad
+    return {"mode": "readme-usage", "ok": ok, "failed_step": None if ok else "README usage",
+            "detail": bad or (None if gestures else "no README script gesture found"),
+            "checked": checked, "seconds": round(time.monotonic() - t0, 3)}
 
 
 def _check(name, ok, detail=None):
@@ -525,6 +802,14 @@ def check_github(obs):
         _check("every gh call was one the fake models", obs.get("unhandled") == "",
                obs.get("unhandled")),
     ]
+
+
+def check_gestures(obs, qs):
+    """#277: every README gesture of the two init subsections ran from the repository root."""
+    want = [g for g in qs["gestures"] if g != qs["verify_confirm"]]
+    ran = [g for g, _rc in obs.get("readme_gestures") or []]
+    return _check("every README init gesture ran from the repository root", want and ran == want,
+                  {"want": want, "ran": ran})
 
 
 def check_github_no_command(obs):
@@ -624,7 +909,8 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         run.step("loop start", [sys.executable, loop / "loop.py", "start", ".sdlc", "--session-pid", pid],
                  repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
+            ["--session-pid", pid]
         for _ in range(5):
             goal = run.step("loop next", nxt, repo, env).stdout.strip()
             if not goal or goal == "DONE":
@@ -758,7 +1044,8 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
         py = sys.executable
         run.step("loop start", [py, loop / "loop.py", "start", ".sdlc", "--session-pid", pid], repo, env)
-        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
+            ["--session-pid", pid]
         goal = run.step("loop next", nxt, repo, env).stdout.strip()
         if goal != "1":
             raise Red("loop next", f"expected issue 1, got {goal!r}")
@@ -811,12 +1098,16 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         shown = subprocess.run(["git", "--git-dir", str(remote), "show", f"main:{WORK_FILE}"],
                                capture_output=True, text=True)
         obs["remote_file"] = shown.stdout if shown.returncode == 0 else None
+        if variant == "confirm":
+            obs["readme_gestures"] = run_readme_gestures(run, qs, sigma, repo, env)
     except Red as red:
         run.failed = red.step
         run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
     obs["unhandled"] = unhandled.read_text(encoding="utf-8") if unhandled.is_file() else ""
     if run.failed is None:
         run.assertions += (check_github_no_command if variant == "no-command" else check_github)(obs)
+        if variant == "confirm":
+            run.assertions.append(check_gestures(obs, qs))
     calls = _gh_calls(log_path)
     ev = obs.get("evidence") or {}
     obs["evidence"] = {k: ev.get(k) for k in ("command", "exit", "verify_state")} if ev else None
@@ -944,6 +1235,7 @@ def main(argv):
                 else:
                     run_from = pathlib.Path(inst)
         result["scripts_from"] = str(run_from)
+        result["modes"]["readme-usage"] = check_readme_usage(text, run_from, root)
         if qs:
             for variant in VARIANTS if args.variant == "all" else (args.variant,):
                 tag = "" if variant == "confirm" else "/" + variant

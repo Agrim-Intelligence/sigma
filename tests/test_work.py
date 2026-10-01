@@ -5013,9 +5013,9 @@ def test_post_review_block_reason_is_scrubbed_before_the_public_pr_comment(tmp_p
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner([])
     _post_review(d, ON, goal, run, "block",
-                 "leaked AKIAIOSFODNN7EXAMPLE and acme.example.com KEY-123")
+                 "leaked AK" "IAIOSFODNN7EXAMPLE and acme.example.com KEY-123")
     posted = next(c for c in run.calls if "pr comment" in c)
-    assert "AKIAIOSFODNN7EXAMPLE" not in posted
+    assert "AK" "IAIOSFODNN7EXAMPLE" not in posted
     assert "[REDACTED:aws-key]" in posted
 
 

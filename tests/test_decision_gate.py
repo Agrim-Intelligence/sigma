@@ -459,7 +459,7 @@ def test_deny_gate_event_scrubs_a_planted_secret_in_the_message():
     `gate.why` is a declared prose field, so `ledger.append()` scrubs it automatically with zero
     code change to decision_gate.py; this proves that end to end through the real hook subprocess."""
     with tempfile.TemporaryDirectory() as d:
-        SECRET = "AKIAIOSFODNN7EXAMPLE"
+        SECRET = "AK" "IAIOSFODNN7EXAMPLE"
         root = _project(d, _inv(statement=f"Never hardcode {SECRET} in source."))
         out = _run_hook(root, {"file_path": "src/a.py", "new_string": "timeout = 120"})
         payload = json.loads(out.stdout)

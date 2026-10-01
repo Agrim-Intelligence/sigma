@@ -410,11 +410,9 @@ DEFAULT_AUTO_UNPARK_MODE = "on"
 
 
 def _auto_unpark(config):
-    """`discovery.auto_unpark.mode` -> 'off' (default) | 'on'. An unrecognised or missing value
-    falls back to 'off' rather than raising or silently sweeping anything -- a typo in config must
-    not activate a feature nobody asked for, the identical defensive shape `_blocker_promotion`
-    immediately above already established for this exact class of opt-in, GitHub-only mechanism
-    (#1129, mirroring #900's own gating pattern on purpose).
+    """`discovery.auto_unpark.mode` -> 'on' (default since #1394, `DEFAULT_AUTO_UNPARK_MODE`) | 'off'.
+    An unrecognised or missing value falls back to that default rather than raising. It was opt-in
+    (#1129); #1394 made it default-on once the sweep stopped resuming `sdlc:parked` issues.
 
     Unlike `blocker_promotion`'s genuine three-way `smart`/`always` distinction (two materially
     different RULES for computing a promoted rank), there is no analogous middle mode here to

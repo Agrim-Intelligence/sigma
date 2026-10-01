@@ -86,7 +86,7 @@ drain; `enabled: false` opts back into the old behaviour. Goal-count limits reta
 throughout one session, including refills; a new session resets them. A stopped run is
 resume-safe (a budget stop, re-run, picks up
 where it left off). Run
-**Overnight without babysitting:** `python3 skills/agrim-loop/scripts/supervise_daemon.py .sdlc` wraps the
+**Overnight without babysitting:** `python3 <installed-sigma>/skills/agrim-loop/scripts/supervise_daemon.py .sdlc` wraps the
 loop in a zero-polling supervisor — blocked while a session runs, and on exit it classifies the
 tail: loop finished → stop; per-run budget → relaunch; **usage-limit exhaustion → sleeps until the
 stated reset time (+ jitter) and relaunches**; unknown crash → capped escalating backoff. Stop it
@@ -148,9 +148,16 @@ Sigma's own; no companion ships it.
 
 ## Quickstart
 
-`<SIGMA_REPO>` is the one placeholder on this page: the git URL of the public Sigma repository once
-it is published, or the path to a local Sigma checkout until then. Every install line below uses it.
-The marketplace it adds is named `sigma`, so the plugin id is `sigma@sigma` on every host.
+Two placeholders stand in for paths on this page. `<SIGMA_REPO>` is the git URL of the public Sigma
+repository once it is published, or the path to a local Sigma checkout until then; every install line
+below uses it. `<installed-sigma>` is the directory Sigma's scripts live in on your machine: the
+plugin directory your host shows for the installed `agrim-init` skill (Claude Code, Codex), or your
+Sigma checkout (Cursor). Every `python3 <installed-sigma>/...` command on this page is run from the
+root of your repository, where `.sdlc/` lives.
+
+The marketplace `<SIGMA_REPO>` adds is named `sigma`, so the plugin id is `sigma@sigma` on Claude Code
+and on Codex (measured: [docs/onboarding-control.md](docs/onboarding-control.md), which installs both
+into an isolated profile).
 
 ### Claude Code
 
@@ -182,25 +189,25 @@ codex plugin marketplace add <SIGMA_REPO>
 codex plugin add sigma@sigma
 ```
 
-Codex reads the same `.claude-plugin/marketplace.json`. These two lines follow Codex's published
-plugin CLI; this README's own end-to-end run was on Claude Code, not Codex. Then run the `agrim-init`
-skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
+Codex reads the same `.claude-plugin/marketplace.json`: Sigma ships no other manifest, and these
+two lines, run into an isolated `CODEX_HOME` with codex-cli 0.154.0-alpha.6.2, added the marketplace
+`sigma` and installed `sigma@sigma` from it. A live Codex session was not part of that run. Then run
+the `agrim-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
 ([details](#codex-partial-live-validation)):
 
 ```
 python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --codex --demo
 ```
 
-`<installed-sigma>` is the plugin directory Codex shows for the installed `agrim-init` skill.
-
 ### Cursor
 
-Cursor has no plugin system, so Sigma runs from a checkout
+Sigma ships no Cursor plugin manifest, so on Cursor it runs from a checkout, and `<installed-sigma>`
+is that checkout (whether Cursor's own plugin support could install Sigma is unverified)
 ([details](#cursor-experimental)):
 
 ```
-git clone <SIGMA_REPO> ~/sigma
-python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo
+git clone <SIGMA_REPO> <installed-sigma>
+python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --cursor --demo
 ```
 
 ### The next step is `/agrim-init`
@@ -241,31 +248,33 @@ or a work flip) for questions `.sdlc/config.json` does not already answer.
   one, give your own, or decline. Confirming turns `verify.enforce` on; declining leaves it off and
   records why. With enforce off and no command there is nothing to prove, so nothing demands verify
   evidence: `record done` and, in github mode, the PR merge still pass their other gates (review,
-  CI, done-means-merged). The gestures, with `<n>` and `<id>` copied from the printed list:
+  CI, done-means-merged). The gestures, with `<n>` and `<id>` copied from the printed list (init
+  prints them with both paths already filled in):
 
   ```
-  python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>
-  python3 skills/agrim-init/scripts/verify_detect.py set .sdlc --command-file <file>
-  python3 skills/agrim-init/scripts/verify_detect.py decline .sdlc
+  python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>
+  python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py set .sdlc --command-file <file>
+  python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py decline .sdlc
   ```
 
 - **Access.** Init checks, before the loop needs them: a git repository, the `origin` remote, the
-  base branch pushed there, `gh` installed, `gh auth status`, and the token's scopes (`repo`,
-  `workflow`, plus `read:org` for an organization and `project` when a board is on). A directory that
-  is not a git repository is refused before anything is written. Re-run the check any time:
+  base branch pushed there, `gh` installed, `gh auth status`, and the token's scopes (`repo`;
+  `workflow` when work is on; `read:org` when the owner is an organization; `project` when a board is
+  on). A directory that is not a git repository is refused before anything is written. Re-run the
+  check any time:
 
   ```
-  python3 skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc
+  python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc
   ```
 
-Paths above are relative to the Sigma plugin directory; inside a Claude Code session the skill runs
-them for you.
+Run these from the root of your repository (the [Quickstart](#quickstart) defines
+`<installed-sigma>`); inside a Claude Code session the skill runs them for you.
 
 ### If `/agrim-init` says you lack access
 
 Each `[FAIL]` or `[CANNOT VERIFY]` line prints its own fix. These are the commands it prints, with
-your host and base branch filled in. `gh auth login` and `gh auth refresh` are interactive, so run
-them yourself; Sigma never runs them for you.
+your host and base branch filled in; run them from the root of your repository. `gh auth login` and
+`gh auth refresh` are interactive, so run them yourself; Sigma never runs them for you.
 
 | Init reports | Run |
 |---|---|
@@ -276,9 +285,15 @@ them yourself; Sigma never runs them for you.
 | `gh` not installed | install it from https://cli.github.com, then re-run the check |
 | gh not logged in | `gh auth login -h github.com -s repo,workflow,read:org` |
 | token missing scopes | `gh auth refresh -s <missing scopes> -h github.com` |
-| a fine-grained token (scopes cannot be read) | `gh auth login -h github.com -s repo,workflow` |
-| you want another remote | `python3 skills/agrim-init/scripts/preflight.py use-remote .sdlc <remote>` |
-| no GitHub remote at all, and you want to go on without one | `python3 skills/agrim-init/scripts/preflight.py local-only .sdlc` |
+| a fine-grained token (scopes cannot be read) | `gh auth login -h github.com -s <required scopes>` |
+| you want another remote | `python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py use-remote .sdlc <remote>` |
+| no GitHub remote at all, and you want to go on without one | `python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py local-only .sdlc` |
+
+`<required scopes>` is the list init prints for this repository, by the rule under **Access** above
+(for example `repo,workflow,read:org` for an organization's repository with work on). A fine-grained
+token has no scopes to read, so init names the permissions it needs instead: Contents, Pull requests
+and Workflows write, plus Projects write when a board is on and access to the organization when
+the owner is one.
 
 If your organization enforces SAML SSO, the scopes line also names the token settings page where
 you authorize the token for it.
@@ -320,8 +335,8 @@ unit record the old plugin wrote after the conversion is refused and left for
 `feature_sync.py repair`; see docs/upgrading.md):
 
 ```
-python3 skills/agrim-doctor/scripts/migrate.py .sdlc            # lists every change
-python3 skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes and prints what it changed
+python3 <installed-sigma>/skills/agrim-doctor/scripts/migrate.py .sdlc            # lists every change
+python3 <installed-sigma>/skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes and prints what it changed
 ```
 
 The old plugin cannot read Sigma's spellings, so migrate once the whole team runs Sigma. See
@@ -448,11 +463,11 @@ Defaults below are what `/agrim-init` scaffolds (`config.json.tmpl`). Not everyt
 | `backlog_check: {"enabled": true}` | off | pre-work cross-check: parks a picked goal that duplicates / is obsoleted-by / is blocked-by other backlog items, before any token spend — includes a bounded comment-read fallback for a human-authored, comment-only dependency marker; a goal marked as a decomposition child/meta-goal (first-line `sigma:decomposed-from=`/`decompose-of=`) is exempt from the duplicate/obsolete/in-flight-similarity signals, never from an explicit blocker or a recorded hand-off; `/agrim-doctor` flags one that's still silently ignored |
 | `goal_decompose: {"enabled": true}` | off | pre-work oversized-goal classifier: a zero-LLM check flags (`mode: "log"`, default) or parks (`mode: "park"`) a picked goal whose body reads like an epic, before any token spend; `mode: "file"` additionally files one idempotency-guarded "Decompose #N" meta-issue before parking (`max_children` caps its own later split); thresholds are corpus-calibrated against this repo's own issue history (see `goal_size.py`); a decomposition child/meta-goal is exempt by construction |
 | `work: {"enabled": true}` | on (older configs may still hold unset/`null`, which reads as off) | one worktree + branch + PR per goal; your checkout never moves, and `verify_command` runs in the goal's own tree |
-| `work.auto_merge` | `"off"` | `"protected"` merges only where the base *requires* checks/reviews; `"always"` merges any clean+safe PR. A fork or read-only repo never merges — it opens the PR and records `done` |
+| `work.auto_merge` | `"off"` | `"protected"` merges only where the base *requires* checks/reviews; `"always"` merges any clean+safe PR. A fork or read-only repo never merges — it opens the PR and records `review`; the goal is `done` once the PR merges |
 | `work.require_review` | `"changes"` | a real PR-review gate, independent of branch protection: `"changes"` parks on a Request-changes / unresolved thread; `"approval"` also requires an APPROVED PR before merging |
 | `budget.max_iterations` / `max_minutes` / `max_tokens` / `max_codex_raw_tokens` | 20 / 480 / 500,000 / 0 (off) | goals-per-session / wall-clock / priced Claude-equivalent / measured Codex raw phase-token admission ceilings; each enforces only when set to a positive number |
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
-| `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the pre-0.6 always-on prompt gate |
+| `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the always-on prompt gate (the reminder in every repository, adopted or not) |
 
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
@@ -860,10 +875,11 @@ stalled behind is by definition not speculative. And the label pair is decisive:
 means Sigma filed it, `sdlc:needs-confirmation` means **no human has ever ruled on it**. When a
 person filed the proposal themselves, `sdlc:followup` is absent and it is left alone.
 
-The park that follows names each blocker and what happened to it, so a park is never a bare
-"blocked" a human has to investigate from scratch — and when every blocker was resolved, it says so:
-the goal is parked behind work that is now moving, and the auto-unpark sweep resumes it when that
-work closes.
+The comment that follows names each blocker and what happened to it, so a block is never a bare
+"blocked" a human has to investigate from scratch. When every blocker is now workable, the goal is
+not parked at all: it gets the `sdlc:blocked` overlay, keeps `sdlc:goal`, and the auto-unpark sweep
+resumes it when that work closes. When one is not (a parked blocker, a human's proposal, a
+third-party issue), the goal is parked, and only a person resumes it.
 
 #### The blocker chain, which is what the loop does by default
 
@@ -925,15 +941,31 @@ the GitHub UI should not have to learn a syntax. That inference has both error d
   still read as one, incorrectly. Nothing about the shape of those distinguishes them from a real
   dependency; only their meaning does.
 
-Two escapes exist when that misfires, and both are deliberate, one-line actions:
+Two escapes exist when that misfires. Each is a **comment on the goal's issue**, posted with
+`loop.py note` — the helper scripts only print text, they never write to GitHub themselves:
 
 ```bash
-# retire ONE specific wrong match (kind + ref) on this goal, permanently
-python3 skills/agrim-loop/scripts/backlog_check.py dismiss-text blocked-by 40
+# 1. dismiss ONE wrong match (kind + ref) found by the pick-time backlog cross-check
+TEXT=$(python3 <installed-sigma>/skills/agrim-loop/scripts/backlog_check.py dismiss-text blocked-by 40 "sequencing note, not a dependency")
+python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "$TEXT"
 
-# or exempt this goal from the auto-unpark sweep entirely
-python3 skills/agrim-loop/scripts/auto_unpark.py   # see KEEP_PARKED_MARKER in its SKILL docs
+# 2. exempt ONE goal from the auto-unpark sweep entirely
+python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate checkpoint. <!-- sigma:keep-parked -->"
 ```
+
+What each one does, and does not do:
+
+- **`dismiss-text` only prints** a sentence ending in `<!-- sigma:dismissed-finding kind=blocked-by
+  ref=40 -->`; nothing happens until `loop.py note` posts it. Once posted, the backlog cross-check
+  downgrades that exact `(kind, ref)` finding from confident to advisory, so it no longer parks the
+  goal at pick — the finding stays visible as an advisory note, it is not deleted. It does not change
+  what the auto-unpark sweep or blocker promotion read. **GitHub mode only**: in local mode the note
+  lands in `.sdlc/journey/<goal>.md` and the next park says the dismissal was *not applied*.
+- **The `sigma:keep-parked` marker** makes the auto-unpark sweep skip that issue before any blocker
+  matching, for as long as the comment stays. The sweep only ever resumes `sdlc:blocked` goals (a
+  goal labelled `sdlc:parked` is never auto-resumed anyway), so this is for a `sdlc:blocked` goal
+  you want held. `/agrim-unpark`'s `keep-parked` decision posts the same marker for you. There is no
+  `auto_unpark.py` command for it: that script's only verb is `sweep <sdlc_dir> [--apply]`.
 
 `/agrim-triage`'s `enact` has the mirror-image caveat: it treats any such match as an
 already-present marker and skips writing the real one, so confirm edges in its question round. **Setup:** run `gh auth login` once; leave `repo` empty to auto-detect from the git remote,
@@ -1136,14 +1168,10 @@ there.
 Config: `discovery.blocker_promotion.mode` (`off` default | `smart` | `always`) is the only key this
 feature reads.
 
-**A goal BLOCKED on another issue is re-examined automatically once that blocker closes.** A goal a
-human PARKED never is — that is the whole distinction, and it is why the sweep can be on by default
-without ever overriding a person. The human-driven undos are **`/agrim-unpark`** (which answers the question that
-caused the park before flipping anything) and `/agrim-triage`'s `enact`, the third stage of a
-manually-driven `survey` → `plan --pick` → `enact --apply` campaign; the unattended loop never calls
-into either, so a park-on-blocked-by goal could sit `sdlc:parked` forever even after the thing
-blocking it closed. `discovery.auto_unpark` closes that gap automatically — opt-in, mirroring
-`blocker_promotion`'s own gating pattern exactly:
+**A goal BLOCKED on another issue resumes by itself once that blocker closes. A goal a human
+PARKED never does.** That split is why this sweep ships on. When work on a goal finds a genuine
+dependency, the loop gives it the `sdlc:blocked` overlay: it keeps `sdlc:goal`, and nothing picks it
+while the overlay is on. `discovery.auto_unpark` is the sweep that lifts it:
 
 ```json
 "discovery": {
@@ -1153,52 +1181,41 @@ blocking it closed. `discovery.auto_unpark` closes that gap automatically — op
 }
 ```
 
-`discovery.auto_unpark.mode` is **`"on"` by default** — set it to `"off"` to turn the sweep off.
-Every pick re-examines each
-`sdlc:parked` **or `sdlc:blocked`** issue: if its recorded `blocked by #N` reference (read from the issue's own body or its
-comments — including the automated park comment itself, minus Sigma's own fixed "Parked by
-Sigma — needs human review: " prefix text, which is never itself read as a reference) is
-now closed, `sdlc:goal` is re-added and
-`sdlc:parked` dropped, so a pick can pick it back up — never the SAME pick that just unparked it (see
-the cooldown paragraph below), only a later one. A parked issue referencing several blockers waits for
-every one of them; a parked issue with no machine-detectable blocker reference at all is left
-completely alone, whatever else it was parked for — this never guesses at a park it can't prove is
-stale. Every automated unpark is paired with an explanatory comment naming the closed blocker(s) —
-never a silent label change, the identical rule `blocker_promotion` above already follows. Off by
-default on purpose: a park can be a deliberate human checkpoint, not just a dependency wait, and
-turning this on is a decision to make for your own repo, not something that should change
-unattended-loop behavior for an adopter who never asked for it.
+`discovery.auto_unpark.mode` is **`"on"` by default**: the scaffolded config ships it, and a missing
+or unrecognised value also reads as `"on"`. Set it to `"off"` to turn the sweep off. On every pick
+it reads each open `sdlc:blocked` issue. If every `blocked by #N` reference the issue recorded (in
+its body or its comments; Sigma's own fixed "Parked by Sigma — needs human review: " prefix is never
+read as one) now points at a closed issue or pull request, it drops `sdlc:blocked` (and a stale
+`sdlc:in-progress`), re-adds `sdlc:goal` if it is missing, moves the card back to Ready on a board
+repository, and posts a comment naming the closed blocker(s). A label never changes silently. A goal
+naming several blockers waits for all of them, and one with no machine-detectable reference is left
+alone. The same sweep keeps `sdlc:blocking` in sync on the blocker issues themselves.
 
-**A per-goal opt-out, for a park you already know is deliberate.** Post a comment on the parked
-issue carrying an HTML-comment marker — `<!-- sigma:keep-parked -->` — and that ONE issue is
-skipped by every future sweep pass, unconditionally, for as long as the comment stays on the issue:
-whatever its park text says, even after `discovery.auto_unpark.mode` is `"on"` for the rest of the
-repo. This mirrors the `DISMISS_MARKER` convention `backlog_check`'s dismissal-of-a-finding feature
-already uses (an issue comment, never a body rewrite) — post it the same way, via
-`python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/loop.py" note <sdlc_dir> <goal> "<text>"`,
-or generate the exact narrative-plus-marker text with `auto_unpark.keep_parked_comment(reason=...)`.
-The check runs before any blocker-phrase matching at all, not as a filter layered on top of one, so
-it can never be defeated by how the park text happens to read.
+**It never resumes an `sdlc:parked` issue** (#1394). The sweep decides from the text's shape alone,
+so it cannot tell a stale dependency from a person's deliberate checkpoint that happens to say
+"blocked by #N". A park stays a human decision: resume it with **`/agrim-unpark`**, which answers the
+question that caused the park before it changes a label, or with `/agrim-triage`'s `enact`, the
+third stage of a manually driven `survey` → `plan --pick` → `enact --apply` campaign. The sweep still
+reads a parked issue for the blockers it names, so those blockers get `sdlc:blocking`.
 
-**Know what you're accepting before you opt in.** The sweep decides purely from TEXTUAL SHAPE — a
-`blocked by #N`-style phrase plus the `sdlc:parked` or `sdlc:blocked` label — never intent, so it has no way to tell a
-deliberate human checkpoint apart from an ordinary stale block; both look identical to it, and it
-unparks either one the moment the referenced `#N` closes, unless it carries the opt-out marker above.
-There IS a cooldown: the pick that unparks a goal can never also be the one that picks it back up, so
-a human always gets one real pick's worth of window — the audit comment lands first — to notice and
-re-park it before autonomous work resumes. Composing this with goal-level parallelism
-(`parallel.goals.enabled: true` plus `max_concurrent >= 2`, both independently opt-in) can shrink that
-window to near-zero wall-clock time: a goal unparked in one `next_batch()` slot can be dispatched from
-a different slot in that SAME batch, milliseconds later. That window is a mitigation for a block the
-sweep could not have known was deliberate ahead of time — it is not detection. For a park you already
-know is deliberate, use the opt-out marker instead: it is real detection, checked before the sweep
-ever looks at the park text, and is not affected by the cooldown/parallelism timing above at all.
+**A cooldown.** The pick that lifts a block never also picks that goal up; a later pick does, so the
+audit comment lands first. Goal-level parallelism (`parallel.goals.enabled: true` plus
+`max_concurrent >= 2`, both opt-in) can shrink that window to milliseconds: a goal lifted in one
+`next_batch()` slot can be dispatched from another slot of the same batch.
+
+**A per-goal opt-out.** A comment carrying the HTML marker `<!-- sigma:keep-parked -->` makes every
+sweep skip that one issue, for as long as the comment stays on it: a blocked goal carrying it stays
+`sdlc:blocked` until a person acts. The check runs before any blocker phrase is read, so the wording
+of the park text cannot defeat it. Post it like any comment the loop writes,
+`python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "<text>"`, or generate
+the text with `auto_unpark.keep_parked_comment(reason=...)`; `/agrim-unpark`'s keep-parked decision
+writes the same marker.
 
 Same reach as `blocker_promotion`, for the same reason: GitHub mode only. A local goal's own "blocked
 by #N" reference is a file path, never a bare issue number the same regex can match, so there is
 nothing for local-goals mode to ever sweep.
 
-Config: `discovery.auto_unpark.mode` (`off` default | `on`) is the only key this feature reads.
+Config: `discovery.auto_unpark.mode` (`on` default | `off`) is the only key this feature reads.
 
 ### Label reconciliation (optional, off by default)
 
@@ -1212,13 +1229,13 @@ stops existing as far as the loop is concerned.
 
 ```bash
 # Read-only. Safe any time. Lists every issue Sigma is responsible for and classifies it.
-python3 skills/agrim-loop/scripts/reconcile.py census .sdlc
+python3 <installed-sigma>/skills/agrim-loop/scripts/reconcile.py census .sdlc
 
 # Read-only against GitHub; writes a local proposal file with the EVIDENCE for each correction.
-python3 skills/agrim-loop/scripts/reconcile.py propose .sdlc
+python3 <installed-sigma>/skills/agrim-loop/scripts/reconcile.py propose .sdlc
 
 # Apply an approved proposal. Dry-run without --apply, like every apply-shaped verb here.
-python3 skills/agrim-loop/scripts/reconcile.py apply .sdlc --plan .sdlc/plans/reconcile/<file>.json --apply
+python3 <installed-sigma>/skills/agrim-loop/scripts/reconcile.py apply .sdlc --plan .sdlc/plans/reconcile/<file>.json --apply
 ```
 
 It **enumerates the population, not the corruption** — asking "which issues am I responsible for?"
@@ -1279,8 +1296,8 @@ by the ledger — the two mechanisms can't leak into each other even if both are
 Read it with the `agrim-log` skill (or directly):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" goal   .sdlc 0007-cache.md  # one goal's full trace
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" status .sdlc        # every ACTIVE goal, latest event
+python3 <installed-sigma>/skills/agrim-log/scripts/log.py goal   .sdlc 0007-cache.md  # one goal's full trace
+python3 <installed-sigma>/skills/agrim-log/scripts/log.py status .sdlc        # every ACTIVE goal, latest event
 ```
 
 `goal <id>` works for any goal that has ever written an entry, including one an agent has only ever
@@ -1354,9 +1371,9 @@ the ledger off, only the same-instant, same-machine case is covered.
 Read it:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" summary .sdlc  # counts + open hand-offs
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" mine    .sdlc  # addressed to me
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" render  .sdlc --write
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py summary .sdlc  # counts + open hand-offs
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py mine    .sdlc  # addressed to me
+python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py render  .sdlc --write
 ```
 
 Write anything else explicitly — kinds are
@@ -1484,7 +1501,7 @@ retries rather than forcing — and because nobody shares a file, that replay ca
 ### The watcher — so a mention actually reaches you
 
 ```bash
-python3 watch_daemon.py .sdlc &        # stop it with: touch .sdlc/state/watch.stop
+python3 <installed-sigma>/skills/agrim-loop/scripts/watch_daemon.py .sdlc &   # stop: touch .sdlc/state/watch.stop
 ```
 
 Each tick pulls the ops branch, works out what is addressed to you and hasn't been surfaced yet,
@@ -1728,7 +1745,7 @@ settling down, so raise the cap rather than let it thrash.
 `false` explicitly to keep the loop writing to git exactly as little as before this shipped.
 
 ```json
-"work": { "enabled": true, "base": "", "remote": "origin", "auto_merge": false }
+"work": { "enabled": true, "base": "", "remote": "origin", "auto_merge": "off" }
 ```
 
 > **Adopting into an existing repo? Two things to know.**
@@ -1805,8 +1822,8 @@ case GitHub reports `CLEAN` simply because it was never asked to object. So the 
 `repos/{owner}/{repo}/branches/{base}/protection` — a 404 means nothing is enforced — and **not**
 whether a check happened to run.
 
-Then it arms GitHub's own `--auto` rather than merging on what it just read, so the final decision is
-an atomic re-check at merge time.
+Then it lands the PR with a direct `gh pr merge`. GitHub's own `--auto` is armed only when a required
+check has not answered yet (and the repository allows auto-merge); anything else parks with the reason.
 
 **A real review, after the PR — `work.require_review` (on by default).** Without it the
 gate only respects a review your *base branch's protection* requires — so a human's ad-hoc **"Request
@@ -2049,10 +2066,10 @@ the operator must remove that damaged marker after confirming no worker is live.
 
 **Recommended routine prompt** (Claude Desktop, local use — adapt the `.sdlc` path for your project):
 
-> Run `python3 <sigma>/skills/agrim-loop/scripts/loop.py session-active .sdlc`. If it prints `ACTIVE`,
+> Run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-active .sdlc`. If it prints `ACTIVE`,
 > stop here — a session is already running, nothing to do.
 >
-> If it prints `FREE`: capture `session_generation=$(python3 <sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid "$PPID")` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
+> If it prints `FREE`: capture `session_generation=$(python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py start .sdlc --session-pid "$PPID")` — `$PPID` is YOUR OWN invoking shell's parent process id; read it fresh from your own
 > shell on THIS call and on every `next`/`next-batch`/`session-end` call below, rather than trying to
 > remember a value captured earlier — it stays the same stable value every time you read it during
 > this one routine firing, which is exactly what makes it safe to use as this firing's own session
@@ -2064,7 +2081,7 @@ the operator must remove that damaged marker after confirming no worker is live.
 > whatever ran before it; ambient conversational continuity must never substitute for a real backlog
 > pick, or the whole point of the marker (knowing precisely what's still live) is undermined by the
 > one thing it can't see. Let it run to backlog-empty or budget, exactly as `/agrim-loop` already does
-> unattended. When it stops, run `python3 <sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
+> unattended. When it stops, run `python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py session-end .sdlc
 > --session-pid "$PPID" --session-generation "$session_generation"` (the SAME `$PPID` value this firing used throughout) before exiting, so the
 > next firing correctly sees `FREE` again.
 
@@ -2097,7 +2114,7 @@ gate fires reliably in production use on this very repo.
 The kit's "output" is agent *behavior*, so quality is guarded in two tiers, re-run on every change to
 catch drift (see [`evals/README.md`](evals/README.md)):
 
-- **Tier 1 — deterministic behavioral gate (free, in CI):** `python3 evals/run.py` runs the intent hook
+- **Tier 1 — deterministic behavioral gate (free, in CI):** `python3 <installed-sigma>/evals/run.py` runs the intent hook
   over a behavioral corpus (`evals/fixtures.json`) — a deterministic proxy for *"the agent got the right
   discipline signal"* — scores it, and **fails the build if the score drops below `evals/baseline.json`.**
   That drop is the drift signal.
@@ -2117,9 +2134,10 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 - **Companions (optional):** `superpowers` + `code-review` — **auto-used when already installed**,
   otherwise the **parity-reviewed portable `agrim-*` executors run the phases**. Never required; you
   install nothing either way.
-- **Dev/test:** `pip install pytest pytest-cov`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs
-  the full suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1
-  quality gate** (`evals/run.py`) on every push and PR; no coverage threshold is enforced yet (see #194).
+- **Dev/test:** `pip install pytest`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs the full
+  suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1 quality
+  gate** (`evals/run.py`) — on every push/PR, on Python 3.10 + 3.12. CI measures **no** code coverage
+  today (no `--cov` run, no minimum); adding one is issue #194.
 
 ## Contributing, support and security
 
@@ -2139,11 +2157,12 @@ unit-tested but has not been run in Cursor.
 > Sigma has **not been run end-to-end inside Cursor.** Treat this as experimental — the `.mdc` rule
 > format follows Cursor's documented convention, but real-session behavior is unverified.
 
-Cursor has no plugin system, `UserPromptSubmit` hook, or `superpowers`/`code-review`. From your
-Sigma checkout:
+Sigma ships no Cursor plugin manifest (whether Cursor's plugin support could load one is unverified),
+and Cursor has no `UserPromptSubmit` hook or `superpowers`/`code-review`. From the root of your
+repository, with `<installed-sigma>` your Sigma checkout:
 
 ```
-python3 <sigma>/skills/agrim-init/scripts/sdlc_init.py . --cursor --demo
+python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --cursor --demo
 ```
 
 That writes **`.cursor/rules/sdlc.mdc`** — intended as an *always-applied* Cursor rule carrying the full
@@ -2152,7 +2171,7 @@ which points status output at `render.py` instead of at prose to imitate, scaffo
 and pins `companions: off` so each phase would run via the **portable `agrim-*` executors** instead of the
 Claude-only companions. The loop, model-selection, status and KG **helpers are plain zero-dep
 `python3`** — run them from Cursor's terminal (e.g.
-`python3 <sigma>/skills/agrim-loop/scripts/loop.py next .sdlc`). Once verified in a live session, the
+`python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py next .sdlc`). Once verified in a live session, the
 goal is the same spine, executors, and audit trail without Claude — **help testing this is welcome.**
 
 ### Codex (partial live validation)

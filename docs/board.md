@@ -98,7 +98,7 @@ board_layout.py verify <.sdlc> [--number N] [--owner O]           # read-only ac
 board_layout.py spec   <.sdlc>                                    # the spec as JSON, no gh call
 ```
 
-(`python3 <sigma>/skills/agrim-init/scripts/board_layout.py ...`; on Windows use `py -3` or `python`.)
+(`python3 <installed-sigma>/skills/agrim-init/scripts/board_layout.py ...`; on Windows use `py -3` or `python`.)
 
 - **A dry run by default.** Without `--yes`, nothing is written: the run reads the board and prints
   `[plan]` lines.

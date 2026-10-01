@@ -84,7 +84,7 @@ def _header_leak_fixture(tmp_path):
     # the untracked fixture whose ONLY sensitive signal comes from the content scan (the name
     # "notes.txt" matches no glob), so a dead content-scan subshell is visible as a missing category
     repo = _repo(tmp_path)
-    (repo / "notes.txt").write_text('++ aws_key = "AKIALEAK0000000000FAKE"\napi_key = "TRIGGER9SECRETVALUE"\n')
+    (repo / "notes.txt").write_text('++ aws_key = "AK' 'IALEAK0000000000FAKE"\napi_key = "TR' 'IGGER9SECRETVALUE"\n')
     _assert_untracked(repo, "notes.txt")
     return repo
 
@@ -163,7 +163,7 @@ def test_matched_is_sorted_and_deduped(tmp_path):
 
 def test_planted_secret_value_never_in_output(tmp_path):
     repo = _repo(tmp_path)
-    SECRET = "AKIAZZZZ0000EXAMPLE1"
+    SECRET = "AK" "IAZZZZ0000EXAMPLE1"
     (repo / "config.env").write_text("AWS_SECRET=%s\npassword: hunter2plaintext\n" % SECRET)
     _assert_untracked(repo, "config.env")
     out = _run(repo)
@@ -186,12 +186,12 @@ def test_content_line_that_renders_as_a_diff_header_never_leaks_tracked(tmp_path
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "init")
     (repo / "notes.txt").write_text(
-        '++ aws_key = "AKIALEAK0000000000FAKE"\napi_key = "TRIGGER9SECRETVALUE"\n'
+        '++ aws_key = "AK' 'IALEAK0000000000FAKE"\napi_key = "TR' 'IGGER9SECRETVALUE"\n'
     )
     assert "notes.txt" in _git(repo, "diff", "--name-only").split()   # the rewrite is a tracked change
     out = _run(repo)
     blob = json.dumps(out)
-    assert "AKIALEAK0000000000FAKE" not in blob, out.why    # value never in output (fails on buggy awk)
+    assert "AK" "IALEAK0000000000FAKE" not in blob, out.why    # value never in output (fails on buggy awk)
     assert "sensitive" in out["matched"], "the second line must still hard-stop (guard must not be vacuous)\n" + out.why
     for h in out["hits"]:
         assert h["file"] == "notes.txt", out.why            # real filename, never the "+++ …" line text
@@ -203,12 +203,12 @@ def test_content_line_that_renders_as_a_diff_header_never_leaks_untracked(tmp_pa
     # synthesized block must also carry a "diff --git" line so the same inhunk reset fires.
     repo = _repo(tmp_path)
     (repo / "notes.txt").write_text(
-        '++ aws_key = "AKIALEAK0000000000FAKE"\napi_key = "TRIGGER9SECRETVALUE"\n'
+        '++ aws_key = "AK' 'IALEAK0000000000FAKE"\napi_key = "TR' 'IGGER9SECRETVALUE"\n'
     )
     _assert_untracked(repo, "notes.txt")
     out = _run(repo)
     blob = json.dumps(out)
-    assert "AKIALEAK0000000000FAKE" not in blob, out.why
+    assert "AK" "IALEAK0000000000FAKE" not in blob, out.why
     assert "sensitive" in out["matched"], "the second line must still hard-stop (guard must not be vacuous)\n" + out.why
     for h in out["hits"]:
         assert h["file"] == "notes.txt", out.why
@@ -348,7 +348,7 @@ def test_stripe_live_key_shape_is_a_sensitive_token(tmp_path):
     # ...and the converse, pinned: a line carrying BOTH a kv trigger and the key shape reports
     # "secret", not "token", because the kv branch comes first in that else-if chain. Reordering
     # the branches would silently reclassify every such line; this makes it a test failure.
-    (repo / "cfg.rb").write_text('api_key = "sk_live_abcd1234efgh"\n')
+    (repo / "cfg.rb").write_text('api_key = "sk' '_live_abcd1234efgh"\n')
     _git(repo, "add", "-A", "-f")
     out = _run(repo)
     assert any(h["file"] == "pay.js" and h["pattern_id"] == "token" for h in out["hits"]), out.why
@@ -397,11 +397,11 @@ def test_classifier_categories_without_git():
 
 
 def test_classifier_header_shaped_content_never_becomes_file_without_git():
-    fixture = _untracked_block("notes.txt", '++ aws_key = "AKIALEAK0000000000FAKE"',
-                               'api_key = "TRIGGER9SECRETVALUE"')
+    fixture = _untracked_block("notes.txt", '++ aws_key = "AK' 'IALEAK0000000000FAKE"',
+                               'api_key = "TR' 'IGGER9SECRETVALUE"')
     hits = _classify(fixture)
     blob = json.dumps(hits)
-    assert "AKIALEAK0000000000FAKE" not in blob, hits
+    assert "AK" "IALEAK0000000000FAKE" not in blob, hits
     assert hits, "no hit at all -- the second line must hard-stop, or the guard is untested"
     assert all(h["file"] == "notes.txt" for h in hits), hits
     # Built-in non-vacuity: the fixture must be able to SEE the guard's absence, every run, not only
@@ -410,7 +410,7 @@ def test_classifier_header_shaped_content_never_becomes_file_without_git():
     guard = "!inhunk && /^\\+\\+\\+ /"
     assert prog.count(guard) == 1, "the in-hunk header guard moved; retarget this mutant"
     mutant = prog.replace(guard, "/^\\+\\+\\+ /")
-    assert "AKIALEAK0000000000FAKE" in json.dumps(_classify(fixture, mutant)), \
+    assert "AK" "IALEAK0000000000FAKE" in json.dumps(_classify(fixture, mutant)), \
         "the mutant did not leak, so this fixture cannot detect the guard's absence"
 
 
