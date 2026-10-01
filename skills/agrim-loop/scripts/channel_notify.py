@@ -2,8 +2,8 @@
 """One channel-notify tick (#1322): the CLI/Channels adapter's Python half. On detecting the SAME
 candidate `autowatch.py` itself would pick up on its next tick (the oldest unactioned mention/
 assignment/blocker addressed to `me`, matching `ledger.autowatch.scope`), POST a small JSON payload
-to `ledger.autowatch.channel_webhook_url`. That URL is intended for a local sigma-autowatch
-listener; its host is not validated. The channel server
+to `ledger.autowatch.channel_webhook_url`. That URL is limited to a local sigma-autowatch
+listener unless the operator sets the exact remote-delivery opt-in. The channel server
 (`skills/agrim-loop/channels/sigma-autowatch/webhook.ts`, run inside an already-
 open `claude --dangerously-load-development-channels server:sigma-autowatch` session — see that
 plugin's own SKILL.md for the one-time setup). The channel server forwards the payload into the
@@ -40,6 +40,7 @@ import json
 import pathlib
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -122,6 +123,24 @@ def _post(url, payload, run_post=None):
         return False
 
 
+def _local_webhook_url(url, settings):
+    """Whether this configured destination is safe to call without a separate opt-in.
+
+    `channel_notify` is a local wake-up adapter, not a general outbound webhook facility. Keep the
+    permissive path intentionally exact: only the JSON boolean `true` grants remote delivery, so
+    a truthy typo cannot silently exfiltrate a ledger candidate to a network host.
+    """
+    try:
+        parsed = urllib.parse.urlparse(str(url))
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        if settings.get("allow_remote_webhook") is True:
+            return True
+        return parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+    except (TypeError, ValueError):
+        return False
+
+
 def _prior_autowatch_attempts(entries, me, ref):
     """#1337: count of autowatch's own outcome notes recorded against this candidate's ledger id
     (`ref`) -- unlike `autowatch._prior_autowatch_hop`, this increases on EVERY outcome autowatch
@@ -170,6 +189,10 @@ def tick(sdlc_dir, config=None, run_post=None, now=None):
         return ""                        # nothing has changed since the last push -- avoid a storm
     target = str(candidate.get("issue") or candidate.get("goal"))
     url = settings.get("channel_webhook_url")
+    if not _local_webhook_url(url, settings):
+        print("channel_notify: refusing non-local or malformed webhook URL (set "
+              "ledger.autowatch.allow_remote_webhook: true to opt in)", file=sys.stderr)
+        return ""
     payload = {"issue": target, "kind": candidate.get("kind"), "goal": str(candidate.get("goal")),
                "id": cid}
     if not _post(url, payload, run_post=run_post):

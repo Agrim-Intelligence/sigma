@@ -282,6 +282,14 @@
     },
     {
       "path": "skills/agrim-loop/scripts/channel_notify.py",
+      "function": "_real_post",
+      "rule": "network-post",
+      "count": 1,
+      "gate": "http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/channel_notify.py",
       "function": "_save_cursor",
       "rule": "fs-write",
       "count": 2,
@@ -1637,7 +1645,7 @@
       "function": "_delete_remote_branch",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "work.enabled; merged PR cleanup",
+      "gate": "work.enabled; merged PR cleanup; non-empty goal prefix; never base/default branch",
       "risk": "high"
     },
     {
@@ -1733,7 +1741,7 @@
       "function": "merge_design",
       "rule": "gh-pr",
       "count": 1,
-      "gate": "work.enabled",
+      "gate": "work.enabled; work.auto_merge != off",
       "risk": "high"
     },
     {

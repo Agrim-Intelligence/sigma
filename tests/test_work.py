@@ -27,6 +27,7 @@ actionlog = _load("actionlog")
 ledger = _load("ledger")            # #540: _claim() below builds a writer instance the real way
 
 ON = {"work": {"enabled": True}}
+DESIGN_ALWAYS = {"work": {"enabled": True, "auto_merge": "always"}}
 ON_GITHUB = {**ON, "discovery": {"source": "github"}}
 ACTIONLOG = {"action_log": {"enabled": True}}
 NOSLEEP = lambda _: None                                          # noqa: E731 - one-liner test stub
@@ -2499,7 +2500,8 @@ def test_delete_remote_branch_returns_false_on_failure_without_raising(tmp_path)
 def test_delete_remote_branch_returns_true_on_success(tmp_path):
     run = _runner([])
     assert work._delete_remote_branch("/some/cwd", "sdlc/0001-x", run) is True
-    assert run.calls == ["gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"]
+    assert run.calls[-1] == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
+    assert run.calls[0] == "git symbolic-ref --short refs/remotes/origin/HEAD"
 
 
 # --- #1649: the merge that lands the work is what closes the issue the base could not ------------
@@ -8042,7 +8044,7 @@ def test_merge_design_merges_an_open_mergeable_pr():
     lp = work
     calls = []
     pr = json.dumps([_valid_design_row(mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    result = lp.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [pr]))
+    result = lp.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [pr]))
     assert result == "merged PR #42"
     merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
     assert merge_calls and merge_calls[0][1] == ["gh", "pr", "merge", "42", "--squash"]
@@ -8067,7 +8069,7 @@ def test_merge_design_and_close_design_never_echo_a_raw_gh_exception_into_their_
             return json.dumps([_valid_design_row(mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
         raise RuntimeError("needs #999 to be merged first")
     poison = "needs #999"
-    m = work.merge_design(".sdlc", ON, "9", run=_raise)
+    m = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_raise)
     assert poison not in m and m.startswith("could not merge PR #42")
     c = work.close_design(".sdlc", ON, "9", run=_raise)
     assert poison not in c and c.startswith("could not close PR #42")
@@ -8083,7 +8085,7 @@ def test_merge_design_is_a_clean_noop_with_no_open_pr():
 def test_merge_design_uses_the_configured_merge_method():
     calls = []
     pr = json.dumps([_valid_design_row(number=5, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    cfg = {"work": {"enabled": True, "merge_method": "rebase"}}
+    cfg = {"work": {"enabled": True, "auto_merge": "always", "merge_method": "rebase"}}
     work.merge_design(".sdlc", cfg, "9", run=_design_pr_spy(calls, [pr]))
     merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
     assert merge_calls[0][1] == ["gh", "pr", "merge", "5", "--rebase"]
@@ -8178,7 +8180,7 @@ def test_merge_design_refuses_when_work_is_disabled():
 
 def test_merge_design_cli_dispatches_outside_the_generic_commands_gate(tmp_path, capsys,
                                                                         monkeypatch):
-    d = _sdlc(tmp_path, ON)
+    d = _sdlc(tmp_path, DESIGN_ALWAYS)
     pr = json.dumps([_valid_design_row(number=3, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     calls = []
     monkeypatch.setattr(work, "_run", _design_pr_spy(calls, [pr]))
@@ -8210,7 +8212,7 @@ def test_merge_design_retries_once_on_a_transient_gh_failure():
         if attempts["n"] == 1:
             raise RuntimeError("transient")
         return ""
-    result = work.merge_design(".sdlc", ON, "9", run=_flaky, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_flaky, sleep=NOSLEEP)
     assert result == "merged PR #8"
     assert attempts["n"] == 2                                 # exactly one retry, not more
 
@@ -8221,7 +8223,7 @@ def test_merge_design_gives_up_after_two_failures():
         if argv[:3] == ["gh", "pr", "list"]:
             return pr
         raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", ON, "9", run=_always_fails, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_always_fails, sleep=NOSLEEP)
     assert "could not merge" in result
 
 
@@ -8238,7 +8240,7 @@ def test_merge_design_reports_success_when_a_retry_error_actually_landed():
             calls["list"] += 1
             return pr if calls["list"] == 1 else "[]"   # gone by the re-check -- it landed
         raise RuntimeError("connection dropped after the merge actually succeeded")
-    result = work.merge_design(".sdlc", ON, "9", run=_lands_but_errors, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_lands_but_errors, sleep=NOSLEEP)
     assert result == "merged PR #8 (confirmed on re-check after a retry error)"
 
 
@@ -8250,7 +8252,7 @@ def test_merge_design_still_reports_failure_when_the_retry_error_was_a_genuine_f
         if argv[:3] == ["gh", "pr", "list"]:
             return pr                            # still open on every re-check too
         raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", ON, "9", run=_genuinely_fails, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_genuinely_fails, sleep=NOSLEEP)
     assert "could not merge" in result
 
 
@@ -8288,7 +8290,7 @@ def test_merge_design_polls_a_bounded_number_of_times_on_unknown_mergeability():
     clean = json.dumps([_valid_design_row(number=9, mergeable="MERGEABLE",
                                            mergeStateStatus="CLEAN")])
     calls = []
-    result = work.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [unknown, clean]),
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [unknown, clean]),
                                sleep=NOSLEEP)
     assert result == "merged PR #9"
 
@@ -8299,7 +8301,7 @@ def test_merge_design_proceeds_when_mergeability_stays_unknown():
     unknown = json.dumps([_valid_design_row(number=9, mergeable="UNKNOWN",
                                              mergeStateStatus="UNKNOWN")])
     calls = []
-    result = work.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [unknown] * 5),
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [unknown] * 5),
                                sleep=NOSLEEP)
     assert result == "merged PR #9"
 
@@ -8358,7 +8360,7 @@ def test_close_design_and_merge_design_cli_both_act_on_the_same_repo_pr_never_th
     `gh pr merge`/`gh pr close` -- a mixed reply (fork #43 + this goal's own PR #42) must make
     BOTH gestures act on 42 and never so much as target 43, checked against the fake's own
     call log, not just stdout."""
-    d = _sdlc(tmp_path, ON)
+    d = _sdlc(tmp_path, DESIGN_ALWAYS)
     mixed = json.dumps([
         _valid_design_row(number=43, isCrossRepository=True),
         _valid_design_row(number=42),
@@ -8690,7 +8692,7 @@ def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_fork_
             calls["list"] += 1
             return pr if calls["list"] == 1 else fork
         raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", ON, "9", run=_run, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
     assert "could not merge" in result
     assert "confirmed on re-check" not in result
 
@@ -8721,7 +8723,7 @@ def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_
             calls["list"] += 1
             return pr if calls["list"] == 1 else code_pr
         raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", ON, "9", run=_run, sleep=NOSLEEP)
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
     assert "could not merge" in result
     assert "confirmed on re-check" not in result
 

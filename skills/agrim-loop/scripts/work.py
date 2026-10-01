@@ -5252,7 +5252,7 @@ def _auto_merge_allowed(rec, run):
     return out.strip().lower() == "true"
 
 
-def _delete_remote_branch(cwd, branch, run):
+def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=None, goal=None):
     """Best-effort REST delete of a goal's remote branch. Deliberately NOT `gh pr merge
     --delete-branch`: that flag tries to check out the base branch locally first, in whatever cwd
     it's given, and fails loudly the moment that base is already checked out somewhere else -- true
@@ -5263,9 +5263,47 @@ def _delete_remote_branch(cwd, branch, run):
     in `merge()` right after a direct landing, and again (redundant but harmless there; load-bearing
     for a goal that was armed and landed asynchronously instead) from `finish()` once it
     independently confirms MERGED -- so this never raises: every caller's own success must never
-    depend on this cleanup nicety succeeding too."""
+    depend on this cleanup nicety succeeding too.
+
+    The cleanup is deliberately narrower than the merge that precedes it: a misconfigured empty
+    branch prefix must not turn a successful landing into a delete of the base/default branch. The
+    optional `base` is the goal record's resolved target; callers that do not have one retain the
+    configured-base and local-origin-HEAD protections. A refusal is best-effort cleanup failure,
+    not a merge failure."""
+    s = settings(config or {})
+    name = str(branch or "").strip()
+
+    def refuse(rule):
+        message = f"work: refusing remote branch delete for {name!r}: {rule}"
+        print(message, file=sys.stderr)
+        if sdlc_dir is not None and goal is not None:
+            # Lazy: actionlog loads this module for stem(), so importing it at module scope cycles.
+            _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge",
+                                            verdict="refused", why=message)
+        return False
+
+    prefix = str(s.get("branch_prefix") or "")
+    if not prefix:
+        return refuse("work.branch_prefix is empty")
+    if not name.startswith(prefix):
+        return refuse(f"branch does not start with configured prefix {prefix!r}")
+    if name in {"main", "master"}:
+        return refuse("branch is a protected conventional default")
+    configured_base = str(s.get("base") or "").strip()
+    resolved_base = str(base or "").strip()
+    if name and name in {configured_base, resolved_base}:
+        return refuse("branch is the configured or resolved base")
     try:
-        run(cwd, ["gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{branch}"])
+        origin_head = run(cwd, ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        origin_head = str(origin_head or "").strip()
+        if origin_head.startswith("origin/"):
+            origin_head = origin_head[len("origin/"):]
+        if origin_head and name == origin_head:
+            return refuse("branch is origin/HEAD's target")
+    except Exception:                       # noqa: BLE001 - this extra comparison is advisory
+        pass
+    try:
+        run(cwd, ["gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{name}"])
         return True
     except Exception:                       # noqa: BLE001 - best-effort
         return False
@@ -5644,7 +5682,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # gives the caller something to act on.
         return f"PARK: direct merge of PR #{rec['pr']} was refused ({exc})"
     if rec.get("branch"):                   # defensive: `start()` always sets it, but never assume
-        _delete_remote_branch(rec["worktree"], rec["branch"], run)
+        _delete_remote_branch(rec["worktree"], rec["branch"], run, config=config,
+                              base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
     # #1649: the second post-landing GitHub effect, and it belongs HERE rather than anywhere later
     # for the same reason the branch delete does — this is the moment the landing is a fact. #2615:
     # the call reads the issue's own state on EVERY base, never a base comparison — it does nothing
@@ -5983,7 +6022,8 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     # `force` exists precisely for the "get me out, whatever state this is in" case; bolting an
     # unconditional network call onto it would be a silent new dependency nobody asked for.
     if not force and branch and rec.get("pr") and (merged_before_cleanup or _pr_merged(sdlc_dir, rec, run)):
-        remote_deleted = _delete_remote_branch(project_root(sdlc_dir), branch, run)
+        remote_deleted = _delete_remote_branch(project_root(sdlc_dir), branch, run, config=config,
+                                                base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
         try:
             run(project_root(sdlc_dir), ["git", "branch", "-D", branch])
         except Exception:                   # noqa: BLE001 - best-effort; the worktree is already gone
@@ -6287,6 +6327,8 @@ def merge_design(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         return "no open design PR found -- nothing to land"
     if pr.get("mergeStateStatus") == "DIRTY" or pr.get("mergeable") == "CONFLICTING":
         return f"PR #{pr['number']} has conflicts -- land it by hand"
+    if policy(config) == OFF:
+        return "auto_merge is off (config: \"work\": {\"auto_merge\": \"always\"}) -- land this PR by hand"
     method = settings(config)["merge_method"]
     try:
         _retry_gh(run, project_root(sdlc_dir),

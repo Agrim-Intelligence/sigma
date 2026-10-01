@@ -177,7 +177,7 @@ def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path)
     source.write_text('def merge_design(run, cwd):\n    _retry_gh(run, cwd, ["gh", "pr", "merge", "1"])\n')
     assert _module().scan_paths(tmp_path, [source])[0]["rule"] == "gh-pr"
     assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr") == (
-        "work.enabled", "high")
+        "work.enabled; work.auto_merge != off", "high")
 
 
 def test_git_runner_force_and_destructive_forms_are_scanned(tmp_path):

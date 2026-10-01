@@ -17,7 +17,7 @@ from pathlib import Path
 RISK = {"gh-issue": "medium", "gh-pr": "medium", "gh-label": "medium",
         "gh-project": "medium", "gh-api-write": "medium", "graphql-mutation": "medium",
         "git-push": "high", "git-destructive": "high", "fs-remove": "high",
-        "fs-rmtree": "high", "fs-write": "medium"}
+        "fs-rmtree": "high", "fs-write": "medium", "network-post": "high"}
 _GH_ACTIONS = {"issue": {"close", "reopen", "edit", "comment", "create", "delete", "transfer", "lock"},
                "pr": {"create", "merge", "close", "comment", "review", "edit", "ready"},
                "label": {"create", "edit", "delete"},
@@ -37,7 +37,7 @@ def _metadata(path, function, rule):
         ("skills/agrim-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr"):
-            ("work.enabled", "high"),
+            ("work.enabled; work.auto_merge != off", "high"),
         ("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr"):
             ("ungated", "high"),
         ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"):
@@ -45,7 +45,9 @@ def _metadata(path, function, rule):
         ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
         ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
-            ("work.enabled; merged PR cleanup", "high"),
+            ("work.enabled; merged PR cleanup; non-empty goal prefix; never base/default branch", "high"),
+        ("skills/agrim-loop/scripts/channel_notify.py", "_real_post", "network-post"):
+            ("http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery", "high"),
         ("skills/agrim-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
             ("work.enabled; base branch cannot close the issue", "high"),
         ("tools/readiness/baseline.py", "snapshot", "fs-write"):
@@ -220,7 +222,11 @@ def scan_paths(root, paths):
                     continue
                 matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
                 function = max(matching, default=(0, "<module>"))[1]
-                for rule in _rules_for_call(node, values):
+                rules = _rules_for_call(node, values)
+                if (path.relative_to(root).as_posix() == "skills/agrim-loop/scripts/channel_notify.py"
+                        and function == "_real_post" and _call_name(node.func) == "urllib.request.urlopen"):
+                    rules.add("network-post")
+                for rule in rules:
                     key = (path.relative_to(root).as_posix(), function, rule)
                     groups[key] = groups.get(key, 0) + 1
         for (relpath, function, rule), count in groups.items():
