@@ -19,6 +19,32 @@ from pathlib import Path
 _WRITER_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
 _SKILL_EVIDENCE = re.compile(r"\.sdlc/evidence(?:/[^\s`'\")]+)?")
 
+# These functions intentionally hide their file naming behind one safe writer
+# API.  Resolving their destination from a caller would make the inventory
+# depend on every caller keeping an implementation detail, so pin the public
+# writer seam and the patterns its own path helpers guarantee instead.
+_HELPER_STORES = {
+    "skills/agrim-loop/scripts/ledger.py": {
+        "append": (
+            ".sdlc/ledger/entries/<actor>-<writer>.jsonl",
+            ".sdlc/events/<actor>-<writer>.jsonl",
+        ),
+    },
+    "skills/agrim-loop/scripts/actionlog.py": {
+        "append": (".sdlc/state/log/<goal>.jsonl",),
+    },
+    "skills/agrim-loop/scripts/timing_store.py": {
+        "append": (".sdlc/state/time/<goal>/<writer>.jsonl",),
+        "append_session": (
+            ".sdlc/state/time/_sessions/<session>/turns.jsonl",
+            ".sdlc/state/time/_sessions/<session>/<writer>.jsonl",
+        ),
+    },
+    "skills/agrim-loop/scripts/witness.py": {
+        "record": (".sdlc/state/witness/<goal>.jsonl",),
+    },
+}
+
 
 def _expression_path(node):
     """Return a static path expression, or ``None`` when it is not knowable."""
@@ -130,6 +156,28 @@ def _code_rows(root, path):
     return rows
 
 
+def _helper_rows(root, path):
+    """Resolve durable stores whose public writer deliberately owns its path."""
+    rel = path.relative_to(root).as_posix()
+    functions = _HELPER_STORES.get(rel)
+    if not functions:
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
+    rows = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name not in functions:
+            continue
+        writer_line = next((call.lineno for call in ast.walk(node)
+                            if isinstance(call, ast.Call)
+                            and isinstance(call.func, ast.Attribute)
+                            and call.func.attr == "open"), None)
+        if writer_line is None:
+            continue
+        for pattern in functions[node.name]:
+            rows.append({"pattern": pattern, "source": "code", "writer": f"{rel}:{writer_line}"})
+    return rows
+
+
 def _skill_rows(root, path):
     rel = path.relative_to(root).as_posix()
     rows = []
@@ -149,6 +197,7 @@ def scan(root):
     for path in sorted(root.rglob("*.py")):
         if "tests" not in path.relative_to(root).parts:
             rows.extend(_code_rows(root, path))
+            rows.extend(_helper_rows(root, path))
     skills = root / "skills"
     if skills.exists():
         for path in sorted(skills.rglob("*.md")):
@@ -168,21 +217,26 @@ def _size(path):
     return total
 
 
-def _host_label(root, home):
-    relative = root.relative_to(home)
-    return _normalise("<home>/" + relative.as_posix())
+def _named_host_roots(home, environ):
+    """Return the only host roots this audit is allowed to traverse."""
+    return {
+        "<sigma-ops>": home / ".sigma-ops",
+        "<claude-config>": Path(environ.get("CLAUDE_CONFIG_DIR", home / ".claude")),
+        "<codex-home>": Path(environ.get("CODEX_HOME", home / ".codex")),
+    }
 
 
-def measure_host(root, *, home=None):
-    """Measure exactly one opted-in host root; the home root is always refused."""
+def measure_host(root, *, home=None, environ=None):
+    """Measure one named opted-in host root; the home root is always refused."""
     root = Path(root).resolve()
     home = Path.home().resolve() if home is None else Path(home).resolve()
+    environ = os.environ if environ is None else environ
     if root == home:
         raise ValueError("refusing to measure the home directory itself")
-    try:
-        label = _host_label(root, home)
-    except ValueError as exc:
-        raise ValueError("host measurement root must be below the home directory") from exc
+    label = next((name for name, candidate in _named_host_roots(home, environ).items()
+                  if root == candidate.resolve()), None)
+    if label is None:
+        raise ValueError("host measurement root must be a named configuration root")
     if not root.is_dir():
         raise ValueError("host measurement root must be an existing directory")
     return {"path": label, "size_bytes": _size(root)}

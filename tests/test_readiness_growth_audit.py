@@ -86,7 +86,78 @@ def test_measure_host_refuses_home_and_only_measures_the_opted_in_root(tmp_path)
     with pytest.raises(ValueError, match="home directory"):
         _mod().measure_host(home, home=home)
 
-    assert _mod().measure_host(config, home=home) == {
-        "path": "<home>/.codex",
+    assert _mod().measure_host(config, home=home, environ={}) == {
+        "path": "<codex-home>",
         "size_bytes": 3,
     }
+
+
+def test_scan_resolves_supported_helper_writers_to_durable_store_rows(tmp_path):
+    """Removing the helper map must make real helper-managed stores disappear."""
+    scripts = tmp_path / "skills" / "agrim-loop" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "ledger.py").write_text(
+        "def append(sdlc_dir):\n"
+        "    with path.open('a') as handle:\n"
+        "        handle.write('entry')\n"
+    )
+    (scripts / "actionlog.py").write_text(
+        "def append(sdlc_dir, goal):\n"
+        "    with path.open('a') as handle:\n"
+        "        handle.write('entry')\n"
+    )
+    (scripts / "timing_store.py").write_text(
+        "def append(sdlc_dir, goal):\n"
+        "    with path.open('a') as handle:\n"
+        "        handle.write('entry')\n"
+        "def append_session(sdlc_dir, session):\n"
+        "    with path.open('a') as handle:\n"
+        "        handle.write('entry')\n"
+    )
+    (scripts / "witness.py").write_text(
+        "def record(sdlc_dir, goal):\n"
+        "    with path.open('a') as handle:\n"
+        "        handle.write('entry')\n"
+    )
+
+    assert _mod().scan(tmp_path) == [
+        {"pattern": ".sdlc/events/<actor>-<writer>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/ledger.py:2"},
+        {"pattern": ".sdlc/ledger/entries/<actor>-<writer>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/ledger.py:2"},
+        {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/actionlog.py:2"},
+        {"pattern": ".sdlc/state/time/<goal>/<writer>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/timing_store.py:2"},
+        {"pattern": ".sdlc/state/time/_sessions/<session>/<writer>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/timing_store.py:5"},
+        {"pattern": ".sdlc/state/time/_sessions/<session>/turns.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/timing_store.py:5"},
+        {"pattern": ".sdlc/state/witness/<goal>.jsonl", "source": "code",
+         "writer": "skills/agrim-loop/scripts/witness.py:2"},
+    ]
+
+
+def test_measure_host_accepts_only_named_configuration_roots(tmp_path):
+    """Widening measurement beyond named roots must make this refusal control fail."""
+    home = tmp_path / "home"; home.mkdir()
+    codex = home / ".codex"; codex.mkdir()
+    (codex / "state.json").write_bytes(b"abc")
+    sigma_ops = home / ".sigma-ops"; sigma_ops.mkdir()
+    (sigma_ops / "audit.log").write_bytes(b"abcd")
+    claude = tmp_path / "managed-claude"; claude.mkdir()
+    (claude / "cursor.json").write_bytes(b"abcde")
+    unowned = home / "Downloads"; unowned.mkdir()
+
+    mod = _mod()
+    assert mod.measure_host(codex, home=home, environ={}) == {
+        "path": "<codex-home>", "size_bytes": 3,
+    }
+    assert mod.measure_host(sigma_ops, home=home, environ={}) == {
+        "path": "<sigma-ops>", "size_bytes": 4,
+    }
+    assert mod.measure_host(claude, home=home, environ={"CLAUDE_CONFIG_DIR": str(claude)}) == {
+        "path": "<claude-config>", "size_bytes": 5,
+    }
+    with pytest.raises(ValueError, match="named configuration root"):
+        mod.measure_host(unowned, home=home, environ={})
