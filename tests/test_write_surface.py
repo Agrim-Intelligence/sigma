@@ -180,10 +180,38 @@ def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path)
         "work.enabled", "high")
 
 
+def test_git_runner_force_and_destructive_forms_are_scanned(tmp_path):
+    source = tmp_path / "writes.py"
+    source.write_text('''def cleanup(root, scratch):
+    gitc(root, ["worktree", "remove", "--force", scratch])
+
+def reconcile(root, name):
+    run(root, ["branch", "--force", name, "origin/" + name])
+
+def push(root, remote):
+    run(root, ["git", "push", "--force-with-lease=topic:sha", remote])
+''')
+    got = {(row["function"], row["rule"]) for row in _module().scan_paths(tmp_path, [source])}
+    assert got == {("cleanup", "git-destructive"), ("reconcile", "git-destructive"),
+                   ("push", "git-push"), ("push", "git-destructive")}
+
+
+def test_live_git_runner_force_sites_are_in_the_inventory():
+    mod = _module()
+    paths = [ROOT / "skills/agrim-loop/scripts/diff_revert.py",
+             ROOT / "skills/agrim-loop/scripts/work.py",
+             ROOT / "skills/agrim-loop/scripts/sync.py"]
+    got = {(row["path"], row["function"], row["rule"])
+           for row in mod.scan_paths(ROOT, paths)}
+    assert ("skills/agrim-loop/scripts/diff_revert.py", "cleanup", "git-destructive") in got
+    assert ("skills/agrim-loop/scripts/work.py", "finish", "git-destructive") in got
+    assert ("skills/agrim-loop/scripts/sync.py", "init", "git-destructive") in got
+
+
 def test_issue_decided_write_gates_and_delete_risks_are_exact():
     mod = _module()
     assert mod._metadata("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write") == ("granted verdict", "high")
     assert mod._metadata("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr") == ("ungated", "high")
-    assert mod._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights", "high")
+    assert mod._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high")
     for function, rule in (("_delete_remote_branch", "gh-api-write"), ("_close_issue_the_base_cannot", "gh-api-write")):
         assert mod._metadata("skills/agrim-loop/scripts/work.py", function, rule)[1] == "high"

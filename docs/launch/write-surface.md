@@ -52,6 +52,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/cross_repo.py | _record | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/diff_revert.py | cleanup | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/diff_revert.py | cleanup | fs-rmtree | 1 | ungated | high |
+| skills/agrim-loop/scripts/diff_revert.py | cleanup | git-destructive | 1 | ungated | high |
 | skills/agrim-loop/scripts/diff_revert.py | run | fs-write | 3 | ungated | medium |
 | skills/agrim-loop/scripts/drift_watch.py | _stamp | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/feature_doc.py | _atomic_write_bytes | fs-remove | 2 | ungated | high |
@@ -64,6 +65,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _mark_blocked | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/agrim-loop/scripts/feature_rebase.py | _pushed | git-destructive | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _pushed | git-push | 1 | work.rebase_upkeep | high |
 | skills/agrim-loop/scripts/feature_rebase.py | _rebase_feature | fs-write | 1 | work.rebase_upkeep | medium |
 | skills/agrim-loop/scripts/feature_rebase.py | _remember | fs-write | 2 | work.rebase_upkeep | medium |
@@ -113,6 +115,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/promote.py | promote | gh-issue | 1 | ungated | medium |
 | skills/agrim-loop/scripts/reconcile.py | _write | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/reconcile.py | _write | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/release_manifest.py | publish_to_ledger_branch | git-push | 1 | ungated | high |
 | skills/agrim-loop/scripts/release_manifest.py | write_once | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/release_manifest.py | write_once | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/review_context.py | _atomic_bytes | fs-remove | 2 | ungated | high |
@@ -165,11 +168,15 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/sync.py | _ensure_lines | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | _knowledge_lock | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | _prune | fs-remove | 3 | ungated | high |
+| skills/agrim-loop/scripts/sync.py | _publish_knowledge | git-destructive | 1 | ungated | high |
+| skills/agrim-loop/scripts/sync.py | _push_with_retry | git-push | 1 | ungated | high |
 | skills/agrim-loop/scripts/sync.py | _union_note | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | _write_knowledge_gitignore | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | _write_team | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | bootstrap | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/sync.py | init | fs-write | 2 | ungated | medium |
+| skills/agrim-loop/scripts/sync.py | init | git-destructive | 1 | ungated | high |
+| skills/agrim-loop/scripts/sync.py | publish_receipt | git-push | 1 | ungated | high |
 | skills/agrim-loop/scripts/tier_escalation.py | write_floor | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/tier_escalation.py | write_floor | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/timing_store.py | _sweep | fs-remove | 2 | ungated | high |
@@ -212,12 +219,12 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; confirmed merged PR | high |
 | skills/agrim-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights | high |
+| skills/agrim-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR | high |
 | skills/agrim-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled | high |
 | skills/agrim-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |
-| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | rebase | git-destructive | 3 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
 | skills/agrim-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
@@ -226,6 +233,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-rebase/scripts/rebase_brief.py | _write_context_store | fs-write | 1 | ungated | medium |
 | skills/agrim-rebase/scripts/rebase_brief.py | attempt_rebase | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | clear_context_snapshots | fs-remove | 1 | ungated | high |
+| skills/agrim-rebase/scripts/rebase_brief.py | push_branch | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | push_branch | git-push | 1 | ungated | high |
 | skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-remove | 1 | human input() confirmation | high |
 | skills/agrim-rebase/scripts/verify_merge.py | _write_delivery | fs-write | 1 | human input() confirmation | medium |
@@ -251,5 +259,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/onboarding_control.py | main | fs-rmtree | 1 | ungated | high |
 | tools/onboarding_control.py | main | fs-write | 1 | ungated | medium |
 | tools/onboarding_control.py | run_github | fs-write | 7 | ungated | medium |
+| tools/onboarding_control.py | run_github | git-push | 1 | ungated | high |
 | tools/onboarding_control.py | run_local | fs-write | 3 | ungated | medium |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |

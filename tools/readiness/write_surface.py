@@ -41,7 +41,7 @@ def _metadata(path, function, rule):
         ("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr"):
             ("ungated", "high"),
         ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"):
-            ("work.enabled; work.auto_merge != off; merge rights", "high"),
+            ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high"),
         ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
         ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
@@ -151,11 +151,19 @@ def _rules_for_call(node, values):
             rules.add("gh-api-write")
     if ("graphql" in command or name.endswith("_graphql")) and any("mutation" in s.lower() for s in strings):
         rules.add("graphql-mutation")
+    git_runner = name in {"git", "gitc", "_git", "_run_git"}
+    git = []
     if command_call and "git" in tokens:
         git = tokens[tokens.index("git") + 1:]
+    elif git_runner:
+        git = tokens
+    elif command_call and command and command[0] in {"branch", "reset", "worktree", "tag"}:
+        # These verbs occur only in git's CLI grammar; `run` is the repository's git/gh runner.
+        git = command
+    if git:
         if "push" in git:
             rules.add("git-push")
-        if any(x in git for x in ("-d", "-D", "--hard", "remove", "rm", "tag")):
+        if any(x in git for x in ("-d", "-D", "--hard", "remove", "rm", "tag", "--force", "--force-with-lease")) or any(x.startswith("--force-with-lease=") for x in git):
             rules.add("git-destructive")
     if name == "shutil.rmtree":
         rules.add("fs-rmtree")
