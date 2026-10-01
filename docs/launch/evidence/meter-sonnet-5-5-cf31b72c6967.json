@@ -1,0 +1,87 @@
+{
+  "schema": "sigma.benchmark-transcript-meter/v2",
+  "goal": 345,
+  "meter_commit": "cf31b72c6967",
+  "recorded_at": "2026-10-01",
+  "command": "python3 evals/bench/meter.py --paths <redacted-local-sonnet-5-5-transcript>",
+  "transcript": {
+    "sha256": "6d4cda8e9e4b385dfc045192107debd32f35fcf8163c6527bc6d7021a60b5c94",
+    "bytes": 631078,
+    "location": "not recorded; local transcript path and content are private"
+  },
+  "rate_card": {
+    "path": "skills/agrim-loop/rates/anthropic_list_prices.csv",
+    "sha256": "b19f38838649ca5de354b64dc66e1c92849b5aeba612bc5dab6d0956bad9e58d",
+    "selection_rule": "For each turn and rate kind, select the latest row whose effective_from is at or before the turn timestamp and whose effective_to is absent or after it. Sum the seven per-kind charges for each fully priced turn, then round the aggregate USD total to six decimal places."
+  },
+  "result": {
+    "models": ["claude-sonnet-5-5"],
+    "tokens_in": 36,
+    "tokens_out": 12467,
+    "turns": 18,
+    "unpriced_turns": 0,
+    "unavailable_inputs": [],
+    "cost_usd": 0.645964,
+    "cost_usd_priced_part": 0.645964,
+    "usage_by_rate_kind": [
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "input",
+        "unit": "tokens",
+        "units": 36,
+        "rate": {"usd_per_mtok": 2.0, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.000072
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "output",
+        "unit": "tokens",
+        "units": 12467,
+        "rate": {"usd_per_mtok": 10.0, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.12467
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "cache_read",
+        "unit": "tokens",
+        "units": 1525190,
+        "rate": {"usd_per_mtok": 0.2, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.305038
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "cache_write_5m",
+        "unit": "tokens",
+        "units": 0,
+        "rate": {"usd_per_mtok": 2.5, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.0
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "cache_write_1h",
+        "unit": "tokens",
+        "units": 54046,
+        "rate": {"usd_per_mtok": 4.0, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.216184
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "web_search",
+        "unit": "requests",
+        "units": 0,
+        "rate": {"usd_per_request": 0.01, "effective_from": "2026-09-28 00:00:00", "effective_to": null},
+        "cost_usd": 0.0
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "rate_kind": "web_fetch",
+        "unit": "requests",
+        "units": 0,
+        "rate": null,
+        "cost_usd": 0.0,
+        "zero_unit_rule": "A zero-unit kind costs $0 even when the rate card has no row."
+      }
+    ]
+  },
+  "privacy": "This evidence records only aggregate meter output, rate-card facts, and a content hash; it contains no transcript text or local path."
+}

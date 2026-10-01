@@ -213,6 +213,7 @@ def load_rate_rows(csv_path=None):
                 "usd_per_request": float(raw["usd_per_request"]) if raw.get("usd_per_request") else None,
                 "effective_from": raw["effective_from"],
                 "effective_to": raw["effective_to"] or None,
+                "source": raw["source"],
             })
     return rows
 
