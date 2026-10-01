@@ -2057,6 +2057,46 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/baseline.py",
+      "function": "snapshot",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit snapshot command; empty destination",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/baseline.py",
+      "function": "snapshot",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "explicit snapshot command; empty destination; detached push-disabled clone",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/egress_capture.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit summarize command; caller-supplied JSON path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/exposure_scan.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit exposure scan; caller-supplied evidence path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/exposure_scan.py",
+      "function": "scan_refs",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "explicit refs scan; local tag listing is read-only",
+      "risk": "low"
+    },
+    {
       "path": "tools/readiness/write_surface.py",
       "function": "main",
       "rule": "fs-write",

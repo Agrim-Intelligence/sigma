@@ -48,6 +48,16 @@ def _metadata(path, function, rule):
             ("work.enabled; merged PR cleanup", "high"),
         ("skills/agrim-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
             ("work.enabled; base branch cannot close the issue", "high"),
+        ("tools/readiness/baseline.py", "snapshot", "fs-write"):
+            ("explicit snapshot command; empty destination", "medium"),
+        ("tools/readiness/baseline.py", "snapshot", "git-destructive"):
+            ("explicit snapshot command; empty destination; detached push-disabled clone", "medium"),
+        ("tools/readiness/egress_capture.py", "main", "fs-write"):
+            ("explicit summarize command; caller-supplied JSON path", "medium"),
+        ("tools/readiness/exposure_scan.py", "_write", "fs-write"):
+            ("explicit exposure scan; caller-supplied evidence path", "medium"),
+        ("tools/readiness/exposure_scan.py", "scan_refs", "git-destructive"):
+            ("explicit refs scan; local tag listing is read-only", "low"),
     }
     if site in known:
         return known[site]

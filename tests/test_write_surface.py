@@ -215,3 +215,17 @@ def test_issue_decided_write_gates_and_delete_risks_are_exact():
     assert mod._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high")
     for function, rule in (("_delete_remote_branch", "gh-api-write"), ("_close_issue_the_base_cannot", "gh-api-write")):
         assert mod._metadata("skills/agrim-loop/scripts/work.py", function, rule)[1] == "high"
+
+
+def test_readiness_tool_write_metadata_is_specific():
+    mod = _module()
+    assert mod._metadata("tools/readiness/baseline.py", "snapshot", "fs-write") == (
+        "explicit snapshot command; empty destination", "medium")
+    assert mod._metadata("tools/readiness/baseline.py", "snapshot", "git-destructive") == (
+        "explicit snapshot command; empty destination; detached push-disabled clone", "medium")
+    assert mod._metadata("tools/readiness/egress_capture.py", "main", "fs-write") == (
+        "explicit summarize command; caller-supplied JSON path", "medium")
+    assert mod._metadata("tools/readiness/exposure_scan.py", "_write", "fs-write") == (
+        "explicit exposure scan; caller-supplied evidence path", "medium")
+    assert mod._metadata("tools/readiness/exposure_scan.py", "scan_refs", "git-destructive") == (
+        "explicit refs scan; local tag listing is read-only", "low")

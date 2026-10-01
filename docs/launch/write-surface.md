@@ -261,4 +261,9 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/onboarding_control.py | run_github | fs-write | 7 | ungated | medium |
 | tools/onboarding_control.py | run_github | git-push | 1 | ungated | high |
 | tools/onboarding_control.py | run_local | fs-write | 3 | ungated | medium |
+| tools/readiness/baseline.py | snapshot | fs-write | 2 | explicit snapshot command; empty destination | medium |
+| tools/readiness/baseline.py | snapshot | git-destructive | 1 | explicit snapshot command; empty destination; detached push-disabled clone | medium |
+| tools/readiness/egress_capture.py | main | fs-write | 1 | explicit summarize command; caller-supplied JSON path | medium |
+| tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
+| tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |
