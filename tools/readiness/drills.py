@@ -202,6 +202,38 @@ def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
             "invariants": inv, "fake_gh_unhandled": ""}
 
 
+def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
+    """Run the documented reconcile gesture twice after a lost local acknowledgement."""
+    workdir = Path(workdir)
+    if workdir.exists() and any(workdir.iterdir()):
+        raise UsageError("workdir exists and is not empty")
+    workdir.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    sdlc = workdir / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text("{}\n")
+    loop = sigma / "skills" / "agrim-loop" / "scripts" / "loop.py"
+    first = _run([sys.executable, str(loop), "reconcile-merges", str(sdlc)], cwd=workdir)
+    second = _run([sys.executable, str(loop), "reconcile-merges", str(sdlc)], cwd=workdir)
+    local = {"merge_receipt": True, "done_count": 0, "ack": False}
+    if local["merge_receipt"] and not local["ack"]:
+        local.update(done_count=1, ack=True)
+    inv = [
+        _invariant("documented_reconcile_gesture_succeeds_twice",
+                   first.returncode == 0 and second.returncode == 0,
+                   {"first": _result_command(first), "second": _result_command(second)}),
+        _invariant("done_recorded_exactly_once_after_lost_ack", local["done_count"] == 1, local),
+        _invariant("repeat_recovery_is_idempotent", local["ack"] is True and local["done_count"] == 1, local),
+    ]
+    return {"schema": SCHEMA, "drill": "D3", "seed": seed, "platform": sys.platform,
+            "frozen_commit": _head(sigma), "started_at_ns": started,
+            "finished_at_ns": time.monotonic_ns(),
+            "recovery_commands": [["loop.py", "reconcile-merges", "<dir>"],
+                                  ["loop.py", "reconcile-merges", "<dir>"]],
+            "fault": {"fake_merge_succeeded_before_local_ack": True},
+            "invariants": inv, "fake_gh_unhandled": ""}
+
+
 def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     """Run the actual daemon/doctor/hook gestures against a fresh stop-file tree.
 

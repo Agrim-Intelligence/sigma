@@ -69,6 +69,16 @@ def test_d2_restored_awaiting_merge_state_prevents_repick_and_converges_once(tmp
     assert by_name["external_and_local_terminal_state_converge"]["passed"] is True
 
 
+def test_d3_runs_documented_reconcile_twice_and_records_done_once(tmp_path):
+    drills = _module()
+    result = drills.run_d3(tmp_path, ROOT, 1)
+    assert result["recovery_commands"] == [
+        ["loop.py", "reconcile-merges", "<dir>"],
+        ["loop.py", "reconcile-merges", "<dir>"],
+    ]
+    assert all(item["passed"] for item in result["invariants"])
+
+
 def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):
     drills = _module()
 
