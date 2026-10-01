@@ -54,14 +54,16 @@ def test_git_pid_installs_and_info_exclude_are_all_reported(tmp_path, monkeypatc
     (state / "watch.pid").write_text(str(os.getpid()))
     nested = tmp_path / "profiles" / "plugins" / "sigma"; nested.mkdir(parents=True)
     monkeypatch.setattr(mod, "_git", lambda _repo, *args: {
-        ("worktree", "list", "--porcelain"): f"worktree {tmp_path / '.sdlc' / 'ledger'}\\n",
-        ("branch", "--format=%(refname:short)"): "sdlc/1\\nfeature/demo\\nsdlc-ledger\\n",
-        ("branch", "-r", "--format=%(refname:short)"): "origin/sdlc/1\\norigin/feature/demo\\norigin/sdlc-ledger\\n",
+        ("worktree", "list", "--porcelain"): "worktree " + str(tmp_path / ".sdlc" / "ledger") + "\n",
+        ("branch", "--format=%(refname:short)"): "\n".join(("sdlc/1", "feature/demo", mod.LEDGER_BRANCH)) + "\n",
+        ("branch", "-r", "--format=%(refname:short)"): "\n".join(("origin/sdlc/1", "origin/feature/demo", "origin/" + mod.LEDGER_BRANCH)) + "\n",
     }.get(args, ""))
     rows = mod.find_leftovers(tmp_path, environ={"CLAUDE_CONFIG_DIR": str(tmp_path / "profiles"),
                                                  "CODEX_HOME": str(tmp_path / "empty")})
     kinds = {row["kind"] for row in rows}
     assert {".sdlc", "ignore-block", "running-pid", "worktree", "local-branch", "remote-branch", "installed-plugin"} <= kinds
+    assert {"kind": "local-branch", "path": mod.LEDGER_BRANCH} in rows
+    assert {"kind": "remote-branch", "path": "origin/" + mod.LEDGER_BRANCH} in rows
 
 
 def test_cli_github_uses_read_only_rest_and_reports_only_linked_board(tmp_path):

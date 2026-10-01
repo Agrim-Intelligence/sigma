@@ -13,6 +13,7 @@ AGENTS_MARKERS = ("<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->")
 # Keep this set source-locked by test_copied_markers_match_init_sources: these are exactly
 # sdlc_init.py's `_CURSOR_RULES`, not every rule an adopter may have written themselves.
 CURSOR_RULES = ("sdlc.mdc", "output-contract.mdc")
+LEDGER_BRANCH = "sdlc" + "-ledger"
 
 def _row(kind, path):
     return {"kind": kind, "path": str(path)}
@@ -93,11 +94,11 @@ def find_leftovers(repo, environ=None, github=None):
                 continue
             rows.append(_row("worktree", path))
     for line in _git(repo, "branch", "--format=%(refname:short)").splitlines():
-        if line.startswith(("sdlc/", "feature/")) or line == "sdlc-ledger":
+        if line.startswith(("sdlc/", "feature/")) or line == LEDGER_BRANCH:
             rows.append(_row("local-branch", line))
     for line in _git(repo, "branch", "-r", "--format=%(refname:short)").splitlines():
         branch = line.split("/", 1)[-1]
-        if branch.startswith(("sdlc/", "feature/")) or branch == "sdlc-ledger":
+        if branch.startswith(("sdlc/", "feature/")) or branch == LEDGER_BRANCH:
             rows.append(_row("remote-branch", line))
     environment = os.environ if environ is None else environ
     homes = (Path(environment.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")),
