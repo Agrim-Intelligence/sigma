@@ -519,6 +519,9 @@ def test_verify_runs_in_the_worktree_not_the_main_checkout(tmp_path):
     loop = _load("loop")
     d = _sdlc(tmp_path, {**ON, "verify": {"command": "pwd > where.txt"}})
     goal = _started(d)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     assert loop.verify_goal(d, goal) == 0
     wt = pathlib.Path(work._record(d, goal)["worktree"])
     assert (wt / "where.txt").read_text().strip() == str(wt)
@@ -5671,6 +5674,11 @@ def test_ledger_is_byte_identical_across_a_full_actionlog_instrumented_sequence(
     monkeypatch.setattr(os, "getpid", lambda: 999999)
 
     loop = _load("loop")
+    # This is a ledger-isolation test, not a trust-policy test.  Its fake
+    # worktree runner deliberately creates no real Git checkout, so exercise
+    # the existing `true` verification step without coupling this control to
+    # Git-local trust (which test_shell_policy covers end to end).
+    monkeypatch.setattr(loop.shell_policy, "repository_shell_commands_allowed", lambda root: True)
     base = tmp_path / ".sdlc"
     (base / "goals").mkdir(parents=True)
     (base / "state").mkdir()

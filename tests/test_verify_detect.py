@@ -48,6 +48,20 @@ def _git_repo(path):
     return path
 
 
+def _shell_commands_are_trusted(repo):
+    return subprocess.run(
+        ["git", "config", "--local", "--get", "sigma.allowRepositoryShellCommands"],
+        cwd=repo, capture_output=True, text=True,
+    ).returncode == 0
+
+
+def _trust_shell_commands(repo):
+    subprocess.run(
+        ["git", "config", "--local", "sigma.allowRepositoryShellCommands", "true"],
+        cwd=repo, check=True,
+    )
+
+
 # ---------------------------------------------------------------- detection (reads, never runs)
 
 def test_pytest_suite_is_proposed_as_python_m_pytest(tmp_path):
@@ -228,6 +242,7 @@ def test_confirmed_pytest_candidate_makes_verify_and_record_done_pass(tmp_path):
     # proposal itself is pinned by test_init_prints_the_candidate_and_exact_config_line.
     assert _run(DETECT, "set", sdlc, f'"{sys.executable}" -m pytest -q -p no:cacheprovider',
                 cwd=repo).returncode == 0
+    assert _shell_commands_are_trusted(repo)
     goal = ".sdlc/goals/0001-example.md"
     assert _loop(sdlc, "start", ".sdlc").returncode == 0
     v = _loop(sdlc, "verify", ".sdlc", goal)
@@ -243,6 +258,10 @@ def _demo_repo(tmp_path):
     cfg = json.loads((sdlc / "config.json").read_text())
     cfg["verify"] = {"command": "", "enforce": True}   # the pre-#228 shipped state, the hard case
     (sdlc / "config.json").write_text(json.dumps(cfg))
+    # This fixture deliberately executes the shipped, repo-controlled goal
+    # command.  It is not a default-refusal control, so model the operator's
+    # separate explicit local trust decision.
+    _trust_shell_commands(repo)
     goal = sdlc / "goals" / "0000-demo.md"
     # Portability: the demo's `python3` may be absent on Windows; run the same check with ours.
     # Unquoted on purpose: the frontmatter parser strips a leading `"` (see research/228.md).
@@ -342,7 +361,7 @@ def test_hostile_ci_step_is_never_proposed_and_never_printed(tmp_path, kind):
 
 
 def test_benign_quoted_ci_step_is_proposed_and_confirm_stores_it_byte_identical(tmp_path):
-    root = _ci_repo(tmp_path / "r", 'pytest -m "not slow"')
+    root = _ci_repo(_git_repo(tmp_path / "r"), 'pytest -m "not slow"')
     assert _cmds(root) == ['pytest -m "not slow"']
     sdlc = _cfg(root, {"command": "", "enforce": False})
     r = _run(DETECT, "confirm", sdlc, "1", vd.command_id('pytest -m "not slow"'), cwd=root)
@@ -350,6 +369,7 @@ def test_benign_quoted_ci_step_is_proposed_and_confirm_stores_it_byte_identical(
     v = json.loads((sdlc / "config.json").read_text())["verify"]
     assert v["command"] == 'pytest -m "not slow"' and v["enforce"] is True
     assert json.dumps('pytest -m "not slow"') in r.stdout
+    assert _shell_commands_are_trusted(root)
 
 
 def test_confirm_refuses_an_index_that_is_not_a_candidate(tmp_path):
@@ -374,20 +394,29 @@ def test_escape_sequence_in_a_workflow_file_name_is_escaped_when_printed(tmp_pat
 
 @pytest.mark.parametrize("how", ["file", "stdin", "argv"])
 def test_set_stores_the_users_own_command_verbatim_from_file_stdin_or_argv(tmp_path, how):
-    sdlc = _cfg(tmp_path, {"command": "", "enforce": False})
+    repo = _git_repo(tmp_path / "r")
+    sdlc = _cfg(repo, {"command": "", "enforce": False})
     cmd = 'pytest -m "not slow" -k \'a or b\''
     if how == "file":
-        f = tmp_path / "cmd.txt"
+        f = repo / "cmd.txt"
         f.write_text(cmd + "\n")
-        r = _run(DETECT, "set", sdlc, "--command-file", f, cwd=tmp_path)
+        r = _run(DETECT, "set", sdlc, "--command-file", f, cwd=repo)
     elif how == "stdin":
         r = subprocess.run([sys.executable, str(DETECT), "set", str(sdlc), "-"], input=cmd + "\n",
-                           cwd=tmp_path, capture_output=True, text=True)
+                           cwd=repo, capture_output=True, text=True)
     else:
-        r = _run(DETECT, "set", sdlc, cmd, cwd=tmp_path)
+        r = _run(DETECT, "set", sdlc, cmd, cwd=repo)
     assert r.returncode == 0, r.stderr
     assert json.loads((sdlc / "config.json").read_text())["verify"]["command"] == cmd
     assert json.dumps(cmd) in r.stdout
+    assert _shell_commands_are_trusted(repo)
+
+
+def test_set_refuses_to_enable_a_verify_command_outside_a_git_worktree(tmp_path):
+    sdlc = _cfg(tmp_path, {"command": "", "enforce": False})
+    r = _run(DETECT, "set", sdlc, "pytest -q", cwd=tmp_path)
+    assert r.returncode == 2 and "Git worktree" in r.stderr
+    assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False
 
 
 @pytest.mark.parametrize("bad", ["pytest\ntouch X", "pytest \x1b[2K", "pytest\rX"])
@@ -529,7 +558,7 @@ def test_confirm_refuses_when_the_candidate_changed_since_the_report(tmp_path):
 
 
 def test_confirm_requires_the_printed_id_and_rejects_a_wrong_one(tmp_path):
-    root = _ci_repo(tmp_path / "r", "pytest -q")
+    root = _ci_repo(_git_repo(tmp_path / "r"), "pytest -q")
     sdlc = _cfg(root, {"command": "", "enforce": False})
     cid = vd.detect(root)[0]["id"]
     assert cid == vd.command_id("pytest -q")

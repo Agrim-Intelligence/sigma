@@ -36,6 +36,8 @@ Apply the profile with this block, run from the repository root right after `/ag
 ```bash
 # public-repository adoption: run from the repository root, after /agrim-init
 python3 "$SETUP" configure .sdlc --repo <owner/name> --verify "<your test command>"
+# After reviewing that command, keep its shell permission local to this clone.
+git config --local sigma.allowRepositoryShellCommands true
 python3 "$SETUP" ignore . --scope tracked
 python3 "$SETUP" labels .sdlc
 python3 - <<'PY'
@@ -58,7 +60,9 @@ PY
 `$SETUP` is the same variable `SKILL.md` already defines. `configure`'s own summary line prints
 `ledger: enabled=True` before this block's heredoc turns it back off — that line is correct at the
 moment it prints, and the heredoc's own printed line is the one that reflects the profile actually
-applied.
+applied. The Git-local trust line is deliberately separate from `.sdlc/config.json`: a clone or
+committed profile cannot enable repository-controlled shell commands by itself. Run it only after
+reviewing the test command; it applies to every linked worktree of this clone's repository.
 
 Skip only step 6's `sync.py bootstrap` line — it creates and pushes the ledger branch, which this
 profile keeps off. Still run `/agrim-doctor`, step 6's OTHER call: it confirms this profile's own

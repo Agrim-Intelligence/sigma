@@ -179,7 +179,9 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
      already carries the absolute `.sdlc` path). On replace,
      write their command to a file with your file-writing tool (not a shell `echo`), then run
      `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" set .sdlc --command-file <file>`.
-     Either sets the command and turns enforce ON. On decline, run
+     Either sets the command, turns enforce ON, and records Git-local trust for
+     repository-configured shell commands. That trust is not committed or
+     cloned; these gestures refuse outside a Git worktree. On decline, run
      `python3 "${CLAUDE_SKILL_DIR}/scripts/verify_detect.py" decline .sdlc`. That keeps enforce
      OFF and records why. If nothing was detected, say so and say that enforce is OFF.
    - **Codex / Cursor:** relay the printed candidate block verbatim. It carries the exact

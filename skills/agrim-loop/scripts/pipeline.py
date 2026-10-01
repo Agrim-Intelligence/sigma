@@ -40,6 +40,7 @@ def _load(name):
 
 
 ledger = _load("ledger")            # team record (config-gated, default OFF; every call is fail-open)
+shell_policy = _load("shell_policy")
 
 PASS, WARN, FAIL, ABSENT = "PASS", "WARN", "FAIL", "ABSENT"
 #: The source of contract/vocabulary.json's "severity_order": tools/generate_vocabulary.py
@@ -64,6 +65,8 @@ def load_pipeline(sdlc_dir):
 
 def _run_check(check, cwd):
     """(status, detail) for one declared check command."""
+    if not shell_policy.repository_shell_commands_allowed(cwd):
+        return FAIL, shell_policy.refusal_message()
     try:
         proc = subprocess.run(check.get("run", ""), shell=True, cwd=cwd,
                               capture_output=True, text=True, timeout=_CHECK_TIMEOUT_SECS)

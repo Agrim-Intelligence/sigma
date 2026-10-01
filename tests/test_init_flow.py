@@ -304,6 +304,9 @@ def test_local_goals_flow_reaches_done(tmp_path):
     demo.write_text(demo.read_text().replace("verify_command: python3 ",
                                              "verify_command: %s " % sys.executable)
                     .replace("verify_command: python ", "verify_command: %s " % sys.executable))
+    # This test intentionally executes the shipped demo command after the
+    # operator chose --no-verify. Model the later, explicit local trust choice.
+    _git(w["repo"], "config", "--local", "sigma.allowRepositoryShellCommands", "true", env=w["env"])
     (w["repo"] / "sigma-demo.md").write_text("Sigma ran this goal.\n")
     v = _run(w, [LOOP, "verify", ".sdlc", ".sdlc/goals/0000-demo.md"])
     assert v.returncode == 0, v.stdout + v.stderr

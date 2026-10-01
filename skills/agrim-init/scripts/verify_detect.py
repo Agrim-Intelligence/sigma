@@ -48,6 +48,7 @@ import pathlib
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -322,6 +323,36 @@ def write_verify(sdlc_dir, command, why):
     return verify
 
 
+def trust_confirmed_repository_shell_commands(sdlc_dir):
+    """Record the operator's confirm/set decision in Git-local configuration.
+
+    A verified command is repository input and ``loop.py verify`` executes it with
+    shell semantics.  The confirmation CLI is the only setup gesture that can
+    enable it: keeping this bit in Git's local config means a committed
+    ``.sdlc/config.json`` or a newly-cloned checkout cannot enable itself.
+    ``write_verify`` intentionally stays a pure config writer because callers
+    which scaffold an unconfirmed config must never acquire this trust.
+    """
+    repo = pathlib.Path(sdlc_dir).parent
+    try:
+        inside = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if inside.returncode != 0 or inside.stdout.strip().lower() != "true":
+            return False, "the scaffold directory is not inside a Git worktree"
+        written = subprocess.run(
+            ["git", "-C", str(repo), "config", "--local",
+             "sigma.allowRepositoryShellCommands", "true"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, "Git-local trust could not be recorded"
+    if written.returncode != 0:
+        return False, "Git-local trust could not be recorded"
+    return True, None
+
+
 def unconfirmed_why(candidates):
     """The `_why` a fresh scaffold records -- no command has been confirmed yet. Committed config,
     so the gestures name the portable <installed-sigma> placeholder (the README's own spelling), never this machine's path."""
@@ -476,10 +507,17 @@ def main(argv):
                                "command is one visible line")
             origin = "a command the user supplied"
         if verb in ("set", "confirm"):
+            # This fixed-argument Git write is the operator's explicit opt-in.
+            # Do it before changing the shared config: otherwise config could
+            # advertise an executable command which this checkout cannot run.
+            trusted, reason = trust_confirmed_repository_shell_commands(sdlc)
+            if not trusted:
+                return _refuse("cannot enable a repository verify command because " + reason
+                               + "; use `decline` until this is a Git worktree")
             write_verify(sdlc, cmd, f"set by /agrim-init: `{cmd}` ({origin}) confirmed by the user")
             # json.dumps: exactly the stored string, every character visible, safe to print.
             print(f"verify: command = {json.dumps(cmd)}, enforce ON "
-                  "(loop.py verify runs it; record done needs it green)")
+                  "(Git-local shell trust recorded; loop.py verify runs it; record done needs it green)")
             return 0
         declined = [c["command"] for c in detect(repo)]
         why = ("enforce OFF: the user declined every detected verify command at /agrim-init"
