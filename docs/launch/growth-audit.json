@@ -35,7 +35,7 @@
       ".sdlc/knowledge/analysis",
       ".sdlc/knowledge/analysis/",
       ".sdlc/knowledge/analysis/<note_id_str>.md",
-      ".sdlc/knowledge/analysis/goal-<stem>.md",
+      ".sdlc/knowledge/analysis/goal-<goal>.md",
       ".sdlc/knowledge/analysis/goal-<value>.md",
       ".sdlc/knowledge/analysis/issue-*.md",
       ".sdlc/knowledge/analysis/issue-<digits>.md",
@@ -122,7 +122,7 @@
       ".sdlc/state/phase/<goal>.json",
       ".sdlc/state/propagation",
       ".sdlc/state/propagation/",
-      ".sdlc/state/propagation/<stem>.json",
+      ".sdlc/state/propagation/<goal>.json",
       ".sdlc/state/reconcile.meta.json",
       ".sdlc/state/review-generations/<generation>",
       ".sdlc/state/review-generations/<generation>/brief.md",
@@ -159,9 +159,9 @@
       ".sdlc/state/time",
       ".sdlc/state/time/",
       ".sdlc/state/time/.last-prune",
-      ".sdlc/state/time/<stem>",
-      ".sdlc/state/time/<stem>/",
-      ".sdlc/state/time/<stem>/<value>.jsonl",
+      ".sdlc/state/time/<goal>",
+      ".sdlc/state/time/<goal>/",
+      ".sdlc/state/time/<goal>/<value>.jsonl",
       ".sdlc/state/time/_sessions/<text>/",
       ".sdlc/state/time/_sessions/<text>/<value>.jsonl",
       ".sdlc/state/time/_sessions/<text>/turns.jsonl",
@@ -173,7 +173,7 @@
       ".sdlc/state/withheld/<goal>.md",
       ".sdlc/state/witness",
       ".sdlc/state/witness/",
-      ".sdlc/state/witness/<stem>.jsonl",
+      ".sdlc/state/witness/<goal>.jsonl",
       ".sdlc/state/work",
       ".sdlc/state/work/",
       ".sdlc/state/work/<goal>.json",
@@ -184,8 +184,8 @@
   },
   "repository_measurement": {
     "path": ".sdlc",
-    "revision": "c102e181df60c628673b749fd90cb36890a74189",
-    "size_bytes": 562531
+    "revision": "64709b3971a5ef0f3e59b004c1b5237af8c27e6d",
+    "size_bytes": 566609
   },
   "rows": [
     {
@@ -830,6 +830,11 @@
     },
     {
       "pattern": ".sdlc/goals/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sources.py:639"
+    },
+    {
+      "pattern": ".sdlc/goals/",
       "source": "skill-prose",
       "writer": "skills/agrim-status/SKILL.md:23"
     },
@@ -895,6 +900,11 @@
     },
     {
       "pattern": ".sdlc/journey/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sources.py:578"
+    },
+    {
+      "pattern": ".sdlc/journey/",
       "source": "skill-prose",
       "writer": "skills/agrim-plan-review/SKILL.md:186"
     },
@@ -912,6 +922,11 @@
       "pattern": ".sdlc/journey/<goal>.md",
       "source": "skill-prose",
       "writer": "skills/agrim-loop/references/progress.md:110"
+    },
+    {
+      "pattern": ".sdlc/journey/<goal>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sources.py:584"
     },
     {
       "pattern": ".sdlc/journey/<goal>.md",
@@ -1014,7 +1029,7 @@
       "writer": "skills/agrim-kg/scripts/kg.py:365"
     },
     {
-      "pattern": ".sdlc/knowledge/analysis/goal-<stem>.md",
+      "pattern": ".sdlc/knowledge/analysis/goal-<goal>.md",
       "source": "code",
       "writer": "skills/agrim-kg/scripts/kg.py:762"
     },
@@ -2569,17 +2584,17 @@
       "writer": "skills/agrim-loop/scripts/feature_propagate.py:413"
     },
     {
-      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "pattern": ".sdlc/state/propagation/<goal>.json",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/feature_propagate.py:414"
     },
     {
-      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "pattern": ".sdlc/state/propagation/<goal>.json",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/feature_propagate.py:736"
     },
     {
-      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "pattern": ".sdlc/state/propagation/<goal>.json",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/feature_propagate.py:752"
     },
@@ -3504,42 +3519,42 @@
       "writer": "skills/agrim-loop/scripts/timing_store.py:385"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>",
+      "pattern": ".sdlc/state/time/<goal>",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5333"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>",
+      "pattern": ".sdlc/state/time/<goal>",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5344"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>",
+      "pattern": ".sdlc/state/time/<goal>",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/timing_store.py:362"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>/",
+      "pattern": ".sdlc/state/time/<goal>/",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/timing_store.py:351"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5333"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5344"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/timing_store.py:353"
     },
     {
-      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/timing_store.py:362"
     },
@@ -3639,27 +3654,27 @@
       "writer": "skills/agrim-loop/scripts/witness.py:157"
     },
     {
-      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5023"
     },
     {
-      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5078"
     },
     {
-      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5280"
     },
     {
-      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/loop.py:5283"
     },
     {
-      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
       "source": "code",
       "writer": "skills/agrim-loop/scripts/witness.py:158"
     },
@@ -3887,6 +3902,1601 @@
       "pattern": "<home>/",
       "source": "code",
       "writer": "tools/onboarding_control.py:867"
+    }
+  ],
+  "store_measurements": [
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-design/references/writing-the-artifact.md:282)",
+      "pattern": ".sdlc/*",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 56660900,
+      "size_10x_bytes": 5666090,
+      "size_now_bytes": 566609
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-wizard/SKILL.md:30)",
+      "pattern": ".sdlc/.sdlc/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/acceptance.py:166)",
+      "pattern": ".sdlc/acceptance/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 1031800,
+      "size_10x_bytes": 103180,
+      "size_now_bytes": 10318
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal/SKILL.md:68, skills/agrim-loop/references/running.md:144, skills/agrim-retro/SKILL.md:38)",
+      "pattern": ".sdlc/acceptance/<goal-stem>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 1031800,
+      "size_10x_bytes": 103180,
+      "size_now_bytes": 10318
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-decide/SKILL.md:133, skills/agrim-doctor/SKILL.md:24, skills/agrim-goal-design/references/mapping-the-codebase.md:160, skills/agrim-goal-design/references/mapping-the-codebase.md:60, skills/agrim-init/SKILL.md:160, skills/agrim-init/SKILL.md:49, skills/agrim-init/scripts/verify_detect.py:321, skills/agrim-kg/SKILL.md:17, skills/agrim-ledger/SKILL.md:39, skills/agrim-ledger/SKILL.md:89, skills/agrim-log/SKILL.md:47, skills/agrim-loop/AUTOWATCH.md:100, skills/agrim-loop/AUTOWATCH.md:15, skills/agrim-loop/AUTOWATCH.md:29, skills/agrim-loop/AUTOWATCH.md:48, skills/agrim-loop/SLACK_COMMANDS.md:118, skills/agrim-loop/SLACK_COMMANDS.md:168, skills/agrim-loop/channels/sigma-autowatch/README.md:61, skills/agrim-loop/references/landing.md:121, skills/agrim-loop/references/picking.md:11, skills/agrim-model/SKILL.md:126, skills/agrim-model/SKILL.md:79, skills/agrim-model/SKILL.md:91, skills/agrim-setup/references/public-repo.md:43, skills/agrim-setup/scripts/setup.py:225, skills/agrim-slack/SKILL.md:19, skills/agrim-slack/SKILL.md:75, skills/agrim-wizard/SKILL.md:19)",
+      "pattern": ".sdlc/config.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-align/SKILL.md:25, skills/agrim-decide/SKILL.md:35, skills/agrim-implement/SKILL.md:139, skills/agrim-implement/SKILL.md:175, skills/agrim-plan-review/SKILL.md:91, skills/agrim-research/SKILL.md:98, skills/agrim-retro/SKILL.md:90, skills/agrim-vision/SKILL.md:23, skills/agrim-vision/references/architecture.md:4, skills/agrim-vision/references/design.md:4, skills/agrim-vision/references/selection.md:3, skills/agrim-vision/references/strategy.md:4, skills/agrim-vision/references/vision.md:4, skills/agrim-vision/references/vision.md:8)",
+      "pattern": ".sdlc/context/north-star.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-audit/SKILL.md:48, skills/agrim-decide/SKILL.md:16, skills/agrim-decide/SKILL.md:43, skills/agrim-retro/SKILL.md:97)",
+      "pattern": ".sdlc/decisions.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-design/references/writing-the-artifact.md:280)",
+      "pattern": ".sdlc/design/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/AUTOWATCH.md:179)",
+      "pattern": ".sdlc/design/2289.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-design/references/writing-the-artifact.md:90)",
+      "pattern": ".sdlc/design/<n>-in-brief.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-design/SKILL.md:156, skills/agrim-goal-design/references/writing-the-artifact.md:119, skills/agrim-goal-design/references/writing-the-artifact.md:12, skills/agrim-goal-design/references/writing-the-artifact.md:276, skills/agrim-goal-design/references/writing-the-artifact.md:286, skills/agrim-goal-design/references/writing-the-artifact.md:3, skills/agrim-goal-review/SKILL.md:13, skills/agrim-goal-review/SKILL.md:15, skills/agrim-goal-review/SKILL.md:19, skills/agrim-goal-review/SKILL.md:38, skills/agrim-goal-review/references/adjudication.md:47, skills/agrim-goal-review/references/confirm.md:112, skills/agrim-goal-review/references/confirm.md:175, skills/agrim-goal-review/references/confirm.md:26, skills/agrim-goal-review/references/confirm.md:28, skills/agrim-goal-review/references/confirm.md:61, skills/agrim-goal-review/references/confirm.md:94, skills/agrim-goal-review/references/reading-the-target.md:11, skills/agrim-goal-review/references/reading-the-target.md:3, skills/agrim-goal-review/references/selection.md:3, skills/agrim-rebase/SKILL.md:46)",
+      "pattern": ".sdlc/design/<n>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/comment_watch.py:138, skills/agrim-loop/scripts/drift_watch.py:381, skills/agrim-loop/scripts/ledger.py:1560, skills/agrim-loop/scripts/loop.py:1713, skills/agrim-loop/scripts/loop.py:5170, skills/agrim-loop/scripts/loop.py:5200, skills/agrim-loop/scripts/loop.py:5316, skills/agrim-loop/scripts/phase_report.py:2003, skills/agrim-loop/scripts/phase_report.py:2009, skills/agrim-loop/scripts/phase_report.py:2025, skills/agrim-loop/scripts/work.py:5808, skills/agrim-loop/scripts/work.py:888, skills/agrim-scope/scripts/assign.py:562)",
+      "pattern": ".sdlc/events",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/SKILL.md:88, skills/agrim-loop/scripts/ledger.py:1405, skills/agrim-loop/scripts/sync.py:824)",
+      "pattern": ".sdlc/events/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/ledger.py:1239, skills/agrim-loop/scripts/ledger.py:1255, skills/agrim-loop/scripts/ledger.py:1353)",
+      "pattern": ".sdlc/events/.last-prune",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/comment_watch.py:138, skills/agrim-loop/scripts/drift_watch.py:381, skills/agrim-loop/scripts/ledger.py:1550, skills/agrim-loop/scripts/ledger.py:1560, skills/agrim-loop/scripts/loop.py:1713, skills/agrim-loop/scripts/loop.py:5170, skills/agrim-loop/scripts/loop.py:5200, skills/agrim-loop/scripts/loop.py:5316, skills/agrim-loop/scripts/phase_report.py:2003, skills/agrim-loop/scripts/phase_report.py:2009, skills/agrim-loop/scripts/phase_report.py:2025, skills/agrim-loop/scripts/sync.py:826, skills/agrim-loop/scripts/work.py:5808, skills/agrim-loop/scripts/work.py:888, skills/agrim-scope/scripts/assign.py:562)",
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/references/board.md:90)",
+      "pattern": ".sdlc/evidence/<goal>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-define/SKILL.md:178, skills/agrim-define/SKILL.md:245, skills/agrim-define/SKILL.md:40, skills/agrim-loop/AUTOWATCH.md:160, skills/agrim-loop/SLACK_COMMANDS.md:12, skills/agrim-rebase/SKILL.md:62)",
+      "pattern": ".sdlc/features/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:374, skills/agrim-loop/SLACK_COMMANDS.md:378)",
+      "pattern": ".sdlc/features/index.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/selection.md:3, skills/agrim-loop/scripts/pipeline.py:304)",
+      "pattern": ".sdlc/goals",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-audit/SKILL.md:87, skills/agrim-goal/SKILL.md:20, skills/agrim-loop/SKILL.md:140, skills/agrim-loop/references/running.md:345, skills/agrim-loop/references/stopping.md:54, skills/agrim-loop/scripts/pipeline.py:193, skills/agrim-loop/scripts/pipeline.py:242, skills/agrim-loop/scripts/sources.py:639, skills/agrim-status/SKILL.md:23)",
+      "pattern": ".sdlc/goals/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-align/SKILL.md:36, skills/agrim-radar/SKILL.md:21)",
+      "pattern": ".sdlc/goals/*.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/pipeline.py:215, skills/agrim-loop/scripts/pipeline.py:255, skills/agrim-loop/scripts/pipeline.py:304)",
+      "pattern": ".sdlc/goals/<gid>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal/SKILL.md:21, skills/agrim-model/SKILL.md:40, skills/agrim-research/SKILL.md:46, skills/agrim-retro/SKILL.md:41)",
+      "pattern": ".sdlc/goals/NNNN-*.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-align/SKILL.md:42, skills/agrim-context/SKILL.md:40, skills/agrim-goal/SKILL.md:78, skills/agrim-loop/scripts/sources.py:578, skills/agrim-plan-review/SKILL.md:186, skills/agrim-research/SKILL.md:176, skills/agrim-retro/SKILL.md:88)",
+      "pattern": ".sdlc/journey/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/progress.md:110, skills/agrim-loop/scripts/sources.py:584, skills/agrim-retro/SKILL.md:44)",
+      "pattern": ".sdlc/journey/<goal>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:126, skills/agrim-kg/SKILL.md:65, skills/agrim-kg/scripts/kg.py:740)",
+      "pattern": ".sdlc/knowledge",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:121, skills/agrim-kg/SKILL.md:33, skills/agrim-kg/SKILL.md:34, skills/agrim-kg/SKILL.md:74, skills/agrim-kg/scripts/kg.py:56)",
+      "pattern": ".sdlc/knowledge/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-align/SKILL.md:31)",
+      "pattern": ".sdlc/knowledge/align/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-align/SKILL.md:94)",
+      "pattern": ".sdlc/knowledge/align/<UTC-date>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:177, skills/agrim-kg/SKILL.md:53, skills/agrim-kg/scripts/kg.py:762)",
+      "pattern": ".sdlc/knowledge/analysis",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:136, skills/agrim-kg/SKILL.md:188, skills/agrim-kg/SKILL.md:23, skills/agrim-kg/scripts/kg.py:364, skills/agrim-loop/references/stopping.md:13)",
+      "pattern": ".sdlc/knowledge/analysis/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:365)",
+      "pattern": ".sdlc/knowledge/analysis/<note_id_str>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:762)",
+      "pattern": ".sdlc/knowledge/analysis/goal-<goal>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:762)",
+      "pattern": ".sdlc/knowledge/analysis/goal-<value>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-retro/SKILL.md:115)",
+      "pattern": ".sdlc/knowledge/analysis/issue-*.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:762)",
+      "pattern": ".sdlc/knowledge/analysis/issue-<digits>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:762)",
+      "pattern": ".sdlc/knowledge/analysis/issue-<ref>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:675, skills/agrim-kg/scripts/kg.py:692)",
+      "pattern": ".sdlc/knowledge/archive/research/web",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:67, skills/agrim-kg/scripts/kg.py:188)",
+      "pattern": ".sdlc/knowledge/archive/research/web/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:189, skills/agrim-kg/scripts/kg.py:675, skills/agrim-kg/scripts/kg.py:692)",
+      "pattern": ".sdlc/knowledge/archive/research/web/<name>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-audit/SKILL.md:74)",
+      "pattern": ".sdlc/knowledge/audit/<UTC-date>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:58, skills/agrim-kg/scripts/kg.py:740, skills/agrim-kg/scripts/kg.py:749, skills/agrim-kg/scripts/kg.py:78)",
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-radar/scripts/radar.py:62)",
+      "pattern": ".sdlc/knowledge/radar",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-radar/SKILL.md:39, skills/agrim-radar/scripts/radar.py:38)",
+      "pattern": ".sdlc/knowledge/radar/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-radar/SKILL.md:32)",
+      "pattern": ".sdlc/knowledge/radar/<UTC-date>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-radar/scripts/radar.py:40, skills/agrim-radar/scripts/radar.py:62)",
+      "pattern": ".sdlc/knowledge/radar/ledger.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:187)",
+      "pattern": ".sdlc/knowledge/research/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:21)",
+      "pattern": ".sdlc/knowledge/research/web/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/SKILL.md:156, skills/agrim-ledger/SKILL.md:103, skills/agrim-ledger/SKILL.md:19)",
+      "pattern": ".sdlc/ledger/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/comment_watch.py:138, skills/agrim-loop/scripts/drift_watch.py:381, skills/agrim-loop/scripts/ledger.py:1560, skills/agrim-loop/scripts/loop.py:1713, skills/agrim-loop/scripts/loop.py:5170, skills/agrim-loop/scripts/loop.py:5200, skills/agrim-loop/scripts/loop.py:5316, skills/agrim-loop/scripts/phase_report.py:2003, skills/agrim-loop/scripts/phase_report.py:2009, skills/agrim-loop/scripts/phase_report.py:2025, skills/agrim-loop/scripts/work.py:5808, skills/agrim-loop/scripts/work.py:888, skills/agrim-scope/scripts/assign.py:562)",
+      "pattern": ".sdlc/ledger/<stream>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/ledger.py:1405, skills/agrim-loop/scripts/sync.py:824)",
+      "pattern": ".sdlc/ledger/<stream>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/comment_watch.py:138, skills/agrim-loop/scripts/drift_watch.py:381, skills/agrim-loop/scripts/ledger.py:1550, skills/agrim-loop/scripts/ledger.py:1560, skills/agrim-loop/scripts/loop.py:1713, skills/agrim-loop/scripts/loop.py:5170, skills/agrim-loop/scripts/loop.py:5200, skills/agrim-loop/scripts/loop.py:5316, skills/agrim-loop/scripts/phase_report.py:2003, skills/agrim-loop/scripts/phase_report.py:2009, skills/agrim-loop/scripts/phase_report.py:2025, skills/agrim-loop/scripts/sync.py:826, skills/agrim-loop/scripts/work.py:5808, skills/agrim-loop/scripts/work.py:888, skills/agrim-scope/scripts/assign.py:562)",
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-doctor/SKILL.md:52, skills/agrim-ledger/SKILL.md:41, skills/agrim-ledger/SKILL.md:60)",
+      "pattern": ".sdlc/ledger/TEAM.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/landing.md:358)",
+      "pattern": ".sdlc/pipeline.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/references/adjudication.md:49, skills/agrim-loop/references/running.md:99, skills/agrim-plan/SKILL.md:54, skills/agrim-plan/SKILL.md:62, skills/agrim-research/SKILL.md:181, skills/agrim-retro/SKILL.md:150, skills/agrim-retro/SKILL.md:152, skills/agrim-scope/SKILL.md:80, skills/agrim-scope/scripts/assign.py:584)",
+      "pattern": ".sdlc/plans/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 34176100,
+      "size_10x_bytes": 3417610,
+      "size_now_bytes": 341761
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-plan/SKILL.md:55)",
+      "pattern": ".sdlc/plans/0007-fix-retry.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/picking.md:120)",
+      "pattern": ".sdlc/plans/2521.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-scope/scripts/assign.py:585)",
+      "pattern": ".sdlc/plans/<epic>-plan.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SKILL.md:212, skills/agrim-loop/references/landing.md:99, skills/agrim-loop/references/running.md:217, skills/agrim-plan/SKILL.md:53)",
+      "pattern": ".sdlc/plans/<goal-stem>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 34176100,
+      "size_10x_bytes": 3417610,
+      "size_now_bytes": 341761
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/running.md:352)",
+      "pattern": ".sdlc/plans/<goal-stem>.slices.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-define/SKILL.md:88, skills/agrim-scope/SKILL.md:106, skills/agrim-scope/SKILL.md:190, skills/agrim-scope/SKILL.md:195, skills/agrim-scope/SKILL.md:199, skills/agrim-scope/SKILL.md:79, skills/agrim-scope/SKILL.md:87)",
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-triage/SKILL.md:83)",
+      "pattern": ".sdlc/plans/triage/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-triage/SKILL.md:237, skills/agrim-triage/SKILL.md:241, skills/agrim-triage/SKILL.md:66)",
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-triage/SKILL.md:251, skills/agrim-triage/SKILL.md:64)",
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-context/SKILL.md:47, skills/agrim-doctor/SKILL.md:144, skills/agrim-retro/SKILL.md:46, skills/agrim-retro/SKILL.md:94, skills/agrim-verify/SKILL.md:30, skills/agrim-vision/references/architecture.md:26)",
+      "pattern": ".sdlc/project.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-design/references/writing-the-artifact.md:13)",
+      "pattern": ".sdlc/research/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 20851900,
+      "size_10x_bytes": 2085190,
+      "size_now_bytes": 208519
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-research/SKILL.md:135, skills/agrim-research/SKILL.md:198)",
+      "pattern": ".sdlc/research/<goal-slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 20295400,
+      "size_10x_bytes": 2029540,
+      "size_now_bytes": 202954
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-release-check/SKILL.md:18, skills/agrim-release-check/SKILL.md:38)",
+      "pattern": ".sdlc/reviews/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-contract-check/SKILL.md:56)",
+      "pattern": ".sdlc/reviews/contract-check-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-debug/SKILL.md:55)",
+      "pattern": ".sdlc/reviews/debug-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-migration-check/SKILL.md:53)",
+      "pattern": ".sdlc/reviews/migration-check-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-release-check/SKILL.md:61)",
+      "pattern": ".sdlc/reviews/release-check-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-security-review/SKILL.md:86)",
+      "pattern": ".sdlc/reviews/security-review-<slug>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/scripts/setup_wizard.py:333, skills/agrim-kg/scripts/kg.py:439, skills/agrim-kg/scripts/kg.py:678, skills/agrim-kg/scripts/kg.py:701, skills/agrim-loop/scripts/agent_watch.py:166, skills/agrim-loop/scripts/autowatch.py:803, skills/agrim-loop/scripts/backlog_check.py:947, skills/agrim-loop/scripts/channel_notify.py:178, skills/agrim-loop/scripts/comment_watch.py:156, skills/agrim-loop/scripts/drift_watch.py:337, skills/agrim-loop/scripts/drift_watch.py:359, skills/agrim-loop/scripts/feature_judge.py:791, skills/agrim-loop/scripts/feature_judge.py:832, skills/agrim-loop/scripts/feature_judge.py:842, skills/agrim-loop/scripts/feature_judge.py:850, skills/agrim-loop/scripts/loop.py:1142, skills/agrim-loop/scripts/loop.py:2039, skills/agrim-loop/scripts/loop.py:2058, skills/agrim-loop/scripts/loop.py:2335, skills/agrim-loop/scripts/loop.py:4058, skills/agrim-loop/scripts/loop.py:5453, skills/agrim-loop/scripts/loop.py:5456, skills/agrim-loop/scripts/phase_report.py:1972, skills/agrim-loop/scripts/phase_report.py:1990, skills/agrim-loop/scripts/phase_report.py:1999, skills/agrim-loop/scripts/slack_commands_listen.py:1195, skills/agrim-loop/scripts/slack_commands_listen.py:1550, skills/agrim-loop/scripts/slack_commands_listen.py:1560, skills/agrim-loop/scripts/slack_commands_listen.py:1575, skills/agrim-loop/scripts/slack_commands_listen.py:1639, skills/agrim-loop/scripts/slack_commands_listen.py:1643, skills/agrim-loop/scripts/slack_commands_listen.py:1648, skills/agrim-loop/scripts/slack_commands_listen.py:1650, skills/agrim-loop/scripts/slack_commands_listen.py:1656, skills/agrim-loop/scripts/slack_commands_listen.py:1657, skills/agrim-loop/scripts/slack_commands_listen.py:1660, skills/agrim-loop/scripts/slack_commands_listen.py:605, skills/agrim-loop/scripts/slack_commands_listen.py:752, skills/agrim-loop/scripts/slack_commands_listen.py:753, skills/agrim-loop/scripts/state.py:243, skills/agrim-loop/scripts/state.py:244, skills/agrim-loop/scripts/state.py:310, skills/agrim-loop/scripts/state.py:325, skills/agrim-loop/scripts/state.py:391, skills/agrim-loop/scripts/state.py:422, skills/agrim-loop/scripts/state.py:483, skills/agrim-loop/scripts/state.py:490, skills/agrim-loop/scripts/sync.py:436, skills/agrim-loop/scripts/sync.py:622, skills/agrim-loop/scripts/sync.py:762, skills/agrim-loop/scripts/watch.py:97, skills/agrim-scope/scripts/assign.py:485)",
+      "pattern": ".sdlc/state",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 601100,
+      "size_10x_bytes": 60110,
+      "size_now_bytes": 6011
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/scripts/setup_wizard.py:230, skills/agrim-init/scripts/setup_wizard.py:281, skills/agrim-kg/scripts/kg.py:488, skills/agrim-kg/scripts/kg.py:615, skills/agrim-loop/scripts/autowatch.py:514, skills/agrim-loop/scripts/backlog_check.py:880, skills/agrim-loop/scripts/coexist.py:602, skills/agrim-loop/scripts/drift_watch.py:134, skills/agrim-loop/scripts/feature_judge.py:510, skills/agrim-loop/scripts/feature_judge.py:666, skills/agrim-loop/scripts/loop.py:1172, skills/agrim-loop/scripts/loop.py:145, skills/agrim-loop/scripts/loop.py:3942, skills/agrim-loop/scripts/slack_commands_listen.py:710, skills/agrim-loop/scripts/slack_commands_listen.py:795, skills/agrim-loop/scripts/state.py:151, skills/agrim-loop/scripts/state.py:202, skills/agrim-loop/scripts/state.py:523, skills/agrim-loop/scripts/state.py:88, skills/agrim-loop/scripts/supervise_daemon.py:341, skills/agrim-loop/scripts/sync.py:209, skills/agrim-loop/scripts/watch.py:61)",
+      "pattern": ".sdlc/state/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 601100,
+      "size_10x_bytes": 60110,
+      "size_now_bytes": 6011
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5453, skills/agrim-loop/scripts/phase_report.py:1990, skills/agrim-loop/scripts/phase_report.py:1999, skills/agrim-loop/scripts/state.py:153, skills/agrim-loop/scripts/state.py:244, skills/agrim-loop/scripts/state.py:249, skills/agrim-loop/scripts/state.py:310, skills/agrim-loop/scripts/state.py:325, skills/agrim-loop/scripts/state.py:391, skills/agrim-loop/scripts/state.py:422, skills/agrim-scope/scripts/assign.py:485)",
+      "pattern": ".sdlc/state/STATE.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5453, skills/agrim-loop/scripts/phase_report.py:1990, skills/agrim-loop/scripts/phase_report.py:1999, skills/agrim-loop/scripts/state.py:203, skills/agrim-loop/scripts/state.py:243, skills/agrim-loop/scripts/state.py:310, skills/agrim-loop/scripts/state.py:325, skills/agrim-loop/scripts/state.py:391, skills/agrim-loop/scripts/state.py:422, skills/agrim-scope/scripts/assign.py:485)",
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/agent_watch.py:166)",
+      "pattern": ".sdlc/state/agent-watch-cursor.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:3096)",
+      "pattern": ".sdlc/state/agents/<goal>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:3139, skills/agrim-loop/scripts/loop.py:3152)",
+      "pattern": ".sdlc/state/agents/<goal>/<thread>.active",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/slack_commands_listen.py:1185)",
+      "pattern": ".sdlc/state/agents/<key>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/slack_commands_listen.py:1185)",
+      "pattern": ".sdlc/state/agents/<key>/<thread>.active",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/autowatch.py:515, skills/agrim-loop/scripts/autowatch.py:803)",
+      "pattern": ".sdlc/state/autowatch-spend.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/channel_notify.py:178)",
+      "pattern": ".sdlc/state/channel-notify-cursor.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1062, skills/agrim-loop/scripts/loop.py:2122, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/slack_commands_listen.py:881, skills/agrim-scope/scripts/assign.py:491)",
+      "pattern": ".sdlc/state/claims",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1855, skills/agrim-loop/scripts/loop.py:447)",
+      "pattern": ".sdlc/state/claims/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1856)",
+      "pattern": ".sdlc/state/claims/<goal>.claimed",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1062, skills/agrim-loop/scripts/loop.py:2122, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:448, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-scope/scripts/assign.py:491)",
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/slack_commands_listen.py:881)",
+      "pattern": ".sdlc/state/claims/slack-cmd-<name>.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/coexist.py:996)",
+      "pattern": ".sdlc/state/coexist.notice",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/comment_watch.py:156)",
+      "pattern": ".sdlc/state/comment-watch-cursor.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/drift_watch.py:135, skills/agrim-loop/scripts/drift_watch.py:337, skills/agrim-loop/scripts/drift_watch.py:359)",
+      "pattern": ".sdlc/state/drift.meta.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/backlog_check.py:885, skills/agrim-loop/scripts/backlog_check.py:947)",
+      "pattern": ".sdlc/state/embeddings.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/running.md:257)",
+      "pattern": ".sdlc/state/escalation/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/feature_judge.py:511, skills/agrim-loop/scripts/feature_judge.py:832, skills/agrim-loop/scripts/feature_judge.py:842, skills/agrim-loop/scripts/feature_judge.py:850)",
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/feature_judge.py:667, skills/agrim-loop/scripts/feature_judge.py:791)",
+      "pattern": ".sdlc/state/feature-judge-spend.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/references/confirm.md:32)",
+      "pattern": ".sdlc/state/goal-review",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/references/confirm.md:172, skills/agrim-goal-review/references/confirm.md:97)",
+      "pattern": ".sdlc/state/goal-review/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/references/confirm.md:144, skills/agrim-goal-review/references/confirm.md:158, skills/agrim-goal-review/references/confirm.md:31, skills/agrim-goal-review/references/confirm.md:93)",
+      "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/SKILL.md:122, skills/agrim-goal-review/references/confirm.md:159)",
+      "pattern": ".sdlc/state/goal-review/<n>.report.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-ledger/SKILL.md:66, skills/agrim-loop/AUTOWATCH.md:5, skills/agrim-loop/scripts/loop.py:3360, skills/agrim-loop/scripts/watch.py:64, skills/agrim-loop/scripts/watch.py:81, skills/agrim-loop/scripts/watch.py:97)",
+      "pattern": ".sdlc/state/inbox.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/SKILL.md:110, skills/agrim-kg/scripts/kg.py:439, skills/agrim-kg/scripts/kg.py:489, skills/agrim-kg/scripts/kg.py:678)",
+      "pattern": ".sdlc/state/kg-refresh.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-kg/scripts/kg.py:616, skills/agrim-kg/scripts/kg.py:701)",
+      "pattern": ".sdlc/state/kg-warned.stamp",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/sync.py:210, skills/agrim-loop/scripts/sync.py:436, skills/agrim-loop/scripts/sync.py:622, skills/agrim-loop/scripts/sync.py:762)",
+      "pattern": ".sdlc/state/knowledge-sync.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/cross_repo.py:773, skills/agrim-loop/scripts/cross_repo.py:777, skills/agrim-loop/scripts/cross_repo.py:806, skills/agrim-loop/scripts/cross_repo.py:814, skills/agrim-loop/scripts/cross_repo.py:820, skills/agrim-loop/scripts/cross_repo.py:828, skills/agrim-loop/scripts/cross_repo.py:848)",
+      "pattern": ".sdlc/state/landing",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/cross_repo.py:626)",
+      "pattern": ".sdlc/state/landing/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/cross_repo.py:627, skills/agrim-loop/scripts/cross_repo.py:773, skills/agrim-loop/scripts/cross_repo.py:777, skills/agrim-loop/scripts/cross_repo.py:806, skills/agrim-loop/scripts/cross_repo.py:814, skills/agrim-loop/scripts/cross_repo.py:820, skills/agrim-loop/scripts/cross_repo.py:828, skills/agrim-loop/scripts/cross_repo.py:848)",
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:146, skills/agrim-loop/scripts/loop.py:5456)",
+      "pattern": ".sdlc/state/ledger-delivery-attempt",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/actionlog.py:373, skills/agrim-loop/scripts/loop.py:1715, skills/agrim-loop/scripts/loop.py:5202, skills/agrim-loop/scripts/loop.py:5323)",
+      "pattern": ".sdlc/state/log",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-log/SKILL.md:21, skills/agrim-loop/references/running.md:44, skills/agrim-loop/scripts/actionlog.py:361)",
+      "pattern": ".sdlc/state/log/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-log/SKILL.md:22)",
+      "pattern": ".sdlc/state/log/*.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-doctor/SKILL.md:171, skills/agrim-loop/scripts/actionlog.py:362, skills/agrim-loop/scripts/actionlog.py:373, skills/agrim-loop/scripts/loop.py:1715, skills/agrim-loop/scripts/loop.py:5202, skills/agrim-loop/scripts/loop.py:5323)",
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/landing.md:301, skills/agrim-loop/scripts/loop.py:2058, skills/agrim-loop/scripts/loop.py:3943, skills/agrim-loop/scripts/loop.py:4058)",
+      "pattern": ".sdlc/state/merge-reconcile.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/coexist.py:607)",
+      "pattern": ".sdlc/state/owner.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/phase_report.py:1972, skills/agrim-loop/scripts/state.py:89)",
+      "pattern": ".sdlc/state/phase-end-<stripe>.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/phase_report.py:1414)",
+      "pattern": ".sdlc/state/phase/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/phase_report.py:1415)",
+      "pattern": ".sdlc/state/phase/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/feature_propagate.py:736, skills/agrim-loop/scripts/feature_propagate.py:752)",
+      "pattern": ".sdlc/state/propagation",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/feature_propagate.py:413)",
+      "pattern": ".sdlc/state/propagation/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/feature_propagate.py:414, skills/agrim-loop/scripts/feature_propagate.py:736, skills/agrim-loop/scripts/feature_propagate.py:752)",
+      "pattern": ".sdlc/state/propagation/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1142, skills/agrim-loop/scripts/loop.py:1173, skills/agrim-loop/scripts/loop.py:2039, skills/agrim-loop/scripts/loop.py:2335)",
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/review_context.py:962)",
+      "pattern": ".sdlc/state/review-generations/<generation>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/review_context.py:962)",
+      "pattern": ".sdlc/state/review-generations/<generation>/brief.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:5705)",
+      "pattern": ".sdlc/state/review-generations/<generation_id>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:664)",
+      "pattern": ".sdlc/state/review-generations/<generation_id>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:5705, skills/agrim-loop/scripts/work.py:670)",
+      "pattern": ".sdlc/state/review-generations/<generation_id>/evidence.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/landing.md:137, skills/agrim-loop/references/landing.md:139, skills/agrim-loop/references/running.md:188, skills/agrim-loop/references/running.md:190)",
+      "pattern": ".sdlc/state/review-manifests/$goal.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:5770, skills/agrim-loop/scripts/work.py:837)",
+      "pattern": ".sdlc/state/review-posts",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:5770, skills/agrim-loop/scripts/work.py:837, skills/agrim-loop/scripts/work.py:921)",
+      "pattern": ".sdlc/state/review-posts/<evidence_id>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SKILL.md:250, skills/agrim-loop/references/stopping.md:22, skills/agrim-loop/scripts/state.py:483, skills/agrim-loop/scripts/state.py:490, skills/agrim-loop/scripts/state.py:525, skills/agrim-loop/scripts/state.py:535, skills/agrim-status/SKILL.md:18)",
+      "pattern": ".sdlc/state/review-queue.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:755)",
+      "pattern": ".sdlc/state/review-results",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:755)",
+      "pattern": ".sdlc/state/review-results/<generation_id>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:2094, skills/agrim-loop/scripts/loop.py:2146, skills/agrim-loop/scripts/loop.py:2154, skills/agrim-loop/scripts/loop.py:2208, skills/agrim-loop/scripts/loop.py:5443)",
+      "pattern": ".sdlc/state/run_stop",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/state.py:702)",
+      "pattern": ".sdlc/state/run_stop/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:2094, skills/agrim-loop/scripts/loop.py:2146, skills/agrim-loop/scripts/loop.py:2154, skills/agrim-loop/scripts/loop.py:2208, skills/agrim-loop/scripts/loop.py:5443, skills/agrim-loop/scripts/state.py:703)",
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1716, skills/agrim-loop/scripts/loop.py:1847, skills/agrim-loop/scripts/loop.py:2201, skills/agrim-loop/scripts/loop.py:2234, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:5452, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/slack_commands_listen.py:885, skills/agrim-scope/scripts/assign.py:484, skills/agrim-scope/scripts/assign.py:491, skills/agrim-scope/scripts/assign.py:590)",
+      "pattern": ".sdlc/state/sessions",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:2673, skills/agrim-loop/scripts/loop.py:2868, skills/agrim-loop/scripts/loop.py:2935)",
+      "pattern": ".sdlc/state/sessions/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1716, skills/agrim-loop/scripts/loop.py:1847, skills/agrim-loop/scripts/loop.py:2201, skills/agrim-loop/scripts/loop.py:2218, skills/agrim-loop/scripts/loop.py:2223, skills/agrim-loop/scripts/loop.py:2234, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:2690, skills/agrim-loop/scripts/loop.py:2894, skills/agrim-loop/scripts/loop.py:2911, skills/agrim-loop/scripts/loop.py:2943, skills/agrim-loop/scripts/loop.py:5452, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/slack_commands_listen.py:885, skills/agrim-scope/scripts/assign.py:484, skills/agrim-scope/scripts/assign.py:491, skills/agrim-scope/scripts/assign.py:590)",
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1716, skills/agrim-loop/scripts/loop.py:1847, skills/agrim-loop/scripts/loop.py:2201, skills/agrim-loop/scripts/loop.py:2218, skills/agrim-loop/scripts/loop.py:2223, skills/agrim-loop/scripts/loop.py:2234, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:2690, skills/agrim-loop/scripts/loop.py:2894, skills/agrim-loop/scripts/loop.py:2911, skills/agrim-loop/scripts/loop.py:2943, skills/agrim-loop/scripts/loop.py:5452, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/slack_commands_listen.py:885, skills/agrim-scope/scripts/assign.py:484, skills/agrim-scope/scripts/assign.py:491, skills/agrim-scope/scripts/assign.py:590)",
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1716, skills/agrim-loop/scripts/loop.py:1847, skills/agrim-loop/scripts/loop.py:2201, skills/agrim-loop/scripts/loop.py:2218, skills/agrim-loop/scripts/loop.py:2223, skills/agrim-loop/scripts/loop.py:2234, skills/agrim-loop/scripts/loop.py:2245, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:2457, skills/agrim-loop/scripts/loop.py:2695, skills/agrim-loop/scripts/loop.py:2725, skills/agrim-loop/scripts/loop.py:2791, skills/agrim-loop/scripts/loop.py:2898, skills/agrim-loop/scripts/loop.py:2914, skills/agrim-loop/scripts/loop.py:2945, skills/agrim-loop/scripts/loop.py:2993, skills/agrim-loop/scripts/loop.py:5452, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/loop.py:5519, skills/agrim-loop/scripts/slack_commands_listen.py:885, skills/agrim-scope/scripts/assign.py:484, skills/agrim-scope/scripts/assign.py:491, skills/agrim-scope/scripts/assign.py:590)",
+      "pattern": ".sdlc/state/sessions/locks",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:2527)",
+      "pattern": ".sdlc/state/sessions/locks/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1716, skills/agrim-loop/scripts/loop.py:1847, skills/agrim-loop/scripts/loop.py:2201, skills/agrim-loop/scripts/loop.py:2218, skills/agrim-loop/scripts/loop.py:2223, skills/agrim-loop/scripts/loop.py:2234, skills/agrim-loop/scripts/loop.py:2245, skills/agrim-loop/scripts/loop.py:2358, skills/agrim-loop/scripts/loop.py:2457, skills/agrim-loop/scripts/loop.py:2528, skills/agrim-loop/scripts/loop.py:2695, skills/agrim-loop/scripts/loop.py:2725, skills/agrim-loop/scripts/loop.py:2791, skills/agrim-loop/scripts/loop.py:2898, skills/agrim-loop/scripts/loop.py:2914, skills/agrim-loop/scripts/loop.py:2945, skills/agrim-loop/scripts/loop.py:2993, skills/agrim-loop/scripts/loop.py:5452, skills/agrim-loop/scripts/loop.py:5462, skills/agrim-loop/scripts/loop.py:5519, skills/agrim-loop/scripts/slack_commands_listen.py:885, skills/agrim-scope/scripts/assign.py:484, skills/agrim-scope/scripts/assign.py:491, skills/agrim-scope/scripts/assign.py:590)",
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/scripts/setup_wizard.py:282, skills/agrim-init/scripts/setup_wizard.py:333)",
+      "pattern": ".sdlc/state/setup-wizard-cache.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-init/scripts/setup_wizard.py:231, skills/agrim-wizard/SKILL.md:105, skills/agrim-wizard/SKILL.md:143)",
+      "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:156, skills/agrim-loop/SLACK_COMMANDS.md:204, skills/agrim-loop/scripts/slack_commands_listen.py:1550, skills/agrim-loop/scripts/slack_commands_listen.py:1656, skills/agrim-loop/scripts/slack_commands_listen.py:605, skills/agrim-loop/scripts/slack_commands_listen.py:752)",
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:314, skills/agrim-loop/SLACK_COMMANDS.md:315)",
+      "pattern": ".sdlc/state/slack-commands.launchd.log</string>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:234)",
+      "pattern": ".sdlc/state/slack-commands.lock",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:155, skills/agrim-loop/scripts/slack_commands_listen.py:1195, skills/agrim-loop/scripts/slack_commands_listen.py:1560, skills/agrim-loop/scripts/slack_commands_listen.py:1575, skills/agrim-loop/scripts/slack_commands_listen.py:1639, skills/agrim-loop/scripts/slack_commands_listen.py:1643, skills/agrim-loop/scripts/slack_commands_listen.py:1650, skills/agrim-loop/scripts/slack_commands_listen.py:1657, skills/agrim-loop/scripts/slack_commands_listen.py:1660, skills/agrim-loop/scripts/slack_commands_listen.py:796)",
+      "pattern": ".sdlc/state/slack-commands.log",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/slack_commands_listen.py:1648, skills/agrim-loop/scripts/slack_commands_listen.py:753)",
+      "pattern": ".sdlc/state/slack-commands.pid",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/SLACK_COMMANDS.md:190, skills/agrim-loop/SLACK_COMMANDS.md:228, skills/agrim-loop/SLACK_COMMANDS.md:325, skills/agrim-slack/SKILL.md:56)",
+      "pattern": ".sdlc/state/slack-commands.stop",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/supervise_daemon.py:351, skills/agrim-loop/scripts/supervise_daemon.py:354, skills/agrim-loop/scripts/supervise_daemon.py:365, skills/agrim-loop/scripts/supervise_daemon.py:411, skills/agrim-loop/scripts/supervise_daemon.py:443, skills/agrim-loop/scripts/supervise_daemon.py:461)",
+      "pattern": ".sdlc/state/supervisor.log",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/supervise_daemon.py:382, skills/agrim-loop/scripts/supervise_daemon.py:401)",
+      "pattern": ".sdlc/state/supervisor.run.out",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/supervise_daemon.py:419, skills/agrim-loop/scripts/supervise_daemon.py:428)",
+      "pattern": ".sdlc/state/supervisor.tail",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:331, skills/agrim-loop/scripts/timing_store.py:340, skills/agrim-loop/scripts/timing_store.py:385)",
+      "pattern": ".sdlc/state/time",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 601100,
+      "size_10x_bytes": 60110,
+      "size_now_bytes": 6011
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:313)",
+      "pattern": ".sdlc/state/time/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 601100,
+      "size_10x_bytes": 60110,
+      "size_now_bytes": 6011
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:315, skills/agrim-loop/scripts/timing_store.py:331, skills/agrim-loop/scripts/timing_store.py:340, skills/agrim-loop/scripts/timing_store.py:385)",
+      "pattern": ".sdlc/state/time/.last-prune",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 1000,
+      "size_10x_bytes": 100,
+      "size_now_bytes": 10
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5333, skills/agrim-loop/scripts/loop.py:5344, skills/agrim-loop/scripts/timing_store.py:362)",
+      "pattern": ".sdlc/state/time/<goal>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 601100,
+      "size_10x_bytes": 60110,
+      "size_now_bytes": 6011
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:351)",
+      "pattern": ".sdlc/state/time/<goal>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 600100,
+      "size_10x_bytes": 60010,
+      "size_now_bytes": 6001
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5333, skills/agrim-loop/scripts/loop.py:5344, skills/agrim-loop/scripts/timing_store.py:353, skills/agrim-loop/scripts/timing_store.py:362)",
+      "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:396)",
+      "pattern": ".sdlc/state/time/_sessions/<text>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 600100,
+      "size_10x_bytes": 60010,
+      "size_now_bytes": 6001
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:398)",
+      "pattern": ".sdlc/state/time/_sessions/<text>/<value>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 600100,
+      "size_10x_bytes": 60010,
+      "size_now_bytes": 6001
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/timing_store.py:398)",
+      "pattern": ".sdlc/state/time/_sessions/<text>/turns.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1917)",
+      "pattern": ".sdlc/state/unit-tracking/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:1918)",
+      "pattern": ".sdlc/state/unit-tracking/<goal>.attempt",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/state.py:897, skills/agrim-loop/scripts/work.py:4225)",
+      "pattern": ".sdlc/state/verify/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/upstream.py:893)",
+      "pattern": ".sdlc/state/withheld",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/upstream.py:571, skills/agrim-setup/references/public-repo.md:158, skills/agrim-setup/references/public-repo.md:29)",
+      "pattern": ".sdlc/state/withheld/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/references/filing.md:85, skills/agrim-loop/scripts/upstream.py:572, skills/agrim-loop/scripts/upstream.py:893)",
+      "pattern": ".sdlc/state/withheld/<goal>.md",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5023, skills/agrim-loop/scripts/loop.py:5078, skills/agrim-loop/scripts/loop.py:5280, skills/agrim-loop/scripts/loop.py:5283)",
+      "pattern": ".sdlc/state/witness",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/witness.py:157)",
+      "pattern": ".sdlc/state/witness/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/loop.py:5023, skills/agrim-loop/scripts/loop.py:5078, skills/agrim-loop/scripts/loop.py:5280, skills/agrim-loop/scripts/loop.py:5283, skills/agrim-loop/scripts/witness.py:158)",
+      "pattern": ".sdlc/state/witness/<goal>.jsonl",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:2200, skills/agrim-loop/scripts/work.py:2280, skills/agrim-loop/scripts/work.py:2296, skills/agrim-loop/scripts/work.py:3223, skills/agrim-loop/scripts/work.py:3266, skills/agrim-loop/scripts/work.py:3529, skills/agrim-loop/scripts/work.py:3537, skills/agrim-loop/scripts/work.py:3548, skills/agrim-loop/scripts/work.py:3560, skills/agrim-loop/scripts/work.py:4080, skills/agrim-loop/scripts/work.py:4120, skills/agrim-loop/scripts/work.py:4132, skills/agrim-loop/scripts/work.py:4540, skills/agrim-loop/scripts/work.py:519, skills/agrim-loop/scripts/work.py:5783, skills/agrim-loop/scripts/work.py:5799, skills/agrim-loop/scripts/work.py:899, skills/agrim-loop/scripts/work.py:921)",
+      "pattern": ".sdlc/state/work",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:1151)",
+      "pattern": ".sdlc/state/work/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-loop/scripts/work.py:1152, skills/agrim-loop/scripts/work.py:2200, skills/agrim-loop/scripts/work.py:2280, skills/agrim-loop/scripts/work.py:2296, skills/agrim-loop/scripts/work.py:3223, skills/agrim-loop/scripts/work.py:3266, skills/agrim-loop/scripts/work.py:3529, skills/agrim-loop/scripts/work.py:3537, skills/agrim-loop/scripts/work.py:3548, skills/agrim-loop/scripts/work.py:3560, skills/agrim-loop/scripts/work.py:4080, skills/agrim-loop/scripts/work.py:4120, skills/agrim-loop/scripts/work.py:4132, skills/agrim-loop/scripts/work.py:4540, skills/agrim-loop/scripts/work.py:519, skills/agrim-loop/scripts/work.py:5783, skills/agrim-loop/scripts/work.py:5799, skills/agrim-loop/scripts/work.py:899, skills/agrim-loop/scripts/work.py:921)",
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-plan-review/SKILL.md:54, skills/agrim-plan-review/SKILL.md:62, skills/agrim-review/SKILL.md:53, skills/agrim-review/SKILL.md:61)",
+      "pattern": ".sdlc/work/<goal>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (skills/agrim-goal-review/SKILL.md:58, skills/agrim-goal-review/references/adjudication.md:30)",
+      "pattern": ".sdlc/work/<n>",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": 0,
+      "size_10x_bytes": 0,
+      "size_now_bytes": 0
+    },
+    {
+      "decision": "B6 #419 disposition required",
+      "growth_event": "writer invoked (tools/onboarding_control.py:867)",
+      "pattern": "<home>/",
+      "pruner_or_cap": "unknown (B6 #419)",
+      "size_100x_bytes": null,
+      "size_10x_bytes": null,
+      "size_now_bytes": null
     }
   ]
 }

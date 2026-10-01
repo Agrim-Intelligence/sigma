@@ -14,16 +14,16 @@ python3 tools/readiness/growth_audit.py . --measure-sdlc --b6-issue 419 --json d
 ```
 
 The committed snapshot was generated on 2026-10-01 at revision
-`c102e181df60c628673b749fd90cb36890a74189`. It measured this checkout's
-`.sdlc` at **562,531 bytes**. The SHA is part of the JSON result, so a later
+`64709b3971a5ef0f3e59b004c1b5237af8c27e6d`. It measured this checkout's
+`.sdlc` at **566,609 bytes**. The SHA is part of the JSON result, so a later
 checkout cannot present this byte count as current. `--measure-host ROOT`
 remains a separate named-root opt-in; it never walks a home directory.
 
 | Scanner source | Full rows | Unique path patterns | Measurement / dedup decision |
 | --- | ---: | ---: | --- |
-| Python durable-writer calls | 518 | 122 | Every statically resolvable direct destination and helper-return destination is recorded with source line. Before a B6 issue is filed, its exact row must be re-measured at the current SHA and deduplicated against an open B6 issue. |
+| Python durable-writer calls | 521 | 124 | Every statically resolvable direct destination and helper-return destination is recorded with source line. Before a B6 issue is filed, its exact row must be re-measured at the current SHA and deduplicated against an open B6 issue. |
 | Skill prose write gestures | 222 | 77 | The documented paths are retained as host-agnostic procedural evidence, not treated as proof a filesystem write occurred. Their rows use the same `(pattern, writer, source)` dedup key. |
-| Combined scan | 740 | 177 | `growth-audit.json` is sorted by path, writer, source; it is the reviewable source of truth for the table counts. |
+| Combined scan | 743 | 177 | `growth-audit.json` is sorted by path, writer, source; it is the reviewable source of truth for the table counts. |
 
 The scanner follows source-discovered helper returns and writer-helper call
 chains rather than a hard-coded writer allowlist. Its current rows include
