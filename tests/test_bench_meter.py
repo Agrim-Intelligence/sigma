@@ -136,3 +136,60 @@ def test_shipped_rate_card_prices_sonnet_5_5_after_its_official_release(tmp_path
 
     assert result["unpriced_turns"] == 0
     assert result["cost_usd"] == 12.0
+
+
+def test_usage_breakdown_includes_cache_and_request_kinds_and_reconciles_total(tmp_path):
+    """A published meter total is independently reproducible without transcript text.
+
+    Input/output alone do not account for Claude cache charges.  This deliberately exercises
+    every token kind plus a server-tool request, while retaining the absent-rate/zero-unit
+    ``web_fetch`` row: a reader must be able to see every rate kind that the meter considered.
+    """
+    transcript = tmp_path / "full-usage.jsonl"
+    line = _line("full", input_tokens=1_000_000, output_tokens=1_000_000)
+    usage = line["message"]["usage"]
+    usage["cache_read_input_tokens"] = 2_000_000
+    usage["cache_creation"] = {
+        "ephemeral_5m_input_tokens": 3_000_000,
+        "ephemeral_1h_input_tokens": 4_000_000,
+    }
+    usage["server_tool_use"] = {"web_search_requests": 2}
+    _write(transcript, line)
+
+    rates = _rates(tmp_path)
+    rates.append({"model": "claude-test", "rate_kind": "web_search",
+                  "usd_per_mtok": None, "usd_per_request": 0.01,
+                  "effective_from": "2026-01-01 00:00:00", "effective_to": None,
+                  "source": "test-local"})
+    result = meter.meter_transcripts([transcript], rates=rates)
+
+    assert [(row["rate_kind"], row["units"], row["cost_usd"])
+            for row in result["usage_by_rate_kind"]] == [
+                ("input", 1_000_000, 2.0),
+                ("output", 1_000_000, 10.0),
+                ("cache_read", 2_000_000, 0.4),
+                ("cache_write_5m", 3_000_000, 7.5),
+                ("cache_write_1h", 4_000_000, 16.0),
+                ("web_search", 2, 0.02),
+                ("web_fetch", 0, 0.0),
+            ]
+    assert result["usage_by_rate_kind"][-1]["rate"] is None
+    assert round(sum(row["cost_usd"] for row in result["usage_by_rate_kind"]), 6) == \
+        result["cost_usd"] == 35.92
+
+
+def test_recorded_sonnet_evidence_has_a_content_free_reproducible_breakdown():
+    """The shipped evidence must explain its total without publishing a transcript path/text."""
+    evidence = json.loads((ROOT / "docs" / "launch" / "evidence" /
+                           "meter-sonnet-5-5-cf31b72c6967.json").read_text(encoding="utf-8"))
+    result = evidence["result"]
+    rows = result["usage_by_rate_kind"]
+
+    assert evidence["schema"] == "sigma.benchmark-transcript-meter/v2"
+    assert evidence["rate_card"]["path"] == "skills/agrim-loop/rates/anthropic_list_prices.csv"
+    assert len(evidence["rate_card"]["sha256"]) == 64
+    assert [row["rate_kind"] for row in rows] == list(phase_report.RATE_KIND_USAGE)
+    assert round(sum(row["cost_usd"] for row in rows), 6) == result["cost_usd"] == 0.645964
+    assert rows[-1]["rate"] is None and rows[-1]["units"] == 0
+    public = json.dumps(evidence, sort_keys=True)
+    assert "/Users/" not in public and ".jsonl" not in public
