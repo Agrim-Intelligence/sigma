@@ -332,7 +332,25 @@ def main(argv):
     run_parser.add_argument("--seed", type=int, required=True)
     run_parser.add_argument("--workdir", type=Path, required=True)
     run_parser.add_argument("--json", type=Path, required=True)
+    disposition = sub.add_parser("disposition")
+    disposition.add_argument("--finding", type=Path, required=True)
+    disposition.add_argument("--sdlc", type=Path, required=True)
+    disposition.add_argument("--json", type=Path, required=True)
     args = parser.parse_args(argv[1:])
+    if args.verb == "disposition":
+        try:
+            finding = args.finding.read_text(encoding="utf-8")
+            dedup = _load_dedup().find_candidates(args.sdlc, finding, records=[])
+        except OSError as exc:
+            print("drills: " + str(exc), file=sys.stderr)
+            return 2
+        result = {"schema": "readiness-drill-b6/v1", "finding": finding,
+                  "dedup": dedup, "disposition": "no-github-write",
+                  "reason": "explicit filing requires a fresh GitHub check"}
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print("B6 disposition: no-github-write")
+        return 0
     try:
         result = run(args.drill, args.seed, args.workdir)
     except UsageError as exc:

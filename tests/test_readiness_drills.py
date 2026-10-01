@@ -90,6 +90,19 @@ def test_public_cli_dispatches_d1_to_its_real_runner(tmp_path):
     assert json.loads(output.read_text())["drill"] == "D1"
 
 
+def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):
+    output = tmp_path / "b6.json"
+    finding = tmp_path / "finding.txt"
+    finding.write_text("D4 stop-file reporting control failed for seed 1.\n")
+    proc = subprocess.run([sys.executable, str(SCRIPT), "disposition", "--finding", str(finding),
+                           "--sdlc", str(tmp_path / ".sdlc"), "--json", str(output)],
+                          text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(output.read_text())
+    assert result["schema"] == "readiness-drill-b6/v1"
+    assert result["disposition"] == "no-github-write"
+
+
 def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):
     drills = _module()
 
