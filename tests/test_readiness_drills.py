@@ -80,7 +80,7 @@ def test_d1_kills_at_the_selected_actual_fake_merge_checkpoint(tmp_path, seed, c
 
 
 def test_d1_records_the_real_work_merge_and_recovery_command_paths(tmp_path):
-    """D1 must not substitute a bare git update for the shipped lifecycle."""
+    """D1's recovery receipts must come from the killed fixture, not a preflight."""
     drills = _module()
 
     result = drills.run_d1(tmp_path, ROOT, 1)
@@ -90,6 +90,10 @@ def test_d1_records_the_real_work_merge_and_recovery_command_paths(tmp_path):
     assert "review gate passed" in lifecycle["work_merge"]["stdout"]
     assert lifecycle["next"]["returncode"] == 0
     assert lifecycle["reconcile_merges"]["returncode"] == 0
+    assert lifecycle["second_reconcile_merges"]["returncode"] == 0
+    assert lifecycle["fault_fixture"] == lifecycle["recovery_fixture"]
+    assert lifecycle["fault_fixture"].endswith("fixture")
+    assert lifecycle["fake_github"]["prs"]["100"]["state"] == "MERGED"
     assert lifecycle["fake_gh_unhandled"] == ""
 
 
@@ -101,6 +105,9 @@ def test_d2_restored_awaiting_merge_state_prevents_repick_and_converges_once(tmp
     assert by_name["next_does_not_repick_restored_goal"]["passed"] is True
     assert by_name["done_recorded_exactly_once"]["passed"] is True
     assert by_name["external_and_local_terminal_state_converge"]["passed"] is True
+    assert result["lifecycle"]["fault_fixture"] == result["lifecycle"]["recovery_fixture"]
+    assert result["lifecycle"]["fake_github"]["issues"]["1"]["state"] == "closed"
+    assert result["lifecycle"]["worktree_exists"] is False
 
 
 def test_d2_uses_the_public_next_and_reconcile_lifecycle_after_overlay_loss(tmp_path):
@@ -130,9 +137,13 @@ def test_d3_records_real_reconcile_passes_after_the_fake_merge_lifecycle(tmp_pat
     result = drills.run_d3(tmp_path, ROOT, 1)
 
     lifecycle = result["lifecycle"]
-    assert lifecycle["fake_merge"]["returncode"] == 0
+    assert lifecycle["fake_merge"]["returncode"] < 0
+    assert lifecycle["fake_merge"]["remote_merge_returncode"] == 0
     assert lifecycle["first_reconcile"]["returncode"] == 0
     assert lifecycle["second_reconcile"]["returncode"] == 0
+    assert lifecycle["fault_fixture"] == lifecycle["recovery_fixture"]
+    assert lifecycle["fake_github"]["prs"]["100"]["state"] == "MERGED"
+    assert lifecycle["worktree_exists"] is False
     assert lifecycle["fake_gh_unhandled"] == ""
 
 

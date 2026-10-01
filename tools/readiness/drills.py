@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -91,65 +92,6 @@ def _result_command(proc):
     return {"returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
 
 
-def _actual_github_lifecycle(workdir: Path, sigma: Path):
-    """Run Sigma's shipped fake-GitHub lifecycle and retain its command receipts.
-
-    The readiness fixture deliberately delegates setup to the existing public
-    onboarding control.  That control creates the fake ``gh`` executable,
-    drives ``work.py merge`` through its review gate, and reaches the public
-    ``reconcile-merges`` gesture.  Keeping its structured receipts prevents a
-    drill from silently replacing the lifecycle with a bare ``git update-ref``.
-    """
-    # An evidence command runs twenty isolated faults.  Its lifecycle preflight
-    # is deterministic and independent of the fault workdirs, so share one
-    # completed public-control receipt per enclosing scratch tree rather than
-    # silently turning evidence into minutes of identical setup.
-    cache = workdir.parent / ".actual-github-lifecycle.json"
-    if cache.is_file():
-        return json.loads(cache.read_text(encoding="utf-8"))
-    root = workdir.parent / "actual-lifecycle"
-    result_path = root / "result.json"
-    root.mkdir(exist_ok=True)
-    control = sigma / "tools" / "onboarding_control.py"
-    proc = _run([sys.executable, str(control), "--mode", "github", "--variant", "confirm",
-                 "--sigma", str(sigma), "--workdir", str(root), "--keep", "--json", str(result_path)],
-                cwd=sigma)
-    if proc.returncode or not result_path.is_file():
-        raise UsageError("actual fake-GitHub lifecycle failed: " + (proc.stderr or proc.stdout).strip()[-500:])
-    payload = json.loads(result_path.read_text(encoding="utf-8"))
-    mode = (payload.get("modes") or {}).get("github") or {}
-    if not mode.get("ok"):
-        raise UsageError("actual fake-GitHub lifecycle did not reach green")
-    steps = {item.get("step"): item for item in mode.get("steps", [])}
-    required = ("work merge", "loop reconcile-merges")
-    if any(name not in steps for name in required):
-        raise UsageError("actual lifecycle omitted a required command receipt")
-    run_root = Path(payload["workdir"])
-    repo = run_root / "github" / "repo"
-    env = {**os.environ,
-           "PATH": str(run_root / "github" / "bin") + os.pathsep + os.environ.get("PATH", ""),
-           "FAKE_GH_STATE": str(run_root / "github" / "gh_state.json"),
-           "FAKE_GH_LOG": str(run_root / "github" / "gh_log.jsonl"),
-           "FAKE_GH_UNHANDLED": str(run_root / "github" / "gh_unhandled.jsonl")}
-    next_proc = _run([sys.executable, str(sigma / "skills" / "agrim-loop" / "scripts" / "loop.py"),
-                      "next", ".sdlc", "--session-pid", str(os.getpid())], cwd=repo, env=env)
-    second_reconcile = _run([sys.executable, str(sigma / "skills" / "agrim-loop" / "scripts" / "loop.py"),
-                             "reconcile-merges", ".sdlc"], cwd=repo, env=env)
-    unhandled = Path(env["FAKE_GH_UNHANDLED"]).read_text(encoding="utf-8")
-    def receipt(step):
-        item = steps[step]
-        return {"returncode": item["rc"], "stdout": item.get("stdout_tail", ""),
-                "stderr": item.get("stderr_tail", ""), "argv": item.get("argv", [])}
-    result = {"work_merge": receipt("work merge"),
-              "next": _result_command(next_proc),
-              "reconcile_merges": receipt("loop reconcile-merges"),
-              "second_reconcile_merges": _result_command(second_reconcile),
-              "fake_merge": receipt("human merges the PR"),
-              "fake_gh_unhandled": unhandled}
-    cache.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
-    return result
-
-
 def _scratch_sdlc(workdir: Path):
     repo = workdir / "d4-repo"
     state = repo / ".sdlc" / "state"
@@ -161,26 +103,24 @@ def _scratch_sdlc(workdir: Path):
     return repo, state
 
 
-def _git(cwd, *args):
-    proc = _run(["git", "-C", str(cwd), *args])
-    if proc.returncode:
-        raise UsageError(proc.stderr.strip())
-    return proc.stdout.strip()
+def _load_onboarding_control(sigma: Path):
+    """Load the shipped public fixture builder without importing its pytest test source.
 
-
-def _checkpointed_fake_merge(workdir: Path, remote: Path, candidate: str, checkpoint: str, *, sigma: Path):
-    """Kill the stateful fake's own ``gh pr merge`` seam, never a stand-in git child.
-
-    The fake is extracted from the public lifecycle control's one source of
-    truth, then only three test seams are injected around its existing merge
-    implementation.  In particular, the parent never writes the remote ref.
+    The control owns the fake-GitHub contract.  Readiness drills use the same
+    builder, then drive its normal Sigma lifecycle themselves so a drill cannot
+    claim a bare ref update is a merge recovery.
     """
-    import ast
-    source = sigma / "tests" / "test_public_bootstrap_control.py"
-    tree = ast.parse(source.read_text(encoding="utf-8"))
-    fake = next(ast.literal_eval(node.value) for node in tree.body
-                if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "_FAKE_GH_BODY"
-                                                         for t in node.targets))
+    path = sigma / "tools" / "onboarding_control.py"
+    spec = importlib.util.spec_from_file_location("readiness_onboarding_control", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _checkpoint_fake_body(control, sigma: Path):
+    """Return the public fake gh with only the three D1 test seams inserted."""
+    fake = control._fake_gh_body(sigma)
     hook = '''\nimport pathlib\nimport time\ndef _readiness_checkpoint(name):\n    if name == os.environ.get("READINESS_CHECKPOINT"):\n        pathlib.Path(os.environ["READINESS_READY"]).write_text(json.dumps({"checkpoint": name, "entered_at_ns": time.monotonic_ns()}))\n        while True:\n            time.sleep(1)\n'''
     fake = fake.replace('UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n',
                         'UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n' + hook)
@@ -188,38 +128,143 @@ def _checkpointed_fake_merge(workdir: Path, remote: Path, candidate: str, checkp
                         '        _readiness_checkpoint("pre_write")\n        git(state, "update-ref", base_ref, head_sha)\n')
     fake = fake.replace('        save_state(state)\n        print("Merged pull request #%s" % number)\n        return\n',
                         '        save_state(state)\n        _readiness_checkpoint("durable_remote_update")\n        print("Merged pull request #%s" % number, flush=True)\n        _readiness_checkpoint("post_response_before_ack")\n        return\n', 1)
-    bin_dir = workdir / "fake-bin"; bin_dir.mkdir()
-    gh = bin_dir / "gh"; gh.write_text(f"#!{sys.executable}\n" + fake, encoding="utf-8"); gh.chmod(0o755)
-    state, log, unhandled, ready = (workdir / "fake-state.json", workdir / "fake-log.jsonl",
-                                    workdir / "fake-unhandled.jsonl", workdir / "ready.json")
-    state.write_text(json.dumps({"repo": "acme/readiness", "remote_git_dir": str(remote),
-                                  "labels": {}, "label_seq": 0, "issues": {"1": {"labels": [], "state": "open"}},
-                                  "issue_seq": 2, "prs": {"1": {"state": "OPEN", "base": "main", "head": "drill-candidate"}},
-                                  "pr_seq": 2, "projects": [], "login": "drill", "default_branch": "main",
-                                  "allow_auto_merge": True, "viewer_permission": "ADMIN", "refuse_label_create": False}),
-                     encoding="utf-8")
-    log.write_text("", encoding="utf-8"); unhandled.write_text("", encoding="utf-8")
-    env = {**os.environ, "FAKE_GH_STATE": str(state), "FAKE_GH_LOG": str(log),
-           "FAKE_GH_UNHANDLED": str(unhandled), "READINESS_CHECKPOINT": checkpoint,
-           "READINESS_READY": str(ready)}
-    # Invoke the PATH-installed fake through Python so the repository's
-    # anti-live-GitHub test guard can see this is a fixture script, not ``gh``.
-    proc = subprocess.Popen([sys.executable, str(gh), "pr", "merge", "1", "--repo", "acme/readiness", "--squash"],
-                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                            start_new_session=True)
+    return fake
+
+
+def _real_fixture(workdir: Path, sigma: Path):
+    """Create one isolated issue/claim/work/PR fixture, stopped before human merge.
+
+    Every D1--D3 fault and every subsequent recovery gesture use this *same*
+    directory, fake service, bare remote, work record and checkout.  The
+    public onboarding control supplies the initialiser and stateful fake; this
+    function deliberately drives the documented lifecycle commands itself.
+    """
+    control = _load_onboarding_control(sigma)
+    root = workdir / "fixture"
+    base, bin_dir, remote, repo = root / "github", root / "github" / "bin", root / "github" / "remote.git", root / "github" / "repo"
+    state_path, log_path, unhandled = root / "github" / "gh_state.json", root / "github" / "gh_log.jsonl", root / "github" / "gh_unhandled.jsonl"
+    bin_dir.mkdir(parents=True)
+    gh = bin_dir / "gh"
+    gh.write_text(f"#!{sys.executable}\n" + _checkpoint_fake_body(control, sigma), encoding="utf-8")
+    gh.chmod(0o755)
+    log_path.write_text("", encoding="utf-8"); unhandled.write_text("", encoding="utf-8")
+    state_path.write_text(json.dumps({
+        "repo": control.FAKE_REPO, "remote_git_dir": str(remote), "labels": {}, "label_seq": 0,
+        "issues": {}, "issue_seq": 1, "prs": {}, "pr_seq": 100, "projects": [],
+        "login": "readiness-bot", "default_branch": "main", "allow_auto_merge": True,
+        "viewer_permission": "ADMIN", "refuse_label_create": False,
+    }), encoding="utf-8")
+    env = control._env(base, bin_dir, {"FAKE_GH_STATE": str(state_path), "FAKE_GH_LOG": str(log_path),
+                                       "FAKE_GH_UNHANDLED": str(unhandled)})
+    control._git(["init", "-q", "--bare", "-b", "main", str(remote)], base, env)
+    control._git(["clone", "-q", str(remote), str(repo)], base, env)
+    control._fresh_files(repo, "confirm")
+    control._git(["add", "-A"], repo, env); control._git(["commit", "-qm", "fresh repository"], repo, env)
+    control._git(["push", "-q", "-u", "origin", "main"], repo, env)
+    run = control.Run("readiness-fixture")
+    qs = control.parse_quickstart((sigma / "README.md").read_text(encoding="utf-8"), sigma)
+    init_out, _ = control._init_and_verify(run, qs, sigma, repo, env, "github", "confirm")
+    py, loop = sys.executable, sigma / "skills" / "agrim-loop" / "scripts"
+    def step(name, argv, ok=(0,)):
+        return run.step(name, argv, repo, env, ok_rc=ok)
+    step("file goal", [sys.executable, gh, "issue", "create", "--repo", control.FAKE_REPO, "--label", "sdlc:goal",
+                       "--assignee", "@me", "--title", control.GOAL_TITLE,
+                       "--body", f"Create {control.WORK_FILE} with one line.\n\n## Done when\n- [ ] {control.WORK_FILE} contains hi.\n- [ ] Verification passes when configured.\n- [ ] The goal can be recorded done after its PR merges.\n"])
+    pid = str(os.getpid())
+    step("loop start", [py, loop / "loop.py", "start", ".sdlc", "--session-pid", pid])
+    nxt = control._py_argv(control._loop_next_line(init_out), sigma, {}, step="loop next") + ["--session-pid", pid]
+    goal = step("loop next", nxt).stdout.strip()
+    if goal != "1":
+        raise UsageError("fixture did not claim issue 1: %r" % goal)
+    step("agent-start", [py, loop / "loop.py", "agent-start", ".sdlc", goal, "--pid", pid])
+    step("work start", [py, loop / "work.py", "start", ".sdlc", goal, "--session-pid", pid])
+    step("record acceptance", [py, loop / "acceptance.py", "record", ".sdlc", goal,
+                                "--verify-command", "test -s " + control.WORK_FILE])
+    acceptance = repo / ".sdlc" / "acceptance" / (goal + ".md")
+    target = repo / ".sdlc" / "work" / goal / ".sdlc" / "acceptance" / acceptance.name
+    target.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(acceptance, target)
+    step("phase start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement", "--model", "haiku", "--pid", pid])
+    (repo / ".sdlc" / "work" / goal / control.WORK_FILE).write_text("hi\n", encoding="utf-8")
+    step("phase end", [py, loop / "phase_report.py", "end", ".sdlc", goal, "implement", "--pid", pid])
+    step("verify", [py, loop / "loop.py", "verify", ".sdlc", goal])
+    step("work commit", [py, loop / "work.py", "commit", ".sdlc", goal, "--message", "sdlc: readiness drill"])
+    step("work pr", [py, loop / "work.py", "pr", ".sdlc", goal, "--no-tests", "Fixture verification is retained."])
+    fixture = {"root": root, "base": base, "repo": repo, "remote": remote, "gh": gh, "state_path": state_path,
+               "log_path": log_path, "unhandled": unhandled, "env": env, "py": py, "loop": loop, "goal": goal,
+               "pr": "100", "run": run, "next_argv": nxt}
+    _fixture_gh(fixture, ["pr", "comment", "100", "--repo", control.FAKE_REPO, "--body", "sigma:approve"])
+    fixture["work_merge"] = _fixture_cmd(fixture, [py, loop / "work.py", "merge", ".sdlc", goal])
+    fixture["record_review"] = _fixture_cmd(fixture, [py, loop / "loop.py", "record", ".sdlc", goal, "review"])
+    if fixture["record_review"].returncode:
+        raise UsageError("fixture could not record review: " + (fixture["record_review"].stderr or fixture["record_review"].stdout)[-400:])
+    return fixture
+
+
+def _fixture_cmd(fixture, argv, *, env=None):
+    return _run([str(x) for x in argv], cwd=fixture["repo"], env=env or fixture["env"])
+
+
+def _fixture_gh(fixture, args, *, env=None):
+    # The test guard correctly rejects an argv beginning with `gh`; execute the
+    # fixture script through the interpreter so this can never resolve a host
+    # credential-bearing gh binary.
+    return _fixture_cmd(fixture, [sys.executable, fixture["gh"], *args], env=env)
+
+
+def _fixture_state(fixture):
+    return json.loads(fixture["state_path"].read_text(encoding="utf-8"))
+
+
+def _kill_fixture_merge(fixture, checkpoint):
+    """SIGKILL the fixture's own fake-GitHub merge process at one named seam."""
+    ready = fixture["root"] / "merge-ready.json"
+    env = {**fixture["env"], "READINESS_CHECKPOINT": checkpoint, "READINESS_READY": str(ready)}
+    proc = subprocess.Popen([sys.executable, str(fixture["gh"]), "pr", "merge", fixture["pr"], "--repo",
+                             _fixture_state(fixture)["repo"], "--squash"], cwd=fixture["repo"], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     deadline = time.monotonic() + 10
     while not ready.exists() and time.monotonic() < deadline:
         time.sleep(.01)
     if not ready.exists():
-        proc.kill(); raise UsageError("fake gh merge checkpoint not reached")
+        proc.kill(); raise UsageError("fixture merge checkpoint not reached")
     barrier = json.loads(ready.read_text(encoding="utf-8"))
     pgid = os.getpgid(proc.pid)
     requested = time.monotonic_ns(); os.killpg(pgid, signal.SIGKILL); sent = time.monotonic_ns()
     stdout, stderr = proc.communicate(timeout=10)
     return {"barrier": barrier, "pid": proc.pid, "pgid": pgid, "returncode": proc.returncode,
-            "requested_at_ns": requested, "sent_at_ns": sent, "stdout": stdout, "stderr": stderr,
-            "state": json.loads(state.read_text(encoding="utf-8")),
-            "unhandled": unhandled.read_text(encoding="utf-8")}
+            "requested_at_ns": requested, "sent_at_ns": sent, "stdout": stdout, "stderr": stderr}
+
+
+def _kill_after_fixture_merge(fixture):
+    """Kill a child after its real fake-GitHub merge returned, before Sigma can acknowledge it."""
+    ready = fixture["root"] / "remote-merged.json"
+    script = ("import pathlib, subprocess, sys, time; p=subprocess.run(sys.argv[1:-1], text=True, capture_output=True); "
+              "pathlib.Path(sys.argv[-1]).write_text(str(p.returncode)); time.sleep(60)")
+    proc = subprocess.Popen([sys.executable, "-c", script, str(fixture["gh"]), "pr", "merge", fixture["pr"],
+                             "--repo", _fixture_state(fixture)["repo"], "--squash", str(ready)], cwd=fixture["repo"],
+                            env=fixture["env"], start_new_session=True)
+    deadline = time.monotonic() + 10
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(.01)
+    if not ready.exists() or ready.read_text(encoding="utf-8") != "0":
+        proc.kill(); raise UsageError("fixture merge did not succeed before kill")
+    os.killpg(os.getpgid(proc.pid), signal.SIGKILL); proc.wait(timeout=10)
+    return {"returncode": proc.returncode, "remote_merge_returncode": 0, "ready": str(ready)}
+
+
+def _fixture_recover(fixture):
+    """Capture durable state from the fixture after its caller ran the public gestures."""
+    state = _fixture_state(fixture)
+    action_logs = {str(p.relative_to(fixture["repo"])): p.read_text(encoding="utf-8")
+                   for p in fixture["repo"].glob(".sdlc/**/*action*") if p.is_file()}
+    records = {str(p.relative_to(fixture["repo"])): p.read_text(encoding="utf-8")
+               for p in fixture["repo"].glob(".sdlc/state/**/*") if p.is_file()}
+    return {"fake_github": state,
+            "fake_gh_log": fixture["log_path"].read_text(encoding="utf-8"),
+            "fake_gh_unhandled": fixture["unhandled"].read_text(encoding="utf-8"),
+            "action_log": action_logs, "state_records": records,
+            "worktree_exists": (fixture["repo"] / ".sdlc" / "work" / fixture["goal"]).exists(),
+            "fixture": str(fixture["root"])}
 
 
 def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
@@ -230,26 +275,28 @@ def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         raise UsageError("workdir exists and is not empty")
     workdir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
-    lifecycle = _actual_github_lifecycle(workdir, sigma)
-    repo, remote = workdir / "repo", workdir / "remote.git"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "drill@example.invalid")
-    _git(repo, "config", "user.name", "Drill")
-    (repo / "base").write_text("base\n")
-    _git(repo, "add", "."); _git(repo, "commit", "-qm", "base")
-    _run(["git", "init", "-q", "--bare", "-b", "main", str(remote)])
-    _git(repo, "remote", "add", "origin", str(remote)); _git(repo, "push", "-q", "-u", "origin", "main")
-    (repo / "merge").write_text("merge\n")
-    _git(repo, "add", "."); _git(repo, "commit", "-qm", "candidate")
-    candidate = _git(repo, "rev-parse", "HEAD")
-    # The fake service can only durably update a ref to an object it owns.
-    _git(repo, "push", "-q", "origin", "HEAD:refs/heads/drill-candidate")
-    observed = _checkpointed_fake_merge(workdir, remote, candidate, checkpoint, sigma=sigma)
+    fixture = _real_fixture(workdir, sigma)
+    observed = _kill_fixture_merge(fixture, checkpoint)
     barrier, pgid = observed["barrier"], observed["pgid"]
-    remote_main = _run(["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"]).stdout.strip()
-    landed = remote_main == candidate
+    state_after_fault = _fixture_state(fixture)
+    landed = state_after_fault["prs"][fixture["pr"]]["state"] == "MERGED"
     expected_landed = checkpoint != "pre_write"
+    # A pre-write crash has no remote merge for reconciliation to observe.  The
+    # actual retry happens only after the documented `next` gesture below, then
+    # the two documented reconcile passes operate on this same fixture.
+    next_proc = _fixture_cmd(fixture, fixture["next_argv"])
+    retry = None
+    if not landed:
+        retry = _fixture_gh(fixture, ["pr", "merge", fixture["pr"], "--repo", state_after_fault["repo"], "--squash"])
+    first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    lifecycle = _fixture_recover(fixture)
+    # _fixture_recover intentionally repeats the public gestures for a stable
+    # receipt.  Preserve the first recovery calls as the fault-adjacent facts.
+    lifecycle.update({"next": _result_command(next_proc), "reconcile_merges": _result_command(first),
+                      "second_reconcile_merges": _result_command(second), "work_merge": _result_command(fixture["work_merge"]),
+                      "retry_merge": _result_command(retry) if retry is not None else None,
+                      "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
     inv = [
         _invariant("selected_checkpoint_reached", barrier["checkpoint"] == checkpoint, barrier),
         _invariant("isolated_child_process_group", pgid != os.getpgrp(), {"pid": observed["pid"], "pgid": pgid}),
@@ -257,12 +304,15 @@ def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
                    {"entered_at_ns": barrier["entered_at_ns"], "requested_at_ns": observed["requested_at_ns"], "sent_at_ns": observed["sent_at_ns"]}),
         _invariant("no_later_ack_before_recovery", observed["returncode"] == -signal.SIGKILL, observed),
         _invariant("remote_update_matches_checkpoint", landed is expected_landed, {"landed": landed}),
+        _invariant("same_fixture_converged_after_recovery", lifecycle["fake_github"]["issues"]["1"]["state"] == "closed" and
+                   lifecycle["worktree_exists"] is False, {"issue": lifecycle["fake_github"]["issues"]["1"],
+                                                             "worktree_exists": lifecycle["worktree_exists"]}),
     ]
     return {"schema": SCHEMA, "drill": "D1", "seed": seed, "platform": sys.platform,
             "frozen_commit": _head(sigma), "started_at_ns": started, "finished_at_ns": time.monotonic_ns(),
             "recovery_commands": [["loop.py","next","<dir>"],["loop.py","reconcile-merges","<dir>"]],
             "fault": {"checkpoint": checkpoint, "barrier": barrier, "fake_gh_merge": observed}, "invariants": inv,
-            "lifecycle": lifecycle, "fake_gh_unhandled": observed["unhandled"] + lifecycle["fake_gh_unhandled"]}
+            "lifecycle": lifecycle, "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
 
 
 def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
@@ -272,23 +322,34 @@ def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         raise UsageError("workdir exists and is not empty")
     workdir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
-    lifecycle = _actual_github_lifecycle(workdir, sigma)
-    external = {"issue": "OPEN", "labels": ["sdlc:goal", "sdlc:in-progress"],
-                "project": "QC", "pr": "MERGED", "remote_ref": "landed"}
-    local = {"goal": "1", "awaiting_merge": True, "done_count": 0,
-             "lease": "claimed", "worktree": "resumable"}
-    external["labels"].remove("sdlc:in-progress")
-    next_pick = None if local["awaiting_merge"] else local["goal"]
-    if next_pick is None and external["pr"] == "MERGED":
-        local.update(awaiting_merge=False, done_count=1, lease="released", worktree="removed")
-        external.update(issue="CLOSED", labels=[], project="Done")
+    fixture = _real_fixture(workdir, sigma)
+    state_snapshot = workdir / "pre-merge-state"
+    shutil.copytree(fixture["repo"] / ".sdlc" / "state", state_snapshot)
+    human_merge = _fixture_gh(fixture, ["pr", "merge", fixture["pr"], "--repo", _fixture_state(fixture)["repo"], "--squash"])
+    shutil.rmtree(fixture["repo"] / ".sdlc" / "state")
+    shutil.copytree(state_snapshot, fixture["repo"] / ".sdlc" / "state")
+    overlay = _fixture_gh(fixture, ["issue", "edit", fixture["goal"], "--repo", _fixture_state(fixture)["repo"],
+                                    "--remove-label", "sdlc:in-progress"])
+    next_proc = _fixture_cmd(fixture, fixture["next_argv"])
+    first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    lifecycle = _fixture_recover(fixture)
+    lifecycle.update({"work_merge": _result_command(fixture["work_merge"]), "human_merge": _result_command(human_merge),
+                      "overlay_remove": _result_command(overlay), "next": _result_command(next_proc),
+                      "reconcile_merges": _result_command(first), "second_reconcile_merges": _result_command(second),
+                      "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
+    external = lifecycle["fake_github"]["issues"]["1"]
+    local = {"goal": "1", "done_count": lifecycle["fake_github"]["issues"]["1"]["state"] == "closed",
+             "lease": "released" if not lifecycle["worktree_exists"] else "claimed",
+             "worktree": "removed" if not lifecycle["worktree_exists"] else "resumable"}
+    next_pick = next_proc.stdout.strip() or None
     inv = [
         _invariant("next_does_not_repick_restored_goal", next_pick != local["goal"],
                    {"next_result": next_pick, "restored_awaiting_merge": True}),
-        _invariant("done_recorded_exactly_once", local["done_count"] == 1,
+        _invariant("done_recorded_exactly_once", local["done_count"] is True,
                    {"done_count": local["done_count"]}),
         _invariant("external_and_local_terminal_state_converge",
-                   external["issue"] == "CLOSED" and external["project"] == "Done" and
+                   external["state"] == "closed" and
                    local["lease"] == "released" and local["worktree"] == "removed",
                    {"external": external, "local": local}),
     ]
@@ -298,7 +359,7 @@ def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
             "recovery_commands": [["loop.py", "next", "<dir>"],
                                   ["loop.py", "reconcile-merges", "<dir>"]],
             "fault": {"external_in_progress_removed": "sdlc:in-progress" not in external["labels"],
-                      "restored_state": True},
+                      "restored_state": True, "snapshot": str(state_snapshot)},
             "invariants": inv, "lifecycle": lifecycle,
             "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
 
@@ -310,16 +371,16 @@ def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         raise UsageError("workdir exists and is not empty")
     workdir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
-    lifecycle = _actual_github_lifecycle(workdir, sigma)
-    sdlc = workdir / ".sdlc"
-    sdlc.mkdir()
-    (sdlc / "config.json").write_text("{}\n")
-    loop = sigma / "skills" / "agrim-loop" / "scripts" / "loop.py"
-    first = _run([sys.executable, str(loop), "reconcile-merges", str(sdlc)], cwd=workdir)
-    second = _run([sys.executable, str(loop), "reconcile-merges", str(sdlc)], cwd=workdir)
-    local = {"merge_receipt": True, "done_count": 0, "ack": False}
-    if local["merge_receipt"] and not local["ack"]:
-        local.update(done_count=1, ack=True)
+    fixture = _real_fixture(workdir, sigma)
+    fault = _kill_after_fixture_merge(fixture)
+    first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    lifecycle = _fixture_recover(fixture)
+    lifecycle.update({"fake_merge": fault, "first_reconcile": _result_command(first), "second_reconcile": _result_command(second),
+                      "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
+    local = {"merge_receipt": _fixture_state(fixture)["prs"][fixture["pr"]]["state"] == "MERGED",
+             "done_count": 1 if _fixture_state(fixture)["issues"][fixture["goal"]]["state"] == "closed" else 0,
+             "ack": not lifecycle["worktree_exists"]}
     inv = [
         _invariant("documented_reconcile_gesture_succeeds_twice",
                    first.returncode == 0 and second.returncode == 0,
@@ -332,13 +393,9 @@ def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
             "finished_at_ns": time.monotonic_ns(),
             "recovery_commands": [["loop.py", "reconcile-merges", "<dir>"],
                                   ["loop.py", "reconcile-merges", "<dir>"]],
-            "fault": {"fake_merge_succeeded_before_local_ack": True},
-            "invariants": inv, "lifecycle": {
-                "fake_merge": lifecycle["fake_merge"],
-                "first_reconcile": lifecycle["reconcile_merges"],
-                "second_reconcile": lifecycle["second_reconcile_merges"],
-                "fake_gh_unhandled": lifecycle["fake_gh_unhandled"],
-            }, "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
+            "fault": {"fake_merge_succeeded_before_local_ack": fault["remote_merge_returncode"] == 0,
+                      "killed_operation": fault},
+            "invariants": inv, "lifecycle": lifecycle, "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
 
 
 def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
