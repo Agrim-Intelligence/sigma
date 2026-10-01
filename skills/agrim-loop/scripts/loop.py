@@ -4241,6 +4241,14 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
         ledger.safe_append(sdlc_dir, "retro", goal, stream=ledger.EVENTS, grade=retro_grade)
     # One call regardless of outcome — the local action-log counterpart of the ledger calls above.
     actionlog.safe_append(sdlc_dir, goal, "recorded", result=outcome, detail=(detail or None))
+    # Review text is durable evidence, but a copied review checkout is reproducible growth.  The
+    # successful path reaches work.finish below; a failed terminal record intentionally keeps its
+    # goal worktree for repair, so both paths meet at this narrow, fail-open evidence-only cleanup.
+    if outcome in ("done", "failed"):
+        try:
+            work.prune_terminal_review_copies(sdlc_dir, goal)
+        except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
+            print(f"loop.py record: review-copy cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
     # A goal's terminal outcome, however it ended, always clears every thread's death-watch
     # marker — a cleanly-finished goal must never linger in agent_watch's candidate set.
     agent_end(sdlc_dir, goal)
