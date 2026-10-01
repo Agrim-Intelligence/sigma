@@ -255,7 +255,12 @@ def _key_bodies(text):
         if not all(re.search(r"[A-Z]", ln) and re.search(r"[a-z]", ln) and re.search(r"\d", ln)
                    for ln in lines):
             continue
-        before = text[:m.start()].rstrip("\r\n").rsplit("\n", 1)[-1].strip()
+        prefix = text[:m.start()]
+        if prefix.endswith("\n"):
+            prefix = prefix[:-1]
+            if prefix.endswith("\r"):
+                prefix = prefix[:-1]
+        before = prefix.rsplit("\n", 1)[-1].rstrip("\r").strip()
         if re.fullmatch(r"-----BEGIN (?:CERTIFICATE|(?:[A-Z0-9 ]+ )?PUBLIC KEY)-----", before):
             continue                            # only an adjacent public/certificate header owns it
         out.append(m.start())

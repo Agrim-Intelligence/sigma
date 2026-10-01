@@ -358,6 +358,12 @@ def test_control_nearby_prose_cannot_exempt_a_headerless_key_body(tmp_path, near
     assert _KEY_BODY.splitlines()[0] not in proc.stdout + proc.stderr
 
 
+def test_control_a_public_header_with_a_blank_line_cannot_exempt_a_key_body(tmp_path):
+    plant = "-----BEGIN CERTIFICATE-----\n\n" + _KEY_BODY.rstrip("\n")
+    proc = _run(_scratch(tmp_path, plant, "certs/notes.txt"))
+    assert proc.returncode == 1 and "certs/notes.txt:4: key-body" in proc.stdout, proc.stdout
+
+
 def test_a_public_certificate_body_and_hash_lists_are_not_key_bodies(tmp_path):
     cert = "-----BEGIN CERTIFICATE-----\n" + _KEY_BODY + "-----END CERTIFICATE-----"
     shas = "\n".join(["0123456789abcdef0123456789abcdef01234567"] * 4)
