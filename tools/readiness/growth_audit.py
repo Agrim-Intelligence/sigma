@@ -28,7 +28,7 @@ def _placeholder(name):
     return "<%s>" % aliases.get(name, name)
 
 
-def _expression_path(node, env=None, functions=None, module=None, depth=0):
+def _expression_path(node, env=None, functions=None, module=None, depth=0, resolving=None):
     """Return every statically traceable destination for one expression.
 
     ``functions`` is discovered from the repository on every scan.  It is
@@ -37,6 +37,7 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
     """
     env = {} if env is None else env
     functions = {} if functions is None else functions
+    resolving = set() if resolving is None else resolving
     if depth > 12:
         return set()
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -46,7 +47,7 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
             return set(env[node.id])
         constant = functions.get(module, {}).get("__constants__", {}).get(node.id)
         if constant is not None:
-            return _expression_path(constant, env, functions, module, depth + 1)
+            return _expression_path(constant, env, functions, module, depth + 1, resolving)
         return {_placeholder(node.id)}
     if isinstance(node, ast.Attribute):
         # Instance state is a common local-source path carrier: constructors
@@ -64,7 +65,7 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 values = {value.value}
             elif isinstance(value, ast.FormattedValue):
-                values = _expression_path(value.value, env, functions, module, depth + 1) or {"<value>"}
+                values = _expression_path(value.value, env, functions, module, depth + 1, resolving) or {"<value>"}
             else:
                 return set()
             # A formatted branch can resolve to more than one durable suffix.
@@ -73,20 +74,20 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
             parts = {prefix + suffix for prefix in parts for suffix in sorted(values)}
         return parts
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        left = _expression_path(node.left, env, functions, module, depth + 1)
-        right = _expression_path(node.right, env, functions, module, depth + 1)
+        left = _expression_path(node.left, env, functions, module, depth + 1, resolving)
+        right = _expression_path(node.right, env, functions, module, depth + 1, resolving)
         return {a.rstrip("/") + "/" + b.lstrip("/") for a in left for b in right}
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left = _expression_path(node.left, env, functions, module, depth + 1)
-        right = _expression_path(node.right, env, functions, module, depth + 1)
+        left = _expression_path(node.left, env, functions, module, depth + 1, resolving)
+        right = _expression_path(node.right, env, functions, module, depth + 1, resolving)
         return {a + b for a in left for b in right}
     if isinstance(node, ast.IfExp):
-        return (_expression_path(node.body, env, functions, module, depth + 1)
-                | _expression_path(node.orelse, env, functions, module, depth + 1))
+        return (_expression_path(node.body, env, functions, module, depth + 1, resolving)
+                | _expression_path(node.orelse, env, functions, module, depth + 1, resolving))
     if isinstance(node, ast.Call):
         if ((isinstance(node.func, ast.Name) and node.func.id in {"Path", "str"})
                 or (isinstance(node.func, ast.Attribute) and node.func.attr == "Path")) and node.args:
-            return _expression_path(node.args[0], env, functions, module, depth + 1)
+            return _expression_path(node.args[0], env, functions, module, depth + 1, resolving)
         if (isinstance(node.func, ast.Attribute) and node.func.attr == "home"
                 and isinstance(node.func.value, ast.Name) and node.func.value.id == "Path"):
             return {"<home>"}
@@ -94,55 +95,62 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
             owner = node.func.value
             if (isinstance(owner, ast.Attribute) and owner.attr == "environ"
                     and isinstance(owner.value, ast.Name) and owner.value.id == "os" and node.args):
-                return _environment_root(node.args[0], env, functions, module)
+                return _environment_root(node.args[0], env, functions, module, resolving)
         if (isinstance(node.func, ast.Attribute) and node.func.attr == "getenv"
                 and isinstance(node.func.value, ast.Name) and node.func.value.id == "os" and node.args):
-            return _environment_root(node.args[0], env, functions, module)
+            return _environment_root(node.args[0], env, functions, module, resolving)
         target_module, function = module, None
         if isinstance(node.func, ast.Name):
             function = node.func.id
         elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             target_module, function = node.func.value.id, node.func.attr
         fn = functions.get(target_module, {}).get(function)
-        if fn is not None:
-            values = []
-            for argument in node.args:
-                values.append(_expression_path(argument, env, functions, module, depth + 1))
-            bound = {arg.arg: (values[index] if index < len(values) else {_placeholder(arg.arg)})
-                     for index, arg in enumerate(fn.args.args)}
-            for _ in range(4):
-                changed = False
+        marker = (target_module, function)
+        if fn is not None and marker not in resolving:
+            resolving.add(marker)
+            try:
+                values = []
+                for argument in node.args:
+                    values.append(_expression_path(argument, env, functions, module, depth + 1, resolving))
+                bound = {arg.arg: (values[index] if index < len(values) else {_placeholder(arg.arg)})
+                         for index, arg in enumerate(fn.args.args)}
+                for _ in range(4):
+                    changed = False
+                    for candidate in ast.walk(fn):
+                        if not isinstance(candidate, (ast.Assign, ast.AnnAssign)) or candidate.value is None:
+                            continue
+                        targets = candidate.targets if isinstance(candidate, ast.Assign) else [candidate.target]
+                        resolved = _expression_path(candidate.value, bound, functions, target_module,
+                                                    depth + 1, resolving)
+                        for target in targets:
+                            if isinstance(target, ast.Name) and resolved and bound.get(target.id) != resolved:
+                                bound[target.id] = resolved
+                                changed = True
+                    if not changed:
+                        break
+                returns = []
                 for candidate in ast.walk(fn):
-                    if not isinstance(candidate, (ast.Assign, ast.AnnAssign)) or candidate.value is None:
-                        continue
-                    targets = candidate.targets if isinstance(candidate, ast.Assign) else [candidate.target]
-                    resolved = _expression_path(candidate.value, bound, functions, target_module, depth + 1)
-                    for target in targets:
-                        if isinstance(target, ast.Name) and resolved and bound.get(target.id) != resolved:
-                            bound[target.id] = resolved
-                            changed = True
-                if not changed:
-                    break
-            returns = []
-            for candidate in ast.walk(fn):
-                if isinstance(candidate, ast.Return) and candidate.value is not None:
-                    returns.extend(_expression_path(candidate.value, bound, functions, target_module, depth + 1))
-            return set(returns)
+                    if isinstance(candidate, ast.Return) and candidate.value is not None:
+                        returns.extend(_expression_path(candidate.value, bound, functions, target_module,
+                                                        depth + 1, resolving))
+                return set(returns)
+            finally:
+                resolving.remove(marker)
     if isinstance(node, ast.Subscript):
         owner = node.value
         if (isinstance(owner, ast.Attribute) and owner.attr == "environ"
                 and isinstance(owner.value, ast.Name) and owner.value.id == "os"):
-            return _environment_root(node.slice, env, functions, module)
+            return _environment_root(node.slice, env, functions, module, resolving)
         if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
             return {_placeholder(node.slice.value)}
     if isinstance(node, ast.Attribute) and node.attr == "parent":
-        return {value.rsplit("/", 1)[0] for value in _expression_path(node.value, env, functions, module, depth + 1)
+        return {value.rsplit("/", 1)[0] for value in _expression_path(node.value, env, functions, module, depth + 1, resolving)
                 if "/" in value}
     return set()
 
 
-def _environment_root(node, env, functions, module):
-    keys = _expression_path(node, env, functions, module)
+def _environment_root(node, env, functions, module, resolving=None):
+    keys = _expression_path(node, env, functions, module, resolving=resolving)
     names = {"HOME": "<home>", "CLAUDE_CONFIG_DIR": "<claude-config>",
              "CODEX_HOME": "<codex-home>"}
     return {names[key] for key in sorted(keys) if key in names}

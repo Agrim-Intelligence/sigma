@@ -236,6 +236,37 @@ def test_scan_walks_class_and_nested_method_writers_with_self_path_aliases(tmp_p
     ]
 
 
+def test_scan_cyclic_helpers_keeps_independent_writer_without_revisiting_cycle(tmp_path):
+    """A cycle in helper returns must not consume the resolver's whole depth budget."""
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "def first(sdlc_dir):\n"
+        "    return second(sdlc_dir)\n"
+        "def second(sdlc_dir):\n"
+        "    return first(sdlc_dir)\n"
+        "def independent(sdlc_dir):\n"
+        "    return Path(sdlc_dir) / 'state' / 'kept.json'\n"
+        "def persist(sdlc_dir):\n"
+        "    first(sdlc_dir).write_text('cycle')\n"
+        "    independent(sdlc_dir).write_text('kept')\n"
+    )
+
+    assert _mod().scan(tmp_path) == [
+        {"pattern": ".sdlc/state/kept.json", "source": "code", "writer": "writer.py:10"},
+    ]
+
+
+def test_real_repository_scan_is_bounded_and_keeps_sources_writer_coverage():
+    """A cyclic helper graph must not make the production scan unbounded."""
+    command = [sys.executable, str(SCRIPT), str(ROOT)]
+    completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15)
+    rows = json.loads(completed.stdout)["rows"]
+
+    assert any(row["source"] == "code" and row["writer"].startswith(
+        "skills/agrim-loop/scripts/sources.py:")
+        and row["pattern"] == ".sdlc/journey/<goal>.md" for row in rows)
+
+
 def test_repository_scan_includes_localsource_journey_and_goal_file_writers():
     """The actual LocalSource class must be present, not just a synthetic fixture."""
     rows = _mod().scan(ROOT)
