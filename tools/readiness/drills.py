@@ -320,10 +320,8 @@ def validate_evidence(path: Path, payload: dict, checkout_sha: str):
 
 
 def run(drill: str, seed: int, workdir: Path, sigma: Path = ROOT):
-    if drill == "D4":
-        return run_d4(workdir, sigma, seed)
-    checkpoint = checkpoint_for_seed(seed)
-    raise UsageError("%s at checkpoint %s is not implemented yet" % (drill, checkpoint))
+    runners = {"D1": run_d1, "D2": run_d2, "D3": run_d3, "D4": run_d4}
+    return runners[drill](workdir, sigma, seed)
 
 
 def main(argv):

@@ -2,6 +2,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -77,6 +79,15 @@ def test_d3_runs_documented_reconcile_twice_and_records_done_once(tmp_path):
         ["loop.py", "reconcile-merges", "<dir>"],
     ]
     assert all(item["passed"] for item in result["invariants"])
+
+
+def test_public_cli_dispatches_d1_to_its_real_runner(tmp_path):
+    output = tmp_path / "d1.json"
+    proc = subprocess.run([sys.executable, str(SCRIPT), "run", "D1", "--seed", "1",
+                           "--workdir", str(tmp_path / "run"), "--json", str(output)],
+                          text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(output.read_text())["drill"] == "D1"
 
 
 def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):
