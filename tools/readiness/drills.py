@@ -143,6 +143,85 @@ def _checkpoint_fake_body(control, sigma: Path):
     # copy so the recovery receipt cannot label a closed card as open.
     fake = fake.replace('out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],',
                         'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],')
+    fake = fake.replace('out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],\n+                        "assignees":',
+                        'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],\n+                        "assignees":')
+    # The public control intentionally models no Projects v2 surface.  These
+    # drills need a configured board whose card is genuinely changed by
+    # Sigma's normal source writer, so install the smallest stateful extension
+    # in this private fixture copy.  It replaces the fake's command handler
+    # before ``main`` resolves it, leaving the public fake unchanged.
+    board = r'''
+
+def _readiness_project(state, number):
+    for project in state.get("projects", []):
+        if str(project.get("number")) == str(number):
+            return project
+    return None
+
+
+def _readiness_option_name(project, field_id, option_id):
+    for field in project.get("fields", []):
+        if field.get("id") == field_id:
+            for option in field.get("options", []):
+                if option.get("id") == option_id:
+                    return option.get("name")
+    return None
+
+
+def _readiness_item(project, item):
+    values = item.get("values", {})
+    status = _readiness_option_name(project, "FIELD_STATUS", values.get("FIELD_STATUS"))
+    return {"id": item["id"], "content": item["content"], "status": status}
+
+
+def cmd_project(state, argv, pos, flags):
+    sub = pos[0]
+    if sub == "list":
+        projects = [{k: p.get(k) for k in ("number", "id", "title")}
+                    for p in state.get("projects", [])]
+        print(json.dumps({"projects": projects, "totalCount": len(projects)})); return
+    if sub == "view":
+        project = _readiness_project(state, pos[1])
+        if project is None:
+            unhandled(argv, "unknown readiness project")
+        print(json.dumps({k: project.get(k) for k in ("number", "id", "title")})); return
+    if sub == "link":
+        save_state(state); return
+    if sub == "field-list":
+        project = _readiness_project(state, pos[1])
+        if project is None:
+            unhandled(argv, "unknown readiness project")
+        print(json.dumps({"fields": project.get("fields", [])})); return
+    if sub == "item-list":
+        project = _readiness_project(state, pos[1])
+        if project is None:
+            unhandled(argv, "unknown readiness project")
+        items = [_readiness_item(project, item) for item in project.get("items", {}).values()]
+        print(json.dumps({"items": items})); return
+    if sub == "item-add":
+        project = _readiness_project(state, pos[1])
+        match = re.search(r"/issues/(\d+)$", flags.get("url", ""))
+        if project is None or match is None:
+            unhandled(argv, "invalid readiness project item add")
+        number = match.group(1)
+        item_id = "PITEM_" + number
+        item = project.setdefault("items", {}).setdefault(item_id, {
+            "id": item_id,
+            "content": {"number": int(number), "repository": state["repo"]},
+            "values": {"FIELD_STATUS": "OPT_READY"},
+        })
+        save_state(state); print(json.dumps({"id": item["id"]})); return
+    if sub == "item-edit":
+        project = next((p for p in state.get("projects", [])
+                        if p.get("id") == flags.get("project-id")), None)
+        item = (project or {}).get("items", {}).get(flags.get("id"))
+        if item is None:
+            unhandled(argv, "unknown readiness project item")
+        item.setdefault("values", {})[flags.get("field-id")] = flags.get("single-select-option-id")
+        save_state(state); return
+    unhandled(argv, "unmodeled readiness project subcommand")
+'''
+    fake = fake.replace('\n\nif __name__ == "__main__":\n', board + '\n\nif __name__ == "__main__":\n')
     return fake
 
 
@@ -165,7 +244,18 @@ def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     log_path.write_text("", encoding="utf-8"); unhandled.write_text("", encoding="utf-8")
     state_path.write_text(json.dumps({
         "repo": control.FAKE_REPO, "remote_git_dir": str(remote), "labels": {}, "label_seq": 0,
-        "issues": {}, "issue_seq": 1, "prs": {}, "pr_seq": 100, "projects": [],
+        "issues": {}, "issue_seq": 1, "prs": {}, "pr_seq": 100, "projects": [{
+            "number": 1, "id": "PROJECT_1", "title": "Readiness recovery",
+            "fields": [{"id": "FIELD_STATUS", "name": "Status", "dataType": "SINGLE_SELECT",
+                        "options": [{"id": "OPT_BACKLOG", "name": "Backlog"},
+                                    {"id": "OPT_READY", "name": "Ready"},
+                                    {"id": "OPT_PROGRESS", "name": "In Progress"},
+                                    {"id": "OPT_QC", "name": "QC"},
+                                    {"id": "OPT_DONE", "name": "Done"},
+                                    {"id": "OPT_BLOCKED", "name": "Blocked"},
+                                    {"id": "OPT_PARKED", "name": "Parked"}]}],
+            "items": {},
+        }],
         "login": "readiness-bot", "default_branch": "main", "allow_auto_merge": True,
         "viewer_permission": "ADMIN", "refuse_label_create": False,
     }), encoding="utf-8")
@@ -179,6 +269,15 @@ def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     run = control.Run("readiness-fixture")
     qs = control.parse_quickstart((sigma / "README.md").read_text(encoding="utf-8"), sigma)
     init_out, _ = control._init_and_verify(run, qs, sigma, repo, env, "github", "confirm")
+    # Turn on a pre-existing, pinned fake board before any lifecycle command.
+    # ``label`` queue mode keeps the control's original admission gesture while
+    # every source write still travels through Projects v2.
+    config_path = repo / ".sdlc" / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    board = config["discovery"]["github"]["project"]
+    board.update({"enabled": True, "number": 1, "owner": "acme", "queue_source": "label",
+                  "archive_done": False})
+    config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
     py, loop = sys.executable, sigma / "skills" / "agrim-loop" / "scripts"
     def step(name, argv, ok=(0,)):
         return run.step(name, argv, repo, env, ok_rc=ok)
@@ -301,19 +400,57 @@ def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns)
 def _kill_after_fixture_merge(fixture):
     """Kill the real ``work.py merge`` parent after fake remote success, before acknowledgement.
 
-    The fake's post-response barrier runs only after it has durably updated the
-    disposable remote and emitted its success response.  The killed process is
-    nevertheless the parent lifecycle that would close the issue/write local
-    receipts next, never a standalone fake-gh subprocess.
+    A disposable ``sitecustomize`` wrapper stops the *parent* immediately
+    after its ``subprocess.run(["gh", "pr", "merge", ...])`` has returned
+    success.  Unlike a fake-gh-side barrier, the fake process has exited and
+    work.py has received the successful result before the parent pauses.  The
+    next work.py statement would start local acknowledgement (branch/issue/
+    receipt writes), so SIGKILL here is the specified lost-ack seam.
     """
-    observed = _kill_fixture_work_merge(
-        fixture, "post_response_before_ack", seed=1, measured_duration_ns=1,
-    )
+    hook_dir = fixture["root"] / "parent-post-success-hook"
+    hook_dir.mkdir()
+    ready = fixture["root"] / "parent-post-success.json"
+    hook_dir.joinpath("sitecustomize.py").write_text(
+        "import json, os, pathlib, subprocess, time\n"
+        "_run = subprocess.run\n"
+        "def _wrapped(*args, **kwargs):\n"
+        "    result = _run(*args, **kwargs)\n"
+        "    argv = args[0] if args else kwargs.get('args', [])\n"
+        "    if (os.environ.get('READINESS_PARENT_POST_SUCCESS_READY') and result.returncode == 0\n"
+        "            and list(argv)[:3] == ['gh', 'pr', 'merge']):\n"
+        "        pathlib.Path(os.environ['READINESS_PARENT_POST_SUCCESS_READY']).write_text(\n"
+        "            json.dumps({'pid': os.getpid(), 'fake_gh_returned_success': True}))\n"
+        "        while True: time.sleep(1)\n"
+        "    return result\n"
+        "subprocess.run = _wrapped\n",
+        encoding="utf-8")
+    env = dict(fixture["env"])
+    env["READINESS_PARENT_POST_SUCCESS_READY"] = str(ready)
+    env["PYTHONPATH"] = str(hook_dir) + os.pathsep + env.get("PYTHONPATH", "")
+    argv = [fixture["py"], fixture["loop"] / "work.py", "merge", ".sdlc", fixture["goal"]]
+    proc = subprocess.Popen([str(item) for item in argv], cwd=fixture["repo"], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    deadline = time.monotonic() + 10
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(.01)
+    if not ready.exists():
+        proc.kill()
+        raise UsageError("fixture parent did not receive fake-gh merge success")
+    marker = json.loads(ready.read_text(encoding="utf-8"))
+    pgid = os.getpgid(proc.pid)
+    requested = time.monotonic_ns()
+    os.killpg(pgid, signal.SIGKILL)
+    sent = time.monotonic_ns()
+    stdout, stderr = proc.communicate(timeout=10)
+    observed = {"pid": proc.pid, "pgid": pgid, "returncode": proc.returncode,
+                "requested_at_ns": requested, "sent_at_ns": sent, "stdout": stdout, "stderr": stderr,
+                "argv": [str(item) for item in argv], "parent_post_success": marker,
+                "fake_gh_returned_success": marker["fake_gh_returned_success"],
+                "parent_killed_after_success_before_ack": proc.returncode == -signal.SIGKILL}
     remote_merged = _fixture_state(fixture)["prs"][fixture["pr"]]["state"] == "MERGED"
     observed["remote_merge_durable"] = remote_merged
-    observed["remote_merge_response_emitted"] = (
-        observed["barrier"]["checkpoint"] == "post_response_before_ack"
-    )
+    observed["remote_merge_response_emitted"] = marker["fake_gh_returned_success"]
     return observed
 
 
@@ -359,13 +496,23 @@ def _terminal_convergence(fixture, lifecycle):
             mirror_records.append(json.loads(line))
         except ValueError:
             continue
-    mirror = next((record for record in mirror_records if str(record.get("number")) == goal), {})
-    # The hermetic public onboarding fake deliberately has no Projects v2 API.
-    # Its local board mirror is still a real lifecycle artifact, so refresh it
-    # after recovery and record the closed card rather than treating a stale
-    # pre-merge mirror as convergence.
-    board = {"configured": board_enabled, "status": None, "mirror_state": mirror.get("state")}
+    # The mirror is append-only.  Convergence must inspect the latest refresh,
+    # not the pre-merge card snapshot retained earlier in the same lifecycle.
+    mirror = next((record for record in reversed(mirror_records)
+                   if str(record.get("number")) == goal), {})
     state = lifecycle["fake_github"]
+    project = next((p for p in state.get("projects", [])
+                    if p.get("number") == board_config.get("number")), None)
+    item = ((project or {}).get("items") or {}).get("PITEM_" + goal)
+    status = None
+    if project and item:
+        options = next((f.get("options", []) for f in project.get("fields", [])
+                        if f.get("id") == "FIELD_STATUS"), [])
+        wanted = (item.get("values") or {}).get("FIELD_STATUS")
+        status = next((o.get("name") for o in options if o.get("id") == wanted), None)
+    board = {"configured": board_enabled, "project_number": board_config.get("number"),
+             "item_id": item.get("id") if item else None, "status": status,
+             "mirror_state": mirror.get("state")}
     issue = state["issues"][goal]
     pr = state["prs"][fixture["pr"]]
     return {

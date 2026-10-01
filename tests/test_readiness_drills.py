@@ -208,7 +208,8 @@ def test_d2_receipt_proves_terminal_action_log_work_record_cursor_and_board_conv
     assert convergence["work_record_exists"] is False
     assert convergence["worktree_exists"] is False
     assert convergence["cursor"] == "1 -> done"
-    assert convergence["board"] == {"configured": False, "status": None,
+    assert convergence["board"] == {"configured": True, "project_number": 1,
+                                    "item_id": "PITEM_1", "status": "Done",
                                     "mirror_state": "closed"}
 
 
@@ -222,12 +223,38 @@ def test_d3_kills_the_actual_work_merge_parent_after_fake_merge_then_reconciles_
     convergence = result["lifecycle"]["convergence"]
     assert fault["returncode"] < 0
     assert fault["argv"][1].endswith("work.py")
-    assert fault["barrier"]["checkpoint"] == "post_response_before_ack"
     assert fault["remote_merge_durable"] is True
-    assert fault["remote_merge_response_emitted"] is True
+    assert fault["fake_gh_returned_success"] is True
+    assert fault["parent_killed_after_success_before_ack"] is True
     assert convergence["action_log_done_count"] == 1
     assert convergence["work_record_exists"] is False
     assert convergence["worktree_exists"] is False
+
+
+def test_d2_and_d3_converge_the_configured_fake_projects_v2_card_to_done(tmp_path):
+    """The recovery receipt must read the fake board, not a local mirror.
+
+    The fixture configures a real fake Projects-v2 board/card before the
+    lifecycle begins.  D2 restores local state and D3 loses the parent only
+    after fake-gh has returned merge success; both recovery paths must then
+    read the configured card back as Done.
+    """
+    drills = _module()
+
+    d2 = drills.run_d2(tmp_path / "d2", ROOT, 1)
+    d3 = drills.run_d3(tmp_path / "d3", ROOT, 1)
+
+    for result in (d2, d3):
+        convergence = result["lifecycle"]["convergence"]
+        assert convergence["board"]["configured"] is True
+        assert convergence["board"]["project_number"] == 1
+        assert convergence["board"]["item_id"] == "PITEM_1"
+        assert convergence["board"]["status"] == "Done"
+        assert result["lifecycle"]["fake_github"]["projects"][0]["items"]["PITEM_1"]["values"]["FIELD_STATUS"] == "OPT_DONE"
+
+    fault = d3["lifecycle"]["fake_merge"]
+    assert fault["fake_gh_returned_success"] is True
+    assert fault["parent_killed_after_success_before_ack"] is True
 
 
 def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):
