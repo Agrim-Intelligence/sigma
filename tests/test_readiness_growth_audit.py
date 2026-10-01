@@ -256,6 +256,30 @@ def test_scan_cyclic_helpers_keeps_independent_writer_without_revisiting_cycle(t
     ]
 
 
+def test_scan_does_not_cache_a_cycle_truncated_writer_path_as_absent(tmp_path):
+    """A later call site must still reach a writer after an earlier cycle walk."""
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "def outer(sdlc_dir):\n"
+        "    a(Path(sdlc_dir) / 'state' / 'outer.json')\n"
+        "    (Path(sdlc_dir) / 'state' / 'outer-marker.json').write_text('outer')\n"
+        "def a(dst):\n"
+        "    b(dst)\n"
+        "    leaf(dst)\n"
+        "def b(dst):\n"
+        "    a(dst)\n"
+        "def leaf(dst):\n"
+        "    dst.write_text('leaf')\n"
+        "def persist(sdlc_dir):\n"
+        "    b(Path(sdlc_dir) / 'state' / 'forwarded.json')\n"
+        "    (Path(sdlc_dir) / 'state' / 'persist-marker.json').write_text('persist')\n"
+    )
+
+    patterns = {row["pattern"] for row in _mod().scan(tmp_path)}
+
+    assert ".sdlc/state/forwarded.json" in patterns
+
+
 def test_real_repository_scan_is_bounded_and_keeps_sources_writer_coverage():
     """A cyclic helper graph must not make the production scan unbounded."""
     command = [sys.executable, str(SCRIPT), str(ROOT)]

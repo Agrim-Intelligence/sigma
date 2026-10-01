@@ -235,10 +235,31 @@ def _writer_argument_indices(function, functions=None, module=None, seen=None):
     names = [arg.arg for arg in function.args.args]
     found = set()
     functions = {} if functions is None else functions
-    seen = set() if seen is None else seen
     marker = (module, function.name)
+    # The static helper graph does not vary by call site.  `_code_rows` asks
+    # this question for every helper invocation it finds, and without a
+    # top-level cache a large source module repeatedly walks the same callee
+    # graph thousands of times.  Cache only fresh root queries: recursive
+    # queries carry a cycle guard whose partial result depends on its caller.
+    cache = functions.setdefault("__growth-writer-argument-cache__", {})
+    if seen is None:
+        cached = cache.get(marker)
+        if cached is not None:
+            return set(cached)
+        result = _writer_argument_indices(function, functions, module, set())
+        cache[marker] = frozenset(result)
+        return result
     if marker in seen:
         return found
+    # Recursive results are only reusable under the same cycle guard.  This
+    # avoids the unsafe shortcut of memoizing a partial cycle walk globally,
+    # while collapsing repeated sanitizer/helper traversals reached from the
+    # same call graph context.
+    contextual = functions.setdefault("__growth-writer-argument-context-cache__", {})
+    context = (marker, frozenset(seen))
+    cached = contextual.get(context)
+    if cached is not None:
+        return set(cached)
     seen = seen | {marker}
     for node in ast.walk(function):
         if not isinstance(node, ast.Call):
@@ -262,12 +283,18 @@ def _writer_argument_indices(function, functions=None, module=None, seen=None):
         elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             target_module, helper = node.func.value.id, node.func.attr
         callee = functions.get(target_module, {}).get(helper)
-        if callee is not None:
+        # A helper that cannot reach any writer cannot turn one of this
+        # function's arguments into a destination.  The reachability result
+        # is cached for the scan, so this avoids recursively walking large
+        # formatter/sanitizer graphs whose answer is necessarily empty.
+        if (callee is not None
+                and _writes_anything(callee, functions, target_module)):
             for index in _writer_argument_indices(callee, functions, target_module, seen):
                 if index < len(node.args):
                     forwarded = _argument_name(node.args[index])
                     if forwarded in names:
                         found.add(names.index(forwarded))
+    contextual[context] = frozenset(found)
     return found
 
 
@@ -356,7 +383,8 @@ def _writes_anything(function, functions, module, seen=None):
     marker = (module, function.name)
     if marker in cache:
         return cache[marker]
-    seen = set() if seen is None else seen
+    root_query = seen is None
+    seen = set() if root_query else seen
     if marker in seen:
         return False
     next_seen = seen | {marker}
@@ -376,7 +404,14 @@ def _writes_anything(function, functions, module, seen=None):
         if nested is not None and _writes_anything(nested, functions, target_module, next_seen):
             cache[marker] = True
             return True
-    cache[marker] = False
+    # A False result reached with a non-empty guard may have been truncated
+    # solely because a caller is already in this cycle.  It is not a global
+    # fact: another call site can enter the same helper without that guard and
+    # reach a writer through a different edge.  Cache negative reachability
+    # only for a complete root traversal; positive reachability is valid from
+    # every context and remains safely reusable above.
+    if root_query:
+        cache[marker] = False
     return False
 
 
@@ -446,7 +481,14 @@ def _code_rows(root, path, functions):
             # ``self.method`` as another interprocedural graph edge caused the
             # repository audit to revisit the same very large class methods at
             # each call site.  Module-level helper following remains intact.
-            if target is not None and not class_method:
+            # Most call sites target ordinary helpers that cannot reach a
+            # durable writer.  Descending into each of those graphs was the
+            # dominant cost of a repository scan.  The cached reachability
+            # check retains every helper that can write (including a
+            # transitive writer) while avoiding alias resolution for the
+            # overwhelmingly common non-writer case.
+            if (target is not None and not class_method
+                    and _writes_anything(target, functions, target_module)):
                 for index in _writer_argument_indices(target, functions, target_module):
                     if index < len(node.args):
                         patterns |= _expression_path(node.args[index], env, functions, module)
