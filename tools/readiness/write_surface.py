@@ -26,17 +26,28 @@ _REMOVE_METHODS = {"unlink", "rmdir"}
 _WRITE_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
 
 
-def _gate(path):
-    """Known runtime gates; every other entry states the absence of one explicitly."""
+def _metadata(path, function, rule):
+    """Return the gate and risk for this specific call site, never just its file."""
     if path == "skills/agrim-loop/scripts/work.py":
-        return "work.enabled; merge requires fresh verify evidence and CLEAN PR"
-    if path == "skills/agrim-loop/scripts/feature_rebase.py":
-        return "work.rebase_upkeep"
-    if path == "skills/agrim-loop/scripts/sources.py":
-        return "discovery.source == github; board writes require project.enabled"
-    if path == "skills/agrim-rebase/scripts/verify_merge.py":
-        return "human input() confirmation"
-    return "ungated"
+        gate = "work.enabled; merge requires fresh verify evidence and CLEAN PR"
+    elif path == "skills/agrim-loop/scripts/feature_rebase.py":
+        gate = "work.rebase_upkeep"
+    elif path == "skills/agrim-loop/scripts/sources.py":
+        gate = "discovery.source == github; board writes require project.enabled"
+    elif path == "skills/agrim-rebase/scripts/verify_merge.py":
+        gate = "human input() confirmation"
+    else:
+        gate = "ungated"
+    risk = RISK[rule]
+    if (path, function, rule) in {
+        ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"),
+        ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"),
+        ("skills/agrim-rebase/scripts/verify_merge.py", "merge_pr", "gh-pr"),
+        ("skills/agrim-loop/scripts/sources.py", "complete", "gh-issue"),
+        ("skills/agrim-loop/scripts/sources.py", "release", "gh-issue"),
+    }:
+        risk = "high"
+    return gate, risk
 
 
 def _shell_rules(line):
@@ -108,18 +119,20 @@ def _rules_for_call(node, values):
                for s in _strings(arg, values)]
     tokens = [s.lower() for s in strings]
     rules = set()
+    command_call = name in {"subprocess.run", "subprocess.Popen", "run", "git", "_run", "_run_gh", "_gh_json"} or name.endswith("._run")
     command = tokens[:]
-    if "gh" in command:
-        command = command[command.index("gh") + 1:]
-    if name.endswith("._run") or name in {"_run", "_gh_json"}:
-        command = tokens
-    if len(command) >= 2 and command[0] in _GH_ACTIONS and command[1] in _GH_ACTIONS[command[0]]:
-        rules.add("gh-" + ("pr" if command[0] == "pr" else command[0]))
-    if command and command[0] == "api" and any(x in {"post", "patch", "put", "delete"} for x in command):
-        rules.add("gh-api-write")
+    if command_call:
+        if "gh" in command:
+            command = command[command.index("gh") + 1:]
+        if name.endswith("._run") or name in {"_run", "_run_gh", "_gh_json"}:
+            command = tokens
+        if len(command) >= 2 and command[0] in _GH_ACTIONS and command[1] in _GH_ACTIONS[command[0]]:
+            rules.add("gh-" + ("pr" if command[0] == "pr" else command[0]))
+        if command and command[0] == "api" and any(x in {"post", "patch", "put", "delete"} for x in command):
+            rules.add("gh-api-write")
     if ("graphql" in command or name.endswith("_graphql")) and any("mutation" in s.lower() for s in strings):
         rules.add("graphql-mutation")
-    if "git" in tokens:
+    if command_call and "git" in tokens:
         git = tokens[tokens.index("git") + 1:]
         if "push" in git:
             rules.add("git-push")
@@ -173,9 +186,10 @@ def scan_paths(root, paths):
                 for rule in _rules_for_call(node, values):
                     key = (path.relative_to(root).as_posix(), function, rule)
                     groups[key] = groups.get(key, 0) + 1
-        found.extend({"path": path, "function": function, "rule": rule, "count": count,
-                      "gate": _gate(path), "risk": RISK[rule]}
-                     for (path, function, rule), count in groups.items())
+        for (relpath, function, rule), count in groups.items():
+            gate, risk = _metadata(relpath, function, rule)
+            found.append({"path": relpath, "function": function, "rule": rule, "count": count,
+                          "gate": gate, "risk": risk})
     return sorted(found, key=lambda item: (item["path"], item["function"], item["rule"]))
 
 

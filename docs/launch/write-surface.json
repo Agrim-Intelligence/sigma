@@ -33,14 +33,6 @@
       "risk": "medium"
     },
     {
-      "path": "hooks/issue_field_gate.py",
-      "function": "_is_issue_create",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
       "path": "hooks/research_capture.py",
       "function": "main",
       "rule": "fs-write",
@@ -55,14 +47,6 @@
       "count": 2,
       "gate": "ungated",
       "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-define/scripts/define.py",
-      "function": "_step_branch",
-      "rule": "git-push",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
     },
     {
       "path": "skills/agrim-define/scripts/define.py",
@@ -1004,7 +988,7 @@
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "_ensure_board",
       "rule": "gh-project",
-      "count": 2,
+      "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
@@ -1036,7 +1020,7 @@
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "_gh_json",
       "rule": "gh-label",
-      "count": 2,
+      "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
@@ -1050,33 +1034,9 @@
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
-      "function": "_item_id",
-      "rule": "gh-project",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sources.py",
-      "function": "_read_card",
-      "rule": "gh-project",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sources.py",
-      "function": "_run",
-      "rule": "gh-label",
-      "count": 3,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sources.py",
       "function": "_run_gh",
       "rule": "gh-label",
-      "count": 2,
+      "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
@@ -1101,14 +1061,6 @@
       "function": "_sync_backlog",
       "rule": "gh-project",
       "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/sources.py",
-      "function": "_warn_unmatched_column",
-      "rule": "gh-issue",
-      "count": 2,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
@@ -1158,7 +1110,7 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/agrim-loop/scripts/sources.py",
@@ -1180,7 +1132,7 @@
       "path": "skills/agrim-loop/scripts/sources.py",
       "function": "create_dependency",
       "rule": "gh-label",
-      "count": 2,
+      "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
@@ -1230,7 +1182,7 @@
       "rule": "gh-issue",
       "count": 2,
       "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/agrim-loop/scripts/state.py",
@@ -1634,32 +1586,8 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
-      "function": "_emit_test_trust",
-      "rule": "gh-pr",
-      "count": 2,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "_reconcile_behind",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
       "function": "_repair_review_post_effects",
       "rule": "fs-write",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "_review_post_request",
-      "rule": "gh-pr",
       "count": 1,
       "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
@@ -1698,14 +1626,6 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
-      "function": "close_design",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
       "function": "finish",
       "rule": "fs-remove",
       "count": 2,
@@ -1726,7 +1646,7 @@
       "rule": "gh-pr",
       "count": 1,
       "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
@@ -1738,41 +1658,17 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
-      "function": "main",
-      "rule": "gh-pr",
-      "count": 3,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
       "function": "merge",
       "rule": "gh-pr",
-      "count": 4,
+      "count": 2,
       "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "merge_design",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "normalise_ci_rollup",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
       "function": "post_review",
       "rule": "gh-pr",
-      "count": 3,
+      "count": 1,
       "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
@@ -1810,41 +1706,9 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
-      "function": "record_plan_review",
-      "rule": "gh-pr",
-      "count": 3,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "record_subagent_review",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
       "function": "review_evidence",
       "rule": "fs-write",
       "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "review_evidence",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-loop/scripts/work.py",
-      "function": "run_resolved_review",
-      "rule": "gh-pr",
-      "count": 5,
       "gate": "work.enabled; merge requires fresh verify evidence and CLEAN PR",
       "risk": "medium"
     },
@@ -1906,14 +1770,6 @@
     },
     {
       "path": "skills/agrim-rebase/scripts/verify_merge.py",
-      "function": "_parse_created_pr_number",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "human input() confirmation",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/agrim-rebase/scripts/verify_merge.py",
       "function": "_write_delivery",
       "rule": "fs-remove",
       "count": 1,
@@ -1932,7 +1788,7 @@
       "path": "skills/agrim-rebase/scripts/verify_merge.py",
       "function": "ensure_landing_pr",
       "rule": "gh-pr",
-      "count": 3,
+      "count": 2,
       "gate": "human input() confirmation",
       "risk": "medium"
     },
@@ -1942,7 +1798,7 @@
       "rule": "gh-pr",
       "count": 1,
       "gate": "human input() confirmation",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/agrim-scope/scripts/assign.py",
@@ -2106,35 +1962,11 @@
     },
     {
       "path": "tools/onboarding_control.py",
-      "function": "run_github",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "tools/onboarding_control.py",
-      "function": "run_github",
-      "rule": "gh-pr",
-      "count": 3,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "tools/onboarding_control.py",
       "function": "run_local",
       "rule": "fs-write",
       "count": 3,
       "gate": "ungated",
       "risk": "medium"
-    },
-    {
-      "path": "tools/readiness/write_surface.py",
-      "function": "_rules_for_call",
-      "rule": "git-destructive",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
     },
     {
       "path": "tools/readiness/write_surface.py",

@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "readiness" / "write_surface.py"
@@ -141,3 +143,30 @@ def test_documented_shell_label_delete_control_fails_the_ratchet(tmp_path):
     assert _module().ratchet(tmp_path, inventory) == [
         "new write site control.sh:<script> gh-label -- add it to docs/launch/write-surface.json with its gate"
     ]
+
+
+@pytest.mark.parametrize("rule, text", [
+    ("gh-issue", 'subprocess.run(["gh", "issue", "delete", "1"])'),
+    ("gh-pr", 'subprocess.run(["gh", "pr", "merge", "1"])'),
+    ("gh-label", 'subprocess.run(["gh", "label", "delete", "x"])'),
+    ("gh-project", 'subprocess.run(["gh", "project", "item-delete", "x"])'),
+    ("gh-api-write", 'subprocess.run(["gh", "api", "-X", "POST", "x"])'),
+    ("graphql-mutation", '_graphql("mutation { x }")'),
+    ("git-push", 'subprocess.run(["git", "push"])'),
+    ("git-destructive", 'subprocess.run(["git", "reset", "--hard"])'),
+    ("fs-rmtree", 'shutil.rmtree(path)'),
+    ("fs-remove", 'os.unlink(path)'),
+    ("fs-write", 'Path(path).write_text("x")'),
+])
+def test_each_command_rule_ignores_a_nonexecuting_lookalike(tmp_path, rule, text):
+    source = tmp_path / "lookalike.py"
+    source.write_text("def explain():\n    print(" + repr(text) + ")\n")
+    assert rule not in {row["rule"] for row in _module().scan_paths(tmp_path, [source])}
+
+
+def test_call_site_metadata_escalates_merge_risk_without_escalating_comments(tmp_path):
+    source = tmp_path / "a.py"
+    source.write_text('import subprocess\n\ndef merge():\n    subprocess.run(["gh", "pr", "merge", "1"])\n')
+    row = _module().scan_paths(tmp_path, [source])[0]
+    assert row["gate"] == "ungated" and row["risk"] == "medium"
+    assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr")[1] == "high"
