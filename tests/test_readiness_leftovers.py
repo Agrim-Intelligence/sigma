@@ -41,6 +41,11 @@ def test_checker_detects_owned_agents_and_cursor_rules(tmp_path):
     assert {row["kind"] for row in got} == {"agents-block", "cursor-rule"}
 
 
+def test_checker_detects_an_orphaned_sigma_agents_marker(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("before\n<!-- sigma:codex:start -->\na torn block\n")
+    assert _mod().find_leftovers(tmp_path) == [{"kind": "agents-block", "path": "AGENTS.md"}]
+
+
 def test_git_pid_installs_and_info_exclude_are_all_reported(tmp_path, monkeypatch):
     mod = _mod()
     (tmp_path / ".git" / "info").mkdir(parents=True)

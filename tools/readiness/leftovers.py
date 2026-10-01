@@ -72,7 +72,8 @@ def find_leftovers(repo, environ=None, github=None):
         agent_text = agents.read_text(encoding="utf-8")
     except OSError:
         agent_text = ""
-    if all(marker in agent_text for marker in AGENTS_MARKERS):
+    # Either delimiter is residue: a torn/manual edit must not let the final check claim clean.
+    if any(marker in agent_text for marker in AGENTS_MARKERS):
         rows.append(_row("agents-block", "AGENTS.md"))
     for name in CURSOR_RULES:
         path = repo / ".cursor" / "rules" / name
