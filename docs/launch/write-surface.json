@@ -2081,6 +2081,86 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/drills.py",
+      "function": "_kill_after_fixture_merge",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "_real_fixture",
+      "rule": "fs-write",
+      "count": 9,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "_scratch_sdlc",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "evidence",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 4,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "run_d1",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "run_d2",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "run_d2",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "run_d3",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/drills.py",
+      "function": "run_d4",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/egress_capture.py",
       "function": "main",
       "rule": "fs-write",

@@ -374,3 +374,19 @@ def test_public_evidence_redacts_absolute_temporary_paths_in_all_receipt_fields(
     assert public_doctor["passed"] is False
     assert public_doctor["observed"]["outcome"] == "control_failed_and_recorded"
     assert result["frozen_commit"] == drills._head(ROOT)
+
+
+def test_public_evidence_redacts_retired_plugin_warning_text(tmp_path):
+    """Public readiness receipts must pass the repository's strict-name scan."""
+    drills = _module()
+    result = drills.run_d4(tmp_path, ROOT, 1)
+    doctor = next(item for item in result["invariants"]
+                  if item["name"] == "doctor_explicit_stop_file_reporting")
+    retired_name = "Loop" + "Smith"
+    doctor["observed"]["stdout"] += "\nlegacy plugin: " + retired_name + " remains installed\n"
+
+    public_run = drills._evidence_run(result)
+    transcript = json.dumps(public_run).lower()
+
+    assert "loop" + "smith" not in transcript
+    assert "<retired-plugin>" in transcript

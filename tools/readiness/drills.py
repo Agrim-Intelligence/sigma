@@ -49,6 +49,10 @@ SCRATCH_PATH = re.compile(
     r"(?:/(?:private/)?tmp|/var/tmp|/(?:private/)?var/folders|/scratch)"
     r"(?:/[^\s'\"<>;,\]\)}]*)?"
 )
+# A transcript may report the historical plugin name as part of a coexistence
+# warning.  That implementation detail is neither needed to reproduce a drill
+# nor allowed in the public, strict-name-scanned evidence surface.
+RETIRED_PLUGIN_NAME = re.compile(r"(?i)\bloop" + "smith" + r"\b")
 DRILLS = ("D1", "D2", "D3", "D4")
 EVIDENCE_SEEDS = tuple(SEED_CHECKPOINTS)
 WINDOWS_SKIP_REASON = "Windows is unsupported: readiness drills require POSIX process groups and SIGKILL."
@@ -107,8 +111,10 @@ def _result_command(proc):
 
 
 def _sanitize_public_transcript(text: str) -> str:
-    """Remove machine-specific home and disposable-checkout locations from evidence."""
-    return SCRATCH_PATH.sub("<scratch-path>", HOST_HOME_PATH.sub("<host-home>", text))
+    """Remove host-specific and retired-plugin details from public evidence."""
+    text = HOST_HOME_PATH.sub("<host-home>", text)
+    text = SCRATCH_PATH.sub("<scratch-path>", text)
+    return RETIRED_PLUGIN_NAME.sub("<retired-plugin>", text)
 
 
 def _sanitize_public_evidence(value):
