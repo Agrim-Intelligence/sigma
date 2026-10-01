@@ -4153,6 +4153,72 @@ def test_finish_force_still_releases_an_orphaned_worktree_that_has_content(tmp_p
     assert not wt.exists()          # the orphaned content must actually go, not just the record
 
 
+def test_terminal_review_copy_pruner_deletes_only_real_direct_copies_and_logs_them(tmp_path):
+    """The pruner must not turn review evidence or a symlink into an authority to remove another
+    tree.  Replacing either direct-child/symlink guard with a recursive delete fails this fixture."""
+    cfg = {**ON, **ACTIONLOG}
+    d = _sdlc(tmp_path, cfg); goal = "0001-x.md"
+    evidence = pathlib.Path(d) / "evidence" / "0001-x"
+    copied = evidence / "rv1" / "wt"
+    copied.mkdir(parents=True)
+    (copied / "copied.txt").write_text("review copy\n")
+    (evidence / "rv1" / "notes.md").write_text("human evidence\n")
+    (evidence / "rv1" / "wt-extra").mkdir()
+    nested = evidence / "rv1" / "nested" / "wt"
+    nested.mkdir(parents=True)
+    outside = tmp_path / "outside"; outside.mkdir()
+    (outside / "keep.txt").write_text("outside\n")
+    (evidence / "rv-link").symlink_to(outside, target_is_directory=True)
+    (evidence / "rv2").mkdir()
+    (evidence / "rv2" / "wt").symlink_to(outside, target_is_directory=True)
+
+    assert work.prune_terminal_review_copies(d, goal) == [copied]
+
+    assert not copied.exists()
+    assert (evidence / "rv1" / "notes.md").read_text() == "human evidence\n"
+    assert (evidence / "rv1" / "wt-extra").is_dir()
+    assert nested.is_dir()
+    assert (outside / "keep.txt").read_text() == "outside\n"
+    entries = [e for e in actionlog.read_goal(d, goal) if e["kind"] == "file"]
+    assert len(entries) == 1
+    assert entries[0]["op"] == "delete" and entries[0]["path"] == str(copied)
+
+
+def test_terminal_review_copy_pruner_is_fail_open_for_delete_and_actionlog_failures(tmp_path, monkeypatch):
+    """A cleanup/logging fault is post-terminal housekeeping: it may leave a copy for retry, but
+    never throws, and a logging fault must not make a successful delete look retained."""
+    d = _sdlc(tmp_path, {**ON, **ACTIONLOG}); goal = "0001-x.md"
+    copied = pathlib.Path(d) / "evidence" / "0001-x" / "rv1" / "wt"
+    copied.mkdir(parents=True)
+    (copied / "copy.txt").write_text("copy\n")
+
+    monkeypatch.setattr(work.shutil, "rmtree", lambda _path: (_ for _ in ()).throw(RuntimeError("busy")))
+    assert work.prune_terminal_review_copies(d, goal) == []
+    assert copied.exists()
+
+    monkeypatch.undo()
+    class _BrokenLog:
+        @staticmethod
+        def safe_append(*_args, **_kwargs):
+            raise RuntimeError("log unavailable")
+    original_load = work._load
+    monkeypatch.setattr(work, "_load", lambda name: _BrokenLog if name == "actionlog" else original_load(name))
+    assert work.prune_terminal_review_copies(d, goal) == [copied]
+    assert not copied.exists()
+
+
+def test_terminal_review_copy_pruner_stays_silent_when_action_logging_is_disabled(tmp_path):
+    """The file/delete observation is opt-in; disabling it must not retain a safe disposable
+    copy merely because no local audit file will be written."""
+    d = _sdlc(tmp_path, ON); goal = "0001-x.md"
+    copied = pathlib.Path(d) / "evidence" / "0001-x" / "rv1" / "wt"
+    copied.mkdir(parents=True)
+
+    assert work.prune_terminal_review_copies(d, goal) == [copied]
+    assert not copied.exists()
+    assert actionlog.read_goal(d, goal) == []
+
+
 # --- CLI + the off switch ------------------------------------------------------------------------
 
 def test_cli_refuses_every_command_while_the_feature_is_off(tmp_path, capsys):

@@ -538,6 +538,68 @@ def test_cli_start_next_record_and_budget():
         assert run("next", base).stdout.strip() == "BUDGET"            # per-run budget=1 spent
 
 
+def test_record_done_prunes_only_the_direct_review_copy_and_keeps_evidence_text():
+    """The documented ``loop.py record <dir> <goal> done`` gesture must release copied review
+    worktrees without treating the human evidence beside them as disposable.  Removing the terminal
+    cleanup call, or widening its direct-child selection to a recursive/glob delete, makes one of
+    these observable filesystem assertions fail."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 1, max_iter=5)
+        evidence = pathlib.Path(base) / "evidence" / "0001"
+        copied = evidence / "rv9" / "wt"
+        copied.mkdir(parents=True)
+        (copied / "checkout.py").write_text("copied review tree\n")
+        (evidence / "rv9" / "notes.md").write_text("human review evidence\n")
+        (evidence / "rv9" / "wt-extra").mkdir()
+        nested = evidence / "rv9" / "nested" / "wt"
+        nested.mkdir(parents=True)
+
+        run = lambda *a: subprocess.run([sys.executable, str(S / "loop.py"), *a],
+                                        capture_output=True, text=True)
+        run("start", base)
+        goal = run("next", base).stdout.strip()
+        result = run("record", base, goal, "done")
+
+        assert result.returncode == 0, result.stderr
+        assert not copied.exists()
+        assert (evidence / "rv9" / "notes.md").read_text() == "human review evidence\n"
+        assert (evidence / "rv9" / "wt-extra").is_dir()
+        assert nested.is_dir()
+
+
+def test_record_failed_prunes_review_copy_without_releasing_the_failed_worktree():
+    """A failed terminal record reaches the same cleanup, but does not route through
+    ``work.finish``: losing a failed goal's checkout would destroy the work needed to repair it."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 1, max_iter=5)
+        config_path = pathlib.Path(base) / "config.json"
+        config = json.loads(config_path.read_text())
+        config["work"] = {"enabled": True}
+        config_path.write_text(json.dumps(config))
+        evidence = pathlib.Path(base) / "evidence" / "0001"
+        copied = evidence / "rv2" / "wt"
+        copied.mkdir(parents=True)
+        (copied / "snapshot.txt").write_text("copy\n")
+        failed_worktree = pathlib.Path(base) / "work" / "0001"
+        failed_worktree.mkdir(parents=True)
+        (failed_worktree / "uncommitted.txt").write_text("keep me\n")
+
+        run = lambda *a: subprocess.run([sys.executable, str(S / "loop.py"), *a],
+                                        capture_output=True, text=True)
+        run("start", base)
+        goal = run("next", base).stdout.strip()
+        record = pathlib.Path(base) / "state" / "work" / "0001.json"
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({"worktree": str(failed_worktree), "branch": "sdlc/0001",
+                                      "base": "main", "remote": "origin", "pr": ""}))
+        result = run("record", base, goal, "failed", "needs repair")
+
+        assert result.returncode == 0, result.stderr
+        assert not copied.exists()
+        assert (failed_worktree / "uncommitted.txt").read_text() == "keep me\n"
+        assert record.exists(), "failed terminal records must not call work.finish"
+
+
 def test_two_real_picker_processes_the_second_is_refused_a_goal_a_live_worker_still_holds():
     """#1197's own acceptance bar, driven end-to-end: two REAL, separate `loop.py next` picker
     subprocesses against ONE ledger-enabled `.sdlc`, exactly as two `/agrim-loop` sessions minutes

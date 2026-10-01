@@ -5998,6 +5998,48 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     return f"removed {rec['worktree']}"
 
 
+def prune_terminal_review_copies(sdlc_dir, goal):
+    """Best-effort removal of one goal's disposable review worktree copies.
+
+    Review text is evidence, while the ``rv*/wt`` checkout copies below it are reproducible disk
+    growth.  This deliberately considers only a non-symlink direct ``wt`` child of a non-symlink
+    direct ``rv*`` child under ``.sdlc/evidence/<safe-goal>``.  It never follows a symlink, never
+    recurses to discover another candidate, and never makes a terminal record fail because cleanup
+    or its local observation could not be completed.
+    """
+    stem = pathlib.Path(goal).stem if str(goal).endswith(".md") else str(goal)
+    if state.unsafe_goal_reason(stem):
+        return []
+    evidence = pathlib.Path(sdlc_dir) / "evidence" / stem
+    try:
+        if evidence.is_symlink() or not evidence.is_dir():
+            return []
+        review_dirs = list(evidence.iterdir())
+    except OSError as exc:
+        print(f"work.py: review-copy cleanup skipped for {stem!r} ({exc})", file=sys.stderr)
+        return []
+
+    removed = []
+    for review_dir in review_dirs:
+        if not review_dir.name.startswith("rv") or review_dir.is_symlink() or not review_dir.is_dir():
+            continue
+        copied_tree = review_dir / "wt"
+        if copied_tree.is_symlink() or not copied_tree.is_dir():
+            continue
+        try:
+            shutil.rmtree(copied_tree)
+        except Exception as exc:              # noqa: BLE001 - cleanup is terminal fail-open work
+            print(f"work.py: review-copy cleanup skipped for {copied_tree} ({exc})", file=sys.stderr)
+            continue
+        removed.append(copied_tree)
+        # Lazy for the same reason as start()/merge(): actionlog imports this module for stem().
+        try:
+            _load("actionlog").safe_append(sdlc_dir, goal, "file", path=str(copied_tree), op="delete")
+        except Exception as exc:              # noqa: BLE001 - observation must remain fail-open
+            print(f"work.py: review-copy cleanup observation skipped ({exc})", file=sys.stderr)
+    return removed
+
+
 
 #: How many open PRs on one design goal's head branch this will look at before refusing as
 #: ambiguous -- mirrors `SIBLING_PR_LIMIT`'s own reasoning (work.py:3311-3314) exactly: "one head
