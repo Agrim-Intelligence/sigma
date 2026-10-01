@@ -29,6 +29,12 @@ def test_branching_model_names_human_merge_exception():
     assert "never merges a feature branch anywhere" not in text or "verify_merge.py" in text
 
 
+def test_channel_webhook_does_not_claim_unvalidated_loopback_only_delivery():
+    text = (ROOT / "skills/agrim-loop/scripts/channel_notify.py").read_text()
+    assert "127.0.0.1-only" not in text
+    assert "host is not validated" in text
+
+
 def test_changelog_versions_are_dated():
     headings = re.findall(r"^## \[?([0-9]+\.[0-9]+\.[0-9]+)\]?\s*(.*)$", (ROOT / "CHANGELOG.md").read_text(), re.M)
     assert headings and all(re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) for _version, suffix in headings)
