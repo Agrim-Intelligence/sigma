@@ -18,6 +18,7 @@ import sys
 
 MAX_BLOB_BYTES = 2 * 1024 * 1024
 DEFAULT_ALLOWLIST = "docs/launch/exposure-allowlist.json"
+_OBJECT_ID = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 PRIVATE_RULES = (
     ("absolute-home-path", re.compile(r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|/private/tmp/claude-[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+\\)")),
     ("email-address", re.compile(r"(?i)\b(?!(?:[A-Z0-9._%+-]+@(?:example\.com|example\.invalid|users\.noreply\.github\.com)|noreply@anthropic\.com)\b)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")),
@@ -72,8 +73,11 @@ def _allowlist(path):
         data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError("invalid allowlist: %s" % exc)
-    if not isinstance(data, list) or any(not isinstance(x, dict) or not x.get("path") or not x.get("rule") or not x.get("reason") for x in data):
-        raise ValueError("allowlist entries require path, rule, and reason")
+    if not isinstance(data, list) or any(
+            not isinstance(x, dict) or not x.get("path") or not x.get("rule") or not x.get("reason")
+            or ("blob" in x and (not isinstance(x["blob"], str) or not _OBJECT_ID.fullmatch(x["blob"])))
+            for x in data):
+        raise ValueError("allowlist entries require path, rule, and reason; blob, when present, is a Git object id")
     return data
 
 
@@ -181,7 +185,7 @@ def scan(repo, mode, allowlist=None, patterns=None):
     if not (repo / ".git").exists():
         raise ValueError("repository must be a working tree")
     allow = _allowlist(allowlist or repo / DEFAULT_ALLOWLIST)
-    allowed, used = {(x["path"], x["rule"]): x for x in allow}, set()
+    used = set()
     findings, skipped, counts = [], {"oversized": 0, "binary": 0}, {"legacy_issue_references": 0}
     rules = _patterns(patterns, repo)
     blobs = _history_blobs(repo) if mode == "history" else _tracked_blobs(repo)
@@ -216,14 +220,18 @@ def scan(repo, mode, allowlist=None, patterns=None):
         for rule, (line, preview, hit_count) in per_rule.items():
             visible = []
             for path in sorted(paths):
-                if (path, rule) in allowed:
-                    used.add((path, rule))
+                matching = [index for index, entry in enumerate(allow)
+                            if entry["path"] == path and entry["rule"] == rule
+                            and ("blob" not in entry or entry["blob"].lower() == sha.lower())]
+                if matching:
+                    used.update(matching)
                 else:
                     visible.append(path)
             if visible:
                 findings.append({"rule": rule, "path": visible[0], "paths": visible, "line": line,
                                  "blob": sha, "commits": commits, "matches": hit_count, "preview": preview})
-    stale = [{"path": x["path"], "rule": x["rule"]} for x in allow if (x["path"], x["rule"]) not in used]
+    stale = [{"path": x["path"], "rule": x["rule"]}
+             for index, x in enumerate(allow) if index not in used]
     return {"schema": "sigma.launch-exposure/v1", "mode": mode, "findings": findings,
             "stale_allowlist": stale, "skipped": skipped, "counts": counts}
 
