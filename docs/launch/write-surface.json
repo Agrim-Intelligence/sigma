@@ -1,0 +1,2108 @@
+{
+  "entries": [
+    {
+      "path": "hooks/gate_state.py",
+      "function": "_open_child",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "hooks/gate_state.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "hooks/gate_state.py",
+      "function": "_stripe_lock",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "hooks/gate_state.py",
+      "function": "_stripe_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "hooks/research_capture.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "hooks/time_track.py",
+      "function": "handle",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-define/scripts/define.py",
+      "function": "_step_registry",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-define/scripts/define.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-doctor/scripts/board_migrate.py",
+      "function": "seed_ready",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-doctor/scripts/migrate.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-dossier/scripts/dossier.py",
+      "function": "_comment",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/init_flow.py",
+      "function": "_write_json",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_codex",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_cursor_rules",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_demo",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_extras",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_github",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/sdlc_init.py",
+      "function": "scaffold_vision",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/setup_wizard.py",
+      "function": "_write_cache",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/setup_wizard.py",
+      "function": "write_dismissed",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-init/scripts/verify_detect.py",
+      "function": "_atomic_write_json",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "_write_refresh_record",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "gap_log",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "gap_resolve",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "retain_web",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "warn",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-kg/scripts/kg.py",
+      "function": "write_note",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/acceptance.py",
+      "function": "record",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/acceptance.py",
+      "function": "record",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/actionlog.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/agent_watch.py",
+      "function": "_save_cursor",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/autowatch.py",
+      "function": "_record_spend",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/backlog_check.py",
+      "function": "_dense_channel",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/blockers.py",
+      "function": "_comment",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/channel_notify.py",
+      "function": "_save_cursor",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "_mark",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "backup_features",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "backup_features",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "backup_features",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "clear_watch_owner",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "write_owner",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "write_owner",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/coexist.py",
+      "function": "write_watch_owner",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/comment_watch.py",
+      "function": "_save_cursor",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/cross_repo.py",
+      "function": "_record",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/diff_revert.py",
+      "function": "cleanup",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/diff_revert.py",
+      "function": "cleanup",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/diff_revert.py",
+      "function": "cleanup",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/diff_revert.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/drift_watch.py",
+      "function": "_stamp",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_doc.py",
+      "function": "_atomic_write_bytes",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_doc.py",
+      "function": "_atomic_write_bytes",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_judge.py",
+      "function": "_acquire_spend_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_judge.py",
+      "function": "_record_spend",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_propagate.py",
+      "function": "_store",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_propagate.py",
+      "function": "_write_remote",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "granted verdict",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_clear_blocked",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_drop_worktree",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_drop_worktree",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_mark_blocked",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_pushed",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_pushed",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_rebase_feature",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_remember",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "_upkeep",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "ack",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "mark_push_refused",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.rebase_upkeep",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_rebase.py",
+      "function": "push_refused",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "work.rebase_upkeep",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_registry.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_registry.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/feature_sync.py",
+      "function": "_acquire",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/ledger.py",
+      "function": "_maybe_prune_journal",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/ledger.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/ledger.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/ledger.py",
+      "function": "prune_journal",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_end_if_owner",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_ensure_claimed",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_ensure_ledger_delivery",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_ensure_unit_tracking",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_merge_reconcile_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_phase_marker_end",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_prune_dead_session_entries",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_reconcile_stamp",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_reserve_goal_slot",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_session_claim",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_session_locked",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_session_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_try_acquire_claim_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "agent_end",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "agent_reclaim",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "agent_start",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "reclaim_stale_claim_lock",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "session_start",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "verify_goal",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "write_session_heartbeat",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/loop.py",
+      "function": "write_session_heartbeat",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/merge_observation.py",
+      "function": "materialize_snapshot",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/merge_observation.py",
+      "function": "write_immutable",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/merge_observation.py",
+      "function": "write_immutable",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/mirror.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/phase_report.py",
+      "function": "write_marker",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/pipeline.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/pipeline.py",
+      "function": "propose_from_discovery",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/pipeline.py",
+      "function": "propose_goals",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/promote.py",
+      "function": "promote",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/reconcile.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/reconcile.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/release_manifest.py",
+      "function": "publish_to_ledger_branch",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/release_manifest.py",
+      "function": "write_once",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/release_manifest.py",
+      "function": "write_once",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/review_context.py",
+      "function": "_atomic_bytes",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/review_context.py",
+      "function": "_atomic_bytes",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "_log",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "acquire_single_instance",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "acquire_single_instance",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "cut_worktree",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+      "function": "release_single_instance",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_apply_custom_fields",
+      "rule": "gh-project",
+      "count": 2,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_archive_card",
+      "rule": "graphql-mutation",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_create_issue",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_ensure_board",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_ensure_labels",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_ensure_priority_field",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_ensure_status_field",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_gh_json",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_graphql",
+      "rule": "graphql-mutation",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_run_gh",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_set_board_status",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_swap_labels",
+      "rule": "graphql-mutation",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_sync_backlog",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_write_board_phase",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_write_priority_field",
+      "rule": "gh-project",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "_write_priority_label",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "append_to_body",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "append_to_body",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "complete",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "create_dependency",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "create_dependency",
+      "rule": "gh-issue",
+      "count": 2,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "create_dependency",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "ensure_labels_report",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "fetch_issues_rest",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "note",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "note",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "note",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sources.py",
+      "function": "release",
+      "rule": "gh-issue",
+      "count": 2,
+      "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "_cursor_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "_patch_cursor",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "_queue",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "_set_status",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "_state_file",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "claim_run_stop",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "phase_end_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/state.py",
+      "function": "reanchor_content",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/supervise_daemon.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 4,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_ensure_gitattributes",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_ensure_lines",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_knowledge_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_publish_knowledge",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_push_with_retry",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_union_note",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_write_knowledge_gitignore",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "_write_team",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "bootstrap",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "init",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "init",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/sync.py",
+      "function": "publish_receipt",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/tier_escalation.py",
+      "function": "write_floor",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/tier_escalation.py",
+      "function": "write_floor",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/timing_store.py",
+      "function": "_sweep",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/timing_store.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/timing_store.py",
+      "function": "append_session",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/timing_store.py",
+      "function": "maybe_prune",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/triage.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/triage.py",
+      "function": "_atomic_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/triage.py",
+      "function": "_ensure_arbitrary_labels",
+      "rule": "gh-label",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/triage.py",
+      "function": "_execute_action",
+      "rule": "gh-issue",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/unpark.py",
+      "function": "_append_block",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/unpark.py",
+      "function": "_comment",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/upstream.py",
+      "function": "_file_upstream",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/upstream.py",
+      "function": "_remember",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/upstream.py",
+      "function": "_spill",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch.py",
+      "function": "clear_inbox",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch.py",
+      "function": "tick",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_classify.py",
+      "function": "save_cursor",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "_run",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "acquire_decision_mutex",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "acquire_decision_mutex",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "cleanup",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "release_decision_mutex",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "rotate_log",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "take_over",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "take_over",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/watch_daemon.py",
+      "function": "touch_heartbeat",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/witness.py",
+      "function": "record",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_clear_completed_merge_deliveries",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_close_issue_the_base_cannot",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; base branch cannot close the issue",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_create_exclusive",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_delete_remote_branch",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; merged PR cleanup",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_repair_review_post_effects",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_save",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_try_union_changelog",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_write_merge_delivery",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "_write_merge_delivery",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "close_design",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "finish",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "finish",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "finish",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "work.enabled; confirmed merged PR",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "finish",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "merge",
+      "rule": "gh-pr",
+      "count": 2,
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "merge_design",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "work.enabled",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "post_review",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "pr",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "pr",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "rebase",
+      "rule": "git-destructive",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "rebase",
+      "rule": "git-push",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "review_evidence",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-radar/scripts/radar.py",
+      "function": "record",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/conflict_walk.py",
+      "function": "_resolve_to_stage",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "_write_context_store",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "_write_context_store",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "attempt_rebase",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "clear_context_snapshots",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "push_branch",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+      "function": "push_branch",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/verify_merge.py",
+      "function": "_write_delivery",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "human input() confirmation",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/verify_merge.py",
+      "function": "_write_delivery",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "human input() confirmation",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/verify_merge.py",
+      "function": "ensure_landing_pr",
+      "rule": "gh-pr",
+      "count": 2,
+      "gate": "human input() confirmation",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-rebase/scripts/verify_merge.py",
+      "function": "merge_pr",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "human input() confirmation",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-scope/scripts/assign.py",
+      "function": "_apply_assignment",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-scope/scripts/assign.py",
+      "function": "execute",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-scope/scripts/scope.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-setup/scripts/setup.py",
+      "function": "ensure_ignore",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-setup/scripts/setup.py",
+      "function": "write_cfg",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-status/scripts/merge_queue_enable.py",
+      "function": "create_merge_queue_ruleset",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "exact --yes-enable-merge-queue admin consent",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-status/scripts/merge_queue_enable.py",
+      "function": "patch_auto_merge",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "exact --yes-enable-merge-queue admin consent",
+      "risk": "high"
+    },
+    {
+      "path": "tools/kg_control.py",
+      "function": "_repo",
+      "rule": "fs-write",
+      "count": 7,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/kg_control.py",
+      "function": "_write_builder",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/kg_control.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/kg_control.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "_drive_local_goal",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "_env",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "_fresh_files",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "_local_goal_work",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "_stub_gh",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "host_install",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "main",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "run_github",
+      "rule": "fs-write",
+      "count": 7,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "run_github",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "run_local",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/baseline.py",
+      "function": "snapshot",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit snapshot command; empty destination",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/baseline.py",
+      "function": "snapshot",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "explicit snapshot command; empty destination; detached push-disabled clone",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/egress_capture.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit summarize command; caller-supplied JSON path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/exposure_scan.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit exposure scan; caller-supplied evidence path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/exposure_scan.py",
+      "function": "scan_refs",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "explicit refs scan; local tag listing is read-only",
+      "risk": "low"
+    },
+    {
+      "path": "tools/readiness/write_surface.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    }
+  ]
+}
