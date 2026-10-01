@@ -39,8 +39,9 @@ def test_evidence_refuses_filename_body_or_checkout_sha_mismatch(tmp_path):
     drills = _module()
     sha = "a" * 40
     payload = {"schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "runs": [],
-               "command": [], "platform": "darwin", "windows_skip_reason": None,
-               "b6": {"issue": 416, "disposition": "filed"}}
+               "command": [], "interpreter": sys.executable, "platform": "win32",
+               "windows_skip_reason": drills.WINDOWS_SKIP_REASON,
+               "b6": drills.B6_DISPOSITION}
     path = tmp_path / "drills-aaaaaaaaaaaa.json"
 
     drills.validate_evidence(path, payload, sha)
@@ -54,10 +55,10 @@ def test_evidence_schema_requires_reproducibility_and_failure_disposition(tmp_pa
     drills = _module()
     sha = "a" * 40
     payload = {
-        "schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "command": ["drills.py", "run"],
-        "platform": "darwin", "windows_skip_reason": None, "b6": {"issue": 416, "disposition": "filed"},
-        "runs": [{"drill": "D4", "seed": 1, "checkpoint": None,
-                  "invariants": [{"name": "doctor", "passed": False}]}],
+        "schema": drills.EVIDENCE_SCHEMA, "frozen_commit": sha, "command": ["drills.py", "evidence"],
+        "interpreter": sys.executable, "platform": "win32",
+        "windows_skip_reason": drills.WINDOWS_SKIP_REASON, "b6": drills.B6_DISPOSITION,
+        "runs": [],
     }
     drills.validate_evidence(tmp_path / "drills-aaaaaaaaaaaa.json", payload, sha)
     with pytest.raises(drills.UsageError):
@@ -118,6 +119,33 @@ def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):
     result = json.loads(output.read_text())
     assert result["schema"] == "readiness-drill-b6/v1"
     assert result["disposition"] == "no-github-write"
+
+
+def test_public_frozen_all_seed_evidence_run_builds_validated_schema(tmp_path):
+    """The documented evidence gesture must produce the complete frozen run."""
+    sha = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                         text=True, capture_output=True, check=True).stdout.strip()
+    output = tmp_path / ("drills-" + sha[:12] + ".json")
+    proc = subprocess.run([sys.executable, str(SCRIPT), "evidence", "--workdir",
+                           str(tmp_path / "runs"), "--json", str(output)],
+                          text=True, capture_output=True)
+    assert proc.returncode == 0, proc.stderr
+
+    drills = _module()
+    payload = json.loads(output.read_text())
+    assert output.name == "drills-" + sha[:12] + ".json"
+    drills.validate_evidence(output, payload, sha)
+    assert payload["command"] == ["drills.py", "evidence", "--workdir", "<workdir>",
+                                  "--json", "drills-" + sha[:12] + ".json"]
+    assert {(run["drill"], run["seed"]) for run in payload["runs"]} == {
+        (drill, seed) for drill in ("D1", "D2", "D3", "D4") for seed in range(1, 6)
+    }
+    assert all("checkpoint" in run and "invariants" in run for run in payload["runs"])
+    d4 = [run for run in payload["runs"] if run["drill"] == "D4"]
+    assert all(run["expected_failure_states"] == {
+        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded",
+    } for run in d4)
 
 
 def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):

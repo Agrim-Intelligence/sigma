@@ -3,7 +3,7 @@
 
 Usage:
     drills.py run D1|D2|D3|D4 --seed N --workdir DIR --json OUT
-    drills.py evidence --workdir DIR --json OUT
+    drills.py evidence --workdir DIR --json drills-<sha12>.json
 
 The public runner is deliberately stdlib-only.  It never falls through to the
 host's GitHub credentials: individual drills build their own stateful fake.
@@ -34,6 +34,18 @@ SEED_CHECKPOINTS = {
     5: "durable_remote_update",
 }
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+DRILLS = ("D1", "D2", "D3", "D4")
+EVIDENCE_SEEDS = tuple(SEED_CHECKPOINTS)
+WINDOWS_SKIP_REASON = "Windows is unsupported: readiness drills require POSIX process groups and SIGKILL."
+D4_EXPECTED_FAILURE_STATES = {
+    "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
+    "session_start_explicit_stop_file_reporting": "control_failed_and_recorded",
+}
+B6_DISPOSITION = {
+    "issue": 416,
+    "disposition": "no-github-write",
+    "reason": "explicit filing requires a fresh GitHub check",
+}
 
 
 class UsageError(Exception):
@@ -314,20 +326,92 @@ def validate_evidence(path: Path, payload: dict, checkout_sha: str):
         raise UsageError("unexpected evidence schema")
     if payload.get("frozen_commit") != checkout_sha:
         raise UsageError("evidence body SHA does not match checkout")
-    required = ("command", "platform", "windows_skip_reason", "b6", "runs")
+    required = ("command", "interpreter", "platform", "windows_skip_reason", "b6", "runs")
     if any(key not in payload for key in required):
         raise UsageError("evidence is missing reproducibility fields")
-    if not isinstance(payload["command"], list) or not isinstance(payload["runs"], list):
+    if not isinstance(payload["command"], list) or not isinstance(payload["runs"], list) \
+            or not isinstance(payload["interpreter"], str) or not isinstance(payload["platform"], str):
         raise UsageError("evidence command/runs have invalid shape")
     b6 = payload["b6"]
-    if not isinstance(b6, dict) or "issue" not in b6 or "disposition" not in b6:
+    if b6 != B6_DISPOSITION:
         raise UsageError("evidence B6 disposition is incomplete")
-    for run in payload["runs"]:
-        if not isinstance(run, dict) or not {"drill", "seed", "checkpoint", "invariants"} <= set(run):
-            raise UsageError("evidence run is incomplete")
     expected = "drills-" + checkout_sha[:12] + ".json"
     if Path(path).name != expected:
         raise UsageError("evidence filename SHA does not match checkout")
+    if payload["platform"].startswith("win"):
+        if not isinstance(payload["windows_skip_reason"], str) or payload["runs"]:
+            raise UsageError("Windows evidence must be an explicit non-passing skip")
+        return
+    if payload["windows_skip_reason"] is not None:
+        raise UsageError("non-Windows evidence cannot carry a Windows skip")
+    expected_runs = {(drill, seed) for drill in DRILLS for seed in EVIDENCE_SEEDS}
+    observed_runs = set()
+    for run in payload["runs"]:
+        required_run = {"drill", "seed", "checkpoint", "invariants"}
+        if not isinstance(run, dict) or not required_run <= set(run):
+            raise UsageError("evidence run is incomplete")
+        if run["drill"] not in DRILLS or run["seed"] not in EVIDENCE_SEEDS:
+            raise UsageError("evidence run has an unknown drill or seed")
+        key = (run["drill"], run["seed"])
+        if key in observed_runs:
+            raise UsageError("evidence has duplicate drill seed")
+        observed_runs.add(key)
+        if not isinstance(run["invariants"], list) or not run["invariants"]:
+            raise UsageError("evidence run lacks invariants")
+        if run["drill"] == "D1" and run["checkpoint"] != checkpoint_for_seed(run["seed"]):
+            raise UsageError("D1 evidence checkpoint does not match seed")
+        if run["drill"] == "D4":
+            if run.get("expected_failure_states") != D4_EXPECTED_FAILURE_STATES:
+                raise UsageError("D4 evidence has unexpected failure states")
+    if observed_runs != expected_runs:
+        raise UsageError("evidence does not cover every drill and seed")
+
+
+def _evidence_run(result):
+    run = {
+        "drill": result["drill"],
+        "seed": result["seed"],
+        "checkpoint": result["fault"].get("checkpoint"),
+        "invariants": result["invariants"],
+    }
+    if result["drill"] == "D4":
+        observed = {item["name"]: item.get("observed", {}).get("outcome")
+                    for item in result["invariants"]
+                    if item["name"] in D4_EXPECTED_FAILURE_STATES}
+        if observed != D4_EXPECTED_FAILURE_STATES:
+            raise UsageError("D4 did not record its expected reporting control failures")
+        run["expected_failure_states"] = D4_EXPECTED_FAILURE_STATES
+    return run
+
+
+def evidence(workdir: Path, output: Path, sigma: Path = ROOT):
+    """Execute each frozen drill/seed pair and build one validated public record."""
+    frozen_commit = _head(sigma)
+    expected_name = "drills-" + frozen_commit[:12] + ".json"
+    if output.name != expected_name:
+        raise UsageError("evidence filename must be " + expected_name)
+    if workdir.exists() and any(workdir.iterdir()):
+        raise UsageError("evidence workdir exists and is not empty")
+    workdir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": EVIDENCE_SCHEMA,
+        "frozen_commit": frozen_commit,
+        "command": ["drills.py", "evidence", "--workdir", "<workdir>", "--json", expected_name],
+        "interpreter": sys.executable,
+        "platform": sys.platform,
+        "windows_skip_reason": WINDOWS_SKIP_REASON if sys.platform.startswith("win") else None,
+        "b6": B6_DISPOSITION,
+        "runs": [],
+    }
+    if not sys.platform.startswith("win"):
+        for drill in DRILLS:
+            for seed in EVIDENCE_SEEDS:
+                result = run(drill, seed, workdir / (drill.lower() + "-seed-" + str(seed)), sigma)
+                if result["frozen_commit"] != frozen_commit:
+                    raise UsageError("checkout changed during evidence run")
+                payload["runs"].append(_evidence_run(result))
+    validate_evidence(output, payload, frozen_commit)
+    return payload
 
 
 def run(drill: str, seed: int, workdir: Path, sigma: Path = ROOT):
@@ -347,6 +431,9 @@ def main(argv):
     disposition.add_argument("--finding", type=Path, required=True)
     disposition.add_argument("--sdlc", type=Path, required=True)
     disposition.add_argument("--json", type=Path, required=True)
+    evidence_parser = sub.add_parser("evidence")
+    evidence_parser.add_argument("--workdir", type=Path, required=True)
+    evidence_parser.add_argument("--json", type=Path, required=True)
     args = parser.parse_args(argv[1:])
     if args.verb == "disposition":
         try:
@@ -363,12 +450,18 @@ def main(argv):
         print("B6 disposition: no-github-write")
         return 0
     try:
-        result = run(args.drill, args.seed, args.workdir)
+        if args.verb == "evidence":
+            result = evidence(args.workdir, args.json)
+        else:
+            result = run(args.drill, args.seed, args.workdir)
     except UsageError as exc:
         print("drills: " + str(exc), file=sys.stderr)
         return 2
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.verb == "evidence":
+        print("evidence: " + str(args.json))
+        return 0
     print("%s seed %d: %s" % (args.drill, args.seed,
                                "pass" if all(i["passed"] for i in result["invariants"]) else "recorded failure"))
     return 0
