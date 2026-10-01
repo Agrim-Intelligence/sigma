@@ -603,6 +603,9 @@ out, never blocks — it shapes what the agent does next.
 
 ## Architecture & flow
 
+Threat boundaries, assets, and the mitigations currently present are recorded in
+[the threat model](docs/threat-model.md).
+
 ### The pieces
 
 ```mermaid
