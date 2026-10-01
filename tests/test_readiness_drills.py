@@ -46,6 +46,19 @@ def test_evidence_refuses_filename_body_or_checkout_sha_mismatch(tmp_path):
         drills.validate_evidence(tmp_path / "drills-bbbbbbbbbbbb.json", payload, sha)
 
 
+@pytest.mark.parametrize("seed,checkpoint", [
+    (1, "pre_write"), (2, "durable_remote_update"), (3, "post_response_before_ack"),
+])
+def test_d1_kills_at_the_selected_actual_fake_merge_checkpoint(tmp_path, seed, checkpoint):
+    drills = _module()
+
+    result = drills.run_d1(tmp_path, ROOT, seed)
+
+    assert result["fault"]["checkpoint"] == checkpoint
+    assert result["fault"]["barrier"]["checkpoint"] == checkpoint
+    assert all(item["passed"] for item in result["invariants"])
+
+
 def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):
     drills = _module()
 

@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -87,6 +88,82 @@ def _scratch_sdlc(workdir: Path):
         "session_start": {"enabled": False},
     }) + "\n", encoding="utf-8")
     return repo, state
+
+
+def _git(cwd, *args):
+    proc = _run(["git", "-C", str(cwd), *args])
+    if proc.returncode:
+        raise UsageError(proc.stderr.strip())
+    return proc.stdout.strip()
+
+
+def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
+    """Exercise the selected fake-GitHub merge-path checkpoint in a child group."""
+    checkpoint = checkpoint_for_seed(seed)
+    workdir = Path(workdir)
+    if workdir.exists() and any(workdir.iterdir()):
+        raise UsageError("workdir exists and is not empty")
+    workdir.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    repo, remote = workdir / "repo", workdir / "remote.git"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "drill@example.invalid")
+    _git(repo, "config", "user.name", "Drill")
+    (repo / "base").write_text("base\n")
+    _git(repo, "add", "."); _git(repo, "commit", "-qm", "base")
+    _run(["git", "init", "-q", "--bare", "-b", "main", str(remote)])
+    _git(repo, "remote", "add", "origin", str(remote)); _git(repo, "push", "-q", "-u", "origin", "main")
+    (repo / "merge").write_text("merge\n")
+    _git(repo, "add", "."); _git(repo, "commit", "-qm", "candidate")
+    candidate = _git(repo, "rev-parse", "HEAD")
+    # The fake service can only durably update a ref to an object it owns.
+    _git(repo, "push", "-q", "origin", "HEAD:refs/heads/drill-candidate")
+    state, ready = workdir / "state.json", workdir / "ready.json"
+    state.write_text('{"pr_state":"OPEN","ack":false}')
+    child = '''import json,os,pathlib,subprocess,time
+s=pathlib.Path(os.environ["S"]); r=pathlib.Path(os.environ["R"]); c=os.environ["C"]; k=os.environ["K"]
+def cp(n):
+ if n==k:
+  r.write_text(json.dumps({"checkpoint":n,"entered_at_ns":time.monotonic_ns()}))
+  while True: time.sleep(1)
+cp("pre_write")
+subprocess.run(["git","--git-dir",os.environ["G"],"update-ref","refs/heads/main",c],check=True)
+s.write_text(json.dumps({"pr_state":"MERGED","ack":False}))
+cp("durable_remote_update")
+print("merged",flush=True)
+cp("post_response_before_ack")
+s.write_text(json.dumps({"pr_state":"MERGED","ack":True}))'''
+    env = {**os.environ, "S": str(state), "R": str(ready), "C": candidate, "K": checkpoint, "G": str(remote)}
+    proc = subprocess.Popen([sys.executable, "-c", child], cwd=repo, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    pgid = os.getpgid(proc.pid)
+    if pgid == os.getpgrp():
+        proc.kill(); raise UsageError("shared process group")
+    deadline = time.monotonic() + 10
+    while not ready.exists() and time.monotonic() < deadline: time.sleep(.01)
+    if not ready.exists():
+        proc.kill(); raise UsageError("checkpoint not reached")
+    barrier = json.loads(ready.read_text())
+    requested = time.monotonic_ns(); os.killpg(pgid, signal.SIGKILL); sent = time.monotonic_ns()
+    proc.communicate(timeout=10)
+    observed = json.loads(state.read_text())
+    remote_main = _run(["git", "--git-dir", str(remote), "rev-parse", "refs/heads/main"]).stdout.strip()
+    landed = remote_main == candidate
+    expected_landed = checkpoint != "pre_write"
+    inv = [
+        _invariant("selected_checkpoint_reached", barrier["checkpoint"] == checkpoint, barrier),
+        _invariant("isolated_child_process_group", pgid != os.getpgrp(), {"pid": proc.pid, "pgid": pgid}),
+        _invariant("sigkill_at_selected_checkpoint", proc.returncode == -signal.SIGKILL,
+                   {"entered_at_ns": barrier["entered_at_ns"], "requested_at_ns": requested, "sent_at_ns": sent}),
+        _invariant("no_later_ack_before_recovery", observed["ack"] is False, observed),
+        _invariant("remote_update_matches_checkpoint", landed is expected_landed, {"landed": landed}),
+    ]
+    return {"schema": SCHEMA, "drill": "D1", "seed": seed, "platform": sys.platform,
+            "frozen_commit": _head(sigma), "started_at_ns": started, "finished_at_ns": time.monotonic_ns(),
+            "recovery_commands": [["loop.py","next","<dir>"],["loop.py","reconcile-merges","<dir>"]],
+            "fault": {"checkpoint": checkpoint, "barrier": barrier}, "invariants": inv, "fake_gh_unhandled": ""}
 
 
 def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
