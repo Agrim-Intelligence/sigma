@@ -6,7 +6,11 @@ normalised store key, or walking an entire home directory during measurement.
 """
 
 import importlib.util
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -160,3 +164,50 @@ def test_measure_repository_sdlc_is_explicit_and_binds_the_measured_revision(tmp
     assert _mod().measure_repository(tmp_path) == {
         "path": ".sdlc", "size_bytes": 3, "revision": "abc123",
     }
+
+
+def test_scan_is_identical_across_hash_seeds_when_a_path_branch_has_two_values(tmp_path):
+    """A set-backed helper branch must not choose a different durable row per process."""
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "def path(sdlc_dir, selected):\n"
+        "    suffix = 'first' if selected else 'second'\n"
+        "    return Path(sdlc_dir) / 'state' / f'{suffix}.json'\n"
+        "def persist(sdlc_dir, selected):\n"
+        "    path(sdlc_dir, selected).write_text('{}')\n"
+    )
+    command = (
+        "import importlib.util, json, sys; "
+        "spec=importlib.util.spec_from_file_location('audit', sys.argv[1]); "
+        "mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); "
+        "print(json.dumps(mod.scan(sys.argv[2]), sort_keys=True))"
+    )
+    results = []
+    for seed in ("1", "2", "3"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        completed = subprocess.run(
+            [sys.executable, "-c", command, str(SCRIPT), str(tmp_path)],
+            check=True, capture_output=True, text=True, env=env,
+        )
+        results.append(json.loads(completed.stdout))
+    assert results[0] == results[1] == results[2]
+    assert results[0] == [
+        {"pattern": ".sdlc/state/first.json", "source": "code", "writer": "writer.py:6"},
+        {"pattern": ".sdlc/state/second.json", "source": "code", "writer": "writer.py:6"},
+    ]
+
+
+def test_scan_records_one_argument_path_rename_and_replace_destinations(tmp_path):
+    """Path.rename/replace each take one destination, unlike os.rename's two args."""
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "def persist(sdlc_dir):\n"
+        "    pending = Path(sdlc_dir) / 'state' / 'pending.json'\n"
+        "    pending.replace(Path(sdlc_dir) / 'state' / 'committed.json')\n"
+        "    pending.rename(Path(sdlc_dir) / 'state' / 'archived.json')\n"
+    )
+
+    assert _mod().scan(tmp_path) == [
+        {"pattern": ".sdlc/state/archived.json", "source": "code", "writer": "writer.py:5"},
+        {"pattern": ".sdlc/state/committed.json", "source": "code", "writer": "writer.py:4"},
+    ]

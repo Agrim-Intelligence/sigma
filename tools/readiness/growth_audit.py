@@ -49,16 +49,19 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
             return _expression_path(constant, env, functions, module, depth + 1)
         return {_placeholder(node.id)}
     if isinstance(node, ast.JoinedStr):
-        parts = []
+        parts = {""}
         for value in node.values:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                parts.append(value.value)
+                values = {value.value}
             elif isinstance(value, ast.FormattedValue):
-                values = _expression_path(value.value, env, functions, module, depth + 1)
-                parts.append(next(iter(values), "<value>"))
+                values = _expression_path(value.value, env, functions, module, depth + 1) or {"<value>"}
             else:
                 return set()
-        return {"".join(parts)}
+            # A formatted branch can resolve to more than one durable suffix.
+            # Keep every combination in sorted order instead of selecting an
+            # arbitrary set element whose value changes with PYTHONHASHSEED.
+            parts = {prefix + suffix for prefix in parts for suffix in sorted(values)}
+        return parts
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
         left = _expression_path(node.left, env, functions, module, depth + 1)
         right = _expression_path(node.right, env, functions, module, depth + 1)
@@ -130,9 +133,9 @@ def _expression_path(node, env=None, functions=None, module=None, depth=0):
 
 def _environment_root(node, env, functions, module):
     keys = _expression_path(node, env, functions, module)
-    value = {"HOME": "<home>", "CLAUDE_CONFIG_DIR": "<claude-config>",
-             "CODEX_HOME": "<codex-home>"}.get(next(iter(keys), ""))
-    return {value} if value else set()
+    names = {"HOME": "<home>", "CLAUDE_CONFIG_DIR": "<claude-config>",
+             "CODEX_HOME": "<codex-home>"}
+    return {names[key] for key in sorted(keys) if key in names}
 
 
 def _normalise(pattern, directory=False):
@@ -244,9 +247,12 @@ def _write_target(node):
         if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
             return (node.args[0], False) if node.args else (None, False)
         return (node.func.value, False) if any(flag in str(mode) for flag in ("a", "w", "x", "+")) else (None, False)
-    if (isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "rename"}
-            and len(node.args) >= 2):
-        return node.args[1], False
+    if isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "rename"}:
+        # Path.rename(destination) and Path.replace(destination) take one
+        # argument.  The os.rename/os.replace forms take source, destination.
+        if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
+            return (node.args[1], False) if len(node.args) >= 2 else (None, False)
+        return (node.args[0], False) if node.args else (None, False)
     if isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
         return node.func.value, node.func.attr == "mkdir"
     if ((isinstance(node.func, ast.Name) and node.func.id == "copytree")
@@ -359,6 +365,9 @@ def _code_rows(root, path, functions):
             elif isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
                 patterns = _expression_path(node.func.value, env, functions, module)
                 directory = node.func.attr == "mkdir"
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "rename"}:
+                target, directory = _write_target(node)
+                patterns = _expression_path(target, env, functions, module) if target is not None else set()
             elif isinstance(node.func, ast.Attribute) and node.func.attr == "copytree" and len(node.args) >= 2:
                 patterns, directory = _expression_path(node.args[1], env, functions, module), True
             elif isinstance(node.func, ast.Name) and node.func.id == "copytree" and len(node.args) >= 2:
