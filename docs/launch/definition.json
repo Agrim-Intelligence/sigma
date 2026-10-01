@@ -1,0 +1,16 @@
+{
+  "schema": "launch-definition/v1",
+  "status": "proposed",
+  "signed_by": null,
+  "signed_on": null,
+  "artifact": "public-snapshot",
+  "public_repo": "Agrim-Intelligence/sigma",
+  "version": "1.0.0",
+  "audience": "github-individuals-and-small-teams",
+  "supported": [
+    {"host": "claude-code", "os": "macos", "python": ["3.10", "3.11", "3.12", "3.13"], "modes": ["local-goals", "github"]},
+    {"host": "claude-code", "os": "linux", "python": ["3.10", "3.11", "3.12", "3.13"], "modes": ["local-goals", "github"]}
+  ],
+  "experimental": [{"host": "codex"}, {"host": "cursor"}, {"os": "windows"}],
+  "out_of_scope": ["slack-listener", "cross-repo-units", "managed-settings"]
+}
