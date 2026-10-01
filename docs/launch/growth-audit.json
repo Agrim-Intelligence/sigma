@@ -1,0 +1,3664 @@
+{
+  "repository_measurement": {
+    "path": ".sdlc",
+    "revision": "b47768434ced603759b7f891605be2d334bcf585",
+    "size_bytes": 562531
+  },
+  "rows": [
+    {
+      "pattern": ".sdlc/*",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:282"
+    },
+    {
+      "pattern": ".sdlc/.sdlc/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-wizard/SKILL.md:30"
+    },
+    {
+      "pattern": ".sdlc/acceptance/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/acceptance.py:166"
+    },
+    {
+      "pattern": ".sdlc/acceptance/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal/SKILL.md:68"
+    },
+    {
+      "pattern": ".sdlc/acceptance/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:144"
+    },
+    {
+      "pattern": ".sdlc/acceptance/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:38"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-decide/SKILL.md:133"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-doctor/SKILL.md:24"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/mapping-the-codebase.md:160"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/mapping-the-codebase.md:60"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-init/SKILL.md:160"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-init/SKILL.md:49"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/verify_detect.py:321"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:17"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:39"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:89"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-log/SKILL.md:47"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:100"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:15"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:29"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:48"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:118"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:168"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/channels/sigma-autowatch/README.md:61"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:121"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/picking.md:11"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-model/SKILL.md:126"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-model/SKILL.md:79"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-model/SKILL.md:91"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-setup/references/public-repo.md:43"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "code",
+      "writer": "skills/agrim-setup/scripts/setup.py:225"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-slack/SKILL.md:19"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-slack/SKILL.md:75"
+    },
+    {
+      "pattern": ".sdlc/config.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-wizard/SKILL.md:19"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-align/SKILL.md:25"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-decide/SKILL.md:35"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-implement/SKILL.md:139"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-implement/SKILL.md:175"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan-review/SKILL.md:91"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:98"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:90"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/SKILL.md:23"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/architecture.md:4"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/design.md:4"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/selection.md:3"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/strategy.md:4"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/vision.md:4"
+    },
+    {
+      "pattern": ".sdlc/context/north-star.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/vision.md:8"
+    },
+    {
+      "pattern": ".sdlc/decisions.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-audit/SKILL.md:48"
+    },
+    {
+      "pattern": ".sdlc/decisions.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-decide/SKILL.md:16"
+    },
+    {
+      "pattern": ".sdlc/decisions.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-decide/SKILL.md:43"
+    },
+    {
+      "pattern": ".sdlc/decisions.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:97"
+    },
+    {
+      "pattern": ".sdlc/design/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:280"
+    },
+    {
+      "pattern": ".sdlc/design/2289.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:179"
+    },
+    {
+      "pattern": ".sdlc/design/<n>-in-brief.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:90"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/SKILL.md:156"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:119"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:12"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:276"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:286"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:3"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:13"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:15"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:19"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:38"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/adjudication.md:47"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:112"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:175"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:26"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:28"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:61"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:94"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/reading-the-target.md:11"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/reading-the-target.md:3"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/selection.md:3"
+    },
+    {
+      "pattern": ".sdlc/design/<n>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-rebase/SKILL.md:46"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:138"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:381"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1560"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1713"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5170"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5200"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5316"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2003"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2009"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2025"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5808"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:888"
+    },
+    {
+      "pattern": ".sdlc/events",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:562"
+    },
+    {
+      "pattern": ".sdlc/events/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-init/SKILL.md:88"
+    },
+    {
+      "pattern": ".sdlc/events/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1405"
+    },
+    {
+      "pattern": ".sdlc/events/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:824"
+    },
+    {
+      "pattern": ".sdlc/events/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1239"
+    },
+    {
+      "pattern": ".sdlc/events/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1255"
+    },
+    {
+      "pattern": ".sdlc/events/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1353"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:138"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:381"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1550"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1560"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1713"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5170"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5200"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5316"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2003"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2009"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2025"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:826"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5808"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:888"
+    },
+    {
+      "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:562"
+    },
+    {
+      "pattern": ".sdlc/evidence/<goal>/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-init/references/board.md:90"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-define/SKILL.md:178"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-define/SKILL.md:245"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-define/SKILL.md:40"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:160"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:12"
+    },
+    {
+      "pattern": ".sdlc/features/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-rebase/SKILL.md:62"
+    },
+    {
+      "pattern": ".sdlc/features/index.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:374"
+    },
+    {
+      "pattern": ".sdlc/features/index.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:378"
+    },
+    {
+      "pattern": ".sdlc/goals",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/selection.md:3"
+    },
+    {
+      "pattern": ".sdlc/goals",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:304"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-audit/SKILL.md:87"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal/SKILL.md:20"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SKILL.md:140"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:345"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/stopping.md:54"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:193"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:242"
+    },
+    {
+      "pattern": ".sdlc/goals/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-status/SKILL.md:23"
+    },
+    {
+      "pattern": ".sdlc/goals/*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-align/SKILL.md:36"
+    },
+    {
+      "pattern": ".sdlc/goals/*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-radar/SKILL.md:21"
+    },
+    {
+      "pattern": ".sdlc/goals/<gid>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:215"
+    },
+    {
+      "pattern": ".sdlc/goals/<gid>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:255"
+    },
+    {
+      "pattern": ".sdlc/goals/<gid>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/pipeline.py:304"
+    },
+    {
+      "pattern": ".sdlc/goals/NNNN-*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal/SKILL.md:21"
+    },
+    {
+      "pattern": ".sdlc/goals/NNNN-*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-model/SKILL.md:40"
+    },
+    {
+      "pattern": ".sdlc/goals/NNNN-*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:46"
+    },
+    {
+      "pattern": ".sdlc/goals/NNNN-*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:41"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-align/SKILL.md:42"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-context/SKILL.md:40"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal/SKILL.md:78"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan-review/SKILL.md:186"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:176"
+    },
+    {
+      "pattern": ".sdlc/journey/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:88"
+    },
+    {
+      "pattern": ".sdlc/journey/<goal>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/progress.md:110"
+    },
+    {
+      "pattern": ".sdlc/journey/<goal>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:44"
+    },
+    {
+      "pattern": ".sdlc/knowledge",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:126"
+    },
+    {
+      "pattern": ".sdlc/knowledge",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:65"
+    },
+    {
+      "pattern": ".sdlc/knowledge",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:740"
+    },
+    {
+      "pattern": ".sdlc/knowledge/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:121"
+    },
+    {
+      "pattern": ".sdlc/knowledge/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:33"
+    },
+    {
+      "pattern": ".sdlc/knowledge/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:34"
+    },
+    {
+      "pattern": ".sdlc/knowledge/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:74"
+    },
+    {
+      "pattern": ".sdlc/knowledge/",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:56"
+    },
+    {
+      "pattern": ".sdlc/knowledge/align/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-align/SKILL.md:31"
+    },
+    {
+      "pattern": ".sdlc/knowledge/align/<UTC-date>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-align/SKILL.md:94"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:177"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:53"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:762"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:136"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:188"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:23"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:364"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/stopping.md:13"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/<note_id_str>.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:365"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/issue-*.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:115"
+    },
+    {
+      "pattern": ".sdlc/knowledge/analysis/issue-<digits>.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:762"
+    },
+    {
+      "pattern": ".sdlc/knowledge/archive/research/web",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:675"
+    },
+    {
+      "pattern": ".sdlc/knowledge/archive/research/web",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:692"
+    },
+    {
+      "pattern": ".sdlc/knowledge/archive/research/web/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:67"
+    },
+    {
+      "pattern": ".sdlc/knowledge/archive/research/web/",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:188"
+    },
+    {
+      "pattern": ".sdlc/knowledge/audit/<UTC-date>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-audit/SKILL.md:74"
+    },
+    {
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:58"
+    },
+    {
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:740"
+    },
+    {
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:749"
+    },
+    {
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:78"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar",
+      "source": "code",
+      "writer": "skills/agrim-radar/scripts/radar.py:62"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-radar/SKILL.md:39"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar/",
+      "source": "code",
+      "writer": "skills/agrim-radar/scripts/radar.py:38"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar/<UTC-date>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-radar/SKILL.md:32"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar/ledger.md",
+      "source": "code",
+      "writer": "skills/agrim-radar/scripts/radar.py:40"
+    },
+    {
+      "pattern": ".sdlc/knowledge/radar/ledger.md",
+      "source": "code",
+      "writer": "skills/agrim-radar/scripts/radar.py:62"
+    },
+    {
+      "pattern": ".sdlc/knowledge/research/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:187"
+    },
+    {
+      "pattern": ".sdlc/knowledge/research/web/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:21"
+    },
+    {
+      "pattern": ".sdlc/ledger/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-init/SKILL.md:156"
+    },
+    {
+      "pattern": ".sdlc/ledger/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:103"
+    },
+    {
+      "pattern": ".sdlc/ledger/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:19"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:138"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:381"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1560"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1713"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5170"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5200"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5316"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2003"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2009"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2025"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5808"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:888"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:562"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1405"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:824"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:138"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:381"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1550"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/ledger.py:1560"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1713"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5170"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5200"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5316"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2003"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2009"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:2025"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:826"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5808"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:888"
+    },
+    {
+      "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:562"
+    },
+    {
+      "pattern": ".sdlc/ledger/TEAM.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-doctor/SKILL.md:52"
+    },
+    {
+      "pattern": ".sdlc/ledger/TEAM.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:41"
+    },
+    {
+      "pattern": ".sdlc/ledger/TEAM.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:60"
+    },
+    {
+      "pattern": ".sdlc/pipeline.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:358"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/adjudication.md:49"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:99"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan/SKILL.md:54"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan/SKILL.md:62"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:181"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:150"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:152"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:80"
+    },
+    {
+      "pattern": ".sdlc/plans/",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:584"
+    },
+    {
+      "pattern": ".sdlc/plans/0007-fix-retry.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan/SKILL.md:55"
+    },
+    {
+      "pattern": ".sdlc/plans/2521.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/picking.md:120"
+    },
+    {
+      "pattern": ".sdlc/plans/<epic>-plan.md",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:585"
+    },
+    {
+      "pattern": ".sdlc/plans/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SKILL.md:212"
+    },
+    {
+      "pattern": ".sdlc/plans/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:99"
+    },
+    {
+      "pattern": ".sdlc/plans/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:217"
+    },
+    {
+      "pattern": ".sdlc/plans/<goal-stem>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan/SKILL.md:53"
+    },
+    {
+      "pattern": ".sdlc/plans/<goal-stem>.slices.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:352"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-define/SKILL.md:88"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:106"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:190"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:195"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:199"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:79"
+    },
+    {
+      "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-scope/SKILL.md:87"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:83"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:237"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:241"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:66"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:251"
+    },
+    {
+      "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-triage/SKILL.md:64"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-context/SKILL.md:47"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-doctor/SKILL.md:144"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:46"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-retro/SKILL.md:94"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-verify/SKILL.md:30"
+    },
+    {
+      "pattern": ".sdlc/project.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-vision/references/architecture.md:26"
+    },
+    {
+      "pattern": ".sdlc/research/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-design/references/writing-the-artifact.md:13"
+    },
+    {
+      "pattern": ".sdlc/research/<goal-slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:135"
+    },
+    {
+      "pattern": ".sdlc/research/<goal-slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-research/SKILL.md:198"
+    },
+    {
+      "pattern": ".sdlc/reviews/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-release-check/SKILL.md:18"
+    },
+    {
+      "pattern": ".sdlc/reviews/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-release-check/SKILL.md:38"
+    },
+    {
+      "pattern": ".sdlc/reviews/contract-check-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-contract-check/SKILL.md:56"
+    },
+    {
+      "pattern": ".sdlc/reviews/debug-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-debug/SKILL.md:55"
+    },
+    {
+      "pattern": ".sdlc/reviews/migration-check-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-migration-check/SKILL.md:53"
+    },
+    {
+      "pattern": ".sdlc/reviews/release-check-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-release-check/SKILL.md:61"
+    },
+    {
+      "pattern": ".sdlc/reviews/security-review-<slug>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-security-review/SKILL.md:86"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:333"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:439"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:678"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:701"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/agent_watch.py:166"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/autowatch.py:803"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/backlog_check.py:947"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/channel_notify.py:178"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:156"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:337"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:359"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:791"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:832"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:842"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:850"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1142"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2039"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2058"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2335"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:4058"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5453"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5456"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1972"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1990"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1999"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1195"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1550"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1560"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1575"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1639"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1643"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1648"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1650"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1656"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1657"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1660"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:605"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:752"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:753"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:243"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:244"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:310"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:325"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:391"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:422"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:483"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:490"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:436"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:622"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:762"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/watch.py:97"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:485"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:230"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:281"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:488"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:615"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/autowatch.py:514"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/backlog_check.py:880"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/coexist.py:602"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:134"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:510"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:666"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1172"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:145"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:3942"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:710"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:795"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:151"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:202"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:523"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:88"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:341"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:209"
+    },
+    {
+      "pattern": ".sdlc/state/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/watch.py:61"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5453"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1990"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1999"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:153"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:244"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:310"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:325"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:391"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:422"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:485"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5453"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1990"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1999"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:203"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:243"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:310"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:325"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:391"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:422"
+    },
+    {
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:485"
+    },
+    {
+      "pattern": ".sdlc/state/agent-watch-cursor.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/agent_watch.py:166"
+    },
+    {
+      "pattern": ".sdlc/state/agents/<goal>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:3096"
+    },
+    {
+      "pattern": ".sdlc/state/agents/<goal>/<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:3139"
+    },
+    {
+      "pattern": ".sdlc/state/agents/<key>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1185"
+    },
+    {
+      "pattern": ".sdlc/state/agents/<key>/<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1185"
+    },
+    {
+      "pattern": ".sdlc/state/autowatch-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/autowatch.py:515"
+    },
+    {
+      "pattern": ".sdlc/state/autowatch-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/autowatch.py:803"
+    },
+    {
+      "pattern": ".sdlc/state/channel-notify-cursor.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/channel_notify.py:178"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1062"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2122"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:881"
+    },
+    {
+      "pattern": ".sdlc/state/claims",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/claims/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1855"
+    },
+    {
+      "pattern": ".sdlc/state/claims/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:447"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.claimed",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1856"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1062"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2122"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:448"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/claims/<goal>.lock",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/claims/slack-cmd-<name>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:881"
+    },
+    {
+      "pattern": ".sdlc/state/coexist.notice",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/coexist.py:996"
+    },
+    {
+      "pattern": ".sdlc/state/comment-watch-cursor.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/comment_watch.py:156"
+    },
+    {
+      "pattern": ".sdlc/state/drift.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:135"
+    },
+    {
+      "pattern": ".sdlc/state/drift.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:337"
+    },
+    {
+      "pattern": ".sdlc/state/drift.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/drift_watch.py:359"
+    },
+    {
+      "pattern": ".sdlc/state/embeddings.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/backlog_check.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/embeddings.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/backlog_check.py:947"
+    },
+    {
+      "pattern": ".sdlc/state/escalation/<goal>.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:257"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:511"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:832"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:842"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:850"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:667"
+    },
+    {
+      "pattern": ".sdlc/state/feature-judge-spend.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_judge.py:791"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:32"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:172"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:97"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:144"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:158"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:31"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:93"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.report.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:122"
+    },
+    {
+      "pattern": ".sdlc/state/goal-review/<n>.report.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/confirm.md:159"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-ledger/SKILL.md:66"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/AUTOWATCH.md:5"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:3360"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/watch.py:64"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/watch.py:81"
+    },
+    {
+      "pattern": ".sdlc/state/inbox.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/watch.py:97"
+    },
+    {
+      "pattern": ".sdlc/state/kg-refresh.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-kg/SKILL.md:110"
+    },
+    {
+      "pattern": ".sdlc/state/kg-refresh.json",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:439"
+    },
+    {
+      "pattern": ".sdlc/state/kg-refresh.json",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:489"
+    },
+    {
+      "pattern": ".sdlc/state/kg-refresh.json",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:678"
+    },
+    {
+      "pattern": ".sdlc/state/kg-warned.stamp",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:616"
+    },
+    {
+      "pattern": ".sdlc/state/kg-warned.stamp",
+      "source": "code",
+      "writer": "skills/agrim-kg/scripts/kg.py:701"
+    },
+    {
+      "pattern": ".sdlc/state/knowledge-sync.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:210"
+    },
+    {
+      "pattern": ".sdlc/state/knowledge-sync.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:436"
+    },
+    {
+      "pattern": ".sdlc/state/knowledge-sync.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:622"
+    },
+    {
+      "pattern": ".sdlc/state/knowledge-sync.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/sync.py:762"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:773"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:777"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:806"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:814"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:820"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:828"
+    },
+    {
+      "pattern": ".sdlc/state/landing",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:848"
+    },
+    {
+      "pattern": ".sdlc/state/landing/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:626"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:627"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:773"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:777"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:806"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:814"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:820"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:828"
+    },
+    {
+      "pattern": ".sdlc/state/landing/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/cross_repo.py:848"
+    },
+    {
+      "pattern": ".sdlc/state/ledger-delivery-attempt",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:146"
+    },
+    {
+      "pattern": ".sdlc/state/ledger-delivery-attempt",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5456"
+    },
+    {
+      "pattern": ".sdlc/state/log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/actionlog.py:373"
+    },
+    {
+      "pattern": ".sdlc/state/log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1715"
+    },
+    {
+      "pattern": ".sdlc/state/log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5202"
+    },
+    {
+      "pattern": ".sdlc/state/log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5323"
+    },
+    {
+      "pattern": ".sdlc/state/log/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-log/SKILL.md:21"
+    },
+    {
+      "pattern": ".sdlc/state/log/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:44"
+    },
+    {
+      "pattern": ".sdlc/state/log/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/actionlog.py:361"
+    },
+    {
+      "pattern": ".sdlc/state/log/*.jsonl",
+      "source": "skill-prose",
+      "writer": "skills/agrim-log/SKILL.md:22"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "skill-prose",
+      "writer": "skills/agrim-doctor/SKILL.md:171"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/actionlog.py:362"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/actionlog.py:373"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1715"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5202"
+    },
+    {
+      "pattern": ".sdlc/state/log/<goal>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5323"
+    },
+    {
+      "pattern": ".sdlc/state/merge-reconcile.lock",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:301"
+    },
+    {
+      "pattern": ".sdlc/state/merge-reconcile.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2058"
+    },
+    {
+      "pattern": ".sdlc/state/merge-reconcile.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:3943"
+    },
+    {
+      "pattern": ".sdlc/state/merge-reconcile.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:4058"
+    },
+    {
+      "pattern": ".sdlc/state/phase-end-<stripe>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1972"
+    },
+    {
+      "pattern": ".sdlc/state/phase-end-<stripe>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:89"
+    },
+    {
+      "pattern": ".sdlc/state/phase/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1414"
+    },
+    {
+      "pattern": ".sdlc/state/phase/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/phase_report.py:1415"
+    },
+    {
+      "pattern": ".sdlc/state/propagation",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:736"
+    },
+    {
+      "pattern": ".sdlc/state/propagation",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:752"
+    },
+    {
+      "pattern": ".sdlc/state/propagation/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:413"
+    },
+    {
+      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:414"
+    },
+    {
+      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:736"
+    },
+    {
+      "pattern": ".sdlc/state/propagation/<stem>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/feature_propagate.py:752"
+    },
+    {
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1142"
+    },
+    {
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1173"
+    },
+    {
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2039"
+    },
+    {
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2335"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/review_context.py:962"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation>/brief.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/review_context.py:962"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation_id>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5705"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation_id>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:664"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation_id>/evidence.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5705"
+    },
+    {
+      "pattern": ".sdlc/state/review-generations/<generation_id>/evidence.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:670"
+    },
+    {
+      "pattern": ".sdlc/state/review-manifests/$goal.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:137"
+    },
+    {
+      "pattern": ".sdlc/state/review-manifests/$goal.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/landing.md:139"
+    },
+    {
+      "pattern": ".sdlc/state/review-manifests/$goal.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:188"
+    },
+    {
+      "pattern": ".sdlc/state/review-manifests/$goal.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/running.md:190"
+    },
+    {
+      "pattern": ".sdlc/state/review-posts",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5770"
+    },
+    {
+      "pattern": ".sdlc/state/review-posts",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:837"
+    },
+    {
+      "pattern": ".sdlc/state/review-posts/<evidence_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5770"
+    },
+    {
+      "pattern": ".sdlc/state/review-posts/<evidence_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:837"
+    },
+    {
+      "pattern": ".sdlc/state/review-posts/<evidence_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:921"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SKILL.md:250"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/stopping.md:22"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:483"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:490"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:525"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:535"
+    },
+    {
+      "pattern": ".sdlc/state/review-queue.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-status/SKILL.md:18"
+    },
+    {
+      "pattern": ".sdlc/state/review-results",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:755"
+    },
+    {
+      "pattern": ".sdlc/state/review-results/<generation_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:755"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2094"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2146"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2154"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2208"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5443"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:702"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2094"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2146"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2154"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2208"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5443"
+    },
+    {
+      "pattern": ".sdlc/state/run_stop/<run_id>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:703"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1716"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1847"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2201"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2234"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5452"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:484"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/sessions",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:590"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2673"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2868"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2935"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1716"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1847"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2201"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2218"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2223"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2234"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2690"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2894"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2911"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2943"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5452"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:484"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:590"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1716"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1847"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2201"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2218"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2223"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2234"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2690"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2894"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2911"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2943"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5452"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:484"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/<pid>.active",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:590"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1716"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1847"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2201"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2218"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2223"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2234"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2245"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2457"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2695"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2725"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2791"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2898"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2914"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2945"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2993"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5452"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5519"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:484"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:590"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2527"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1716"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1847"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2201"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2218"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2223"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2234"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2245"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2358"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2457"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2528"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2695"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2725"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2791"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2898"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2914"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2945"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:2993"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5452"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5462"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5519"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:885"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:484"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:491"
+    },
+    {
+      "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+      "source": "code",
+      "writer": "skills/agrim-scope/scripts/assign.py:590"
+    },
+    {
+      "pattern": ".sdlc/state/setup-wizard-cache.json",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:282"
+    },
+    {
+      "pattern": ".sdlc/state/setup-wizard-cache.json",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:333"
+    },
+    {
+      "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+      "source": "code",
+      "writer": "skills/agrim-init/scripts/setup_wizard.py:231"
+    },
+    {
+      "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-wizard/SKILL.md:105"
+    },
+    {
+      "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-wizard/SKILL.md:143"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:156"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:204"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1550"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1656"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:605"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:752"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.launchd.log</string>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:314"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.launchd.log</string>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:315"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.lock",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:234"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:155"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1195"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1560"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1575"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1639"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1643"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1650"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1657"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1660"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:796"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.pid",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:1648"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.pid",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/slack_commands_listen.py:753"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.stop",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:190"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.stop",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:228"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.stop",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/SLACK_COMMANDS.md:325"
+    },
+    {
+      "pattern": ".sdlc/state/slack-commands.stop",
+      "source": "skill-prose",
+      "writer": "skills/agrim-slack/SKILL.md:56"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:351"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:354"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:365"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:411"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:443"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.log",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:461"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.run.out",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:382"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.run.out",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:401"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.tail",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:419"
+    },
+    {
+      "pattern": ".sdlc/state/supervisor.tail",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/supervise_daemon.py:428"
+    },
+    {
+      "pattern": ".sdlc/state/time",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:331"
+    },
+    {
+      "pattern": ".sdlc/state/time",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:340"
+    },
+    {
+      "pattern": ".sdlc/state/time",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:385"
+    },
+    {
+      "pattern": ".sdlc/state/time/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:313"
+    },
+    {
+      "pattern": ".sdlc/state/time/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:315"
+    },
+    {
+      "pattern": ".sdlc/state/time/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:331"
+    },
+    {
+      "pattern": ".sdlc/state/time/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:340"
+    },
+    {
+      "pattern": ".sdlc/state/time/.last-prune",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:385"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5333"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5344"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:362"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:351"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5333"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5344"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:353"
+    },
+    {
+      "pattern": ".sdlc/state/time/<stem>/<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:362"
+    },
+    {
+      "pattern": ".sdlc/state/time/_sessions/<text>/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:396"
+    },
+    {
+      "pattern": ".sdlc/state/time/_sessions/<text>/<value>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:398"
+    },
+    {
+      "pattern": ".sdlc/state/time/_sessions/<text>/turns.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/timing_store.py:398"
+    },
+    {
+      "pattern": ".sdlc/state/unit-tracking/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1917"
+    },
+    {
+      "pattern": ".sdlc/state/unit-tracking/<goal>.attempt",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:1918"
+    },
+    {
+      "pattern": ".sdlc/state/verify/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/state.py:897"
+    },
+    {
+      "pattern": ".sdlc/state/verify/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4225"
+    },
+    {
+      "pattern": ".sdlc/state/withheld",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/upstream.py:893"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/upstream.py:571"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-setup/references/public-repo.md:158"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/",
+      "source": "skill-prose",
+      "writer": "skills/agrim-setup/references/public-repo.md:29"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/<goal>.md",
+      "source": "skill-prose",
+      "writer": "skills/agrim-loop/references/filing.md:85"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/<goal>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/upstream.py:572"
+    },
+    {
+      "pattern": ".sdlc/state/withheld/<goal>.md",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/upstream.py:893"
+    },
+    {
+      "pattern": ".sdlc/state/witness",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5023"
+    },
+    {
+      "pattern": ".sdlc/state/witness",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5078"
+    },
+    {
+      "pattern": ".sdlc/state/witness",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5280"
+    },
+    {
+      "pattern": ".sdlc/state/witness",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5283"
+    },
+    {
+      "pattern": ".sdlc/state/witness/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/witness.py:157"
+    },
+    {
+      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5023"
+    },
+    {
+      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5078"
+    },
+    {
+      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5280"
+    },
+    {
+      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/loop.py:5283"
+    },
+    {
+      "pattern": ".sdlc/state/witness/<stem>.jsonl",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/witness.py:158"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2200"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2280"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2296"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3223"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3266"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3529"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3537"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3548"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3560"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4080"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4120"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4132"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4540"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:519"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5783"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5799"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:899"
+    },
+    {
+      "pattern": ".sdlc/state/work",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:921"
+    },
+    {
+      "pattern": ".sdlc/state/work/",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:1151"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:1152"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2200"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2280"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:2296"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3223"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3266"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3529"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3537"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3548"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:3560"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4080"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4120"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4132"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:4540"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:519"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5783"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:5799"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:899"
+    },
+    {
+      "pattern": ".sdlc/state/work/<goal>.json",
+      "source": "code",
+      "writer": "skills/agrim-loop/scripts/work.py:921"
+    },
+    {
+      "pattern": ".sdlc/work/<goal>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan-review/SKILL.md:54"
+    },
+    {
+      "pattern": ".sdlc/work/<goal>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-plan-review/SKILL.md:62"
+    },
+    {
+      "pattern": ".sdlc/work/<goal>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-review/SKILL.md:53"
+    },
+    {
+      "pattern": ".sdlc/work/<goal>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-review/SKILL.md:61"
+    },
+    {
+      "pattern": ".sdlc/work/<n>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/SKILL.md:58"
+    },
+    {
+      "pattern": ".sdlc/work/<n>",
+      "source": "skill-prose",
+      "writer": "skills/agrim-goal-review/references/adjudication.md:30"
+    },
+    {
+      "pattern": "<home>/",
+      "source": "code",
+      "writer": "tools/onboarding_control.py:867"
+    }
+  ]
+}

@@ -92,52 +92,6 @@ def test_measure_host_refuses_home_and_only_measures_the_opted_in_root(tmp_path)
     }
 
 
-def test_scan_resolves_supported_helper_writers_to_durable_store_rows(tmp_path):
-    """Removing the helper map must make real helper-managed stores disappear."""
-    scripts = tmp_path / "skills" / "agrim-loop" / "scripts"
-    scripts.mkdir(parents=True)
-    (scripts / "ledger.py").write_text(
-        "def append(sdlc_dir):\n"
-        "    with path.open('a') as handle:\n"
-        "        handle.write('entry')\n"
-    )
-    (scripts / "actionlog.py").write_text(
-        "def append(sdlc_dir, goal):\n"
-        "    with path.open('a') as handle:\n"
-        "        handle.write('entry')\n"
-    )
-    (scripts / "timing_store.py").write_text(
-        "def append(sdlc_dir, goal):\n"
-        "    with path.open('a') as handle:\n"
-        "        handle.write('entry')\n"
-        "def append_session(sdlc_dir, session):\n"
-        "    with path.open('a') as handle:\n"
-        "        handle.write('entry')\n"
-    )
-    (scripts / "witness.py").write_text(
-        "def record(sdlc_dir, goal):\n"
-        "    with path.open('a') as handle:\n"
-        "        handle.write('entry')\n"
-    )
-
-    assert _mod().scan(tmp_path) == [
-        {"pattern": ".sdlc/events/<actor>-<writer>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/ledger.py:2"},
-        {"pattern": ".sdlc/ledger/entries/<actor>-<writer>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/ledger.py:2"},
-        {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/actionlog.py:2"},
-        {"pattern": ".sdlc/state/time/<goal>/<writer>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/timing_store.py:2"},
-        {"pattern": ".sdlc/state/time/_sessions/<session>/<writer>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/timing_store.py:5"},
-        {"pattern": ".sdlc/state/time/_sessions/<session>/turns.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/timing_store.py:5"},
-        {"pattern": ".sdlc/state/witness/<goal>.jsonl", "source": "code",
-         "writer": "skills/agrim-loop/scripts/witness.py:2"},
-    ]
-
-
 def test_measure_host_accepts_only_named_configuration_roots(tmp_path):
     """Widening measurement beyond named roots must make this refusal control fail."""
     home = tmp_path / "home"; home.mkdir()
@@ -161,3 +115,48 @@ def test_measure_host_accepts_only_named_configuration_roots(tmp_path):
     }
     with pytest.raises(ValueError, match="named configuration root"):
         mod.measure_host(unowned, home=home, environ={})
+
+
+def test_scan_follows_discovered_helper_returns_for_claim_review_receipt_and_worktree(tmp_path):
+    """A writer hidden behind a newly-added helper must still become an inventory row.
+
+    This deliberately does not register the helper anywhere in the scanner.  The
+    source import and its return expression are the only mapping authority.
+    """
+    (tmp_path / "state.py").write_text(
+        "from pathlib import Path\n"
+        "def claim_path(sdlc_dir, goal):\n"
+        "    return Path(sdlc_dir) / 'state' / 'claims' / f'{goal}.json'\n"
+        "def receipt_path(sdlc_dir, generation):\n"
+        "    return Path(sdlc_dir) / 'state' / 'receipts' / f'{generation}.json'\n"
+    )
+    (tmp_path / "writer.py").write_text(
+        "from pathlib import Path\n"
+        "import state\n"
+        "def persist(sdlc_dir, goal, generation):\n"
+        "    claim = state.claim_path(sdlc_dir, goal)\n"
+        "    claim.write_text('{}')\n"
+        "    receipt = state.receipt_path(sdlc_dir, generation)\n"
+        "    receipt.write_text('{}')\n"
+        "    (Path(sdlc_dir) / 'state' / 'review-generations' / generation / 'evidence.json').write_text('{}')\n"
+        "    (Path(sdlc_dir) / 'work' / goal).mkdir()\n"
+    )
+
+    assert _mod().scan(tmp_path) == [
+        {"pattern": ".sdlc/state/claims/<goal>.json", "source": "code", "writer": "writer.py:5"},
+        {"pattern": ".sdlc/state/receipts/<generation>.json", "source": "code", "writer": "writer.py:7"},
+        {"pattern": ".sdlc/state/review-generations/<generation>/evidence.json", "source": "code", "writer": "writer.py:8"},
+        {"pattern": ".sdlc/work/<goal>/", "source": "code", "writer": "writer.py:9"},
+    ]
+
+
+def test_measure_repository_sdlc_is_explicit_and_binds_the_measured_revision(tmp_path, monkeypatch):
+    """Removing the repo-root or revision binding makes this measurement lie."""
+    sdlc = tmp_path / ".sdlc"; sdlc.mkdir()
+    (sdlc / "state.json").write_bytes(b"abc")
+    monkeypatch.setattr(_mod().subprocess, "run", lambda *args, **kwargs: type(
+        "Run", (), {"returncode": 0, "stdout": "abc123\n"})())
+
+    assert _mod().measure_repository(tmp_path) == {
+        "path": ".sdlc", "size_bytes": 3, "revision": "abc123",
+    }

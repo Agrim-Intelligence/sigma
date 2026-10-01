@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: MIT
 """Inventory durable Sigma stores without discovering arbitrary host paths.
 
-USAGE: growth_audit.py REPOSITORY [--json OUT] [--measure-host ROOT]
+USAGE: growth_audit.py REPOSITORY [--json OUT] [--measure-sdlc] [--measure-host ROOT]
 
-The scanner is deliberately static and deterministic.  Host measurement is an
+The scanner is deliberately static and deterministic. Repository `.sdlc`
+measurement is explicit and records the checkout SHA; host measurement is an
 explicit, one-root opt-in and refuses the home directory itself.
 """
 
@@ -13,86 +14,125 @@ import ast
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 
 
 _WRITER_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
-_SKILL_EVIDENCE = re.compile(r"\.sdlc/evidence(?:/[^\s`'\")]+)?")
-
-# These functions intentionally hide their file naming behind one safe writer
-# API.  Resolving their destination from a caller would make the inventory
-# depend on every caller keeping an implementation detail, so pin the public
-# writer seam and the patterns its own path helpers guarantee instead.
-_HELPER_STORES = {
-    "skills/agrim-loop/scripts/ledger.py": {
-        "append": (
-            ".sdlc/ledger/entries/<actor>-<writer>.jsonl",
-            ".sdlc/events/<actor>-<writer>.jsonl",
-        ),
-    },
-    "skills/agrim-loop/scripts/actionlog.py": {
-        "append": (".sdlc/state/log/<goal>.jsonl",),
-    },
-    "skills/agrim-loop/scripts/timing_store.py": {
-        "append": (".sdlc/state/time/<goal>/<writer>.jsonl",),
-        "append_session": (
-            ".sdlc/state/time/_sessions/<session>/turns.jsonl",
-            ".sdlc/state/time/_sessions/<session>/<writer>.jsonl",
-        ),
-    },
-    "skills/agrim-loop/scripts/witness.py": {
-        "record": (".sdlc/state/witness/<goal>.jsonl",),
-    },
-}
+_SKILL_PATH = re.compile(r"\.sdlc(?:/[A-Za-z0-9_.<>*${}/-]+)?")
 
 
-def _expression_path(node):
-    """Return a static path expression, or ``None`` when it is not knowable."""
+def _placeholder(name):
+    """Give every unresolved function argument a stable, reviewable name."""
+    aliases = {"who": "actor", "actor_name": "actor", "run": "writer"}
+    return "<%s>" % aliases.get(name, name)
+
+
+def _expression_path(node, env=None, functions=None, module=None, depth=0):
+    """Return every statically traceable destination for one expression.
+
+    ``functions`` is discovered from the repository on every scan.  It is
+    deliberately not a list of blessed writer APIs: a newly-added helper that
+    returns a path is followed as soon as its caller is scanned.
+    """
+    env = {} if env is None else env
+    functions = {} if functions is None else functions
+    if depth > 12:
+        return set()
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
+        return {node.value}
     if isinstance(node, ast.Name):
-        return {"sdlc_dir": ".sdlc", "goal": "<goal>"}.get(node.id)
+        if node.id in env:
+            return set(env[node.id])
+        constant = functions.get(module, {}).get("__constants__", {}).get(node.id)
+        if constant is not None:
+            return _expression_path(constant, env, functions, module, depth + 1)
+        return {_placeholder(node.id)}
     if isinstance(node, ast.JoinedStr):
         parts = []
         for value in node.values:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 parts.append(value.value)
             elif isinstance(value, ast.FormattedValue):
-                parts.append("<goal>")
+                values = _expression_path(value.value, env, functions, module, depth + 1)
+                parts.append(next(iter(values), "<value>"))
             else:
-                return None
-        return "".join(parts)
+                return set()
+        return {"".join(parts)}
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        left, right = _expression_path(node.left), _expression_path(node.right)
-        if left is not None and right is not None:
-            return left.rstrip("/") + "/" + right.lstrip("/")
-        return None
+        left = _expression_path(node.left, env, functions, module, depth + 1)
+        right = _expression_path(node.right, env, functions, module, depth + 1)
+        return {a.rstrip("/") + "/" + b.lstrip("/") for a in left for b in right}
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _expression_path(node.left, env, functions, module, depth + 1)
+        right = _expression_path(node.right, env, functions, module, depth + 1)
+        return {a + b for a in left for b in right}
+    if isinstance(node, ast.IfExp):
+        return (_expression_path(node.body, env, functions, module, depth + 1)
+                | _expression_path(node.orelse, env, functions, module, depth + 1))
     if isinstance(node, ast.Call):
-        if isinstance(node.func, ast.Name) and node.func.id == "Path" and node.args:
-            return _expression_path(node.args[0])
+        if ((isinstance(node.func, ast.Name) and node.func.id in {"Path", "str"})
+                or (isinstance(node.func, ast.Attribute) and node.func.attr == "Path")) and node.args:
+            return _expression_path(node.args[0], env, functions, module, depth + 1)
         if (isinstance(node.func, ast.Attribute) and node.func.attr == "home"
                 and isinstance(node.func.value, ast.Name) and node.func.value.id == "Path"):
-            return "<home>"
+            return {"<home>"}
         if isinstance(node.func, ast.Attribute) and node.func.attr == "get":
             owner = node.func.value
             if (isinstance(owner, ast.Attribute) and owner.attr == "environ"
                     and isinstance(owner.value, ast.Name) and owner.value.id == "os" and node.args):
-                return _environment_root(node.args[0])
+                return _environment_root(node.args[0], env, functions, module)
         if (isinstance(node.func, ast.Attribute) and node.func.attr == "getenv"
                 and isinstance(node.func.value, ast.Name) and node.func.value.id == "os" and node.args):
-            return _environment_root(node.args[0])
+            return _environment_root(node.args[0], env, functions, module)
+        target_module, function = module, None
+        if isinstance(node.func, ast.Name):
+            function = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            target_module, function = node.func.value.id, node.func.attr
+        fn = functions.get(target_module, {}).get(function)
+        if fn is not None:
+            values = []
+            for argument in node.args:
+                values.append(_expression_path(argument, env, functions, module, depth + 1))
+            bound = {arg.arg: (values[index] if index < len(values) else {_placeholder(arg.arg)})
+                     for index, arg in enumerate(fn.args.args)}
+            for _ in range(4):
+                changed = False
+                for candidate in ast.walk(fn):
+                    if not isinstance(candidate, (ast.Assign, ast.AnnAssign)) or candidate.value is None:
+                        continue
+                    targets = candidate.targets if isinstance(candidate, ast.Assign) else [candidate.target]
+                    resolved = _expression_path(candidate.value, bound, functions, target_module, depth + 1)
+                    for target in targets:
+                        if isinstance(target, ast.Name) and resolved and bound.get(target.id) != resolved:
+                            bound[target.id] = resolved
+                            changed = True
+                if not changed:
+                    break
+            returns = []
+            for candidate in ast.walk(fn):
+                if isinstance(candidate, ast.Return) and candidate.value is not None:
+                    returns.extend(_expression_path(candidate.value, bound, functions, target_module, depth + 1))
+            return set(returns)
     if isinstance(node, ast.Subscript):
         owner = node.value
         if (isinstance(owner, ast.Attribute) and owner.attr == "environ"
                 and isinstance(owner.value, ast.Name) and owner.value.id == "os"):
-            return _environment_root(node.slice)
-    return None
+            return _environment_root(node.slice, env, functions, module)
+        if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+            return {_placeholder(node.slice.value)}
+    if isinstance(node, ast.Attribute) and node.attr == "parent":
+        return {value.rsplit("/", 1)[0] for value in _expression_path(node.value, env, functions, module, depth + 1)
+                if "/" in value}
+    return set()
 
 
-def _environment_root(node):
-    key = _expression_path(node)
-    return {"HOME": "<home>", "CLAUDE_CONFIG_DIR": "<claude-config>",
-            "CODEX_HOME": "<codex-home>"}.get(key)
+def _environment_root(node, env, functions, module):
+    keys = _expression_path(node, env, functions, module)
+    value = {"HOME": "<home>", "CLAUDE_CONFIG_DIR": "<claude-config>",
+             "CODEX_HOME": "<codex-home>"}.get(next(iter(keys), ""))
+    return {value} if value else set()
 
 
 def _normalise(pattern, directory=False):
@@ -120,61 +160,235 @@ def _row(pattern, source, path, line, directory=False):
     return {"pattern": pattern, "source": source, "writer": f"{path}:{line}"}
 
 
-def _code_rows(root, path):
+def _scope(path, tree, function, functions, module, seed=None):
+    """Resolve local path aliases by the writer's source, not a manual map."""
+    env = ({arg.arg: ({".sdlc"} if arg.arg == "sdlc_dir" else {_placeholder(arg.arg)})
+            for arg in function.args.args} if seed is None else dict(seed))
+    for _ in range(4):
+        changed = False
+        for node in ast.walk(function):
+            targets, value = [], None
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                value = node.value
+            if value is None:
+                continue
+            values = _expression_path(value, env, functions, module)
+            for target in targets:
+                if isinstance(target, ast.Name) and values and env.get(target.id) != values:
+                    env[target.id] = values
+                    changed = True
+        if not changed:
+            break
+    return env
+
+
+def _argument_name(node):
+    """Return the parameter name passed through an internal writer unchanged."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"str", "Path"} and node.args):
+        return _argument_name(node.args[0])
+    return None
+
+
+def _writer_argument_indices(function, functions=None, module=None, seen=None):
+    """Discover which helper arguments become destinations in its own source."""
+    names = [arg.arg for arg in function.args.args]
+    found = set()
+    functions = {} if functions is None else functions
+    seen = set() if seen is None else seen
+    marker = (module, function.name)
+    if marker in seen:
+        return found
+    seen = seen | {marker}
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        target = None
+        if isinstance(node.func, ast.Name) and node.func.id == "open" and node.args:
+            target = node.args[0]
+        elif isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+            target = node.args[0] if isinstance(node.func.value, ast.Name) and node.func.value.id == "os" and node.args else node.func.value
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
+            target = node.func.value
+        elif ((isinstance(node.func, ast.Name) and node.func.id == "copytree")
+              or (isinstance(node.func, ast.Attribute) and node.func.attr == "copytree")) and len(node.args) >= 2:
+            target = node.args[1]
+        name = _argument_name(target) if target is not None else None
+        if name in names:
+            found.add(names.index(name))
+        target_module, helper = module, None
+        if isinstance(node.func, ast.Name):
+            helper = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            target_module, helper = node.func.value.id, node.func.attr
+        callee = functions.get(target_module, {}).get(helper)
+        if callee is not None:
+            for index in _writer_argument_indices(callee, functions, target_module, seen):
+                if index < len(node.args):
+                    forwarded = _argument_name(node.args[index])
+                    if forwarded in names:
+                        found.add(names.index(forwarded))
+    return found
+
+
+def _write_target(node):
+    """Return ``(destination-expression, is-directory)`` for a direct writer."""
+    if isinstance(node.func, ast.Name) and node.func.id == "open" and len(node.args) >= 2:
+        mode = node.args[1].value if isinstance(node.args[1], ast.Constant) else ""
+        return (node.args[0], False) if any(flag in str(mode) for flag in ("a", "w", "x", "+")) else (None, False)
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+        mode = node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else ""
+        if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
+            return (node.args[0], False) if node.args else (None, False)
+        return (node.func.value, False) if any(flag in str(mode) for flag in ("a", "w", "x", "+")) else (None, False)
+    if (isinstance(node.func, ast.Attribute) and node.func.attr in {"replace", "rename"}
+            and len(node.args) >= 2):
+        return node.args[1], False
+    if isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
+        return node.func.value, node.func.attr == "mkdir"
+    if ((isinstance(node.func, ast.Name) and node.func.id == "copytree")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "copytree")) and len(node.args) >= 2:
+        return node.args[1], True
+    return None, False
+
+
+def _helper_destinations(function, env, functions, module, depth=0):
+    """Follow a helper's local aliases and nested writer helpers without a registry."""
+    if depth > 8:
+        return set()
+    scoped = _scope(None, None, function, functions, module, seed=env)
+    paths = set()
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        target, _directory = _write_target(node)
+        if target is not None:
+            paths |= _expression_path(target, scoped, functions, module)
+        target_module, helper = module, None
+        if isinstance(node.func, ast.Name):
+            helper = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            target_module, helper = node.func.value.id, node.func.attr
+        nested = functions.get(target_module, {}).get(helper)
+        if nested is not None and nested is not function and _has_direct_writer(nested):
+            arguments = [_expression_path(argument, scoped, functions, module) for argument in node.args]
+            bound = {arg.arg: (arguments[index] if index < len(arguments) else {_placeholder(arg.arg)})
+                     for index, arg in enumerate(nested.args.args)}
+            paths |= _helper_destinations(nested, bound, functions, target_module, depth + 1)
+    return paths
+
+
+def _has_direct_writer(function):
+    return any(isinstance(node, ast.Call) and _write_target(node)[0] is not None
+               for node in ast.walk(function))
+
+
+def _has_immediate_writer_helper(function, functions, module):
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        target_module, helper = module, None
+        if isinstance(node.func, ast.Name):
+            helper = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            target_module, helper = node.func.value.id, node.func.attr
+        nested = functions.get(target_module, {}).get(helper)
+        if nested is not None and _has_direct_writer(nested):
+            return True
+    return False
+
+
+def _writes_anything(function, functions, module, seen=None):
+    """Whether source-level call graph reaches a local durable writer."""
+    cache = functions.setdefault("__growth-writer-cache__", {})
+    marker = (module, function.name)
+    if marker in cache:
+        return cache[marker]
+    seen = set() if seen is None else seen
+    if marker in seen:
+        return False
+    next_seen = seen | {marker}
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        target, _directory = _write_target(node)
+        if target is not None:
+            cache[marker] = True
+            return True
+        target_module, helper = module, None
+        if isinstance(node.func, ast.Name):
+            helper = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            target_module, helper = node.func.value.id, node.func.attr
+        nested = functions.get(target_module, {}).get(helper)
+        if nested is not None and _writes_anything(nested, functions, target_module, next_seen):
+            cache[marker] = True
+            return True
+    cache[marker] = False
+    return False
+
+
+def _code_rows(root, path, functions):
     """Find the pinned stdlib and git writer forms in one non-test Python file."""
     tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
     rel = path.relative_to(root).as_posix()
+    module = path.stem
     rows = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+    for function in (node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        calls = list(ast.walk(function))
+        if not (_has_direct_writer(function) or _has_immediate_writer_helper(function, functions, module)):
             continue
-        pattern = None
-        directory = False
-        if isinstance(node.func, ast.Name) and node.func.id == "open":
-            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and "a" in str(node.args[1].value):
-                pattern = _expression_path(node.args[0])
-        elif isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
-            pattern = _expression_path(node.func.value)
-            directory = node.func.attr == "mkdir"
-        elif isinstance(node.func, ast.Attribute) and node.func.attr == "copytree":
-            if len(node.args) >= 2:
-                pattern, directory = _expression_path(node.args[1]), True
-        elif isinstance(node.func, ast.Name) and node.func.id == "copytree" and len(node.args) >= 2:
-            pattern, directory = _expression_path(node.args[1]), True
-        elif isinstance(node.func, ast.Attribute) and node.func.attr == "run" and node.args:
-            command = node.args[0]
-            if isinstance(command, (ast.List, ast.Tuple)):
-                words = command.elts
-                literal = [item.value if isinstance(item, ast.Constant) else None for item in words]
-                if literal[:3] == ["git", "worktree", "add"] and len(words) >= 4:
-                    pattern, directory = _expression_path(words[3]), True
-                elif literal[:2] == ["git", "clone"] and len(words) >= 4:
-                    pattern, directory = _expression_path(words[-1]), True
-        row = _row(pattern, "code", rel, node.lineno, directory=directory)
-        if row:
-            rows.append(row)
-    return rows
-
-
-def _helper_rows(root, path):
-    """Resolve durable stores whose public writer deliberately owns its path."""
-    rel = path.relative_to(root).as_posix()
-    functions = _HELPER_STORES.get(rel)
-    if not functions:
-        return []
-    tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
-    rows = []
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name not in functions:
-            continue
-        writer_line = next((call.lineno for call in ast.walk(node)
-                            if isinstance(call, ast.Call)
-                            and isinstance(call.func, ast.Attribute)
-                            and call.func.attr == "open"), None)
-        if writer_line is None:
-            continue
-        for pattern in functions[node.name]:
-            rows.append({"pattern": pattern, "source": "code", "writer": f"{rel}:{writer_line}"})
+        env = _scope(path, tree, function, functions, module)
+        for node in calls:
+            if not isinstance(node, ast.Call):
+                continue
+            patterns, directory = set(), False
+            if isinstance(node.func, ast.Name) and node.func.id == "open":
+                if (len(node.args) >= 2 and isinstance(node.args[1], ast.Constant)
+                        and any(flag in str(node.args[1].value) for flag in ("a", "w", "x", "+"))):
+                    patterns = _expression_path(node.args[0], env, functions, module)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+                mode = node.args[0].value if node.args and isinstance(node.args[0], ast.Constant) else ""
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
+                    patterns = _expression_path(node.args[0], env, functions, module) if node.args else set()
+                elif any(flag in str(mode) for flag in ("a", "w", "x", "+")):
+                    patterns = _expression_path(node.func.value, env, functions, module)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in _WRITER_METHODS:
+                patterns = _expression_path(node.func.value, env, functions, module)
+                directory = node.func.attr == "mkdir"
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "copytree" and len(node.args) >= 2:
+                patterns, directory = _expression_path(node.args[1], env, functions, module), True
+            elif isinstance(node.func, ast.Name) and node.func.id == "copytree" and len(node.args) >= 2:
+                patterns, directory = _expression_path(node.args[1], env, functions, module), True
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "run" and node.args:
+                command = node.args[0]
+                if isinstance(command, (ast.List, ast.Tuple)):
+                    literal = [item.value if isinstance(item, ast.Constant) else None for item in command.elts]
+                    if literal[:3] == ["git", "worktree", "add"] and len(command.elts) >= 4:
+                        patterns, directory = _expression_path(command.elts[3], env, functions, module), True
+                    elif literal[:2] == ["git", "clone"] and len(command.elts) >= 4:
+                        patterns, directory = _expression_path(command.elts[-1], env, functions, module), True
+            target_module, helper = module, None
+            if isinstance(node.func, ast.Name):
+                helper = node.func.id
+            elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                target_module, helper = node.func.value.id, node.func.attr
+            target = functions.get(target_module, {}).get(helper)
+            if target is not None:
+                for index in _writer_argument_indices(target, functions, target_module):
+                    if index < len(node.args):
+                        patterns |= _expression_path(node.args[index], env, functions, module)
+                arguments = [_expression_path(argument, env, functions, module) for argument in node.args]
+                bound = {arg.arg: (arguments[index] if index < len(arguments) else {_placeholder(arg.arg)})
+                         for index, arg in enumerate(target.args.args)}
+                patterns |= _helper_destinations(target, bound, functions, target_module)
+            for pattern in patterns:
+                row = _row(pattern, "code", rel, node.lineno, directory=directory)
+                if row:
+                    rows.append(row)
     return rows
 
 
@@ -182,9 +396,9 @@ def _skill_rows(root, path):
     rel = path.relative_to(root).as_posix()
     rows = []
     for line, text in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-        match = _SKILL_EVIDENCE.search(text)
-        if match and "wt" in match.group(0):
-            row = _row(match.group(0), "skill-prose", rel, line)
+        match = _SKILL_PATH.search(text)
+        if match:
+            row = _row(match.group(0), "skill-prose", rel, line, directory=match.group(0).endswith("/"))
             if row:
                 rows.append(row)
     return rows
@@ -193,11 +407,21 @@ def _skill_rows(root, path):
 def scan(root):
     """Return deterministic code and skill-prose store rows below ``root``."""
     root = Path(root)
+    paths = [path for path in sorted(root.rglob("*.py")) if "tests" not in path.relative_to(root).parts]
+    functions = {}
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
+        functions[path.stem] = {node.name: node for node in tree.body
+                                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        functions[path.stem]["__constants__"] = {
+            target.id: node.value for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
+            and node.value is not None
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            if isinstance(target, ast.Name)
+        }
     rows = []
-    for path in sorted(root.rglob("*.py")):
-        if "tests" not in path.relative_to(root).parts:
-            rows.extend(_code_rows(root, path))
-            rows.extend(_helper_rows(root, path))
+    for path in paths:
+        rows.extend(_code_rows(root, path, functions))
     skills = root / "skills"
     if skills.exists():
         for path in sorted(skills.rglob("*.md")):
@@ -242,15 +466,32 @@ def measure_host(root, *, home=None, environ=None):
     return {"path": label, "size_bytes": _size(root)}
 
 
+def measure_repository(repository):
+    """Measure only this checkout's `.sdlc` and bind the result to its Git SHA."""
+    repository = Path(repository).resolve()
+    sdlc = repository / ".sdlc"
+    if not sdlc.is_dir():
+        raise ValueError("repository .sdlc directory does not exist")
+    completed = subprocess.run(["git", "-C", str(repository), "rev-parse", "HEAD"],
+                               capture_output=True, text=True, check=False)
+    revision = completed.stdout.strip()
+    if completed.returncode != 0 or not revision:
+        raise ValueError("repository revision is unavailable")
+    return {"path": ".sdlc", "size_bytes": _size(sdlc), "revision": revision}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repository", type=Path)
     parser.add_argument("--json", type=Path)
     parser.add_argument("--measure-host", type=Path)
+    parser.add_argument("--measure-sdlc", action="store_true")
     args = parser.parse_args(argv)
     result = {"rows": scan(args.repository)}
     if args.measure_host:
         result["host_measurement"] = measure_host(args.measure_host)
+    if args.measure_sdlc:
+        result["repository_measurement"] = measure_repository(args.repository)
     payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.json:
         args.json.write_text(payload, encoding="utf-8")
