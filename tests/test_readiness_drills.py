@@ -290,6 +290,10 @@ def test_public_frozen_all_seed_evidence_run_builds_validated_schema(tmp_path):
         (drill, seed) for drill in ("D1", "D2", "D3", "D4") for seed in range(1, 6)
     }
     assert all("checkpoint" in run and "invariants" in run for run in payload["runs"])
+    public_evidence = json.dumps(payload)
+    assert "/Users/" not in public_evidence
+    assert ".codex/config.toml" not in public_evidence
+    assert ".claude/settings.json" not in public_evidence
     d4 = [run for run in payload["runs"] if run["drill"] == "D4"]
     assert all(run["expected_failure_states"] == {
         "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
@@ -313,3 +317,28 @@ def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failur
     assert by_name["session_start_explicit_stop_file_reporting"]["observed"]["outcome"] == "control_failed_and_recorded"
     assert result["dedup"]["schema"] == "brainstorm-dedup/v1"
     json.dumps(result)
+
+
+def test_public_d4_evidence_redacts_host_configuration_locations(tmp_path):
+    """A host-path leak in a doctor/session transcript must not reach frozen evidence."""
+    drills = _module()
+
+    result = drills.run_d4(tmp_path, ROOT, 1)
+    doctor = next(item for item in result["invariants"]
+                  if item["name"] == "doctor_explicit_stop_file_reporting")
+    doctor["observed"]["stdout"] += (
+        "\nhost guidance: /Users/alice/.codex/config.toml "
+        "and /Users/alice/.claude/settings.json; "
+        "C:\\Users\\alice\\.codex\\config.toml\n"
+    )
+
+    public_run = drills._evidence_run(result)
+    transcript = json.dumps(public_run)
+    public_doctor = next(item for item in public_run["invariants"]
+                         if item["name"] == "doctor_explicit_stop_file_reporting")
+    public_stdout = public_doctor["observed"]["stdout"]
+
+    assert "/Users/" not in transcript
+    assert ".codex/config.toml" not in transcript
+    assert ".claude/settings.json" not in transcript
+    assert "C:\\Users\\" not in public_stdout

@@ -36,6 +36,10 @@ SEED_CHECKPOINTS = {
     5: "durable_remote_update",
 }
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+HOST_HOME_PATH = re.compile(
+    r"(?:/(?:Users|home)/[A-Za-z0-9._-]+(?:/[^\s'\"<>;,\]\)}]*)?"
+    r"|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+(?:\\[^\s'\"<>;,\]\)}]*)?)"
+)
 DRILLS = ("D1", "D2", "D3", "D4")
 EVIDENCE_SEEDS = tuple(SEED_CHECKPOINTS)
 WINDOWS_SKIP_REASON = "Windows is unsupported: readiness drills require POSIX process groups and SIGKILL."
@@ -91,6 +95,22 @@ def _classify_reporting(stdout: str, stderr: str) -> str:
 
 def _result_command(proc):
     return {"returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
+
+
+def _sanitize_public_transcript(text: str) -> str:
+    """Remove machine-specific home/config locations from public evidence streams."""
+    return HOST_HOME_PATH.sub("<host-home>", text)
+
+
+def _sanitize_public_evidence(value):
+    """Copy JSON-shaped evidence while redacting host-home values in every field."""
+    if isinstance(value, str):
+        return _sanitize_public_transcript(value)
+    if isinstance(value, list):
+        return [_sanitize_public_evidence(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_public_evidence(item) for key, item in value.items()}
+    return value
 
 
 def _scratch_sdlc(workdir: Path):
@@ -800,11 +820,12 @@ def validate_evidence(path: Path, payload: dict, checkout_sha: str):
 
 
 def _evidence_run(result):
+    invariants = _sanitize_public_evidence(result["invariants"])
     run = {
         "drill": result["drill"],
         "seed": result["seed"],
         "checkpoint": result["fault"].get("checkpoint"),
-        "invariants": result["invariants"],
+        "invariants": invariants,
     }
     if result["drill"] == "D4":
         observed = {item["name"]: item.get("observed", {}).get("outcome")
@@ -829,7 +850,7 @@ def evidence(workdir: Path, output: Path, sigma: Path = ROOT):
         "schema": EVIDENCE_SCHEMA,
         "frozen_commit": frozen_commit,
         "command": ["drills.py", "evidence", "--workdir", "<workdir>", "--json", expected_name],
-        "interpreter": sys.executable,
+        "interpreter": _sanitize_public_transcript(sys.executable),
         "platform": sys.platform,
         "windows_skip_reason": WINDOWS_SKIP_REASON if sys.platform.startswith("win") else None,
         "b6": B6_DISPOSITION,
