@@ -137,6 +137,12 @@ def _checkpoint_fake_body(control, sigma: Path):
         save_state(state); return
 '''
     fake = fake.replace('    if endpoint == "repos/%s/issues" % repo:\n', comments + '    if endpoint == "repos/%s/issues" % repo:\n')
+    # The public onboarding fake is sufficient for the open-goal queue, where
+    # every listed issue is open.  D2's real board-mirror refresh additionally
+    # reads recently closed issues; preserve their true state in this private
+    # copy so the recovery receipt cannot label a closed card as open.
+    fake = fake.replace('out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],',
+                        'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],')
     return fake
 
 
@@ -247,6 +253,22 @@ def _measure_work_merge_duration(workdir: Path, sigma: Path):
     return duration
 
 
+def seeded_delay_ns(seed: int, measured_duration_ns: int) -> int:
+    """Choose D1's deterministic in-seam delay without exceeding its calibration.
+
+    A one-millisecond lower preference is useful on ordinary machines, but it
+    is not a floor: a measured sub-millisecond lifecycle must still receive a
+    strictly smaller delay.  Keeping this arithmetic standalone makes the
+    fast-host safety property directly testable without weakening the real
+    child-process control.
+    """
+    if measured_duration_ns <= 0:
+        raise UsageError("measured work.py merge duration must be positive")
+    upper = min(measured_duration_ns, 100_000_000)
+    lower = min(1_000_000, upper)
+    return random.Random(seed).randint(lower, upper)
+
+
 def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns):
     """SIGKILL an actual ``work.py merge`` process group at a named fake-gh seam."""
     ready = fixture["root"] / "merge-ready.json"
@@ -266,8 +288,7 @@ def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns)
     # race for whether the fault lands.  Cap it at a small fraction of a
     # measured normal work.py merge so a slow host cannot turn the drill into an
     # unbounded sleep.
-    upper = max(1_000_000, min(measured_duration_ns, 100_000_000))
-    delay = random.Random(seed).randint(1_000_000, upper)
+    delay = seeded_delay_ns(seed, measured_duration_ns)
     time.sleep(delay / 1_000_000_000)
     requested = time.monotonic_ns(); os.killpg(pgid, signal.SIGKILL); sent = time.monotonic_ns()
     stdout, stderr = proc.communicate(timeout=10)
@@ -278,27 +299,29 @@ def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns)
 
 
 def _kill_after_fixture_merge(fixture):
-    """Kill a child after its real fake-GitHub merge returned, before Sigma can acknowledge it."""
-    ready = fixture["root"] / "remote-merged.json"
-    script = ("import pathlib, subprocess, sys, time; p=subprocess.run(sys.argv[1:-1], text=True, capture_output=True); "
-              "pathlib.Path(sys.argv[-1]).write_text(str(p.returncode)); time.sleep(60)")
-    proc = subprocess.Popen([sys.executable, "-c", script, str(fixture["gh"]), "pr", "merge", fixture["pr"],
-                             "--repo", _fixture_state(fixture)["repo"], "--squash", str(ready)], cwd=fixture["repo"],
-                            env=fixture["env"], start_new_session=True)
-    deadline = time.monotonic() + 10
-    while not ready.exists() and time.monotonic() < deadline:
-        time.sleep(.01)
-    if not ready.exists() or ready.read_text(encoding="utf-8") != "0":
-        proc.kill(); raise UsageError("fixture merge did not succeed before kill")
-    os.killpg(os.getpgid(proc.pid), signal.SIGKILL); proc.wait(timeout=10)
-    return {"returncode": proc.returncode, "remote_merge_returncode": 0, "ready": str(ready)}
+    """Kill the real ``work.py merge`` parent after fake remote success, before acknowledgement.
+
+    The fake's post-response barrier runs only after it has durably updated the
+    disposable remote and emitted its success response.  The killed process is
+    nevertheless the parent lifecycle that would close the issue/write local
+    receipts next, never a standalone fake-gh subprocess.
+    """
+    observed = _kill_fixture_work_merge(
+        fixture, "post_response_before_ack", seed=1, measured_duration_ns=1,
+    )
+    remote_merged = _fixture_state(fixture)["prs"][fixture["pr"]]["state"] == "MERGED"
+    observed["remote_merge_durable"] = remote_merged
+    observed["remote_merge_response_emitted"] = (
+        observed["barrier"]["checkpoint"] == "post_response_before_ack"
+    )
+    return observed
 
 
 def _fixture_recover(fixture):
     """Capture durable state from the fixture after its caller ran the public gestures."""
     state = _fixture_state(fixture)
     action_logs = {str(p.relative_to(fixture["repo"])): p.read_text(encoding="utf-8")
-                   for p in fixture["repo"].glob(".sdlc/**/*action*") if p.is_file()}
+                   for p in fixture["repo"].glob(".sdlc/state/log/*.jsonl") if p.is_file()}
     records = {str(p.relative_to(fixture["repo"])): p.read_text(encoding="utf-8")
                for p in fixture["repo"].glob(".sdlc/state/**/*") if p.is_file()}
     return {"fake_github": state,
@@ -307,6 +330,54 @@ def _fixture_recover(fixture):
             "action_log": action_logs, "state_records": records,
             "worktree_exists": (fixture["repo"] / ".sdlc" / "work" / fixture["goal"]).exists(),
             "fixture": str(fixture["root"])}
+
+
+def _terminal_convergence(fixture, lifecycle):
+    """Read every D2/D3 terminal artifact from the same fixture after recovery."""
+    goal = fixture["goal"]
+    entries = []
+    for text in lifecycle["action_log"].values():
+        for line in text.splitlines():
+            try:
+                entries.append(json.loads(line))
+            except ValueError:
+                continue
+    done_count = sum(entry.get("kind") == "recorded" and entry.get("result") == "done"
+                     and str(entry.get("goal")) == goal for entry in entries)
+    state_text = lifecycle["state_records"].get(".sdlc/state/STATE.md", "")
+    cursor = None
+    for line in state_text.splitlines():
+        if line.startswith("last_run: "):
+            cursor = line.split(": ", 1)[1].removeprefix("last: ")
+            break
+    config = json.loads((fixture["repo"] / ".sdlc" / "config.json").read_text(encoding="utf-8"))
+    board_config = ((config.get("discovery") or {}).get("github") or {}).get("project") or {}
+    board_enabled = board_config.get("enabled") is True
+    mirror_records = []
+    for line in lifecycle["state_records"].get(".sdlc/state/board-mirror.ndjson", "").splitlines():
+        try:
+            mirror_records.append(json.loads(line))
+        except ValueError:
+            continue
+    mirror = next((record for record in mirror_records if str(record.get("number")) == goal), {})
+    # The hermetic public onboarding fake deliberately has no Projects v2 API.
+    # Its local board mirror is still a real lifecycle artifact, so refresh it
+    # after recovery and record the closed card rather than treating a stale
+    # pre-merge mirror as convergence.
+    board = {"configured": board_enabled, "status": None, "mirror_state": mirror.get("state")}
+    state = lifecycle["fake_github"]
+    issue = state["issues"][goal]
+    pr = state["prs"][fixture["pr"]]
+    return {
+        "pr_state": pr["state"],
+        "issue_state": issue["state"],
+        "labels": issue["labels"],
+        "board": board,
+        "cursor": cursor,
+        "action_log_done_count": done_count,
+        "work_record_exists": (fixture["repo"] / ".sdlc" / "state" / "work" / (goal + ".json")).exists(),
+        "worktree_exists": lifecycle["worktree_exists"],
+    }
 
 
 def run_d1(workdir: Path, sigma: Path = ROOT, seed: int = 1):
@@ -383,25 +454,34 @@ def run_d2(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     next_proc = _fixture_cmd(fixture, fixture["next_argv"])
     first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
     second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
+    mirror = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "mirror.py", ".sdlc", "--force"])
     lifecycle = _fixture_recover(fixture)
     lifecycle.update({"work_merge": _result_command(fixture["work_merge"]), "human_merge": _result_command(human_merge),
                       "overlay_remove": _result_command(overlay), "next": _result_command(next_proc),
                       "reconcile_merges": _result_command(first), "second_reconcile_merges": _result_command(second),
+                      "board_mirror": _result_command(mirror),
                       "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
+    convergence = _terminal_convergence(fixture, lifecycle)
+    lifecycle["convergence"] = convergence
     external = lifecycle["fake_github"]["issues"]["1"]
-    local = {"goal": "1", "done_count": lifecycle["fake_github"]["issues"]["1"]["state"] == "closed",
-             "lease": "released" if not lifecycle["worktree_exists"] else "claimed",
-             "worktree": "removed" if not lifecycle["worktree_exists"] else "resumable"}
+    local = {"goal": "1", "done_count": convergence["action_log_done_count"],
+             "lease": "released" if not convergence["work_record_exists"] else "claimed",
+             "worktree": "removed" if not convergence["worktree_exists"] else "resumable",
+             "cursor": convergence["cursor"], "board": convergence["board"]}
     next_pick = next_proc.stdout.strip() or None
     inv = [
         _invariant("next_does_not_repick_restored_goal", next_pick != local["goal"],
                    {"next_result": next_pick, "restored_awaiting_merge": True}),
-        _invariant("done_recorded_exactly_once", local["done_count"] is True,
+        _invariant("done_recorded_exactly_once", local["done_count"] == 1,
                    {"done_count": local["done_count"]}),
         _invariant("external_and_local_terminal_state_converge",
-                   external["state"] == "closed" and
+                   convergence["pr_state"] == "MERGED" and external["state"] == "closed" and
+                   convergence["labels"] == [] and convergence["cursor"] == "1 -> done" and
+                   convergence["action_log_done_count"] == 1 and
+                   convergence["board"]["mirror_state"] == "closed" and
+                   convergence["work_record_exists"] is False and
                    local["lease"] == "released" and local["worktree"] == "removed",
-                   {"external": external, "local": local}),
+                   {"external": external, "local": local, "convergence": convergence}),
     ]
     return {"schema": SCHEMA, "drill": "D2", "seed": seed, "platform": sys.platform,
             "frozen_commit": _head(sigma), "started_at_ns": started,
@@ -421,16 +501,18 @@ def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         raise UsageError("workdir exists and is not empty")
     workdir.mkdir(parents=True, exist_ok=True)
     started = time.monotonic_ns()
-    fixture = _real_fixture(workdir, sigma)
+    fixture = _real_fixture(workdir, sigma, direct_merge=True)
     fault = _kill_after_fixture_merge(fixture)
     first = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
     second = _fixture_cmd(fixture, [fixture["py"], fixture["loop"] / "loop.py", "reconcile-merges", ".sdlc"])
     lifecycle = _fixture_recover(fixture)
     lifecycle.update({"fake_merge": fault, "first_reconcile": _result_command(first), "second_reconcile": _result_command(second),
                       "fault_fixture": str(fixture["root"]), "recovery_fixture": str(fixture["root"])})
-    local = {"merge_receipt": _fixture_state(fixture)["prs"][fixture["pr"]]["state"] == "MERGED",
-             "done_count": 1 if _fixture_state(fixture)["issues"][fixture["goal"]]["state"] == "closed" else 0,
-             "ack": not lifecycle["worktree_exists"]}
+    convergence = _terminal_convergence(fixture, lifecycle)
+    lifecycle["convergence"] = convergence
+    local = {"merge_receipt": convergence["pr_state"] == "MERGED",
+             "done_count": convergence["action_log_done_count"],
+             "ack": not convergence["work_record_exists"] and not convergence["worktree_exists"]}
     inv = [
         _invariant("documented_reconcile_gesture_succeeds_twice",
                    first.returncode == 0 and second.returncode == 0,
@@ -443,7 +525,8 @@ def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
             "finished_at_ns": time.monotonic_ns(),
             "recovery_commands": [["loop.py", "reconcile-merges", "<dir>"],
                                   ["loop.py", "reconcile-merges", "<dir>"]],
-            "fault": {"fake_merge_succeeded_before_local_ack": fault["remote_merge_returncode"] == 0,
+            "fault": {"fake_merge_succeeded_before_local_ack": fault["remote_merge_durable"] and
+                      fault["remote_merge_response_emitted"],
                       "killed_operation": fault},
             "invariants": inv, "lifecycle": lifecycle, "fake_gh_unhandled": lifecycle["fake_gh_unhandled"]}
 

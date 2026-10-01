@@ -142,7 +142,8 @@ def test_d3_records_real_reconcile_passes_after_the_fake_merge_lifecycle(tmp_pat
 
     lifecycle = result["lifecycle"]
     assert lifecycle["fake_merge"]["returncode"] < 0
-    assert lifecycle["fake_merge"]["remote_merge_returncode"] == 0
+    assert lifecycle["fake_merge"]["remote_merge_durable"] is True
+    assert lifecycle["fake_merge"]["remote_merge_response_emitted"] is True
     assert lifecycle["first_reconcile"]["returncode"] == 0
     assert lifecycle["second_reconcile"]["returncode"] == 0
     assert lifecycle["fault_fixture"] == lifecycle["recovery_fixture"]
@@ -181,6 +182,52 @@ def test_documented_d1_gesture_measures_a_seeded_delay_and_kills_work_merge(tmp_
     assert killed["returncode"] < 0
     assert killed["argv"][1].endswith("work.py")
     assert result["lifecycle"]["fault_fixture"] == result["lifecycle"]["recovery_fixture"]
+
+
+@pytest.mark.parametrize("duration", [1, 999_999, 1_000_000, 100_000_001])
+def test_d1_seeded_delay_never_exceeds_the_measured_merge_duration(duration):
+    """A fast host must not turn D1's lower delay preference into an overrun."""
+    drills = _module()
+
+    delay = drills.seeded_delay_ns(2, duration)
+
+    assert 0 < delay <= duration
+
+
+def test_d2_receipt_proves_terminal_action_log_work_record_cursor_and_board_convergence(tmp_path):
+    """D2 must inspect the actual restored fixture, not infer terminal state from the issue."""
+    drills = _module()
+
+    result = drills.run_d2(tmp_path, ROOT, 1)
+
+    convergence = result["lifecycle"]["convergence"]
+    assert convergence["pr_state"] == "MERGED"
+    assert convergence["issue_state"] == "closed"
+    assert convergence["labels"] == []
+    assert convergence["action_log_done_count"] == 1
+    assert convergence["work_record_exists"] is False
+    assert convergence["worktree_exists"] is False
+    assert convergence["cursor"] == "1 -> done"
+    assert convergence["board"] == {"configured": False, "status": None,
+                                    "mirror_state": "closed"}
+
+
+def test_d3_kills_the_actual_work_merge_parent_after_fake_merge_then_reconciles_once(tmp_path):
+    """D3's lost-ack fault belongs to work.py, never a standalone fake-gh helper."""
+    drills = _module()
+
+    result = drills.run_d3(tmp_path, ROOT, 1)
+
+    fault = result["lifecycle"]["fake_merge"]
+    convergence = result["lifecycle"]["convergence"]
+    assert fault["returncode"] < 0
+    assert fault["argv"][1].endswith("work.py")
+    assert fault["barrier"]["checkpoint"] == "post_response_before_ack"
+    assert fault["remote_merge_durable"] is True
+    assert fault["remote_merge_response_emitted"] is True
+    assert convergence["action_log_done_count"] == 1
+    assert convergence["work_record_exists"] is False
+    assert convergence["worktree_exists"] is False
 
 
 def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):
