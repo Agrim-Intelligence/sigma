@@ -211,3 +211,22 @@ def test_scan_records_one_argument_path_rename_and_replace_destinations(tmp_path
         {"pattern": ".sdlc/state/archived.json", "source": "code", "writer": "writer.py:5"},
         {"pattern": ".sdlc/state/committed.json", "source": "code", "writer": "writer.py:4"},
     ]
+
+
+def test_b6_disposition_lists_each_pattern_without_a_source_proven_pruner():
+    """Only the directly pruned review-copy path may be omitted from a B6 outcome."""
+    rows = [
+        {"pattern": ".sdlc/evidence/<goal>/rv*/wt", "source": "code", "writer": "work.py:1"},
+        {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code", "writer": "actionlog.py:2"},
+        {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "skill-prose", "writer": "SKILL.md:3"},
+        {"pattern": "<codex-home>/state/", "source": "code", "writer": "host.py:4"},
+    ]
+
+    assert _mod().b6_disposition(rows, "419") == {
+        "issue": "#419",
+        "status": "filed",
+        "unresolved_patterns": [
+            ".sdlc/state/log/<goal>.jsonl",
+            "<codex-home>/state/",
+        ],
+    }

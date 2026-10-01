@@ -438,6 +438,23 @@ def scan(root):
     return sorted(rows, key=lambda row: (row["pattern"], row["writer"], row["source"]))
 
 
+def b6_disposition(rows, issue):
+    """Preserve the blocker outcome for every path without a proven pruner.
+
+    The terminal lifecycle directly proves pruning only for review checkout
+    copies.  This inventory must not turn similarly shaped durable or host
+    paths into an implied retention policy, so every other unique pattern is
+    carried to the measured B6 issue.
+    """
+    resolved = ".sdlc/evidence/<goal>/rv*/wt"
+    return {
+        "issue": "#%s" % str(issue).lstrip("#"),
+        "status": "filed",
+        "unresolved_patterns": sorted({row["pattern"] for row in rows
+                                       if row["pattern"] != resolved}),
+    }
+
+
 def _size(path):
     """Count bytes below one supplied root without following symlinks."""
     total = 0
@@ -495,12 +512,15 @@ def main(argv=None):
     parser.add_argument("--json", type=Path)
     parser.add_argument("--measure-host", type=Path)
     parser.add_argument("--measure-sdlc", action="store_true")
+    parser.add_argument("--b6-issue", help="filed B6 issue for patterns without a proven pruner")
     args = parser.parse_args(argv)
     result = {"rows": scan(args.repository)}
     if args.measure_host:
         result["host_measurement"] = measure_host(args.measure_host)
     if args.measure_sdlc:
         result["repository_measurement"] = measure_repository(args.repository)
+    if args.b6_issue:
+        result["b6_disposition"] = b6_disposition(result["rows"], args.b6_issue)
     payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.json:
         args.json.write_text(payload, encoding="utf-8")
