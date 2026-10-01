@@ -1977,6 +1977,13 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
         # The marker-to-end interval is measured once in cmd_end. Omit it when no matching
         # marker exists; zero would claim an instantaneous phase that was not measured.
         timing = {"ms": interval_ms} if interval_ms is not None else {}
+        # An unpriced phase has no `spend` record (that would fabricate a price), so its observed
+        # model and excluded-turn count must travel with the durable phase boundary. Doctor reads
+        # exactly this record rather than a transient stderr line.
+        rate_coverage = {
+            "unpriced_turns": str(result.get("unpriced_turns") or 0),
+            "model": ",".join(result.get("models") or []),
+        }
         attempt_id = state.phase_attempt_key(attempt) if attempt is not None else None
         if attempt is not None:
             new_end, _, old_run = state.record_phase_end(
@@ -1995,11 +2002,11 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
             ledger.safe_append(
                 sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase, state="end",
                 tokens_in=str(result["tokens_in"]), tokens_out=str(result["tokens_out"]),
-                attempt_id=attempt_id, **timing,
+                attempt_id=attempt_id, **timing, **rate_coverage,
             )
         elif "phase" not in recorded:
             ledger.safe_append(sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase,
-                               state="end", attempt_id=attempt_id, **timing)
+                               state="end", attempt_id=attempt_id, **timing, **rate_coverage)
 
         # #1686: the `phase` event above carries real tokens_in/tokens_out but never the already-built
         # `spend` kind (EVENT_FIELDS["spend"] = ("phase", "model", "tokens_in", "tokens_out",

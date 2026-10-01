@@ -3776,6 +3776,46 @@ def _dispatch_model_compliance_slice_state(base, cfg, now=None):
 _BUDGET_ENFORCEMENT_WINDOW_SECONDS = 30 * 24 * 3600
 
 
+def _rate_card_coverage_state(base, now=None):
+    """Report whether the last twenty durable phase ends included unpriced model turns.
+
+    `phase_report.py end` writes ``model`` and ``unpriced_turns`` into each phase-end event. The
+    direct event record matters: an stderr warning is visible only to the process that ended the
+    phase, whereas `/agrim-doctor` is the host-agnostic recovery surface. This is deliberately a
+    bounded read of *records*, not a time window: a quiet repository should still surface the last
+    model that its operator actually used. Historical records lacking the additive fields are
+    honestly counted as legacy/unknown coverage and do not manufacture a failure.
+    """
+    try:
+        ledger = _load_loop_script("ledger")
+    except Exception:                      # noqa: BLE001 - diagnostic failure is never all-clear
+        return "COULD NOT CHECK — ledger.py did not load; not an all-clear"
+    events = (_read_events_from(ledger.local_events_dir(base), ledger)
+              + ledger.read_all(base, stream=ledger.EVENTS))
+    ends = [event for event in events
+            if event.get("kind") == "phase" and event.get("state") == "end"]
+    if not ends:
+        return "no phase boundaries recorded — no model-rate coverage to check yet"
+    ends.sort(key=lambda event: str(event.get("ts") or ""))
+    recent = ends[-20:]
+    gaps = []
+    for event in recent:
+        try:
+            unpriced = int(event.get("unpriced_turns") or 0)
+        except (TypeError, ValueError):
+            unpriced = 0
+        if unpriced > 0:
+            gaps.append(str(event.get("model") or "unknown"))
+    if gaps:
+        shown = ", ".join(dict.fromkeys(gaps))
+        return ("MISSING — %d/%d recent phase record(s) include unpriced turns "
+                "(model %s); add its price to skills/agrim-loop/rates/anthropic_list_prices.csv"
+                % (len(gaps), len(recent), shown))
+    legacy = sum("unpriced_turns" not in event for event in recent)
+    suffix = ("; %d legacy record(s) predate this coverage field" % legacy) if legacy else ""
+    return "READY — %d recent phase record(s) had no unpriced turns%s" % (len(recent), suffix)
+
+
 def _budget_enforcement_state(base, cfg, now=None):
     """#2515 -- a SIBLING to the existing "budgets" row, not a rewrite of it. That row answers "is
     `budget.max_tokens` CONFIGURED" (a config read, always true/false, cheap); this one answers the
@@ -4392,6 +4432,10 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          'no ledger cross-reference (no execution-time ledger signal exists for slices), see its '
          'own docstring. --role goal-slot is deliberately not covered: nothing requires --model '
          'there on main today (#2557)'),
+        ("rate card prices the models this repo used",
+         _rate_card_coverage_state(base),
+         'add the observed model to skills/agrim-loop/rates/anthropic_list_prices.csv; '
+         'unpriced turns are warned at every phase end and never count toward budget.max_tokens'),
         ("pre-work backlog cross-check",
          _backlog_check_state(cfg),
          'config: "backlog_check": {"enabled": true}'),

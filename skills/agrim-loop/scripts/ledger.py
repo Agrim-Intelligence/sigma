@@ -134,7 +134,8 @@ EVENT_KINDS = ("phase", "gate", "verify", "slice", "spend", "retro", "park", "sc
 #: OPTIONAL_FIELDS. A closed list per kind, not one shared list, because event kinds do not
 #: share a field namespace (e.g. `gate.verdict` vs `retro.grade`) the way entries kinds do.
 EVENT_FIELDS = {
-    "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id"),
+    "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id",
+              "model", "unpriced_turns"),
     # issue #272: `decision_id` joins `why` on `gate` -- the denial's decision id as a REAL,
     # structured field, not only reconstructible by regexing `why`'s free text (the read side had
     # two unfixable failure modes: an id with internal whitespace truncates to its first word, and
@@ -206,6 +207,9 @@ assert set(EVENT_KINDS) == set(EVENT_FIELDS), "EVENT_KINDS and EVENT_FIELDS have
 #: path already funnels through. Nothing else in EVENT_FIELDS is prose: everything else is an
 #: enum, a count, a duration, a bool, or (`verify.command_sha256`) a hash.
 EVENT_FREE_TEXT_FIELDS = {
+    # Observed transcript model IDs are the same unbounded vendor-owned strings as `spend.model`.
+    # Keep them scrubbed and capped even though phase_report.py is the only writer today.
+    "phase": ("model",),
     "gate": ("why",),
     "park": ("why",),
     "spend": ("model",),
@@ -243,7 +247,8 @@ EVENT_FREE_TEXT_FIELDS = {
 #: numeric/bool at its chokepoint; `loop.py`'s `_validate_event` enforces the same thing again,
 #: earlier, at the CLI, with a usable refusal instead of a silent sanitize.
 EVENT_NON_PROSE_FIELDS = {
-    "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id"),
+    "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id",
+              "unpriced_turns"),
     # issue #272: `decision_id` is a bounded-id (EVENT_BOUNDED_ID_FIELDS below), NOT free text --
     # it is the point of this field that it never gets `why`'s FREE_TEXT_CAP prose treatment (a
     # deep repo-relative path prefix can push the id itself past that 200-char cap; the shorter,
@@ -310,7 +315,7 @@ _assert_event_fields_classified(EVENT_KINDS, EVENT_FIELDS, EVENT_FREE_TEXT_FIELD
 #:     the same treatment as prose, closing the `slice.slice` gap the review flagged (an agent-
 #:     authored plan `id` landing verbatim with no length/shape check at all).
 EVENT_NUMERIC_FIELDS = {
-    "phase": ("ms", "tokens_in", "tokens_out"),
+    "phase": ("ms", "tokens_in", "tokens_out", "unpriced_turns"),
     "gate": ("cycle",),
     "verify": ("exit", "ms"),
     "slice": ("wave", "files_declared", "ms"),

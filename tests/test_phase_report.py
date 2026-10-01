@@ -1469,6 +1469,14 @@ def test_cli_end_with_unpriceable_transcript_writes_no_spend_event(tmp_path):
     events = journal_events(ledger, sdlc)
     spend_events = [e for e in events if e.get("kind") == "spend" and e.get("goal") == "42"]
     assert spend_events == []
+    phase_events = [e for e in events if e.get("kind") == "phase" and e.get("goal") == "42"
+                    and e.get("state") == "end"]
+    assert len(phase_events) == 1
+    # No spend event exists for an unpriced model, so the rate-card coverage fact must survive on
+    # the durable phase boundary that `/agrim-doctor` reads later.
+    assert phase_events[0]["model"] == "claude-nonexistent-9"
+    assert phase_events[0]["unpriced_turns"] == "1"
+    assert "budget: 1 of 1 turns in this phase are unpriced" in result.stderr
 
 
 # --------------------------------------------------------------------------- #2515: cmd_end feeds
