@@ -203,3 +203,42 @@ def test_nfc_nfd_pair_is_a_case_collision(tmp_path, capsys):
     assert rc == 2 and so == "", (rc, so, se)
     assert se.startswith("build_public_tree: REFUSED [case-collision] "), se
     assert not out.exists() and not pathlib.Path(str(out) + ".rejected").exists()
+
+
+# ------------------------------------------------------------------------------ review cycle 2, findings 6 and 7
+
+_STUB_LEAK_SCAN = "print('leak_scan: 0 finding(s) over 1 file(s)')\n"
+
+
+@pytest.mark.parametrize("prefix", ["tools/", "tools/leak_scan.py"])
+def test_excluding_the_exports_own_leak_scan_is_refused_before_building(tmp_path, capsys, prefix):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"tools/leak_scan.py": _STUB_LEAK_SCAN})
+    out = tmp_path / "out" / "export"
+    argv = _argv(tmp_path, repo, sha, out) + ["--exclude", prefix]
+    rc, so, se = _build(mod, capsys, argv)
+    assert rc == 2 and so == "", (rc, so, se)
+    assert se.startswith("build_public_tree: REFUSED [leak-scan-absent] "), se
+    assert len(se.strip().splitlines()) == 1, se
+    assert not out.exists() and not pathlib.Path(str(out) + ".rejected").exists()
+    assert not (tmp_path / "reports").exists() or not list((tmp_path / "reports").iterdir())
+    # the control: the same commit with nothing excluded runs all four scans and is VERIFIED
+    out2 = tmp_path / "out" / "export2"
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out2))
+    assert rc == 0, se
+    fields = _fields(so)
+    assert fields["verdict"] == "VERIFIED" and fields["scans"].endswith("leak_scan=0"), so
+
+
+def test_rejected_export_keeps_no_index_and_no_blob_of_its_tree(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"README.md": "hello\nsee zq-planted-1234 here\n"})
+    out = tmp_path / "out" / "export"
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out))
+    assert rc == 1, se
+    rejected = pathlib.Path(str(out) + ".rejected")
+    assert (rejected / "docs" / "guide.md").read_text(encoding="utf-8") == "a guide\n"  # files stay
+    assert _git(rejected, "ls-files") == "", "the rejected export's index still lists its files"
+    blob = _git(repo, "rev-parse", sha + ":docs/guide.md")
+    gone = subprocess.run(["git", "-C", str(rejected), "cat-file", "-e", blob], capture_output=True)
+    assert gone.returncode != 0, "the rejected export still holds the blob %s" % blob

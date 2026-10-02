@@ -79,8 +79,9 @@ case folding and Unicode NFC normalisation), `head-not-commit`,
 `dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
-`work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `internal`; `scan-failed` is the
-NOT-VERIFIED refusal below.
+`work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
+`tools/leak_scan.py` and an `--exclude` drops it, so the fourth scan could not run; refused before
+anything is built), `internal`; `scan-failed` is the NOT-VERIFIED refusal below.
 
 ## The `.sdlc/` switch and `--exclude`
 
@@ -121,8 +122,12 @@ never says "reviewed commit": it says what was measured.
 
 ## What the scans do not cover
 
-Four scans all run, with no short circuit, and the verdict is REJECTED if any finds anything. The
-report prints, in `not_covered`, what they cannot see:
+Four scans run, with no short circuit, and the verdict is REJECTED if any finds anything. The
+fourth, `leak_scan`, is the export's own `tools/leak_scan.py`, so it runs only when the export holds
+that file: this repository's commits do, and an `--exclude` that drops it is refused
+(`leak-scan-absent`). A commit that never had the file (a test fixture, say) builds with three scans
+and records `leak_scan` as `absent` in the report and on the `scans:` line; that build can still be
+VERIFIED, so read that field. The report prints, in `not_covered`, what the scans cannot see:
 
 - header-less private key bodies (#433): the builder's own header rule and `tools/leak_scan.py`
   find a key header, not a body with no header;
@@ -203,8 +208,9 @@ Write surface: `docs/launch/write-surface.json` records the builder's filesystem
 NOT-VERIFIED export repository's own `main`, never on the source repository, and it is recorded as
 `ungated` because nothing it touches can reach anything but the throwaway export. The same
 function then expires the export's reflogs and runs `git gc --prune=now` in it, through the
-builder's private byte runner, which the ratchet does not classify as a command call, so those two
-are not rows; they too touch only the rejected export repository. The verifier has
+builder's private byte runner, which the ratchet does not classify as a command call, so those (and
+the `read-tree --empty` that empties its index first) are not rows; they too touch only the rejected
+export repository. The verifier has
 no row at all; the checker's only rows are its create-once `--json` output.
 
 ## Rehearsal
@@ -257,12 +263,14 @@ slug; nothing here creates, renames or changes a real repository.
 
 ## Recovery and scale
 
-- A REJECTED or NOT-VERIFIED export keeps no branch and no export commit: `git for-each-ref` is
-  empty, `HEAD` is unborn, every reflog is expired and the commit is pruned (`git gc --prune=now`),
-  and the builder proves `git cat-file -e <export-commit>` fails before it reports, else it refuses
+- A REJECTED or NOT-VERIFIED export keeps no branch, no index and no export object: `git
+  for-each-ref` is empty, `HEAD` is unborn, the index is emptied (`git read-tree --empty`), every
+  reflog is expired and the commit, its trees and its blobs are pruned (`git gc --prune=now`), and the
+  builder proves `git cat-file -e <export-commit>` fails before it reports, else it refuses
   `unpublish-failed`. So the id the report and stdout carry cannot be pushed from there. The files
-  stay on disk for inspection (and the index keeps their blobs), so a person can still commit and
-  push them by hand: never push a `.rejected` directory. Fix the cause,
+  stay on disk for inspection, and because the build is deterministic anyone can rebuild the
+  IDENTICAL commit id from them by hand (`hash-object`, `write-tree`, then `commit-tree` with the
+  fixed identity, date and message above) and push it: never push a `.rejected` directory. Fix the cause,
   delete `OUT.rejected`, and re-run: the build is a pure function of the commit, so re-running is
   idempotent.
 - A crash leaves `OUT.partial-<pid>` and possibly a report reading NOT-VERIFIED or REJECTED. Delete

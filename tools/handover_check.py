@@ -4,8 +4,8 @@
 
 USAGE:
   handover_check.py check --old OWNER/NAME [--new OWNER/NAME] [--repo-id N] [--clone PATH ...]
-                    [--scan-root DIR ...] [--max-depth N] [--max-repos N] [--claude-config DIR]
-                    [--offline] [--json FILE]
+                    [--scan-root DIR ...] [--max-depth N] [--max-repos N] [--max-seconds S]
+                    [--claude-config DIR] [--offline] [--json FILE]
   handover_check.py sequence --old OWNER/NAME --new OWNER/NAME [--throwaway OWNER/NAME]
 EXIT: 0 = no blocking finding; 1 = at least one blocking finding; 2 = refusal (one stderr line).
 
@@ -14,16 +14,22 @@ Claude plugin records, the process list and (unless `--offline`) names-only GitH
 the injected `run`. Its one write is the `--json` evidence file, created once, 0600, outside every
 repository. `sequence` is pure text and runs nothing.
 
-A remote is classified by its configured value AND by the URL git really uses (`git remote get-url
---all [--push]`, which applies insteadOf/pushInsteadOf); a URL whose path ends in OWNER/NAME of the old
-repository is `old` whatever its host (an SSH alias, a mirror), with a note when the host is not
-github.com. The `--scan-root` walk descends into repositories too (a clone inside another clone's
-directory is found), never into `.git` or a linked worktree; both caps are blocking `truncated`
-findings, field `max-repos` or `max-depth` (a directory at the depth cap that still has
-subdirectories), so a clone is never dropped silently.
+Every place git can take a push or fetch URL from is read: `remote.<n>.url`/`pushurl`, a URL given as
+`branch.<b>.remote`, `branch.<b>.pushRemote` or `remote.pushDefault`, the legacy `remotes/` and
+`branches/` files, in every config scope git applies (includes and per-worktree config too), each
+classified by its value AND by the URL git really uses (`git remote get-url --all [--push]`, or the
+insteadOf/pushInsteadOf rewrite for a URL value). A URL (query and fragment dropped, path normalised)
+whose path ends in OWNER/NAME of the old repository is `old` whatever its host, with a note when the
+host is not github.com. A repository is a work tree (`.git` directory or file), a bare or mirror
+repository, a separate git directory, or a submodule's git directory (`.git/modules`, read even after
+`deinit`). The `--scan-root` walk descends into repositories (never into a `.git` directory or into a
+bare one), counts depth from the nearest repository, skips the directories named in `_HEAVY` (an
+informational `skipped` finding counts them), and every cap is a blocking `truncated` finding, field
+`max-repos`, `max-depth` or `max-seconds`, so a clone is never dropped silently.
 
 Not covered, and said so in docs/name-handover.md: other machines, collaborators' clones, the board's
-linked repository, schedulers that set GH_REPO, Codex marketplace records.
+linked repository, other processes' environments (GH_REPO, GIT_CONFIG_*), Codex marketplace records,
+a URL typed on a command line.
 """
 import argparse
 import json
@@ -48,7 +54,9 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 
 _URL_RE = re.compile(r"^(?:https?|ssh|git)://(?:[^@/]+@)?(?:www\.|ssh\.)?github\.com(?::\d+)?/([^/]+)/([^/]+?)"
                      r"(?:\.git)?/?$", re.I)
-_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?(?:www\.|ssh\.)?github\.com:([^/]+)/([^/]+?)(?:\.git)?/?$", re.I)
+_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?(?:www\.|ssh\.)?github\.com:/?([^/]+)/([^/]+?)(?:\.git)?/?$", re.I)
+_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://[^/]*)(/.*)?$")
+_SCPLIKE_RE = re.compile(r"^([^/:\s]+):(.*)$")
 #: Any other host: the path's last two parts, so an SSH alias or a rewritten host still classifies.
 _PATH_RE = re.compile(r"[/:]([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9._-]+?)(?:\.git)?/?$")
 _HOST_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/\s]+@)?([^/:\s]+)")
@@ -70,6 +78,15 @@ _REST = (("rest-secret", "actions/secrets", "secrets"),
 _REMOTE_KEYS = ("work.remote", "ledger.remote", "knowledge_graph.sync.remote")
 _HOLDER_KINDS = frozenset(["remote-url", "remote-pushurl", "url-rewrite", "config-repo",
                            "config-upstream", "config-remote"])
+#: Directories the walk does not enter (one informational `skipped` finding counts them): they hold
+#: installed packages and caches, never a clone worth a holder row. One that is itself a repository
+#: (it holds `.git`) is still read.
+_HEAVY = frozenset(["node_modules", ".venv", "venv", "__pycache__", ".tox", ".nox", ".mypy_cache",
+                    ".pytest_cache", ".ruff_cache"])
+#: Config keys whose value is a remote URL: the remote ones, a URL given in place of a remote name,
+#: and the rewrites.
+_CONFIG_KEYS = (r"^(remote\..+\.(url|pushurl)|remote\.pushdefault|branch\..+\.(remote|pushremote)"
+                r"|url\..+\.(insteadof|pushinsteadof))$")
 
 
 class Refused(Exception):
@@ -124,11 +141,40 @@ def _check_slug(value, what):
     return value
 
 
+def _norm_path(path):
+    """Collapse `//`, drop `.`, resolve `..` (never above the start); keep a leading `/`."""
+    if not path:
+        return path
+    parts = []
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return ("/" if path.startswith("/") else "") + "/".join(parts)
+
+
+def _normalise_url(url):
+    """The URL as GitHub resolves it: `?query` and `#fragment` dropped, the path normalised."""
+    url = re.split(r"[?#]", (url or "").strip(), 1)[0]
+    m = _SCHEME_RE.match(url)
+    if m:
+        return m.group(1) + _norm_path(m.group(2) or "")
+    m = _SCPLIKE_RE.match(url)
+    if m:
+        return m.group(1) + ":" + _norm_path(m.group(2))
+    return _norm_path(url)
+
+
 def _url_info(url):
     """-> ('owner/name' or None, note). A GitHub URL (https, ssh://, scp-like SSH; the www. and
     ssh. hosts too) gives no note; any other URL whose path ends in OWNER/NAME gives that slug and
-    a note naming the host, so a holder behind an SSH alias or a rewrite is never `absent`."""
-    url = (url or "").strip()
+    a note naming the host, so a holder behind an SSH alias or a rewrite is never `absent`. The URL
+    is normalised first (`_normalise_url`), as GitHub accepts every such spelling."""
+    url = _normalise_url(url)
     for rx in (_URL_RE, _SCP_RE):
         m = rx.match(url)
         if m:
@@ -206,37 +252,98 @@ def _refuse_inside_work_tree(path, code, run):
                   "(git exit %d)" % rc)
 
 
-def _git_ids(path, run):
-    """-> (common_dir, top_level) as real paths, or None when `path` is not a readable work tree."""
-    rc, out, _err = run(["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir",
-                         "--show-toplevel"], None, GIT_TIMEOUT)
-    lines = out.splitlines()
-    if rc == 0 and len(lines) >= 2:
-        return os.path.realpath(lines[0]), os.path.realpath(lines[1])
-    rc, out, _err = run(["git", "-C", path, "rev-parse", "--git-common-dir", "--show-toplevel"],
-                        None, GIT_TIMEOUT)
-    lines = out.splitlines()
-    if rc == 0 and len(lines) >= 2:
-        return os.path.realpath(os.path.join(path, lines[0])), os.path.realpath(lines[1])
-    return None
+def _looks_like_git_dir(path, names=None, dirs=None):
+    """A bare/mirror repository or a separate or submodule git directory: HEAD plus objects/ and
+    refs/, or HEAD plus a `commondir` file (git's own test)."""
+    if names is None:
+        try:
+            listed = os.listdir(path)
+        except OSError:
+            return False
+        names = [n for n in listed if os.path.isfile(os.path.join(path, n))]
+        dirs = [n for n in listed if os.path.isdir(os.path.join(path, n))]
+    return "HEAD" in names and (("objects" in dirs and "refs" in dirs) or "commondir" in names)
 
 
-def _worktree_roots(top, run):
-    rc, out, _err = run(["git", "-C", top, "worktree", "list", "--porcelain"], None, GIT_TIMEOUT)
+def _gbase(place, gitdir_only):
+    """git argv prefix for a place: `-C` a work tree, or `-C dir --git-dir=.` for a git directory
+    (explicit, so `safe.bareRepository=explicit` still reads it)."""
+    return ["git", "-C", place] + (["--git-dir=."] if gitdir_only else [])
+
+
+def _git_ids(path, run, explicit=False):
+    """-> (common_dir, place, gitdir_only) as real paths, or None when git cannot read `path`. The
+    place is the work tree's top level, or the git directory itself for a bare, mirror, separate
+    or submodule git directory."""
+    base = _gbase(path, explicit)
+    rc, out, _err = run(base + ["rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir",
+                                "--is-inside-work-tree"], None, GIT_TIMEOUT)
+    lines = out.splitlines()
+    if rc != 0 or len(lines) < 3:
+        rc, out, _err = run(base + ["rev-parse", "--git-common-dir", "--git-dir", "--is-inside-work-tree"],
+                            None, GIT_TIMEOUT)
+        lines = out.splitlines()
+        if rc != 0 or len(lines) < 3:
+            return None
+        lines = [os.path.join(path, lines[0]), os.path.join(path, lines[1]), lines[2]]
+    common, gitdir = os.path.realpath(lines[0]), os.path.realpath(lines[1])
+    if not explicit and lines[2].strip() == "true":
+        rc, out, _err = run(base + ["rev-parse", "--show-toplevel"], None, GIT_TIMEOUT)
+        if rc != 0 or not out.strip():
+            return None
+        return common, os.path.realpath(out.strip()), False
+    return common, gitdir, True
+
+
+def _read_ids(path, run, explicit=False):
+    """`_git_ids`, retried explicitly for a directory that looks like a git directory."""
+    got = _git_ids(path, run, explicit)
+    if got is None and not explicit and _looks_like_git_dir(path):
+        got = _git_ids(path, run, True)
+    return got
+
+
+def _module_dirs(common):
+    """Every submodule git directory under `<common>/modules`, nested ones too (read even when the
+    submodule was deinit-ed: its config still names a remote, and it can still push)."""
+    found, stack = [], [os.path.join(common, "modules")]
+    while stack:
+        folder = stack.pop()
+        try:
+            names = sorted(os.listdir(folder), reverse=True)
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            if os.path.islink(path) or not os.path.isdir(path):
+                continue
+            if _looks_like_git_dir(path):
+                found.append(path)
+                stack.append(os.path.join(path, "modules"))
+            else:
+                stack.append(path)        # a submodule name may hold `/`
+    return sorted(found)
+
+
+def _worktree_roots(base, run):
+    """The work trees `git worktree list` names (a bare repository's own record is skipped)."""
+    rc, out, _err = run(base + ["worktree", "list", "--porcelain"], None, GIT_TIMEOUT)
     roots = []
     if rc == 0:
-        for line in out.splitlines():
-            if line.startswith("worktree "):
-                path = os.path.realpath(line[len("worktree "):])
-                if os.path.isdir(path):
-                    roots.append(path)
+        for record in out.split("\n\n"):
+            lines = record.splitlines()
+            if not lines or not lines[0].startswith("worktree ") or "bare" in lines[1:]:
+                continue
+            path = os.path.realpath(lines[0][len("worktree "):])
+            if os.path.isdir(path):
+                roots.append(path)
     return roots
 
 
-def _read_git_config(top, run):
-    """-> (entries, ok); entries are (origin, key, value) for remote urls and url rewrites."""
-    rc, out, _err = run(["git", "-C", top, "config", "--null", "--show-origin", "--get-regexp",
-                         r"^(remote\..+\.(url|pushurl)|url\..+\.(insteadof|pushinsteadof))$"],
+def _read_git_config(base, run):
+    """-> (entries, ok); entries are (origin, key, value) for every `_CONFIG_KEYS` key, from every
+    scope git applies at this place (system, global, includes, the repository, its worktree)."""
+    rc, out, _err = run(base + ["config", "--null", "--show-origin", "--get-regexp", _CONFIG_KEYS],
                         None, GIT_TIMEOUT)
     if rc == 1:
         return [], True
@@ -251,59 +358,95 @@ def _read_git_config(top, run):
     return entries, True
 
 
-def _config_location(origin, common, top):
-    """A setting kept in the repository's own config is located at the checkout; any other file
-    (a global or included one) is located at that file."""
+def _config_location(origin, common, top, first=None):
+    """A setting kept in the repository's own config is located at its first checkout (`first`),
+    one in a worktree's own `config.worktree` at that worktree (`top`); any other file (a global
+    or included one) is located at that file."""
     if not origin.startswith("file:"):
         return origin
     path = origin[len("file:"):]
     path = os.path.realpath(path if os.path.isabs(path) else os.path.join(top, path))
     if path == common or path.startswith(common + os.sep):
-        return top
+        return top if (first is None or os.path.basename(path) == "config.worktree") else first
     return path
 
 
 # ------------------------------------------------------------------------------ discovery
 
-def _walk(root, max_depth, max_repos, sink):
-    """-> (repository paths, truncated by the repository cap). No symlinks; `.git` marks a
-    repository and is never entered; a repository's own directories ARE walked (a clone may sit
-    inside another), a linked worktree's are not (`.git` is a file: its files are a checkout of a
-    repository already read). A directory at the depth cap that still has subdirectories is one
-    blocking `truncated` finding (field `max-depth`) for this root, never a silent cut."""
-    found, truncated, cut = [], False, []
+def _walk(root, args, sink):
+    """-> (repository paths as (path, gitdir_only), truncated by the repository cap). No symlinks.
+    A `.git` directory or file marks a work tree and is never entered; a bare repository (or any git
+    directory, `_looks_like_git_dir`) is a repository and is not entered either. A repository's own
+    directories ARE walked (a clone may sit inside another, or inside a linked worktree). `_HEAVY`
+    directories are skipped, counted in one informational `skipped` finding. Depth counts from the
+    nearest repository above (or the root), so a clone deep inside a big repository is reached; a
+    directory at the depth cap that still has subdirectories is one blocking `truncated` finding
+    (field `max-depth`) for this root. The wall-clock bound (`args.deadline`) stops the walk with a
+    blocking `truncated` finding, field `max-seconds`."""
+    found, truncated, cut, heavy, timed_out = [], False, [], [], False
     root = os.path.realpath(root)
-    base = len(root.rstrip(os.sep).split(os.sep))
+
+    def depth(path):
+        return len(path.rstrip(os.sep).split(os.sep))
+
+    anchors = {root: depth(root)}
 
     def onerror(exc):
         sink.add(_finding("unreadable", str(getattr(exc, "filename", None) or root), "walk", "absent",
                           True, "cannot read: %s" % (getattr(exc, "strerror", None) or "error")))
 
     for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
+        if time.monotonic() >= args.deadline:
+            timed_out = True
+            break
+        anchor = anchors.pop(dirpath, depth(root))
         dirnames.sort()
-        git_dir = ".git" in dirnames
-        if git_dir:
+        work_tree = ".git" in dirnames or ".git" in filenames
+        if ".git" in dirnames:
             dirnames.remove(".git")
-        if git_dir or ".git" in filenames:
-            if len(found) >= max_repos:
+        git_dir = not work_tree and _looks_like_git_dir(dirpath, filenames, dirnames)
+        if work_tree or git_dir:
+            if len(found) >= args.max_repos:
                 truncated = True
                 break
-            found.append(dirpath)
-            if not git_dir:
+            found.append((dirpath, git_dir))
+            if git_dir:
                 dirnames[:] = []
                 continue
-        depth = len(dirpath.rstrip(os.sep).split(os.sep)) - base
-        if depth >= max_depth and dirnames:
+            anchor = depth(dirpath)
+        keep = []
+        for name in dirnames:
+            if name in _HEAVY and not os.path.lexists(os.path.join(dirpath, name, ".git")):
+                heavy.append(name)
+            else:
+                keep.append(name)
+        dirnames[:] = keep
+        if depth(dirpath) - anchor >= args.max_depth and dirnames:
             cut.append(dirpath)
             dirnames[:] = []
+            continue
+        for name in dirnames:
+            anchors[os.path.join(dirpath, name)] = anchor
     if truncated:
         sink.add(_finding("truncated", root, "max-repos", "absent", True, "not every clone was seen"))
     if cut:
         sink.add(_finding("truncated", root, "max-depth", "absent", True,
-                          "not every clone was seen: %d director%s at depth %d still had subdirectories "
-                          "(first %s); raise --max-depth" % (len(cut), "y" if len(cut) == 1 else "ies",
-                                                             max_depth, cut[0])))
+                          "not every clone was seen: %d director%s at depth %d below the nearest repository "
+                          "still had subdirectories (first %s); raise --max-depth"
+                          % (len(cut), "y" if len(cut) == 1 else "ies", args.max_depth, cut[0])))
+    if timed_out:
+        sink.add(_finding("truncated", root, "max-seconds", "absent", True,
+                          "not every clone was seen: the walk stopped at the %s-second bound; raise "
+                          "--max-seconds" % _seconds(args.max_seconds)))
+    if heavy:
+        sink.add(_finding("skipped", root, "walk", "absent", False,
+                          "%d director%s not walked (%s): a clone inside one is not seen"
+                          % (len(heavy), "y" if len(heavy) == 1 else "ies", ", ".join(sorted(set(heavy))))))
     return found, truncated
+
+
+def _seconds(value):
+    return ("%d" % value) if float(value) == int(value) else ("%g" % value)
 
 
 # ------------------------------------------------------------------------------ the check
@@ -360,51 +503,126 @@ def _within(path, root):
 
 
 def _scan_repositories(args, run, sink):
-    """Discovery plus the per-repository and per-checkout readings. -> (repos, current_top, truncated)."""
-    repos = {}      # common dir -> {"roots": [...], "remotes": {name: [url]}}
+    """Discovery plus the per-repository places. -> (repos, order, current_top, truncated). Each
+    repository (keyed by its common git dir) lists its places, work trees first; a git-directory
+    place is read with `--git-dir=.`."""
+    repos = {}      # common dir -> {"roots": [...], "gitdirs": set, "remotes": {name: [url]}}
     order = []
 
-    def add(common, top):
+    def add(got):
+        common, place, gitdir_only = got
         entry = repos.get(common)
         if entry is None:
-            entry = repos[common] = {"roots": [], "remotes": {}}
+            entry = repos[common] = {"roots": [], "gitdirs": set(), "remotes": {}}
             order.append(common)
-        if top not in entry["roots"]:
-            entry["roots"].append(top)
+        if place in entry["roots"]:
+            return
+        if gitdir_only:
+            entry["gitdirs"].add(place)
+            entry["roots"].append(place)
+        else:
+            first_dir = next((i for i, r in enumerate(entry["roots"]) if r in entry["gitdirs"]), None)
+            entry["roots"].insert(len(entry["roots"]) if first_dir is None else first_dir, place)
 
     current_top = None
-    ids = _git_ids(os.getcwd(), run)
+    ids = _read_ids(os.getcwd(), run)
     if ids:
-        current_top = ids[1]
-        add(ids[0], ids[1])
-        for root in _worktree_roots(ids[1], run):
-            add(ids[0], root)
+        current_top = ids[1] if not ids[2] else None
+        add(ids)
     for clone in args.clone:
         if not os.path.isdir(clone):
             raise Refused("clone-unreadable", "cannot read the clone %s" % _tilde(str(clone)))
-        got = _git_ids(clone, run)
+        got = _read_ids(clone, run)
         if not got:
-            raise Refused("clone-unreadable", "not a readable git work tree: %s" % _tilde(str(clone)))
-        add(got[0], got[1])
+            raise Refused("clone-unreadable", "not a readable git repository: %s" % _tilde(str(clone)))
+        add(got)
     truncated = False
     for root in args.scan_root:
-        found, cut = _walk(root, args.max_depth, args.max_repos, sink)
+        found, cut = _walk(root, args, sink)
         truncated = truncated or cut
-        for path in found:
-            got = _git_ids(path, run)
+        for index, (path, git_dir) in enumerate(found):
+            if time.monotonic() >= args.deadline:
+                left = len(found) - index
+                sink.add(_finding("truncated", os.path.realpath(root), "max-seconds", "absent", True,
+                                  "not every clone was read: %d found repositor%s left unread at the "
+                                  "%s-second bound; raise --max-seconds"
+                                  % (left, "y" if left == 1 else "ies", _seconds(args.max_seconds))))
+                break
+            got = _git_ids(path, run, git_dir)
             if got:
-                add(got[0], got[1])
+                add(got)
             else:
                 sink.add(_finding("unreadable", path, "git", "absent", True,
                                   "git cannot read this repository"))
+    for common in list(order):
+        if time.monotonic() >= args.deadline:
+            break                          # the remote reading reports what was left unread
+        entry = repos[common]
+        for root in _worktree_roots(_gbase(entry["roots"][0], entry["roots"][0] in entry["gitdirs"]), run):
+            add((common, root, False))
+    for common in list(order):
+        if time.monotonic() >= args.deadline:
+            break
+        for path in _module_dirs(common):
+            got = _git_ids(path, run, True)
+            if got:
+                add(got)
+            else:
+                sink.add(_finding("unreadable", path, "git", "absent", True,
+                                  "git cannot read this submodule git directory"))
     return repos, order, current_top, truncated
 
 
-def _effective_urls(args, top, name, raw_classes, entry, run, sink):
+def _legacy_remotes(common, sink, place):
+    """-> [(name, field, [urls])] from the legacy `remotes/<name>` (`URL:` lines) and
+    `branches/<name>` (`url#branch`) files, which git still reads for fetch and push."""
+    found = []
+    for sub in ("remotes", "branches"):
+        folder = os.path.join(common, sub)
+        try:
+            names = sorted(os.listdir(folder))
+        except FileNotFoundError:
+            continue
+        except OSError:
+            sink.add(_finding("unreadable", place, sub, "absent", True,
+                              "the legacy %s/ directory cannot be read" % sub))
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    lines = fh.read().splitlines()
+            except OSError:
+                sink.add(_finding("unreadable", place, "%s/%s" % (sub, name), "absent", True, "cannot be read"))
+                continue
+            if sub == "remotes":
+                urls = [l.split(":", 1)[1].strip() for l in lines if l.lower().startswith("url:")]
+            else:
+                urls = [lines[0].split("#", 1)[0].strip()] if lines and lines[0].strip() else []
+            found.append((name, "%s/%s" % (sub, name), urls))
+    return found
+
+
+def _rewrite(url, rewrites, push):
+    """git's URL rewrite: the longest matching pushInsteadOf (push only), else insteadOf."""
+    for want in ((True, False) if push else (False,)):
+        best = None
+        for prefix, base, is_push in rewrites:
+            if is_push == want and url.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
+                best = (prefix, base)
+        if best:
+            return best[1] + url[len(best[0]):]
+    return url
+
+
+def _effective_urls(args, base, top, name, raw_classes, entry, run, sink, seen):
     """The URLs git really uses for remote `name` (insteadOf/pushInsteadOf applied). A class the
-    configured values did not already show is a finding of its own, located at the checkout."""
+    configured values did not already show is a finding of its own, located at the place (once per
+    repository: `seen`)."""
     for push in (False, True):
-        argv = ["git", "-C", top, "remote", "get-url", "--all"] + (["--push"] if push else []) + [name]
+        argv = base + ["remote", "get-url", "--all"] + (["--push"] if push else []) + [name]
         rc, out, _err = run(argv, None, GIT_TIMEOUT) if not name.startswith("-") else (128, "", "")
         field = "remote.%s.%s" % (name, "pushurl" if push else "url")
         if rc != 0:
@@ -414,51 +632,108 @@ def _effective_urls(args, top, name, raw_classes, entry, run, sink):
         for url in (u.strip() for u in out.splitlines()):
             if not url:
                 continue
-            entry["remotes"].setdefault(name, []).append(url)
+            if url not in entry["remotes"].setdefault(name, []):
+                entry["remotes"][name].append(url)
             slug, note = _url_info(url)
             cls = _class(slug, args.old, args.new)
-            if cls in ("old", "new") and cls not in raw_classes:
+            if cls in ("old", "new") and cls not in raw_classes and (field, cls, note) not in seen:
+                seen.add((field, cls, note))
                 what = "the URL git uses to %s, after insteadOf/pushInsteadOf" % ("push" if push else "fetch")
                 sink.add(_finding("remote-pushurl" if push else "remote-url", top, field, cls, cls == "old",
                                   what + ("; " + note if note else "")))
 
 
+def _url_valued(args, key, value, rewrites, location, sink):
+    """`branch.<b>.remote`, `branch.<b>.pushRemote` or `remote.pushDefault` holding a URL instead of a
+    remote name: git fetches or pushes straight to it (rewritten by insteadOf/pushInsteadOf)."""
+    fetch = key.endswith(".remote")
+    urls = [(value, "")]
+    for push in ((False, True) if fetch else (True,)):
+        rewritten = _rewrite(value, rewrites, push)
+        if rewritten != value:
+            urls.append((rewritten, "after %s" % ("pushInsteadOf/insteadOf" if push else "insteadOf")))
+    best = None
+    for url, how in urls:
+        slug, note = _url_info(url)
+        cls = _class(slug, args.old, args.new)
+        if cls == "old" or (cls == "new" and best is None):
+            best = (cls, "; ".join(x for x in ("a URL in place of a remote name", how, note) if x))
+            if cls == "old":
+                break
+    if best:
+        sink.add(_finding("remote-url" if fetch else "remote-pushurl", location, key, best[0],
+                          best[0] == "old", best[1]))
+
+
 def _read_remotes(args, repos, order, run, sink):
-    for common in order:
+    """Every repository's remotes, in discovery order, until the `--max-seconds` bound: the
+    repositories left unread then are one blocking `truncated` finding (field `max-seconds`)."""
+    for index, common in enumerate(order):
+        if time.monotonic() >= args.deadline:
+            left = len(order) - index
+            sink.add(_finding("truncated", "repositories", "max-seconds", "absent", True,
+                              "not every clone was read: %d repositor%s found but not read at the %s-second "
+                              "bound; raise --max-seconds" % (left, "y" if left == 1 else "ies",
+                                                             _seconds(args.max_seconds))))
+            break
         entry = repos[common]
-        top = entry["roots"][0]
-        entries, ok = _read_git_config(top, run)
-        if not ok:
-            sink.add(_finding("unreadable", top, "git config", "absent", True,
-                              "git config could not be read"))
-            continue
-        names, raw = [], {}
-        for origin, key, value in entries:
-            m = re.match(r"^remote\.(.+)\.(url|pushurl)$", key)
-            if m:
-                slug, note = _url_info(value)
-                cls = _class(slug, args.old, args.new)
-                if m.group(1) not in raw:
-                    names.append(m.group(1))
-                    raw[m.group(1)] = set()
-                raw[m.group(1)].add(cls)
-                if m.group(2) == "url":
-                    entry["remotes"].setdefault(m.group(1), []).append(value)
-                if cls in ("old", "new"):
-                    kind = "remote-url" if m.group(2) == "url" else "remote-pushurl"
-                    sink.add(_finding(kind, _config_location(origin, common, top), key, cls,
-                                      cls == "old", note))
+        first = entry["roots"][0]
+        seen, shared = set(), None
+        legacy = _legacy_remotes(common, sink, first)
+        for place in entry["roots"]:
+            base = _gbase(place, place in entry["gitdirs"])
+            entries, ok = _read_git_config(base, run)
+            if not ok:
+                sink.add(_finding("unreadable", place, "git config", "absent", True,
+                                  "git config could not be read"))
                 continue
-            m = re.match(r"^url\.(.+)\.(insteadof|pushinsteadof)$", key)
-            if m:
-                classes = (_class(_any_slug(m.group(1)), args.old, args.new),
-                           _class(_any_slug(value), args.old, args.new))
-                cls = "old" if "old" in classes else ("new" if "new" in classes else None)
-                if cls:
-                    sink.add(_finding("url-rewrite", _config_location(origin, common, top), key, cls,
-                                      cls == "old"))
-        for name in names:
-            _effective_urls(args, top, name, raw[name], entry, run, sink)
+            if shared is not None and set(entries) == shared:
+                continue                       # nothing of its own: the first place already read it
+            if shared is None:
+                shared = set(entries)
+            names, raw, rewrites, valued = [], {}, [], []
+            for origin, key, value in entries:
+                location = _config_location(origin, common, place, first)
+                m = re.match(r"^remote\.(.+)\.(url|pushurl)$", key)
+                if m:
+                    slug, note = _url_info(value)
+                    cls = _class(slug, args.old, args.new)
+                    if m.group(1) not in raw:
+                        names.append(m.group(1))
+                        raw[m.group(1)] = set()
+                    raw[m.group(1)].add(cls)
+                    if m.group(2) == "url" and value not in entry["remotes"].setdefault(m.group(1), []):
+                        entry["remotes"][m.group(1)].append(value)
+                    if cls in ("old", "new"):
+                        kind = "remote-url" if m.group(2) == "url" else "remote-pushurl"
+                        sink.add(_finding(kind, location, key, cls, cls == "old", note))
+                    continue
+                m = re.match(r"^url\.(.+)\.(insteadof|pushinsteadof)$", key)
+                if m:
+                    rewrites.append((value, m.group(1), m.group(2) == "pushinsteadof"))
+                    classes = (_class(_any_slug(m.group(1)), args.old, args.new),
+                               _class(_any_slug(value), args.old, args.new))
+                    cls = "old" if "old" in classes else ("new" if "new" in classes else None)
+                    if cls:
+                        sink.add(_finding("url-rewrite", location, key, cls, cls == "old"))
+                    continue
+                valued.append((location, key, value))
+            for name, field, urls in legacy:
+                if name not in raw:
+                    names.append(name)
+                    raw[name] = set()
+                for url in urls:
+                    slug, note = _url_info(url)
+                    cls = _class(slug, args.old, args.new)
+                    raw[name].add(cls)
+                    if cls in ("old", "new"):
+                        sink.add(_finding("remote-url", first, field, cls, cls == "old",
+                                          "a legacy remote file" + ("; " + note if note else "")))
+            for location, key, value in valued:
+                if value.strip() and value.strip() != "." and value.strip() not in raw:
+                    _url_valued(args, key, value.strip(), rewrites, location, sink)
+            for name in names:
+                _effective_urls(args, base, place, name, raw[name], entry, run, sink, seen)
 
 
 def _read_sdlc_configs(args, repos, order, sink):
@@ -595,11 +870,15 @@ def _marketplace_clones(args, sink, run, names, base):
         clone = os.path.join(base, name)
         if not os.path.exists(os.path.join(clone, ".git")):
             continue
-        rc, out, _err = run(["git", "-C", clone, "config", "--get", "remote.origin.url"], None, GIT_TIMEOUT)
-        if rc != 0:
-            continue
-        cls = _class(_url_slug(out.strip()), args.old, args.new)
-        if cls in ("old", "new"):
+        urls = []
+        for argv in (["config", "--get", "remote.origin.url"], ["remote", "get-url", "--all", "origin"],
+                     ["remote", "get-url", "--all", "--push", "origin"]):
+            rc, out, _err = run(["git", "-C", clone] + argv, None, GIT_TIMEOUT)
+            if rc == 0:
+                urls += [u.strip() for u in out.splitlines() if u.strip()]
+        classes = [_class(_url_slug(u), args.old, args.new) for u in urls]
+        cls = "old" if "old" in classes else ("new" if "new" in classes else None)
+        if cls:
             sink.add(_finding("marketplace", clone, "remote.origin.url", cls, cls == "old"))
 
 
@@ -746,6 +1025,9 @@ def _validate_names(args, with_new):
 
 def cmd_check(args, run):
     _validate_names(args, True)
+    if not args.max_seconds >= 0 or args.max_depth < 0 or args.max_repos < 0:
+        raise Refused("bad-cap", "--max-depth, --max-repos and --max-seconds must not be negative")
+    args.deadline = time.monotonic() + args.max_seconds
     args.claude_config = args.claude_config or os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
         os.path.expanduser("~"), ".claude")
     for root in args.scan_root:
@@ -805,7 +1087,7 @@ _SEQUENCE = """SEQUENCE (owner commands, in this order; stop at the first failur
    none is left (never pause a process with a stop signal):
      ps -axo pid,etime,command | grep -E 'watch_daemon|loop\\.py'
 2. list every holder: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --json "$JSON"
-     (a --json path outside every repository, never used before)
+     ($JSON, $JSON2 and $JSON3: three different paths outside every repository, none used before; a --json file is never overwritten)
 3. record the repository id: gh api repos/%(old)s --jq '.id, .private'
      write the id down as ID
 4. owner: gh repo rename %(nname)s -R %(old)s --yes
@@ -814,12 +1096,12 @@ _SEQUENCE = """SEQUENCE (owner commands, in this order; stop at the first failur
      set discovery.github.repo (and ledger.handoff.upstream_repo if it named %(old)s) to %(new)s in each .sdlc/config.json
      re-add any marketplace recorded as %(old)s
 6. gh api repos/%(new)s --jq '.id, .private'
-     the id equals ID; then python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON"
+     the id equals ID; then python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON2"
      must exit 0
 7. ONLY THEN, owner: gh repo create %(old)s --public
      git -C "$OUT" push https://github.com/%(old)s.git main
      python3 tools/verify_public_repo.py --repo %(old)s --report "$REPORT" --expect-visibility public
-8. check again: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON"
+8. check again: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON3"
      expect old-name-taken informational and no BLOCK
 9. `rm .sdlc/state/watch.stop` in each checkout
 """
@@ -854,8 +1136,11 @@ def _parser(prog):
     chk.add_argument("--repo-id", type=int, metavar="N", help="the recorded repository id (REST id check)")
     chk.add_argument("--clone", action="append", default=[], metavar="PATH", help="a clone to read (repeatable)")
     chk.add_argument("--scan-root", action="append", default=[], metavar="DIR", help="a directory to walk for clones (repeatable)")
-    chk.add_argument("--max-depth", type=int, default=5, metavar="N", help="walk depth cap (default 5)")
+    chk.add_argument("--max-depth", type=int, default=5, metavar="N",
+                     help="walk depth cap, counted from the nearest repository (default 5)")
     chk.add_argument("--max-repos", type=int, default=2000, metavar="N", help="repository cap (default 2000)")
+    chk.add_argument("--max-seconds", type=float, default=600.0, metavar="S",
+                     help="wall-clock bound on the walk, discovery and remote reading (default 600)")
     chk.add_argument("--claude-config", metavar="DIR", help="Claude config dir (default $CLAUDE_CONFIG_DIR, else ~/.claude)")
     chk.add_argument("--offline", action="store_true", help="make no GitHub REST call")
     chk.add_argument("--json", metavar="FILE", help="also write the findings here (create-once, 0600, outside every repository)")

@@ -15,12 +15,14 @@ path, a secret file name, a binary, non-UTF-8 or oversized blob), checks the req
 derives the planned tree twice (git in a private object directory, and Python), writes the files to
 `OUT.partial-<pid>`, re-derives the tree from disk, makes a one-commit repository there with a fixed
 identity and the source's committer date, runs four scans (its own content rules, `leak_refs.py
-tree`, `exposure_scan.py tracked` and the export's own `leak_scan.py`), writes its report and only
-then renames the export into place.
+tree`, `exposure_scan.py tracked` and the export's own `leak_scan.py`, which runs only when the export
+holds it: an exclusion that drops the commit's copy is refused `[leak-scan-absent]`), writes its
+report and only then renames the export into place.
 
 EXIT. 0 = VERIFIED (the export is at OUT). 1 = REJECTED (the export is at `OUT.rejected` with no
-branch and no export commit: the commit is pruned, so its id cannot be pushed; the files stay on
-disk for inspection; the report says why). 2 = a refusal (one stderr line
+branch, no index and no export object: all pruned, so its id cannot be pushed from there; the files
+stay on disk for inspection, and the identical commit can be rebuilt from them by hand, so a
+`.rejected` directory is never pushed; the report says why). 2 = a refusal (one stderr line
 `build_public_tree: REFUSED [<code>] <detail>`, nothing on stdout, no export, no report) or
 NOT-VERIFIED (a scan crashed or timed out: the export is at `OUT.rejected`, the report is written).
 
@@ -70,6 +72,7 @@ STDERR_CUT = 200
 #: The running copies whose bytes are compared with the commit's (step 7).
 TOOL_PATHS = ("tools/build_public_tree.py", "tools/leak_refs.py", "tools/readiness/exposure_scan.py",
               "skills/agrim-loop/scripts/scrub.py")
+LEAK_SCAN_PATH = "tools/leak_scan.py"
 LEAK_SCAN_LABEL = "commit-time scan; key-body rule known incomplete, #433"
 NOT_COVERED = (
     "header-less private key bodies (#433)",
@@ -822,12 +825,13 @@ def _export_repository(partial, plan, planned, ct, message):
 
 
 def _unpublish_rejected(partial, run, commit):
-    """A REJECTED or NOT-VERIFIED export keeps NO branch and NO export commit, in the EXPORT
-    repository only (never the source): delete `refs/heads/main`, expire every reflog, prune the
-    now-unreachable commit, then prove `commit` no longer exists. HEAD stays `ref: refs/heads/main`,
-    now unborn. The files stay on disk for inspection (and the index keeps their blobs); the id in
-    the report and on stdout names a commit that is gone, so it cannot be pushed. No reflog is
-    written, and every call but the injected `run` sees no global or system git configuration."""
+    """A REJECTED or NOT-VERIFIED export keeps NO branch, NO index and NO export object, in the
+    EXPORT repository only (never the source): delete `refs/heads/main`, empty the index, expire
+    every reflog, prune the now-unreachable commit, trees and blobs, then prove `commit` no longer
+    exists. HEAD stays `ref: refs/heads/main`, now unborn. The files stay on disk for inspection, so
+    the identical commit can still be rebuilt by hand from them (`docs/public-snapshot.md`, Recovery);
+    the id in the report and on stdout names a commit that is gone from here. No reflog is written,
+    and every call but the injected `run` sees no global or system git configuration."""
     rc, _out, _err = run(["git", "-C", str(partial), "-c", "core.logAllRefUpdates=false",
                           "-c", "core.hooksPath=/dev/null", "update-ref", "-d", "refs/heads/main"])
     if rc != 0:
@@ -836,6 +840,7 @@ def _unpublish_rejected(partial, run, commit):
     env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
     base = ["-c", "core.logAllRefUpdates=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0"]
     try:
+        _gitb(partial, base + ["read-tree", "--empty"], env=env)
         _gitb(partial, base + ["reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all"], env=env)
         _gitb(partial, base + ["gc", "--prune=now", "--quiet"], env=env)
     except Refused as exc:
@@ -1087,6 +1092,9 @@ def _main(argv, run, state):
     remaining = [row for path, row in decoded if not _under(path, names)]
     paths = _check_structure(remaining)
     plan = [(path, row[1], row[3]) for path, row in zip(paths, remaining)]
+    if LEAK_SCAN_PATH in full and LEAK_SCAN_PATH not in paths:
+        raise Refused("leak-scan-absent", "an exclusion drops %s, the export's own commit-time scan; the "
+                      "fourth scan would not run" % LEAK_SCAN_PATH)
     mark = lap("plan", mark)
 
     # 6. clean
