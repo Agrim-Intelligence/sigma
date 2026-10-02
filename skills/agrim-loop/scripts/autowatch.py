@@ -697,6 +697,19 @@ def _trap_signals(received, saved):
             signal.signal(signum, handler)
         except (ValueError, OSError):
             saved.pop(signum, None)
+    # A caller that restored SIGPIPE's default would otherwise be KILLED by a write to a dead
+    # lifeline sentinel, orphaning the model, instead of getting the documented refusal. Ignored
+    # for the drive only (restored with the rest); children get the default back from Popen's
+    # `restore_signals`. Never recorded or re-delivered.
+    sigpipe = getattr(signal, "SIGPIPE", None)
+    if sigpipe is not None:
+        try:
+            previous = signal.getsignal(sigpipe)
+            if previous is not None and previous is not signal.SIG_IGN:
+                saved[sigpipe] = previous
+                signal.signal(sigpipe, signal.SIG_IGN)
+        except (ValueError, OSError):
+            saved.pop(sigpipe, None)
 
 
 def _restore_and_redeliver(received, saved):
@@ -851,7 +864,9 @@ def _run_drive(cmd_str, prompt, cwd, env, timeout, on_spawn=None):
     group -- its leftovers, or nobody); a drive on a non-main thread, where nothing is trapped and
     a signal reaches the caller's own handling (the lifeline is the backstop if the process dies);
     a caller thread that has SIGTERM blocked, whose mask the model inherits, so the graceful step
-    is lost and the model is SIGKILLed after the grace. Repeats of one signal are re-delivered
+    is lost and the model is SIGKILLed after the grace; a non-main-thread drive in a caller with
+    SIGPIPE at SIG_DFL whose sentinel has already died (the main thread ignores SIGPIPE for the
+    drive; a worker thread cannot). Repeats of one signal are re-delivered
     once. On a host without
     POSIX process groups (Windows) the call REFUSES -- `(2, NO_PROCESS_GROUP_REFUSAL)`, the same
     line on stderr, nothing spawned -- rather than proceed with a kill that cannot reach the tree.

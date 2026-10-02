@@ -5,11 +5,13 @@ The documented invocation is ``python3 -m pytest tests/test_autowatch_process_gr
 Deterministic subprocess-tree controls with REAL processes (no mocked Popen): the driven command is
 a small Python "model" that starts a grandchild, waits until the grandchild has written its own pid
 to a file, then sleeps far past the drive's timeout. The pre-#425 `_run_drive` called
-`proc.kill()` on the direct child only, so in every case below the grandchild survived the timeout
-(or, when it held the stdout pipe, the drain after the kill blocked until it exited). Each test was
-run red against that code before the fix (PR body for #425). The direct-kill window does not
-depend on timing: the grandchild is confirmed alive BEFORE the timeout fires (its pid file exists,
-asserted, never skipped), so the only question asked is whether the timeout handling reaches it.
+`proc.kill()` on the direct child only, so in the timeout cases the grandchild survived (or, when it
+held the stdout pipe, the drain after the kill blocked until it exited). Every test fails against
+that code or against a mutant removing the mechanism it guards (PR body for #425); two --
+`[tick-group]` SIGKILL and the normal-finish case -- pass against the old code by design, because
+they guard behaviour it already had and the new code must keep. The grandchild is confirmed alive
+BEFORE the timeout fires (its pid file exists, asserted, never skipped), so the only question
+asked is whether the timeout handling reaches it.
 
 Every test kills whatever it recorded in a `finally`, so a red run leaks no process.
 """
@@ -334,6 +336,27 @@ spec = importlib.util.spec_from_file_location("autowatch", sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 m.DRIVE_TERM_GRACE_SECONDS = 1
 seam, out = sys.argv[3], pathlib.Path(sys.argv[4])
+if seam == "dead-sentinel-sigpipe":
+    # A caller that restored SIGPIPE's default (a common CLI idiom); the sentinel is dead before
+    # the handoff, so the write to it hits a closed pipe.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    real_start = m._start_lifeline
+    def dead_start():
+        sentinel, fd = real_start()
+        sentinel.kill(); sentinel.wait()
+        return sentinel, fd
+    m._start_lifeline = dead_start
+    real = subprocess.Popen
+    class Recording(real):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            if kw.get("stdout") is subprocess.PIPE:
+                (out / "model.pid").write_text(str(self.pid))
+    m.subprocess.Popen = Recording
+    result = m._run_drive(sys.argv[2], "", ".", dict(os.environ), 60)
+    (out / "result").write_text(str(result[0]))
+    (out / "sigpipe-restored").write_text(str(signal.getsignal(signal.SIGPIPE) is signal.SIG_DFL))
+    sys.exit(0)
 if seam == "spawn-dead-sentinel":
     real_start = m._start_lifeline
     def dead_start():
@@ -624,3 +647,21 @@ def test_a_setsid_escapee_holding_the_pipe_cannot_hang_the_call(tmp_path, short_
     finally:
         _cleanup(gc, child)
         t.join(35)
+
+
+
+def test_a_dead_sentinel_does_not_kill_a_caller_with_default_sigpipe(tmp_path):
+    """Writing the handoff to a dead sentinel must surface as the documented refusal, not as a
+    SIGPIPE that kills a caller running with SIGPIPE at SIG_DFL and orphans the model."""
+    model = None
+    silent = " ".join(shlex.quote(a) for a in (sys.executable, "-c", "import time; time.sleep(30)"))
+    try:
+        rc = _run_race(tmp_path, "dead-sentinel-sigpipe", silent)
+        model = _read_pid(tmp_path / "model.pid")
+        assert model is not None, "precondition: the model was never spawned"
+        assert rc == 0, "the caller died writing to the dead sentinel"
+        assert (tmp_path / "result").read_text() == "1"
+        assert (tmp_path / "sigpipe-restored").read_text() == "True"
+        assert _gone_within(model, 15), "the model outlived the refused drive"
+    finally:
+        _cleanup(model)
