@@ -303,8 +303,14 @@ def test_repository_scan_includes_localsource_journey_and_goal_file_writers():
         and row["pattern"].startswith(".sdlc/goals/") for row in rows)
 
 
+REVIEW_COPY_DISPOSITION = {
+    entry["pattern"]: entry
+    for entry in json.loads((ROOT / "docs" / "launch" / "dispositions" / "review-copy.json").read_text())
+}
+
+
 def test_b6_disposition_lists_each_pattern_without_a_source_proven_pruner():
-    """Only the directly pruned review-copy path may be omitted from a B6 outcome."""
+    """Only a pattern with a recorded disposition may be omitted from a B6 outcome."""
     rows = [
         {"pattern": ".sdlc/evidence/<goal>/rv*/wt", "source": "code", "writer": "work.py:1"},
         {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code", "writer": "actionlog.py:2"},
@@ -312,7 +318,7 @@ def test_b6_disposition_lists_each_pattern_without_a_source_proven_pruner():
         {"pattern": "<codex-home>/state/", "source": "code", "writer": "host.py:4"},
     ]
 
-    assert _mod().b6_disposition(rows, "419") == {
+    assert _mod().b6_disposition(rows, "419", REVIEW_COPY_DISPOSITION) == {
         "issue": "#419",
         "status": "filed",
         "unresolved_patterns": [
@@ -333,7 +339,7 @@ def test_store_measurements_give_each_pattern_growth_pruner_size_and_decision(tm
         {"pattern": ".sdlc/state/log/<goal>.jsonl", "source": "code", "writer": "actionlog.py:2"},
     ]
 
-    assert _mod().store_measurements(tmp_path, rows, "419") == [
+    assert _mod().store_measurements(tmp_path, rows, "419", REVIEW_COPY_DISPOSITION) == [
         {
             "pattern": ".sdlc/evidence/<goal>/rv*/wt",
             "growth_event": "writer invoked (work.py:1)",
