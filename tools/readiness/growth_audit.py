@@ -3,6 +3,10 @@
 """Inventory durable Sigma stores without discovering arbitrary host paths.
 
 USAGE: growth_audit.py REPOSITORY [--json OUT] [--measure-sdlc] [--measure-host ROOT]
+                       [--b6-issue N]
+
+Per-slice dispositions live in REPOSITORY/docs/launch/dispositions/*.json and are
+validated on every run; a bad file exits 2 before anything is written.
 
 The scanner is deliberately static and deterministic. Repository `.sdlc`
 measurement is explicit and records the checkout SHA; host measurement is an
@@ -15,7 +19,17 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+
+DISPOSITION_DIR = Path("docs") / "launch" / "dispositions"
+_DISPOSITION_KEYS = ("pattern", "issue", "decision", "pruner_or_cap", "evidence")
+_DISPOSITION_OPTIONAL = ("unscanned",)
+
+
+class DispositionError(ValueError):
+    """A disposition file the audit refuses to interpret."""
 
 
 _WRITER_METHODS = {"write_text", "write_bytes", "mkdir", "touch"}
@@ -588,20 +602,83 @@ def scan(root):
     return sorted(unique.values(), key=lambda row: (row["pattern"], row["writer"], row["source"]))
 
 
-def b6_disposition(rows, issue):
-    """Preserve the blocker outcome for every path without a proven pruner.
+def _no_duplicate_keys(pairs):
+    keys = [key for key, _ in pairs]
+    if len(keys) != len(set(keys)):
+        raise ValueError("duplicate JSON object key")
+    return dict(pairs)
 
-    The terminal lifecycle directly proves pruning only for review checkout
-    copies.  This inventory must not turn similarly shaped durable or host
+
+def load_dispositions(repository, rows):
+    """Return {pattern: entry} from docs/launch/dispositions/*.json, or refuse loudly.
+
+    No directory means no dispositions.  Every entry in it must be a `*.json` file (a
+    stray name is refused, never skipped; dotfiles are ignored); each file is a JSON array of objects with
+    the keys in `_DISPOSITION_KEYS` (all non-empty strings, `issue` shaped `#<digits>`)
+    and optionally `"unscanned": true`.  A repeated pattern (within or across files) or
+    a pattern the scan does not produce raises DispositionError naming the file and
+    pattern.  `unscanned: true` waives only the last check, for a source-proven store
+    whose writer the scan cannot see; `evidence` must name that writer.
+    """
+    folder = Path(repository) / DISPOSITION_DIR
+    if not folder.is_dir():
+        return {}
+    known = {row["pattern"] for row in rows}
+    found, owner = {}, {}
+    for path in sorted(folder.iterdir()):
+        name = "%s/%s" % (DISPOSITION_DIR.as_posix(), path.name)
+        if path.name.startswith("."):  # editor/OS litter such as .DS_Store, never a slice file
+            continue
+        if not path.name.endswith(".json"):
+            raise DispositionError("%s: not a .json disposition file; rename or delete it" % name)
+        try:
+            entries = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_no_duplicate_keys)
+        except (OSError, ValueError) as exc:  # includes UnicodeDecodeError and JSON errors
+            raise DispositionError("%s: unreadable or invalid JSON (%s)" % (name, exc))
+        if not isinstance(entries, list):
+            raise DispositionError("%s: top level must be a JSON array of entries" % name)
+        for index, entry in enumerate(entries):
+            where = "%s[%d]" % (name, index)
+            if (not isinstance(entry, dict) or not set(_DISPOSITION_KEYS) <= set(entry)
+                    or set(entry) - set(_DISPOSITION_KEYS) - set(_DISPOSITION_OPTIONAL)):
+                raise DispositionError("%s: each entry needs the keys %s (and may add only %s)"
+                                       % (where, ", ".join(_DISPOSITION_KEYS),
+                                          ", ".join(_DISPOSITION_OPTIONAL)))
+            if "unscanned" in entry and entry["unscanned"] is not True:
+                raise DispositionError("%s: unscanned, when present, must be true" % where)
+            for key in _DISPOSITION_KEYS:
+                if not isinstance(entry[key], str) or not entry[key].strip():
+                    raise DispositionError("%s: %s must be a non-empty string" % (where, key))
+            if not re.fullmatch(r"#[0-9]+", entry["issue"]):
+                raise DispositionError("%s: issue must look like #123" % where)
+            pattern = entry["pattern"]
+            if pattern in found:
+                raise DispositionError("%s: duplicate pattern %r (also in %s); delete one"
+                                       % (where, pattern, owner[pattern]))
+            if pattern not in known and not entry.get("unscanned"):
+                raise DispositionError(
+                    "%s: pattern %r is not produced by the scan; fix the pattern, delete the "
+                    "entry if its writer is gone, or set unscanned: true with the writer named "
+                    "in evidence" % (where, pattern))
+            found[pattern] = entry
+            owner[pattern] = name
+    return found
+
+
+def b6_disposition(rows, issue, dispositions=None):
+    """Preserve the blocker outcome for every path without a recorded disposition.
+
+    A pattern with an entry in `dispositions` (from load_dispositions) is
+    resolved; this inventory must not turn similarly shaped durable or host
     paths into an implied retention policy, so every other unique pattern is
     carried to the measured B6 issue.
     """
-    resolved = ".sdlc/evidence/<goal>/rv*/wt"
+    resolved = dispositions or {}
     return {
         "issue": "#%s" % str(issue).lstrip("#"),
         "status": "filed",
         "unresolved_patterns": sorted({row["pattern"] for row in rows
-                                       if row["pattern"] != resolved}),
+                                       if row["pattern"] not in resolved}),
     }
 
 
@@ -619,7 +696,7 @@ def _pattern_size(repository, pattern):
     return sum(path.stat().st_size for path in files)
 
 
-def store_measurements(repository, rows, issue):
+def store_measurements(repository, rows, issue, dispositions=None):
     """Return an honest size/growth/disposition row for every unique pattern.
 
     The 10x/100x columns are linear projections of the observed bytes at the
@@ -629,15 +706,14 @@ def store_measurements(repository, rows, issue):
     grouped = {}
     for row in rows:
         grouped.setdefault(row["pattern"], []).append(row["writer"])
-    resolved = ".sdlc/evidence/<goal>/rv*/wt"
+    resolved = dispositions or {}
     result = []
     for pattern in sorted(grouped):
         writers = ", ".join(sorted(set(grouped[pattern])))
         size = _pattern_size(repository, pattern)
-        proven = pattern == resolved
-        if proven:
-            pruner = "terminal review-copy lifecycle prune"
-            decision = "source-proven prune"
+        if pattern in resolved:
+            pruner = resolved[pattern]["pruner_or_cap"]
+            decision = resolved[pattern]["decision"]
         else:
             pruner = "unknown (B6 #%s)" % str(issue).lstrip("#")
             decision = "B6 #%s disposition required" % str(issue).lstrip("#")
@@ -713,15 +789,24 @@ def main(argv=None):
     parser.add_argument("--b6-issue", help="filed B6 issue for patterns without a proven pruner")
     args = parser.parse_args(argv)
     result = {"rows": scan(args.repository)}
+    try:
+        dispositions = load_dispositions(args.repository, result["rows"])
+    except DispositionError as exc:
+        print("growth_audit.py: REFUSED: %s" % exc, file=sys.stderr)
+        return 2
+    for pattern, entry in sorted(dispositions.items()):
+        if entry.get("unscanned") and pattern not in {row["pattern"] for row in result["rows"]}:
+            print("growth_audit.py: note: unscanned disposition %r matched no scan row" % pattern,
+                  file=sys.stderr)
     if args.measure_host:
         result["host_measurement"] = measure_host(args.measure_host)
     if args.measure_sdlc:
         result["repository_measurement"] = measure_repository(args.repository)
     if args.b6_issue:
-        result["b6_disposition"] = b6_disposition(result["rows"], args.b6_issue)
+        result["b6_disposition"] = b6_disposition(result["rows"], args.b6_issue, dispositions)
         if args.measure_sdlc:
             result["store_measurements"] = store_measurements(args.repository, result["rows"],
-                                                                 args.b6_issue)
+                                                                 args.b6_issue, dispositions)
     payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.json:
         args.json.write_text(payload, encoding="utf-8")

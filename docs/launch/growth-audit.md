@@ -45,3 +45,50 @@ no open B6 retention/cap issue (the only related hit was closed #150, which is
 limited to abandoned phase markers). The issue has `readiness` and
 `launch:blocker` labels and requires a narrower, measured ownership decision
 before any deletion. It does not authorize pruning host configuration roots.
+
+## Per-slice dispositions
+
+A pattern is resolved by a disposition file, not by code. Each B6 slice adds its own
+`docs/launch/dispositions/<slice>.json` and never edits `tools/readiness/growth_audit.py`.
+A file is a JSON array of entries, one per resolved store pattern:
+
+```json
+[
+  {
+    "pattern": ".sdlc/state/log/<goal>.jsonl",
+    "issue": "#123",
+    "decision": "capped",
+    "pruner_or_cap": "keep newest 50 per goal",
+    "evidence": "path or command that proves the pruner or cap"
+  }
+]
+```
+
+All five keys are required non-empty strings; `issue` is `#<digits>`. The scan's pattern
+text must match exactly. A resolved pattern is omitted from `b6_disposition.unresolved_patterns`,
+and its `store_measurements` row carries the entry's `pruner_or_cap` and `decision`; its size
+and growth columns are still measured. With no `dispositions/` directory nothing is resolved.
+`review-copy.json` is the first entry (the terminal review-copy prune).
+
+The audit validates every file on every run, before it writes anything, and exits 2 with
+`growth_audit.py: REFUSED: <file>[<index>]: <why>` on stderr (a pre-existing `--json` file is left
+untouched) for: invalid JSON or duplicate JSON keys, a top level that is not an array, a missing,
+extra, empty or non-string field, a bad `issue`, a file in the directory not named `*.json` (dotfiles such as `.DS_Store` are ignored), the same pattern twice (in one file or across
+files), and a pattern the scan does not produce. If a writer is removed or refactored, its entry
+starts failing the audit; delete or fix that file.
+
+`"unscanned": true` is the one waiver, accepted only as the literal `true`: it lets an entry name
+a source-proven store whose writer the scan cannot see (the review-copy checkout is written outside
+Sigma's Python and skill prose). It bypasses the unknown-pattern guard for that entry, so the
+`evidence` must name the writer and a reviewer of the slice must check it. It resolves a row only
+when the scan produces that pattern, and each run prints a stderr note for an unscanned entry that
+matched no row.
+
+### Control
+
+The guard is checked with the same gesture as regeneration, in a scratch copy of the repository so
+the committed snapshot is not overwritten: add `docs/launch/dispositions/bogus.json` with one valid
+entry whose `pattern` is `.sdlc/nowhere/<goal>.json`, run the command from [Reproduce](#reproduce),
+and expect exit 2, `REFUSED` on stderr and an unchanged `docs/launch/growth-audit.json`.
+The disposition test module parses that command out of this page and runs it that way; deleting the
+unknown-pattern check in `load_dispositions` turns its `test_unknown` red.
