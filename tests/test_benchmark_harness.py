@@ -62,6 +62,12 @@ def _launcher(tmp_path):
     return path
 
 
+@pytest.fixture(autouse=True)
+def _neutral_environment(monkeypatch):
+    """Each targeted refusal owns its input instead of inheriting CI's guard."""
+    monkeypatch.delenv("CI", raising=False)
+
+
 def test_documented_cli_refuses_to_run_without_an_explicit_spend_ceiling(tmp_path, capsys):
     """Red control: deleting the ceiling check makes this documented gesture run."""
     bench = _bench()
@@ -75,6 +81,25 @@ def test_documented_cli_refuses_to_run_without_an_explicit_spend_ceiling(tmp_pat
 
     assert not results.exists()
     assert "--max-usd" in capsys.readouterr().err
+
+
+def test_ci_environment_refuses_before_the_smoke_arm_or_results_write(tmp_path, monkeypatch):
+    """Control: CI is a production refusal, not test-environment collateral."""
+    bench = _bench()
+    manifest = _manifest(tmp_path)
+    hidden = _hidden_root(tmp_path)
+    launcher = _launcher(tmp_path)
+    results = tmp_path / "results.json"
+    arm = bench.FakeArm()
+    monkeypatch.setenv("CI", "true")
+
+    with pytest.raises(bench.BenchmarkRefusal, match="refuses to run from CI"):
+        bench.run_benchmark(manifest, [arm], max_usd=0.01, hidden_root=hidden,
+                            results_path=results, scratch_root=tmp_path / "scratch",
+                            isolation_launcher=launcher)
+
+    assert arm.allowances == []
+    assert not results.exists()
 
 
 def test_two_task_fake_arm_smoke_writes_content_free_schema_results(tmp_path):
