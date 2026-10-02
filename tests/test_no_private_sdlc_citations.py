@@ -57,7 +57,9 @@ def untracked_citations(root, files=None):
 
 
 def test_no_shipped_file_cites_an_untracked_sdlc_design_or_plan():
-    assert untracked_citations(ROOT) == []
+    hits = untracked_citations(ROOT)
+    if hits:  # a one-line AssertionError, so the planned-test red proof can attribute it
+        raise AssertionError(f"{len(hits)} citations of untracked .sdlc files, first: {hits[0]}")
 
 
 def _plant(tmp_path, files):
