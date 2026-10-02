@@ -6384,7 +6384,7 @@ def _dispatch(argv):
     # outright "the loop never measures spend itself; no reports == no enforcement", and nothing in
     # skills/ or hooks/ ever calls `loop.py spend` itself -- it exists to be invoked by whatever
     # external process hosts/wraps the loop. A fourth, distinct reason behind the same zero-count
-    # symptom; see .sdlc/research/1013-retro-decision-emitters.md §5.
+    # symptom; see the research dossier for #1013 (retro decision emitters) §5.
     if len(argv) >= 4 and argv[1] == "spend":       # host-reported token spend → budget.max_tokens
         # A non-integer token count (a float, empty, comma-grouped, garbage) must REFUSE loudly —
         # exit 2, a usable message — rather than a raw traceback. "Fail-open" (the docstring's

@@ -215,7 +215,7 @@ _PLACEHOLDER = (
 #: reply (#2337) -- one string, not two independently-drifting copies of the same fact.
 NO_OPEN_UNITS_MESSAGE = "No open units are currently registered."
 
-#: `--list [page]`: 10 per page, per design #2329's own slice-count estimate (line 1048) and
+#: `--list [page]`: 10 per page, per design #2329's own slice-count estimate and
 #: `SLACK_COMMANDS.md`'s command-grammar table -- not configurable in this slice.
 LIST_PAGE_SIZE = 10
 
@@ -403,7 +403,7 @@ def _format_unit_line(name, entry):
 def _list_reply(sdlc_dir, page):
     """`--list [page]` (Component C, BR-18): a paginated, 10-per-page read of every OPEN unit in
     `.sdlc/features/index.json`, via `feature_registry.read_index` directly -- the design's own
-    explicit citation (design #2329 line 1048: "paginated `feature_registry.read_index`, 10/page"),
+    explicit citation (design #2329: "paginated `feature_registry.read_index`, 10/page"),
     and the same chart-sheet read `drift_watch._open_units` already uses for the identical
     enumeration question, so `--drift` and `--list` agree on what "open" means without either
     reimplementing the other's read.
@@ -765,7 +765,7 @@ def release_single_instance(sdlc_dir):
     bash's `trap ... EXIT` firing on all three signals. This function is reached only from a
     `finally`, so a SIGTERM/SIGHUP here terminates the interpreter without unwinding and leaves this
     listener's markers behind. That gap is this file's, not a shared design -- do not read the
-    ownership check as evidence the lifecycle matches (.sdlc/research/2488.md §6.2)."""
+    ownership check as evidence the lifecycle matches (research for #2488 §6.2)."""
     if _read_pid(sdlc_dir) != os.getpid():
         return
     for path in (pid_path(sdlc_dir), heartbeat_path(sdlc_dir)):

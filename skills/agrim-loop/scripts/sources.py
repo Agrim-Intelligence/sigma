@@ -58,7 +58,7 @@ def fetch_issues_rest(run, repo, labels, cap, state="open", sort="created", dire
 
     WHY NOT `gh issue list` (what this replaces): ANY `--label` flag makes `gh` route the call
     through GitHub's `search()` GraphQL field regardless of whether `--search` is also given
-    (confirmed live with `GH_DEBUG=api` — see `.sdlc/research/1829-rest-backlog-pick.md`), billed
+    (confirmed live with `GH_DEBUG=api` — see the research for #1829 (REST backlog pick)), billed
     against the shared 5000/hour `graphql` resource at ~2600+ points per call. This REST call is
     confirmed billed against the separate `core` resource instead, at ~1 point.
 
@@ -3460,7 +3460,7 @@ class GitHubSource:
         (confirmed live), NOT the `REST/core`-only call an earlier note about this function
         believed (that belief predated a later correction to a DIFFERENT, sibling claim in the
         same investigation, and was never re-checked against this function specifically -- see
-        `.sdlc/research/1829-rest-backlog-pick.md`). Migrated to the same `_fetch_issues_rest`
+        the research for #1829 (REST backlog pick)). Migrated to the same `_fetch_issues_rest`
         helper `_fetch_pending` uses. No `assignee` scoping: this sweep is deliberately unscoped by
         owner, unchanged from before -- ANY held goal must resume once its label exists, regardless
         of who is running the loop that happens to notice.

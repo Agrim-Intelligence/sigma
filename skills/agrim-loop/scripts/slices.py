@@ -631,7 +631,7 @@ def main(argv):
         # .sdlc/plans/<goal-stem>.slices.json's EXISTENCE (see the `if not slices:` guard above), NOT on
         # `parallel.enabled` (that flag only gates whether waves run CONCURRENTLY, checked separately, a few
         # lines below this loop). No plan has ever declared slices in this repo, which is the real, sole
-        # reason `slice` events are zero here. See .sdlc/research/1013-retro-decision-emitters.md §5.
+        # reason `slice` events are zero here. See the research dossier for #1013 (retro decision emitters) §5.
         # Site g (#139): one `slice` event per planned slice, across every wave. Each field
         # computation (`s["id"]`, `dispatch(s)`, `len(s["files"])`) runs in THIS frame, not inside
         # `safe_append`'s own try/except — Python evaluates call arguments before the call happens

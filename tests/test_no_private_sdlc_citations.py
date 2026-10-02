@@ -1,4 +1,4 @@
-"""Shipped files never cite a `.sdlc/design|plans/<name>` file the public tree does not track (#173).
+"""Shipped files never cite a `.sdlc/design|plans|research/<name>` file the public tree does not track (#173).
 
 A public reader who follows `.sdlc/design/2253.md` out of a shipped doc or comment lands on
 nothing: those write-ups are not in the public tree. The structural leak scan skips `.sdlc/` by
@@ -20,12 +20,15 @@ import public_surface
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-CITATION = re.compile(r"\.sdlc/(?:design|plans)/[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.(?:md|json)\b")
+CITATION = re.compile(r"\.sdlc[/\\](?:design|plans|research)[/\\][A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.(?:md|json|py)\b",
+                      re.IGNORECASE)
 
 SKIP_PREFIXES = ("tests/", "docs/launch/", "contract/golden/", ".sdlc/")
 
 #: file -> cited paths that are illustrative output of an adopter's own run, not pointers.
-ALLOWED = {"docs/how-the-dossier-pipeline-works.md": {".sdlc/design/1.md"}}
+ALLOWED = {"docs/how-the-dossier-pipeline-works.md": {".sdlc/design/1.md"},
+           # owned by #429; follow-up #436 rewords it
+           "docs/output-contract.md": {".sdlc/research/1626.md"}}
 
 
 def _tracked(root):
@@ -46,7 +49,7 @@ def untracked_citations(root, files=None):
             continue
         for n, line in enumerate(text.splitlines(), 1):
             for m in CITATION.finditer(line):
-                cited = m.group(0).rstrip(".")
+                cited = m.group(0).rstrip(".").replace("\\", "/")
                 if cited in tracked or cited in ALLOWED.get(rel, ()):
                     continue
                 hits.append(f"{rel}:{n}: {cited}")
@@ -66,7 +69,8 @@ def _plant(tmp_path, files):
     subprocess.check_call(["git", "-C", str(tmp_path), "add", "-A"])
 
 
-@pytest.mark.parametrize("cite", [".sdlc/design/2253.md", ".sdlc/plans/2260-live-judge.md"])
+@pytest.mark.parametrize("cite", [".sdlc/design/2253.md", ".sdlc/plans/2260-live-judge.md",
+                                  ".sdlc/research/2531.md", ".sdlc/research/9-x.py"])
 def test_control_a_new_citation_of_an_untracked_file_fails(tmp_path, cite):
     _plant(tmp_path, {"docs/a.md": f"See `{cite}` for why.\n"})
     assert untracked_citations(tmp_path) == [f"docs/a.md:1: {cite}"]
@@ -76,3 +80,10 @@ def test_control_tracked_targets_and_placeholders_pass(tmp_path):
     _plant(tmp_path, {".sdlc/plans/7.md": "x\n",
                       "docs/a.md": "`.sdlc/plans/7.md`, `.sdlc/design/<n>.md`, `.sdlc/plans/*.md`\n"})
     assert untracked_citations(tmp_path) == []
+
+
+@pytest.mark.parametrize("written,norm", [(".SDLC/Design/2253.MD", ".SDLC/Design/2253.MD"),
+                                          (".sdlc\\design\\2253.md", ".sdlc/design/2253.md")])
+def test_control_case_and_backslash_variants_fail(tmp_path, written, norm):
+    _plant(tmp_path, {"docs/a.md": f"See {written}.\n"})
+    assert untracked_citations(tmp_path) == [f"docs/a.md:1: {norm}"]
