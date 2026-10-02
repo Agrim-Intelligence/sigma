@@ -809,9 +809,8 @@ def _install_cleanup(p, my_pid):
     (rc -1), and not on SIGKILL. Python's `atexit`/`try...finally` fire on SystemExit and
     KeyboardInterrupt but **not** on SIGTERM or SIGHUP -- the default disposition terminates the
     interpreter without unwinding, leaving watch.pid + watch.heartbeat behind on every kill/pkill/
-    logout: precisely the stale-marker shape #1227 exists to prevent. The Slack-commands listener is
-    NOT a precedent to copy -- it reaches release_single_instance only from a `finally` and registers
-    no handlers at all.
+    logout: precisely the stale-marker shape #1227 exists to prevent. The Slack-commands listener
+    installs the same SIGTERM/SIGHUP handlers around its own cleanup (#424).
 
     `getattr(signal, name, None)` is load-bearing: a bare `signal.SIGHUP` raises AttributeError on
     Windows, which is the platform this whole migration is for. Re-raising after restoring the
