@@ -295,13 +295,13 @@ def test_public_frozen_all_seed_evidence_run_builds_validated_schema(tmp_path):
     assert ".codex/config.toml" not in public_evidence
     assert ".claude/settings.json" not in public_evidence
     d4 = [run for run in payload["runs"] if run["drill"] == "D4"]
-    assert all(run["expected_failure_states"] == {
-        "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
-        "session_start_explicit_stop_file_reporting": "control_failed_and_recorded",
+    assert all(run["expected_reporting_states"] == {
+        "doctor_explicit_stop_file_reporting": "reporting_invariant_passed",
+        "session_start_explicit_stop_file_reporting": "reporting_invariant_passed",
     } for run in d4)
 
 
-def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failures(tmp_path):
+def test_d4_runs_real_stop_file_daemon_and_both_reporting_controls_pass(tmp_path):
     drills = _module()
 
     result = drills.run_d4(tmp_path, ROOT)
@@ -311,10 +311,10 @@ def test_d4_runs_real_stop_file_daemon_and_records_two_expected_reporting_failur
     assert "stop-file present" in result["fault"]["daemon"]["stdout"]
     assert result["fault"]["stop_file_exists"] is True
     by_name = {entry["name"]: entry for entry in result["invariants"]}
-    assert by_name["doctor_explicit_stop_file_reporting"]["passed"] is False
-    assert by_name["session_start_explicit_stop_file_reporting"]["passed"] is False
-    assert by_name["doctor_explicit_stop_file_reporting"]["observed"]["outcome"] == "control_failed_and_recorded"
-    assert by_name["session_start_explicit_stop_file_reporting"]["observed"]["outcome"] == "control_failed_and_recorded"
+    assert by_name["doctor_explicit_stop_file_reporting"]["passed"] is True
+    assert by_name["session_start_explicit_stop_file_reporting"]["passed"] is True
+    assert by_name["doctor_explicit_stop_file_reporting"]["observed"]["outcome"] == "reporting_invariant_passed"
+    assert by_name["session_start_explicit_stop_file_reporting"]["observed"]["outcome"] == "reporting_invariant_passed"
     assert result["dedup"]["schema"] == "brainstorm-dedup/v1"
     json.dumps(result)
 
@@ -371,8 +371,8 @@ def test_public_evidence_redacts_absolute_temporary_paths_in_all_receipt_fields(
 
     assert scratch not in transcript
     assert "/private/tmp/" not in transcript
-    assert public_doctor["passed"] is False
-    assert public_doctor["observed"]["outcome"] == "control_failed_and_recorded"
+    assert public_doctor["passed"] is True
+    assert public_doctor["observed"]["outcome"] == "reporting_invariant_passed"
     assert result["frozen_commit"] == drills._head(ROOT)
 
 
@@ -390,3 +390,26 @@ def test_public_evidence_redacts_retired_plugin_warning_text(tmp_path):
 
     assert "loop" + "smith" not in transcript
     assert "<retired-plugin>" in transcript
+
+
+def test_d4_is_not_fooled_by_an_inherited_sigma_run_id(tmp_path, monkeypatch):
+    """The drill runs inside supervised sessions; the hook skips headless runs, so D4 must scrub it."""
+    monkeypatch.setenv("SIGMA_RUN_ID", "supervised-run")
+    drills = _module()
+    result = drills.run_d4(tmp_path, ROOT, 1)
+    assert all(item["passed"] for item in result["invariants"])
+
+
+def test_checkpoint_reader_survives_the_file_existing_before_its_content(tmp_path):
+    """Deterministic control for the D3 `JSONDecodeError: Expecting value` seen under load: the
+    child's write_text creates the file empty first, so an exists()-then-read reader raced it."""
+    import threading
+    drills = _module()
+    ready = tmp_path / "ready.json"
+    ready.write_text("")                       # the window: file exists, content not yet written
+    writer = threading.Timer(0.3, lambda: ready.write_text(json.dumps({"checkpoint": "x"})))
+    writer.start()
+    try:
+        assert drills._read_json_when_ready(ready) == {"checkpoint": "x"}
+    finally:
+        writer.join()

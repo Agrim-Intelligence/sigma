@@ -3079,6 +3079,17 @@ def _ledger_feature_state(base, cfg, now=None):
         n, "y" if n == 1 else "ies", _ledger_delivery_state(base, cfg, now=now))
 
 
+def _stop_file_state(base):
+    """#416. A forgotten daemon stop-file reads as a dead daemon that has nothing to say; surface it
+    with its age. Independent of every feature flag -- the file halts the daemon whether or not the
+    feature is configured. Facts come from agrim-loop's stopfiles.py (also read by session_start.sh)."""
+    try:
+        text = _load_loop_script("stopfiles").line(base)
+    except Exception:                       # noqa: BLE001 - a load failure is "could not answer"
+        return "COULD NOT CHECK stop-files (stopfiles.py did not load); not an all-clear"
+    return text or "none"  # a "COULD NOT CHECK ..." answer (unreadable state dir) comes back as text
+
+
 def _ledger_watcher_state(base, cfg, now=None):
     """What the ledger watcher's own heartbeat says about itself, or why there is nothing to say.
     AGE-BASED, NOT ERROR-BASED -- the shape every daemon-liveness row in this project shares,
@@ -4386,6 +4397,9 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("team ledger",
          _ledger_feature_state(base, cfg),
          'config: "ledger": {"enabled": true}, then /agrim-ledger to create + push it'),
+        ("daemon stop-files (state/*.stop)",
+         _stop_file_state(base),
+         "delete the named file under .sdlc/state/ to let that daemon run again"),
         ("ledger watcher (keeps the shared ledger pushed)",
          _ledger_watcher_state(base, cfg),
          'config: "ledger": {"enabled": true, "watch": {"interval_seconds": 900, '
