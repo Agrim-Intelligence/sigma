@@ -94,6 +94,41 @@ def _hashes(root, nodes):
     return result
 
 
+def _split_traceback_assertions(output, failed):
+    """Return uniquely attributable assertion failures from pytest's report blocks.
+
+    Pytest 7--9 prints bare ``FAILED <node>`` lines in its short summary, while
+    the assertion type lives in the preceding traceback.  The summary still
+    supplies the authoritative failing node; this only joins it to a report
+    block when its file and unparameterized function name select exactly one
+    such node.  Ambiguous parameterized reports fail closed.
+    """
+    reports = re.split(r"^=+ short test summary info =+\s*$", output, flags=re.M)[0]
+    # Captured test stdout/stderr shares pytest's report stream.  It is
+    # untrusted test-controlled text, so do not parse any split traceback
+    # attribution from a run that contains it. Refusing a noisy real assertion
+    # is safer than crediting a forged one.
+    if re.search(r"^-+ Captured (?:stdout|stderr|log) .*-+$", reports, re.M):
+        return set()
+    assertions = set()
+    for block in re.split(r"(?m)^_{3,}.*_{3,}\s*$", reports):
+        if not re.search(r"^E\s+(?:AssertionError\b|assert\b)", block, re.M):
+            continue
+        locations = re.findall(r"^(?P<file>[^:\n]+\.py):\d+: in (?P<name>[^\s]+)",
+                               block, re.M)
+        for report_file, report_name in locations:
+            report_file = report_file.lstrip("./")
+            candidates = {
+                node for node in failed
+                if (node.split("::", 1)[0] == report_file
+                    or report_file.endswith("/" + node.split("::", 1)[0]))
+                and node.rsplit("::", 1)[-1].split("[", 1)[0] == report_name
+            }
+            if len(candidates) == 1:
+                assertions.update(candidates)
+    return assertions
+
+
 def observe(sdlc_dir, goal, root, plan, run=None):
     """Return green proof or an explicit absence; write only attributed, stable assertion reds."""
     run = run or _run
@@ -117,6 +152,7 @@ def observe(sdlc_dir, goal, root, plan, run=None):
         # final summary is authoritative; absent summaries earn no proof.
         summaries = re.split(r"^=+ short test summary info =+\s*$", proc.stdout, flags=re.M)
         summary = summaries[-1] if len(summaries) > 1 else ""
+        failed = set()
         for line in summary.splitlines():
             if line.startswith('PASSED '):
                 node = line[len('PASSED '):].strip()
@@ -124,8 +160,11 @@ def observe(sdlc_dir, goal, root, plan, run=None):
                     passed.add(node)
             elif line.startswith('FAILED '):
                 node, sep, reason = line[len('FAILED '):].partition(' - ')
-                if node in hashes and sep and re.match(r'(AssertionError\b|assert\b)', reason):
-                    assertion.add(node)
+                if node in hashes:
+                    failed.add(node)
+                    if sep and re.match(r'(AssertionError\b|assert\b)', reason):
+                        assertion.add(node)
+        assertion.update(_split_traceback_assertions(proc.stdout, failed))
         # Collection/interruption/internal/usage failures cannot create trustworthy red.
         if proc.returncode == 1:
             w = _witness()
