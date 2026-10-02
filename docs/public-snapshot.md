@@ -16,7 +16,8 @@ git and `gh api` GET calls, and nothing depends on a hook or on a host.
   (`sigma-public-snapshot`), the commit date of the source commit, and the message `Initial public
   snapshot (Sigma <plugin version>)`. The export's commit id is therefore a pure function of the
   source commit: the same commit twice gives the same tree and the same export commit, and one
-  changed byte changes both.
+  changed byte changes both. No reflog is written (`core.logAllRefUpdates=false` on every ref
+  update), so the export's `.git` records no operator name, e-mail or host.
 - **The verifier** (`python3 tools/verify_public_repo.py`) reads a PUSHED export over REST and
   proves it is exactly that one commit with CI green on every leg.
 - **The report** is a JSON file and a `.md` twin, written outside every repository. It names the
@@ -59,11 +60,13 @@ Exit codes and what is on disk:
 
 - `0`, verdict `VERIFIED`: the export is at `OUT`. stdout, in order: `verdict:`, `commit:`, `tree:`,
   `export-commit:`, `out:`, `report:`, `scans:`.
-- `1`, verdict `REJECTED`: a scan found something. The export is at `OUT.rejected`, with NO branch,
-  and the report is written. stdout has the same lines.
+- `1`, verdict `REJECTED`: a scan found something. The export is at `OUT.rejected`, with NO branch
+  and NO export commit (it is pruned; see Recovery), and the report is written. stdout has the same
+  lines; its `export-commit:` names the pruned commit, which no longer exists there.
 - `2`: a refusal (one stderr line `build_public_tree: REFUSED [<code>] <detail>`, nothing on
   stdout, no export, no report, the partial removed), or verdict `NOT-VERIFIED` (a scan exited with
-  anything but 0 or 1, or timed out; the report is written, `OUT.rejected` holds no branch, stderr
+  anything but 0 or 1, or timed out; the report is written, `OUT.rejected` holds no branch and no
+  export commit, stderr
   says `REFUSED [scan-failed]` and the report path, stdout is empty). A scanner that crashes is
   NOT-VERIFIED, never REJECTED, never VERIFIED.
 
@@ -71,7 +74,8 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `patterns-unreadable`, `pattern-compile`, `pattern-matches-empty`, `zero-patterns`, `out-exists`
 (for `OUT` and for `OUT.rejected`), `out-inside-work-tree`, `report-dir-inside-work-tree`,
 `not-a-repo`, `bad-commit`, `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
-`gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision`, `head-not-commit`,
+`gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
+case folding and Unicode NFC normalisation), `head-not-commit`,
 `dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
@@ -197,7 +201,10 @@ this page gives, are saved with the pull request:
 Write surface: `docs/launch/write-surface.json` records the builder's filesystem writes and ONE
 `git-destructive` row, inside `_unpublish_rejected`. It is `update-ref -d` on the REJECTED or
 NOT-VERIFIED export repository's own `main`, never on the source repository, and it is recorded as
-`ungated` because nothing it touches can reach anything but the throwaway export. The verifier has
+`ungated` because nothing it touches can reach anything but the throwaway export. The same
+function then expires the export's reflogs and runs `git gc --prune=now` in it, through the
+builder's private byte runner, which the ratchet does not classify as a command call, so those two
+are not rows; they too touch only the rejected export repository. The verifier has
 no row at all; the checker's only rows are its create-once `--json` output.
 
 ## Rehearsal
@@ -250,8 +257,12 @@ slug; nothing here creates, renames or changes a real repository.
 
 ## Recovery and scale
 
-- A REJECTED or NOT-VERIFIED export keeps no branch: `git for-each-ref` is empty and `HEAD` is
-  unborn, so there is nothing pushable. Even so, never push a `.rejected` directory. Fix the cause,
+- A REJECTED or NOT-VERIFIED export keeps no branch and no export commit: `git for-each-ref` is
+  empty, `HEAD` is unborn, every reflog is expired and the commit is pruned (`git gc --prune=now`),
+  and the builder proves `git cat-file -e <export-commit>` fails before it reports, else it refuses
+  `unpublish-failed`. So the id the report and stdout carry cannot be pushed from there. The files
+  stay on disk for inspection (and the index keeps their blobs), so a person can still commit and
+  push them by hand: never push a `.rejected` directory. Fix the cause,
   delete `OUT.rejected`, and re-run: the build is a pure function of the commit, so re-running is
   idempotent.
 - A crash leaves `OUT.partial-<pid>` and possibly a report reading NOT-VERIFIED or REJECTED. Delete

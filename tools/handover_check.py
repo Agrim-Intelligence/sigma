@@ -14,10 +14,16 @@ Claude plugin records, the process list and (unless `--offline`) names-only GitH
 the injected `run`. Its one write is the `--json` evidence file, created once, 0600, outside every
 repository. `sequence` is pure text and runs nothing.
 
+A remote is classified by its configured value AND by the URL git really uses (`git remote get-url
+--all [--push]`, which applies insteadOf/pushInsteadOf); a URL whose path ends in OWNER/NAME of the old
+repository is `old` whatever its host (an SSH alias, a mirror), with a note when the host is not
+github.com. The `--scan-root` walk descends into repositories too (a clone inside another clone's
+directory is found), never into `.git` or a linked worktree; both caps are blocking `truncated`
+findings, field `max-repos` or `max-depth` (a directory at the depth cap that still has
+subdirectories), so a clone is never dropped silently.
+
 Not covered, and said so in docs/name-handover.md: other machines, collaborators' clones, the board's
-linked repository, schedulers that set GH_REPO, Codex marketplace records. A repository root found by
-`--scan-root` is not descended into (its linked worktrees share its git directory); the depth cap is
-silent, the repository-count cap is reported as a blocking `truncated` finding.
+linked repository, schedulers that set GH_REPO, Codex marketplace records.
 """
 import argparse
 import json
@@ -40,9 +46,12 @@ _GIT_SCRUB = ("GIT_DIR", "GIT_WORK_TREE", "GIT_CEILING_DIRECTORIES", "GIT_INDEX_
               "GIT_NAMESPACE")
 _REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 
-_URL_RE = re.compile(r"^(?:https?|ssh|git)://(?:[^@/]+@)?github\.com(?::\d+)?/([^/]+)/([^/]+?)(?:\.git)?/?$",
-                     re.I)
-_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?github\.com:([^/]+)/([^/]+?)(?:\.git)?/?$", re.I)
+_URL_RE = re.compile(r"^(?:https?|ssh|git)://(?:[^@/]+@)?(?:www\.|ssh\.)?github\.com(?::\d+)?/([^/]+)/([^/]+?)"
+                     r"(?:\.git)?/?$", re.I)
+_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?(?:www\.|ssh\.)?github\.com:([^/]+)/([^/]+?)(?:\.git)?/?$", re.I)
+#: Any other host: the path's last two parts, so an SSH alias or a rewritten host still classifies.
+_PATH_RE = re.compile(r"[/:]([A-Za-z0-9][A-Za-z0-9-]*)/([A-Za-z0-9._-]+?)(?:\.git)?/?$")
+_HOST_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/\s]+@)?([^/:\s]+)")
 _WRITER_RE = re.compile(r"(?:^|/)(?:watch_daemon|loop)\.py$")
 _PS_ROW_RE = re.compile(r"^\s*(\d+)\s+(\S+)\s+(.*)$")
 _GREP_RE = re.compile(r"([^\0\n]+)\0(\d+)\0([^\n]*)\n")
@@ -115,14 +124,26 @@ def _check_slug(value, what):
     return value
 
 
-def _url_slug(url):
-    """-> 'owner/name' for a GitHub remote URL (https, ssh://, scp-like SSH), else None."""
+def _url_info(url):
+    """-> ('owner/name' or None, note). A GitHub URL (https, ssh://, scp-like SSH; the www. and
+    ssh. hosts too) gives no note; any other URL whose path ends in OWNER/NAME gives that slug and
+    a note naming the host, so a holder behind an SSH alias or a rewrite is never `absent`."""
     url = (url or "").strip()
     for rx in (_URL_RE, _SCP_RE):
         m = rx.match(url)
         if m:
-            return "%s/%s" % (m.group(1), m.group(2))
-    return None
+            return "%s/%s" % (m.group(1), m.group(2)), ""
+    m = _PATH_RE.search(url)
+    if not m:
+        return None, ""
+    host = _HOST_RE.match(url)
+    return "%s/%s" % (m.group(1), m.group(2)), "host %s is not github.com; classified by its path" % (
+        host.group(1) if host else "-")
+
+
+def _url_slug(url):
+    """-> 'owner/name' for a remote URL (see `_url_info`), else None."""
+    return _url_info(url)[0]
 
 
 def _any_slug(value):
@@ -245,9 +266,12 @@ def _config_location(origin, common, top):
 # ------------------------------------------------------------------------------ discovery
 
 def _walk(root, max_depth, max_repos, sink):
-    """-> (repository paths, truncated). Depth and repository caps; no symlinks; `.git` marks a
-    repository and is never entered; a repository root is not descended into."""
-    found, truncated = [], False
+    """-> (repository paths, truncated by the repository cap). No symlinks; `.git` marks a
+    repository and is never entered; a repository's own directories ARE walked (a clone may sit
+    inside another), a linked worktree's are not (`.git` is a file: its files are a checkout of a
+    repository already read). A directory at the depth cap that still has subdirectories is one
+    blocking `truncated` finding (field `max-depth`) for this root, never a silent cut."""
+    found, truncated, cut = [], False, []
     root = os.path.realpath(root)
     base = len(root.rstrip(os.sep).split(os.sep))
 
@@ -257,16 +281,28 @@ def _walk(root, max_depth, max_repos, sink):
 
     for dirpath, dirnames, filenames in os.walk(root, onerror=onerror, followlinks=False):
         dirnames.sort()
-        if ".git" in dirnames or ".git" in filenames:
+        git_dir = ".git" in dirnames
+        if git_dir:
+            dirnames.remove(".git")
+        if git_dir or ".git" in filenames:
             if len(found) >= max_repos:
                 truncated = True
                 break
             found.append(dirpath)
-            dirnames[:] = []
-            continue
+            if not git_dir:
+                dirnames[:] = []
+                continue
         depth = len(dirpath.rstrip(os.sep).split(os.sep)) - base
-        if depth >= max_depth:
+        if depth >= max_depth and dirnames:
+            cut.append(dirpath)
             dirnames[:] = []
+    if truncated:
+        sink.add(_finding("truncated", root, "max-repos", "absent", True, "not every clone was seen"))
+    if cut:
+        sink.add(_finding("truncated", root, "max-depth", "absent", True,
+                          "not every clone was seen: %d director%s at depth %d still had subdirectories "
+                          "(first %s); raise --max-depth" % (len(cut), "y" if len(cut) == 1 else "ies",
+                                                             max_depth, cut[0])))
     return found, truncated
 
 
@@ -361,10 +397,30 @@ def _scan_repositories(args, run, sink):
             else:
                 sink.add(_finding("unreadable", path, "git", "absent", True,
                                   "git cannot read this repository"))
-    if truncated:
-        sink.add(_finding("truncated", os.path.realpath(args.scan_root[-1]), "max-repos", "absent", True,
-                          "not every clone was seen"))
     return repos, order, current_top, truncated
+
+
+def _effective_urls(args, top, name, raw_classes, entry, run, sink):
+    """The URLs git really uses for remote `name` (insteadOf/pushInsteadOf applied). A class the
+    configured values did not already show is a finding of its own, located at the checkout."""
+    for push in (False, True):
+        argv = ["git", "-C", top, "remote", "get-url", "--all"] + (["--push"] if push else []) + [name]
+        rc, out, _err = run(argv, None, GIT_TIMEOUT) if not name.startswith("-") else (128, "", "")
+        field = "remote.%s.%s" % (name, "pushurl" if push else "url")
+        if rc != 0:
+            sink.add(_finding("unreadable", top, field, "absent", True,
+                              "git cannot resolve the URL git uses for this remote"))
+            continue
+        for url in (u.strip() for u in out.splitlines()):
+            if not url:
+                continue
+            entry["remotes"].setdefault(name, []).append(url)
+            slug, note = _url_info(url)
+            cls = _class(slug, args.old, args.new)
+            if cls in ("old", "new") and cls not in raw_classes:
+                what = "the URL git uses to %s, after insteadOf/pushInsteadOf" % ("push" if push else "fetch")
+                sink.add(_finding("remote-pushurl" if push else "remote-url", top, field, cls, cls == "old",
+                                  what + ("; " + note if note else "")))
 
 
 def _read_remotes(args, repos, order, run, sink):
@@ -376,16 +432,22 @@ def _read_remotes(args, repos, order, run, sink):
             sink.add(_finding("unreadable", top, "git config", "absent", True,
                               "git config could not be read"))
             continue
+        names, raw = [], {}
         for origin, key, value in entries:
             m = re.match(r"^remote\.(.+)\.(url|pushurl)$", key)
             if m:
-                cls = _class(_url_slug(value), args.old, args.new)
+                slug, note = _url_info(value)
+                cls = _class(slug, args.old, args.new)
+                if m.group(1) not in raw:
+                    names.append(m.group(1))
+                    raw[m.group(1)] = set()
+                raw[m.group(1)].add(cls)
                 if m.group(2) == "url":
                     entry["remotes"].setdefault(m.group(1), []).append(value)
                 if cls in ("old", "new"):
                     kind = "remote-url" if m.group(2) == "url" else "remote-pushurl"
                     sink.add(_finding(kind, _config_location(origin, common, top), key, cls,
-                                      cls == "old"))
+                                      cls == "old", note))
                 continue
             m = re.match(r"^url\.(.+)\.(insteadof|pushinsteadof)$", key)
             if m:
@@ -395,6 +457,8 @@ def _read_remotes(args, repos, order, run, sink):
                 if cls:
                     sink.add(_finding("url-rewrite", _config_location(origin, common, top), key, cls,
                                       cls == "old"))
+        for name in names:
+            _effective_urls(args, top, name, raw[name], entry, run, sink)
 
 
 def _read_sdlc_configs(args, repos, order, sink):
@@ -717,8 +781,9 @@ def cmd_check(args, run):
         if f["note"]:
             line += " -- " + f["note"]
         lines.append(_tilde(line))
+    cut = truncated or any(f["kind"] == "truncated" for f in findings)
     lines.append("handover_check: %d blocking, %d informational; repositories %d; truncated %s"
-                 % (blocking, len(findings) - blocking, len(order), "yes" if truncated else "no"))
+                 % (blocking, len(findings) - blocking, len(order), "yes" if cut else "no"))
     if args.json:
         _write_json_once(args.json, _json_doc(args, findings, "offline" if args.offline else "ran", truncated))
     print("\n".join(lines))

@@ -2,8 +2,9 @@
 """Read-only REST verifier for a pushed public-tree export (#397).
 
 Proves, from GitHub's own answers, that a repository holds exactly the one commit the
-builder reported, with its tree, no other refs, issues or pull requests, and CI green on
-every leg. Every `gh` call is a GET through `gh api`; nothing is written anywhere.
+builder reported, with its tree, no other branch and no tag, no issues or pull requests, and
+CI green on every leg. Only branches and tags are queried: other refs (pull-request heads,
+notes, custom namespaces) are not listed by this verifier. Every `gh` call is a GET through `gh api`; nothing is written anywhere.
 
     python3 tools/verify_public_repo.py --repo OWNER/NAME --report FILE \
         --expect-visibility private|public [--branch main] [--legs N]

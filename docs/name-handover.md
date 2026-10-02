@@ -4,8 +4,8 @@ The public repository will take this repository's current name. GitHub redirects
 until a new repository takes it, so after the public repository exists every clone, config value,
 marketplace record and workflow that still names the old slug points at the PUBLIC repository.
 Nothing here performs the rename: it is the owner's action, by hand. What this page and
-`tools/handover_check.py` give the owner is the list of every holder of the old name, and the
-ordered commands. The release checklist, pin and rollback are #359's; the checker and the sequence
+`tools/handover_check.py` give the owner is the list of every holder of the old name that this
+machine can show it (see [What it cannot see](#what-it-cannot-see)), and the ordered commands. The release checklist, pin and rollback are #359's; the checker and the sequence
 are #397's, and each page links the other by number only.
 
 Host-agnostic: the checker is plain Python on git, `ps` and (optionally) `gh api` GET calls.
@@ -19,11 +19,20 @@ reads:
 
 - the current repository (the top level of the working directory) and its worktrees, each
   `--clone PATH`, and every repository found under each `--scan-root DIR` (a walk that never follows
-  symlinks, never enters `.git`, and is capped by `--max-depth` (default 5) and `--max-repos`
-  (default 2000));
+  symlinks and never enters `.git`; it DOES walk a repository's own directories, so a clone kept
+  inside another clone's directory is found, but not a linked worktree's, whose files are a
+  checkout of a repository already read). The walk is capped by `--max-depth` (default 5) and
+  `--max-repos` (default 2000), and neither cap is silent: each one that cuts the walk is a blocking
+  `truncated` finding, field `max-repos` or `max-depth` (a directory at the depth cap that still has
+  subdirectories; the note counts them and names the first);
 - per repository, every `remote.<name>.url`, `remote.<name>.pushurl` and `url.<base>.insteadOf` /
-  `pushInsteadOf` value, in the HTTPS, `ssh://` and scp-like SSH forms, classified `old`, `new`,
-  `other` or `absent` (case-insensitive);
+  `pushInsteadOf` value, AND the URLs git really uses for each remote (`git remote get-url --all`,
+  with and without `--push`, which apply every rewrite), classified `old`, `new`, `other` or
+  `absent` (case-insensitive). A GitHub URL (HTTPS, `ssh://`, scp-like SSH, on `github.com`,
+  `www.github.com` or `ssh.github.com`) is classified by its slug; ANY other URL whose path ends in
+  `OWNER/NAME` is classified by that path too, with a note naming the host, so a clone behind an SSH
+  host alias, a rewrite or a mirror is never missed (it fails closed: a mirror on another host that
+  happens to end in the old slug blocks until it is repointed or confirmed);
 - per checkout, the `.sdlc/config.json` keys that name a repository
   (`discovery.github.repo`, `discovery.github.project`, `ledger.handoff.upstream_repo`,
   `work.remote`, `ledger.remote`, `knowledge_graph.sync.remote`, the last three resolved to their
@@ -55,7 +64,9 @@ Each finding prints `BLOCK <kind> <location> <field> <class>` or `INFO  ...`, th
   directory (read-only), or by its own fresh heartbeat; `id-mismatch` (`--new` resolves to an id
   other than `--repo-id`, or is not private); `unreadable` (a directory the walk could not read:
   macOS makes new folders under `~/Documents` unreadable from a terminal that was not granted
-  access, so it is listed, never skipped); `truncated` (not every clone was seen).
+  access, so it is listed, never skipped); `truncated` (not every clone was seen: field
+  `max-repos` when the repository cap stopped the walk, `max-depth` when the depth cap cut a
+  directory that still had subdirectories; re-run with a larger cap until neither appears).
 - INFO: the same holder kinds when they already hold the new name; `config-project` (it holds no
   repository name); `tracked-text`; the `rest-*` name lists; `rest-unreadable` (403 or 404);
   unattributed `writer` rows (a note says `cwd unreadable` when the directory could not be read)
@@ -63,6 +74,15 @@ Each finding prints `BLOCK <kind> <location> <field> <class>` or `INFO  ...`, th
   `--repo-id`: every remaining old holder reaches that repository).
 
 `--json FILE` also writes schema `sigma.handover-check/v1` with the findings, counts and caps.
+`caps.truncated` records the repository cap only; a depth cut is the `truncated` finding with field
+`max-depth`, and the last line's `truncated yes` covers both.
+
+Cost, measured on this machine (`--scan-root ~/.sigma-ops`, 97 entries at the top and more than
+2000 repositories below it, `--offline`): about 76 seconds of wall time, against about 38 before the
+walk descended into repositories; both runs stopped at the 2000-repository cap and the new one also
+reported 4317 directories cut at depth 5. The walk is linear in the directories under the scan
+root, so 10x the directories is roughly 10x the time; on a root this large the default caps are
+not enough, and step 6 cannot exit 0 until `--max-repos` and `--max-depth` are raised past it.
 
 ## The sequence
 
@@ -122,8 +142,9 @@ same block is printed by `python3 tools/handover_check.py sequence ... --throwaw
 - R4. Run steps 1 to 6 above with the throwaway as the old name and a renamed throwaway as the new
   name, then repeat R3 against the renamed one.
 
-Doing R4 is what shows that the checker listed every holder: after the repoint, a `check` that exits
-0 and a loop that still claims and opens a pull request.
+R4 shows that the repoint of the holders the checker DID list works: after it, a `check` that exits
+0 and a loop that still claims and opens a pull request. It cannot show that no holder was missed;
+that rests on the classification and walk rules above and on [What it cannot see](#what-it-cannot-see).
 
 ## What it cannot see
 

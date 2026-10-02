@@ -19,7 +19,8 @@ tree`, `exposure_scan.py tracked` and the export's own `leak_scan.py`), writes i
 then renames the export into place.
 
 EXIT. 0 = VERIFIED (the export is at OUT). 1 = REJECTED (the export is at `OUT.rejected` with no
-branch at all, so nothing is pushable; the report says why). 2 = a refusal (one stderr line
+branch and no export commit: the commit is pruned, so its id cannot be pushed; the files stay on
+disk for inspection; the report says why). 2 = a refusal (one stderr line
 `build_public_tree: REFUSED [<code>] <detail>`, nothing on stdout, no export, no report) or
 NOT-VERIFIED (a scan crashed or timed out: the export is at `OUT.rejected`, the report is written).
 
@@ -44,6 +45,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from collections import Counter
 
 TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -613,8 +615,9 @@ def _check_structure(remaining):
         parts = path.split("/")
         for i in range(1, len(parts) + 1):
             key = "/".join(parts[:i])
-            if seen.setdefault(key.casefold(), key) != key:
-                raise Refused("case-collision", "two planned paths differ only by case")
+            folded = unicodedata.normalize("NFC", unicodedata.normalize("NFC", key).casefold())
+            if seen.setdefault(folded, key) != key:
+                raise Refused("case-collision", "two planned paths differ only by case or Unicode normalisation")
     return paths
 
 
@@ -780,7 +783,7 @@ def _export_repository(partial, plan, planned, ct, message):
     `git archive`, never a hook-running command. -> the commit id."""
     env = _git_env()
     env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
-    base = ["-c", "core.autocrlf=false", "-c", "commit.gpgsign=false"]
+    base = ["-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", "-c", "core.logAllRefUpdates=false"]
     template = tempfile.mkdtemp(prefix="build_public_tree-template-")
     try:
         _gitb(partial, base + ["-c", "init.defaultBranch=main", "init", "-q", "--template=" + template], env=env)
@@ -818,13 +821,28 @@ def _export_repository(partial, plan, planned, ct, message):
     return commit
 
 
-def _unpublish_rejected(partial, run):
-    """A REJECTED or NOT-VERIFIED export keeps NO branch: delete `refs/heads/main` of the EXPORT
-    repository only (never the source). HEAD stays `ref: refs/heads/main`, now unborn, so nothing
-    is pushable; the commit object stays and its id is in the report."""
-    rc, _out, _err = run(["git", "-C", str(partial), "update-ref", "-d", "refs/heads/main"])
+def _unpublish_rejected(partial, run, commit):
+    """A REJECTED or NOT-VERIFIED export keeps NO branch and NO export commit, in the EXPORT
+    repository only (never the source): delete `refs/heads/main`, expire every reflog, prune the
+    now-unreachable commit, then prove `commit` no longer exists. HEAD stays `ref: refs/heads/main`,
+    now unborn. The files stay on disk for inspection (and the index keeps their blobs); the id in
+    the report and on stdout names a commit that is gone, so it cannot be pushed. No reflog is
+    written, and every call but the injected `run` sees no global or system git configuration."""
+    rc, _out, _err = run(["git", "-C", str(partial), "-c", "core.logAllRefUpdates=false",
+                          "-c", "core.hooksPath=/dev/null", "update-ref", "-d", "refs/heads/main"])
     if rc != 0:
         raise Refused("unpublish-failed", "could not remove the rejected export's branch (git exit %d)" % rc)
+    env = _git_env()
+    env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+    base = ["-c", "core.logAllRefUpdates=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0"]
+    try:
+        _gitb(partial, base + ["reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all"], env=env)
+        _gitb(partial, base + ["gc", "--prune=now", "--quiet"], env=env)
+    except Refused as exc:
+        raise Refused("unpublish-failed", "could not prune the rejected export commit (%s)" % exc.detail)
+    rc, _raw, _err = _run_bytes(["git", "-C", str(partial), "cat-file", "-e", commit], env=env)
+    if rc == 0:
+        raise Refused("unpublish-failed", "the rejected export commit is still retrievable after pruning")
     rc, out, _err = _real_run(["git", "-C", str(partial), "for-each-ref"])
     if rc != 0 or out.strip():
         raise Refused("unpublish-failed", "the rejected export still lists a ref")
@@ -1188,7 +1206,7 @@ def _main(argv, run, state):
 
     # 15. finalise
     if verdict != "VERIFIED":
-        _unpublish_rejected(partial, run)
+        _unpublish_rejected(partial, run, export_commit)
     dest = out if verdict == "VERIFIED" else rejected
     stale_keys = set((s["path"], s["rule"]) for s in exposure["stale"])
     unpinned = [{"source": "exposure-allowlist", "path": e["path"], "rule": e["rule"]}
