@@ -41,6 +41,7 @@ flake_check = _load("flake_check")  # #1933: 3x varied-order re-run of a goal's 
 witness = _load("witness")          # #1934: red-before-green as data (+ #1935's vocabulary)
 diff_revert = _load("diff_revert")  # #2240: mutmut-free kill control -- writes #1935's `mutation`
                                      # witness kind, which nothing else in this repo ever produces
+retention = _load("retention")      # #457: bounded prune of closed goals' action-log + witness streams
 actionlog = _load("actionlog")      # local-only action trace (config-gated, default OFF; never the ledger)
 timing_store = _load("timing_store")  # working time; the ONLY store here that is never config-gated
 decision_tier = _load("decision_tier")   # #953: needs_decision-park tier classifier (config-gated, #952)
@@ -4250,6 +4251,13 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             work.prune_terminal_review_copies(sdlc_dir, goal)
         except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
             print(f"loop.py record: review-copy cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
+    # #457: the same terminal moment sweeps OTHER closed goals' old action-log and witness streams
+    # (bounded, fail-open; `retention.py` states exactly what it will and will not delete).
+    if outcome == "done":
+        try:
+            retention.prune_closed_goal_streams(sdlc_dir)
+        except Exception as exc:              # noqa: BLE001 - retention must never cost a terminal record
+            print(f"loop.py record: stream retention skipped ({exc})", file=sys.stderr)
     # A goal's terminal outcome, however it ended, always clears every thread's death-watch
     # marker — a cleanly-finished goal must never linger in agent_watch's candidate set.
     agent_end(sdlc_dir, goal)
@@ -5758,7 +5766,7 @@ def _validate_event(kind, flags, kind_allowlist=None):
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> | "
          "next <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
          "next-batch <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
-         "session-active <dir> | session-end <dir> [--session-pid PID] | "
+         "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
          "precheck <dir> <goal> | "
@@ -6053,6 +6061,8 @@ def _dispatch(argv):
         session_end(argv[2], None if session_pid in (None, "true") else session_pid,
                     generation=None if generation == "true" else generation)
         return 0
+    if len(argv) >= 3 and argv[1] == "prune-state":          # #457: closed-goal log/witness retention
+        return retention.cli(argv[2:])
     if len(argv) >= 3 and argv[1] == "session-active":       # F10.5-4/#377: routine pre-flight check
         config = state.load_config(argv[2])
         print("ACTIVE" if session_active(argv[2], config) else "FREE")
