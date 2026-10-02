@@ -1168,7 +1168,7 @@ there.
 Config: `discovery.blocker_promotion.mode` (`off` default | `smart` | `always`) is the only key this
 feature reads.
 
-**A goal BLOCKED on another issue resumes by itself once that blocker closes. A goal a human
+**A goal BLOCKED on another issue resumes by itself once that blocker is resolved (a closed issue or a merged pull request). A goal a human
 PARKED never does.** That split is why this sweep ships on. When work on a goal finds a genuine
 dependency, the loop gives it the `sdlc:blocked` overlay: it keeps `sdlc:goal`, and nothing picks it
 while the overlay is on. `discovery.auto_unpark` is the sweep that lifts it:
