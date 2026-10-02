@@ -31,7 +31,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 |------|------|--------------|-----------|--------|
 | **entries** | `.sdlc/ledger/entries/*.jsonl` | Always (ledger.enabled) | Core | `{id, actor, ts, kind, ...optional}` |
 | **events** | `.sdlc/events/*.jsonl` | `journal.enabled`, or a managed-settings lock | Core | `{id, actor, ts, kind, goal, ...per-kind}` |
-| **verify** | `.sdlc/state/verify/*.json` | Always | Core | `{goal_id, result, ...}` |
+| **verify** | `.sdlc/state/verify/*.json` | Always (kept at least 7 days after the goal's `done`, then pruned by `goal_state_prune.py`; #458) | Core | `{goal_id, result, ...}` |
 | **witness** | `.sdlc/state/witness/*.jsonl` | Always | Core | `{goal_id, witness_line, ...}` |
 | **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command}` plus 3–7 checklist statements |
 | **plans** | `.sdlc/plans/*.md` | Always (hash only, body excluded) | Core | `{id, hash, frontmatter, ...}` |

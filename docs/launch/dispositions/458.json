@@ -1,0 +1,205 @@
+[
+  {
+    "pattern": ".sdlc/state/agents/<goal>/",
+    "issue": "#458",
+    "decision": "already bounded + crash-leak sweep",
+    "pruner_or_cap": "loop.agent_end at record plus goal_state_prune.sweep for dead markers of a goal done 7+ days",
+    "evidence": "agent_end in loop.py _record; sweep in skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/agents/<goal>/<thread>.active",
+    "issue": "#458",
+    "decision": "already bounded + crash-leak sweep",
+    "pruner_or_cap": "loop.agent_end at record plus goal_state_prune.sweep for dead markers of a goal done 7+ days",
+    "evidence": "agent_end in loop.py _record; sweep in skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/agents/<key>",
+    "issue": "#458",
+    "decision": "already bounded (slack listener) + documented residual",
+    "pruner_or_cap": "slack_commands_listen.finish_claim calls loop.agent_end for the key; a crashed key dir is retained (no log row proves it terminal)",
+    "evidence": "tests/test_slack_commands_listen.py::test_finish_claim_writes_a_terminal_entry_and_clears_the_marker; tests/test_goal_state_prune.py::test_a_dir_with_no_log_row_such_as_a_slack_key_is_kept; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/agents/<key>/<thread>.active",
+    "issue": "#458",
+    "decision": "already bounded (slack listener) + documented residual",
+    "pruner_or_cap": "slack_commands_listen.finish_claim calls loop.agent_end for the key; a crashed key dir is retained (no log row proves it terminal)",
+    "evidence": "tests/test_slack_commands_listen.py::test_finish_claim_writes_a_terminal_entry_and_clears_the_marker; tests/test_goal_state_prune.py::test_a_dir_with_no_log_row_such_as_a_slack_key_is_kept; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/escalation/<goal>.json",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/goal-review",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: written by the goal-review agent per confirmed design (compile input + receipt), never passed to record, so there is no code-level terminal signal; operator reclaims with rm of .sdlc/state/goal-review/<n>.*",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (not measured at scale: directory absent on the measured checkout)"
+  },
+  {
+    "pattern": ".sdlc/state/goal-review/",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: written by the goal-review agent per confirmed design (compile input + receipt), never passed to record, so there is no code-level terminal signal; operator reclaims with rm of .sdlc/state/goal-review/<n>.*",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (not measured at scale: directory absent on the measured checkout)"
+  },
+  {
+    "pattern": ".sdlc/state/goal-review/<n>.plan.json",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: written by the goal-review agent per confirmed design (compile input + receipt), never passed to record, so there is no code-level terminal signal; operator reclaims with rm of .sdlc/state/goal-review/<n>.*",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (not measured at scale: directory absent on the measured checkout)"
+  },
+  {
+    "pattern": ".sdlc/state/goal-review/<n>.report.json",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: written by the goal-review agent per confirmed design (compile input + receipt), never passed to record, so there is no code-level terminal signal; operator reclaims with rm of .sdlc/state/goal-review/<n>.*",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (not measured at scale: directory absent on the measured checkout)"
+  },
+  {
+    "pattern": ".sdlc/state/landing",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/landing/",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/landing/<goal>.json",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/phase/",
+    "issue": "#458",
+    "decision": "already bounded + crash-leak sweep",
+    "pruner_or_cap": "loop._phase_marker_end at record done; sweep removes a leaked marker of a goal done 7+ days",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/phase/<goal>.json",
+    "issue": "#458",
+    "decision": "already bounded + crash-leak sweep",
+    "pruner_or_cap": "loop._phase_marker_end at record done; sweep removes a leaked marker of a goal done 7+ days",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/propagation",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/propagation/",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/propagation/<goal>.json",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/run_stop",
+    "issue": "#458",
+    "decision": "age-based prune",
+    "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/run_stop/",
+    "issue": "#458",
+    "decision": "age-based prune",
+    "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/run_stop/<run_id>.json",
+    "issue": "#458",
+    "decision": "age-based prune",
+    "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/unit-tracking/",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/unit-tracking/<goal>.attempt",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/verify/<goal>.json",
+    "issue": "#458",
+    "decision": "terminal-goal prune after 7 days",
+    "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old (the largest family: median 16,468 B, max 593,634 B measured)",
+    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+  },
+  {
+    "pattern": ".sdlc/state/withheld",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: may be the only full copy of a finding about the kit; operator deletes after filing it upstream",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (directory absent on the measured checkout; not measured at scale)"
+  },
+  {
+    "pattern": ".sdlc/state/withheld/",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: may be the only full copy of a finding about the kit; operator deletes after filing it upstream",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (directory absent on the measured checkout; not measured at scale)"
+  },
+  {
+    "pattern": ".sdlc/state/withheld/<goal>.md",
+    "issue": "#458",
+    "decision": "documented intentionally unbounded",
+    "pruner_or_cap": "none: may be the only full copy of a finding about the kit; operator deletes after filing it upstream",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md (directory absent on the measured checkout; not measured at scale)"
+  },
+  {
+    "pattern": ".sdlc/state/work",
+    "issue": "#458",
+    "decision": "documented retained for the worktree lifecycle",
+    "pruner_or_cap": "none: owned by work.finish, which unlinks it with the worktree; 169 B per worktree; lever work.py finish --force",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md; real checkout 16 records, 6 for closed issues with surviving worktrees"
+  },
+  {
+    "pattern": ".sdlc/state/work/",
+    "issue": "#458",
+    "decision": "documented retained for the worktree lifecycle",
+    "pruner_or_cap": "none: owned by work.finish, which unlinks it with the worktree; 169 B per worktree; lever work.py finish --force",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md; real checkout 16 records, 6 for closed issues with surviving worktrees"
+  },
+  {
+    "pattern": ".sdlc/state/work/<goal>.json",
+    "issue": "#458",
+    "decision": "documented retained for the worktree lifecycle",
+    "pruner_or_cap": "none: owned by work.finish, which unlinks it with the worktree; 169 B per worktree; lever work.py finish --force",
+    "evidence": "ceiling and lever in docs/launch/b6-per-goal-state.md; real checkout 16 records, 6 for closed issues with surviving worktrees"
+  }
+]

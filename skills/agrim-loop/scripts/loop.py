@@ -4313,6 +4313,14 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
     # above returns "parked" here, not the stale request. `run_loop` relies on this (see its own
     # comment) so its per-run done/parked/failed counters reflect what was truly recorded rather
     # than re-deriving the same "did complete() raise?" decision a second, independent way.
+    # #458: LAST, and only on a real `done`: a bounded sweep of EARLIER terminal goals' per-goal
+    # state records. It never touches this goal (inside the 7-day window), whose verify evidence is
+    # read after `done` by the onboarding control and the contract's downstream ingester. Fail-open.
+    if outcome == "done":
+        try:
+            _load("goal_state_prune").after_done(sdlc_dir, agent_alive=agent_alive)
+        except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
+            print(f"loop.py record: per-goal state cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
     return outcome
 
 
