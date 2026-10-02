@@ -202,6 +202,7 @@ def test_only_owned_paths_are_touched(sdlc, tmp_path):
         os.utime(p, (OLD, OLD))
     before = {p: p.read_text() for p in neighbours}
     _sweep(tmp_path)
+    assert all(p.exists() for p in neighbours)
     assert {p: p.read_text() for p in neighbours} == before
 
 
