@@ -4,6 +4,21 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Claim locks and claim markers whose owner is dead are swept, and session and lock markers have a stated
+  cap** (#464, B6 of #419). On the measured checkout `state/claims/` held 82 files after four days
+  (47 `.lock`, 35 `.claimed`, about 20 a day) and nothing ever deleted one: `reclaim_stale_claim_lock`
+  had no caller. `python3 skills/agrim-loop/scripts/liveness_prune.py sweep .sdlc [--dry-run]
+  [--limit N]` (and, capped at 200 removals and 5 s, `loop.py start` and `loop.py record ... done`)
+  now removes a claim lock only when it is older than the claim lease (at least an hour), its goal has no
+  alive or unknown agent marker and is in no live session, and the sweep wins its `flock` (so a live
+  holder is never touched); a `.claimed` marker goes after 30 days when no work record or live agent
+  holds it. `_try_acquire_claim_lock` now re-checks that the lock it won is still the file at the path,
+  closing an unlink-between-`open`-and-`flock` window where two pickers could both win. The 256-stripe
+  and singleton `flock` files are capped, never deleted, and a test `SIGKILL`s a real holder of each to
+  show it reads free at once; dead session entries and the Slack lock keep their existing reclaim.
+  Not measured: inode cost at 10x or 100x on a real filesystem, network filesystems, Windows (the lock
+  sweep refuses without `fcntl`).
+
 - **Per-goal state records are removed once their goal is `done` and seven days old** (#458, B6 of #419).
   Nothing removed `state/verify`, `landing`, `propagation`, `escalation` or `unit-tracking`: on the
   measured checkout verify evidence alone was 3,929,772 bytes over 55 goals (median 16,468, max

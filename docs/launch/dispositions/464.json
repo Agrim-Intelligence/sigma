@@ -1,0 +1,128 @@
+[
+  {
+    "pattern": ".sdlc/state/STATE.md.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead owner never reads held",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/claims",
+    "issue": "#464",
+    "decision": "pruned (dead-owner lock sweep, 30-day marker prune)",
+    "pruner_or_cap": "liveness_prune.sweep removes a lock only when older than max(lease TTL, 1 h), no alive or unknown agent marker, goal in no live session, flock won, inode unchanged; run by loop.py start, loop.py record done and the operator lever; liveness_prune.sweep removes a claim marker older than 30 days with no work record and no alive or unknown agent marker; safe because _ensure_claimed re-reads the ledger and only re-touches",
+    "evidence": "tests/test_liveness_prune.py::test_kill9_slot_lock_reclaimed_and_live_sibling_kept and ::test_lock_held_by_a_live_flock_holder_is_kept_even_when_old and ::test_acquire_survives_an_unlink_between_open_and_flock; docs/launch/b6-claims-sessions-locks.md; tests/test_liveness_prune.py::test_claimed_marker_is_pruned_by_age_only_and_owners_keep_it; tests/test_flock_markers_release_on_kill.py::test_ensure_claimed_after_a_marker_prune_appends_no_second_claim; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/claims/",
+    "issue": "#464",
+    "decision": "pruned (dead-owner lock sweep, 30-day marker prune)",
+    "pruner_or_cap": "liveness_prune.sweep removes a lock only when older than max(lease TTL, 1 h), no alive or unknown agent marker, goal in no live session, flock won, inode unchanged; run by loop.py start, loop.py record done and the operator lever; liveness_prune.sweep removes a claim marker older than 30 days with no work record and no alive or unknown agent marker; safe because _ensure_claimed re-reads the ledger and only re-touches",
+    "evidence": "tests/test_liveness_prune.py::test_kill9_slot_lock_reclaimed_and_live_sibling_kept and ::test_lock_held_by_a_live_flock_holder_is_kept_even_when_old and ::test_acquire_survives_an_unlink_between_open_and_flock; docs/launch/b6-claims-sessions-locks.md; tests/test_liveness_prune.py::test_claimed_marker_is_pruned_by_age_only_and_owners_keep_it; tests/test_flock_markers_release_on_kill.py::test_ensure_claimed_after_a_marker_prune_appends_no_second_claim; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/claims/<goal>.claimed",
+    "issue": "#464",
+    "decision": "pruned (30-day age)",
+    "pruner_or_cap": "liveness_prune.sweep removes a claim marker older than 30 days with no work record and no alive or unknown agent marker; safe because _ensure_claimed re-reads the ledger and only re-touches",
+    "evidence": "tests/test_liveness_prune.py::test_claimed_marker_is_pruned_by_age_only_and_owners_keep_it; tests/test_flock_markers_release_on_kill.py::test_ensure_claimed_after_a_marker_prune_appends_no_second_claim; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/claims/<goal>.lock",
+    "issue": "#464",
+    "decision": "pruned (dead-owner sweep)",
+    "pruner_or_cap": "liveness_prune.sweep removes a lock only when older than max(lease TTL, 1 h), no alive or unknown agent marker, goal in no live session, flock won, inode unchanged; run by loop.py start, loop.py record done and the operator lever",
+    "evidence": "tests/test_liveness_prune.py::test_kill9_slot_lock_reclaimed_and_live_sibling_kept and ::test_lock_held_by_a_live_flock_holder_is_kept_even_when_old and ::test_acquire_survives_an_unlink_between_open_and_flock; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/claims/slack-cmd-<name>.lock",
+    "issue": "#464",
+    "decision": "pruned (dead-owner sweep)",
+    "pruner_or_cap": "liveness_prune.sweep removes a lock only when older than max(lease TTL, 1 h), no alive or unknown agent marker, goal in no live session, flock won, inode unchanged; run by loop.py start, loop.py record done and the operator lever",
+    "evidence": "tests/test_liveness_prune.py::test_kill9_slot_lock_reclaimed_and_live_sibling_kept and ::test_lock_held_by_a_live_flock_holder_is_kept_even_when_old and ::test_acquire_survives_an_unlink_between_open_and_flock; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/feature-judge-spend.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead owner never reads held",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/knowledge-sync.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead owner never reads held",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/merge-reconcile.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead owner never reads held",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/phase-end-<stripe>.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at 256 stripes by construction (fixed-width hash, 0 bytes each), never deleted; the kernel drops the lock when its owner dies",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions",
+    "issue": "#464",
+    "decision": "already bounded + lever",
+    "pruner_or_cap": "existing loop._prune_dead_session_entries (pid liveness via ledger.pid_alive, lease TTL as pid-reuse backstop) runs from loop.py start and next; liveness_prune.py sweep is the operator lever for a machine that starts no further session",
+    "evidence": "tests/test_liveness_prune.py::test_dead_session_entries_removed_live_kept; tests/test_loop.py::test_session_active_is_false_for_a_definitively_dead_pid and ::test_session_prune_removes_stale_atomic_write_temps; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/",
+    "issue": "#464",
+    "decision": "already bounded + lever",
+    "pruner_or_cap": "existing loop._prune_dead_session_entries (pid liveness via ledger.pid_alive, lease TTL as pid-reuse backstop) runs from loop.py start and next; liveness_prune.py sweep is the operator lever for a machine that starts no further session",
+    "evidence": "tests/test_liveness_prune.py::test_dead_session_entries_removed_live_kept; tests/test_loop.py::test_session_active_is_false_for_a_definitively_dead_pid and ::test_session_prune_removes_stale_atomic_write_temps; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/<pid>-<thread>.active",
+    "issue": "#464",
+    "decision": "already bounded + lever",
+    "pruner_or_cap": "existing loop._prune_dead_session_entries (pid liveness via ledger.pid_alive, lease TTL as pid-reuse backstop) runs from loop.py start and next; liveness_prune.py sweep is the operator lever for a machine that starts no further session",
+    "evidence": "tests/test_liveness_prune.py::test_dead_session_entries_removed_live_kept; tests/test_loop.py::test_session_active_is_false_for_a_definitively_dead_pid and ::test_session_prune_removes_stale_atomic_write_temps; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/<pid>.active",
+    "issue": "#464",
+    "decision": "already bounded + lever",
+    "pruner_or_cap": "existing loop._prune_dead_session_entries (pid liveness via ledger.pid_alive, lease TTL as pid-reuse backstop) runs from loop.py start and next; liveness_prune.py sweep is the operator lever for a machine that starts no further session",
+    "evidence": "tests/test_liveness_prune.py::test_dead_session_entries_removed_live_kept; tests/test_loop.py::test_session_active_is_false_for_a_definitively_dead_pid and ::test_session_prune_removes_stale_atomic_write_temps; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/locks",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at 256 stripes by construction (fixed-width hash, 0 bytes each), never deleted; the kernel drops the lock when its owner dies",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/locks/",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at 256 stripes by construction (fixed-width hash, 0 bytes each), never deleted; the kernel drops the lock when its owner dies",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/sessions/locks/<slot>.lock",
+    "issue": "#464",
+    "decision": "capped",
+    "pruner_or_cap": "capped at 256 stripes by construction (fixed-width hash, 0 bytes each), never deleted; the kernel drops the lock when its owner dies",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed; docs/launch/b6-claims-sessions-locks.md"
+  },
+  {
+    "pattern": ".sdlc/state/slack-commands.lock",
+    "issue": "#464",
+    "decision": "already bounded (existing mkdir reclaim)",
+    "pruner_or_cap": "slack_commands_listen.acquire_single_instance reclaims a lock directory whose holder pid is dead, whose heartbeat is stale, or that has no pidfile past a 5 s grace window (never inside it); release_single_instance removes it on a clean or signalled exit",
+    "evidence": "tests/test_slack_commands_listen.py::test_acquire_single_instance_reclaims_when_the_holder_pid_is_dead and ::test_acquire_single_instance_reclaims_a_pidless_lock_older_than_the_grace_window and ::test_acquire_single_instance_no_intermediate_state_of_a_live_winner_is_reclaimable; docs/launch/b6-claims-sessions-locks.md"
+  }
+]

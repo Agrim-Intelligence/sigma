@@ -649,6 +649,22 @@
       "risk": "high"
     },
     {
+      "path": "skills/agrim-loop/scripts/liveness_prune.py",
+      "function": "_try_remove_lock",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "claim lock only: mtime older than max(claim lease TTL, 1 h), no alive or unknown agent marker, goal in no live session's in_flight, this process wins a non-blocking flock opened O_NOFOLLOW (never O_CREAT), the locked inode is still the path's inode, mtime re-checked under the lock (#464)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/liveness_prune.py",
+      "function": "sweep",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "claims/<goal>.claimed only: regular non-symlink file in a real claims dir, older than 30 days, no work record, no alive or unknown agent marker; capped by --limit and a wall-clock budget (#464)",
+      "risk": "medium"
+    },
+    {
       "path": "skills/agrim-loop/scripts/logroll.py",
       "function": "_acquire",
       "rule": "fs-remove",
