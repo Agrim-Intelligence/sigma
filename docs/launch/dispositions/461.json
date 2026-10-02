@@ -1,0 +1,128 @@
+[
+  {
+    "pattern": ".sdlc/events",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
+    "evidence": "tests/test_b6_461.py (events nodes) and tests/test_ledger_prune.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/events/",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
+    "evidence": "tests/test_b6_461.py (events nodes) and tests/test_ledger_prune.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/events/.last-prune",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
+    "evidence": "tests/test_b6_461.py (events nodes) and tests/test_ledger_prune.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
+    "evidence": "tests/test_b6_461.py (events nodes) and tests/test_ledger_prune.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/ledger/",
+    "issue": "#461",
+    "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
+    "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
+    "evidence": "tests/test_b6_461.py (unbounded node, red when a sweep reaches ledger/entries or the legacy ledger/events); decision, ceiling and who can reclaim in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/ledger/<stream>",
+    "issue": "#461",
+    "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
+    "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
+    "evidence": "tests/test_b6_461.py (unbounded node, red when a sweep reaches ledger/entries or the legacy ledger/events); decision, ceiling and who can reclaim in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/ledger/<stream>/",
+    "issue": "#461",
+    "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
+    "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
+    "evidence": "tests/test_b6_461.py (unbounded node, red when a sweep reaches ledger/entries or the legacy ledger/events); decision, ceiling and who can reclaim in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
+    "issue": "#461",
+    "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
+    "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
+    "evidence": "tests/test_b6_461.py (unbounded node, red when a sweep reaches ledger/entries or the legacy ledger/events); decision, ceiling and who can reclaim in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/ledger/TEAM.md",
+    "issue": "#461",
+    "decision": "derived view, regenerated",
+    "pruner_or_cap": "none: rewritten whole from the entries on every publish; size follows the entries (25 recent rows plus open hand-offs)",
+    "evidence": "tests/test_b6_461.py (unbounded node); decision in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/.last-prune",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/<goal>",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/<goal>/",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/<goal>/<value>.jsonl",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/_sessions/<text>/",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/_sessions/<text>/<value>.jsonl",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  },
+  {
+    "pattern": ".sdlc/state/time/_sessions/<text>/turns.jsonl",
+    "issue": "#461",
+    "decision": "capped",
+    "pruner_or_cap": "timing_store.prune: deletes goals and sessions whose newest file is 90 days old, from the first timing_store.append of each process, at most once per 24h; age-based, not size-based; own *.jsonl only",
+    "evidence": "tests/test_b6_461.py (time nodes) and tests/test_timing_store.py; measurements, ownership and recovery in docs/launch/retention-event-time-ledger.md"
+  }
+]
