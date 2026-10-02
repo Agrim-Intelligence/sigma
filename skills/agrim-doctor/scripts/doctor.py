@@ -3547,7 +3547,8 @@ def _dispatch_compliance_state(base, cfg, now=None):
 
     SCALABILITY, NAMED RATHER THAN DISCOVERED LATER: this reads every goal's ENTIRE local log once
     per doctor run — O(total historical log lines across the whole repo), unbounded by the 30-day
-    window that already bounds the ledger side (a log file is never pruned once its goal is done).
+    window that already bounds the ledger side (since #457 `retention.py` prunes a goal's log once it
+    is closed as done and older than `action_log.retention_days`, default 90; every other goal's log stays).
     At today's scale this is one more full-directory read alongside the `_ledger_entries`/
     `_journal_local_events_count` scans this file already runs on every `/agrim-doctor`; a repo
     with 10-100x more completed-goal history pays a proportionally larger one-time read on every

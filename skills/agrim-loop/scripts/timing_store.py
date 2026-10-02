@@ -210,9 +210,9 @@ def _stamp(now=None):
 
 
 #: How long a finished goal's durations are kept. Bounded growth is a design-time requirement, not
-#: an operational surprise, and this store deliberately does NOT copy the action log's precedent —
-#: `doctor.py` records that a log file there "is never pruned once its goal is done", i.e. that
-#: directory grows without limit forever. The precedent copied instead is `autowatch._record_spend`:
+#: an operational surprise. The action log once grew without limit (#457 has since added
+#: `retention.py`, which prunes a closed-as-done goal's log); this store prunes by its own rolling
+#: window. The precedent copied is `autowatch._record_spend`:
 #: append-only, pruned to a rolling window on the write side, fail-open throughout.
 RETENTION_DAYS = 90
 
