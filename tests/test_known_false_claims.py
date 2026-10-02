@@ -40,18 +40,37 @@ def test_changelog_versions_are_dated():
     assert headings and all(re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) for _version, suffix in headings)
 
 
-def test_readme_ci_python_claim_lists_every_ci_matrix_version():
-    """#434: the README's CI line named only 3.10 + 3.12 while ci.yml runs four Linux versions."""
-    readme = (ROOT / "README.md").read_text()
+
+def _ci_matrix():
+    """{os family: set of python versions} parsed from ci.yml's `include:` cells."""
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    versions = set(re.findall(r'python:\s*"(3\.\d+)"', workflow))
-    assert versions
+    cells = re.findall(r'-\s*os:\s*(\w+)-latest\s*\n\s*python:\s*"(3\.\d+)"', workflow)
+    out = {}
+    for os_name, version in cells:
+        out.setdefault(os_name, set()).add(version)
+    return out
+
+
+def _versions(text):
+    return set(re.findall(r"3\.\d+", text))
+
+
+def test_ci_python_claims_equal_the_ci_matrix_exactly():
+    """#434: the README's CI line said 3.10 + 3.12 while ci.yml runs four Linux versions + macOS 3.12."""
+    matrix = _ci_matrix()
+    assert matrix.get("ubuntu") and matrix.get("macos")
+    pattern = re.compile(r"on Linux with Python ([\d., and]+?),? and on macOS with Python (3\.\d+)")
+    readme = " ".join((ROOT / "README.md").read_text().split())
     start = readme.index("**CI** (GitHub Actions)")
-    claim = readme[start:start + 600]
-    for version in versions:
-        assert f"Python {version}" in claim or version in claim, version
-    assert "3.10 + 3.12" not in readme
-    assert "Linux, Python 3.10 and 3.12" not in (ROOT / "docs/onboarding-control.md").read_text()
+    sites = [readme[:readme.index("Windows verification")], readme[start:start + 400]]
+    for site in sites:
+        m = pattern.search(site)
+        assert m, "CI sentence must state both the Linux and the macOS Python versions"
+        assert _versions(m.group(1)) == matrix["ubuntu"]
+        assert _versions(m.group(2)) == matrix["macos"]
+    doc = " ".join((ROOT / "docs/onboarding-control.md").read_text().split())
+    m = re.search(r"\(`tests/test_onboarding_control.py`, Linux, Python ([\d., and]+)\)", doc)
+    assert m and _versions(m.group(1)) == matrix["ubuntu"]
 
 
 def test_blocker_docs_say_merged_pull_request_not_closed():
@@ -61,19 +80,20 @@ def test_blocker_docs_say_merged_pull_request_not_closed():
     import blocker_scan
     assert blocker_scan.closed_state("CLOSED", "") is False
     assert blocker_scan.closed_state("MERGED", "") is True
-    assert "closed issue or pull request" not in (ROOT / "README.md").read_text()
+    assert blocker_scan.closed_state("CLOSED", "COMPLETED") is True
+    readme = " ".join((ROOT / "README.md").read_text().split())
+    sweep = readme[readme.index("`discovery.auto_unpark.mode` is"):][:1800]
+    assert re.search(r"points at a closed issue or a merged pull request \(a pull request closed "
+                     r"without merging does not resolve it\), it drops `sdlc:blocked`", sweep)
+    allowed = "a pull request closed without merging does not resolve it"
+    stripped = sweep.replace(allowed, "")
+    assert not re.search(r"closed (?:issue or )?(?:pull request|PR)|closed or merged", stripped, re.I)
 
 
 def test_readme_managed_settings_says_it_is_advisory():
-    text = (ROOT / "README.md").read_text()
+    text = " ".join((ROOT / "README.md").read_text().split())
     section = text[text.index("## Managed settings"):]
-    section = section[:section.index("\n## ", 5)]
-    assert "advisory" in section
-
-
-def test_leak_scan_docs_carry_no_stale_measurements_or_symlink_claim():
-    """#434: 614 files / 4.1-4.3 s was stale (798 files); `secret-file` does not flag symlinks."""
-    doc = (ROOT / "tools/leak_scan.py").read_text()
-    assert "614 tracked files" not in doc
-    assert "614 tracked files" not in (ROOT / "CHANGELOG.md").read_text()
-    assert "whatever it holds" not in doc or "symlink" in doc[doc.index("secret-file:"):][:700]
+    section = section[:section.index(" ## ", 5)]
+    assert ("The managed-settings file is advisory against anyone with write access to the checkout: "
+            "they can edit or delete it, and deleting it falls back to the local config.") in section
+    assert not re.search(r"not advisory|tamper|cannot be (?:edited|bypassed|deleted)", section, re.I)

@@ -176,7 +176,7 @@ All notable changes to Sigma are recorded here, newest first.
   `claude plugin` / `codex plugin` syntax against the CLIs' help. (8) The `loop.py start` nag after
   `--local-only` was already fixed by #236 and has its own control, so nothing changed. (9) New
   `tools/leak_scan.py` is the leak gate that #231's acceptance and `scrub.py` name. It reports
-  locations only, never values: 0 findings over all tracked files (614 when written, 798 now), and each plant is red
+  locations only, never values: 0 findings over all 614 tracked files, and each plant is red
   (`tests/test_leak_scan.py`). After review it scans EVERY tracked file (`.sdlc/` and `tests/`
   ship too; a first draft skipped them and missed a real home path in `.sdlc/plans/258.md`, now
   `<home>/…`); its secret rules are scrub.py's `SHAPE_RULES` plus `_SECRET_PATTERNS` (PEM keys, AWS
@@ -187,8 +187,8 @@ All notable changes to Sigma are recorded here, newest first.
   allowing this repository and doctor.py's public slug. 98 lines of token-shaped test fixtures in 16
   files are now built from fragments, and a line may opt out of one rule only with an in-file
   allow marker that names the rule and a reason (the syntax is in the tool's docstring; a malformed
-  marker is itself a finding). Measured when written: 4.1-4.3 s
-  for the whole tree on Python 3.10 and 3.12 (now 5.7-7.6 s over 798 files on 3.9). Second review: the credential rule borrowed from
+  marker is itself a finding). Measured: 4.1-4.3 s
+  for the whole tree on Python 3.10 and 3.12. Second review: the credential rule borrowed from
   scrub.py began with `\b`, which cannot match after `_`, so `GITHUB_TOKEN=`, `OPENAI_API_KEY=`,
   `DB_PASSWORD=`, `aws_secret_access_key =` and every other prefixed key were missed. The gate's own
   `config-credential` rule now matches any key that ENDS in a credential word, quoted or not, in

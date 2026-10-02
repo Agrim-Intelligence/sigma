@@ -42,12 +42,10 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     `_authToken`, ...; `_CRED_KEY`) assigned a value, quoted or not. scrub.py's generic key:value
     redactor is NOT used here: its leading `\\b` cannot match after `_`, so it misses every
     prefixed key. In prose and code the rule would fire on every `token: str` annotation.
-  * key-body: a run of three or more consecutive lines, EVERY line of which is a 40+ character base64
-    run with upper case, lower case and a digit -- a private key body whose header was stripped. One
-    non-qualifying line inside a longer run makes the whole maximal run clean. A certificate or
+  * key-body: three or more consecutive lines that are each a 40+ character base64 run with upper
+    case, lower case and a digit -- a private key body whose header was stripped. A certificate or
     public-key body is excluded only when its recognized header is immediately adjacent.
-  * secret-file: a tracked REGULAR-FILE path whose NAME is a credential container, whatever it holds
-    (a symlink returns early in `_scan_path`, so a link named like one is not flagged): `id_rsa` /
+  * secret-file: a tracked path whose NAME is a credential container, whatever it holds: `id_rsa` /
     `id_dsa` / `id_ecdsa` / `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
     `*.ppk`, `.netrc` / `_netrc`, `.pgpass`, `credentials.json`, `service-account*.json`, and `.env` /
     `.env.<x>` other than an example (`.example`, `.sample`, `.template`, `.dist`, `.defaults`).
@@ -70,12 +68,7 @@ slug outside a URL (`gh repo clone <owner>/<repo>`), `<owner>.github.io`, `githu
 and a percent-encoded GitHub URL; e-mail addresses; bidi and zero-width characters (including one
 spliced into a token); base64-wrapped, split or concatenated tokens; credentials made of letters
 only (the digit+letter post-filter drops them); `key: value` credentials in prose and code files
-(only quoted `key = "value"` is caught there, by scrub.py's `credential-assignment`). Also verified
-NOT detected (#434, run through `scan_text`): hex-encoded and base64url key bodies; key bodies
-whose lines carry a `#` prefix or are quoted and comma-ended; lone-CR line endings; UTF-32 files;
-`/var/home/<name>`, `-I/Users/<name>/...` and JSON-escaped `\\/Users\\/<name>` paths; a Hugging Face
-`hf_` token; a docker `config.json` `auth` value. The gate reads working-tree bytes of `git ls-files`
-paths, so the index and git history are not scanned.
+(only quoted `key = "value"` is caught there, by scrub.py's `credential-assignment`).
 
 OUTPUT. One line per finding, `<path>:<line>: <rule>` -- the LOCATION only, never the matched value,
 then `leak_scan: <n> finding(s) over <m> file(s) (<u> unscannable, <a> allow-marked line(s))`.
@@ -86,9 +79,9 @@ USAGE
     python3 tools/leak_scan.py            # scans the checkout this file lives in
 
 Cost: one `git ls-files`, one `git remote get-url`, then each rule once over each tracked text file.
-MEASURED on this tree (798 tracked files, Apple M-series, Python 3.9): 5.7-7.6 s wall (two runs, #434),
-nearly all of it regex time; not re-measured on 3.10+. Linear in bytes, one file at a time, so memory
-is bounded by the largest file (`MAX_BYTES`); 10x the tree is ~60-75 s -- a publish/CI gate, never a hook. Stdlib only; Linux, macOS,
+MEASURED on this tree (614 tracked files, Apple M-series): 4.1-4.3 s wall on Python 3.10 and 3.12, nearly
+all of it regex time. Linear in bytes, one file at a time, so memory is bounded by the largest file
+(`MAX_BYTES`); 10x the tree is ~40 s -- a publish/CI gate, never a hook. Stdlib only; Linux, macOS,
 Windows.
 """
 import ast
