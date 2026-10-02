@@ -42,9 +42,59 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     `_authToken`, ...; `_CRED_KEY`) assigned a value, quoted or not. scrub.py's generic key:value
     redactor is NOT used here: its leading `\\b` cannot match after `_`, so it misses every
     prefixed key. In prose and code the rule would fire on every `token: str` annotation.
-  * key-body: three or more consecutive lines that are each a 40+ character base64 run with upper
-    case, lower case and a digit -- a private key body whose header was stripped. A certificate or
-    public-key body is excluded only when its recognized header is immediately adjacent.
+  * key-body: a private key body that lost its header or its END (#433). Three triggers:
+    (1) BLOCKS. Adjacent whole lines of 40+ base64 characters (`=` padding; outer spaces, tabs and
+    a CR ignored) count when there are 3 or more with at most ONE lacking upper case, lower case or a
+    digit, or exactly 2, both mixed, followed directly by a 28-39 character line (an EC P-256 body
+    is 64, 64, 36). Lengths count the base64 payload, never the `=` padding: a 28-character line
+    ending in `=` is a 27-character tail, and a 40-character line ending in `=` is under the 40
+    floor (measured: a real legacy-encrypted EC body re-wrapped at 72 columns, 72, 72 and 28 with
+    `=`, is clean header-less; at 64 columns, 64, 64 and 44, it is flagged). A counted block is
+    exempt only when its first line is inside a whole public span: a standalone `-----BEGIN
+    <label>-----` line whose label names neither PRIVATE nor SECRET (any case), then only blank, `Key:
+    value`, base64 or `...` lines, then `-----END <same label>-----`. A body under a public header with
+    no END, or glued to a certificate with no END, is flagged; a body before or after a whole span is
+    flagged too (measured on a real certificate and a 6-line slice of a real RSA body).
+    (2) HEADER ANCHOR. A block that does not count, every line mixed (one line is enough), is a
+    finding when a line naming `BEGIN <label>-----` (4 or 5 dashes after the label; `BEGIN PRIVATE KEY`
+    alone does not anchor) with PRIVATE or SECRET in the label -- a header, or prose naming one --
+    sits above it with at most `_GAP` = 8 blank or `Key: value` lines between
+    (each may carry a unified diff's leading `+`): a one-line Ed25519 body or a truncated RSA paste
+    under its header, also inside a diff. So a lone 40+ mixed digest under such prose is a finding
+    too (KNOWN AMBIGUITIES below).
+    (3) DER FIRST LINE. A line that starts, after space / tab indentation and at most two runs of
+    1-3 symbols (`"`, `# `, `> `, `// `, ` * `, `- "`; `+` and `/` are symbols too, so a diff's `+`
+    or a `//` with no space is one run, and at most 6 of them are read this way), with base64 or
+    base64url whose first 24 characters decode
+    to a private key's DER header (`SEQUENCE { INTEGER 0|1, SEQUENCE | INTEGER | OCTET STRING`:
+    PKCS8 v1/v2, PKCS1 / DSA, SEC1), or with OpenSSH's `openssh-key-v1` constant; anything may follow
+    it and no span exempts it. A LONGER run of `+` and `/` is read only when the whole line, run
+    included, is a (1) candidate line, 40+ base64 characters and nothing else: the run is then
+    stripped before the DER header is read. MEASURED through the gesture (runs of 1-10 `+`, `/` and
+    `+/`, before a 64-character Ed25519-shaped line and a 24-character P-224 one, each bare and
+    followed by `",`, ` \\` and ` x`): a run of 1-6 is flagged whatever follows; a run of 7 or more is
+    flagged only when nothing but base64 follows and the line reaches 40 characters (7+ before the
+    64-character line: flagged bare, NOT flagged with any of the three tails or with a base64url `-`
+    / `_` in the key; 15 `+` before the 24-character line, 39 characters: NOT flagged; 16: flagged).
+    It is the only reach of a header-less one-line Ed25519 key, which is
+    otherwise 48 random bytes, the same as a sha384 digest. Explicit EC PARAMETERS (public, and
+    shaped like PKCS8 v2) are excluded by their OID.
+    A finding's line is the block's first line, or the DER line. A trailing allow marker waives a DER
+    line (it stays a DER line). There is NO designed waiver for a header-less multi-line body. A marker
+    on one of its lines makes that line non-base64, which splits the block, and what remains is judged
+    by the same rules (measured through the gesture): a SHORT body with no DER first line (3 lines, or
+    lines of 64, 64 and 36) split below the thresholds goes clean, whichever line carries the marker;
+    a DER-led body stays flagged at its DER first line unless the marker is on THAT line (real keys: a
+    P-256 SEC1 body, 64, 64 and 36, which always opens with its DER header, and the first 3 lines of
+    an RSA body: marker on line 1 clean, on line 2 or 3 flagged at line 1; an Ed25519 line: clean); a
+    longer body is still flagged on its remaining lines (6 lines, marker on line 1: flagged at line 2;
+    on line 4 or 6: at line 1); a marker on the line above the body waives nothing. That is a side effect of the
+    block rule, not a per-block waiver, and the summary's `allow-marked line(s)` count still counts
+    the marker. The documented, reliable waiver is `ALLOW_PATHS`, for a whole file.
+    False positives, MEASURED against a3c913c's rule: 0 -> 0 findings on the staged tree (826 files:
+    821 at origin/main f69d3e1, this change's 2 new test files and its 3 `.sdlc` phase documents); on
+    a generated 97-file corpus 34 -> 17 with 1 new (a P-256 body); the CHANGELOG lists the wider
+    populations.
   * secret-file: a tracked path whose NAME is a credential container, whatever it holds: `id_rsa` /
     `id_dsa` / `id_ecdsa` / `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
     `*.ppk`, `.netrc` / `_netrc`, `.pgpass`, `credentials.json`, `service-account*.json`, and `.env` /
@@ -68,7 +118,49 @@ slug outside a URL (`gh repo clone <owner>/<repo>`), `<owner>.github.io`, `githu
 and a percent-encoded GitHub URL; e-mail addresses; bidi and zero-width characters (including one
 spliced into a token); base64-wrapped, split or concatenated tokens; credentials made of letters
 only (the digit+letter post-filter drops them); `key: value` credentials in prose and code files
-(only quoted `key = "value"` is caught there, by scrub.py's `credential-assignment`).
+(only quoted `key = "value"` is caught there, by scrub.py's `credential-assignment`); UTF-32 text
+(measured: without a byte-order mark, or big-endian with one, it is reported `opaque-binary`;
+little-endian WITH one is mis-decoded as UTF-16 and nothing in it is seen). For `key-body` (each
+planted and run through the gesture, #433):
+hex bodies, and base64url bodies other than a base64url DER first line; a PEM base64-wrapped into one
+string; a key inline in a JSON or shell string (`{"k": "<base64>"}`, `KEY='<base64>'`, or a
+multi-line shell string whose body starts on the `KEY="` line), or after other text on its line
+(`key: <base64>`) -- but a DER-led key alone on its line inside one IS caught (measured: a JSON array
+element `  "<Ed25519 line>",`, and a multi-line shell string whose P-256 body starts on its own line);
+a non-DER body (encrypted PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries
+a comment or quote prefix (`# `, `"`, `// `, `> `, ` * `, `+ `), even directly under its header
+(real keys, 48 plants: 0 findings here and on a3c913c);
+a PuTTY `.ppk` key whose `Private-Lines` part is 1-2 lines (Ed25519: 1 line; an RSA `.ppk`'s
+64-wide blocks of 3+ lines ARE flagged, measured, and a file named `*.ppk` is a `secret-file`); a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); a slice
+with no DER start inside a matching public span, unless a `Key: value` line above it in the span
+names a PRIVATE `BEGIN <label>-----` (then the header anchor flags it, measured); an encrypted PKCS8, PKCS12 or PGP-private body
+from a lone first line; a body wrapped below 24 characters (in every shape); a body wrapped below 40
+whose first line is missing; any non-DER body wrapped below 40, header and END included (no line
+reaches the 40 floor, nor scrub.py's `private-key` 40-character run); an all-lower-case body; a
+body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean) or with
+U+2003, U+3000, `\\v` or `\\f`; a body whose lines are separated by U+2028, U+2029 or NEL (U+0085)
+instead of LF / CR, except a DER first line that opens the file or follows an LF / CR: that line is
+still read, whatever separates the rest (real P-256 SEC1, 12-line RSA and Ed25519 bodies: flagged at
+their first line at the start of the file and after an LF line; clean only when one of these
+separators also comes before the first line; a 12-line non-DER RSA slice: clean; only space and tab
+are indentation, only LF and CR end a line); more
+than 8 armor lines, or a line that is not armor, between header and body; a non-DER body under a
+lower-case `begin` header (it does not anchor; a DER first line or a counted block under it is
+still caught: EC, RSA, Ed25519 and P-224 bodies measured). KNOWN AMBIGUITIES (findings, not misses;
+waive with `ALLOW_PATHS`): 3+ raw base64 digests in a row; generic wrapped base64 (a binary MIME
+attachment, a 76-wide CSS data URI: a3c913c flags both too); a header-less public DER body (an XML
+`<X509Certificate>`, a CMP message); any other public DER that opens `02 01 00|01 30|02|04` after its
+SEQUENCE; a certificate with prose inside its BEGIN/END, or whose BEGIN or END line also carries code
+(a Go backtick or a Python triple-quoted literal), or an SSH2 public block whose `Comment:` continues
+with a trailing backslash: none is a span, so the body is a finding; a unified diff or patch that
+ADDS a certificate or a CA bundle (every line `+`-prefixed: a `+-----BEGIN` line is not a
+standalone BEGIN line, so the span exemption is not diff-aware; a `+`-prefixed copy of a 145-
+certificate certifi bundle: 141 key-body locations on a3c913c, 145 now; of a 121-certificate
+Homebrew bundle: 119 and 121); ONE 40+ mixed-case base64 line (a digest) below prose that names a
+PRIVATE `BEGIN <label>-----` header, with only blank, `+`-only or `Key: value` lines between, by
+design of the header anchor (2) (a changelog sentence, a markdown table row, a diff of a changelog:
+0 findings each on a3c913c, 1 now; no file on this tree or in the 97- or 137-file corpora hits it
+except those three planted probes).
 
 OUTPUT. One line per finding, `<path>:<line>: <rule>` -- the LOCATION only, never the matched value,
 then `leak_scan: <n> finding(s) over <m> file(s) (<u> unscannable, <a> allow-marked line(s))`.
@@ -79,12 +171,22 @@ USAGE
     python3 tools/leak_scan.py            # scans the checkout this file lives in
 
 Cost: one `git ls-files`, one `git remote get-url`, then each rule once over each tracked text file.
-MEASURED on this tree (614 tracked files, Apple M-series): 4.1-4.3 s wall on Python 3.10 and 3.12, nearly
-all of it regex time. Linear in bytes, one file at a time, so memory is bounded by the largest file
-(`MAX_BYTES`); 10x the tree is ~40 s -- a publish/CI gate, never a hook. Stdlib only; Linux, macOS,
-Windows.
+MEASURED on the staged tree (826 files: 821 at origin/main f69d3e1, this change's 2 new test files
+and its 3 `.sdlc` phase documents; Apple M-series, CPU seconds, minimum of 3 runs at load 4-6):
+5.49 s on Python 3.9.6 and 5.05 s on 3.12.13 (a3c913c's gate: 5.57 and 5.11 s), nearly all of it
+regex time; `key-body` takes 0.16 s of it (0.26 s before #433; one run) and adds no finding here. One
+file at a time, so memory is bounded by the largest file (`MAX_BYTES`); 10x the tree would be ~50-55
+s (extrapolated, not measured) -- a publish/CI gate, never a hook. Every `key-body` regex was fuzzed
+with single lines of 16 KB, 64 KB and 1 MB (26 line shapes x 8 contexts, worst 0.27 s at 1 MB) and
+grows linearly; the worst single 4 MB file found for it (one line of repeated `BEGIN ` words above a
+one-line body) took 1.1 s in `key-body` and 2.6 s for the whole file (a3c913c: 0.05 and 1.1 s).
+NOT linear, and not changed by #433: scrub.py's `private-key` rule on a file of repeated private
+BEGIN headers, each followed by 8 blank lines and one base64 line, with no END: 0.5, 1.9 and 7.6 s
+at 0.125, 0.25 and 0.5 MB (4x per doubling), and a 4 MB file did not finish in 150 s.
+Stdlib only; Linux, macOS, Windows.
 """
 import ast
+import base64
 import bisect
 import importlib.util
 import os
@@ -128,8 +230,32 @@ _DOCKER_CRED = re.compile(r"(?im)^[ \t]*(?:ENV|ARG)[ \t]+" + _CRED_KEY + r"[ \t]
                           + r"[ \t]*$")
 _PLACEHOLDER_VALUE = re.compile(r"(?i)(?:your[-_ ].*|.*[-_]here|changeme|change[-_]me|example|"
                                 r"placeholder|dummy|redacted|x{3,}|\*{3,}|\.{3,}|none|null)")
-#: A private key body with its header stripped: 3+ consecutive long, mixed-case-and-digit base64 lines.
-_B64_RUN = re.compile(r"(?m)(?:^[ \t]*[A-Za-z0-9+/]{40,}={0,2}[ \t]*\r?(?:\n|\Z)){3,}")
+#: A private key body that lost its header or its END (see `key-body`). Per line, ONE alternative matches:
+#:  b = a CANDIDATE: a whole line of 40+ base64 chars (`=` padding, outer spaces/tabs and a CR allowed,
+#:      nothing else); a BLOCK is a run of adjacent candidate lines.
+#:  k = the start of a private key's first line: indentation, up to two marker runs of 1-3 symbols (a quote,
+#:      `# `, `> `, `// `, ` * `, `- "`), then `M` (0x30, a DER SEQUENCE) and base64 or base64url, or OpenSSH's
+#:      constant; anything may follow. `_der_private` then reads the DER header. `+` and `/` are symbols here
+#:      too, so `k` takes at most 6 of them; a longer `+`/`/` run is seen only when the whole line is a `b`
+#:      candidate (40+ base64, nothing else), and `_key_bodies` strips it there. 7+ then other text: unseen.
+_BODY_LINE = re.compile(r"(?m)^(?:[ \t]*(?P<b>[A-Za-z0-9+/]{40,}={0,2})[ \t]*\r?$"
+                        r"|[ \t]*(?:[^A-Za-z0-9\s]{1,3}[ \t]*){0,2}"
+                        r"(?P<k>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
+#: The short last line of a P-256 SEC1 body (64, 64, 36 chars).
+_B64_TAIL = re.compile(r"(?m)[ \t]*[A-Za-z0-9+/]{28,39}={0,2}[ \t]*\r?$")
+#: A PEM/armor BEGIN label. Bounded (`{1,64}`) and dash-free so a line of `-----BEGIN ` repeated cannot
+#: go quadratic: a lazy `(.*?)` here took 31.5 s on 0.22 MB (measured, #433 research).
+_PEM_BEGIN = re.compile(r"BEGIN ([^\r\n-]{1,64}?) ?-{4,5}")
+_PEM_BEGIN_LINE = re.compile(r"(?m)^[ \t]*-{4,5} ?BEGIN ([^\r\n-]{1,64}?) ?-{4,5}[ \t]*\r?$")
+_PEM_END_LINE = re.compile(r"[ \t]*-{4,5} ?END ([^\r\n-]{1,64}?) ?-{4,5}[ \t]*\r?$")
+_BLANK_OR_ARMOR = re.compile(r"\+?[ \t]*(?:[A-Za-z][A-Za-z0-9 -]*:[^\r\n]*)?\r?$")  # blank, or `Key: value`
+_SPAN_LINE = re.compile(r"[ \t]*(?:(?:[A-Za-z0-9+/=]+|\.{3}|\u2026)[ \t]*|[A-Za-z][A-Za-z0-9 -]*:[^\r\n]*)?\r?$")
+_LONE_CR = re.compile(r"\r(?!\n)")
+_OPENSSH_KEY = "b3BlbnNzaC1rZXktdjEA"            # base64 of `openssh-key-v1\0`, the first 20 chars of every one
+#: DER (version, next tag) after the outer SEQUENCE of a private key: PKCS8 v1 (0, SEQUENCE), PKCS1 / DSA
+#: (0, INTEGER), SEC1 (1, OCTET STRING), PKCS8 v2 (1, SEQUENCE).
+_DER_PRIVATE = {(0, 0x30), (0, 0x02), (1, 0x04), (1, 0x30)}
+_GAP = 8                                         # blank / `Key: value` lines (a diff's `+` allowed) header->body
 _SECRET_FILE = re.compile(
     r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|.+\.(?:pem|key|p12|pfx|jks|keystore|ppk)"
     r"|[._]netrc|\.pgpass|credentials\.json|service[-_]?account.*\.json"
@@ -247,24 +373,102 @@ def _allowed(line):
     return {words[0]}, False
 
 
-def _key_bodies(text):
-    """Start offsets of header-less private-key bodies (see `key-body`)."""
-    out = []
-    for m in _B64_RUN.finditer(text):
-        lines = m.group(0).split()
-        if not all(re.search(r"[A-Z]", ln) and re.search(r"[a-z]", ln) and re.search(r"\d", ln)
-                   for ln in lines):
+def _private_label(label):
+    return "PRIVATE" in label.upper() or "SECRET" in label.upper()
+
+
+def _der_private(tok):
+    """True for the first line of a private key: OpenSSH's constant, or a DER header `SEQUENCE { INTEGER
+    0|1, SEQUENCE | INTEGER | OCTET STRING ...` in the first 24 bytes. A certificate, CSR, CRL, SPKI,
+    PKCS7 or DH parameters open with SEQUENCE / OID / a long INTEGER instead."""
+    if tok.startswith(_OPENSSH_KEY):
+        return True
+    if tok[:1] != "M" or len(tok) < 24:         # 0x30 (SEQUENCE) is always `M` in base64
+        return False
+    head = base64.urlsafe_b64decode(tok[:24])
+    if head[0] != 0x30:                         # `M` also spans 0x31-0x33
+        return False
+    if head[1] < 0x80:
+        i = 2
+    elif head[1] in (0x81, 0x82, 0x83):
+        i = 2 + (head[1] & 0x7F)
+    else:
+        return False
+    if head[i:i + 4] == b"\x02\x01\x01\x30" and head[i + 5:i + 13] == b"\x06\x07\x2a\x86\x48\xce\x3d\x01":
+        return False                            # explicit ECParameters (public) look like PKCS8 v2
+    return head[i] == 0x02 and head[i + 1] == 0x01 and (head[i + 2], head[i + 3]) in _DER_PRIVATE
+
+
+def _public_spans(text):
+    """[(first offset, end offset)] of the interior of every `-----BEGIN <label>-----` ..
+    `-----END <label>-----` span whose label names no PRIVATE/SECRET key and whose lines are all blank,
+    `Key: value` or base64. Each scan stops at the first other line (a BEGIN line is one), so the
+    scans never overlap and the pass is linear."""
+    spans = []
+    for m in _PEM_BEGIN_LINE.finditer(text):
+        if _private_label(m.group(1)):
             continue
-        prefix = text[:m.start()]
-        if prefix.endswith("\n"):
-            prefix = prefix[:-1]
-            if prefix.endswith("\r"):
-                prefix = prefix[:-1]
-        before = prefix.rsplit("\n", 1)[-1].rstrip("\r").strip()
-        if re.fullmatch(r"-----BEGIN (?:CERTIFICATE|(?:[A-Z0-9 ]+ )?PUBLIC KEY)-----", before):
-            continue                            # only an adjacent public/certificate header owns it
-        out.append(m.start())
-    return out
+        first = pos = m.end() + 1
+        while pos <= len(text):
+            eol = text.find("\n", pos)
+            eol = len(text) if eol < 0 else eol
+            if _SPAN_LINE.fullmatch(text, pos, eol):
+                pos = eol + 1
+                continue
+            end = _PEM_END_LINE.fullmatch(text, pos, eol)
+            if end and end.group(1) == m.group(1):
+                spans.append((first, pos))
+            break
+    return spans
+
+
+def _anchored(text, first):
+    """True when a PRIVATE/SECRET BEGIN header is named on a line above `first`, with at most `_GAP`
+    blank or `Key: value` lines between (prose that names the header counts: shape (b))."""
+    pos = first
+    for _ in range(_GAP + 1):
+        if pos == 0:
+            return False
+        start = text.rfind("\n", 0, pos - 1) + 1
+        if any(_private_label(h.group(1)) for h in _PEM_BEGIN.finditer(text, start, pos - 1)):
+            return True
+        if not _BLANK_OR_ARMOR.fullmatch(text, start, pos - 1):
+            return False
+        pos = start
+    return False
+
+
+def _key_bodies(text):
+    """Start offsets of private-key bodies whose header or END is missing (see `key-body`): one per block
+    that counts, at its first line, plus one per DER-recognised first line."""
+    cands, out = [], []
+    for m in _BODY_LINE.finditer(text):
+        tok = (m.group("b") or m.group("k")).lstrip("+/")   # a diff's `+`, a `//`: base64 too, so `b` kept them
+        if m.group("b"):
+            cands.append(m)
+        if _der_private(tok):
+            out.append(m.start())
+    blocks = []
+    for m in cands:
+        if blocks and m.start() == blocks[-1][-1].end() + 1:   # begins right after the previous line's newline
+            blocks[-1].append(m)
+        else:
+            blocks.append([m])
+    spans = None
+    for blk in blocks:
+        n = len(blk)
+        bad = sum(not (re.search("[A-Z]", m.group("b")) and re.search("[a-z]", m.group("b"))
+                       and re.search(r"\d", m.group("b"))) for m in blk)
+        counted = (n >= 3 and bad <= 1) or (n == 2 and bad == 0
+                                            and _B64_TAIL.match(text, blk[-1].end() + 1))
+        if counted:
+            if spans is None:
+                spans = _public_spans(text)
+            i = bisect.bisect_right(spans, (blk[0].start(), len(text) + 1)) - 1
+            counted = i < 0 or not spans[i][0] <= blk[0].start() < spans[i][1]
+        if counted or (bad == 0 and _anchored(text, blk[0].start())):
+            out.append(blk[0].start())
+    return sorted(set(out))
 
 
 def scan_text(text, rules, owner, config=False, stats=None):
@@ -273,9 +477,17 @@ def scan_text(text, rules, owner, config=False, stats=None):
     `allowed` += the number of lines a valid allow marker covers.
 
     Each rule runs ONCE over the whole text and a match is attributed to the line it starts on --
-    per-line matching made ~5.4M regex calls on this tree; whole-text makes ~15k. PEM blocks span
+    per-line matching made ~5.4M regex calls on the tree #277 counted it on; whole-text made ~15k
+    (not re-counted since; today's 837 files, 325,879 lines, x 19 scrub rules alone is 6.2M vs 16k). PEM blocks span
     lines anyway, and count only with a real key body (a base64 run of 40+), never for prose that
-    merely names the marker."""
+    merely names the marker. A lone CR ends a line too (it is turned into a newline first, same
+    length, so every rule's line numbers agree; so `\\r\\r\\n` counts as 2 lines, as Python's
+    `splitlines` does, where `grep -n` counts 1; a side effect: an empty line then follows every
+    line, so in a `\\r\\r\\n` file a header-less body is caught only by a DER first line: an
+    encrypted PKCS8 or legacy-encrypted EC body is missed, as a3c913c missed it). `key-body` reports
+    a counted block, a header anchor or a DER line (see the module docstring)."""
+    if "\r" in text:
+        text = _LONE_CR.sub("\n", text)         # a lone CR ends a line too; same length
     starts = [0] + [m.end() for m in re.finditer("\n", text)]
     hits = {}
 

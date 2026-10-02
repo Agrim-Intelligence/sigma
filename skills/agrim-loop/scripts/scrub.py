@@ -26,9 +26,10 @@ import re
 #: names the provider (they cannot overlap: `sk-[A-Za-z0-9]{20,}` stops at the hyphen).
 #:
 #: GATE-ONLY, deliberately not here -- each is a rule `tools/leak_scan.py` implements and tests:
-#: `key-body` (3+ header-less base64 key lines; a redactor would eat legitimate base64 in
-#: transcripts); `secret-file` (`_SECRET_FILE`, a path rule, meaningless on text); `opaque-binary` /
-#: `oversize` / `unreadable` (a whole-file verdict: the gate names the file and fails); and
+#: `key-body` (a private key body missing its header or END: line counts, a PRIVATE-header anchor
+#: or a DER first line; a redactor would eat legitimate base64 in transcripts); `secret-file`
+#: (`_SECRET_FILE`, a path rule, meaningless on text); `opaque-binary` / `oversize` / `unreadable`
+#: (a whole-file verdict: the gate names the file and fails); and
 #: `config-credential` (`_CONFIG_CRED`, keyed on the file's suffix, which runtime text has no notion
 #: of). Concatenated or split token spellings are covered by NEITHER file (out of scope, stated in
 #: the gate's docstring).

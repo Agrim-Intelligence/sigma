@@ -4,6 +4,89 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The leak gate's `key-body` rule catches EC P-256, Ed25519 and truncated private-key bodies, and
+  no longer exempts a private body under a public header** (#433; corrects the #277 entry below).
+  #277's entry said `key-body` catches "a private key body with its header stripped". What it caught
+  was 3 or more adjacent whole lines of 40+ base64 characters, each with upper case, lower case and
+  a digit. So it missed a real EC P-256 SEC1 body (lines of 64, 64 and 36), an Ed25519 PKCS8 key
+  (one 64-character line) and a truncated RSA paste (BEGIN, `Comment:`, 2 lines), whether the header
+  was kept without an END, named in prose above the body, or gone. It exempted any body whose single
+  line above was a `CERTIFICATE` or `PUBLIC KEY` header, a private one included, and it flagged real
+  public PGP, SSH2, CSR, CRL and PKCS7 blocks. The rule now has three triggers. (1) Blocks: 3+ lines
+  of 40+ with at most one line lacking upper case, lower case or a digit, or 2 mixed lines followed
+  by a 28-39 character line; lengths count the base64 payload, not the `=` padding (a 28-character
+  line ending in `=` is a 27-character tail, so a real legacy-encrypted EC body re-wrapped at 72
+  columns, 72, 72 and 28 with `=`, is clean header-less). (2) A header anchor: a block that does not
+  count, every line mixed, is flagged when a line naming a PRIVATE or SECRET `BEGIN <label>-----`
+  (a header, or prose naming one) sits above it with at most 8 blank or `Key: value` lines between, each may carry a unified diff's `+`.
+  (3) A DER first line: a line whose first 24 base64 or base64url characters decode to a private
+  key's DER header (PKCS8, PKCS1 / DSA, SEC1), or OpenSSH's constant, after indentation and at most
+  two runs of 1-3 symbols, `+` and `/` among them (a diff's `+`, a `//` with no space: missed until
+  post-PR review 1); a longer run of `+` and `/` is read only when the whole line, run included, is
+  40+ base64 characters and nothing else, so a run of 7 or more followed by other text on the line
+  (`",`) is not caught (measured, post-PR review 2); this is the only way a header-less one-line Ed25519
+  key can be told from a random token. The exemption is now the whole span: a standalone non-private
+  `BEGIN` line, then only blank, `Key: value`, base64 or `...` lines, then the matching `END`; it
+  applies to the block trigger only, never to a DER line. A lone CR now ends a line for every rule
+  (4 of 133,124 files scanned hold one; output identical on all 4). Measured against a3c913c's rule,
+  each with its population: the staged tree 0 -> 0 findings (826 files: 821 at origin/main f69d3e1,
+  this change's 2 new test files and its 3 `.sdlc` phase documents); a generated 97-file corpus 34
+  -> 17, 1 of them new (a P-256 body); the working trees of 71 sibling repositories (128,828
+  decodable text files up to 4 MB) 39 -> 47: 15 new, of which 13 are private keys by their decoded
+  DER structure (not reviewed by hand) and 2 are public certificate bodies in SAML XML, false
+  positives, and 7 public CRL/CSR blocks no longer flagged; /opt/homebrew (99,772 files) 35 -> 50:
+  18 new, of which 17 are private-looking test keys and fixtures in Python packages (not reviewed by
+  hand) and 1 is a false positive, a header-less public CMP message in a Python string. An attack
+  harness of 147 attempts: 68 got through a3c913c (one a false positive on a public PGP block), 32
+  get through now, 21 of them aimed at other rules; every one also got through a3c913c, and none is
+  a false positive. So the false-positive figure is 0 new false positives on this tree and on the
+  corpus (the corpus's 1 new finding is its P-256-shaped body), and the 3 listed above on the wider
+  scans; it is not "no false positive". Cost, CPU seconds, minimum of 3 runs at load 4-6, over the
+  same 826-file staged tree: the whole gate 5.57 -> 5.49 s on Python 3.9.6 and 5.11 -> 5.05 s on
+  3.12.13; `key-body` alone 0.26 -> 0.16 s (one run); the worst adversarial 4 MB file found (one
+  line of repeated `BEGIN ` words above a one-line body) 1.1 s in `key-body` and 2.6 s for the whole
+  file (a3c913c: 0.05 / 1.1 s); scrub.py's `private-key` rule, unchanged here, is not linear on a
+  file of repeated unterminated private headers (7.6 s at 0.5 MB, a 4 MB file unfinished after 150
+  s). Known ambiguities, all findings: 3+ raw base64 digests in a row; generic wrapped base64 (a
+  binary MIME attachment, a 76-wide CSS data URI; a3c913c flags both too); a header-less public DER
+  body (an XML certificate, a CMP message) or any other public DER opening `02 01 00|01 30|02|04`; a
+  certificate with prose inside, or whose BEGIN or END line carries code; an SSH2 public block whose
+  `Comment:` continues with a backslash; a unified diff that adds a certificate bundle (the span
+  exemption is not diff-aware: a `+`-prefixed copy of a 145-certificate certifi bundle, 141 locations
+  on a3c913c, 145 now); one 40+ mixed-case digest below prose naming a PRIVATE `BEGIN` header with
+  only blank, `+` or `Key: value` lines between, by design of the anchor (a changelog sentence, a
+  table row, a diff: 0 findings on a3c913c, 1 now; no file on this tree or in the corpora hits it
+  except those planted probes). Not detected (each planted and run): hex bodies; base64url
+  bodies other than a DER first line; a base64-wrapped PEM; a key inline in a JSON or shell string
+  (`{"k": "<base64>"}`, `KEY='<base64>'`) or after text on its line (a DER-led key alone on its line
+  inside one, a JSON array element or a multi-line shell string, is caught); a non-DER body (encrypted
+  PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries a comment or quote
+  prefix (`# `, `"`, `// `, `> `), even directly under its header (a3c913c missed it too); UTF-32 text with a little-endian byte-order mark (mis-decoded as UTF-16, nothing
+  seen; without a mark, or big-endian, it is reported `opaque-binary`); a body indented with U+00A0,
+  U+2003, U+3000, `\v` or `\f`; a body whose lines are separated by U+2028, U+2029 or NEL, except a
+  DER first line that opens the file or follows an LF (flagged there whatever separates the rest;
+  hidden only when one of these separators comes before it); a header-less non-DER body in a file whose lines end `\r\r\n` (each line is then
+  followed by an empty one; a3c913c missed it too); a PuTTY `.ppk` key whose private part is 1-2 lines (Ed25519; an RSA
+  one's 3+ line blocks are flagged); a slice of 1-2 lines with no tail;
+  a slice with no DER start inside a matching public span; encrypted PKCS8, PKCS12 or PGP-private
+  first lines; a body wrapped below 24 characters; a body wrapped below 40 with no DER first line;
+  an all-lower-case body; more than 8 armor lines; a non-DER body under a lower-case `begin` (it
+  does not anchor; a DER first line or a counted block under it is still caught). The gate's
+  docstring keeps the full list. The allow marker waives a DER first line; there is no designed
+  inline waiver for a header-less multi-line body: a marker on one of its lines splits the block, so
+  a short body with no DER first line (3 lines, or lines of 64, 64 and 36) goes clean, a DER-led one
+  (every real P-256 SEC1 body) stays flagged at its first line unless the marker is on that line, and
+  a longer one stays flagged on its remaining lines, a side effect pinned by tests, not a feature; `ALLOW_PATHS` is the reliable
+  waiver. The new test files test_key_body (84 tests, all red on a3c913c) and test_key_body_guards
+  (148; green on a3c913c except 48, measured: one review pin, a lone P-256 PKCS8 first line, 24 of
+  the 30 rows added after post-PR review 1: the `+` / `/` / `// ` / diff rows and one padded tail,
+  and their control, whose mutation target a3c913c does not have; 8 of the 19 rows added after
+  post-PR review 2: the five flagged `+` / `/` run rows and the three anchor digest rows; 14 of the
+  25 rows added after post-PR review 3: the two marker rows flagged at a P-256 DER first line and the
+  12 U+2028 / U+2029 / NEL rows flagged at a DER first line; the 18 `+` / `/` / diff rows are red on
+  the PR's first head too) plant every shape through the documented
+  gesture, with 9 mutation controls. Follow-up issues are listed in the PR.
+
 - **Review units and seeded-defect recall: `tools/readiness/review_units.py` and
   `tools/readiness/seed_defects.py`** (#352). `review_units.py <repo> --sha SHA [--json PATH]` turns
   one frozen commit into review units of at most 3,000 lines (`readiness-units/v1`): every tracked
