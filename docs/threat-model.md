@@ -45,7 +45,7 @@ and E (elevation of privilege).
 | TM-06 | T4 | Credential exposure in logs (I) | A token-shaped value reaches a command or comment diagnostic. Coverage of every `gh` comment site is unverified. | `skills/agrim-loop/scripts/scrub.py:150` | med | — |
 | TM-07 | T4 | Remote webhook egress (I) | `channel_webhook_url` names an Internet host instead of the documented local adapter. | none | high | #358 |
 | TM-08 | T5 | Stale watcher appears idle (D) | A dead watcher reports no errors and is mistaken for an idle one. | `hooks/session_start.sh:131` | med | — |
-| TM-09 | T5 | Listener cleanup omission (D) | SIGTERM or SIGHUP leaves Slack pid, heartbeat, and lock markers, preventing restart. | none | med | #424 |
+| TM-09 | T5 | Listener cleanup omission (D) | SIGTERM or SIGHUP leaves Slack pid, heartbeat, and lock markers, preventing restart. | `skills/agrim-loop/scripts/slack_commands_listen.py:806` | low | — |
 | TM-10 | T5 | Orphaned model descendant (D) | A timed-out, signalled, or SIGKILLed autowatch tick leaves a model descendant running. Residual: a descendant that calls `setsid` itself escapes the group, and a SIGKILL of the lifeline sentinel removes the backstop for a later SIGKILL of the tick. | `skills/agrim-loop/scripts/autowatch.py:772` terminates the driven session's whole process group (SIGTERM, grace, SIGKILL), a lifeline sentinel repeats that if the tick dies, and hosts without process groups refuse | low | #425 |
 | TM-11 | T6 | Managed-policy deletion (T) | Removing the file makes an enrolled checkout read as unadopted. | none | high | #423 |
 | TM-12 | T6 | Direct-edit bypass (T) | A local sentinel bypasses a hard plan gate when the key is not organization-locked. | `docs/enforcement.md:54` | med | — |

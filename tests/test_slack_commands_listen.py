@@ -13,8 +13,10 @@ import importlib.util
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
+import threading
 import time
 import types
 
@@ -2670,3 +2672,298 @@ def test_ensure_is_never_wired_into_ensure_watcher_or_watch_daemon():
     watch_daemon = (S / "watch_daemon.py").read_text(encoding="utf-8")
     assert "slack_commands_listen" not in loop_py
     assert "slack_commands" not in watch_daemon
+
+
+# --------------------------------------------------------------------------- signal cleanup (#424)
+#
+# SIGTERM/SIGHUP used to terminate the listener without unwinding `run()`'s `finally`, stranding the
+# pidfile, heartbeat and lock dir. The REAL-SUBPROCESS controls below deliver each signal to a real
+# listener and are deterministic: the parent blocks on a READY line the child prints only after startup finished writing
+# its markers (first stop-file poll) (no sleeps, no racing a window), and every wait is bounded so a regressed handler
+# FAILS instead of hanging. The in-process seam controls pin the exact handler logic.
+
+_CHILD = """
+import importlib.util, signal, sys
+for _n in ("SIGTERM", "SIGHUP"):
+    if hasattr(signal, _n):
+        signal.signal(getattr(signal, _n), signal.SIG_DFL)   # a nohup parent must not mask the control
+spec = importlib.util.spec_from_file_location("slack_commands_listen", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+
+class _Client:
+    def connect(self):
+        pass
+    def close(self):
+        pass
+
+# READY is printed from the FIRST stop-file poll: that runs after run()'s post-connect heartbeat write
+# and log line, so nothing the child does later can overwrite markers the parent rewrites afterwards.
+_polled = []
+def _stop_requested(sdlc_dir):
+    if not _polled:
+        _polled.append(1)
+        print("READY", flush=True)
+    return False
+
+m._build_client = lambda *a, **k: _Client()
+m.stop_requested = _stop_requested
+sys.exit(m.main(["slack_commands_listen.py", sys.argv[2]]))
+"""
+
+_POSIX_SIGNALS = [n for n in ("SIGTERM", "SIGHUP") if hasattr(signal, n)]
+_needs_posix = pytest.mark.skipif(sys.platform == "win32",
+                                  reason="a signal terminates the process on Windows without a handler")
+
+
+def _spawn_child(tmp_path):
+    d = _sdlc(tmp_path)
+    (d / "config.json").write_text(json.dumps(_config()))
+    script = tmp_path / "child.py"
+    script.write_text(_CHILD)
+    env = dict(os.environ, APP_ENV_T="xapp-fake", BOT_ENV_T="xoxb-fake")
+    proc = subprocess.Popen([sys.executable, str(script), str(S / "slack_commands_listen.py"), str(d)],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+    return d, proc
+
+
+def _await_ready(proc):
+    """Read the READY handshake with a hard bound (a reader thread: a blocked readline cannot hang)."""
+    box = []
+    reader = threading.Thread(target=lambda: box.append(proc.stdout.readline()), daemon=True)
+    reader.start()
+    reader.join(60)
+    if not box or box[0].strip() != "READY":
+        proc.kill()
+        proc.wait(10)
+        pytest.fail("child never reached READY: %r" % (box,))
+
+
+def _signal_and_reap(proc, name):
+    proc.send_signal(getattr(signal, name))
+    try:
+        return proc.wait(60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(10)
+        pytest.fail("child survived %s" % name)
+
+
+@_needs_posix
+@pytest.mark.parametrize("name", _POSIX_SIGNALS)
+def test_real_subprocess_signal_removes_every_marker(tmp_path, name):
+    d, proc = _spawn_child(tmp_path)
+    try:
+        _await_ready(proc)
+        assert sc.pid_path(d).is_file() and sc.heartbeat_path(d).is_file() and sc.lock_dir_path(d).is_dir()
+        rc = _signal_and_reap(proc, name)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.stdout.close()
+    assert rc == -getattr(signal, name)   # died BY the signal, not a masked clean exit
+    assert not sc.pid_path(d).exists()
+    assert not sc.heartbeat_path(d).exists()
+    assert not sc.lock_dir_path(d).exists()
+
+
+@_needs_posix
+@pytest.mark.parametrize("name", _POSIX_SIGNALS)
+def test_real_subprocess_signal_never_removes_a_successors_markers(tmp_path, name):
+    d, proc = _spawn_child(tmp_path)
+    try:
+        _await_ready(proc)
+        sc.pid_path(d).write_text("424242")      # a successor has taken over, heartbeat and all
+        heartbeat_before = json.dumps({"pid": 424242, "last_seen": time.time()})
+        sc.heartbeat_path(d).write_text(heartbeat_before)
+        _signal_and_reap(proc, name)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.stdout.close()
+    assert sc.pid_path(d).read_text() == "424242"
+    assert sc.heartbeat_path(d).read_text() == heartbeat_before
+    assert sc.lock_dir_path(d).is_dir()
+
+
+@pytest.fixture
+def _restore_signals():
+    saved = {n: signal.getsignal(getattr(signal, n)) for n in _POSIX_SIGNALS}
+    yield
+    for n, h in saved.items():
+        signal.signal(getattr(signal, n), h)
+
+
+@pytest.fixture
+def _no_real_death(monkeypatch):
+    """The handler ends by re-raising the signal at itself; capture that instead of dying."""
+    kills = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: kills.append((pid, sig)))
+    monkeypatch.setattr(os, "_exit", lambda code: kills.append(("_exit", code)))
+    return kills
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="no SIGHUP on this platform")
+def test_seam_installs_handlers_that_release_then_die_by_the_same_signal(
+        tmp_path, _restore_signals, _no_real_death):
+    d = _sdlc(tmp_path)
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        for name in ("SIGTERM", "SIGHUP"):
+            num = getattr(signal, name)
+            sc.acquire_single_instance(d)
+            handler = signal.getsignal(num)
+            assert callable(handler)
+            _no_real_death.clear()
+            handler(num, None)
+            assert not sc.pid_path(d).exists() and not sc.heartbeat_path(d).exists()
+            assert not sc.lock_dir_path(d).exists()
+            assert signal.getsignal(num) == signal.SIG_DFL     # restored BEFORE the re-raise
+            assert _no_real_death == [(os.getpid(), num), ("_exit", 128 + num)]
+            uninstall()                                         # clears _DYING, restores handlers
+            uninstall = sc._install_signal_cleanup(d)
+    finally:
+        uninstall()
+
+
+def test_seam_handler_leaves_a_successors_markers(tmp_path, _restore_signals, _no_real_death):
+    d = _sdlc(tmp_path)
+    sc.acquire_single_instance(d)
+    sc.pid_path(d).write_text(str(os.getpid() + 1))
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+    finally:
+        uninstall()
+    assert sc.pid_path(d).read_text() == str(os.getpid() + 1)
+    assert sc.heartbeat_path(d).is_file() and sc.lock_dir_path(d).is_dir()
+
+
+def test_seam_signal_mid_acquire_after_heartbeat_before_pidfile_still_cleans_up(
+        tmp_path, _restore_signals, _no_real_death):
+    """acquire writes the heartbeat BEFORE the pidfile (#2751); a signal in that window used to strand
+    the lock dir and heartbeat because ownership was judged by the pidfile alone."""
+    d = _sdlc(tmp_path)
+    sc.lock_dir_path(d).mkdir()
+    sc.write_heartbeat(d)                      # ours; no pidfile yet
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+    finally:
+        uninstall()
+    assert not sc.heartbeat_path(d).exists() and not sc.lock_dir_path(d).exists()
+
+
+def test_seam_a_foreign_heartbeat_without_a_pidfile_is_not_ours_to_remove(tmp_path):
+    d = _sdlc(tmp_path)
+    sc.lock_dir_path(d).mkdir()
+    sc.heartbeat_path(d).write_text(json.dumps({"pid": os.getpid() + 1, "last_seen": time.time()}))
+    sc.release_single_instance(d)
+    assert sc.heartbeat_path(d).is_file() and sc.lock_dir_path(d).is_dir()
+
+
+def test_seam_our_own_stale_heartbeat_without_a_pidfile_is_a_reclaimers_not_ours(tmp_path):
+    """A stalled holder's OLD heartbeat, pidfile already unlinked by a successor mid-reclaim: releasing
+    now would rmdir the successor's lock dir."""
+    d = _sdlc(tmp_path)
+    sc.lock_dir_path(d).mkdir()
+    sc.heartbeat_path(d).write_text(json.dumps({"pid": os.getpid(), "last_seen": time.time() - 10_000}))
+    sc.release_single_instance(d)
+    assert sc.heartbeat_path(d).is_file() and sc.lock_dir_path(d).is_dir()
+
+
+def test_seam_a_request_thread_cannot_recreate_the_heartbeat_once_the_handler_ran(
+        tmp_path, _restore_signals, _no_real_death):
+    d = _sdlc(tmp_path)
+    sc.acquire_single_instance(d)
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+        sc.write_heartbeat(d)                  # what `_on_request` does on its own thread
+        assert not sc.heartbeat_path(d).exists()
+    finally:
+        uninstall()
+    sc.write_heartbeat(d)                      # cleared again by uninstall
+    assert sc.heartbeat_path(d).is_file()
+    sc.release_single_instance(d)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="no SIGHUP on this platform")
+def test_seam_an_inherited_ignored_sighup_stays_ignored(tmp_path, _restore_signals):
+    """`nohup`-style launchers set SIGHUP to ignored on purpose; overriding it would be a regression."""
+    d = _sdlc(tmp_path)
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN
+        assert callable(signal.getsignal(signal.SIGTERM))
+    finally:
+        uninstall()
+    assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN
+
+
+def test_seam_uninstall_restores_the_previous_handlers(tmp_path, _restore_signals):
+    d = _sdlc(tmp_path)
+    marker = lambda *_: None            # noqa: E731
+    signal.signal(signal.SIGTERM, marker)
+    sc._install_signal_cleanup(d)()
+    assert signal.getsignal(signal.SIGTERM) is marker
+
+
+def test_seam_uninstall_survives_a_previous_handler_of_none(tmp_path, monkeypatch, _restore_signals):
+    """`signal.getsignal` returns None for a handler installed from C; `signal.signal(sig, None)`
+    raises TypeError, which must not turn a clean exit into a crash."""
+    d = _sdlc(tmp_path)
+    real = signal.getsignal
+    monkeypatch.setattr(signal, "getsignal", lambda n: None)
+    uninstall = sc._install_signal_cleanup(d)
+    monkeypatch.setattr(signal, "getsignal", real)
+    uninstall()
+    assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+
+
+def test_seam_off_the_main_thread_installs_nothing(tmp_path, _restore_signals):
+    d = _sdlc(tmp_path)
+    before = signal.getsignal(signal.SIGTERM)
+    out = {}
+
+    def work():
+        out["uninstall"] = sc._install_signal_cleanup(d)
+        out["uninstall"]()
+    t = threading.Thread(target=work)
+    t.start()
+    t.join(30)
+    assert "uninstall" in out and signal.getsignal(signal.SIGTERM) == before
+
+
+def test_seam_missing_sighup_is_skipped_not_an_attribute_error(tmp_path, monkeypatch, _restore_signals):
+    d = _sdlc(tmp_path)
+    proxy = types.SimpleNamespace(SIGTERM=signal.SIGTERM, SIG_DFL=signal.SIG_DFL, SIG_IGN=signal.SIG_IGN,
+                                  getsignal=signal.getsignal, signal=signal.signal)
+    monkeypatch.setattr(sc, "signal", proxy)       # no SIGHUP, as on Windows
+    uninstall = sc._install_signal_cleanup(d)
+    try:
+        assert callable(signal.getsignal(signal.SIGTERM))
+    finally:
+        uninstall()
+
+
+def test_run_restores_signal_handlers_on_every_exit_path(tmp_path, monkeypatch, _restore_signals):
+    d = _sdlc(tmp_path)
+    monkeypatch.setenv("APP_ENV_T", "xapp-fake")
+    monkeypatch.setenv("BOT_ENV_T", "xoxb-fake")
+    before = signal.getsignal(signal.SIGTERM)
+
+    class _Boom:
+        def connect(self):
+            raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        sc.run(d, _config(), client_factory=lambda *a: _Boom())
+    assert signal.getsignal(signal.SIGTERM) == before
+    live_other = os.getppid()      # a pid that is alive and is not ours (pid+1 may not exist under load)
+    sc.acquire_single_instance(d)
+    sc.pid_path(d).write_text(str(live_other))
+    sc.heartbeat_path(d).write_text(json.dumps({"pid": live_other, "last_seen": time.time()}))
+    assert sc.run(d, _config(), client_factory=lambda *a: _Boom()) == 1     # live holder: refused
+    assert signal.getsignal(signal.SIGTERM) == before

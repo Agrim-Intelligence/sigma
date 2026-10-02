@@ -118,9 +118,11 @@ import json
 import os
 import pathlib
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -595,6 +597,11 @@ def _atomic_write_text(path, text):
         raise
 
 
+#: Set by the SIGTERM/SIGHUP handler (#424) so a Socket Mode request thread cannot recreate the
+#: heartbeat between the handler's release and the process dying; cleared by the uninstall.
+_DYING = False
+
+
 def write_heartbeat(sdlc_dir):
     """`.sdlc/state/slack-commands.heartbeat.json`: `{"pid": <int>, "last_seen": <epoch seconds>}`
     -- exactly the two fields Component F specifies, mirroring `watch_daemon.py`'s own
@@ -602,6 +609,8 @@ def write_heartbeat(sdlc_dir):
     Written at startup, on EVERY confirmed Socket Mode request (`_on_request`, any type -- a ping/
     hello/disconnect frame is as much "still alive" as an actual command), and once more right
     before the connect-time log line."""
+    if _DYING:      # the signal handler has released our markers; a request thread must not recreate one
+        return
     _atomic_write_text(heartbeat_path(sdlc_dir),
                         json.dumps({"pid": os.getpid(), "last_seen": time.time()}))
 
@@ -754,19 +763,34 @@ def acquire_single_instance(sdlc_dir, stale_after_seconds=DEFAULT_STALE_AFTER_SE
     return True, None
 
 
-def release_single_instance(sdlc_dir):
-    """Best-effort cleanup on a clean exit. PIDF-ownership-checked -- the same ownership rule
-    `watch_daemon.py` applies in its own cleanup -- so a delayed cleanup from a process that has
-    already been superseded (its own reclaim lost, or it is simply exiting late) can never rip the
-    lock, pidfile or heartbeat out from under a live successor.
+def _owns_markers(sdlc_dir):
+    """True when the markers on disk are THIS process's. The pidfile is the identity, except in the
+    window `acquire_single_instance` leaves on purpose -- heartbeat written, pidfile not yet (#2751) --
+    where our own pid in the heartbeat is the only proof. A successor's heartbeat names the successor,
+    so it is never claimed here."""
+    pid = _read_pid(sdlc_dir)
+    if pid is not None:
+        return pid == os.getpid()
+    # FRESH only: a stale heartbeat of ours with no pidfile is a stalled holder a successor is mid-way
+    # through reclaiming, whose lock dir we must not rmdir out from under it.
+    if heartbeat_liveness(sdlc_dir)[0] != "live":
+        return False
+    try:
+        return json.loads(heartbeat_path(sdlc_dir).read_text(encoding="utf-8")).get("pid") == os.getpid()
+    except (OSError, ValueError, AttributeError):
+        return False
 
-    NOT the same MECHANISM, and the difference matters: `watch_daemon.py` reaches its cleanup from
-    `signal.signal` handlers for SIGTERM/SIGINT/SIGHUP *plus* `atexit`, which is what reproduces
-    bash's `trap ... EXIT` firing on all three signals. This function is reached only from a
-    `finally`, so a SIGTERM/SIGHUP here terminates the interpreter without unwinding and leaves this
-    listener's markers behind. That gap is this file's, not a shared design -- do not read the
-    ownership check as evidence the lifecycle matches (research for #2488 §6.2)."""
-    if _read_pid(sdlc_dir) != os.getpid():
+
+def release_single_instance(sdlc_dir):
+    """Best-effort, idempotent cleanup. Ownership-checked -- the same ownership rule `watch_daemon.py`
+    applies in its own cleanup -- so a delayed cleanup from a process that has already been superseded
+    (its own reclaim lost, or it is simply exiting late) can never rip the lock, pidfile or heartbeat
+    out from under a live successor.
+
+    Reached from `run()`'s `finally` on a normal exit AND from the SIGTERM/SIGHUP handler
+    `_install_signal_cleanup` installs (#424): those signals terminate the interpreter without
+    unwinding any `finally`, which used to strand all three markers."""
+    if not _owns_markers(sdlc_dir):
         return
     for path in (pid_path(sdlc_dir), heartbeat_path(sdlc_dir)):
         try:
@@ -777,6 +801,72 @@ def release_single_instance(sdlc_dir):
         os.rmdir(lock_dir_path(sdlc_dir))
     except OSError:
         pass
+
+
+def _install_signal_cleanup(sdlc_dir):
+    """SIGTERM/SIGHUP cleanup (#424), modelled on `watch_daemon.py::_install_cleanup`: run
+    `release_single_instance`, restore the default disposition, then re-raise the signal at ourselves
+    so the exit status is still death-by-signal. Returns an `uninstall()` that restores the previous
+    handlers (a no-op where nothing was installed).
+
+    * Release runs BEFORE the default is restored, so a second signal mid-release re-enters a handler
+      that is idempotent and ownership-checked rather than killing us half-cleaned.
+    * `getattr(signal, name, None)`: SIGHUP does not exist on Windows. A signal already ignored
+      (`nohup`-style launcher) stays ignored. SIGINT is untouched: KeyboardInterrupt already unwinds.
+    * POSIX only in effect: Windows never delivers SIGTERM to a Python handler (it is
+      `TerminateProcess`), so there the markers still age out via the heartbeat; the install is harmless.
+    * Main thread only (`signal.signal` raises elsewhere); in-process callers elsewhere get a no-op.
+    * Installed BEFORE `acquire_single_instance` so no signal lands in the acquire window with the
+      default disposition. The one residual is the instruction span between `os.mkdir` and the heartbeat
+      write inside acquire: a lock dir with no heartbeat and no pidfile, which the next acquire reclaims
+      after `_LOCK_RECLAIM_GRACE_SECONDS`.
+    * Residuals, all self-healing and none a wrong deletion: a request thread already inside
+      `_atomic_write_text` when the handler runs can leave one stale heartbeat (it ages out); a signal
+      after the heartbeat unlink but before the `rmdir` leaves the lock dir (reclaimed after
+      `_LOCK_RECLAIM_GRACE_SECONDS`).
+    * No `atexit`: `run()`'s `finally` already covers every unwinding exit, and a per-call registration
+      would leak across in-process callers.
+    * A main thread stuck inside a C call that never checks signals defers the handler; SIGKILL stays
+      the lever there, and its markers age out via the heartbeat (`heartbeat_liveness`)."""
+    if threading.current_thread() is not threading.main_thread():
+        return lambda: None
+
+    def _on_signal(signum, _frame):
+        global _DYING
+        _DYING = True
+        try:
+            release_single_instance(sdlc_dir)
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            try:
+                os.kill(os.getpid(), signum)     # die BY the signal, as before this handler existed
+            finally:
+                os._exit(128 + signum)           # never resume a process whose markers are gone
+
+    previous = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            old = signal.getsignal(sig)
+            if old == signal.SIG_IGN:
+                continue
+            signal.signal(sig, _on_signal)
+            previous[sig] = old
+        except (ValueError, OSError):
+            continue
+
+    def uninstall():
+        global _DYING
+        _DYING = False
+        for sig, old in previous.items():
+            try:
+                signal.signal(sig, old if old is not None else signal.SIG_DFL)
+            except (ValueError, OSError, TypeError):
+                pass
+        previous.clear()
+    return uninstall
 
 
 def _utc_now_iso():
@@ -1645,11 +1735,12 @@ def run(sdlc_dir, config, client_factory=None, sleep=time.sleep, poll_seconds=1)
         return 1
     app_token = legacy.getenv(app_token_env(config), "")
     bot_token = legacy.getenv(bot_token_env(config), "")
-    ok, reason = acquire_single_instance(sdlc_dir)
-    if not ok:
-        _log(sdlc_dir, reason)
-        return 1
+    uninstall = _install_signal_cleanup(sdlc_dir)     # BEFORE acquire: no unhandled window (#424)
     try:
+        ok, reason = acquire_single_instance(sdlc_dir)
+        if not ok:
+            _log(sdlc_dir, reason)
+            return 1
         build = client_factory or _build_client
         client = build(app_token, bot_token, config, sdlc_dir)
         client.connect()
@@ -1663,7 +1754,10 @@ def run(sdlc_dir, config, client_factory=None, sleep=time.sleep, poll_seconds=1)
             closer()
         return 0
     finally:
-        release_single_instance(sdlc_dir)
+        try:
+            release_single_instance(sdlc_dir)
+        finally:
+            uninstall()
 
 
 # --------------------------------------------------------------------------- status / ensure (#2396)
