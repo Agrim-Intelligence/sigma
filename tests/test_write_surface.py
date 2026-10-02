@@ -229,3 +229,8 @@ def test_readiness_tool_write_metadata_is_specific():
         "explicit exposure scan; caller-supplied evidence path", "medium")
     assert mod._metadata("tools/readiness/exposure_scan.py", "scan_refs", "git-destructive") == (
         "explicit refs scan; local tag listing is read-only", "low")
+    assert mod._metadata("tools/readiness/review_units.py", "main", "fs-write") == (
+        "explicit --json PATH; caller-supplied output path", "medium")
+    assert mod._metadata("tools/readiness/seed_defects.py", "apply", "fs-write") == (
+        "explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
+        "medium")

@@ -60,6 +60,11 @@ def _metadata(path, function, rule):
             ("explicit exposure scan; caller-supplied evidence path", "medium"),
         ("tools/readiness/exposure_scan.py", "scan_refs", "git-destructive"):
             ("explicit refs scan; local tag listing is read-only", "low"),
+        ("tools/readiness/review_units.py", "main", "fs-write"):
+            ("explicit --json PATH; caller-supplied output path", "medium"),
+        ("tools/readiness/seed_defects.py", "apply", "fs-write"):
+            ("explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
+             "medium"),
     }
     if site in known:
         return known[site]

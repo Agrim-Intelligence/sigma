@@ -1,0 +1,18 @@
+diff --git a/tools/report_save.py b/tools/report_save.py
+index 0e98158..c07b1c2 100644
+--- a/tools/report_save.py
++++ b/tools/report_save.py
+@@ -6,12 +6,8 @@ import os
+ def save_report(path, report):
+     """Write ``report`` as JSON to ``path``; the old file stays whole until the new one is complete."""
+     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
+-    tmp = path + ".tmp"
+-    with open(tmp, "w", encoding="utf-8") as handle:
++    with open(path, "w", encoding="utf-8") as handle:
+         handle.write(text)
+-        handle.flush()
+-        os.fsync(handle.fileno())
+-    os.replace(tmp, path)
+     return path
+ 
+ 
