@@ -54,8 +54,11 @@ def test_session_start_names_the_stop_file_even_when_ledger_watcher_looks_stale(
     assert "supervisor.stop" in ctx and "2.0h old" in ctx
 
 
-def test_session_start_silent_without_stop_file(tmp_path):
-    assert "stop-file" not in _hook(_repo(tmp_path))
+def test_session_start_silent_without_stop_file_then_names_it_once_present(tmp_path):
+    repo = _repo(tmp_path)
+    assert "stop-file" not in _hook(repo)
+    (repo / ".sdlc/state/watch.stop").touch()
+    assert "watch.stop" in _hook(repo)
 
 
 def test_cli_line_empty_without_stop_file_and_never_raises(tmp_path):
@@ -74,7 +77,8 @@ def test_dangling_symlink_is_not_reported_as_a_stop_for_any_daemon(tmp_path):
     for n in ("watch.stop", "supervisor.stop"):
         (state / n).symlink_to(state / "nowhere")
     out = _doctor(repo)
-    assert "STOPPED" not in out
+    assert "daemon stop-files" in out          # the row exists (positive control) ...
+    assert "STOPPED" not in out                # ... and says nothing about a link the daemon ignores
 
 
 def test_directory_named_watch_stop_is_flagged_as_ignored_but_supervisor_dir_is_a_stop(tmp_path):
@@ -91,6 +95,7 @@ def test_directory_named_watch_stop_is_flagged_as_ignored_but_supervisor_dir_is_
 
 def test_unknown_age_reads_naturally():
     import importlib.util
+    assert STOPFILES.exists()
     spec = importlib.util.spec_from_file_location("sf", STOPFILES)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
     assert "age unknown" in m._describe("watch.stop", "ledger watcher", None)
