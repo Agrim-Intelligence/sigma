@@ -733,8 +733,10 @@ def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     doctor = _run([sys.executable, str(sigma / "skills" / "agrim-doctor" / "scripts" / "doctor.py"),
                    "check", str(repo / ".sdlc")], cwd=repo)
     session = _run(["bash", str(sigma / "hooks" / "session_start.sh")],
-                   cwd=repo, env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo),
-                                  "SIGMA_ALLOW_COEXIST": "1"})
+                   cwd=repo, env={**{k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"},
+                                  "CLAUDE_PROJECT_DIR": str(repo), "SIGMA_ALLOW_COEXIST": "1"})
+    # SIGMA_RUN_ID is scrubbed: the hook's tiers skip a headless run, so a drill launched from inside
+    # a supervised session would otherwise measure the skip, not the report (#416).
     doctor_outcome = _classify_reporting(doctor.stdout, doctor.stderr)
     session_outcome = _classify_reporting(session.stdout, session.stderr)
     finding = (

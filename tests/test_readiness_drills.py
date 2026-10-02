@@ -390,3 +390,11 @@ def test_public_evidence_redacts_retired_plugin_warning_text(tmp_path):
 
     assert "loop" + "smith" not in transcript
     assert "<retired-plugin>" in transcript
+
+
+def test_d4_is_not_fooled_by_an_inherited_sigma_run_id(tmp_path, monkeypatch):
+    """The drill runs inside supervised sessions; the hook skips headless runs, so D4 must scrub it."""
+    monkeypatch.setenv("SIGMA_RUN_ID", "supervised-run")
+    drills = _module()
+    result = drills.run_d4(tmp_path, ROOT, 1)
+    assert all(item["passed"] for item in result["invariants"])
