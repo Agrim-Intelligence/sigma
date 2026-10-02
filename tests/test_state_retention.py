@@ -313,4 +313,5 @@ def test_bad_arguments_refuse_and_delete_nothing(tmp_path, args):
     log, wit = _goal(d, "405")
     r = _run(d, *args)
     assert r.returncode == 2, (r.stdout, r.stderr)
+    assert "prune-state" in r.stderr, r.stderr            # refused by THIS verb, not by an unknown one
     assert log.exists() and wit.exists()

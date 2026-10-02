@@ -244,7 +244,7 @@ def _unlink_streams(sdlc, stem, prints, cutoff):
 
 def cli(argv):
     """`loop.py prune-state <sdlc> [--dry-run] [--keep-days N] [--limit N]`"""
-    usage = "usage: loop.py prune-state <sdlc-dir> [--dry-run] [--keep-days N] [--limit N]"
+    usage = "usage: loop.py prune-state <dir> [--dry-run] [--keep-days N] [--limit N]"
     if argv and argv[0] in ("-h", "--help"):
         print(usage)
         return 0

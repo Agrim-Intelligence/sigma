@@ -969,6 +969,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/agrim-loop/scripts/retention.py",
+      "function": "_unlink_streams",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "retention gate: only a closed-as-done goal's own log and witness file, both older than the window, no fresh owner marker, no symlink, size and mtime re-checked before the unlink; best-effort, never raises",
+      "risk": "medium"
+    },
+    {
       "path": "skills/agrim-loop/scripts/review_context.py",
       "function": "_atomic_bytes",
       "rule": "fs-remove",
