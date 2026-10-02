@@ -4,7 +4,7 @@
 Quickstart, followed literally on a fresh repository, get one goal to `done`? It is the control for
 epic #227 (plugin install -> `/agrim-init` -> one goal to done), built in #237.
 
-It runs in CI on every push (`tests/test_onboarding_control.py`, Linux, Python 3.10 and 3.12), with
+It runs in CI on every push (`tests/test_onboarding_control.py`, Linux, Python 3.10, 3.11, 3.12 and 3.13), with
 no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
 are not on CI runners, so the install lines are parsed and checked there, and run only by hand.
 
