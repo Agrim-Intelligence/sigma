@@ -28,6 +28,7 @@ def anchors(path: Path) -> set[str]:
 def findings(root: Path) -> list[str]:
     allow = json.loads((root / "tests/fixtures/doc_links_allowlist.json").read_text())
     assert isinstance(allow, list) and all(isinstance(x, dict) and isinstance(x.get("file"), str) and isinstance(x.get("target"), str) and isinstance(x.get("line"), int) and x["line"] > 0 and isinstance(x.get("line_text_substring"), str) and x["line_text_substring"] and isinstance(x.get("reason"), str) and x["reason"] for x in allow), "malformed doc-link allowlist"
+    tracked_sdlc = bool(subprocess.check_output(["git", "ls-files", "--", ".sdlc"], cwd=root, text=True).strip())
     used, problems = set(), []
     files = [Path(p) for p in subprocess.check_output(["git", "ls-files", "*.md"], cwd=root, text=True).splitlines() if not p.startswith("tests/fixtures/")]
     for rel in files:
@@ -43,7 +44,7 @@ def findings(root: Path) -> list[str]:
                 destination = (source.parent / target).resolve()
                 if not destination.exists(): problems.append(f"{rel}:{line_no}: missing link {raw}"); continue
                 if "#" in raw and raw.split("#", 1)[1] not in anchors(destination): problems.append(f"{rel}:{line_no}: missing anchor {raw}")
-    problems += [f"stale allowlist {allow[i]['file']}:{allow[i]['line']}:{allow[i]['target']}" for i in range(len(allow)) if i not in used]
+    problems += [f"stale allowlist {allow[i]['file']}:{allow[i]['line']}:{allow[i]['target']}" for i in range(len(allow)) if i not in used and (tracked_sdlc or not allow[i]["file"].startswith(".sdlc/"))]
     return problems
 
 

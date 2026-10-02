@@ -99,6 +99,18 @@ All notable changes to Sigma are recorded here, newest first.
   two guard behaviour the old code already had and the new code must keep (a group SIGKILL of
   the tick reaching the model, and leftovers of a normally finished model being left alone). Threat model TM-10 is now mitigated (residual: a descendant that
   calls `setsid` itself, or a SIGKILLed lifeline process).
+- **A public-tree builder, a name-handover checker and an export verifier** (#397).
+  `tools/build_public_tree.py` turns one reviewed commit into the tree of a fresh one-commit
+  public repository: deterministic (same commit, same tree and export commit), scanned four ways,
+  with its report outside every repository; `.sdlc/` is excluded by default, a default the owner
+  may reverse with `--sdlc include`. `tools/handover_check.py` lists every local and configured
+  holder of the old repository name and prints the ordered owner sequence;
+  `tools/verify_public_repo.py` proves over read-only REST that a pushed export is exactly that
+  commit with CI green on every leg. The exposure baseline is reconciled in
+  `docs/launch/exposure-allowlist.json`, the builder's own exceptions are in the new
+  `docs/launch/public-tree-dispositions.json`, and `tests/test_doc_links.py` treats its `.sdlc/`
+  allowlist entries as moot when no `.sdlc` file is tracked. Runbooks: `docs/public-snapshot.md`
+  and `docs/name-handover.md`. The rehearsal is prepared and owner-run, not performed.
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
