@@ -36,6 +36,21 @@ All notable changes to Sigma are recorded here, newest first.
   available yet, so no pin or rollback gesture is claimed. The publish runbook
   now describes fresh-public-snapshot publication rather than a visibility flip.
 
+- **A timed-out autowatch drive now stops the model's whole process tree** (#425). Before, the
+  timeout killed only the direct model process; anything it had started kept running, and one
+  holding the output pipe made the "timeout" wait until that process exited. The driven session
+  now starts in a process group of its own. On timeout, or on SIGTERM/SIGHUP/Ctrl-C to the tick,
+  the whole group gets SIGTERM, then up to 10s to exit, then SIGKILL, and the pipe drain is
+  bounded at 5s. Further signals cannot cut that short. Afterwards every signal the tick
+  received is re-delivered in order, so its own handling (dying by SIGTERM, KeyboardInterrupt, a
+  handler it installed) still happens. If the tick is SIGKILLed (alone, or by a
+  `killpg` of its group), a lifeline process sees its pipe close and runs the same escalation.
+  Windows refuses the drive (`REFUSED [no-process-group]`, exit 2, recorded in the ledger).
+  `tests/test_autowatch_process_group.py` covers each path with real process trees. Each test
+  fails when the mechanism it guards is removed. Against the previous code all but two fail; the
+  two guard behaviour the old code already had and the new code must keep (a group SIGKILL of
+  the tick reaching the model, and leftovers of a normally finished model being left alone). Threat model TM-10 is now mitigated (residual: a descendant that
+  calls `setsid` itself, or a SIGKILLed lifeline process).
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a

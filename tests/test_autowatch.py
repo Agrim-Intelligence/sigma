@@ -692,6 +692,20 @@ def test_a_real_failed_outcome_is_retriable_not_permanently_resolved(tmp_path):
 # ------------------------------------------------------------------ always writes a ledger entry
 
 
+def test_a_no_process_group_refusal_reaches_the_ledger_not_only_stderr(tmp_path):
+    """#425: on a host that cannot terminate the driven group, `_run_drive` refuses with exit 2;
+    the tick's ledger note must carry the refusal itself, or an operator reading the ledger sees
+    only "exited 2"."""
+    d = _sdlc(tmp_path, _config())
+    _note_or_handoff(d, "note", ME, issue=1)
+    result = autowatch.tick(
+        d, run_drive=lambda cmd, prompt, cwd, env, timeout: (2, autowatch.NO_PROCESS_GROUP_REFUSAL),
+        **_all_gates_pass_deps())
+    assert result == "failed"
+    why = _notes(d)[0]["why"]
+    assert "exited 2" in why and "REFUSED [no-process-group]" in why
+
+
 def test_writes_a_ledger_entry_on_a_genuine_driven_run_failure(tmp_path):
     d = _sdlc(tmp_path, _config())
     _note_or_handoff(d, "note", ME, issue=1)
