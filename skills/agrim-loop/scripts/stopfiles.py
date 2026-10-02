@@ -93,6 +93,9 @@ def line(sdlc_dir, now=None):
 
 
 def main(argv):
+    if argv[1:] in (["-h"], ["--help"]):
+        print("usage: stopfiles.py line <sdlc_dir>\n\n" + __doc__.strip())
+        return 0
     if len(argv) != 3 or argv[1] != "line":
         print("usage: stopfiles.py line <sdlc_dir>", file=sys.stderr)
         return 2
