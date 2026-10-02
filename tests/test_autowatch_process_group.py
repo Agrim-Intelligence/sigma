@@ -141,6 +141,15 @@ def _cleanup(*pids):
                 pass
 
 
+def _exit_code(proc, seconds):
+    """The tick's exit code, or a failing ASSERTION if it has not exited in time -- a tick that
+    never returns is this file's red, and it must read as one, not as a TimeoutExpired error."""
+    try:
+        return proc.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"the tick did not exit within {seconds}s") from None
+
+
 def _cmd(tmp_path, mode):
     script = tmp_path / "child.py"
     script.write_text(CHILD)
@@ -218,7 +227,7 @@ def test_sigterm_to_the_tick_mid_drive_takes_the_model_tree_down(tmp_path):
         gc, child = _read_pid(tmp_path / "grandchild.pid"), _read_pid(tmp_path / "child.pid")
         assert gc is not None, "precondition: the grandchild never started"
         proc.send_signal(signal.SIGTERM)
-        rc = proc.wait(timeout=30)
+        rc = _exit_code(proc, 30)
         assert rc == -signal.SIGTERM, "the tick must still die by the signal it received"
         assert _gone_within(child), "the direct child outlived the SIGTERMed tick"
         assert _gone_within(gc), "the grandchild outlived the SIGTERMed tick"
@@ -273,7 +282,7 @@ def test_sigkill_to_the_tick_still_takes_the_model_tree_down(tmp_path, how):
             proc.kill()
         else:
             os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=10)
+        _exit_code(proc, 10)
         assert _gone_within(child, 10), "the direct child outlived a SIGKILLed tick"
         assert _gone_within(gc, 10), "the grandchild outlived a SIGKILLed tick"
     finally:
@@ -297,7 +306,7 @@ def test_a_second_signal_during_termination_does_not_abort_the_escalation(tmp_pa
         proc.send_signal(signal.SIGTERM)
         time.sleep(1)
         proc.send_signal(signal.SIGINT)
-        proc.wait(timeout=30)
+        _exit_code(proc, 30)
         assert _gone_within(gc, 0.5), "the tick exited with its escalation cut short"
         assert _gone_within(child, 0.5), "the tick exited with its escalation cut short"
     finally:
@@ -315,7 +324,7 @@ def test_a_callers_own_sigterm_handler_still_stops_the_model_and_still_runs(tmp_
     try:
         assert gc is not None, "precondition: the grandchild never started"
         proc.send_signal(signal.SIGTERM)
-        rc = proc.wait(timeout=15)
+        rc = _exit_code(proc, 15)
         assert rc == 0 and (tmp_path / "returned").exists(), "the drive did not return promptly"
         assert (tmp_path / "handler-ran").exists(), "the caller's own handler never ran"
         assert _gone_within(child) and _gone_within(gc), "the model tree outlived the SIGTERM"
@@ -438,7 +447,7 @@ def _run_race(tmp_path, seam, cmd):
     proc = subprocess.Popen([sys.executable, str(tick), str(S / "autowatch.py"), cmd, seam,
                              str(tmp_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        return proc.wait(timeout=30)
+        return _exit_code(proc, 30)
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -494,7 +503,7 @@ def test_every_signal_received_mid_drive_is_redelivered_not_just_the_first(tmp_p
         proc.send_signal(signal.SIGTERM)
         time.sleep(0.7)
         proc.send_signal(signal.SIGINT)
-        rc = proc.wait(timeout=30)
+        rc = _exit_code(proc, 30)
         assert (tmp_path / "handler-ran").exists(), "the caller's SIGTERM handler never ran"
         assert not (tmp_path / "returned").exists(), "the Ctrl-C was swallowed"
         assert rc != 0
@@ -590,7 +599,7 @@ def test_a_signal_that_raises_on_redelivery_does_not_drop_the_ones_after_it(tmp_
         proc.send_signal(signal.SIGINT)
         time.sleep(0.1)
         proc.send_signal(signal.SIGTERM)
-        rc = proc.wait(timeout=30)
+        rc = _exit_code(proc, 30)
         assert not (tmp_path / "survived").exists(), "the SIGTERM after the Ctrl-C was dropped"
         assert rc == -signal.SIGTERM
         assert _gone_within(gc) and _gone_within(child)
