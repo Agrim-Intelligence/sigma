@@ -17,12 +17,14 @@ All notable changes to Sigma are recorded here, newest first.
   by a 28-39 character line; lengths count the base64 payload, not the `=` padding (a 28-character
   line ending in `=` is a 27-character tail, so a real legacy-encrypted EC body re-wrapped at 72
   columns, 72, 72 and 28 with `=`, is clean header-less). (2) A header anchor: a block that does not
-  count, every line mixed, is flagged when a line naming a PRIVATE or SECRET `BEGIN` label sits
-  above it with at most 8 blank or `Key: value` lines between, each may carry a unified diff's `+`.
+  count, every line mixed, is flagged when a line naming a PRIVATE or SECRET `BEGIN <label>-----`
+  (a header, or prose naming one) sits above it with at most 8 blank or `Key: value` lines between, each may carry a unified diff's `+`.
   (3) A DER first line: a line whose first 24 base64 or base64url characters decode to a private
   key's DER header (PKCS8, PKCS1 / DSA, SEC1), or OpenSSH's constant, after indentation and at most
-  two short symbol runs, or any run of `+` and `/` (a diff's `+`, a `//` with no space: base64
-  characters, missed until post-PR review 1); this is the only way a header-less one-line Ed25519
+  two runs of 1-3 symbols, `+` and `/` among them (a diff's `+`, a `//` with no space: missed until
+  post-PR review 1); a longer run of `+` and `/` is read only when the whole line, run included, is
+  40+ base64 characters and nothing else, so a run of 7 or more followed by other text on the line
+  (`",`) is not caught (measured, post-PR review 2); this is the only way a header-less one-line Ed25519
   key can be told from a random token. The exemption is now the whole span: a standalone non-private
   `BEGIN` line, then only blank, `Key: value`, base64 or `...` lines, then the matching `END`; it
   applies to the block trigger only, never to a DER line. A lone CR now ends a line for every rule
@@ -49,12 +51,18 @@ All notable changes to Sigma are recorded here, newest first.
   binary MIME attachment, a 76-wide CSS data URI; a3c913c flags both too); a header-less public DER
   body (an XML certificate, a CMP message) or any other public DER opening `02 01 00|01 30|02|04`; a
   certificate with prose inside, or whose BEGIN or END line carries code; an SSH2 public block whose
-  `Comment:` continues with a backslash. Not detected (each planted and run): hex bodies; base64url
+  `Comment:` continues with a backslash; a unified diff that adds a certificate bundle (the span
+  exemption is not diff-aware: a `+`-prefixed copy of a 145-certificate certifi bundle, 141 locations
+  on a3c913c, 145 now); one 40+ mixed-case digest below prose naming a PRIVATE `BEGIN` header with
+  only blank, `+` or `Key: value` lines between, by design of the anchor (a changelog sentence, a
+  table row, a diff: 0 findings on a3c913c, 1 now; no file on this tree or in the corpora hits it
+  except those planted probes). Not detected (each planted and run): hex bodies; base64url
   bodies other than a DER first line; a base64-wrapped PEM; a key in a JSON or shell string or after
   text on its line; UTF-32 text with a little-endian byte-order mark (mis-decoded as UTF-16, nothing
-  seen; without a mark, or big-endian, it is reported `opaque-binary`); a body indented with U+00A0
-  no-break spaces; a header-less non-DER body in a file whose lines end `\r\r\n` (each line is then
-  followed by an empty one; a3c913c missed it too); PuTTY `.ppk`; a slice of 1-2 lines with no tail;
+  seen; without a mark, or big-endian, it is reported `opaque-binary`); a body indented with U+00A0,
+  U+2003, U+3000, `\v` or `\f`, or whose lines are separated by U+2028, U+2029 or NEL; a header-less non-DER body in a file whose lines end `\r\r\n` (each line is then
+  followed by an empty one; a3c913c missed it too); a PuTTY `.ppk` key whose private part is 1-2 lines (Ed25519; an RSA
+  one's 3+ line blocks are flagged); a slice of 1-2 lines with no tail;
   a slice with no DER start inside a matching public span; encrypted PKCS8, PKCS12 or PGP-private
   first lines; a body wrapped below 24 characters; a body wrapped below 40 with no DER first line;
   an all-lower-case body; more than 8 armor lines; a non-DER body under a lower-case `begin` (it
@@ -64,9 +72,10 @@ All notable changes to Sigma are recorded here, newest first.
   a short body (3 lines, or the P-256 shape) goes clean and a longer one stays flagged on its
   remaining lines, a side effect pinned by a test, not a feature; `ALLOW_PATHS` is the reliable
   waiver. The new test files test_key_body (84 tests, all red on a3c913c) and test_key_body_guards
-  (104; green on a3c913c except one review pin, a lone P-256 PKCS8 first line, and 24 of the 30 rows
-  added after post-PR review 1: the `+` / `/` / `// ` / diff rows and one padded tail; the 18 `+` /
-  `/` / diff rows are red on the PR's first head too) plant every shape through the documented
+  (123; green on a3c913c except one review pin, a lone P-256 PKCS8 first line, 24 of the 30 rows
+  added after post-PR review 1: the `+` / `/` / `// ` / diff rows and one padded tail, and 8 of the
+  19 rows added after post-PR review 2: the five flagged `+` / `/` run rows and the three anchor
+  digest rows; the 18 `+` / `/` / diff rows are red on the PR's first head too) plant every shape through the documented
   gesture, with 9 mutation controls. Follow-up issues are listed in the PR.
 
 - **Review units and seeded-defect recall: `tools/readiness/review_units.py` and

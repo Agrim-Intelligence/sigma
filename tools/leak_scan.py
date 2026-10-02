@@ -55,16 +55,27 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     value`, base64 or `...` lines, then `-----END <same label>-----`. A body under a public header with
     no END, or glued to a certificate, is flagged.
     (2) HEADER ANCHOR. A block that does not count, every line mixed (one line is enough), is a
-    finding when a line naming `BEGIN <label>` with PRIVATE or SECRET in the label -- a header, or
-    prose naming one -- sits above it with at most `_GAP` = 8 blank or `Key: value` lines between
+    finding when a line naming `BEGIN <label>-----` (4 or 5 dashes after the label; `BEGIN PRIVATE KEY`
+    alone does not anchor) with PRIVATE or SECRET in the label -- a header, or prose naming one --
+    sits above it with at most `_GAP` = 8 blank or `Key: value` lines between
     (each may carry a unified diff's leading `+`): a one-line Ed25519 body or a truncated RSA paste
-    under its header, also inside a diff.
-    (3) DER FIRST LINE. A line that starts, after indentation and at most two runs of 1-3 symbols
-    (`"`, `# `, `> `, `// `, ` * `, `- "`) or any run of `+` and `/` (base64 characters: a diff's `+`,
-    a `//` with no space), with base64 or base64url whose first 24 characters decode
+    under its header, also inside a diff. So a lone 40+ mixed digest under such prose is a finding
+    too (KNOWN AMBIGUITIES below).
+    (3) DER FIRST LINE. A line that starts, after space / tab indentation and at most two runs of
+    1-3 symbols (`"`, `# `, `> `, `// `, ` * `, `- "`; `+` and `/` are symbols too, so a diff's `+`
+    or a `//` with no space is one run, and at most 6 of them are read this way), with base64 or
+    base64url whose first 24 characters decode
     to a private key's DER header (`SEQUENCE { INTEGER 0|1, SEQUENCE | INTEGER | OCTET STRING`:
     PKCS8 v1/v2, PKCS1 / DSA, SEC1), or with OpenSSH's `openssh-key-v1` constant; anything may follow
-    it and no span exempts it. It is the only reach of a header-less one-line Ed25519 key, which is
+    it and no span exempts it. A LONGER run of `+` and `/` is read only when the whole line, run
+    included, is a (1) candidate line, 40+ base64 characters and nothing else: the run is then
+    stripped before the DER header is read. MEASURED through the gesture (runs of 1-10 `+`, `/` and
+    `+/`, before a 64-character Ed25519-shaped line and a 24-character P-224 one, each bare and
+    followed by `",`, ` \\` and ` x`): a run of 1-6 is flagged whatever follows; a run of 7 or more is
+    flagged only when nothing but base64 follows and the line reaches 40 characters (7+ before the
+    64-character line: flagged bare, NOT flagged with any of the three tails or with a base64url `-`
+    / `_` in the key; 15 `+` before the 24-character line, 39 characters: NOT flagged; 16: flagged).
+    It is the only reach of a header-less one-line Ed25519 key, which is
     otherwise 48 random bytes, the same as a sha384 digest. Explicit EC PARAMETERS (public, and
     shaped like PKCS8 v2) are excluded by their OID.
     A finding's line is the block's first line, or the DER line. A trailing allow marker waives a DER
@@ -109,12 +120,16 @@ little-endian WITH one is mis-decoded as UTF-16 and nothing in it is seen). For 
 planted and run through the gesture, #433):
 hex bodies, and base64url bodies other than a base64url DER first line; a PEM base64-wrapped into one
 string; a key inside a JSON or shell string, or after other text on its line (`key: <base64>`);
-PuTTY `.ppk`; a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); any slice
+a PuTTY `.ppk` key whose `Private-Lines` part is 1-2 lines (Ed25519: 1 line; an RSA `.ppk`'s
+64-wide blocks of 3+ lines ARE flagged, measured, and a file named `*.ppk` is a `secret-file`); a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); any slice
 with no DER start inside a matching public span; an encrypted PKCS8, PKCS12 or PGP-private body
 from a lone first line; a body wrapped below 24 characters (in every shape); a body wrapped below 40
 whose first line is missing; any non-DER body wrapped below 40, header and END included (no line
 reaches the 40 floor, nor scrub.py's `private-key` 40-character run); an all-lower-case body; a
-body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean); more
+body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean) or with
+U+2003, U+3000, `\\v` or `\\f`, or whose lines are separated by U+2028, U+2029 or NEL (U+0085)
+instead of LF / CR (each measured on a one-line Ed25519 DER line and a 12-line DER-led RSA body:
+all clean; only space and tab are indentation, only LF and CR end a line); more
 than 8 armor lines, or a line that is not armor, between header and body; a non-DER body under a
 lower-case `begin` header (it does not anchor; a DER first line or a counted block under it is
 still caught: EC, RSA, Ed25519 and P-224 bodies measured). KNOWN AMBIGUITIES (findings, not misses;
@@ -123,7 +138,15 @@ attachment, a 76-wide CSS data URI: a3c913c flags both too); a header-less publi
 `<X509Certificate>`, a CMP message); any other public DER that opens `02 01 00|01 30|02|04` after its
 SEQUENCE; a certificate with prose inside its BEGIN/END, or whose BEGIN or END line also carries code
 (a Go backtick or a Python triple-quoted literal), or an SSH2 public block whose `Comment:` continues
-with a trailing backslash: none is a span, so the body is a finding.
+with a trailing backslash: none is a span, so the body is a finding; a unified diff or patch that
+ADDS a certificate or a CA bundle (every line `+`-prefixed: a `+-----BEGIN` line is not a
+standalone BEGIN line, so the span exemption is not diff-aware; a `+`-prefixed copy of a 145-
+certificate certifi bundle: 141 key-body locations on a3c913c, 145 now; of a 121-certificate
+Homebrew bundle: 119 and 121); ONE 40+ mixed-case base64 line (a digest) below prose that names a
+PRIVATE `BEGIN <label>-----` header, with only blank, `+`-only or `Key: value` lines between, by
+design of the header anchor (2) (a changelog sentence, a markdown table row, a diff of a changelog:
+0 findings each on a3c913c, 1 now; no file on this tree or in the 97- or 137-file corpora hits it
+except those three planted probes).
 
 OUTPUT. One line per finding, `<path>:<line>: <rule>` -- the LOCATION only, never the matched value,
 then `leak_scan: <n> finding(s) over <m> file(s) (<u> unscannable, <a> allow-marked line(s))`.
@@ -198,7 +221,9 @@ _PLACEHOLDER_VALUE = re.compile(r"(?i)(?:your[-_ ].*|.*[-_]here|changeme|change[
 #:      nothing else); a BLOCK is a run of adjacent candidate lines.
 #:  k = the start of a private key's first line: indentation, up to two marker runs of 1-3 symbols (a quote,
 #:      `# `, `> `, `// `, ` * `, `- "`), then `M` (0x30, a DER SEQUENCE) and base64 or base64url, or OpenSSH's
-#:      constant; anything may follow. `_der_private` then reads the DER header.
+#:      constant; anything may follow. `_der_private` then reads the DER header. `+` and `/` are symbols here
+#:      too, so `k` takes at most 6 of them; a longer `+`/`/` run is seen only when the whole line is a `b`
+#:      candidate (40+ base64, nothing else), and `_key_bodies` strips it there. 7+ then other text: unseen.
 _BODY_LINE = re.compile(r"(?m)^(?:[ \t]*(?P<b>[A-Za-z0-9+/]{40,}={0,2})[ \t]*\r?$"
                         r"|[ \t]*(?:[^A-Za-z0-9\s]{1,3}[ \t]*){0,2}"
                         r"(?P<k>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
@@ -438,7 +463,8 @@ def scan_text(text, rules, owner, config=False, stats=None):
     `allowed` += the number of lines a valid allow marker covers.
 
     Each rule runs ONCE over the whole text and a match is attributed to the line it starts on --
-    per-line matching made ~5.4M regex calls on this tree; whole-text makes ~15k. PEM blocks span
+    per-line matching made ~5.4M regex calls on the tree #277 counted it on; whole-text made ~15k
+    (not re-counted since; today's 837 files, 325,879 lines, x 19 scrub rules alone is 6.2M vs 16k). PEM blocks span
     lines anyway, and count only with a real key body (a base64 run of 40+), never for prose that
     merely names the marker. A lone CR ends a line too (it is turned into a newline first, same
     length, so every rule's line numbers agree; so `\\r\\r\\n` counts as 2 lines, as Python's

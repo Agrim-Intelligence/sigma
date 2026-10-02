@@ -5,6 +5,8 @@ file is not a `## Tests` selector. One exception, added after code review 1: the
 `p256-pkcs8-line1` is red on a3c913c too; it lives here because the red-first file's bytes are frozen in
 the red witness. Rows added after post-PR review 1 (`prefix`, `diffa`, `padding`) are red on the PR head
 0c25573 or on a3c913c, as their comment says, and carry their own control (`test_control_prefix_and_diff_armor`).
+Rows added after post-PR review 2 (`prefix-run`, `ws-limit`, and four `ambiguity` rows) pin measured behaviour:
+the flagged `prefix-run` rows and the three `anchor-digest` rows are red on a3c913c, the rest green there.
 Fixtures and helpers come from the red-first file."""
 import base64
 import random
@@ -137,6 +139,36 @@ _g("padding", "tail28-eq", "\n".join(_pad3[:2] + [_pad3[2] + "="]), _kb(2))
 _g("padding", "three-39-eq", "\n".join(ln + "=" for ln in _lines([39] * 3, seed=131)), [])
 _g("padding", "three-40-eq", "\n".join(ln + "=" for ln in _lines([40] * 3, seed=131)), _kb(2))
 
+# Post-PR review 2 (#433): the measured reach of a `+` / `/` run before a DER first line. The symbol runs take
+# at most 6 (two runs of 1-3), whatever follows the key; a longer run is read only through the whole-line
+# candidate, so the line, run included, must be 40+ base64 characters with nothing else on it. The flagged
+# rows are red on a3c913c (it reads no DER line); the `limit-` rows are the documented limit, clean on both.
+_P224_24 = _der_text("ec-p224-sec1", _P224, width=24)[0]
+_g("prefix-run", "plus6-trailing-text", "+" * 6 + _ED_DER[0] + '",', _kb(2))
+_g("prefix-run", "mixed6-trailing-text", "+/+/+/" + _ED_DER[0] + " \\", _kb(2))
+_g("prefix-run", "limit-plus7-trailing-text", "+" * 7 + _ED_DER[0] + '",', [])
+_g("prefix-run", "limit-slash10-trailing-text", "/" * 10 + _ED_DER[0] + " x", [])
+_g("prefix-run", "plus7-whole-line", "+" * 7 + _ED_DER[0], _kb(2))
+_g("prefix-run", "slash10-whole-line", "/" * 10 + _ED_DER[0], _kb(2))
+_g("prefix-run", "limit-plus15-24-char-line", "+" * 15 + _P224_24, [])   # 39 characters
+_g("prefix-run", "plus16-24-char-line", "+" * 16 + _P224_24, _kb(2))     # 40 characters
+# Ambiguities found by post-PR review 2, pinned as measured. (2) The header anchor reads prose naming a
+# private BEGIN header, so ONE mixed 40+ digest below it (blank, `+` or `Key: value` lines between) is a
+# finding; a3c913c had no anchor. (3) The public-certificate span is not diff-aware: a `+`-prefixed
+# certificate is a finding on both gates.
+_DIGEST = _lines([43], seed=140)[0] + "="
+_HDR_PROSE = "`-----BEGIN PRIV" + "ATE KEY-----`"
+_g("ambiguity", "anchor-digest-changelog", f"- The gate reads the {_HDR_PROSE} header.\n\n{_DIGEST}", _kb(4))
+_g("ambiguity", "anchor-digest-table", f"| {_HDR_PROSE} | a PKCS8 header |\n\n{_DIGEST}", _kb(4))
+_g("ambiguity", "anchor-digest-diff", f"@@ -1,0 +1,3 @@\n+- Reads the {_HDR_PROSE} header.\n+\n+{_DIGEST}", _kb(5))
+_g("ambiguity", "cert-added-by-a-diff", "\n".join(["--- /dev/null", "+++ b/ca.pem", "@@ -0,0 +1,12 @@"]
+                                                 + ["+" + ln for ln in _public_block("CERTIFICATE").splitlines()]), _kb(6))
+# (4) Indentation other than space / tab, and line separators other than LF / CR, hide a DER first line.
+for name, ws in (("em-space", " "), ("ideographic-space", "　"), ("vt", "\v"), ("ff", "\f")):
+    _g("ws-limit", f"indent-{name}", ws + _ED_DER[0], [])
+for name, sep in (("u2028", " "), ("u2029", " "), ("nel", "\x85")):
+    _g("ws-limit", f"separator-{name}", sep.join(["x", _ED_DER[0], "y"]), [])
+
 _ALL = _ROWS + _GUARDS
 
 
@@ -237,6 +269,16 @@ def test_a_key_line_behind_a_diff_plus_or_a_slash_run(guard_batch, path, expecte
 
 @pytest.mark.parametrize("path,expected", _ids("prefix-limit") + _ids("padding"))
 def test_short_stripped_tokens_and_padding_lengths(guard_batch, path, expected):
+    _check(guard_batch, path, expected)
+
+
+@pytest.mark.parametrize("path,expected", _ids("prefix-run"))
+def test_the_measured_reach_of_a_plus_or_slash_run(guard_batch, path, expected):
+    _check(guard_batch, path, expected)
+
+
+@pytest.mark.parametrize("path,expected", _ids("ws-limit"))
+def test_the_limit_other_whitespace_and_separators_hide_a_der_line(guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
 
