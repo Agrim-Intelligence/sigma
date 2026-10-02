@@ -16,7 +16,9 @@ git and `gh api` GET calls, and nothing depends on a hook or on a host.
   (`sigma-public-snapshot`), the commit date of the source commit, and the message `Initial public
   snapshot (Sigma <plugin version>)`. The export's commit id is therefore a pure function of the
   source commit: the same commit twice gives the same tree and the same export commit, and one
-  changed byte changes both. No reflog is written (`core.logAllRefUpdates=false` on every ref
+  changed byte changes both. The export's git calls see no global, system or environment-given
+  configuration (`GIT_CONFIG_COUNT`/`_KEY_n`/`_VALUE_n` and `GIT_CONFIG_PARAMETERS` are removed) and
+  commit with `i18n.commitEncoding=UTF-8`, so the operator's environment cannot change the id. No reflog is written (`core.logAllRefUpdates=false` on every ref
   update), so the export's `.git` records no operator name, e-mail or host.
 - **The verifier** (`python3 tools/verify_public_repo.py`) reads a PUSHED export over REST and
   proves it is exactly that one commit with CI green on every leg.
@@ -157,9 +159,9 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 `docs/launch/` cannot drop them):
 
 - `docs/launch/exposure-allowlist.json`: the exposure scanner's allowlist, entries
-  `{path, rule, reason}`. Only `.sdlc/**` entries carry a `blob`, so they are pinned to the exact
-  bytes; entries for `tests/`, `skills/` and `tools/` are unpinned because those files change in
-  every goal.
+  `{path, rule, reason}`. Entries for archived files (`.sdlc/**`, `docs/launch/evidence/**`) and a
+  few single reviewed literals carry a `blob`, so they are pinned to the exact bytes; the other
+  entries for `tests/`, `skills/` and `tools/` are unpinned because those files change in every goal.
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason[, blob]}` for the two content
   rules. It holds the fixtures and regex sources that name a key header or the placeholder on
@@ -219,7 +221,11 @@ Owner-only. A rehearsal is the first push of an export, to a throwaway PRIVATE r
 failure costs nothing public. Each step is the owner's, and none runs in a loop.
 
 1. Build the export (above). Expect REJECTED until the two placeholders are filled; fill them, merge,
-   and build again for `VERIFIED`.
+   and build again for `VERIFIED`. Measured on 2026-10-02 in a scratch clone of the #397 branch
+   (`--review-level clean`, the real patterns file): unfilled, REJECTED with
+   `scans: builder=2 leak_refs=0/0 exposure=0/0+0 leak_scan=0` (the two placeholders only); filled
+   in a scratch commit with a synthetic address, `VERIFIED`. A later merge that brings a new exposure
+   finding turns this REJECTED for that reason too: disposition it (below) before the rehearsal.
 2. Owner: create the throwaway private repository (`THROWAWAY`, in the form `OWNER/NAME`).
 3. Owner: push the export.
 
@@ -237,7 +243,8 @@ failure costs nothing public. Each step is the owner's, and none runs in a loop.
    ```
 
    Exit 0 is every check `ok`; exit 1 prints a `FAIL <check> <detail>` line per failed check; exit 2
-   is a refusal (the report is not a finalised VERIFIED one, or `gh` failed). The checks are
+   is a refusal (the report is not a finalised VERIFIED one, or `gh` failed). `visibility` reads the
+   reply's `private` field, and a missing or non-boolean one is a `FAIL`, never read as public. The checks are
    `visibility`, `default-branch`, `single-commit`, `root-commit`, `branches`, `tags`, `issues`,
    `pulls`, `tree`, `ci-run`, `ci-legs`.
 6. Clone the throwaway and remove its `origin` so the clone cannot push (the push-disabled pattern

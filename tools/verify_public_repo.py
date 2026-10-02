@@ -121,8 +121,12 @@ def _verify(gh, repo, branch, legs, expect, commit, tree):
 
     info, _ = gh.get(r)
     info = info if isinstance(info, dict) else {}
-    visibility = "private" if info.get("private") is True else "public"
-    put("visibility", visibility == expect, "repository is %s, expected %s" % (visibility, expect))
+    private = info.get("private")
+    if isinstance(private, bool):
+        visibility = "private" if private else "public"
+        put("visibility", visibility == expect, "repository is %s, expected %s" % (visibility, expect))
+    else:                       # no boolean `private` field says nothing: never default to public
+        put("visibility", False, "repos/%s answered no boolean private field, expected %s" % (repo, expect))
     default = info.get("default_branch")
     put("default-branch", default == branch, "default branch is %s, expected %s" % (default, branch))
 

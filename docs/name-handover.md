@@ -54,8 +54,10 @@ reads:
   `--push`, which apply every rewrite). A value held in a global or included file is located at
   that file; one in the repository's config at its first work tree; one in a `config.worktree` at
   that worktree. Each URL is classified `old`, `new`, `other` or `absent` (case-insensitive) after
-  normalising it as GitHub does: a `?query` or `#fragment` is dropped, `//` collapsed and `.` and
-  `..` resolved. A GitHub URL (HTTPS, `ssh://`, scp-like SSH with or without a `/` after the colon,
+  normalising it as GitHub does: a `?query` or `#fragment` is dropped, `%XX` escapes in the path
+  are decoded once (GitHub serves `widg%65t` as `widget`; a double escape such as `%2565` keeps a
+  `%` after that one decoding, and no repository name holds one), then `//` is collapsed and `.`
+  and `..` resolved. A GitHub URL (HTTPS, `ssh://`, scp-like SSH with or without a `/` after the colon,
   on `github.com`, `www.github.com` or `ssh.github.com`) is classified by its slug; ANY other URL
   whose path ends in `OWNER/NAME` is classified by that path too, with a note naming the host, so a
   clone behind an SSH host alias, a rewrite or a mirror is never missed (it fails closed: a mirror
@@ -134,7 +136,10 @@ is refused (`json-exists`). The order is the point:
 
 1. Stop every writer: `touch .sdlc/state/watch.stop` in each checkout, end every loop session, and
    confirm none is left. Never pause a process with a stop signal.
-2. Run `check` and save the `--json`: this is the list of every holder to repoint.
+2. Run `check` and save the `--json`: this is the list of every holder to repoint. The printed
+   `check` steps (2, 6 and 8) scan `--scan-root "${CLONES_ROOT:-$HOME/.sigma-ops}"`: set
+   `CLONES_ROOT` to the directory that holds this repository's clones first, because a large
+   `~/.sigma-ops` ends truncated and cannot exit 0 (see "Cost, measured" above).
 3. Record the repository id with `gh api repos/OLD --jq '.id, .private'`.
 4. Owner: `gh repo rename NEWNAME -R OLD --yes`.
 5. Once per repository from step 2: `git remote set-url origin` to the new URL, repoint

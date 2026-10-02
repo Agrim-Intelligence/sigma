@@ -231,5 +231,22 @@
     "path": "tools/leak_scan.py",
     "rule": "email-address",
     "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": ".sdlc/plans/429.md",
+    "rule": "email-address",
+    "blob": "f3f7e71ef2d831a8da1e012582bd47d8c46052b8",
+    "reason": "reviewed: archived goal text quoting a URL-userinfo test fixture (user and a format placeholder at github.com), not an address (blob-pinned: archived file)"
+  },
+  {
+    "path": "docs/launch/evidence/pin-rollback-2026-10-02.md",
+    "rule": "email-address",
+    "blob": "14c38669e9dce5e0ea8aa4273367ae2525755e62",
+    "reason": "reviewed: a captured git error naming the SSH remote user on github.com (git at github.com), not a person (blob-pinned: archived evidence file)"
+  },
+  {
+    "path": "tests/test_readiness_decide.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
   }
 ]

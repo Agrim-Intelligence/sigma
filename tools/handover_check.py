@@ -38,6 +38,7 @@ import re
 import subprocess
 import sys
 import time
+from urllib.parse import unquote
 
 SCHEMA = "sigma.handover-check/v1"
 HEARTBEAT_FRESH_SECONDS = 600
@@ -158,15 +159,17 @@ def _norm_path(path):
 
 
 def _normalise_url(url):
-    """The URL as GitHub resolves it: `?query` and `#fragment` dropped, the path normalised."""
+    """The URL as GitHub resolves it: `?query` and `#fragment` dropped, `%XX` escapes in the path
+    decoded ONCE (GitHub serves `widg%65t` as `widget`; a double escape keeps a `%`, which no
+    repository name holds), then the path normalised."""
     url = re.split(r"[?#]", (url or "").strip(), 1)[0]
     m = _SCHEME_RE.match(url)
     if m:
-        return m.group(1) + _norm_path(m.group(2) or "")
+        return m.group(1) + _norm_path(unquote(m.group(2) or ""))
     m = _SCPLIKE_RE.match(url)
     if m:
-        return m.group(1) + ":" + _norm_path(m.group(2))
-    return _norm_path(url)
+        return m.group(1) + ":" + _norm_path(unquote(m.group(2)))
+    return _norm_path(unquote(url))
 
 
 def _url_info(url):
@@ -1086,8 +1089,10 @@ _SEQUENCE = """SEQUENCE (owner commands, in this order; stop at the first failur
 1. stop every writer: `touch .sdlc/state/watch.stop` in each checkout, end every loop session, and confirm
    none is left (never pause a process with a stop signal):
      ps -axo pid,etime,command | grep -E 'watch_daemon|loop\\.py'
-2. list every holder: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --json "$JSON"
+2. list every holder: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root "${CLONES_ROOT:-$HOME/.sigma-ops}" --json "$JSON"
      ($JSON, $JSON2 and $JSON3: three different paths outside every repository, none used before; a --json file is never overwritten)
+     (CLONES_ROOT: the directory that holds this repository's clones; unset, it falls back to --scan-root ~/.sigma-ops,
+      which on a large root ends truncated and cannot exit 0: see the "Cost, measured" paragraph of docs/name-handover.md)
 3. record the repository id: gh api repos/%(old)s --jq '.id, .private'
      write the id down as ID
 4. owner: gh repo rename %(nname)s -R %(old)s --yes
@@ -1096,12 +1101,12 @@ _SEQUENCE = """SEQUENCE (owner commands, in this order; stop at the first failur
      set discovery.github.repo (and ledger.handoff.upstream_repo if it named %(old)s) to %(new)s in each .sdlc/config.json
      re-add any marketplace recorded as %(old)s
 6. gh api repos/%(new)s --jq '.id, .private'
-     the id equals ID; then python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON2"
+     the id equals ID; then python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root "${CLONES_ROOT:-$HOME/.sigma-ops}" --repo-id "$ID" --json "$JSON2"
      must exit 0
 7. ONLY THEN, owner: gh repo create %(old)s --public
      git -C "$OUT" push https://github.com/%(old)s.git main
      python3 tools/verify_public_repo.py --repo %(old)s --report "$REPORT" --expect-visibility public
-8. check again: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root ~/.sigma-ops --repo-id "$ID" --json "$JSON3"
+8. check again: python3 tools/handover_check.py check --old %(old)s --new %(new)s --scan-root "${CLONES_ROOT:-$HOME/.sigma-ops}" --repo-id "$ID" --json "$JSON3"
      expect old-name-taken informational and no BLOCK
 9. `rm .sdlc/state/watch.stop` in each checkout
 """

@@ -478,3 +478,55 @@ def test_max_seconds_also_bounds_reading_the_repositories_already_found(tmp_path
     cut = [f for f in doc["findings"] if f["kind"] == "truncated" and f["field"] == "max-seconds"]
     assert len(cut) == 1 and cut[0]["blocking"] is True, doc["findings"]
     assert clock["reads"] == 2, "reading went on past the bound: %d repositories read" % clock["reads"]
+
+
+# ------------------------------------------------------------------------------ review cycle 3, findings 1 and 4
+
+#: Spellings GitHub resolves to the old repository over HTTPS: a `%XX` escape is decoded once.
+_PERCENT_OLD = ("https://github.com/acme-old/widg%65t.git", "https://github.com/%61cme-old/widget",
+                "https://github.com/acme-old/WIDG%45T", "https://github.com/acme-old/widget%2Egit",
+                _ssh("github.com") + "acme-old/widg%65t.git")
+
+
+def test_percent_escaped_old_urls_are_classified_as_the_old_repository():
+    mod = _tool()
+    wrong = [(url, mod._url_info(url)) for url in _PERCENT_OLD
+             if (mod._url_info(url)[0] or "").lower() != OLD or mod._url_info(url)[1]]
+    assert wrong == [], wrong
+    assert (mod._url_info("https://github.com/acme-old/widget%2Dprivate")[0] or "").lower() == NEW
+    # decoded ONCE: a double escape leaves `%65` behind, which no repository name holds
+    assert (mod._url_info("https://github.com/acme-old/widg%2565t")[0] or "").lower() != OLD
+
+
+def test_percent_escaped_old_origin_blocks_by_clone_and_by_scan_root(tmp_path, capsys):
+    mod = _tool()
+    clone = _repo(tmp_path / "pct", "https://github.com/acme-old/widg%65t.git")
+    rc, out, err, doc = _check(mod, capsys, tmp_path, "--clone", clone)
+    assert rc == 1, (out, err)
+    assert _blocking_old_at(doc, clone), doc["findings"]
+    root = tmp_path / "root"
+    mirror = _repo(root / "deep" / "mirror", "https://github.com/%61cme-old/widget")
+    rc, out, err, doc = _check(mod, capsys, tmp_path, "--scan-root", root)
+    assert rc == 1, (out, err)
+    assert _blocking_old_at(doc, mirror), doc["findings"]
+
+
+def test_sequence_check_steps_take_the_clones_root_not_the_whole_ops_directory(capsys):
+    mod = _tool()
+
+    def no_run(args, input_text=None, timeout=60):
+        raise AssertionError("sequence ran %r" % (args,))
+
+    rc = mod.main(["handover_check.py", "sequence", "--old", OLD, "--new", NEW], run=no_run)
+    seq = capsys.readouterr().out
+    assert rc == 0
+    steps = [l[l.index("python3 tools/handover_check.py"):] for l in seq.splitlines()
+             if "python3 tools/handover_check.py check" in l]
+    assert len(steps) == 3, steps
+    for step in steps:
+        assert '--scan-root "${CLONES_ROOT' in step, "step hard-codes its scan root: %s" % step
+        assert "--scan-root ~/.sigma-ops" not in step, step
+    assert "CLONES_ROOT" in seq.split("python3 tools/handover_check.py check", 1)[0] or \
+        "CLONES_ROOT:" in seq, "the sequence never says what CLONES_ROOT is"
+    doc = (ROOT / "docs" / "name-handover.md").read_text(encoding="utf-8")
+    assert "CLONES_ROOT" in doc, "docs/name-handover.md never names CLONES_ROOT"

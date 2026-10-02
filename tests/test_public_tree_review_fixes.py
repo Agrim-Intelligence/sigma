@@ -242,3 +242,28 @@ def test_rejected_export_keeps_no_index_and_no_blob_of_its_tree(tmp_path, capsys
     blob = _git(repo, "rev-parse", sha + ":docs/guide.md")
     gone = subprocess.run(["git", "-C", str(rejected), "cat-file", "-e", blob], capture_output=True)
     assert gone.returncode != 0, "the rejected export still holds the blob %s" % blob
+
+
+# ------------------------------------------------------------------------------ review cycle 3, finding 3
+
+def test_export_commit_ignores_git_config_given_through_the_environment(tmp_path, capsys, monkeypatch):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path)
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, tmp_path / "out" / "plain"))
+    assert rc == 0, se
+    plain = _fields(so)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "i18n.commitEncoding")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "ISO-8859-1")
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'i18n.commitencoding'='ISO-8859-2'")
+    out = tmp_path / "out" / "envcfg"
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out))
+    assert rc == 0, se
+    got = _fields(so)
+    assert got["verdict"] == "VERIFIED", so
+    for name in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_PARAMETERS"):
+        monkeypatch.delenv(name)
+    header = _git(out, "cat-file", "-p", "HEAD")
+    assert "\nencoding " not in header, header
+    commit = [v for k, v in got.items() if "commit" in k]
+    assert commit == [v for k, v in plain.items() if "commit" in k], (plain, got)

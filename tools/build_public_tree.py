@@ -781,12 +781,23 @@ def _doctor_slug(partial, definition_raw, blobs):
 
 # ------------------------------------------------------------------------------ the export repository
 
+def _export_env():
+    """`_git_env()` with no global, system OR environment-given git configuration
+    (`GIT_CONFIG_COUNT`/`_KEY_n`/`_VALUE_n`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG`): the export
+    commit id must not depend on the operator's environment."""
+    env = {k: v for k, v in _git_env().items()
+           if not (k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG")
+                   or k.startswith("GIT_CONFIG_KEY_") or k.startswith("GIT_CONFIG_VALUE_"))}
+    env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+    return env
+
+
 def _export_repository(partial, plan, planned, ct, message):
     """Step 13: a one-commit repository in `partial` with the fixed identity; never `git add`, never
     `git archive`, never a hook-running command. -> the commit id."""
-    env = _git_env()
-    env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
-    base = ["-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", "-c", "core.logAllRefUpdates=false"]
+    env = _export_env()
+    base = ["-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", "-c", "core.logAllRefUpdates=false",
+            "-c", "i18n.commitEncoding=UTF-8"]
     template = tempfile.mkdtemp(prefix="build_public_tree-template-")
     try:
         _gitb(partial, base + ["-c", "init.defaultBranch=main", "init", "-q", "--template=" + template], env=env)
@@ -836,8 +847,7 @@ def _unpublish_rejected(partial, run, commit):
                           "-c", "core.hooksPath=/dev/null", "update-ref", "-d", "refs/heads/main"])
     if rc != 0:
         raise Refused("unpublish-failed", "could not remove the rejected export's branch (git exit %d)" % rc)
-    env = _git_env()
-    env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"})
+    env = _export_env()
     base = ["-c", "core.logAllRefUpdates=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0"]
     try:
         _gitb(partial, base + ["read-tree", "--empty"], env=env)
