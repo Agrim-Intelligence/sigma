@@ -2677,113 +2677,12 @@ def test_ensure_is_never_wired_into_ensure_watcher_or_watch_daemon():
 # --------------------------------------------------------------------------- signal cleanup (#424)
 #
 # SIGTERM/SIGHUP used to terminate the listener without unwinding `run()`'s `finally`, stranding the
-# pidfile, heartbeat and lock dir. The REAL-SUBPROCESS controls below deliver each signal to a real
+# pidfile, heartbeat and lock dir. The REAL-SUBPROCESS controls (tests/test_slack_sig.py) deliver each signal to a real
 # listener and are deterministic: the parent blocks on a READY line the child prints only after startup finished writing
 # its markers (first stop-file poll) (no sleeps, no racing a window), and every wait is bounded so a regressed handler
 # FAILS instead of hanging. The in-process seam controls pin the exact handler logic.
 
-_CHILD = """
-import importlib.util, signal, sys
-for _n in ("SIGTERM", "SIGHUP"):
-    if hasattr(signal, _n):
-        signal.signal(getattr(signal, _n), signal.SIG_DFL)   # a nohup parent must not mask the control
-spec = importlib.util.spec_from_file_location("slack_commands_listen", sys.argv[1])
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
-
-class _Client:
-    def connect(self):
-        pass
-    def close(self):
-        pass
-
-# READY is printed from the FIRST stop-file poll: that runs after run()'s post-connect heartbeat write
-# and log line, so nothing the child does later can overwrite markers the parent rewrites afterwards.
-_polled = []
-def _stop_requested(sdlc_dir):
-    if not _polled:
-        _polled.append(1)
-        print("READY", flush=True)
-    return False
-
-m._build_client = lambda *a, **k: _Client()
-m.stop_requested = _stop_requested
-sys.exit(m.main(["slack_commands_listen.py", sys.argv[2]]))
-"""
-
 _POSIX_SIGNALS = [n for n in ("SIGTERM", "SIGHUP") if hasattr(signal, n)]
-_needs_posix = pytest.mark.skipif(sys.platform == "win32",
-                                  reason="a signal terminates the process on Windows without a handler")
-
-
-def _spawn_child(tmp_path):
-    d = _sdlc(tmp_path)
-    (d / "config.json").write_text(json.dumps(_config()))
-    script = tmp_path / "child.py"
-    script.write_text(_CHILD)
-    env = dict(os.environ, APP_ENV_T="xapp-fake", BOT_ENV_T="xoxb-fake")
-    proc = subprocess.Popen([sys.executable, str(script), str(S / "slack_commands_listen.py"), str(d)],
-                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
-    return d, proc
-
-
-def _await_ready(proc):
-    """Read the READY handshake with a hard bound (a reader thread: a blocked readline cannot hang)."""
-    box = []
-    reader = threading.Thread(target=lambda: box.append(proc.stdout.readline()), daemon=True)
-    reader.start()
-    reader.join(60)
-    if not box or box[0].strip() != "READY":
-        proc.kill()
-        proc.wait(10)
-        pytest.fail("child never reached READY: %r" % (box,))
-
-
-def _signal_and_reap(proc, name):
-    proc.send_signal(getattr(signal, name))
-    try:
-        return proc.wait(60)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(10)
-        pytest.fail("child survived %s" % name)
-
-
-@_needs_posix
-@pytest.mark.parametrize("name", _POSIX_SIGNALS)
-def test_real_subprocess_signal_removes_every_marker(tmp_path, name):
-    d, proc = _spawn_child(tmp_path)
-    try:
-        _await_ready(proc)
-        assert sc.pid_path(d).is_file() and sc.heartbeat_path(d).is_file() and sc.lock_dir_path(d).is_dir()
-        rc = _signal_and_reap(proc, name)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.stdout.close()
-    assert rc == -getattr(signal, name)   # died BY the signal, not a masked clean exit
-    assert not sc.pid_path(d).exists()
-    assert not sc.heartbeat_path(d).exists()
-    assert not sc.lock_dir_path(d).exists()
-
-
-@_needs_posix
-@pytest.mark.parametrize("name", _POSIX_SIGNALS)
-def test_real_subprocess_signal_never_removes_a_successors_markers(tmp_path, name):
-    d, proc = _spawn_child(tmp_path)
-    try:
-        _await_ready(proc)
-        sc.pid_path(d).write_text("424242")      # a successor has taken over, heartbeat and all
-        heartbeat_before = json.dumps({"pid": 424242, "last_seen": time.time()})
-        sc.heartbeat_path(d).write_text(heartbeat_before)
-        _signal_and_reap(proc, name)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.stdout.close()
-    assert sc.pid_path(d).read_text() == "424242"
-    assert sc.heartbeat_path(d).read_text() == heartbeat_before
-    assert sc.lock_dir_path(d).is_dir()
 
 
 @pytest.fixture
