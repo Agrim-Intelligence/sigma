@@ -209,33 +209,49 @@ def _declared_managed_settings_id(cfg):
     return declared.strip() if isinstance(declared, str) and declared.strip() else None
 
 
+def _managed_enrolled(base):
+    """Was a valid policy file ever read here (#423)? Cross-loads the loop's own
+    `managed_settings.is_enrolled` rather than copying the marker layout, so doctor and the gates
+    cannot disagree about where enrolment lives. Fails open to False (the pre-#423 reading)."""
+    try:
+        return bool(_load_loop_script("managed_settings").is_enrolled(base))
+    except Exception:                      # noqa: BLE001 - a diagnostic never raises
+        return False
+
+
 def _managed_settings_adopted(base, cfg):
     """Has this checkout opted into org policy? `managed_settings.is_adopted`'s two free signals,
     copied: a declared project id (`_MANAGED_SETTINGS_KEY`), or the
-    managed-settings file sitting beside the config. Dict reads and one `stat` — no subprocess, and
+    managed-settings file sitting beside the config, or (#423) an enrolment marker left by a file
+    that has since been deleted. Dict reads and a few `stat`s — no subprocess, and
     False for every install in the wild. The gate itself has read nothing else since S1-G5."""
     if _declared_managed_settings_id(cfg):
         return True
     try:
-        return (pathlib.Path(base) / _MANAGED_SETTINGS_FILE).exists()
+        if (pathlib.Path(base) / _MANAGED_SETTINGS_FILE).exists():
+            return True
     except OSError:
-        return False
+        pass
+    return _managed_enrolled(base)
 
 
 def _managed_settings_state(base, cfg):
     """State of the managed-settings.json file for org policy.
 
     Returns one of:
-    - "absent" if the file does not exist
+    - "absent" if the file does not exist and was never enrolled
+    - "enrolled, policy file MISSING ..." if it does not exist but once did (#423)
     - "unreadable (error description)" if the file exists but cannot be read
     - "active with N locked keys" if the file is valid and status is "ok"
     - "revoked (member denied)" if status is "access-revoked"
     - "unreadable (server verification failed)" if status is "locked-key-unverifiable"
     - "unreadable (unknown status)" if status is unrecognized
 
-    One-line string, ≤ 80 characters."""
+    One-line string, ≤ 100 characters."""
     file_path = pathlib.Path(base) / _MANAGED_SETTINGS_FILE
     if not file_path.exists():
+        if _managed_enrolled(base):
+            return "enrolled, policy file MISSING (restore it or run managed_settings.py unenroll)"
         return "absent"
 
     try:
@@ -3381,7 +3397,7 @@ def _journal_switch_state(base, cfg):
     if locked_here and locked.get("journal.enabled") is not True:
         return ("off — your organisation's managed settings lock the journal off; a locked "
                 "`false` beats a local `true`")
-    if status in ("access-revoked", "locked-key-unverifiable"):
+    if status in ("access-revoked", "locked-key-unverifiable", "enrolled-policy-missing"):
         return ("off — your organisation's managed settings deny or cannot verify this lock "
                 "(see the `managed settings` line in /agrim-doctor)")
 

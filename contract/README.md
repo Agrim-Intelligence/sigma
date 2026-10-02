@@ -137,7 +137,7 @@ Real examples of each record kind are stored in `contract/golden/`:
 
 **External inputs** (written by systems outside core):
 
-- **managed_settings.json** — S1-G5: now written by a policy writer (outside the core) to deliver org policy. The core reads it at merge and PR gates (merge gate S1-G5, pr gate #2116). Atomic write pattern (temp file then rename).
+- **managed_settings.json** — S1-G5: now written by a policy writer (outside the core) to deliver org policy. The core reads it at merge and PR gates (merge gate S1-G5, pr gate #2116). On the first valid read it also writes two local enrolment markers (`.sdlc/state/managed-enrolled.json`, a file in the checkout's git dir) so a later deletion reads as `enrolled-policy-missing`, a refusing status (#423); the markers are not contract records. Atomic write pattern (temp file then rename).
 
 **Deferred kinds** (documented but not yet written):
 

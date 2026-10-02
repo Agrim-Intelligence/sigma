@@ -272,6 +272,7 @@ def test_refusing_statuses_contains_refusals():
     """REFUSING_STATUSES contains the statuses that cause gate refusal."""
     assert managed_settings.STATUS_ACCESS_REVOKED in managed_settings.REFUSING_STATUSES
     assert managed_settings.STATUS_LOCKED_KEY_UNVERIFIABLE in managed_settings.REFUSING_STATUSES
+    assert managed_settings.STATUS_ENROLLED_POLICY_MISSING in managed_settings.REFUSING_STATUSES
     assert managed_settings.STATUS_NOT_ADOPTED not in managed_settings.REFUSING_STATUSES
     assert managed_settings.STATUS_OK not in managed_settings.REFUSING_STATUSES
 

@@ -380,7 +380,7 @@ def test_the_gate_hook_reads_the_legacy_gate_variable(tmp_path):
 _MARKER_LITERAL = re.compile(r"""["'](?:<!-- )?sigma[:-][a-z][a-z0-9:-]*""")
 #: Brand-prefixed literals that are names, not markers: temp-file/ruleset prefixes, a doc name, and
 #: the git-dir directory #278's refused-push records live in (new with #278, so no legacy spelling).
-_NOT_MARKERS = ("sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
+_NOT_MARKERS = ("sigma-managed-enrolled-", "sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
                 "sigma-receipt-snapshot-")
 
 
