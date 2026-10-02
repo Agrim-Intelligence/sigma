@@ -87,7 +87,7 @@ pin, a renamed board turns mirroring off ("board mirroring OFF this run").
 ## Workflows and views: what the API can and cannot do
 
 Checked by reading GitHub's GraphQL schema (introspection, no mutation). The evidence is in
-`.sdlc/evidence/235/` and `.sdlc/research/235.md`.
+the evidence recorded on #235 and `.sdlc/research/235.md`.
 
 - **Workflows.** There is no API to create or enable one. The only workflow mutation is
   `deleteProjectV2Workflow`. When "Item closed" is off, board_setup prints the manual step and the

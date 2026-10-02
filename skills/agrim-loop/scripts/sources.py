@@ -4789,7 +4789,7 @@ class GitHubSource:
         """#308: `discovery.github.repo` as GitHub resolves it NOW (casefolded `full_name`) -- the
         same repository under its current name after a rename or transfer, which GitHub redirects
         (REST `repos/<old>` answers with the new `full_name`; measured read-only in
-        `.sdlc/evidence/308/`). One `gh api repos/<repo>` read, made when a card names a repository
+        the evidence recorded on #308). One `gh api repos/<repo>` read, made when a card names a repository
         other than the configured one, or before the first `item-add`. A success is cached for the
         instance; a failure only for `_REPO_RETRY_S`. Unreadable -> "" (matches no card): the strict
         #233 rule, so another repo's card is still never written."""

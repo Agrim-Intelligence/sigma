@@ -2089,7 +2089,7 @@ edge this view cannot resolve (not a fellow open member, not found closed in the
 found open in it either) keeps its dependent **out** of the ready set, the opposite of the pick-time
 dependency gate's own fail-OPEN posture on the same shape of gap. Full reasoning, including why that
 divergence is safe here specifically because this is advisory output rather than a claim gate:
-`skills/agrim-loop/scripts/feature_frontier.py`'s own module docstring, and Epic #2260's design
+`skills/agrim-loop/scripts/feature_frontier.py`'s own module docstring, and design #2253
 (BR-4, D-10).
 
 ## 18. The `core` unit, and AI-judgment classification of a dangling goal
@@ -2101,7 +2101,7 @@ this section is that gate in full: the no-dangling-goal pair `docs/label-model.m
 completion work (issue #2260) shipped.
 
 **`core` is a real unit, not a sentinel — a reversal, stated so the earlier shape is not
-rediscovered as a regression.** Epic #2260's own design (D-6) originally proposed the opposite:
+rediscovered as a regression.** Design #2253's own D-6 originally proposed the opposite:
 a bare string `_handle_no_unit_at_pick` wrote as a comment and the registry never checked, chosen
 specifically because "a real unit gets a branch, which nobody wants for cross-cutting work." A
 2026-09-10 correction reversed that call: `core` is bootstrapped **once, ahead of time**, through
@@ -2160,7 +2160,7 @@ at the cost of real latency/reliability surface on what is today a deterministic
 shipping the honest-abstain default as this feature's behaviour for the foreseeable term — and this
 document will say so once one is chosen, rather than implying tiers 1/3 already work end to end.
 
-Full design record: Epic #2260's design D-6 (the sentinel this reverses) and issue #2260's own
+Full design record: design #2253 D-6 (the sentinel this reverses) and issue #2260's own
 comment history (the 2026-09-10 call that reversed it, and the plan-review that verified the
 never-creates-a-unit guarantee before implementation began). Full mechanism:
 `skills/agrim-loop/scripts/feature_classify.py`'s own module docstring.

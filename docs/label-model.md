@@ -397,7 +397,7 @@ added here. It is named in `feature_owner.gate_at_pick`'s docstring too.
 
 ## 2b-iv. `sdlc:needs-unit` — §2b-i's shape, for a goal declaring no unit at all
 
-Added with the branching model's no-dangling-goal rule (#2263, Epic #2260's design). §2b-i's
+Added with the branching model's no-dangling-goal rule (#2263, design #2253). §2b-i's
 overlay fires when a goal's **body declares** a unit whose **label doesn't exist yet**. This one
 fires on the opposite input: the goal declares **no unit anywhere** — no bare `Feature:` line in the
 body, no `feature:*` label — on a repository that has opted into requiring one.
@@ -430,9 +430,9 @@ overlay to *change*, not to persist under a label that no longer describes it �
 would make that transition unobservable.
 
 **The alternative: a configured catch-all, and Epic #2260's completion work REVERSED what that
-means (2026-09-10, Epic #2260's design D-6).** A repository may configure
+means (2026-09-10, design #2253 D-6).** A repository may configure
 `discovery.no_dangling_goal.core` to a unit name (checked clear of collisions on that repo first)
-instead of leaving it empty. Epic #2260's original D-6 made that name a **sentinel** —
+instead of leaving it empty. Design #2253's original D-6 made that name a **sentinel** —
 never a real `feature:*` label or branch, only a comment naming it, specifically so writing it would
 not cause the very next read to see a genuine declaration and try to cut a branch nobody wanted.
 That call was reversed: `core` is now bootstrapped once as a **real** registered unit (a real

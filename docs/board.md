@@ -60,7 +60,7 @@ every P4 goal blank on the board. #235 made the same ruling.
 
 Checked on 2026-09-29 by reading GitHub's GraphQL schema (`__schema` / `__type` introspection),
 through a runner that refused any mutation. Evidence:
-`.sdlc/evidence/234/schema-introspection.json`. Board #17 was read the same way
+the schema-introspection output recorded on #234. Board #17 was read the same way
 (`board17-readonly.json`, `board17-verify-readonly.txt`). **No mutation was sent to GitHub by this
 goal.**
 
