@@ -398,3 +398,18 @@ def test_d4_is_not_fooled_by_an_inherited_sigma_run_id(tmp_path, monkeypatch):
     drills = _module()
     result = drills.run_d4(tmp_path, ROOT, 1)
     assert all(item["passed"] for item in result["invariants"])
+
+
+def test_checkpoint_reader_survives_the_file_existing_before_its_content(tmp_path):
+    """Deterministic control for the D3 `JSONDecodeError: Expecting value` seen under load: the
+    child's write_text creates the file empty first, so an exists()-then-read reader raced it."""
+    import threading
+    drills = _module()
+    ready = tmp_path / "ready.json"
+    ready.write_text("")                       # the window: file exists, content not yet written
+    writer = threading.Timer(0.3, lambda: ready.write_text(json.dumps({"checkpoint": "x"})))
+    writer.start()
+    try:
+        assert drills._read_json_when_ready(ready) == {"checkpoint": "x"}
+    finally:
+        writer.join()

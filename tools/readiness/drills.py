@@ -403,6 +403,23 @@ def seeded_delay_ns(seed: int, measured_duration_ns: int) -> int:
     return random.Random(seed).randint(lower, upper)
 
 
+def _read_json_when_ready(path: Path, timeout: float = 10.0):
+    """Parse a checkpoint file a child writes with ``Path.write_text``.
+
+    ``write_text`` creates (truncates) the file before it writes, so a reader that saw
+    ``exists()`` can read an empty or partial file and die with ``JSONDecodeError`` (seen under
+    load as "Expecting value" from the D3 run).  Poll until the content parses, bounded.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(.01)
+
+
 def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns):
     """SIGKILL an actual ``work.py merge`` process group at a named fake-gh seam."""
     ready = fixture["root"] / "merge-ready.json"
@@ -415,7 +432,7 @@ def _kill_fixture_work_merge(fixture, checkpoint, *, seed, measured_duration_ns)
         time.sleep(.01)
     if not ready.exists():
         proc.kill(); raise UsageError("fixture merge checkpoint not reached")
-    barrier = json.loads(ready.read_text(encoding="utf-8"))
+    barrier = _read_json_when_ready(ready)
     pgid = os.getpgid(proc.pid)
     # The deterministic checkpoint mapping gives seam coverage.  This bounded,
     # seeded delay separately exercises time inside that seam and is never a
@@ -472,7 +489,7 @@ def _kill_after_fixture_merge(fixture):
     if not ready.exists():
         proc.kill()
         raise UsageError("fixture parent did not receive fake-gh merge success")
-    marker = json.loads(ready.read_text(encoding="utf-8"))
+    marker = _read_json_when_ready(ready)
     pgid = os.getpgid(proc.pid)
     requested = time.monotonic_ns()
     os.killpg(pgid, signal.SIGKILL)
