@@ -609,6 +609,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/agrim-loop/scripts/goal_state_prune.py",
+      "function": "sweep",
+      "rule": "fs-remove",
+      "count": 4,
+      "gate": "goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458)",
+      "risk": "medium"
+    },
+    {
       "path": "skills/agrim-loop/scripts/ledger.py",
       "function": "_maybe_prune_journal",
       "rule": "fs-write",

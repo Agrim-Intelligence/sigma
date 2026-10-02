@@ -4,6 +4,19 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Per-goal state records are removed once their goal is `done` and seven days old** (#458, B6 of #419).
+  Nothing removed `state/verify`, `landing`, `propagation`, `escalation` or `unit-tracking`: on the
+  measured checkout verify evidence alone was 3,929,772 bytes over 55 goals (median 16,468, max
+  593,634), about 393 MB at 100x. `loop.py record ... done` now ends with a bounded sweep, and
+  `python3 skills/agrim-loop/scripts/goal_state_prune.py sweep .sdlc [--dry-run] [--limit N]
+  [--min-age-days N]` runs it by hand. A goal is pruned only when its action log's newest internal row
+  is `recorded done` (needs `action_log.enabled`), nothing of it is younger than the window, it has no
+  work record and no live agent marker; symlinks are never followed; `run_stop` markers older than 30
+  days go too. Nothing is removed at `done` itself, because the verify record is a frozen contract kind
+  read after `done`. `work`, `withheld` and `goal-review` are kept on purpose, with a stated ceiling
+  and reclaim lever each, and all 29 patterns of the issue have a recorded disposition. Not measured:
+  the families absent on the measured checkout.
+
 - **The leak gate's `key-body` rule catches EC P-256, Ed25519 and truncated private-key bodies, and
   no longer exempts a private body under a public header** (#433; corrects the #277 entry below).
   #277's entry said `key-body` catches "a private key body with its header stripped". What it caught
