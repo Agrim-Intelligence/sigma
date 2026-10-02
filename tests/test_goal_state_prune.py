@@ -182,6 +182,7 @@ def test_symlinks_are_never_followed(sdlc, tmp_path):
     for target in (keep_me, outside / "18.json"):
         os.utime(target, (OLD, OLD))          # so a follower would see an eligible, aged file
     _sweep(tmp_path)
+    assert keep_me.exists() and (outside / "18.json").exists()          # a follower deletes these
     assert keep_me.read_text() == "precious" and (outside / "18.json").read_text() == "precious too"
     assert link.is_symlink() and linked_dir.is_symlink()
 
