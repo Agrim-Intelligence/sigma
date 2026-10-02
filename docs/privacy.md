@@ -11,7 +11,7 @@ The checked-in evidence records scripted local and GitHub-mode onboarding captur
 | Slack API | configured message payload | opt-in notification | `SIGMA_SLACK_BOT_TOKEN` | not captured (opt-in; traced from `skills/agrim-loop/scripts/slack_client.py:81`) |
 | Configured webhook | notification payload | opt-in channel notification | `ledger.autowatch.channel_webhook_url` | not captured (opt-in; traced from `skills/agrim-loop/scripts/channel_notify.py:109`) |
 | SMTP server | configured notification | opt-in agent-death notification | `agent_watch.notify.email.enabled` | not captured (opt-in; traced from `skills/agrim-loop/scripts/agent_watch.py:94`) |
-| Model host process | prompt supplied by the host | explicitly invoked model session | host configuration | not captured (opt-in; traced from `skills/agrim-loop/scripts/autowatch.py:900`, `skills/agrim-loop/scripts/feature_judge.py:226`, and `skills/agrim-loop/scripts/reviewer.py:239`) |
+| Model host process | prompt supplied by the host | explicitly invoked model session | host configuration | not captured (opt-in; traced from `skills/agrim-loop/scripts/autowatch.py:915`, `skills/agrim-loop/scripts/feature_judge.py:226`, and `skills/agrim-loop/scripts/reviewer.py:239`) |
 
 ## What stays local
 
