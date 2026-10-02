@@ -169,6 +169,35 @@ for name, ws in (("em-space", " "), ("ideographic-space", "　"), ("vt", "\v")
 for name, sep in (("u2028", " "), ("u2029", " "), ("nel", "\x85")):
     _g("ws-limit", f"separator-{name}", sep.join(["x", _ED_DER[0], "y"]), [])
 
+# Post-PR review 3 (#433), each measured first through the gesture on real throwaway keys. The 2 flagged marker
+# rows and the 12 flagged separator rows are red on a3c913c (it reads no DER line); the other 11 are green there.
+# Mutations of a scratch copy of the new gate each turn one red: `counted = i < 0` (bound-body-after-a-span),
+# spans from offset 0 (bound-body-before-a-span), `_anchored` True at offset 0 (gap-zero-lone-line-1). (1) The allow marker
+# on a DER-led body (every real P-256 SEC1 body is one): the DER first line stays a finding unless the marker
+# is on THAT line; `marker-p256-shape` above is the non-DER shape only.
+_P256_DER = _der_text("ec-p256-sec1")
+assert [len(ln) for ln in _P256_DER] == [64, 64, 36]
+for n, flagged in ((1, False), (2, True), (3, True)):
+    _g("pin", f"marker-p256-der-line{n}", "\n".join(ln + _MARK if i == n - 1 else ln for i, ln in enumerate(_P256_DER)),
+       _kb(2) if flagged else [])
+# The header anchor's walk stops at the start of the file (`gap_zero`): a lone 40+ mixed line on line 1, with
+# nothing above it, is clean. Bytes, so no `line one` is written above it.
+_g("pin", "gap-zero-lone-line-1", (_ED_RANDOM[0] + "\n").encode(), [])
+# (3) The public-span exemption's bounds: a header-less non-DER body after or before a complete certificate is
+# flagged; only one inside the span is exempt (`counted = i < 0` and spans from offset 0 each turn one clean).
+_BODY6 = _lines([64] * 6, seed=150)
+_g("span", "bound-body-after-a-span", _public_block("CERTIFICATE") + "\n\n" + "\n".join(_BODY6), _kb(15))
+_g("span", "bound-body-before-a-span", "\n".join(_BODY6) + "\n\n" + _public_block("CERTIFICATE"), _kb(2))
+_g("span", "bound-body-inside-a-span", "\n".join([_C] + _BODY6 + [_CE]), [])
+# (2) U+2028, U+2029 and NEL do not end a line, so a DER first line that opens the file or follows an LF is
+# still read (whatever separates the rest of the body); only one that follows such a separator is hidden.
+_RSA12_DER = _der_text("rsa-pkcs1")[:12]
+for name, sep in (("u2028", " "), ("u2029", " "), ("nel", "\x85")):
+    for kind, body in (("p256", _P256_DER), ("rsa12", _RSA12_DER)):
+        _g("separator", f"{name}-{kind}-file-start", (sep.join(body) + "\n").encode(), _kb(1))
+        _g("separator", f"{name}-{kind}-after-lf", sep.join(body), _kb(2))
+        _g("separator", f"{name}-{kind}-after-separator", "x" + sep + sep.join(body), [])
+
 _ALL = _ROWS + _GUARDS
 
 
@@ -279,6 +308,12 @@ def test_the_measured_reach_of_a_plus_or_slash_run(guard_batch, path, expected):
 
 @pytest.mark.parametrize("path,expected", _ids("ws-limit"))
 def test_the_limit_other_whitespace_and_separators_hide_a_der_line(guard_batch, path, expected):
+    _check(guard_batch, path, expected)
+
+
+@pytest.mark.parametrize("path,expected", _ids("separator"))
+def test_a_der_first_line_that_opens_the_file_or_follows_an_lf_is_seen_whatever_separates_the_rest(
+        guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
 

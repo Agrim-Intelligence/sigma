@@ -53,7 +53,8 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     exempt only when its first line is inside a whole public span: a standalone `-----BEGIN
     <label>-----` line whose label names neither PRIVATE nor SECRET (any case), then only blank, `Key:
     value`, base64 or `...` lines, then `-----END <same label>-----`. A body under a public header with
-    no END, or glued to a certificate, is flagged.
+    no END, or glued to a certificate with no END, is flagged; a body before or after a whole span is
+    flagged too (measured on a real certificate and a 6-line slice of a real RSA body).
     (2) HEADER ANCHOR. A block that does not count, every line mixed (one line is enough), is a
     finding when a line naming `BEGIN <label>-----` (4 or 5 dashes after the label; `BEGIN PRIVATE KEY`
     alone does not anchor) with PRIVATE or SECRET in the label -- a header, or prose naming one --
@@ -81,10 +82,13 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     A finding's line is the block's first line, or the DER line. A trailing allow marker waives a DER
     line (it stays a DER line). There is NO designed waiver for a header-less multi-line body. A marker
     on one of its lines makes that line non-base64, which splits the block, and what remains is judged
-    by the same rules (measured through the gesture): a SHORT body (3 lines, or the 64, 64, 36 P-256
-    shape) split below the thresholds goes clean, whichever line carries the marker; a longer body is
-    still flagged on its remaining lines (6 lines, marker on line 1: flagged at line 2; on line 4 or
-    6: at line 1); a marker on the line above the body waives nothing. That is a side effect of the
+    by the same rules (measured through the gesture): a SHORT body with no DER first line (3 lines, or
+    lines of 64, 64 and 36) split below the thresholds goes clean, whichever line carries the marker;
+    a DER-led body stays flagged at its DER first line unless the marker is on THAT line (real keys: a
+    P-256 SEC1 body, 64, 64 and 36, which always opens with its DER header, and the first 3 lines of
+    an RSA body: marker on line 1 clean, on line 2 or 3 flagged at line 1; an Ed25519 line: clean); a
+    longer body is still flagged on its remaining lines (6 lines, marker on line 1: flagged at line 2;
+    on line 4 or 6: at line 1); a marker on the line above the body waives nothing. That is a side effect of the
     block rule, not a per-block waiver, and the summary's `allow-marked line(s)` count still counts
     the marker. The documented, reliable waiver is `ALLOW_PATHS`, for a whole file.
     False positives, MEASURED against a3c913c's rule: 0 -> 0 findings on the staged tree (826 files:
@@ -119,17 +123,27 @@ only (the digit+letter post-filter drops them); `key: value` credentials in pros
 little-endian WITH one is mis-decoded as UTF-16 and nothing in it is seen). For `key-body` (each
 planted and run through the gesture, #433):
 hex bodies, and base64url bodies other than a base64url DER first line; a PEM base64-wrapped into one
-string; a key inside a JSON or shell string, or after other text on its line (`key: <base64>`);
+string; a key inline in a JSON or shell string (`{"k": "<base64>"}`, `KEY='<base64>'`, or a
+multi-line shell string whose body starts on the `KEY="` line), or after other text on its line
+(`key: <base64>`) -- but a DER-led key alone on its line inside one IS caught (measured: a JSON array
+element `  "<Ed25519 line>",`, and a multi-line shell string whose P-256 body starts on its own line);
+a non-DER body (encrypted PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries
+a comment or quote prefix (`# `, `"`, `// `, `> `, ` * `, `+ `), even directly under its header
+(real keys, 48 plants: 0 findings here and on a3c913c);
 a PuTTY `.ppk` key whose `Private-Lines` part is 1-2 lines (Ed25519: 1 line; an RSA `.ppk`'s
-64-wide blocks of 3+ lines ARE flagged, measured, and a file named `*.ppk` is a `secret-file`); a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); any slice
-with no DER start inside a matching public span; an encrypted PKCS8, PKCS12 or PGP-private body
+64-wide blocks of 3+ lines ARE flagged, measured, and a file named `*.ppk` is a `secret-file`); a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); a slice
+with no DER start inside a matching public span, unless a `Key: value` line above it in the span
+names a PRIVATE `BEGIN <label>-----` (then the header anchor flags it, measured); an encrypted PKCS8, PKCS12 or PGP-private body
 from a lone first line; a body wrapped below 24 characters (in every shape); a body wrapped below 40
 whose first line is missing; any non-DER body wrapped below 40, header and END included (no line
 reaches the 40 floor, nor scrub.py's `private-key` 40-character run); an all-lower-case body; a
 body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean) or with
-U+2003, U+3000, `\\v` or `\\f`, or whose lines are separated by U+2028, U+2029 or NEL (U+0085)
-instead of LF / CR (each measured on a one-line Ed25519 DER line and a 12-line DER-led RSA body:
-all clean; only space and tab are indentation, only LF and CR end a line); more
+U+2003, U+3000, `\\v` or `\\f`; a body whose lines are separated by U+2028, U+2029 or NEL (U+0085)
+instead of LF / CR, except a DER first line that opens the file or follows an LF / CR: that line is
+still read, whatever separates the rest (real P-256 SEC1, 12-line RSA and Ed25519 bodies: flagged at
+their first line at the start of the file and after an LF line; clean only when one of these
+separators also comes before the first line; a 12-line non-DER RSA slice: clean; only space and tab
+are indentation, only LF and CR end a line); more
 than 8 armor lines, or a line that is not armor, between header and body; a non-DER body under a
 lower-case `begin` header (it does not anchor; a DER first line or a counted block under it is
 still caught: EC, RSA, Ed25519 and P-224 bodies measured). KNOWN AMBIGUITIES (findings, not misses;

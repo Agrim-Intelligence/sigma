@@ -57,10 +57,15 @@ All notable changes to Sigma are recorded here, newest first.
   only blank, `+` or `Key: value` lines between, by design of the anchor (a changelog sentence, a
   table row, a diff: 0 findings on a3c913c, 1 now; no file on this tree or in the corpora hits it
   except those planted probes). Not detected (each planted and run): hex bodies; base64url
-  bodies other than a DER first line; a base64-wrapped PEM; a key in a JSON or shell string or after
-  text on its line; UTF-32 text with a little-endian byte-order mark (mis-decoded as UTF-16, nothing
+  bodies other than a DER first line; a base64-wrapped PEM; a key inline in a JSON or shell string
+  (`{"k": "<base64>"}`, `KEY='<base64>'`) or after text on its line (a DER-led key alone on its line
+  inside one, a JSON array element or a multi-line shell string, is caught); a non-DER body (encrypted
+  PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries a comment or quote
+  prefix (`# `, `"`, `// `, `> `), even directly under its header (a3c913c missed it too); UTF-32 text with a little-endian byte-order mark (mis-decoded as UTF-16, nothing
   seen; without a mark, or big-endian, it is reported `opaque-binary`); a body indented with U+00A0,
-  U+2003, U+3000, `\v` or `\f`, or whose lines are separated by U+2028, U+2029 or NEL; a header-less non-DER body in a file whose lines end `\r\r\n` (each line is then
+  U+2003, U+3000, `\v` or `\f`; a body whose lines are separated by U+2028, U+2029 or NEL, except a
+  DER first line that opens the file or follows an LF (flagged there whatever separates the rest;
+  hidden only when one of these separators comes before it); a header-less non-DER body in a file whose lines end `\r\r\n` (each line is then
   followed by an empty one; a3c913c missed it too); a PuTTY `.ppk` key whose private part is 1-2 lines (Ed25519; an RSA
   one's 3+ line blocks are flagged); a slice of 1-2 lines with no tail;
   a slice with no DER start inside a matching public span; encrypted PKCS8, PKCS12 or PGP-private
@@ -69,13 +74,17 @@ All notable changes to Sigma are recorded here, newest first.
   does not anchor; a DER first line or a counted block under it is still caught). The gate's
   docstring keeps the full list. The allow marker waives a DER first line; there is no designed
   inline waiver for a header-less multi-line body: a marker on one of its lines splits the block, so
-  a short body (3 lines, or the P-256 shape) goes clean and a longer one stays flagged on its
-  remaining lines, a side effect pinned by a test, not a feature; `ALLOW_PATHS` is the reliable
+  a short body with no DER first line (3 lines, or lines of 64, 64 and 36) goes clean, a DER-led one
+  (every real P-256 SEC1 body) stays flagged at its first line unless the marker is on that line, and
+  a longer one stays flagged on its remaining lines, a side effect pinned by tests, not a feature; `ALLOW_PATHS` is the reliable
   waiver. The new test files test_key_body (84 tests, all red on a3c913c) and test_key_body_guards
-  (123; green on a3c913c except one review pin, a lone P-256 PKCS8 first line, 24 of the 30 rows
-  added after post-PR review 1: the `+` / `/` / `// ` / diff rows and one padded tail, and 8 of the
-  19 rows added after post-PR review 2: the five flagged `+` / `/` run rows and the three anchor
-  digest rows; the 18 `+` / `/` / diff rows are red on the PR's first head too) plant every shape through the documented
+  (148; green on a3c913c except 48, measured: one review pin, a lone P-256 PKCS8 first line, 24 of
+  the 30 rows added after post-PR review 1: the `+` / `/` / `// ` / diff rows and one padded tail,
+  and their control, whose mutation target a3c913c does not have; 8 of the 19 rows added after
+  post-PR review 2: the five flagged `+` / `/` run rows and the three anchor digest rows; 14 of the
+  25 rows added after post-PR review 3: the two marker rows flagged at a P-256 DER first line and the
+  12 U+2028 / U+2029 / NEL rows flagged at a DER first line; the 18 `+` / `/` / diff rows are red on
+  the PR's first head too) plant every shape through the documented
   gesture, with 9 mutation controls. Follow-up issues are listed in the PR.
 
 - **Review units and seeded-defect recall: `tools/readiness/review_units.py` and
