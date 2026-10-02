@@ -25,7 +25,7 @@
     "issue": "#457",
     "decision": "source-proven prune",
     "pruner_or_cap": "retention.prune_closed_goal_streams: closed-as-done goals older than 90 days (floor 30), at most 200 removals per sweep",
-    "evidence": "writer actionlog.append (actionlog.py log_path); pruned by skills/agrim-loop/scripts/retention.py; a live, parked, failed, awaiting-merge or reopened goal is never pruned"
+    "evidence": "writer actionlog.append (actionlog.py log_path); pruned by skills/agrim-loop/scripts/retention.py; a live, parked, failed, awaiting-merge or re-claimed goal, or one whose branch survives, is never pruned"
   },
   {
     "pattern": ".sdlc/state/witness",

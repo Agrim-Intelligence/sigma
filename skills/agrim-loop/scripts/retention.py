@@ -14,7 +14,7 @@ A goal's streams are removed only when ALL of these hold (otherwise the goal is 
 
   1. its action log's newest code-written row (`actionlog.INTERNAL_KINDS`, which an agent cannot
      forge from the CLI) is `recorded` with `result == "done"`. Parked, failed, awaiting-merge
-     (`result == "review"`), reopened (a later `claimed`/`gate`/`verify_run`) and never-recorded
+     (`result == "review"`), re-claimed (a later `claimed`/`gate`/`verify_run`) and never-recorded
      goals are therefore never candidates, and a stream with no action log at all (witness only)
      cannot prove it is closed, so it is kept;
   2. the log and the witness file are older than the window, by mtime AND by their last row's `ts`;
@@ -23,6 +23,11 @@ A goal's streams are removed only when ALL of these hold (otherwise the goal is 
      written once and never removed, and an agent marker survives a crashed goal, so presence alone
      would make most closed goals unprunable; staleness is what separates a leftover from an owner.
      Short-lived `claims/<g>.lock` mutexes are not markers.
+
+  4. with `work.enabled`, no `<branch_prefix><g>` branch survives, locally or on the remote:
+     `work.start` reads a restarted goal's original base from this log when the branch outlived its
+     work record, so the log of a goal whose branch still exists is still needed. The branches are
+     read once per sweep (`git for-each-ref`); if that read fails nothing is pruned.
 
 Window: `action_log.retention_days`, default 90, floored at 30 (the doctor's dispatch-compliance
 window reads these logs for 30 days). `false` disables. One sweep removes at most `limit` goals
@@ -42,6 +47,7 @@ import calendar
 import importlib.util
 import json
 import pathlib
+import subprocess
 import sys
 import time
 
@@ -63,6 +69,7 @@ def _load(name):
 
 state = _load("state")
 actionlog = _load("actionlog")
+work = _load("work")
 
 DEFAULT_KEEP_DAYS = 90
 MIN_KEEP_DAYS = 30
@@ -109,9 +116,8 @@ def _tail_rows(path):
         size = handle.tell()
         handle.seek(max(0, size - TAIL_BYTES))
         data = handle.read()
+    # A row cut in half by the seek cannot parse as an object, so it is skipped like any bad line.
     lines = data.decode("utf-8", errors="replace").splitlines()
-    if size > TAIL_BYTES and lines:
-        lines = lines[1:]                           # first line is cut mid-row
     rows = []
     for line in lines:
         try:
@@ -121,6 +127,30 @@ def _tail_rows(path):
         if isinstance(item, dict) and item.get("kind"):
             rows.append(item)
     return rows                                     # file (append) order, not ts: no clock dependence
+
+
+def _goal_branches(sdlc, config):
+    """-> set of goal stems that still have a branch, or None when that cannot be read.
+    `set()` when `work` is off: no branches exist for Sigma to have cut."""
+    if not work.enabled(config):
+        return set()
+    cfg = work.settings(config)
+    prefix, remote = str(cfg.get("branch_prefix") or ""), str(cfg.get("remote") or "origin")
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(sdlc.resolve().parent), "for-each-ref", "--format=%(refname)",
+             f"refs/heads/{prefix}", f"refs/remotes/{remote}/{prefix}"],
+            capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    stems = set()
+    for ref in proc.stdout.splitlines():
+        for head in (f"refs/heads/{prefix}", f"refs/remotes/{remote}/{prefix}"):
+            if ref.startswith(head):
+                stems.add(ref[len(head):])
+    return stems
 
 
 def _fresh(path, cutoff):
@@ -146,7 +176,7 @@ def _live_owner(sdlc, stem, cutoff):
     return None
 
 
-def _judge(sdlc, stem, cutoff):
+def _judge(sdlc, stem, cutoff, branches=()):
     """-> (None, fingerprint) when prunable, else (reason, None)."""
     log = sdlc / "state" / "log" / f"{stem}.jsonl"
     wit = sdlc / "state" / "witness" / f"{stem}.jsonl"
@@ -176,6 +206,10 @@ def _judge(sdlc, stem, cutoff):
     owner = _live_owner(sdlc, stem, cutoff)
     if owner:
         return f"fresh owner marker {owner}", None
+    if branches is None:
+        return "branch state unreadable", None
+    if stem in branches:
+        return "goal branch still exists", None
     return None, prints
 
 
@@ -209,8 +243,10 @@ def prune_closed_goal_streams(sdlc_dir, keep=None, now=None, dry_run=False, limi
                 result["kept"][stem] = "inside the retention window"
             else:
                 order.append((mtime, stem))
+        # One git read per sweep, and only when something past the window could be pruned.
+        branches = _goal_branches(sdlc, state.load_config(sdlc_dir)) if order else set()
         for _mtime, stem in sorted(order):
-            reason, prints = _judge(sdlc, stem, cutoff)
+            reason, prints = _judge(sdlc, stem, cutoff, branches)
             if reason:
                 result["kept"][stem] = reason
                 continue

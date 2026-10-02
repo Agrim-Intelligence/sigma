@@ -53,10 +53,8 @@ configuration root, and the pruner never reaches one; it unlinks only those two 
 ## What a prune must not break
 
 Readers: `log.py` active/slots/status (a goal is live unless its newest code-written row is
-`recorded`), `work._branch_base_from_log` (a restarted goal's original base; with the log pruned, `work.start`
-falls back to the branch's upstream and then the configured base, and in a repo that has adopted feature
-units it can refuse the restart loudly, naming a remedy: accepted for an issue reopened more than a window
-after `done`), `triage.py` (parked reason, open goals only), `doctor.py` dispatch compliance
+`recorded`), `work._branch_base_from_log` (a restarted goal's original base, read only when the goal's branch
+outlived its work record; the pruner therefore keeps the log of any goal whose branch still exists), `triage.py` (parked reason, open goals only), `doctor.py` dispatch compliance
 (30-day window), and `witness.verdict` / `red_green.py` (consulted while a goal is live). The log is a
 local best-effort status cache, not the audit record: the durable record is the ledger/journal events,
 the PR, and the committed `.sdlc/` artifacts.
@@ -73,9 +71,12 @@ patterns is in `b6_disposition.unresolved_patterns` (all seven were before), and
 
 A goal's two streams are removed only when all hold: its newest code-written log row (an agent cannot
 forge one) is `recorded` with `result: done`; both files are older than the window by mtime and by last
-row timestamp; and no owner marker (`claims/<g>.claimed`, `agents/<g>/`, `work/<g>.json`,
-`phase/<g>.json`, `.sdlc/work/<g>`) was touched inside the window. Parked, failed, awaiting-merge,
-reopened and never-recorded goals are never touched. A witness file with no log is kept.
+row timestamp; no owner marker (`claims/<g>.claimed`, `agents/<g>/`, `work/<g>.json`,
+`phase/<g>.json`, `.sdlc/work/<g>`) was touched inside the window; and, with `work` enabled, no goal
+branch (local or remote) survives (one `git for-each-ref` per sweep; if it fails, nothing is pruned). Parked, failed, awaiting-merge,
+re-claimed and never-recorded goals are never touched. A goal reopened but not yet re-claimed is
+judged by its last row (done), so it is prunable past the window once its branch is gone; nothing in
+the pruned files is needed to start it again, because a fresh cut resolves its base normally. A witness file with no log is kept.
 
 - Window: `action_log.retention_days`, default 90, floor 30 (doctor reads 30 days); `false` disables.
 - Bound: at most 200 goals REMOVED per sweep, oldest first. This bounds deletions, not work: every
@@ -97,6 +98,15 @@ reopened and never-recorded goals are never touched. A witness file with no log 
   it open can lose that one row in the microsecond window. Both concern an already-merged goal that
   was idle past the window, and a lost row only degrades (see readers), never breaks a gate.
 - Lost sweep (record never ran): the next `done` record, or `prune-state`, catches up.
+
+## Default and opt-out
+
+Retention is on by default at 90 days, like the journal (30 days) and timing store (90 days) pruners it
+sits beside, and only ever removes this repository's own aged, closed-as-done streams. It runs even
+when `action_log.enabled` is false, since that setting gates writing, not the files already on disk.
+`action_log.retention_days: false` turns it off. That the witness is read only while a goal is live is
+from reading `witness.verdict` / `red_green.py` (consulted at verify, `work.py pr` and merge), not from
+a dedicated test.
 
 ## Ceilings not removed
 
