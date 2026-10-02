@@ -54,8 +54,11 @@ All notable changes to Sigma are recorded here, newest first.
   requests dropped. The verdict is read from `main` and the live REST list (#429): the scorecard,
   the definition, every evidence path and the benchmark file are read from the one commit
   `refs/remotes/origin/main` names (that exact ref, read once; a symbolic one is refused), never
-  from the working tree; every git call drops every inherited `GIT_*` variable and switches off
-  global and system config, replace refs, lazy fetch, every built-in transport and (with `-c
+  from the working tree, and nothing is imported from the checker's own folder (it is removed from
+  the import path before anything but the builtins `sys` and `posix` is imported, so an untracked
+  `json.py` beside it cannot print GO); every git call drops every inherited `GIT_*` variable and
+  switches off global and system config, replace refs, lazy fetch, every built-in transport and
+  (with `-c
   core.commitGraph=false`) the commit-graph file; every `gh` call drops every `GIT_*` variable,
   `GH_REPO`, `GH_HOST`, `GH_FORCE_TTY` and `CLICOLOR_FORCE` and pins `GH_PAGER` and `PAGER` empty
   and `NO_COLOR=1`, so a forced terminal cannot run `gh api` output through a pager (measured with
@@ -69,10 +72,12 @@ All notable changes to Sigma are recorded here, newest first.
   symbolic or unreadable `main` is refused (exit 2) instead of a verdict; git older than 2.32 is
   refused. CI runs it on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python
   3.12; Python 3.9 was measured by hand, not CI-proven. It refuses to run on Windows (exit 2). Each
-  of #429's seven defects and the two pre-PR review findings (a `GH_FORCE_TTY` pager forging the
-  REST reads, a same-commit fork passed as `--repo`) has a test seen red on the #331 checker and
+  of #429's seven defects, the two pre-PR review findings (a `GH_FORCE_TTY` pager forging the
+  REST reads, a same-commit fork passed as `--repo`) and the post-PR review finding (an untracked
+  stdlib-named module beside the checker) has a test seen red on the #331 checker and
   green on this one, every guard was broken once and its test seen red, and what the checker still
-  trusts without defending — the checker file, the `python3`, `git` and `gh` on `PATH` and the
+  trusts without defending — the checker file, the `python3`, `git` and `gh` on `PATH` (with `.`
+  or the checkout root on `PATH`, whatever `gh`/`git` it finds there) and the
   interpreter's environment, the whole `.git` directory, `gh`'s config directory and credentials,
   network proxies and certificate authorities and their variables, and `--repo` when `origin`
   cannot name the repository — is stated on the page; the controls and gesture transcripts are in

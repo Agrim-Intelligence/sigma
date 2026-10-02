@@ -31,7 +31,11 @@ and every later read names that commit id. A symbolic `refs/remotes/origin/main`
 would make a local branch main. The scorecard, the definition, every repository-path evidence
 entry and the benchmark file are read from that commit's tree (`git ls-tree`, `git cat-file
 blob`); the working tree is never read, so an edited, untracked, deleted or symlinked file in the
-checkout changes nothing. The checker never fetches. Live, it compares that commit with main as the
+checkout changes nothing. Nor is the checker's own folder imported from: Python puts a script's
+folder first on sys.path, so before importing anything but the builtins `sys` and `posix`, every
+sys.path entry that is that folder (compared by device and inode) is removed, and an untracked
+tools/readiness/json.py, a json/ package or a sourceless json.pyc beside this file is never
+imported. The checker never fetches. Live, it compares that commit with main as the
 REST API reports it (`gh api repos/<OWNER>/<NAME>/git/ref/heads/main`) and refuses when they
 differ, naming both: `git fetch origin`, then rerun. Offline, refs/remotes/origin/main is taken as
 this checkout last fetched it.
@@ -112,8 +116,9 @@ request and is dropped; a `pull_request` that is not an object is MALFORMED.
 The checker writes nothing anywhere.
 
 TRUST ROOTS (stated, not defended). The checker trusts: this file; the `python3`, `git` and `gh`
-that PATH resolves, and the interpreter's own environment (PYTHONPATH, PYTHONHOME, site
-customisation), which loads code before main() can scrub anything; the checkout's whole `.git`
+that PATH resolves (`.` or the checkout root on PATH runs whatever `gh`/`git` it finds there), and
+the interpreter's own environment (PYTHONPATH, PYTHONHOME, site customisation), which loads code
+before this file's first line runs; the checkout's whole `.git`
 directory -- its config and every file that config includes (a local `protocol.<name>.allow` for a
 remote helper is not pinned, and origin's URL is whatever that config says), its object store
 (`git cat-file` does not re-hash what it reads) and its refs (offline, refs/remotes/origin/main is
@@ -140,6 +145,46 @@ Stdlib only. CI runs it on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on ma
 3.12; Python 3.9 was measured by hand, not CI-proven. It refuses to run on Windows (exit 2). The
 external programs are `git` 2.32 or later, always, and `gh`, only when --blockers-json is omitted.
 """
+import sys
+
+
+def _drop_own_folder_from_import_path():
+    """Remove from sys.path every entry that is this file's own folder (compared by device and
+    inode, so another spelling, a symlink or `''` for the current directory is caught too), before
+    any module that could be shadowed is imported. Python puts a script's folder first on sys.path,
+    so an untracked tools/readiness/json.py, a json/ package or a sourceless json.pyc would
+    otherwise replace the stdlib module and could print GO (post-PR review 1). Only `sys` and the
+    builtin `posix` (`nt` on Windows) are used here: a builtin is found before sys.path is searched,
+    so neither can be shadowed. An entry that cannot be stat'ed is kept (nothing can be imported
+    from it); this folder itself not being stat-able is a refusal."""
+    posix = __import__("posix" if "posix" in sys.builtin_module_names else "nt")
+    seps = "/" if posix.__name__ == "posix" else "/\\"
+    cut = max(__file__.rfind(sep) for sep in seps)
+    here = __file__[:cut] if cut > 0 else ("/" if cut == 0 else ".")
+
+    def ident(path):
+        st = posix.stat(path or ".")
+        return st.st_dev, st.st_ino
+
+    try:
+        own = ident(here)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"decide.py: REFUSED: cannot stat this checker's own folder: {exc}\n")
+        raise SystemExit(2)
+    keep = []
+    for entry in sys.path:
+        try:
+            same = isinstance(entry, str) and ident(entry) == own
+        except (OSError, ValueError):
+            same = False
+        if not same:
+            keep.append(entry)
+    sys.path[:] = keep
+
+
+_drop_own_folder_from_import_path()
+
+# Every import below runs only after the scrub above.
 import argparse
 import datetime
 import json
@@ -147,7 +192,6 @@ import os
 import pathlib
 import re
 import subprocess
-import sys
 import urllib.parse
 
 SCORECARD = "docs/launch/scorecard.json"

@@ -1370,6 +1370,41 @@ def test_working_tree_is_never_read(tmp_path, capsys, change):
     assert (code, lines[-1:], err) == (0, ["GO"], ""), (lines, err)
 
 
+SHADOW = "import sys\nprint('GO')\nsys.exit(0)\n"
+
+
+@pytest.mark.parametrize("shadow", ["datetime", "json", "argparse", "pathlib", "subprocess",
+                                    "selectors", "urllib-package", "json-package",
+                                    "json-sourceless-pyc"])
+def test_untracked_module_beside_the_checker_cannot_steer_the_verdict(tmp_path, shadow):
+    """Post-PR review 1: Python puts a script's own folder first on sys.path, so an untracked
+    tools/readiness/<stdlib name>.py (or package, or sourceless .pyc) would replace the module the
+    checker imports and could print GO, exit 0 -- even offline. Driven by the documented gesture;
+    main lacks the benchmark, so the true verdict is NO-GO for that reason."""
+    root = _origin_repo(tmp_path, bench=False)
+    _commit_bench(root)
+    here = root / "tools" / "readiness"
+    here.mkdir(parents=True, exist_ok=True)
+    name, _, kind = shadow.partition("-")
+    if kind == "package":
+        (here / name).mkdir()
+        (here / name / "__init__.py").write_text(SHADOW, encoding="utf-8")
+    elif kind == "sourceless":
+        src = tmp_path / f"{name}.py"
+        src.write_text(SHADOW, encoding="utf-8")
+        compile_it = ("import py_compile, sys; "
+                      "py_compile.compile(sys.argv[1], cfile=sys.argv[2], doraise=True)")
+        compiled = subprocess.run([sys.executable, "-c", compile_it, str(src),
+                                   str(here / f"{name}.pyc")], capture_output=True, text=True)
+        assert compiled.returncode == 0, compiled.stderr
+    else:
+        (here / f"{name}.py").write_text(SHADOW, encoding="utf-8")
+    proc, _ = _offline_gesture(root)
+    lines = proc.stdout.splitlines()
+    assert "GO" not in lines, (proc.returncode, lines, proc.stderr)
+    _not_on_main(proc)
+
+
 def test_every_git_call_is_scrubbed_pinned_and_config_free(tmp_path, capsys, monkeypatch):
     """Every git call the checker makes carries the replace, pathspec and protocol pins and `-C
     <root>`, an environment whose only GIT_* are the five pins (GIT_TRACE is planted, so a missing

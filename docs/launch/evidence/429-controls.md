@@ -9,9 +9,9 @@ file is byte-identical to the one measured.
 | Object | Id |
 |---|---|
 | `origin/main` when measured (the base) | `a3c913c95803a360d7f4882ab1762d6adfe2faf8` |
-| blob `tools/readiness/decide.py` | `92e5ed09b848f56b4ed88e56cd48ba01f79f0c43` |
-| blob `tests/test_readiness_decide.py` | `75192637d5566582008af384b9b00b382585c3b8` |
-| blob `docs/launch/decision-rule.md` | `f5162f7222abcb83c35c3c6c059989dc363fde1d` |
+| blob `tools/readiness/decide.py` | `b8219c6c592de345a7967d1934f832b154150ae8` |
+| blob `tests/test_readiness_decide.py` | `f3e55f4bb6c0a62d9ff127f6600c756f8da9948c` |
+| blob `docs/launch/decision-rule.md` | `4fa7595b4a97be0927722fb62e3f5d2621ca5619` |
 | blob `docs/launch/scorecard.json` | `a9642c419a1aece5078c43a109b8e87bfc90400f` |
 
 Check a commit with:
@@ -27,7 +27,9 @@ After the measurements, two edits changed bytes but not behaviour, so the ids ab
 ones: the test file's placeholder token became a named constant built from two literals (the commit
 gate's credential-assignment scan), and the page and this record name the program before each
 version string (`tests/test_readme_first_run.py`'s release-name guard). The full test file was rerun
-green and every planned node rerun red on the #331 checker after both edits.
+green and every planned node rerun red on the #331 checker after both edits. The post-PR review
+fix below changed all three again; the ids above are the ones after it, and the runs it lists were
+made on those bytes.
 
 Measured 2026-10-02 on macOS (Darwin 25.6), branch `sdlc/429`. Python: the system `python3`
 Python 3.9.6 and Python 3.12.13. git: the one `PATH` resolves first is Homebrew's git 2.55.0 (CI's legs also run
@@ -40,6 +42,17 @@ other gestures below stub `gh`. CI runs Linux with Python 3.10, 3.11, 3.12 and
 their record. Nothing was run on Windows; the checker refuses to run there (exit 2).
 
 ## Test counts and runtime
+
+After the post-PR review fix (278 tests: the 269 below plus 9 new nodes), git 2.55.0, both
+Pythons run at the same time at a load average between 8 and 12:
+
+| Python | git | Result | Wall time |
+|---|---|---|---|
+| Python 3.9.6 | git 2.55.0 | 278 passed | 58 s |
+| Python 3.12.13 | git 2.55.0 | 278 passed | 64 s |
+
+The 23 planned tests (69 nodes) were re-run with this final test file on the #331 checker: 69
+failed, all by `AssertionError` (no error, no skip), on Python 3.9.6 and on Python 3.12.13.
 
 `python3 -m pytest tests/test_readiness_decide.py -q`, serial, on this machine while other work
 shared it (the wall time moves with the load; the plan's budget is 60 s serial on 3.12):
@@ -200,6 +213,56 @@ git read another root tree for the same commit id. Every git call now carries `-
 core.commitGraph=false`, which on the command line beats the checkout's own config and, per
 git-config(1), stops git reading the commit-graph file. Reasoned, not tested: no forged-graph
 fixture was built. `test_every_git_call_is_scrubbed_pinned_and_config_free` pins the flag.
+
+## Post-PR review #1: one finding
+
+A fresh, author-blind review of the pull request blocked it on one finding, reproduced here first.
+
+**An untracked module beside the checker could print GO.** Python puts a script's own folder first
+on `sys.path`, so `python3 tools/readiness/decide.py . --blockers-json none.json` imported an
+untracked `datetime.py` beside the checker (or `json.py`, `argparse.py`, `pathlib.py`,
+`subprocess.py`, `re.py`) in place of the standard library's, and one that printed `GO` and exited
+0 made the run GO, exit 0, offline, on a fixture whose `main` lacks the benchmark (the true verdict
+is NO-GO). Reproduced with the reviewed checker on Python 3.9.6: each of those six names turned
+NO-GO, exit 1 into GO, exit 0; `os.py` did not, because the interpreter has already imported `os`
+by the time the script runs. Also measured on the reviewed checker: `python3 -S` (no `site`, so no
+`os` either) and `python3 -B` with a shadowing `json.py` both printed GO, exit 0; a stale
+`__pycache__/json.cpython-39.pyc` with no `json.py` beside it did not steer the verdict (Python
+ignores a cached file without its source there).
+
+Fixed: the checker's first statement after its docstring imports only `sys`, then removes from
+`sys.path` every entry that is the checker's own folder, compared by device and inode through the
+builtin `posix` module (`nt` on Windows), so another spelling, a symlink or `''` for the current
+directory is caught too; every other import comes after. A builtin is found before `sys.path` is
+searched, so neither `sys` nor `posix` can be shadowed (measured: a `posix.py`, `sys.py`, `stat.py`
+or `encodings.py` beside the checker changes nothing). An entry that cannot be stat'ed is kept;
+the checker's own folder not being stat-able is refused (exit 2). On the fixed checker every case
+above, `-S` and `-B` included, prints NO-GO, exit 1.
+
+Test: `test_untracked_module_beside_the_checker_cannot_steer_the_verdict` (9: `datetime`, `json`,
+`argparse`, `pathlib`, `subprocess`, `selectors` (imported by `subprocess`), a `urllib/` package, a
+`json/` package, a sourceless `json.pyc`), driven by the documented gesture from a fixture root
+whose `main` lacks the benchmark; it asserts no `GO` line, exit 1, last line `NO-GO` and the
+not-on-main reason. `re` is not a parameter: on Python 3.12.13 the interpreter has already imported
+it, so that case was green on the reviewed checker there.
+
+```
+# the reviewed checker, and the #331 checker
+COLUMNS=300 python3 -m pytest -q -rA --tb=line \
+  tests/test_readiness_decide.py::test_untracked_module_beside_the_checker_cannot_steer_the_verdict
+9 failed (all AssertionError), Python 3.9.6 and Python 3.12.13, on each checker
+
+# this checker
+9 passed, Python 3.9.6 and Python 3.12.13
+```
+
+Control: with the call to the scrub deleted from this checker (the function left in place), the
+same command fails all 9 nodes by `AssertionError` on Python 3.9.6 and on Python 3.12.13;
+restored, the file is byte-identical (`cmp`).
+
+**Non-blocking: the checkout root on `PATH`.** With `.` (or the checkout root) on `PATH`, an
+untracked `./gh` in the checkout is the `gh` the live run calls. `PATH` was already a stated trust
+root; the page, the docstring and the changelog now name this case.
 
 ## Gesture transcripts
 
@@ -496,6 +559,8 @@ read: `test_working_tree_is_never_read`, and a committed symlink is not a regula
   a lazy fetch).
 - A checkout really owned by another user: the test sets git's own
   `GIT_TEST_ASSUME_DIFFERENT_OWNER` through a stub `git`.
+- The import-path scrub on Windows (`nt`), and an interpreter started with `-I` or `-P`, which
+  leave the script's folder off `sys.path` anyway (the scrub then removes nothing).
 - Windows, and the CI legs (Linux 3.10–3.13, macOS 3.12): the pull request's checks are their
   record.
 - A forged commit-graph file: `-c core.commitGraph=false` is per git-config(1) and pinned by a

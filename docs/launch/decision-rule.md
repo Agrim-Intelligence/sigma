@@ -106,7 +106,12 @@ never the short name `origin/main`, which a local branch, a tag or `refs/origin/
 — once, refuses it when it is a symbolic ref (that would make a local branch `main`), and reads the
 scorecard, the definition, every repository-path evidence entry and the benchmark file from that
 commit's tree. The working tree is never read: an untracked, edited, deleted or symlinked file in
-the checkout changes nothing. When `main` cannot be read — git is missing or older than 2.32, the
+the checkout changes nothing. That includes the checker's own folder: Python puts a script's folder
+first on its import path, so before importing anything but the builtins `sys` and `posix` (which
+no file can shadow) the checker removes every import-path entry that is that folder (compared by
+device and inode), and an untracked `json.py`, a `json/` package or a sourceless `json.pyc` beside
+it is never imported.
+When `main` cannot be read — git is missing or older than 2.32, the
 directory is not a git work tree or is below its top level, there is no `refs/remotes/origin/main`
 (a single-branch clone, a pull-request CI checkout), it is symbolic or not a commit, or an object
 is missing from a partial clone — the checker refuses: it exits 2 with `decide.py: REFUSED: <why>`
@@ -205,8 +210,9 @@ string and `NO_COLOR=1`. Measured with gh 2.98.0 on a read-only public REST read
 gh reads is inherited.
 
 The checker trusts, and does not defend against: the checker file itself; the `python3`, `git` and
-`gh` that `PATH` resolves, and the interpreter's own environment (`PYTHONPATH`, `PYTHONHOME`, site
-customisation), which load code before the checker can scrub anything; the checkout's whole `.git`
+`gh` that `PATH` resolves (`.` or the checkout root on `PATH` runs whatever `gh`/`git` it finds
+there), and the interpreter's own environment (`PYTHONPATH`, `PYTHONHOME`, site customisation),
+which load code before the checker's first line runs; the checkout's whole `.git`
 directory — its config and every file that config includes, its object store (`git cat-file` does
 not re-hash what it reads) and its refs (offline, `refs/remotes/origin/main` is taken as this
 checkout last fetched it), including `origin`'s URL as that config writes it; `gh`'s config
