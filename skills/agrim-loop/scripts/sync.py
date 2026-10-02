@@ -922,8 +922,8 @@ def watcher_stale_after_seconds(config):
     `SIGMA_WATCH_INTERVAL` has had its say, and that env-first precedence is the watcher's own
     and belongs at the watcher. This function reads config ONLY, which is right for every caller
     here (doctor's ledger-delivery row, `publish_after_write`) and wrong for the watcher.
-    `hooks/session_start.sh` keeps a residual copy of the arithmetic by design (`.sdlc/design/
-    2417.md` X-2: a Claude Code hook stays host-specific and unported)."""
+    `hooks/session_start.sh` keeps a residual copy of the arithmetic by design (design
+    #2417 X-2: a Claude Code hook stays host-specific and unported)."""
     return stale_after_seconds(watch_interval_seconds(config))
 
 
@@ -1052,8 +1052,8 @@ def _jsonl_line_count(path):
     escape and cost `pending_entry_count` its WHOLE answer over one half-written file.
 
     DELIBERATELY DUPLICATED from doctor.py's own copy rather than shared -- the same trade-off
-    `hooks/session_start.sh` takes for its own copy of the watcher staleness rule (`.sdlc/design/
-    2417.md` X-2, the one copy #2490 deliberately left standing): doctor.py is a different skill
+    `hooks/session_start.sh` takes for its own copy of the watcher staleness rule (design
+    #2417 X-2, the one copy #2490 deliberately left standing): doctor.py is a different skill
     directory, and this function sits on the loop's hot pick-time path, where pulling in a whole
     sibling skill module for one helper is exactly the cross-skill coupling this codebase's
     lazy-loading conventions exist to avoid. Note the direction this cuts BOTH ways: #2490 spent

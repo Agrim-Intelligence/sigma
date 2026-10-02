@@ -539,7 +539,7 @@ def _declare_one(source, unit, label, issue):
 
 def set_priority(sdlc_dir, unit, priority):
     """Record `unit`'s OWN priority on its registry entry -- #2266 (epic #2260, slice 6 of
-    `.sdlc/design/2253.md`). THIS is the answer to "prioritise this feature": one value, on the
+    design #2253). THIS is the answer to "prioritise this feature": one value, on the
     unit, that the comparator (`_pick_key`'s `feature_rank` term, #2262/#2264) reads as a
     tie-break among issues that are already eligible. It never touches a member issue's own
     `priority:` label, so it never erases the per-issue tiers a human set deliberately -- the

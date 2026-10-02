@@ -2067,9 +2067,8 @@ chokepoint that bump uses. `set-priority` writes no label at all, so there is no
 mechanism to pick up from it; building a second blocker-priority mechanism here would duplicate an
 existing one regardless of which verb triggered the write.
 
-Full design record: `.sdlc/design/2154.md` (Epic #2161, the shipped first cut) and
-`.sdlc/design/2253.md` (Epic #2260, §5 "Superseding `bump-priority`" — why the first cut was
-superseded rather than built on).
+Full design record: Epic #2161 (the shipped first cut) and Epic #2260 (its "Superseding
+`bump-priority`" section — why the first cut was superseded rather than built on).
 
 ## 17. The feature-level DAG — `loop.py feature-frontier`
 
@@ -2090,7 +2089,7 @@ edge this view cannot resolve (not a fellow open member, not found closed in the
 found open in it either) keeps its dependent **out** of the ready set, the opposite of the pick-time
 dependency gate's own fail-OPEN posture on the same shape of gap. Full reasoning, including why that
 divergence is safe here specifically because this is advisory output rather than a claim gate:
-`skills/agrim-loop/scripts/feature_frontier.py`'s own module docstring, and `.sdlc/design/2253.md`
+`skills/agrim-loop/scripts/feature_frontier.py`'s own module docstring, and design #2253
 (BR-4, D-10).
 
 ## 18. The `core` unit, and AI-judgment classification of a dangling goal
@@ -2099,10 +2098,10 @@ divergence is safe here specifically because this is advisory output rather than
 declares no unit — that is a different axis, gated separately (§6's own closing paragraph), and
 this section is that gate in full: the no-dangling-goal pair `docs/label-model.md` §2b-iv
 (`sdlc:needs-unit`) and §2b-v (`sdlc:needs-triage`) document from the label side, and Epic #2260's
-completion work (issue #2260, `.sdlc/design/2253.md`) shipped.
+completion work (issue #2260) shipped.
 
 **`core` is a real unit, not a sentinel — a reversal, stated so the earlier shape is not
-rediscovered as a regression.** `.sdlc/design/2253.md`'s own D-6 originally proposed the opposite:
+rediscovered as a regression.** Design #2253's own D-6 originally proposed the opposite:
 a bare string `_handle_no_unit_at_pick` wrote as a comment and the registry never checked, chosen
 specifically because "a real unit gets a branch, which nobody wants for cross-cutting work." A
 2026-09-10 correction reversed that call: `core` is bootstrapped **once, ahead of time**, through
@@ -2161,7 +2160,7 @@ at the cost of real latency/reliability surface on what is today a deterministic
 shipping the honest-abstain default as this feature's behaviour for the foreseeable term — and this
 document will say so once one is chosen, rather than implying tiers 1/3 already work end to end.
 
-Full design record: `.sdlc/design/2253.md` D-6 (the sentinel this reverses) and issue #2260's own
+Full design record: design #2253 D-6 (the sentinel this reverses) and issue #2260's own
 comment history (the 2026-09-10 call that reversed it, and the plan-review that verified the
 never-creates-a-unit guarantee before implementation began). Full mechanism:
 `skills/agrim-loop/scripts/feature_classify.py`'s own module docstring.

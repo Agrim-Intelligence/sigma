@@ -52,7 +52,7 @@ A file selector covers every collected test. With `verify.enforce`, no applicabl
 
 ## 5. Write it to disk — `.sdlc/plans/<goal-stem>.md`
 The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal
-(`0007-fix-retry.md` → `.sdlc/plans/0007-fix-retry.md`). Four things downstream read the file, not the
+(goal `0007-fix-retry` → `.sdlc/plans/<goal-stem>.md`). Four things downstream read the file, not the
 conversation:
 
 - **`agrim-plan-review` runs author-blind** (`review.independent`) — a fresh reviewer that never saw

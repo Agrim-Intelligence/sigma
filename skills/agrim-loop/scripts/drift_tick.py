@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""#2311 (slice 1 of Epic #2310, `.sdlc/design/2289.md`): the passive drift watcher's wall-clock
+"""#2311 (slice 1 of Epic #2310, design #2289): the passive drift watcher's wall-clock
 heartbeat, threaded into `watch_daemon.py`'s own tick sequence exactly the way `#2294`'s
 `reconcile_tick.py` already is (design `### 1`, BR-3) -- same
 `tick(sdlc_dir, config=None, run=None, now=None)` -> one-line-summary-or-`""` contract, same

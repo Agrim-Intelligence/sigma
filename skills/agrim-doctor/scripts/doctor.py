@@ -2460,7 +2460,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             "adapter) — otherwise a flagged mention/assignment/blocker is detected but nothing "
             "ever acts on it."))
 
-    # #2339 (Component F, `.sdlc/design/2329.md`): mirrors the autowatch-adapter-wired row directly
+    # #2339 (Component F, design #2329): mirrors the autowatch-adapter-wired row directly
     # above -- "configured" (enabled, a channel_id, both token envs actually set) alone is not
     # "actually running". A stale or absent heartbeat reads as "configured but not running", never
     # as an indistinguishable OK (AGENTS.md LIVENESS: "a component that has DIED must be
@@ -3227,7 +3227,7 @@ def _autowatch_feature_state(cfg, scheduled_tasks_dir=None):
     return f"ON — scope={scope_s}, hop_limit={hop} — {wired}"
 
 
-#: #2339 (Component F, `.sdlc/design/2329.md`): duplicated, not imported, from
+#: #2339 (Component F, design #2329): duplicated, not imported, from
 #: slack_commands_listen.py's own STATE_SUBDIR/HEARTBEAT_FILENAME/PID_FILENAME/
 #: DEFAULT_APP_TOKEN_ENV/DEFAULT_BOT_TOKEN_ENV/DEFAULT_STALE_AFTER_SECONDS — matching this file's
 #: own standalone-diagnostic convention (see `_enforce_enabled`'s docstring / `_DESKTOP_TASK_MARKER`

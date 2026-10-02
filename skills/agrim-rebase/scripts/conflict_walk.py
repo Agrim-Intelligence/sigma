@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agrim-rebase, slice 2 (#2305, epic #2303, design `.sdlc/design/2288.md` §5): the interactive
+"""agrim-rebase, slice 2 (#2305, epic #2303, design #2288 §5): the interactive
 conflict-options walker -- the layer #2304's own SKILL.md named as "a later slice" for what
 happens once `rebase_brief.attempt_rebase` reports `CONFLICT` (or a prior conflict-walk session was
 interrupted mid-resolution).

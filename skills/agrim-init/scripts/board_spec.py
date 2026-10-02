@@ -9,7 +9,7 @@ Nothing is copied from elsewhere. The Status options are the configured columns
 source's own `parked_label` / `goal_blocked_label` / `proposed_label`. Change one of those and the
 spec follows.
 
-WHAT THE API CAN SET (read-only schema introspection, 2026-09-29, `.sdlc/evidence/234/`): a view's
+WHAT THE API CAN SET (read-only schema introspection, 2026-09-29, the evidence recorded on #234): a view's
 name, layout and visible fields (`createProjectV2View`), and its filter (`updateProjectV2View`
 only). Group-by, sort, the board's column field, roadmap date fields and markers, and the view
 order have NO input anywhere; they are in each view as `manual` properties, which `board_layout.py`

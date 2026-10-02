@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The feature-level DAG (#2265, D-1/D-10/BR-3/BR-4/BR-35 of `.sdlc/design/2253.md`): a unit-scoped
+"""The feature-level DAG (#2265, D-1/D-10/BR-3/BR-4/BR-35 of design #2253): a unit-scoped
 frontier over edges that already exist -- a VIEW, never new machinery.
 
 TWO THINGS ALREADY EXIST, AND THIS MODULE ONLY POINTS AT THEM.

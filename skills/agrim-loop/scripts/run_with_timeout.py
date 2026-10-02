@@ -61,7 +61,7 @@ def main(argv):
     target_args = argv[3:]
     # The 7 real sub-scripts this wraps (sync.py, watch.py, agent_watch.py, comment_watch.py,
     # reconcile_tick.py, channel_notify.py, drift_tick.py) carry a shebang but no execute bit
-    # (confirmed -rw-r--r--, .sdlc/research/2443.md §6) -- prepend the interpreter ourselves
+    # (confirmed -rw-r--r--, research for #2443 §6) -- prepend the interpreter ourselves
     # rather than exec the target path directly, or every call fails with PermissionError/OSError
     # on the FIRST real invocation, not specifically the timeout path.
     cmd = [sys.executable, target, *target_args]
@@ -92,7 +92,7 @@ def main(argv):
         # `state/watch.log` handle, and a `"summary"` call (the six tick scripts) gets
         # stdout=PIPE with stderr on that same log handle. A real capture-and-reprint HERE would work
         # most of the time but risks reordering stdout/stderr interleaving
-        # (.sdlc/research/2443.md §2c), which is why this level deliberately sets neither.
+        # (research for #2443 §2c), which is why this level deliberately sets neither.
         proc = subprocess.Popen(cmd, **popen_kwargs)
     except OSError as exc:
         # Never let a launch failure (bad path, permissions) surface as a raw traceback into the

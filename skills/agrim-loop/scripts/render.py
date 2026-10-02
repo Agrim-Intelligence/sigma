@@ -14,7 +14,7 @@ THE MODULE REFUSES TO CONSTRUCT A MALFORMED LINE RATHER THAN EMITTING ONE. A ref
 typed -- `REFUSED [<code>]  at <path>: <detail>` on stderr, exit 2, and NOTHING on stdout -- never a
 silently degraded string. `REFUSAL_CODES` is the closed set of codes, pinned against every
 `Refusal(...)` this file raises. That refusal is only definable because Block A's accepted fact set
-is now closed (design `.sdlc/design/2030.md`, D-1 and D-8, both resolved by the human): six fields
+is now closed (design #2030, D-1 and D-8, both resolved by the human): six fields
 -- marker, goal ref, phase token, title, description and a labelled PREDICTED model tier -- and no
 cost field. Cost lives at the phase boundary in Block B, where `phase_report.py` measures it.
 
@@ -273,7 +273,7 @@ _CONTROL_CHARS = frozenset([chr(c) for c in range(0x20)] + ["\x7f"])
 _REF_RE = re.compile(r"\A(?:#[0-9]+|[A-Za-z0-9][A-Za-z0-9._-]*)\Z")
 
 #: A sentence ends at `.`/`!`/`?` followed by whitespace or the end of the string. `$0.31`,
-#: `claude-sonnet-5` and `.sdlc/design/2030.md` are therefore not sentence ends, which is what
+#: `claude-sonnet-5` and design #2030 are therefore not sentence ends, which is what
 #: makes this usable on the exact Block B lines §7 gives as reference output.
 _SENTENCE_END_RE = re.compile(r"[.!?](?=\s|\Z)")
 

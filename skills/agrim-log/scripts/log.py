@@ -43,7 +43,7 @@ honest answer when it has nothing to say.
 
   THE MARKER COMES OFF CODE-WRITTEN ENTRIES ONLY. `actionlog.INTERNAL_KINDS` cannot be reached
   from any CLI; `AGENT_KINDS` are whatever an agent typed. A liveness marker read off an agent row
-  would launder a claim into a measurement (design .sdlc/design/2030.md, D-2) — and would also be
+  would launder a claim into a measurement (design #2030, D-2) — and would also be
   wrong in practice, since a finished goal's log routinely ends with an `agent_done` written after
   the code's own `recorded`.
 

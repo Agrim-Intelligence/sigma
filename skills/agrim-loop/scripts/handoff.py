@@ -198,7 +198,7 @@ def _auto_classify_unit(sdlc_dir, config, source, issue_title=None, issue_body=N
     (`discovery.no_dangling_goal.enabled`), a catch-all configured
     (`discovery.no_dangling_goal.core`), and `.sdlc/features/` adopted -- so a repo that never
     turned this on pays nothing beyond the same cheap attribute reads that gate already costs, and
-    an unadopted repo is never retroactively attributed (D-7 of `.sdlc/design/2253.md`, the
+    an unadopted repo is never retroactively attributed (D-7 of design #2253, the
     identical reasoning `_handle_no_unit_at_pick` already applies).
 
     `issue_title`/`issue_body` (#2383, slice H of epic #2260's completion work): the new issue's

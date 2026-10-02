@@ -296,7 +296,7 @@ All notable changes to Sigma are recorded here, newest first.
   status path skipped board cards whose `content.repository` differs from `discovery.github.repo`.
   After a rename or transfer with a stale config, every card read as uncarded. The sync then tried
   `item-add` with an old-name issue URL, and on github.com such a URL does not resolve
-  (`resource(url:)` is null, measured read-only in `.sdlc/evidence/308/`), so board mirroring
+  (`resource(url:)` is null, measured read-only, evidence recorded on #308), so board mirroring
   stopped. If `item-add` had returned the existing card instead, In Progress and Blocked cards would
   have been reset to Ready, which the fake reproduced. The configured name is now resolved with one
   `gh api repos/<repo>` read. GitHub answers with the current `full_name`. The read happens when a

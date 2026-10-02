@@ -288,7 +288,7 @@ def _budget_resource_reason(cursor, budget):
 #: is DELIBERATELY equal to `max_iterations`'s own default — see the precedence note in `_next()`
 #: (Task 2) and Top Risk 5 for why that tie is intentional, not accidental.
 #:
-#: #2531 measured this for real (.sdlc/plans/2531.md's own "Real-run results" section): three
+#: #2531 measured this for real (plan #2531's own "Real-run results" section): three
 #: fresh goal-slot subagents (#2543, #2544, #2531) started at 71,055 / 71,226 / 71,635 tokens
 #: respectively (matching the ~70-77k estimate above), and the orchestrator's own CLEAN
 #: dispatch-window peak — windowed to exactly this 3-goal burst, excluding 51 unrelated calls
@@ -3422,7 +3422,7 @@ def _autowatch_setup_warnings(config):
 # Ordered, first match wins, case-insensitive, matched against a lowercased `detail`. Every needle
 # below (other than "irreversible", "rate limit", and the decompose_check-owned group starting at
 # "needs manual decomposition") is a verbatim substring of real work.py PARK: text, verified against
-# the live source — see .sdlc/plans/139.md Design decision 4 for the file:line each one comes from.
+# the live source — see plan #139 Design decision 4 for the file:line each one comes from.
 # The decompose_check group is instead verbatim substrings of loop.py's OWN decompose_check park
 # details, not work.py's: "needs manual decomposition" from #519's `park`/`file`-degrade path, plus
 # five more from #522's real `file`-mode filing. "rate limit" (#1242) is instead a verbatim substring
@@ -6384,7 +6384,7 @@ def _dispatch(argv):
     # outright "the loop never measures spend itself; no reports == no enforcement", and nothing in
     # skills/ or hooks/ ever calls `loop.py spend` itself -- it exists to be invoked by whatever
     # external process hosts/wraps the loop. A fourth, distinct reason behind the same zero-count
-    # symptom; see .sdlc/research/1013-retro-decision-emitters.md §5.
+    # symptom; see the research dossier for #1013 (retro decision emitters) §5.
     if len(argv) >= 4 and argv[1] == "spend":       # host-reported token spend → budget.max_tokens
         # A non-integer token count (a float, empty, comma-grouped, garbage) must REFUSE loudly —
         # exit 2, a usable message — rather than a raw traceback. "Fail-open" (the docstring's

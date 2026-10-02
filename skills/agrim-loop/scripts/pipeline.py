@@ -291,7 +291,7 @@ def _emit_scan_events(sdlc_dir, candidates):
 # repo is a REACHABILITY gap (discover/discovery-scan.sh has apparently never run here with a
 # candidate), not an emission gap. Distinct from `phase`'s genuine prose-dependency and from
 # `decision`'s registry-authoring gate -- three different reasons behind the same zero-count
-# symptom; see .sdlc/research/1013-retro-decision-emitters.md §5.
+# symptom; see the research dossier for #1013 (retro decision emitters) §5.
 def discover(sdlc_dir, repo_root="."):
     """Run the read-only discovery-scan collector over `repo_root` and propose goals from its candidates.
     Fail-open: a missing script / bad JSON / non-git tree yields no proposals (never raises)."""

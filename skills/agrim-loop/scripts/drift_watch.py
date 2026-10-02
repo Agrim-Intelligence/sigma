@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""#2311 (slice 1 of Epic #2310, `.sdlc/design/2289.md`): the passive drift watcher's real logic.
+"""#2311 (slice 1 of Epic #2310, design #2289): the passive drift watcher's real logic.
 
 WHAT "DRIFT" MEANS HERE (design `## Intent`, `### 2`). For every OPEN unit's own `feature/<name>`
 branch: (1) the COMMIT DELTA -- what the integration branch did while the feature branch was away,

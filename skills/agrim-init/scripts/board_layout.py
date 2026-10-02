@@ -19,7 +19,7 @@ views   The six views, matched by name the same way. Absent -> `createProjectV2V
         after ours. A view the spec does not name is never read for changes, updated or deleted.
         Several views answering to one name -> that view is REFUSED and left alone.
         Group-by, sort, the board's column field, roadmap markers and the default (leftmost) view
-        have NO API (schema introspection, `.sdlc/evidence/234/`): each is printed as an exact UI
+        have NO API (schema introspection, the evidence recorded on #234): each is printed as an exact UI
         step, and only while the board reads different.
 verify  Read-only (one REST read + one GraphQL read; a read-only token is enough). Reports every
         spec field and view property that is missing or differs, with the fix. Exit 0 all match,
@@ -32,7 +32,7 @@ needs `--number N`, the operator's explicit choice. Exit: 0 done / dry run, 1 a 
 safe: every step is idempotent), 2 REFUSED (a human must change the named thing first).
 
 COST (counted against tests/boardfake.py, and read-only against a real 246-card org board on
-2026-09-29: 3 calls, 1.6-1.8s per verb, `.sdlc/evidence/234/`): every verb reads the owner (REST),
+2026-09-29: 3 calls, 1.6-1.8s per verb, the evidence recorded on #234): every verb reads the owner (REST),
 the board's node id (REST) and one GraphQL query (fields, views, workflows; the first 50 of each --
 50 is GitHub's field cap; a board with more than 50 views is read as its first 50). `fields --yes` adds 1 mutation per missing field (4 on a fresh board). `views --yes`
 adds 1 create + 1 filter update per missing view (11 on a fresh board: `Board · by Status` has no

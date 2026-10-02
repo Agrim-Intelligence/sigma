@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""#2336 (slice 1 of Epic #2335, `.sdlc/design/2329.md`/`2329-in-brief.md`): the inbound Slack
+"""#2336 (slice 1 of Epic #2335, design #2329): the inbound Slack
 commands listener's FOUNDATION -- Socket Mode connection, the channel-membership authorization
 gate, the structured command-grammar parser, a real `--help`, lifecycle scaffolding
 (pidfile/heartbeat/stop-file/log), and the `slack_commands` config block.
@@ -52,7 +52,7 @@ silently (log-only, no reply); a malformed command on an AUTHORIZED channel is r
 quoting every valid form -- the two are deliberately different postures for two different failure
 modes (Component A).
 
-DISPATCH INFRASTRUCTURE (#2338, slice 3 of Epic #2335, Components B/H/I of `2329.md`). The shared
+DISPATCH INFRASTRUCTURE (#2338, slice 3 of Epic #2335, Components B/H/I of design #2329). The shared
 drive/idempotency machinery `--rebase <name>` (#2340) and `--merge <name>` (#2341) both build on --
 both are wired to it now. Four pieces, reused rather than reinvented, in the same order Component
 H's own write path (`loop.py`'s `_next()`) already uses:
@@ -162,7 +162,7 @@ DEFAULT_SDLC_DIR = ".sdlc"
 #: The real deployed setup: Socket Mode's App-Level Token is added to the SAME Slack App the drift
 #: watcher (#2311) already posts through -- not a second, dedicated app -- and this feature reuses
 #: that app's own bot token (`SIGMA_SLACK_BOT_TOKEN`) to post replies, so there is no second
-#: bot token to create or copy. (`2329.md`'s original decision #4/Doubt D-6 called for a genuinely
+#: bot token to create or copy. (design #2329's original decision #4/Doubt D-6 called for a genuinely
 #: separate app; the real operator setup is this single-app one instead.)
 DEFAULT_APP_TOKEN_ENV = "SIGMA_SLACK_BOT_SOCKET_TOKEN"
 DEFAULT_BOT_TOKEN_ENV = "SIGMA_SLACK_BOT_TOKEN"
@@ -215,7 +215,7 @@ _PLACEHOLDER = (
 #: reply (#2337) -- one string, not two independently-drifting copies of the same fact.
 NO_OPEN_UNITS_MESSAGE = "No open units are currently registered."
 
-#: `--list [page]`: 10 per page, per `2329.md`'s own slice-count estimate (line 1048) and
+#: `--list [page]`: 10 per page, per design #2329's own slice-count estimate and
 #: `SLACK_COMMANDS.md`'s command-grammar table -- not configurable in this slice.
 LIST_PAGE_SIZE = 10
 
@@ -403,7 +403,7 @@ def _format_unit_line(name, entry):
 def _list_reply(sdlc_dir, page):
     """`--list [page]` (Component C, BR-18): a paginated, 10-per-page read of every OPEN unit in
     `.sdlc/features/index.json`, via `feature_registry.read_index` directly -- the design's own
-    explicit citation (`2329.md` line 1048: "paginated `feature_registry.read_index`, 10/page"),
+    explicit citation (design #2329: "paginated `feature_registry.read_index`, 10/page"),
     and the same chart-sheet read `drift_watch._open_units` already uses for the identical
     enumeration question, so `--drift` and `--list` agree on what "open" means without either
     reimplementing the other's read.
@@ -765,7 +765,7 @@ def release_single_instance(sdlc_dir):
     bash's `trap ... EXIT` firing on all three signals. This function is reached only from a
     `finally`, so a SIGTERM/SIGHUP here terminates the interpreter without unwinding and leaves this
     listener's markers behind. That gap is this file's, not a shared design -- do not read the
-    ownership check as evidence the lifecycle matches (.sdlc/research/2488.md §6.2)."""
+    ownership check as evidence the lifecycle matches (research for #2488 §6.2)."""
     if _read_pid(sdlc_dir) != os.getpid():
         return
     for path in (pid_path(sdlc_dir), heartbeat_path(sdlc_dir)):
@@ -1086,7 +1086,7 @@ def _dispatch_prompt(command, name, worktree_path, key, extra_prompt=""):
     full picture regardless, including the completion-marker contract `drive_outcome` reads back."""
     base = (
         "A Slack command `%s %s` was dispatched by the inbound-commands listener (Epic #2335, "
-        "`.sdlc/design/2329.md`). Work ONLY inside the isolated worktree already cut for you at "
+        "design #2329). Work ONLY inside the isolated worktree already cut for you at "
         "`%s` -- a real checkout of `feature/%s`'s own remote tip, on a local branch of that exact "
         "name. NEVER touch the shared root checkout. Call the underlying functions directly (e.g. "
         "`attempt_rebase`/`run_verify_command`/`feature_rebase.rebase_stopped` with `cwd=%r`), "
@@ -1455,7 +1455,7 @@ def _unsafe_merge_reply(sdlc_dir, config, name, run_drive=None):
 #: any human may run it" contract, and there is no Slack-side conversational channel in v1 to
 #: receive `conflict_walk.py`'s own per-file choice regardless).
 _REBASE_EXTRA_PROMPT = (
-    "This is `--rebase <name>` (Epic #2335 slice 4, #2340, Component D of `.sdlc/design/2329.md`): "
+    "This is `--rebase <name>` (Epic #2335 slice 4, #2340, Component D of design #2329): "
     "rebase `feature/<name>` onto `work.base` and push -- but ONLY on a genuinely clean rebase. "
     "Load `skills/agrim-rebase/scripts/rebase_brief.py` by path (the same `_load` pattern every "
     "sibling script in this kit already uses) and call its own `assemble_brief`/`attempt_rebase` "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-goal, cross-session orchestrator context/cost report (#2531 — .sdlc/research/2531.md is
+"""Cross-goal, cross-session orchestrator context/cost report (#2531 — that goal's research dossier is
 the full operational spec; this docstring is the short version). Answers, from real transcripts
 already on disk: how large did the ORCHESTRATOR's own context get, per goal, across a multi-goal
 /agrim-loop run — the measurement #2521's own retro flagged as never produced.
@@ -15,7 +15,7 @@ TRANSCRIPT SHAPE REUSED, UNCHANGED, FROM phase_report.py: ~/.claude/projects/<sl
 agent-<id>.jsonl (one dispatched subagent). NEW, not in phase_report.py: every dispatched
 subagent's sibling agent-<id>.meta.json, carrying spawnDepth/parentAgentId/toolUseId/description —
 Claude-Code-Desktop-harness-specific, unverified on a bare `claude -p` subprocess (see
-.sdlc/research/2531.md Constraints). Absence of this shape degrades to an honest `unavailable`,
+the #2531 research dossier's Constraints). Absence of this shape degrades to an honest `unavailable`,
 never a guess.
 
 DEDUP BY message.id (never the JSONL line's own `uuid` — that is per-CONTENT-BLOCK, not per-API-
@@ -41,7 +41,7 @@ PEAK CONTEXT (one scope): max over that scope's deduped calls of `input_tokens +
 cache_read_input_tokens + cache_creation_input_tokens` — the full prompt size actually processed
 that turn, never summed across calls (context is already cumulative per-turn; summing
 double/triple-counts the same history). VOLUME (one scope): sum over deduped calls of
-input+output+cache_read+cache_creation. Both definitions are .sdlc/research/2531.md's own, verbatim
+input+output+cache_read+cache_creation. Both definitions are the #2531 research dossier's own, verbatim
 — see that file for the full reasoning, including the three wrong-but-plausible alternatives it
 measured and rejected (summing context, trusting isSidechain, reusing price_transcript unmodified).
 
@@ -169,7 +169,7 @@ def dedup_calls(raw_calls):
 
 def peak_context(calls):
     """max(input + cache_read + cache_creation) over calls; 0 for empty. NEVER summed across
-    calls -- .sdlc/research/2531.md's own 'Peak context' definition, verbatim. `calls` must
+    calls -- the #2531 research dossier's own 'Peak context' definition, verbatim. `calls` must
     already be deduped (see dedup_calls) -- taking this max over raw, undeduped lines can be
     corrupted by an earlier duplicate content-block line reporting a higher instantaneous value
     than the final, complete one (see the mutation control,
@@ -255,7 +255,7 @@ _GOAL_NUM_RE = re.compile(r"^#(\d+)|goal\s+#(\d+)")
 #: matched here as a SOFT, CONVENTION-BASED substring check -- there is NO enforced contract
 #: pinning this exact wording (no test anywhere ties it to the dispatch prompt template, and
 #: nothing prevents that prompt's own wording from drifting independently of this module).
-#: Top Risk 5 (.sdlc/plans/2531.md, Plan-Review refinement 5): a future change to the dispatch
+#: Top Risk 5 (plan #2531, Plan-Review refinement 5): a future change to the dispatch
 #: description's phrasing would silently UNDER-COUNT goals here (classify_tree simply drops a
 #: spawnDepth==1 entry that doesn't match, treating it as "not a goal-slot" -- see classify_tree
 #: below), never error or warn. Deliberately left this way for this goal (no drift guard shipped),
@@ -373,7 +373,7 @@ def _norm_ts_precise(iso_ts):
     other absorbed both goals' calls). Deliberately NOT used for ordinary call ts values fed to
     phase_report.price_turn/select_rate -- those stay whole-second, matching the rate card's own
     'YYYY-MM-DD HH:MM:SS' granularity and phase_report.py's own unmodified pricing behavior (out
-    of scope for this fix -- see .sdlc/plans/2531.md Decision 2 and this module's own docstring on
+    of scope for this fix -- see plan #2531 Decision 2 and this module's own docstring on
     reusing phase_report.py unmodified). See _filter_calls's own docstring (NAMED, BOUNDED
     RESIDUAL LIMITATION) for the one residual, narrower, documented consequence of that precision
     difference.

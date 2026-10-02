@@ -138,7 +138,7 @@ A card names the repo's **current** name. After a rename or transfer, a stale `d
 still matches its own cards (#308). One read, `gh api repos/<configured repo>`, resolves it. It is
 made when the first card names another repository, or before the first `item-add`, whichever comes
 first. GitHub answers it with the current `full_name` (measured read-only on a renamed repo,
-`.sdlc/evidence/308/`). That name counts as ours for as long as the source lives. New cards are
+the evidence recorded on #308). That name counts as ours for as long as the source lives. New cards are
 added by an issue URL under it, even on a board that holds none of our cards yet: a URL under the
 old name does not resolve. If the read fails, only the configured name counts, so another repo's
 card is still never written. A failure is remembered for 5 minutes (`_REPO_RETRY_S`), then the next
@@ -272,7 +272,7 @@ the saved owner and number to keep using the existing board.
 ## Owner runbook: acceptance on a live board
 
 The goal that built this (#233) was not allowed to mutate real GitHub. Its acceptance ran against
-the in-memory fake (`tests/test_board_phase.py`, evidence in `.sdlc/evidence/233/`). **The run on
+the in-memory fake (`tests/test_board_phase.py`, evidence recorded on #233). **The run on
 board #17 has not been executed.** To run it yourself, on a throwaway goal:
 
 1. Confirm the config has `project.enabled: true`, `project.owner` and `project.number: 17`.

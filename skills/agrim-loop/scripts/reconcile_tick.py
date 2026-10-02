@@ -2,7 +2,7 @@
 """#2294: give `reconcile.py`'s AUTOMATIC-tier sweep a wall-clock heartbeat independent of whether
 anyone is actively driving `/agrim-loop`.
 
-PC-4 (`.sdlc/design/2287.md`): `loop.py`'s `_reconcile_sweep` is already the correct, fully-gated
+PC-4 (design #2287): `loop.py`'s `_reconcile_sweep` is already the correct, fully-gated
 entry point for this -- `discovery.reconcile.mode` (default 'off'), then a TTL watermark
 (`discovery.reconcile.ttl_minutes`, default 60), then `reconcile.sweep_reconcile` itself. It is
 only ever CALLED from inside `next_batch`/`_next` (loop.py:1828-1829, 2060), so an idle repo --

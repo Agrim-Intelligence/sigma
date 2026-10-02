@@ -3942,8 +3942,8 @@ def ensure_fresh(sdlc_dir, config, goal, run=None):
     string means stop" contract every other gate in this file/`loop.py` already uses (mirrors
     `state.unsafe_goal_reason`, which `verify_goal` consumes the same way one gate earlier).
 
-    Auto-rebase, not warn-only, is deliberate -- see `.sdlc/research/1890.md` and
-    `.sdlc/plans/1890.md` for the full reasoning. In short: `rebase()` already exists, is already
+    Auto-rebase, not warn-only, is deliberate -- see the research for #1890 and
+    plan #1890 for the full reasoning. In short: `rebase()` already exists, is already
     the unconditional remedy `merge()` reaches for on every BEHIND PR, and (as of #1890) is hardened
     to fail SAFE on both conflict shapes it can hit -- a committed-commit conflict and an
     autostash-pop conflict alike abort cleanly rather than ship broken code. A clean rebase is

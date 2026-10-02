@@ -1510,7 +1510,7 @@ def _caller_pid(flags):
     `--pid` (`loop.py:5133-5141`). Returns `(pid, error)`; `error` is a ready-to-print message.
     `start` refuses on it (it has measured nothing yet); `end` warns and falls back instead (it is
     the boundary that already paid for its measurement -- see the departures section of
-    `.sdlc/plans/2667.md`)."""
+    plan #2667)."""
     raw = flags.get("pid")
     if raw is None:
         return None, None
@@ -1593,7 +1593,7 @@ def stale_marker_reason(marker, pid, codex_thread_id, ttl_seconds, now=None,
        against the lease TTL decides (`ttl_seconds() is None` means "never expire" -- config
        `ledger.lease.ttl_hours: 0`); otherwise trusted.
 
-    NOT COVERED, measured (`.sdlc/plans/2667.md`'s own coverage table names every row): a pid-less
+    NOT COVERED, measured (plan #2667's own coverage table names every row): a pid-less
     marker inside the lease still misbills its window in full when `ledger.lease.ttl_hours: 0`,
     and misbills the window even under the default TTL when the crash-then-resume happens within
     it; the pre-#2667 `end` gesture (no `--pid`) against a marker whose pid is ALIVE AGAIN (pid
