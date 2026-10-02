@@ -12,7 +12,6 @@ import subprocess
 import sys
 import time
 
-import pytest
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
 LOOP = S / "loop.py"
@@ -80,21 +79,24 @@ def test_recent_closed_goal_is_kept(tmp_path):
     assert log.exists() and wit.exists()
 
 
-@pytest.mark.parametrize("kinds", [
-    ("claimed", "verify_run"),                              # live: never recorded
-    ("claimed", "recorded:done", "claimed"),                # reopened after a done
-    ("claimed", "recorded:review"),                         # awaiting merge
-    ("claimed", "recorded:parked"),
-    ("claimed", "recorded:failed"),
-    ("claimed", "recorded:done", "gate"),                   # newest internal row is not recorded
-])
-def test_only_a_newest_done_row_is_a_candidate(tmp_path, kinds):
+def test_only_a_newest_done_row_is_a_candidate(tmp_path):
+    cases = [
+        ("claimed", "verify_run"),                          # live: never recorded
+        ("claimed", "recorded:done", "claimed"),            # reopened after a done
+        ("claimed", "recorded:review"),                     # awaiting merge
+        ("claimed", "recorded:parked"),
+        ("claimed", "recorded:failed"),
+        ("claimed", "recorded:done", "gate"),               # newest internal row is not recorded
+    ]
     d = _sdlc(tmp_path)
-    log, wit = _goal(d, "103", kinds=kinds)
+    streams = {}
+    for i, kinds in enumerate(cases):
+        streams[str(103 + i * 10)] = _goal(d, str(103 + i * 10), kinds=kinds)
     r = _run(d)
     assert r.returncode == 0, r.stderr
-    assert "kept 103" in r.stdout and "removed" not in r.stdout
-    assert log.exists() and wit.exists()
+    assert "removed" not in r.stdout, r.stdout
+    for stem, (log, wit) in streams.items():
+        assert f"kept {stem}" in r.stdout and log.exists() and wit.exists(), stem
 
 
 def test_agent_rows_after_done_do_not_hide_it(tmp_path):
@@ -105,18 +107,20 @@ def test_agent_rows_after_done_do_not_hide_it(tmp_path):
     assert "removed 104" in r.stdout and not log.exists()
 
 
-@pytest.mark.parametrize("marker", ["claims/105.claimed", "agents/105/main.json", "work/105.json",
-                                    "phase/105.json"])
-def test_fresh_live_owner_marker_keeps_the_goal(tmp_path, marker):
+def test_fresh_live_owner_marker_keeps_the_goal(tmp_path):
     d = _sdlc(tmp_path)
-    log, wit = _goal(d, "105")
-    p = d / "state" / marker
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("{}")                                      # mtime = now: a live owner
+    streams = {}
+    for stem, marker in (("105", "claims/105.claimed"), ("115", "agents/115/main.json"),
+                         ("125", "work/125.json"), ("135", "phase/135.json")):
+        streams[stem] = _goal(d, stem)
+        p = d / "state" / marker
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("{}")                                  # mtime = now: a live owner
     r = _run(d)
     assert r.returncode == 0, r.stderr
-    assert "kept 105" in r.stdout and "removed" not in r.stdout
-    assert log.exists() and wit.exists()
+    assert "removed" not in r.stdout, r.stdout
+    for stem, (log, wit) in streams.items():
+        assert f"kept {stem}" in r.stdout and log.exists() and wit.exists(), stem
 
 
 def test_fresh_worktree_dir_keeps_the_goal(tmp_path):
@@ -307,11 +311,11 @@ def test_file_order_not_timestamp_decides_the_newest_row(tmp_path):
     assert "kept 404" in r.stdout and log.exists()
 
 
-@pytest.mark.parametrize("args", [["--dryrun"], ["--keep-days"], ["--keep-days", "x"], ["--limit", "0"]])
-def test_bad_arguments_refuse_and_delete_nothing(tmp_path, args):
+def test_bad_arguments_refuse_and_delete_nothing(tmp_path):
     d = _sdlc(tmp_path)
     log, wit = _goal(d, "405")
-    r = _run(d, *args)
-    assert r.returncode == 2, (r.stdout, r.stderr)
-    assert "prune-state" in r.stderr, r.stderr            # refused by THIS verb, not by an unknown one
-    assert log.exists() and wit.exists()
+    for args in (["--dryrun"], ["--keep-days"], ["--keep-days", "x"], ["--limit", "0"]):
+        r = _run(d, *args)
+        assert r.returncode == 2, (args, r.stdout, r.stderr)
+        assert "prune-state" in r.stderr, r.stderr          # refused by THIS verb, not an unknown one
+        assert log.exists() and wit.exists(), args
