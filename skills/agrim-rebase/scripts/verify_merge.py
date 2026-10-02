@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agrim-rebase, slice 3 (#2306, epic #2303, design `.sdlc/design/2288.md` §6-§7): the
+"""agrim-rebase, slice 3 (#2306, epic #2303, design #2288 §6-§7): the
 verify-then-ask-to-merge tail that runs once #2304's rebase is clean, or #2305's conflict walker
 has resolved every conflict.
 

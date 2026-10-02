@@ -502,7 +502,7 @@ def _plan_identity(sdlc_dir, goal):
 def _outline(text):
     """A document's markdown heading lines only — its contract, without the prose under it.
 
-    Fenced blocks are skipped, and that is not a nicety: measured on this repo, `.sdlc/plans/100.md`
+    Fenced blocks are skipped, and that is not a nicety: measured on this repo, plan #100
     carries 32 code fences holding 29 lines that start with `#` — Python comments, not headings. A
     naive startswith would hand the reviewer those comments as if they were plan structure."""
     out, fenced = [], False

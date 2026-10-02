@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A real, validated LIVE judge for `feature_classify.py`'s tiers 1 and 3 (#2380, slice G of epic
-#2260's completion work, `.sdlc/plans/2260-live-judge.md`). `feature_classify._default_judge`
+#2260's completion work, plan #2260 (live-judge)). `feature_classify._default_judge`
 never guesses -- it always abstains, because deciding "is this issue about unit X" is a language
 question the classifier deliberately never attempts in Python. This module is the first REAL
 answer to that question: it shells out to `claude -p` (a live, metered model call) to actually
@@ -100,7 +100,7 @@ def _note(message):
 
 # --- ask_claude: the one mechanism every live call below uses -----------------------------------
 
-#: The plan's own literal MUST-FIX list (`.sdlc/plans/2260-live-judge.md`, "What's being built" #1)
+#: The plan's own literal MUST-FIX list (plan #2260 (live-judge), "What's being built" #1)
 #: -- a real, explicit tool-denial list using this CLI's own vocabulary (confirmed live via
 #: `claude -p --help`: `--disallowedTools, --disallowed-tools <tools...>`, "Comma or space-
 #: separated list of tool names to deny"). Passed as ONE argv element (a single comma-separated

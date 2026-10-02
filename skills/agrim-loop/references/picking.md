@@ -117,7 +117,7 @@ host's blocking/event wait; do not issue short repeated status polls that each a
 The orchestrator's own `next`/`next-batch` call already wrote the goal's claim under ITS
 `--session-pid`; the dispatched subagent then reaches step 3a in its OWN fresh context and captures
 its own `$PPID` for `agent-start --pid`/`work.py start --session-pid` — MEASURED (§2 of
-`.sdlc/plans/2521.md`) to be the SAME value the orchestrator's own `$PPID` capture already used to
+the plan for #2521) to be the SAME value the orchestrator's own `$PPID` capture already used to
 write the claim, within one continuous session, not a distinct, fresh pid. So there is no cross-pid
 comparison to make at all on THIS boundary. The genuine cross-process boundary `work.py start`'s
 resume guard was built for is CROSS-SESSION instead: a dead picker pid left by an ENDED orchestrating

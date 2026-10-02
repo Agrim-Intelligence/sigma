@@ -281,7 +281,7 @@ def _feature_priority(config):
 
 def _no_dangling_goal_enabled(config):
     """`discovery.no_dangling_goal.enabled` -> True | False (default False). #2263 of
-    `.sdlc/design/2253.md` (D-7): the top-level opt-in for "no work sits outside the structure" --
+    design #2253 (D-7): the top-level opt-in for "no work sits outside the structure" --
     a goal declaring NO unit at all (`features.NONE`) is either set aside under `sdlc:needs-unit` or
     attributed to the `core` catch-all (see `_no_dangling_goal_core`), gated jointly on THIS being
     True and on `.sdlc/features/` existing (the second half of D-7's gate lives in
@@ -314,7 +314,7 @@ def _no_dangling_goal_core(config):
     value must not silently start attributing real, undeclared work to a name nobody typed
     correctly.
 
-    #2363 REVERSES D-6 OF `.sdlc/design/2253.md`: `core` WAS a sentinel string this codebase never
+    #2363 REVERSES D-6 OF design #2253: `core` WAS a sentinel string this codebase never
     checked against the registry -- `feature_labels._attribute_to_core` (deleted) wrote a comment
     naming it and attached no label, specifically because a real `feature:core` unit did not exist
     yet. It is now bootstrapped as a REAL registered unit (branch, label, registry entry), so THIS
@@ -323,7 +323,7 @@ def _no_dangling_goal_core(config):
     `feature_classify.classify`/`classify_for_filing` resolve it through
     `feature_registry.resolve_open_unit`, which performs that validation (and answers `None` for a
     name that is not a real, open, registered unit) before anything is written. Per
-    `.sdlc/design/2253.md` B-4, the literal name `core` was checked clear of any collision on the
+    design #2253 B-4, the literal name `core` was checked clear of any collision on the
     three repos this design targets before it was bootstrapped -- that check was a one-time,
     per-adopter pre-flight step, not something this function verifies from config alone."""
     block = ((config or {}).get("discovery") or {}).get("no_dangling_goal")
@@ -344,7 +344,7 @@ def _no_dangling_goal_live_judge_block(config):
 
 def _no_dangling_goal_live_judge_enabled(config):
     """`discovery.no_dangling_goal.live_judge.enabled` -> True | False (default False). #2380 of
-    `.sdlc/plans/2260-live-judge.md`: a FURTHER, deliberate opt-in stacked on top of
+    plan #2260 (live-judge): a FURTHER, deliberate opt-in stacked on top of
     `_no_dangling_goal_enabled` -- turning THAT on alone still behaves exactly as it did before
     this slice existed (tiers 1/3 stay unreachable; `_default_judge` always abstains to the
     catch-all). This key is what routes pick-time and filing-time classification through a REAL,
@@ -932,7 +932,7 @@ class GitHubSource:
         # overlay and that sweep if the two shared one label. Written and cleared only by
         # `feature_labels._handle_no_unit_at_pick`/`resume_needs_unit`, and only when
         # `no_dangling_goal_enabled` is on AND `.sdlc/features/` exists (D-7 of
-        # `.sdlc/design/2253.md`) -- see those attributes below.
+        # design #2253) -- see those attributes below.
         self.needs_unit_label = gh.get("needs_unit_label", "sdlc:needs-unit")
         # #2363: the TIER-4 overlay of `feature_classify`'s classification chain -- every tier
         # (a single existing unit, the configured catch-all, an identifiable-but-unregistered
@@ -1894,7 +1894,7 @@ class GitHubSource:
         (a constant across the whole list), so `ready.sort()` orders by `(_card_rank, feature_rank,
         pos, n)` exactly as before — byte-identical behaviour, unchanged relative order.
 
-        #2264 (D-9/BR-9 of `.sdlc/design/2253.md`): `feature_rank` (`_board_feature_rank`) sits at
+        #2264 (D-9/BR-9 of design #2253): `feature_rank` (`_board_feature_rank`) sits at
         the SAME depth `_pick_key` gave it on the label-queue path (#2262) — immediately after
         `_card_rank`, before board position — for the identical reason: this is a completely
         separate sort key from `_pick_key`'s, and fixing only one path silently fails on whichever
@@ -1997,7 +1997,7 @@ class GitHubSource:
         return [n for _, _, _, _, n in ready], carded
 
     def _board_feature_rank(self, names):
-        """feature_rank for a BOARD card (#2264, D-9/BR-9 of `.sdlc/design/2253.md`): the SAME
+        """feature_rank for a BOARD card (#2264, D-9/BR-9 of design #2253): the SAME
         term `_feature_rank` inserts into the label queue's `_pick_key` (#2262), at the SAME depth
         in `_board_queue`'s own separate sort key -- the design doc's own text, quoting the code's
         prior docstring, is that fixing one path alone "would silently fail on whichever path a
@@ -2572,7 +2572,7 @@ class GitHubSource:
         `priority:P1`. Absent or unrecognised ranks last, which is what makes a backlog that uses no
         priority labels at all sort exactly as it did before (#698).
 
-        #2262 (D-3 of `.sdlc/design/2253.md`): `feature_rank` sits immediately after `priority_rank`
+        #2262 (D-3 of design #2253): `feature_rank` sits immediately after `priority_rank`
         — a LEXICOGRAPHIC tuple, never a weighted sum, because "never a replacement for issue
         priority" has to be structural: a P0 bug in any unit still outranks every P1, no matter how
         the unit-priority term compares, purely because Python tuple comparison never even looks at
@@ -2610,7 +2610,7 @@ class GitHubSource:
                 not_a_bug, issue["number"])
 
     def _feature_rank(self, issue):
-        """feature_rank (#2262, D-3/D-2 of `.sdlc/design/2253.md`): `discovery.priority_rank`
+        """feature_rank (#2262, D-3/D-2 of design #2253): `discovery.priority_rank`
         applied to the ISSUE's declared unit's own recorded priority (#2261's `priority` field on
         the unit's `.sdlc/features/` registry entry) — `discovery.UNPRIORITISED` when the issue
         declares no unit, the unit's registry entry carries no priority, or

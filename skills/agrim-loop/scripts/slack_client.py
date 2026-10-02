@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""#2311 (slice 1 of Epic #2310, `.sdlc/design/2289.md` `### 6`): one Slack-posting primitive.
+"""#2311 (slice 1 of Epic #2310, design #2289 `### 6`): one Slack-posting primitive.
 
 ONE PRIMITIVE, TWO CALLERS -- BY DESIGN. `drift_watch.py`'s passive tick calls `post_message`
 directly (slice 1, `#2311`). Slice 2 (`#2312`, this one) adds `slack_client.py`'s own `main(argv)`
@@ -91,7 +91,7 @@ def post_message(channel_id, text, config, post=None, token_env=None):
     `_post` already holds (BR-14). `post` is DI for tests: `post(token, channel_id, text) -> bool`;
     never make a real network call from the automated suite.
 
-    `token_env` (#2336, design `.sdlc/design/2329.md` Component E, BR-24): OPTIONAL, additive
+    `token_env` (#2336, design #2329 Component E, BR-24): OPTIONAL, additive
     override -- when given, the NAMED env var is read verbatim instead of `_token_env(config)`'s
     own `config["drift_watch"]["slack_bot_token_env"]` lookup. This is what lets a second,
     independent caller (the inbound Slack-commands listener, its own dedicated app/bot per decision

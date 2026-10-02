@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""agrim-rebase, slice 1 (#2304, epic #2303, design `.sdlc/design/2288.md` §2-§4): the
+"""agrim-rebase, slice 1 (#2304, epic #2303, design #2288 §2-§4): the
 decision-context brief and the clean-path rebase for a manually-triggered, human-attended
 companion to `feature_rebase.py`'s automatic upkeep pass.
 
@@ -332,7 +332,7 @@ def file_context(run, cwd, merge_base, base_ref, path, entries):
 # WHAT THIS IS FOR. `file_context` above re-derives its answer from whatever `merge_base`/`base_ref`
 # it is handed -- correct for the brief's own one-shot print, wrong once a conflict's resolution
 # spans two separate process invocations (a human runs `rebase_brief.py rebase`, hits a conflict,
-# and only later runs `conflict_walk.py walk` to resolve it -- design `.sdlc/design/2288.md` §5's
+# and only later runs `conflict_walk.py walk` to resolve it -- design #2288 §5's
 # own "a later slice"). If the base advances in between, re-deriving against the NOW-moved
 # `base_ref` can describe an entirely different commit -- reproduced live (#2321): a conflict
 # correctly classified as a content clash, whose context text cited an unrelated file-deletion

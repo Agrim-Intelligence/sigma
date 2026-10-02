@@ -182,7 +182,7 @@ Everything above this paragraph describes `attach_at_pick`'s `BODY_ONLY` handlin
 `resume_needs_label` -- the ORIGINAL machinery #1543 is about, and it is STILL ungated, unchanged.
 The no-dangling-goal pair this module also carries now (`_handle_no_unit_at_pick`,
 `_set_aside_no_unit`, `resume_needs_unit`) answers a DIFFERENT question -- what to do about a goal
-declaring NO unit at all, not one whose label is missing -- and D-7 of `.sdlc/design/2253.md`
+declaring NO unit at all, not one whose label is missing -- and D-7 of design #2253
 requires it to gate on `.sdlc/features/` existing, on purpose: applying EITHER new behaviour (the
 `sdlc:needs-unit` set-aside, or classification via `feature_classify`) to a repository that never
 adopted the branching model would set aside, or silently re-attribute, its entire backlog -- every
@@ -192,7 +192,7 @@ own `_KNOWN_ADOPTION_GATED_CALL_SITES` census as a decision written down on purp
 effect nobody reviewed -- see that test file's own updated docstring.
 
 #2363 REPLACES THE `core` SENTINEL WITH A REAL CLASSIFICATION CHAIN, AND REVERSES D-6 OF
-`.sdlc/design/2253.md` ON PURPOSE. `core` used to be a STRING nothing in the registry ever checked
+design #2253 ON PURPOSE. `core` used to be a STRING nothing in the registry ever checked
 -- `_attribute_to_core` (deleted) wrote a comment naming it and touched no label, specifically
 because a real `feature:core` unit did not exist yet and D-6 worried about colliding with one a
 repo might already have. #2260's own completion work bootstraps `core` as a REAL registered unit
@@ -569,7 +569,7 @@ def _handle_no_unit_at_pick(sdlc_dir, source, goal, config):
     """-> `Decision`, or `None` when the feature does not apply here. Called from `attach_at_pick`
     only when `features.read` returned `NONE` -- no declaration anywhere on the issue.
 
-    THE GATE IS TWO CONDITIONS, BOTH REQUIRED, PER D-7 OF `.sdlc/design/2253.md`: opted in
+    THE GATE IS TWO CONDITIONS, BOTH REQUIRED, PER D-7 OF design #2253: opted in
     (`source.no_dangling_goal_enabled`, resolved once by the Source from `discovery.no_dangling_goal
     .enabled`, the identical "the Source resolves config, this module reads attributes" split
     `needs_label_label` already establishes) AND `.sdlc/features/` existing. Returning `None` on

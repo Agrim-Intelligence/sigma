@@ -176,7 +176,7 @@ kind of trigger:
 **Unlike `reconcile_tick.py` above, this one DOES need `ledger.enabled: true` — not incidentally,
 but structurally.** `reconcile_tick.py`'s own section above never mentions `ledger.enabled` because
 that tick has no dependency on it at all; copying that silence here would be exactly the gap a
-review round of this design's own confirmation caught and fixed (`.sdlc/design/2289.md` D-2's
+review round of this design's own confirmation caught and fixed (Epic #2310's design, D-2's
 addendum). `drift_watch`'s entire "don't post the same summary twice" mechanism is built on the
 shared ledger (`ledger.safe_append`/`read_all`) — a summary the WHOLE TEAM sees in one Slack channel
 cannot be deduped by a private, per-machine cursor the way `channel_notify.py`'s own personal-nudge

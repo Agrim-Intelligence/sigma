@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """The 4-tier AI-judgment classifier, replacing #2263's `core` sentinel (#2363, slice B of epic
-#2260's completion work, `.sdlc/plans/2260-dangling-completion.md`).
+#2260's completion work, plan #2260 (dangling-completion)).
 
 WHAT THIS REPLACES. `feature_labels._attribute_to_core` (deleted) wrote a COMMENT naming `core`
 and touched no label, because `core` used to be a sentinel string the registry never checked (D-6
-of `.sdlc/design/2253.md`). Slice A of this epic's completion work bootstrapped `core` as a REAL
+of design #2253). Slice A of this epic's completion work bootstrapped `core` as a REAL
 registered unit -- a real branch, a real `feature:core` label, a real registry entry -- once,
 deliberately, ahead of this slice, specifically so a classifier could exist that ATTACHES a real
 label instead of narrating a name. That is what this module is for.

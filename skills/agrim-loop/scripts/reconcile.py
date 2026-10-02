@@ -706,7 +706,7 @@ def compute_proposals(source, census_result, primary, history, overlays=None, go
     #2295: `winner` is carried on every entry — for MULTI_LABEL it is `resolve_primary`'s own return
     value; for ZERO_LABEL it is the primary label being restored. This is additive (every existing
     caller/test that reads `issue`/`add`/`remove`/`evidence`/`klass` is unaffected) and it is what
-    `sweep_reconcile`'s open-issue promotion step (`.sdlc/design/2287.md` detailed design section 2)
+    `sweep_reconcile`'s open-issue promotion step (design #2287 detailed design section 2)
     filters on: `winner == goal_label`, full stop — never a re-parse of the `evidence` string."""
     # Defaulted so every existing caller/test keeps working unchanged; resolved from `source` when
     # not supplied, which is what every real caller has available.
@@ -864,7 +864,7 @@ def apply_proposal(source, proposal, apply=False):
     return out
 
 
-# --- #2295 (`.sdlc/design/2287.md` detailed design section 2): promote DECISIVE open-issue --------
+# --- #2295 (design #2287 detailed design section 2): promote DECISIVE open-issue --------
 # corrections from the PROPOSED tier to AUTOMATIC.
 #
 # B-1 (the design's own blocker): this is a NEW, not-yet-adversarially-reviewed write mechanism on
@@ -940,7 +940,7 @@ def apply_open_issue_promotions(source, proposals, primary, goal_label, apply=Fa
     the caller (`sweep_reconcile`); this function re-verifies eligibility per item regardless, on
     the premise that census time and write time are different moments.
 
-    THE NEW SAFEGUARD (`.sdlc/design/2287.md` detailed design section 2, round-2 goal-review):
+    THE NEW SAFEGUARD (design #2287 detailed design section 2, round-2 goal-review):
     `apply_proposal`'s existing re-read (`reconcile.py:794-833` at review time) only re-verifies the
     SPECIFIC labels already queued for change are still stale — never the eligibility CONDITION
     itself. A human can act on the same issue in the window between `census()` and this write (most
@@ -1069,7 +1069,7 @@ def sweep_reconcile(sdlc_dir, config, apply=False, run=None):
         history = fetch_label_history(source, targets) if targets else {}
         proposals, _unresolved = compute_proposals(source, cen, primary, history)
         # Condition 2, full stop: `winner == goal_label`. See `## Detailed design` section 2 of
-        # `.sdlc/design/2287.md` for why this is narrower than "only adds or restores membership",
+        # design #2287 for why this is narrower than "only adds or restores membership",
         # and `test_a_promoted_multi_label_correction_can_never_remove_an_overlay_by_construction`
         # for the structural proof that this alone makes overlay removal impossible here.
         promotable = [p for p in proposals if p.get("winner") == source.goal_label]

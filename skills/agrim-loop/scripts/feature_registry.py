@@ -151,7 +151,7 @@ SCHEMA = "sigma/features@1"
 #: the failure everyone can see.
 #:
 #: THE COST IS THE DECISION, AND IT HAS BEEN TAKEN ONCE, DELIBERATELY. `priority` (#2261, B-1 of
-#: `.sdlc/design/2253.md`) was added inside `@1` on the team's explicit call: backward compatibility
+#: design #2253) was added inside `@1` on the team's explicit call: backward compatibility
 #: over loud refusal, because refusal is not narrower here -- a document declaring a version the
 #: reader does not know contributes NOTHING, so a bump trades the loss of one optional field for the
 #: loss of every unit, every recorded goal and every `authorized` grant on every install that has
