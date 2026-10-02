@@ -19,6 +19,18 @@ of the two adapters, matched to whichever surface you personally use day to day.
   schema.
 - Check current state any time: `python3 skills/agrim-doctor/scripts/doctor.py check .sdlc` reports
   whether autowatch is enabled AND whether an adapter is actually wired up yet.
+- A POSIX host (macOS or Linux). The driven session runs in a process group of its own, and when
+  it overruns `ledger.autowatch.timeout_seconds` (default 2h) the whole group — the model and
+  everything it started — gets SIGTERM, up to 10s to exit, then SIGKILL, and is reaped before the
+  tick records `failed` (#425). SIGTERM, SIGHUP or Ctrl-C to the tick mid-drive does the same
+  first, and a further signal cannot cut that short; afterwards every signal received is
+  re-delivered in order, so the tick still dies by it, Ctrl-C still raises KeyboardInterrupt, and a
+  handler you installed still runs. If the
+  tick is SIGKILLed, alone or with its whole process group, a small lifeline process notices its
+  pipe close and runs the same escalation. On Windows the drive refuses (`REFUSED
+  [no-process-group]`, recorded in the ledger) instead of leaving model descendants running. Not
+  reached: a descendant that calls `setsid` itself, or a model whose lifeline process was itself
+  SIGKILLed; the drain after the kill is bounded so neither can hang the tick.
 
 ## Pick your surface
 
