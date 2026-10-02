@@ -3087,7 +3087,7 @@ def _stop_file_state(base):
         text = _load_loop_script("stopfiles").line(base)
     except Exception:                       # noqa: BLE001 - a load failure is "could not answer"
         return "COULD NOT CHECK stop-files (stopfiles.py did not load); not an all-clear"
-    return text or "none"
+    return text or "none"  # a "COULD NOT CHECK ..." answer (unreadable state dir) comes back as text
 
 
 def _ledger_watcher_state(base, cfg, now=None):

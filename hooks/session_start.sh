@@ -133,6 +133,8 @@ fi
 # host), which /agrim-doctor reads too. A forgotten stop-file looks like a dead daemon that says
 # nothing; its AGE is the tell. Same one-additionalContext idiom as the tiers around it. Placed
 # BEFORE the watcher-staleness tier so the cause is named rather than a bare "looks stale".
+# LIMIT: only one additionalContext per invocation, so when the setup wizard tier (earlier) fires
+# this line is not shown (the coexist notice is prepended, not a competitor); /agrim-doctor's "daemon stop-files" row (Python) always covers it.
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, subprocess, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
