@@ -1,0 +1,18 @@
+{
+  "schema": "launch-scorecard/v1",
+  "benchmark_results": null,
+  "dimensions": [
+    {"id": "D1", "name": "Correctness", "gating": true, "score": null, "evidence": []},
+    {"id": "D2", "name": "Skills", "gating": true, "score": null, "evidence": []},
+    {"id": "D3", "name": "Outcomes and cost", "gating": true, "score": null, "evidence": []},
+    {"id": "D5", "name": "Five properties", "gating": true, "score": null, "evidence": []},
+    {"id": "D6", "name": "Platform", "gating": true, "score": null, "evidence": []},
+    {"id": "D7", "name": "Onboarding", "gating": true, "score": null, "evidence": []},
+    {"id": "D8", "name": "Docs", "gating": true, "score": null, "evidence": []},
+    {"id": "D9", "name": "Upgrade, coexistence, uninstall", "gating": true, "score": null, "evidence": []},
+    {"id": "D10", "name": "Security, privacy, exposure", "gating": true, "score": null, "evidence": []},
+    {"id": "D11", "name": "Operations", "gating": true, "score": null, "evidence": []},
+    {"id": "D12", "name": "Market", "gating": false, "score": null, "evidence": []},
+    {"id": "D13", "name": "Legal and naming", "gating": true, "score": null, "evidence": []}
+  ]
+}
