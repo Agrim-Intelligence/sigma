@@ -128,6 +128,30 @@ PY
 then
     exit 0
 fi
+# --- Daemon stop-file present (issue #416) -------------------------------------------------------
+# ACCELERATOR only: the facts and wording live in skills/agrim-loop/scripts/stopfiles.py (Python, any
+# host), which /agrim-doctor reads too. A forgotten stop-file looks like a dead daemon that says
+# nothing; its AGE is the tell. Same one-additionalContext idiom as the tiers around it. Placed
+# BEFORE the watcher-staleness tier so the cause is named rather than a bare "looks stale".
+if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
+import json, os, subprocess, sys
+project, plugin_root = sys.argv[1], sys.argv[2]
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
+try:
+    r = subprocess.run([sys.executable, os.path.join(plugin_root, "skills", "agrim-loop", "scripts", "stopfiles.py"),
+                        "line", os.path.join(project, ".sdlc")], capture_output=True, text=True, timeout=30)
+    text = (r.stdout or "").strip()
+except Exception:
+    sys.exit(1)
+if r.returncode != 0 or not text:
+    sys.exit(1)
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                         "additionalContext": _notice + "Sigma: " + text + " Run /agrim-doctor for detail."}}))
+sys.exit(0)
+PY
+then
+    exit 0
+fi
 # --- Proactive ledger-watcher staleness check (issue #2444) --------------------------------------
 # An ACCELERATOR on top of the existing, unchanged multi-trigger watcher-restart mechanism
 # (_ensure_watcher in skills/agrim-loop/scripts/loop.py, untouched by this change) -- it narrows the

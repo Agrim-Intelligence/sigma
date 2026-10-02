@@ -56,9 +56,9 @@ RETIRED_PLUGIN_NAME = re.compile(r"(?i)\bloop" + "smith" + r"\b")
 DRILLS = ("D1", "D2", "D3", "D4")
 EVIDENCE_SEEDS = tuple(SEED_CHECKPOINTS)
 WINDOWS_SKIP_REASON = "Windows is unsupported: readiness drills require POSIX process groups and SIGKILL."
-D4_EXPECTED_FAILURE_STATES = {
-    "doctor_explicit_stop_file_reporting": "control_failed_and_recorded",
-    "session_start_explicit_stop_file_reporting": "control_failed_and_recorded",
+D4_EXPECTED_REPORTING_STATES = {
+    "doctor_explicit_stop_file_reporting": "reporting_invariant_passed",
+    "session_start_explicit_stop_file_reporting": "reporting_invariant_passed",
 }
 B6_DISPOSITION = {
     "issue": 416,
@@ -716,8 +716,8 @@ def run_d3(workdir: Path, sigma: Path = ROOT, seed: int = 1):
 def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     """Run the actual daemon/doctor/hook gestures against a fresh stop-file tree.
 
-    Current diagnostics are intentionally expected to fail the explicit
-    stop-file-reporting control.  That is a measured B6 input, never a pass.
+    Doctor and session start must both name the stop file (#416).  A regression
+    records ``control_failed_and_recorded`` and fails the invariant.
     """
     workdir = Path(workdir)
     if workdir.exists() and any(workdir.iterdir()):
@@ -828,8 +828,8 @@ def validate_evidence(path: Path, payload: dict, checkout_sha: str):
         if run["drill"] == "D1" and run["checkpoint"] != checkpoint_for_seed(run["seed"]):
             raise UsageError("D1 evidence checkpoint does not match seed")
         if run["drill"] == "D4":
-            if run.get("expected_failure_states") != D4_EXPECTED_FAILURE_STATES:
-                raise UsageError("D4 evidence has unexpected failure states")
+            if run.get("expected_reporting_states") != D4_EXPECTED_REPORTING_STATES:
+                raise UsageError("D4 evidence has unexpected reporting states")
     if observed_runs != expected_runs:
         raise UsageError("evidence does not cover every drill and seed")
 
@@ -845,10 +845,10 @@ def _evidence_run(result):
     if result["drill"] == "D4":
         observed = {item["name"]: item.get("observed", {}).get("outcome")
                     for item in result["invariants"]
-                    if item["name"] in D4_EXPECTED_FAILURE_STATES}
-        if observed != D4_EXPECTED_FAILURE_STATES:
-            raise UsageError("D4 did not record its expected reporting control failures")
-        run["expected_failure_states"] = D4_EXPECTED_FAILURE_STATES
+                    if item["name"] in D4_EXPECTED_REPORTING_STATES}
+        if observed != D4_EXPECTED_REPORTING_STATES:
+            raise UsageError("D4 did not record passing stop-file reporting controls")
+        run["expected_reporting_states"] = D4_EXPECTED_REPORTING_STATES
     return run
 
 
