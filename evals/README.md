@@ -1,5 +1,37 @@
 # Quality evals — catch drift on every change
 
+## Benchmark harness smoke control
+
+The benchmark method is fixed in
+[`docs/bench/preregistration.md`](../docs/bench/preregistration.md).  The runner
+deliberately ships only a zero-spend fake arm until the separately reviewed arm
+implementations are available.  It still exercises the task-copy, post-run
+hidden-test, result-schema, and spend-refusal seams against two local tasks:
+
+```bash
+python3 evals/bench/bench.py run --manifest <tasks/manifest.json> \
+  --hidden-root <external-hidden-bundles> --results <results.json> \
+  --max-usd 0.01 --isolation-launcher </absolute/operator-sandbox> --fake-arm
+```
+
+`--max-usd` is mandatory and positive; the command refuses CI and background
+execution.  The hidden root must be outside the repository and every arm
+worktree. The command also refuses until the operator supplies an executable,
+absolute launcher outside the repository, hidden, task, and scratch trees.
+That launcher is an **operator-owned external sandbox or privilege-separation
+boundary**: Sigma validates its location and executable bit, but cannot infer
+that an arbitrary executable’s bytes sandbox a process. Location and executable
+validation cannot establish a boundary, so **all live arms are refused** until
+a separately reviewed, enforceable sandbox/privilege-separation protocol is
+implemented. Arbitrary in-process `Arm.run` callbacks are also refused; the
+built-in fake arm is the sole trusted smoke fixture and never starts an agent.
+The runner never claims that path or environment filtering isolates an
+untrusted agent. Only the parent scorer copies a hidden bundle into a separate
+evaluator scratch tree after the arm exits.
+Each arm receives only the spending allowance left after earlier runs.  If an
+arm reports a cost above that remainder, the run is refused before any results
+report is written.
+
 Sigma's "output" is agent *behavior* (does it follow the spine, plan before editing, verify before
 claiming done). Behavior is non-deterministic, so quality is guarded in tiers. Run the whole thing
 on every change; a drop below the committed baseline fails the build.
