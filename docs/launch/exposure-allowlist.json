@@ -14,8 +14,7 @@
   {
     "path": "tests/test_readiness_drills.py",
     "rule": "absolute-home-path",
-    "blob": "50f637a6a26606fc1f71b9f21d91c32329e5f82c",
-    "reason": "reviewed readiness-drill red fixture; exact blob only"
+    "reason": "reviewed readiness-drill red fixture (a host-guidance string with a synthetic home path); unpinned because the file is edited often"
   },
   {
     "path": "tests/test_upstream.py",
