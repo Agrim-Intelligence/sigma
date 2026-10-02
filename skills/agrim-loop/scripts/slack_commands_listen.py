@@ -149,6 +149,7 @@ legacy = _load("legacy")   # #239: token variables under the previous prefix
 feature_registry = _load("feature_registry")
 slack_client = _load("slack_client")
 scrub = _load("scrub")
+logroll = _load("logroll")              # #460: size-capped rotation for slack-commands.log
 drift_watch = _load("drift_watch")
 unit_completion = _load("unit_completion")
 autowatch = _load("autowatch")          # #2338: _run_drive/_drive_cmd -- the headless drive primitive
@@ -876,15 +877,15 @@ def _utc_now_iso():
 def _log(sdlc_dir, message):
     """One timestamped, scrubbed line -- appended to `.sdlc/state/slack-commands.log` (mirrors
     `watch_daemon.py`'s own `$STATE/watch.log`) and echoed to stderr for foreground visibility. Never
-    raises: a log write failing must not crash the listener over its own housekeeping."""
+    raises: a log write failing must not crash the listener over its own housekeeping. #460: the
+    file is rolled to `.1`..`.3` at its cap before the append (`logroll`), so it is bounded."""
     text = scrub.scrub(message) if message else message
     line = "%s slack_commands: %s" % (_utc_now_iso(), text)
     print(line, file=sys.stderr)
     try:
         path = log_path(sdlc_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        logroll.append(path, line + "\n")
     except OSError:
         pass
 
