@@ -28,6 +28,14 @@ All notable changes to Sigma are recorded here, newest first.
   write-surface inventory records the two new write sites (`review_units.py:main`,
   `seed_defects.py:apply`).
 
+- **Release, pin, rollback and incident runbook** (#359). `docs/release.md`
+  defines semantic-version release ownership, the first-public-release GO gate,
+  release/tag steps, the pre-rename stop/repoint/verify procedure, and S1–S3
+  incident response. `docs/launch/evidence/pin-rollback-2026-10-02.md` records
+  three isolated Claude Code/Git probes honestly: no `v1.0.0` source is
+  available yet, so no pin or rollback gesture is claimed. The publish runbook
+  now describes fresh-public-snapshot publication rather than a visibility flip.
+
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a

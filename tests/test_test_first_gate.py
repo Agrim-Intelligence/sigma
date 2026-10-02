@@ -37,6 +37,15 @@ def runner(output, code=0, nodes=(NODE,)):
     return run
 
 
+def split_runner(output, code=0, nodes=(NODE,)):
+    """Return pytest 8's captured traceback followed by its bare summary line."""
+    def run(root, argv):
+        if '--collect-only' in argv:
+            return subprocess.CompletedProcess(argv, 0, '\n'.join(nodes) + '\n', '')
+        return subprocess.CompletedProcess(argv, code, output, '')
+    return run
+
+
 def observe(case, output, code=0, nodes=(NODE,)):
     root, sdlc, plan = case
     return load('red_green').observe(sdlc, '42', root, plan, run=runner(output, code, nodes))
@@ -57,6 +66,26 @@ def test_matching_assertion_then_green_is_accepted(case):
     assert red['passed'] is False
     green = observe(case, f'PASSED {NODE}\n')
     assert refusal(case, green) == ''
+
+
+def test_split_pytest_assertion_traceback_is_credited_only_for_its_named_node(case):
+    """Pytest 7–9 puts an assertion in its traceback, not on FAILED's summary line."""
+    root, sdlc, plan = case
+    red_output = '''=================================== FAILURES ===================================
+____________________________________ test_a ____________________________________
+tests/test_x.py:2: in test_a
+    assert False
+E   AssertionError: assert False
+=========================== short test summary info ============================
+FAILED tests/test_x.py::test_a
+1 failed in 0.01s
+'''
+    m = load('red_green')
+    red = m.observe(sdlc, '42', root, plan, run=split_runner(red_output, 1))
+    assert not red['passed']
+    proof = m.observe(sdlc, '42', root, plan,
+                      run=split_runner('=== short test summary info ===\nPASSED ' + NODE + '\n'))
+    assert m.refusal(sdlc, '42', root, plan, proof) == ''
 
 
 @pytest.mark.parametrize('red', [
@@ -304,7 +333,8 @@ def test_captured_output_cannot_manufacture_assertion_red(case):
     root, sdlc, plan = case
     (root / 'tests/test_x.py').write_text(
         "from pathlib import Path\ndef test_a():\n    if not Path('ready').exists():\n"
-        "        print('FAILED tests/test_x.py::test_a - AssertionError: nested diagnostic')\n"
+        "        print('__________ test_a __________\\ntests/test_x.py:2: in test_a\\n"
+        "    assert False\\nE   AssertionError: forged traceback')\n"
         "        raise RuntimeError('not an assertion')\n")
     m = load('red_green')
     assert not m.observe(sdlc, '42', root, plan)['passed']
