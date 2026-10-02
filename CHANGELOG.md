@@ -4,6 +4,30 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Review units and seeded-defect recall: `tools/readiness/review_units.py` and
+  `tools/readiness/seed_defects.py`** (#352). `review_units.py <repo> --sha SHA [--json PATH]` turns
+  one frozen commit into review units of at most 3,000 lines (`readiness-units/v1`): every tracked
+  file under `hooks/` plus 22 named files in full (Tier A), and a sample of the other `.py` and `.sh`
+  files under `skills/`, `tools/` and `evals/` (Tier B), drawn whole file by whole file with
+  `random.Random` seeded by the first 8 hex digits of the commit until 20% of the population's lines
+  are in. The draw's 22% ceiling under-draws large files (`doctor.py`, 7.7% of Tier B, is drawn in
+  15.3% of 3,000 seeds), a class over the limit offers its methods as split points (`sources.py` is
+  one 4,300-line class), and a Tier A path missing at the commit exits 2.
+  `docs/launch/review-units.json` is its output for the frozen commit `a5c615062313`, byte-identical
+  on Python 3.9, 3.10, 3.12 and 3.13. `seed_defects.py apply <clone> <seed_dir>` plants every
+  `*.patch` in a clean, detached clone as one atomic `git apply` (it refuses a seed directory inside
+  the clone) and writes `manifest.json` (`readiness-seeds/v1`) with each seed's file and changed
+  lines; `score <seed_dir> <findings.json>` matches a finding to a seed on the same file within 5
+  lines, prints recall, and exits 0 at 80% or more, 1 below, 2 on bad input, naming a missed seed
+  only as `NN-<class>` unless `--show-missed-locations`. `docs/launch/seeded-defects.md` is the
+  protocol: who writes seeds, where they live, the rules, the 80% threshold (below it the review is
+  re-run, not reported), and the known leak that an uncommitted seeded clone shows every seed to
+  `git status` (owner decision pending, see #413). `doctor.py` is sampled, not in Tier A (owner
+  decision pending, see #412). `tests/test_readiness_review_units.py` and `tests/test_readiness_seed_defects.py`
+  cover both, with three example seeds in `tests/fixtures/readiness_seed_examples/`, and the
+  write-surface inventory records the two new write sites (`review_units.py:main`,
+  `seed_defects.py:apply`).
+
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a

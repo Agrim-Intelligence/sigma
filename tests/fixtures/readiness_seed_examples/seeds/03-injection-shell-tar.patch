@@ -1,0 +1,13 @@
+diff --git a/tools/report_pack.py b/tools/report_pack.py
+index 77e3f68..ae2df7a 100644
+--- a/tools/report_pack.py
++++ b/tools/report_pack.py
+@@ -5,7 +5,7 @@ import subprocess
+ 
+ def pack_report(directory, archive):
+     """Create the gzip tar ``archive`` from everything in ``directory``."""
+-    subprocess.run(["tar", "-czf", archive, "-C", directory, "."], check=True)
++    subprocess.run("tar -czf %s -C %s ." % (archive, directory), shell=True, check=True)
+     return archive
+ 
+ 

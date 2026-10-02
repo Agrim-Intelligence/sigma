@@ -1,0 +1,13 @@
+diff --git a/tools/report_load.py b/tools/report_load.py
+index d3256a8..e574bfb 100644
+--- a/tools/report_load.py
++++ b/tools/report_load.py
+@@ -9,7 +9,7 @@ def load_report(path):
+     try:
+         with open(path, encoding="utf-8") as handle:
+             return json.load(handle)
+-    except FileNotFoundError:
++    except Exception:
+         return {}
+ 
+ 

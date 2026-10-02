@@ -4,6 +4,9 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
+| evals/bench/bench.py | _write_json_atomic | fs-write | 1 | ungated | medium |
+| evals/bench/bench.py | run | fs-write | 1 | ungated | medium |
+| evals/bench/bench.py | run_benchmark | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
 | hooks/gate_state.py | _stripe_lock | fs-remove | 2 | ungated | high |
@@ -263,6 +266,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/onboarding_control.py | run_github | fs-write | 7 | ungated | medium |
 | tools/onboarding_control.py | run_github | git-push | 1 | ungated | high |
 | tools/onboarding_control.py | run_local | fs-write | 3 | ungated | medium |
+| tools/onboarding_control.py | run_readme_gestures | fs-write | 1 | ungated | medium |
 | tools/readiness/baseline.py | snapshot | fs-write | 2 | explicit snapshot command; empty destination | medium |
 | tools/readiness/baseline.py | snapshot | git-destructive | 1 | explicit snapshot command; empty destination; detached push-disabled clone | medium |
 | tools/readiness/drills.py | _kill_after_fixture_merge | fs-write | 2 | ungated | medium |
@@ -279,4 +283,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
 | tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
 | tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
+| tools/readiness/review_units.py | main | fs-write | 1 | explicit --json PATH; caller-supplied output path | medium |
+| tools/readiness/seed_defects.py | apply | fs-write | 1 | explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only | medium |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |

@@ -2233,6 +2233,22 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/review_units.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit --json PATH; caller-supplied output path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/seed_defects.py",
+      "function": "apply",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/write_surface.py",
       "function": "main",
       "rule": "fs-write",
