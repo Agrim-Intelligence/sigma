@@ -1185,7 +1185,7 @@ while the overlay is on. `discovery.auto_unpark` is the sweep that lifts it:
 or unrecognised value also reads as `"on"`. Set it to `"off"` to turn the sweep off. On every pick
 it reads each open `sdlc:blocked` issue. If every `blocked by #N` reference the issue recorded (in
 its body or its comments; Sigma's own fixed "Parked by Sigma — needs human review: " prefix is never
-read as one) now points at a closed issue or pull request, it drops `sdlc:blocked` (and a stale
+read as one) now points at a closed issue or a merged pull request (a pull request closed without merging does not resolve it), it drops `sdlc:blocked` (and a stale
 `sdlc:in-progress`), re-adds `sdlc:goal` if it is missing, moves the card back to Ready on a board
 repository, and posts a comment naming the closed blocker(s). A label never changes silently. A goal
 naming several blockers waits for all of them, and one with no machine-detectable reference is left
@@ -2029,6 +2029,9 @@ If the file is absent or unreadable, the core uses the repository's own config. 
 specifies a locked policy, that value overrides the local config. If the member's access is
 revoked, the core refuses to merge or open a PR.
 
+The managed-settings file is advisory against anyone with write access to the checkout: they can edit
+or delete it, and deleting it falls back to the local config.
+
 This feature is opt-in and requires something that writes that file. Repositories without one have
 no managed-settings file and behave identically to the public default.
 
@@ -2136,7 +2139,7 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   install nothing either way.
 - **Dev/test:** `pip install pytest`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs the full
   suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1 quality
-  gate** (`evals/run.py`) — on every push/PR, on Python 3.10 + 3.12. CI measures **no** code coverage
+  gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. CI measures **no** code coverage
   today (no `--cov` run, no minimum); adding one is issue #194.
 
 ## Contributing, support and security
