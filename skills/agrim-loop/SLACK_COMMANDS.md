@@ -329,6 +329,12 @@ applies here verbatim**: a sleeping MACHINE stops the Socket Mode connection exa
 everything else on it, `launchd` included — `KeepAlive` relaunches a crashed *process*, it does not
 wake a sleeping *machine*.
 
+**The launchd log is yours to reclaim.** `slack-commands.launchd.log` is written by launchd, not by Sigma, and
+Sigma never rotates or prunes it; it repeats every line the listener logs. `slack-commands.log` (rotated at a size cap, three
+predecessors kept) already carries them, so if you do not need raw stderr, point both paths at `/dev/null`; otherwise `launchctl
+unload` the plist, delete or truncate the file, and load it again when it grows. See
+`docs/launch/b6-slack-supervisor-logs.md`.
+
 **Linux — `systemd` (user unit).** Save as
 `~/.config/systemd/user/sigma-slack-commands.service`:
 

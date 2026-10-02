@@ -1,0 +1,37 @@
+[
+  {
+    "pattern": ".sdlc/state/slack-commands.log",
+    "issue": "#460",
+    "decision": "capped",
+    "pruner_or_cap": "logroll.rotate: rolls the file to .1-.3 when it reaches its cap, before each append (cap = min(1 MiB, max(free disk / 100, 64 KiB)), so at most 4 x cap on disk); atomic os.replace, one rotator at a time, never loses the line being written; writer slack_commands_listen._log, scrubbed",
+    "evidence": "tests/test_log_rotation.py (listener node and the seam nodes); measurements, ownership and recovery in docs/launch/b6-slack-supervisor-logs.md"
+  },
+  {
+    "pattern": ".sdlc/state/supervisor.log",
+    "issue": "#460",
+    "decision": "capped",
+    "pruner_or_cap": "logroll.rotate: rolls the file to .1-.3 when it reaches its cap, before each append (cap = min(1 MiB, max(free disk / 100, 64 KiB)), so at most 4 x cap on disk); atomic os.replace, one rotator at a time, never loses the line being written; writers supervise_daemon._append and the per-session copy of run.out, which is itself bounded to the cap (tail kept)",
+    "evidence": "tests/test_log_rotation.py (supervisor nodes and the seam nodes); measurements, ownership and recovery in docs/launch/b6-slack-supervisor-logs.md"
+  },
+  {
+    "pattern": ".sdlc/state/supervisor.run.out",
+    "issue": "#460",
+    "decision": "bounded by truncation (not cumulative)",
+    "pruner_or_cap": "none needed: opened \"wb\" for every session, so it holds one session's output; ceiling is that one session, not measured",
+    "evidence": "tests/test_b6_460.py::test_truncated runs the real supervisor for 4 sessions and checks the size; see docs/launch/b6-slack-supervisor-logs.md"
+  },
+  {
+    "pattern": ".sdlc/state/supervisor.tail",
+    "issue": "#460",
+    "decision": "bounded by truncation (not cumulative)",
+    "pruner_or_cap": "none needed: rewritten whole every session with the last 50 lines of run.out",
+    "evidence": "tests/test_b6_460.py::test_truncated (50 lines after 4 sessions); see docs/launch/b6-slack-supervisor-logs.md"
+  },
+  {
+    "pattern": ".sdlc/state/slack-commands.launchd.log</string>",
+    "issue": "#460",
+    "decision": "intentionally unbounded (written by the host service manager, not by Sigma)",
+    "pruner_or_cap": "none by decision: the path appears only inside the operator's own launchd plist (StandardOutPath/StandardErrorPath in SLACK_COMMANDS.md); launchd writes it, so Sigma neither rotates nor prunes it; ceiling and who reclaims it in docs/launch/b6-slack-supervisor-logs.md",
+    "evidence": "tests/test_b6_460.py::test_host_owned (no Sigma source writes that name); ownership, ceiling and reclaim owner in docs/launch/b6-slack-supervisor-logs.md"
+  }
+]

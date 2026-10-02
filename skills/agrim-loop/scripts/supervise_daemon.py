@@ -90,6 +90,18 @@ def _load_legacy():
     return module
 
 
+def _load_logroll():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "logroll", pathlib.Path(__file__).resolve().parent / "logroll.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: #460: size-capped rotation for supervisor.log.
+logroll = _load_logroll()
+
 #: #239: operator env vars may still carry the plugin's previous prefix (`SIGMA_RUN_ID` never does).
 legacy = _load_legacy()
 
@@ -154,10 +166,7 @@ def _append(path, text):
     that needs bash's `cat ... >> "$LOG" 2>/dev/null || true` (item 13) tolerance
     wraps ITS OWN read/write in a try/except OSError explicitly, rather than this
     helper swallowing failures for every caller silently."""
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(text)
-        if not text.endswith("\n"):
-            f.write("\n")
+    logroll.append(path, text if text.endswith("\n") else text + "\n")
 
 
 def _warn_unwritable_once(warned, key, message):
@@ -192,6 +201,18 @@ def _log_and_print(path, line, warned):
     except OSError as exc:
         _warn_unwritable_once(warned, str(path), f"supervisor: cannot write {path} ({exc}) — continuing without it")
     print(line)
+
+
+def _bounded_copy(content, cap):
+    """What of one session's output goes into `supervisor.log` (#460): all of it when it fits the
+    log's cap, else its last `cap` BYTES (an error is the last thing a crashing session prints; a
+    byte trim, so multi-byte text cannot exceed the cap) behind a one-line marker. Without this one
+    long session could write far past the cap in a single append."""
+    raw = content.encode("utf-8", errors="replace")
+    if len(raw) <= cap:
+        return content
+    return ("supervisor: session output truncated to its last %d of %d bytes\n%s"
+            % (cap, len(raw), raw[-cap:].decode("utf-8", errors="ignore")))
 
 
 def _pause(seconds):
@@ -408,8 +429,7 @@ def main(argv):
         # once on OSError rather than swallowing it completely, matching that asymmetry.
         try:
             content = runout.read_text(errors="replace")
-            with open(log, "a", encoding="utf-8") as f:
-                f.write(content)
+            logroll.append(log, _bounded_copy(content, logroll.cap_bytes(log.parent)))
         except OSError as exc:
             _warn_unwritable_once(warned, str(log), f"supervisor: cannot write {log} ({exc}) — continuing without it")
 

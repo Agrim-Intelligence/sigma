@@ -649,6 +649,30 @@
       "risk": "high"
     },
     {
+      "path": "skills/agrim-loop/scripts/logroll.py",
+      "function": "_acquire",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "log rotation lock only: removes a `<log>.rotating` lock file older than 60 s, left by a crashed rotator; never a log; best-effort, never raises",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/logroll.py",
+      "function": "_move",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "log rotation only: one os.replace of a caller-named log to its own `.N` predecessor in the same directory; atomic, the oldest generation is overwritten by design; best-effort, never raises",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/logroll.py",
+      "function": "rotate",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "log rotation lock only: releases the `<log>.rotating` lock this call took; never a log; best-effort, never raises",
+      "risk": "medium"
+    },
+    {
       "path": "skills/agrim-loop/scripts/loop.py",
       "function": "_end_if_owner",
       "rule": "fs-remove",
