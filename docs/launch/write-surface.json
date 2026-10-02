@@ -833,6 +833,30 @@
       "risk": "medium"
     },
     {
+      "path": "skills/agrim-loop/scripts/managed_settings.py",
+      "function": "record_enrolment",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "enrolment marker: unique tmp file renamed over (os.replace) or cleaned up; written only after a valid policy file was parsed, best-effort, never raises",
+      "risk": "low"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/managed_settings.py",
+      "function": "record_enrolment",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "enrolment marker (state dir and git dir), written once after a valid policy file was parsed; local, no network",
+      "risk": "low"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/managed_settings.py",
+      "function": "unenroll",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run `managed_settings.py unenroll`: removes only the enrolment markers; local, idempotent",
+      "risk": "low"
+    },
+    {
       "path": "skills/agrim-loop/scripts/merge_observation.py",
       "function": "materialize_snapshot",
       "rule": "fs-write",

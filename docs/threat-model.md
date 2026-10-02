@@ -24,7 +24,7 @@ risk has been eliminated.
 | T3 | Host hooks execute at prompts and tool calls: `hooks/hooks.json:3`, repo adoption is checked by `hooks/agrim_gate.sh:20`, and session-start's watcher/doctor diagnostic layer begins at `hooks/session_start.sh:131`. |
 | T4 | Network destinations are GitHub, Slack, a configured webhook, SMTP, and the host's model process, enumerated in `docs/privacy.md:9`. |
 | T5 | Background boundaries include detached watcher startup `skills/agrim-loop/scripts/loop.py:75`, the watcher loop `skills/agrim-loop/scripts/watch_daemon.py:906`, Slack listener lifecycle `skills/agrim-loop/scripts/slack_commands_listen.py:757`, and model subprocesses `skills/agrim-loop/scripts/autowatch.py:915`. |
-| T6 | Local policy comes from managed settings `skills/agrim-loop/scripts/managed_settings.py:112` and the direct-edit sentinel is described in `docs/enforcement.md:54`. |
+| T6 | Local policy comes from managed settings `skills/agrim-loop/scripts/managed_settings.py:237` and the direct-edit sentinel is described in `docs/enforcement.md:54`. |
 | T7 | Model-spawned sessions include `skills/agrim-loop/scripts/feature_judge.py:155`, `skills/agrim-loop/scripts/autowatch.py:915`, and `skills/agrim-loop/scripts/supervise_daemon.py:1`. |
 
 ## Threats and current mitigations
@@ -47,7 +47,7 @@ and E (elevation of privilege).
 | TM-08 | T5 | Stale watcher appears idle (D) | A dead watcher reports no errors and is mistaken for an idle one. | `hooks/session_start.sh:131` | med | — |
 | TM-09 | T5 | Listener cleanup omission (D) | SIGTERM or SIGHUP leaves Slack pid, heartbeat, and lock markers, preventing restart. | none | med | #424 |
 | TM-10 | T5 | Orphaned model descendant (D) | A timed-out, signalled, or SIGKILLed autowatch tick leaves a model descendant running. Residual: a descendant that calls `setsid` itself escapes the group, and a SIGKILL of the lifeline sentinel removes the backstop for a later SIGKILL of the tick. | `skills/agrim-loop/scripts/autowatch.py:772` terminates the driven session's whole process group (SIGTERM, grace, SIGKILL), a lifeline sentinel repeats that if the tick dies, and hosts without process groups refuse | low | #425 |
-| TM-11 | T6 | Managed-policy deletion (T) | Removing the file makes an enrolled checkout read as unadopted. | none | high | #423 |
+| TM-11 | T6 | Managed-policy deletion (T) | Removing the file makes an enrolled checkout read as unadopted. | `skills/agrim-loop/scripts/managed_settings.py:237` refuses an enrolled checkout whose file is gone, via markers outside the file. Residual: a checkout writer who also deletes the markers or runs `unenroll` is not bound (README, Managed settings) | med | — |
 | TM-12 | T6 | Direct-edit bypass (T) | A local sentinel bypasses a hard plan gate when the key is not organization-locked. | `docs/enforcement.md:54` | med | — |
 | TM-13 | T7 | Unbounded model spend (D) | A spawned model process spends beyond a sensible per-invocation budget. | `skills/agrim-loop/scripts/feature_judge.py:167` | low | — |
 | TM-14 | T7 | Unsafe Slack merge (E) | `--unsafe-merge` removes interactive confirmation from a merge request. | `skills/agrim-loop/scripts/slack_commands_listen.py:1353` | med | — |
