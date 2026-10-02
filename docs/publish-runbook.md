@@ -1,7 +1,8 @@
 # The publish runbook: private references
 
-Before this repository's visibility flips to public, no issue, pull request, comment, review or
-release text in it may name or link the private repository it grew out of. `tools/leak_refs.py`
+Before a fresh public snapshot repository is published, no issue, pull request, comment, review or
+release text copied into it may name or link the private repository it grew out of. The private
+repository stays private; its visibility does not flip. `tools/leak_refs.py`
 (issue 282) finds every such reference, plans a neutral rewrite of the ones it can safely edit, and
 lists the rest for the owner. It is run by hand, by the owner, attended; no loop runs it.
 
@@ -133,7 +134,7 @@ second apart, at most 400 per run (`--max-writes`); a rate limit is retried afte
 `Retry-After` (at most 300 seconds, at most 3 times). A re-run after a crash or a lost reply skips
 what already landed. There is no revert, on purpose: the before-text is the leak.
 
-## Before the visibility flip: private references
+## Before public-snapshot publication: private references
 
 OWNER RUNBOOK. Run by the owner, attended, from the root of a current checkout.
 
