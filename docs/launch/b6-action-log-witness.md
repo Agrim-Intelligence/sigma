@@ -53,11 +53,21 @@ configuration root, and the pruner never reaches one; it unlinks only those two 
 ## What a prune must not break
 
 Readers: `log.py` active/slots/status (a goal is live unless its newest code-written row is
-`recorded`), `work._branch_base_from_log` (a restarted goal's original base; absent, it falls back to
-the configured base), `triage.py` (parked reason, open goals only), `doctor.py` dispatch compliance
+`recorded`), `work._branch_base_from_log` (a restarted goal's original base; with the log pruned, `work.start`
+falls back to the branch's upstream and then the configured base, and in a repo that has adopted feature
+units it can refuse the restart loudly, naming a remedy: accepted for an issue reopened more than a window
+after `done`), `triage.py` (parked reason, open goals only), `doctor.py` dispatch compliance
 (30-day window), and `witness.verdict` / `red_green.py` (consulted while a goal is live). The log is a
 local best-effort status cache, not the audit record: the durable record is the ledger/journal events,
 the PR, and the committed `.sdlc/` artifacts.
+
+## Resolved rows
+
+Documented gesture from `growth-audit.md`, run in a scratch copy so the committed snapshot is untouched:
+`python3 tools/readiness/growth_audit.py . --measure-sdlc --b6-issue 419 --json docs/launch/growth-audit.json`.
+With `dispositions/457.json` present, none of the seven `.sdlc/state/log*` and `.sdlc/state/witness*`
+patterns is in `b6_disposition.unresolved_patterns` (all seven were before), and each of their
+`store_measurements` rows reads `source-proven prune`.
 
 ## The pruner
 

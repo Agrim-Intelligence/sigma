@@ -102,3 +102,18 @@ def test_a_recent_last_row_keeps_a_log_whose_mtime_is_old(tmp_path):
     res = r.prune_closed_goal_streams(str(d))
     assert res["removed"] == [] and res["kept"]["7"] == "inside the retention window", res
     assert log.exists() and wit.exists()
+
+
+def test_a_fresh_file_inside_an_old_agent_marker_directory_keeps_the_goal(tmp_path):
+    """The directory's own mtime stays old when a child is rewritten in place; its children count."""
+    r = _retention()
+    d, log, wit = _goal(tmp_path)
+    agents = d / "state" / "agents" / "7"
+    agents.mkdir(parents=True)
+    child = agents / "main.json"
+    child.write_text("{}")
+    os.utime(agents, (OLD, OLD))                             # old directory, fresh child
+    res = r.prune_closed_goal_streams(str(d))
+    assert res["removed"] == [], res
+    assert res["kept"]["7"].startswith("fresh owner marker"), res
+    assert log.exists() and wit.exists()
