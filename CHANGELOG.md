@@ -36,6 +36,49 @@ All notable changes to Sigma are recorded here, newest first.
   available yet, so no pin or rollback gesture is claimed. The publish runbook
   now describes fresh-public-snapshot publication rather than a visibility flip.
 
+- **The launch GO/NO-GO rule and the `launch:blocker` classes are pre-registered, with a checker
+  that computes the verdict from `main` alone** (#331, #429). `docs/launch/decision-rule.md` fixes
+  the eight blocker classes (B1–B8; everything else is `launch:next`), the promote/demote rules,
+  which dimensions gate (D12 Market is informational and blocks only through B3), and the rule: GO
+  only when every gating dimension scores >= 3 with evidence, no open issue carries
+  `launch:blocker`, `docs/launch/definition.json` is signed, and the named benchmark results file
+  is on `main`. Its status is Proposed: the owner's merge is the sign-off.
+  `docs/launch/scorecard.json` is the unscored skeleton. `tools/readiness/decide.py <repo_root>
+  [--blockers-json PATH] [--repo OWNER/NAME]` (stdlib only) prints one line per reason, `info:`
+  lines and `GO`/`NO-GO`; exit 0 GO, 1 NO-GO, 2 refused or malformed (`decide.py: REFUSED:` /
+  `decide.py: MALFORMED:` on stderr, nothing on stdout), `--help` and usage errors included. The
+  gating set is pinned in the checker, so a scorecard that flips a `gating` flag, drops, adds or
+  renames a dimension or carries an unknown key is refused, not re-weighted; a missing definition
+  is NO-GO (`definition missing`); a blocker list that cannot be read is exit 2, never "zero
+  blockers"; open blockers are read with one read-only REST call (`gh api ... --paginate`), pull
+  requests dropped. The verdict is read from `main` and the live REST list (#429): the scorecard,
+  the definition, every evidence path and the benchmark file are read from the one commit
+  `refs/remotes/origin/main` names (that exact ref, read once; a symbolic one is refused), never
+  from the working tree; every git call drops every inherited `GIT_*` variable and switches off
+  global and system config, replace refs, lazy fetch, every built-in transport and (with `-c
+  core.commitGraph=false`) the commit-graph file; every `gh` call drops every `GIT_*` variable,
+  `GH_REPO`, `GH_HOST`, `GH_FORCE_TTY` and `CLICOLOR_FORCE` and pins `GH_PAGER` and `PAGER` empty
+  and `NO_COLOR=1`, so a forced terminal cannot run `gh api` output through a pager (measured with
+  gh 2.98.0); without `--repo` the blocker repository is `origin`'s URL as the checkout's own
+  config writes it (no `insteadOf`), and with `--repo` it must be that repository when `origin`
+  names one (else refused, so a same-commit fork cannot stand in) and is the operator's stated
+  assertion when `origin` cannot name one; the
+  live run refuses a `gh` that sends its requests to an `http_unix_socket` and a checkout whose
+  `main` is not the commit REST reports (`git fetch origin`, then rerun); an offline
+  `--blockers-json` run is never GO, because a file cannot show that no blocker is open; a missing,
+  symbolic or unreadable `main` is refused (exit 2) instead of a verdict; git older than 2.32 is
+  refused. CI runs it on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python
+  3.12; Python 3.9 was measured by hand, not CI-proven. It refuses to run on Windows (exit 2). Each
+  of #429's seven defects and the two pre-PR review findings (a `GH_FORCE_TTY` pager forging the
+  REST reads, a same-commit fork passed as `--repo`) has a test seen red on the #331 checker and
+  green on this one, every guard was broken once and its test seen red, and what the checker still
+  trusts without defending — the checker file, the `python3`, `git` and `gh` on `PATH` and the
+  interpreter's environment, the whole `.git` directory, `gh`'s config directory and credentials,
+  network proxies and certificate authorities and their variables, and `--repo` when `origin`
+  cannot name the repository — is stated on the page; the controls and gesture transcripts are in
+  `docs/launch/evidence/429-controls.md`. Process rules the checker cannot see (a blocker names
+  its class; removing the label is a demotion) are listed under their own heading.
+
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
