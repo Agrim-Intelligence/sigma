@@ -389,3 +389,18 @@ def test_an_agent_check_that_raises_counts_as_alive(sdlc):
         raise RuntimeError("cannot tell")
     out = mod.sweep(sdlc, agent_alive=boom)
     assert all(p.exists() for p in made) and out["kept"].get("live-agent") == 1
+
+
+def test_a_symlinked_agents_directory_is_never_followed_or_deleted_through(sdlc, tmp_path):
+    mod = _module()
+    _done(sdlc, "72")
+    made = _files(sdlc, "72")
+    outside = tmp_path / "outside-agents"
+    (outside / "72").mkdir(parents=True)
+    marker, precious = outside / "72" / "main.active", outside / "72" / "precious.txt"
+    marker.write_text("1")
+    precious.write_text("keep")
+    (sdlc / "state" / "agents").symlink_to(outside, target_is_directory=True)
+    mod.sweep(sdlc, agent_alive=lambda *a, **k: ("dead", None))
+    assert marker.exists() and precious.exists() and (outside / "72").is_dir()
+    assert all(p.exists() for p in made)        # an agents dir we cannot trust keeps the goal

@@ -108,6 +108,8 @@ def _terminal_stamp(log_path, internal_kinds):
 
 def _agents_dir_dead(sdlc_dir, stem, config, agent_alive):
     """True when no thread marker under state/agents/<stem>/ is alive or of unknown standing."""
+    if (pathlib.Path(sdlc_dir) / "state" / "agents").is_symlink():
+        return False                              # a redirected markers root cannot be trusted
     d = pathlib.Path(sdlc_dir) / "state" / "agents" / stem
     threads = sorted(p.stem for p in d.glob("*.active")) if _real_dir(d) else []
     for thread in threads:
