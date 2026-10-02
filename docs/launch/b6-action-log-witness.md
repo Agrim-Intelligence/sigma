@@ -73,7 +73,7 @@ A goal's two streams are removed only when all hold: its newest code-written log
 forge one) is `recorded` with `result: done`; both files are older than the window by mtime and by last
 row timestamp; no owner marker (`claims/<g>.claimed`, `agents/<g>/`, `work/<g>.json`,
 `phase/<g>.json`, `.sdlc/work/<g>`) was touched inside the window; and, with `work` enabled, no goal
-branch (local or remote) survives (one `git for-each-ref` per sweep; if it fails, nothing is pruned). Parked, failed, awaiting-merge,
+branch (local, or on the configured remote only) survives (one `git for-each-ref` per sweep; if it fails, nothing is pruned). Parked, failed, awaiting-merge,
 re-claimed and never-recorded goals are never touched. A goal reopened but not yet re-claimed is
 judged by its last row (done), so it is prunable past the window once its branch is gone; nothing in
 the pruned files is needed to start it again, because a fresh cut resolves its base normally. A witness file with no log is kept.

@@ -20,7 +20,7 @@ def _iso(t):
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + ".000Z"
 
 
-def _repo(tmp_path, work=True, git=True):
+def _repo(tmp_path, work=True, git=True, **work_extra):
     if git:
         subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=a@b", "-c", "user.name=x",
@@ -28,7 +28,7 @@ def _repo(tmp_path, work=True, git=True):
     d = tmp_path / ".sdlc"
     (d / "state" / "log").mkdir(parents=True)
     (d / "state" / "witness").mkdir(parents=True)
-    (d / "config.json").write_text(json.dumps({"work": {"enabled": work}}))
+    (d / "config.json").write_text(json.dumps({"work": {"enabled": work, **work_extra}}))
     return d
 
 
@@ -87,3 +87,23 @@ def test_work_off_has_no_branch_to_wait_for(tmp_path):
     r = _run(d)
     assert r.returncode == 0, r.stderr
     assert "removed 605" in r.stdout and not log.exists()
+
+
+def test_custom_prefix_without_a_slash_still_protects_the_log(tmp_path):
+    """`git for-each-ref refs/heads/goal-` matches nothing, so the prefix must be filtered in Python."""
+    d = _repo(tmp_path, branch_prefix="goal-")
+    log = _goal(d, "606")
+    subprocess.run(["git", "-C", str(tmp_path), "branch", "goal-606"], check=True)
+    r = _run(d)
+    assert r.returncode == 0, r.stderr
+    assert "kept 606" in r.stdout and log.exists()
+
+
+def test_custom_remote_is_the_one_consulted(tmp_path):
+    d = _repo(tmp_path, remote="upstream")
+    log = _goal(d, "607")
+    subprocess.run(["git", "-C", str(tmp_path), "update-ref", "refs/remotes/upstream/sdlc/607", "HEAD"],
+                   check=True)
+    r = _run(d)
+    assert r.returncode == 0, r.stderr
+    assert "kept 607" in r.stdout and log.exists()

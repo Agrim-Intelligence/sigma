@@ -27,7 +27,8 @@ A goal's streams are removed only when ALL of these hold (otherwise the goal is 
   4. with `work.enabled`, no `<branch_prefix><g>` branch survives, locally or on the remote:
      `work.start` reads a restarted goal's original base from this log when the branch outlived its
      work record, so the log of a goal whose branch still exists is still needed. The branches are
-     read once per sweep (`git for-each-ref`); if that read fails nothing is pruned.
+     read once per sweep (`git for-each-ref`, filtered in Python so any `branch_prefix` works), for the
+     configured remote only; if that read fails nothing is pruned.
 
 Window: `action_log.retention_days`, default 90, floored at 30 (the doctor's dispatch-compliance
 window reads these logs for 30 days). `false` disables. One sweep removes at most `limit` goals
@@ -139,7 +140,8 @@ def _goal_branches(sdlc, config):
     try:
         proc = subprocess.run(
             ["git", "-C", str(sdlc.resolve().parent), "for-each-ref", "--format=%(refname)",
-             f"refs/heads/{prefix}", f"refs/remotes/{remote}/{prefix}"],
+             "refs/heads", f"refs/remotes/{remote}"],      # no prefix pattern: for-each-ref only
+                                                           # matches whole path components
             capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
