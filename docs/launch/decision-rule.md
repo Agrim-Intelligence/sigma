@@ -187,7 +187,7 @@ system config, a replace ref or a partial clone's lazy fetch cannot change what 
 partial clone, a blob that is not local is refused, never fetched. Global config being off also
 switches off a global `safe.directory`, so a checkout owned by another user is refused (`detected dubious ownership`).
 git older than 2.32 ignores `GIT_CONFIG_GLOBAL`, so it is refused; that includes hosts that ship an
-older git (Debian 11 ships 2.30). git 2.39.5 and 2.55.0 honour `GIT_NO_LAZY_FETCH` (measured);
+older git (Debian 11 ships 2.30). git 2.39.5 and git 2.55.0 honour `GIT_NO_LAZY_FETCH` (measured);
 2.32–2.38 were not measured, and on a git that ignores it, lazy-fetch prevention rests on the
 protocol pins alone. A remote helper's own `protocol.<name>.allow` is not pinned, so a local
 `always` for it falls to the trust placed in the checkout's `.git` directory, below.

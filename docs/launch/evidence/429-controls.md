@@ -10,8 +10,8 @@ file is byte-identical to the one measured.
 |---|---|
 | `origin/main` when measured (the base) | `a3c913c95803a360d7f4882ab1762d6adfe2faf8` |
 | blob `tools/readiness/decide.py` | `92e5ed09b848f56b4ed88e56cd48ba01f79f0c43` |
-| blob `tests/test_readiness_decide.py` | `0a6c350b9f7933d56523b8922f51084664f6496e` |
-| blob `docs/launch/decision-rule.md` | `42445524361f22f45686fc02cab664af5dd1fa88` |
+| blob `tests/test_readiness_decide.py` | `75192637d5566582008af384b9b00b382585c3b8` |
+| blob `docs/launch/decision-rule.md` | `f5162f7222abcb83c35c3c6c059989dc363fde1d` |
 | blob `docs/launch/scorecard.json` | `a9642c419a1aece5078c43a109b8e87bfc90400f` |
 
 Check a commit with:
@@ -23,9 +23,15 @@ git rev-parse <commit>:tools/readiness/decide.py <commit>:tests/test_readiness_d
 
 If any id differs, what was merged is not what was measured: rerun the gestures and the controls.
 
+After the measurements, two edits changed bytes but not behaviour, so the ids above are the final
+ones: the test file's placeholder token became a named constant built from two literals (the commit
+gate's credential-assignment scan), and the page and this record name the program before each
+version string (`tests/test_readme_first_run.py`'s release-name guard). The full test file was rerun
+green and every planned node rerun red on the #331 checker after both edits.
+
 Measured 2026-10-02 on macOS (Darwin 25.6), branch `sdlc/429`. Python: the system `python3`
-3.9.6 and 3.12.13. git: the one `PATH` resolves first is Homebrew's 2.55.0 (CI's legs also run
-2.55.0); the whole test file was also run once with Apple's 2.39.5 first on `PATH`. gh 2.98.0, only
+Python 3.9.6 and Python 3.12.13. git: the one `PATH` resolves first is Homebrew's git 2.55.0 (CI's legs also run
+git 2.55.0); the whole test file was also run once with Apple's git 2.39.5 first on `PATH`. gh 2.98.0, only
 for its `config get` behaviour (unset prints nothing, exit 0; set prints the path; unreadable YAML
 exits 1) and, for the pre-PR review's B1, for read-only REST GETs (`repos/cli/cli/git/ref/heads/trunk`
 and this repository's own `main` and issue list; nothing was written to GitHub); every test and the
@@ -43,26 +49,26 @@ average near 40:
 
 | Python | git | Result | Wall time |
 |---|---|---|---|
-| 3.9.6 | 2.55.0 | 269 passed | 157 s |
-| 3.12.13 | 2.55.0 | 269 passed | 125 s |
+| Python 3.9.6 | git 2.55.0 | 269 passed | 157 s |
+| Python 3.12.13 | git 2.55.0 | 269 passed | 125 s |
 
 Before those fixes (git 2.39.5 was not re-run after them):
 
 | Python | git | Result | Wall time |
 |---|---|---|---|
-| 3.9.6 | 2.55.0 | 259 passed | 50 s; 150 s at a load average near 30 |
-| 3.9.6 | 2.39.5 | 259 passed | 149 s at a load average near 30 (no quiet run) |
-| 3.12.13 | 2.55.0 | 259 passed | 48 s (258 tests, before the last regression test was added); 120 s at a load average of 15 |
-| 3.12.13 | 2.39.5 | 259 passed | 81 s at a load average near 30 (no quiet run) |
+| Python 3.9.6 | git 2.55.0 | 259 passed | 50 s; 150 s at a load average near 30 |
+| Python 3.9.6 | git 2.39.5 | 259 passed | 149 s at a load average near 30 (no quiet run) |
+| Python 3.12.13 | git 2.55.0 | 259 passed | 48 s (258 tests, before the last regression test was added); 120 s at a load average of 15 |
+| Python 3.12.13 | git 2.39.5 | 259 passed | 81 s at a load average near 30 (no quiet run) |
 
 The 23 tests the plan names (69 nodes with their parameters) were each seen fail
 by assertion on the #331 checker (`origin/sdlc/331`'s `tools/readiness/decide.py`, the test file
-unchanged) and pass on this one: against the #331 checker, 69 failed by assertion on 3.9.6 and
-69 failed by assertion on 3.12.13 (no error, no skip); against this one, 69 passed
+unchanged) and pass on this one: against the #331 checker, 69 failed by assertion on Python 3.9.6 and
+69 failed by assertion on Python 3.12.13 (no error, no skip); against this one, 69 passed
 and 69 passed. The run is red_green.py's own invocation (`python3 -m pytest -q -rA
 --tb=short --color=no`) with `COLUMNS=300`: at pytest's default 80 columns a piped run drops the
 failure reason from summary lines this long. Re-run with the final test file after the pre-PR
-review fixes: 69 failed, all by `AssertionError`, on 3.9.6 and on 3.12.13; the 10 nodes added for
+review fixes: 69 failed, all by `AssertionError`, on Python 3.9.6 and on Python 3.12.13; the 10 nodes added for
 those fixes also fail, all by `AssertionError`, on the #331 checker and on the reviewed checker.
 
 ## The seven defects
@@ -384,9 +390,9 @@ on stdout and no `gh` call (measured with a recording `gh` stub first on `PATH`)
 
 Each guard was broken once in a copy of `tools/readiness/decide.py` (one breakage at a time, in a
 scratch tree holding the unchanged test file and docs), and all of `tests/test_readiness_decide.py`
-was run on 3.9.6 and 3.12.13. "red" means the run failed AND every test the row names failed.
+was run on Python 3.9.6 and Python 3.12.13. "red" means the run failed AND every test the row names failed.
 
-| Breakage (one at a time) | Must go red | 3.9.6 | 3.12.13 |
+| Breakage (one at a time) | Must go red | Python 3.9.6 | Python 3.12.13 |
 |---|---|---|---|
 | `GIT_*` scrub: `_git_env` keeps `os.environ` | `test_inherited_git_dir_cannot_redirect_main`, `test_documented_gesture_ignores_an_inherited_git_dir`, `test_git_environment_or_config_cannot_redirect_the_blocker_read[git-dir]`, `test_every_git_call_is_scrubbed_pinned_and_config_free`, `test_inherited_git_trace_writes_nothing` | red, 7 failed | red, 7 failed |
 | `GIT_*` scrub and raw URL: both breakages at once | `test_git_environment_or_config_cannot_redirect_the_blocker_read[config-count]`, `test_git_environment_or_config_cannot_redirect_the_blocker_read[config-parameters]` | red, 11 failed | red, 11 failed |
@@ -425,7 +431,7 @@ The two tables above were run on the checker the pre-PR review saw; its fixes do
 guards. The fixes' own guards, broken the same way (one breakage at a time, the whole final test
 file):
 
-| Breakage (one at a time) | Must go red | 3.9.6 | 3.12.13 |
+| Breakage (one at a time) | Must go red | Python 3.9.6 | Python 3.12.13 |
 |---|---|---|---|
 | gh: GH_FORCE_TTY kept | `test_no_gh_call_can_be_paged_or_coloured` | red, 1 failed | red, 1 failed |
 | gh: CLICOLOR_FORCE kept | `test_no_gh_call_can_be_paged_or_coloured` | red, 1 failed | red, 1 failed |
@@ -441,7 +447,7 @@ file):
 
 #331's controls, re-run on this checker (the acceptance control first):
 
-| #331 control, re-run on this checker | Must go red | 3.9.6 | 3.12.13 |
+| #331 control, re-run on this checker | Must go red | Python 3.9.6 | Python 3.12.13 |
 |---|---|---|---|
 | #331 acceptance: blockers list ignored | `test_one_open_blocker_is_nogo_naming_its_number`, `test_bad_blocker_list_is_malformed`, `test_blocker_entry_of_the_wrong_shape_is_malformed`, `test_blocker_state_matches_case_insensitively`, `test_blocker_with_unknown_or_missing_state_is_malformed`, `test_gh_path_uses_rest_paginated_and_decodes_every_page` | red, 27 failed | red, 27 failed |
 | #331 evidence validity skipped | `test_evidence_entry_that_is_not_a_link_is_nogo_naming_it`, `test_empty_evidence_file_is_nogo`, `test_one_bad_entry_beside_a_good_one_is_still_nogo`, `test_untracked_evidence_file_is_nogo`, `test_symlink_evidence_escaping_the_repo_is_nogo`, `test_directory_evidence_is_not_a_file` | red, 26 failed | red, 26 failed |
@@ -486,7 +492,7 @@ read: `test_working_tree_is_never_read`, and a committed symlink is not a regula
 ## Not measured
 
 - A real git older than 2.32 (the test stubs `git --version`), and whether git 2.32–2.38 honour
-  `GIT_NO_LAZY_FETCH` (2.39.5 and 2.55.0 do; on a git that does not, the protocol pins alone stop
+  `GIT_NO_LAZY_FETCH` (git 2.39.5 and git 2.55.0 do; on a git that does not, the protocol pins alone stop
   a lazy fetch).
 - A checkout really owned by another user: the test sets git's own
   `GIT_TEST_ASSUME_DIFFERENT_OWNER` through a stub `git`.
