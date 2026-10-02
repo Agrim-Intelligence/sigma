@@ -365,7 +365,8 @@ def test_control_a_public_header_with_a_blank_line_cannot_exempt_a_key_body(tmp_
 
 
 def test_a_public_certificate_body_and_hash_lists_are_not_key_bodies(tmp_path):
-    cert = "-----BEGIN CERTIFICATE-----\n" + _KEY_BODY + "-----END CERTIFICATE-----"
+    cert_body = _KEY_BODY.replace("MIIEpAIBAAKCAQEA", "MIIDdzCCAl+gAwIB", 1)   # a certificate's DER header, not PKCS1's
+    cert = "-----BEGIN CERTIFICATE-----\n" + cert_body + "-----END CERTIFICATE-----"
     shas = "\n".join(["0123456789abcdef0123456789abcdef01234567"] * 4)
     proc = _run(_scratch(tmp_path, cert + "\n" + shas))
     assert proc.returncode == 0, proc.stdout

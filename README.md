@@ -2138,7 +2138,9 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   otherwise the **parity-reviewed portable `agrim-*` executors run the phases**. Never required; you
   install nothing either way.
 - **Dev/test:** `pip install pytest`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs the full
-  suite — including the **leakage gate**, the **hook behavioral-spec**, and the **Tier-1 quality
+  suite — including the **leakage gate** (`tools/leak_scan.py`: home paths, secret shapes,
+  private-key bodies and links into the owner's other repositories; its docstring lists what it
+  cannot see), the **hook behavioral-spec**, and the **Tier-1 quality
   gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. CI measures **no** code coverage
   today (no `--cov` run, no minimum); adding one is issue #194.
 
