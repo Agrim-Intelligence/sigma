@@ -95,8 +95,10 @@ import json
 import os
 import pathlib
 import shlex
+import signal
 import subprocess
 import sys
+import threading
 import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -140,6 +142,15 @@ USD_PER_MILLION_TOKENS_ESTIMATE = 10.0
 #: `_parse_total_cost_usd` recovers this run's own reported cost for the spend ceiling.
 DEFAULT_DRIVE_CMD = "claude -p --output-format json"
 DEFAULT_DRIVE_TIMEOUT_SECONDS = 2 * 3600
+
+#: #425: the escalation when a driven session must be stopped (timeout, or a signal/exception
+#: reaching the tick mid-drive). The driven session runs in a process group of its own; the WHOLE
+#: group gets SIGTERM, then up to `DRIVE_TERM_GRACE_SECONDS` to exit (a model CLI flushing its
+#: transcript needs seconds, not minutes), then SIGKILL, then a drain of its pipes bounded by
+#: `DRIVE_REAP_SECONDS`. Worst case a timed-out call returns timeout + 10s + 5s after it started.
+#: Not machine-derived on purpose: these bound wall-clock waits, not resource use.
+DRIVE_TERM_GRACE_SECONDS = 10
+DRIVE_REAP_SECONDS = 5
 
 
 # --------------------------------------------------------------------------- config
@@ -596,49 +607,350 @@ def _drive_prompt(issue, config=None):
     )
 
 
+#: #425: the refusal `_run_drive` returns (exit 2, and the same line on stderr) on a host where it
+#: cannot start the driven session in a process group of its own and terminate that whole group.
+NO_PROCESS_GROUP_REFUSAL = (
+    "autowatch: REFUSED [no-process-group]: this host cannot run the driven session in a process "
+    "group of its own and terminate the whole group on timeout (POSIX setsid/killpg required; "
+    "Windows is not supported) -- not driving, rather than risk orphaned model processes")
+
+#: Signals that, while a drive is in flight, are trapped in the main thread (a handler set to
+#: SIG_IGN, or one installed outside Python, is left alone). The trap NEVER raises: it records the
+#: signal and the drive loop, which wakes every `DRIVE_POLL_SECONDS`, terminates the model's group.
+#: Afterwards the caller's own handlers are restored and every recorded signal is re-delivered, in
+#: order -- so SIG_DFL still kills the caller, Ctrl-C still raises KeyboardInterrupt, and a
+#: caller's own handler still runs. A handler that raised instead would have a window at every
+#: bytecode boundary in the cleanup in which its exception could escape (three reviews found three).
+#: Off the main thread nothing is trapped (Python runs handlers on the main thread only); the
+#: lifeline sentinel is the backstop there if the process dies.
+_TRAPPED_SIGNALS = ("SIGTERM", "SIGHUP", "SIGINT")
+
+#: How often the drive wait wakes to check for a recorded signal: the worst-case delay between a
+#: signal and the start of the group's termination.
+DRIVE_POLL_SECONDS = 0.25
+
+#: #425 lifeline sentinel. A tiny process in a session of its own, holding only the READ end of a
+#: pipe whose write end exists solely in the process running `_run_drive`. It reads the driven
+#: group's id, then blocks. `done` means the drive ended normally: exit quietly. EOF without it
+#: means the caller is gone -- including by SIGKILL, which no handler can see, and including a
+#: `killpg` of the caller's own group, which no longer reaches the model -- so it does the same
+#: SIGTERM, grace, SIGKILL escalation `_terminate_group` does, against the driven group.
+_LIFELINE_SENTINEL = r"""
+import os, signal, sys, time
+for name in ("SIGINT", "SIGHUP"):
+    signal.signal(getattr(signal, name), signal.SIG_IGN)
+grace = float(sys.argv[1])
+try:
+    pgid = int(sys.stdin.buffer.readline())
+except ValueError:
+    sys.exit(0)
+if sys.stdin.buffer.read().startswith(b"done"):
+    sys.exit(0)
+def alive():
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+try:
+    os.killpg(pgid, signal.SIGTERM)
+except OSError:
+    pass
+deadline = time.monotonic() + grace
+while alive() and time.monotonic() < deadline:
+    time.sleep(0.05)
+if alive():
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        pass
+"""
+
+
+def _process_group_refusal():
+    if sys.platform == "win32" or not hasattr(os, "killpg"):
+        return NO_PROCESS_GROUP_REFUSAL
+    return None
+
+
+def _trap_signals(received, saved):
+    """Install a recording handler for each `_TRAPPED_SIGNALS` member, noting the previous handler
+    in `saved` before replacing it. The handler appends to `received` and returns -- it never
+    raises, so no window exists in which it can break the code it interrupts."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+
+    def handler(signum, _frame):
+        received.append(signum)
+
+    for name in _TRAPPED_SIGNALS:
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        try:
+            previous = signal.getsignal(signum)
+            if previous is None or previous is signal.SIG_IGN:
+                continue
+            saved[signum] = previous
+            signal.signal(signum, handler)
+        except (ValueError, OSError):
+            saved.pop(signum, None)
+    # A caller that restored SIGPIPE's default would otherwise be KILLED by a write to a dead
+    # lifeline sentinel, orphaning the model, instead of getting the documented refusal. Ignored
+    # for the drive only (restored with the rest); children get the default back from Popen's
+    # `restore_signals`. Never recorded or re-delivered.
+    sigpipe = getattr(signal, "SIGPIPE", None)
+    if sigpipe is not None:
+        try:
+            previous = signal.getsignal(sigpipe)
+            if previous is not None and previous is not signal.SIG_IGN:
+                saved[sigpipe] = previous
+                signal.signal(sigpipe, signal.SIG_IGN)
+        except (ValueError, OSError):
+            saved.pop(sigpipe, None)
+
+
+def _restore_and_redeliver(received, saved):
+    """Put the caller's handlers back, then re-deliver every recorded signal once, in arrival
+    order. A delivery may end this process (SIG_DFL) or raise (KeyboardInterrupt) -- that is the
+    caller's own signal semantics, which is the point. Every step runs in a `finally` of the one
+    before it, so a restored handler raising mid-restore (a Ctrl-C landing the instant SIGINT's
+    handler is back) can neither leave our recorder installed nor drop a recorded signal; the
+    recorder, still installed for the not-yet-restored signals, keeps appending meanwhile."""
+    _restore_each(list(saved.items()), received)
+
+
+def _restore_each(items, received):
+    if not items:
+        seen = []
+        for signum in received:
+            if signum not in seen:
+                seen.append(signum)
+        _deliver_each(seen)
+        return
+    signum, previous = items[0]
+    try:
+        try:
+            signal.signal(signum, previous)
+        except (ValueError, OSError):
+            pass
+    finally:
+        _restore_each(items[1:], received)
+
+
+def _deliver_each(signums):
+    """Deliver each signal even if an earlier delivery raises (KeyboardInterrupt, a caller
+    handler's SystemExit): every later one is sent from a `finally`, so the first raise
+    propagates only after the rest have been delivered."""
+    if not signums:
+        return
+    try:
+        os.kill(os.getpid(), signums[0])
+    finally:
+        _deliver_each(signums[1:])
+
+
+def _group_alive(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _signal_group(pgid, signum):
+    try:
+        os.killpg(pgid, signum)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _terminate_group(proc):
+    """#425: stop the driven session AND everything it started, then reap. The session was started
+    with `start_new_session=True`, so its pid is its process-group id and every descendant that did
+    not itself call setsid shares it. Escalation: SIGTERM to the group; drain the pipes and wait up
+    to `DRIVE_TERM_GRACE_SECONDS` for the whole group to be gone; SIGKILL to whatever remains; drain
+    again, bounded by `DRIVE_REAP_SECONDS`, so a process that escaped the group (its own setsid --
+    the one case a group signal cannot reach) and still holds the pipe cannot hang the caller.
+    `pgid` is `proc.pid`, never `os.getpgid(...)`, which fails once the leader is reaped. A further
+    signal cannot cut this short: the trap only records it. Never raises an `Exception`."""
+    pgid = proc.pid
+    drained = False
+    _signal_group(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + DRIVE_TERM_GRACE_SECONDS
+    try:
+        proc.communicate(timeout=DRIVE_TERM_GRACE_SECONDS)
+        drained = True
+    except Exception:                                       # noqa: BLE001 - TimeoutExpired, or a
+        pass                                                 # pipe already closed: escalate anyway
+    while _group_alive(pgid) and time.monotonic() < deadline:
+        proc.poll()                                          # reap the leader so it cannot keep the
+        time.sleep(0.05)                                     # group "alive" as a zombie
+    if _group_alive(pgid):
+        _signal_group(pgid, signal.SIGKILL)
+    if not drained:
+        try:
+            proc.communicate(timeout=DRIVE_REAP_SECONDS)
+        except Exception:                                    # noqa: BLE001 - best-effort, bounded
+            pass
+    proc.poll()
+
+
+def _start_lifeline():
+    """Spawn the lifeline sentinel. Returns `(sentinel_proc, write_fd)`; raises OSError on failure.
+    The write end is non-inheritable (PEP 446) and every Popen here closes fds, so no child --
+    least of all the model -- holds it: only this process's death or an explicit close ends it."""
+    read_fd, write_fd = os.pipe()
+    try:
+        sentinel = subprocess.Popen(
+            [sys.executable, "-c", _LIFELINE_SENTINEL, str(DRIVE_TERM_GRACE_SECONDS)],
+            stdin=read_fd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except BaseException:
+        os.close(write_fd)
+        raise
+    finally:
+        os.close(read_fd)
+    return sentinel, write_fd
+
+
+def _end_lifeline(sentinel, write_fd):
+    """Release the sentinel with `done`: this process is alive and has either seen the model
+    finish or terminated its group itself, so there is nothing for the sentinel to sweep (a sweep
+    now would signal an already-reaped group id). Only this process's death -- the case the
+    sentinel exists for -- ends the pipe without `done`. Reaped with a bound; an unreaped sentinel
+    exits by itself as soon as it reads `done`."""
+    try:
+        os.write(write_fd, b"done")
+    except OSError:
+        pass
+    try:
+        os.close(write_fd)
+    except OSError:
+        pass
+    try:
+        sentinel.wait(timeout=DRIVE_REAP_SECONDS)
+    except Exception:                                       # noqa: BLE001 - bounded, best-effort
+        pass
+
+
 def _run_drive(cmd_str, prompt, cwd, env, timeout, on_spawn=None):
-    """The real subprocess invocation. Returns (exit_code, stdout) and never raises — a launch
-    failure or a timeout becomes a synthetic non-zero exit with the error as `stdout`, so every
-    caller treats it identically to a real CLI failure.
+    """The real subprocess invocation. Returns (exit_code, stdout) and never raises an `Exception` —
+    a launch failure or a timeout becomes a synthetic non-zero exit with the error as `stdout`, so
+    every caller treats it identically to a real CLI failure.
+
+    #425 -- the WHOLE driven tree, not just the direct child. The session starts in a process group
+    of its own (`start_new_session=True`), and every way this call can end early goes through
+    `_terminate_group` (SIGTERM the group, `DRIVE_TERM_GRACE_SECONDS` grace, SIGKILL, bounded drain):
+      - the timeout -> `(124, ...)`;
+      - SIGTERM/SIGHUP/SIGINT to this process (main thread) -> recorded by the trap, noticed within
+        `DRIVE_POLL_SECONDS`, group terminated, then the caller's handlers restored and every
+        recorded signal re-delivered in order (a SIG_DFL caller dies by it, Ctrl-C raises
+        KeyboardInterrupt, a caller's own handler runs; if the process survives that, this returns
+        `(128 + first signum, ...)`). A signal arriving before the model is spawned means it is
+        never spawned;
+      - any exception escaping the wait -> group terminated, exception re-raised.
+    The new group is what makes the trap necessary: a signal addressed to the caller's own group no
+    longer reaches the model by sharing it. For what NO handler can see -- SIGKILL to this process,
+    or `killpg` of its group (what `run_with_timeout.py` does) -- the lifeline sentinel
+    (`_LIFELINE_SENTINEL`) sees its pipe close without `done` and runs the same escalation. Not
+    covered: a descendant that calls setsid itself; the sentinel itself being SIGKILLed; this
+    process dying by SIGKILL in the instant between the model's spawn and the sentinel learning its
+    group id, or between a normal finish and `done` (the sentinel then sweeps the finished model's
+    group -- its leftovers, or nobody); a drive on a non-main thread, where nothing is trapped and
+    a signal reaches the caller's own handling (the lifeline is the backstop if the process dies);
+    a caller thread that has SIGTERM blocked, whose mask the model inherits, so the graceful step
+    is lost and the model is SIGKILLed after the grace; a non-main-thread drive in a caller with
+    SIGPIPE at SIG_DFL whose sentinel has already died (the main thread ignores SIGPIPE for the
+    drive; a worker thread cannot). Repeats of one signal are re-delivered
+    once. On a host without
+    POSIX process groups (Windows) the call REFUSES -- `(2, NO_PROCESS_GROUP_REFUSAL)`, the same
+    line on stderr, nothing spawned -- rather than proceed with a kill that cannot reach the tree.
+    A sentinel that cannot be started is likewise a refusal to drive (exit 1).
 
     `on_spawn(pid)` (#2338, Component H's round-2 REJECT fix) is an OPTIONAL, additive, backward-
     compatible callback invoked the INSTANT the child process exists — before anything blocks
     waiting for it to finish, and before any timeout has a chance to fire. Every existing caller
-    (`_drive`'s own autowatch tick) omits it and is byte-for-byte unaffected: `subprocess.run` is
-    itself documented as built from a `Popen` followed by `communicate(timeout=timeout)`, so this
-    function is rewritten in that exact shape rather than changed in behaviour — same return
-    contract, same timeout handling (kill the child, drain its pipes, report `(124, ...)`), same
-    "never raises" guarantee. This exists so a caller that dispatches a driven session unattended
-    (the Slack-commands listener, #2338) can register a REAL liveness marker for the CHILD's own
-    pid — not just its own, short-lived, calling process's pid — closing the gap where a listener
-    killed while blocked inside this call would otherwise orphan the child with nothing tracking
-    it (see `slack_commands_listen.dispatch`, Component H)."""
+    (`_drive`'s own autowatch tick) omits it. This exists so a caller that dispatches a driven
+    session unattended (the Slack-commands listener, #2338) can register a REAL liveness marker for
+    the CHILD's own pid (also its process-group id) — not just its own, short-lived, calling
+    process's pid — closing the gap where a listener killed while blocked inside this call would
+    otherwise orphan the child with nothing tracking it (see `slack_commands_listen.dispatch`)."""
     try:
         args = shlex.split(cmd_str) + [prompt]
     except ValueError as exc:
         return 1, f"autowatch: could not parse drive_cmd {cmd_str!r}: {exc}"
+    refusal = _process_group_refusal()
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 2, refusal
+    received = []
+    saved = {}
     try:
-        with subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True) as proc:
-            if on_spawn is not None:
-                try:
-                    on_spawn(proc.pid)
-                except Exception:                           # noqa: BLE001 - a caller's callback must
-                    pass                                     # never break the drive it is watching
-            try:
-                stdout, _stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                # Mirrors subprocess.run's own timeout handling exactly: kill, then wait/drain so
-                # no zombie or leaked pipe is left behind, before reporting the synthetic failure.
-                proc.kill()
-                try:
-                    proc.communicate()
-                except Exception:                            # noqa: BLE001 - best-effort drain only
-                    pass
-                return 124, f"autowatch: driven run timed out after {timeout}s"
-            return proc.returncode, stdout
+        _trap_signals(received, saved)
+        return _drive_under_trap(args, cwd, env, timeout, on_spawn, received)
+    finally:
+        _restore_and_redeliver(received, saved)
+
+
+def _drive_under_trap(args, cwd, env, timeout, on_spawn, received):
+    """`_run_drive`'s body, run with the recording trap installed. Never raises an `Exception`."""
+    def interrupted():
+        return 128 + received[0], f"autowatch: driven run interrupted by signal {received[0]}"
+
+    if received:
+        return interrupted()
+    try:
+        sentinel, write_fd = _start_lifeline()
     except Exception as exc:                                # noqa: BLE001 - never raise
-        return 1, f"autowatch: failed to launch driven run: {exc}"
+        return 1, f"autowatch: not driving -- could not start the lifeline sentinel: {exc}"
+    try:
+        if received:
+            return interrupted()
+        try:
+            proc = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, start_new_session=True)
+        except Exception as exc:                            # noqa: BLE001 - never raise
+            return 1, f"autowatch: failed to launch driven run: {exc}"
+        with proc:
+            try:
+                try:
+                    os.write(write_fd, f"{proc.pid}\n".encode())
+                except OSError as exc:
+                    _terminate_group(proc)
+                    return 1, f"autowatch: lifeline sentinel gone, driven run stopped: {exc}"
+                if on_spawn is not None:
+                    try:
+                        on_spawn(proc.pid)
+                    except Exception:                       # noqa: BLE001 - a caller's callback must
+                        pass                                 # never break the drive it is watching
+                deadline = time.monotonic() + timeout
+                while True:
+                    if received:
+                        _terminate_group(proc)
+                        return interrupted()
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        _terminate_group(proc)
+                        return 124, (f"autowatch: driven run timed out after {timeout}s "
+                                     f"(process group terminated)")
+                    try:
+                        stdout, _stderr = proc.communicate(
+                            timeout=min(remaining, DRIVE_POLL_SECONDS))
+                    except subprocess.TimeoutExpired:
+                        continue
+                    return proc.returncode, stdout
+            except BaseException:
+                _terminate_group(proc)
+                raise
+    except Exception as exc:                                # noqa: BLE001 - never raise
+        return 1, f"autowatch: driven run failed: {exc}"
+    finally:
+        _end_lifeline(sentinel, write_fd)
 
 
 #: The exact set `loop.py`'s own `_record()` chokepoint writes to the ledger
@@ -793,8 +1105,10 @@ def _tick_inner(sdlc_dir, config, settings, issue, deps):
         return "failed"
 
     if exit_code != 0:
-        _record_outcome(sdlc_dir, config, target,
-                         f"failed — driven /agrim-loop exited {exit_code}", ref=ref, to=to, hop=incoming_hop)
+        why = f"failed — driven /agrim-loop exited {exit_code}"
+        if output == NO_PROCESS_GROUP_REFUSAL:              # #425: the refusal must reach the
+            why += f": {output}"                             # ledger, not only stderr
+        _record_outcome(sdlc_dir, config, target, why, ref=ref, to=to, hop=incoming_hop)
         return "failed"
 
     now = deps.get("now") if deps.get("now") is not None else time.time()
