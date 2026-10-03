@@ -4,6 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The launch-readiness review plan is a committed document with thresholds, spend ceilings and a per-dimension evidence
+  table** (#350). `docs/launch/review-plan.md` lists dimensions D0 to D13 with measurement, pass threshold and gating flag,
+  the nine reviewer rules, the S0 to S10 order with a 75M processed-token ceiling and a 40M owner checkpoint (every estimate
+  marked unmeasured, and what the review does when the ceiling binds), facts re-read on 2026-10-03, and, per dimension, the
+  evidence that already exists on main against what is still to be produced. No dimension is scored.
+  `tests/test_review_plan.py` keeps the plan, `docs/launch/scorecard.json` and the decision rule in step.
+
 - **Hostile issue, PR and comment text is run through the script-level parsers, and the model-level drill is built** (#362,
   readiness dimension D10). Twelve fixtures under `tests/fixtures/hostile/` (prompt-injection text, fenced and commented
   markers, comma-joined refs, a path-traversal unit name, an indented marker, a 1 MB body built at test time, control
