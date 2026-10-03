@@ -1,0 +1,325 @@
+[
+  {
+    "pattern": ".sdlc/context/north-star.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (operator-authored standing document, one file per project)",
+    "pruner_or_cap": "none by decision: one file a person writes and edits in place, so nothing per-run grows it and deleting it deletes the operator's own statement; not measured, absent on the measured checkout, so no ceiling is enforced; owner the operator; reclaim is the operator editing or deleting the file by hand, never a Sigma script",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (standing documents); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/decisions.json",
+    "issue": "#463",
+    "decision": "intentionally unbounded (operator-authored standing registry, one entry per decision, read whole on every edit)",
+    "pruner_or_cap": "none by decision: one entry per standing decision the operator chooses to record, about 530 B each; the decision gate loads it on every edit; measured on synthetic registries (Python 3.9, worst case of a distinct protected path per decision) 0.27 / 38 / 76 / 116 / 158 ms per edit at 100 / 500 / 1,000 / 1,500 / 2,000 decisions, and 0.26 / 1.0 / 1.9 / 3.0 / 4.0 ms when the decisions share 20 path patterns, so the named ceiling is about 1,300 distinct-path decisions (100 ms per edit); no pruner because it is operator-authored; owner the operator; reclaim is the operator retiring an entry (status) or deleting it by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (decision registry, measured); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/design/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
+    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
+  },
+  {
+    "pattern": ".sdlc/design/<n>-in-brief.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
+    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
+  },
+  {
+    "pattern": ".sdlc/design/<n>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
+    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
+  },
+  {
+    "pattern": ".sdlc/evidence/<goal>/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (reviewer and maker scratch; only a direct rv*/wt copy is pruned, at a terminal record)",
+    "pruner_or_cap": "terminal-copy prune for one shape only: work.prune_terminal_review_copies removes a non-symlink direct wt of a non-symlink direct rv* under evidence/<goal> when a goal is recorded done or failed; none by decision for everything else (other names such as me or fin, the rest of an rv* directory, loose files), because nothing in Sigma's Python or skill prose writes them so Sigma cannot prove it owns them; measured 19 goals, 19,721 files, 522,421,958 B, of which the pruner's shape (a direct rv*/wt, four directories) is 143,237,899 B in 3,547 files, all from goals that ended before the pruner existed, and the other 379,184,059 B is uncovered; owner the operator and the reviewer who placed it; reclaim is the per-goal, terminal-check-first, dry-run-first `find` in the doc; the byte figures are from one machine and are heavily skewed (one directory is 196 MB), so they are not extrapolated",
+    "evidence": "tests/test_work.py and tests/test_loop.py (prune scope, red per plan 349); tests/test_b6_463.py (test_evidence_prune_scope, test_evidence_lever, test_evidence_parked_kept); docs/launch/b6-knowledge-and-records.md (evidence); writer is hand-placed by reviewers, outside Sigma's Python and skill prose",
+    "unscanned": true
+  },
+  {
+    "pattern": ".sdlc/features/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one registry shard per unit of work; the index is rewritten, not appended)",
+    "pruner_or_cap": "none by decision: one shard per unit, measured 570 / 2,191 / 18,392 B at 10 / 100 / 1,000 member goals (about 18 B per goal) and 50,345 B for an index of 100 units x 10 goals; the registry is the committed backup of what a unit was, so pruning it would remove the record it exists to keep; owner the project; reclaim is a person closing a unit and removing its shard in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (unit registry); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/features/index.json",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one registry shard per unit of work; the index is rewritten, not appended)",
+    "pruner_or_cap": "none by decision: one shard per unit, measured 570 / 2,191 / 18,392 B at 10 / 100 / 1,000 member goals (about 18 B per goal) and 50,345 B for an index of 100 units x 10 goals; the registry is the committed backup of what a unit was, so pruning it would remove the record it exists to keep; owner the project; reclaim is a person closing a unit and removing its shard in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (unit registry); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/goals",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local goal files; detector and discovery proposals are deduplicated by a deterministic id)",
+    "pruner_or_cap": "none by decision: one file per local goal, and pipeline and discovery proposals never rewrite or duplicate (a repeat creates 0 files, proposal files measured 283 and 274 B), though each distinct failing signal or file still adds one; every pick scans the directory, measured 2.1 / 20.6 / 238 ms at 100 / 1,000 / 10,000 done goal files (about 24 microseconds per file), so the named ceiling is about 10,000 goals (0.24 s per pick); owner the operator; reclaim is a person moving done goals out of the directory in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (local goals); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/goals/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local goal files; detector and discovery proposals are deduplicated by a deterministic id)",
+    "pruner_or_cap": "none by decision: one file per local goal, and pipeline and discovery proposals never rewrite or duplicate (a repeat creates 0 files, proposal files measured 283 and 274 B), though each distinct failing signal or file still adds one; every pick scans the directory, measured 2.1 / 20.6 / 238 ms at 100 / 1,000 / 10,000 done goal files (about 24 microseconds per file), so the named ceiling is about 10,000 goals (0.24 s per pick); owner the operator; reclaim is a person moving done goals out of the directory in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (local goals); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/goals/*.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local goal files; detector and discovery proposals are deduplicated by a deterministic id)",
+    "pruner_or_cap": "none by decision: one file per local goal, and pipeline and discovery proposals never rewrite or duplicate (a repeat creates 0 files, proposal files measured 283 and 274 B), though each distinct failing signal or file still adds one; every pick scans the directory, measured 2.1 / 20.6 / 238 ms at 100 / 1,000 / 10,000 done goal files (about 24 microseconds per file), so the named ceiling is about 10,000 goals (0.24 s per pick); owner the operator; reclaim is a person moving done goals out of the directory in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (local goals); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/goals/<gid>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local goal files; detector and discovery proposals are deduplicated by a deterministic id)",
+    "pruner_or_cap": "none by decision: one file per local goal, and pipeline and discovery proposals never rewrite or duplicate (a repeat creates 0 files, proposal files measured 283 and 274 B), though each distinct failing signal or file still adds one; every pick scans the directory, measured 2.1 / 20.6 / 238 ms at 100 / 1,000 / 10,000 done goal files (about 24 microseconds per file), so the named ceiling is about 10,000 goals (0.24 s per pick); owner the operator; reclaim is a person moving done goals out of the directory in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (local goals); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/goals/NNNN-*.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local goal files; detector and discovery proposals are deduplicated by a deterministic id)",
+    "pruner_or_cap": "none by decision: one file per local goal, and pipeline and discovery proposals never rewrite or duplicate (a repeat creates 0 files, proposal files measured 283 and 274 B), though each distinct failing signal or file still adds one; every pick scans the directory, measured 2.1 / 20.6 / 238 ms at 100 / 1,000 / 10,000 done goal files (about 24 microseconds per file), so the named ceiling is about 10,000 goals (0.24 s per pick); owner the operator; reclaim is a person moving done goals out of the directory in a reviewed commit",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (local goals); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/journey/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (append-only per goal, local backlog mode only)",
+    "pruner_or_cap": "none by decision: one file per goal, one section per phase note, measured about 167 B per note; the GitHub backlog mode posts an issue comment instead and writes no file; the journey is the audit trail of a goal so Sigma never trims it; owner the operator; reclaim is deleting a finished goal's file by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (journey); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/journey/<goal>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (append-only per goal, local backlog mode only)",
+    "pruner_or_cap": "none by decision: one file per goal, one section per phase note, measured about 167 B per note; the GitHub backlog mode posts an issue comment instead and writes no file; the journey is the audit trail of a goal so Sigma never trims it; owner the operator; reclaim is deleting a finished goal's file by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (journey); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge",
+    "issue": "#463",
+    "decision": "intentionally unbounded (parent of the local knowledge corpus; each store under it has its own row)",
+    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /agrim-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (knowledge corpus); tests/test_b6_463.py (test_doc_constants, test_decisions)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (parent of the local knowledge corpus; each store under it has its own row)",
+    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /agrim-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (knowledge corpus); tests/test_b6_463.py (test_doc_constants, test_decisions)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/align/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/align/<UTC-date>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/<note_id_str>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/goal-<goal>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/goal-<value>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/issue-*.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/issue-<digits>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/analysis/issue-<ref>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (one analysis note per goal, overwritten on a re-run)",
+    "pruner_or_cap": "none by decision: kg.write_note writes one file per goal id and replaces it on a re-run, so a repeat adds no file (tested); it caps neither the note's size nor the count of goals, and no real note exists here to measure; `kg.py maintain` is report-only and prints the archive command for stale or duplicate notes; the notes are what the graph is built from and what opt-in sync shares, so Sigma never deletes them; owner the project; reclaim is a person running the printed archive command (`git rm` and commit in the ops worktree, `mv` otherwise)",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (analysis notes); tests/test_b6_463.py (test_dedup_writers, test_no_other_pruner); tests/test_kg_retention.py (maintain is report-only)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/archive/research/web",
+    "issue": "#463",
+    "decision": "intentionally unbounded (archive of retired web captures; retention moves files here and nothing deletes them)",
+    "pruner_or_cap": "none by decision: archive-not-delete is the retention contract (the files stay in a cold graph build's input), and `kg.py maintain` reports the archived count and size; no ceiling is enforced because nothing real was archived on the measured checkout; owner the operator; reclaim is deleting the archive directory by hand, the line `kg.py maintain` already prints",
+    "evidence": "tests/test_b6_463.py (test_web_retention: the archive is never touched); docs/launch/b6-knowledge-and-records.md (web captures)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/archive/research/web/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (archive of retired web captures; retention moves files here and nothing deletes them)",
+    "pruner_or_cap": "none by decision: archive-not-delete is the retention contract (the files stay in a cold graph build's input), and `kg.py maintain` reports the archived count and size; no ceiling is enforced because nothing real was archived on the measured checkout; owner the operator; reclaim is deleting the archive directory by hand, the line `kg.py maintain` already prints",
+    "evidence": "tests/test_b6_463.py (test_web_retention: the archive is never touched); docs/launch/b6-knowledge-and-records.md (web captures)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/archive/research/web/<name>",
+    "issue": "#463",
+    "decision": "intentionally unbounded (archive of retired web captures; retention moves files here and nothing deletes them)",
+    "pruner_or_cap": "none by decision: archive-not-delete is the retention contract (the files stay in a cold graph build's input), and `kg.py maintain` reports the archived count and size; no ceiling is enforced because nothing real was archived on the measured checkout; owner the operator; reclaim is deleting the archive directory by hand, the line `kg.py maintain` already prints",
+    "evidence": "tests/test_b6_463.py (test_web_retention: the archive is never touched); docs/launch/b6-knowledge-and-records.md (web captures)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/audit/<UTC-date>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/gaps.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (append-only, one line per distinct open question, exact-match dedup)",
+    "pruner_or_cap": "none by decision: kg.gap_log skips an exact repeat (tested), the first line costs 93 B, each new write re-reads the whole file (measured 0.08 / 0.22 / 1.75 ms per new gap at 100 / 1,000 / 10,000 lines), distinct questions still append without limit, and a resolved gap keeps its line as history; no ceiling is enforced because no real log exists here to measure; owner the operator; reclaim is editing the file by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (gaps and radar ledger); tests/test_b6_463.py (test_dedup_writers)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/radar",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/radar/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/radar/<UTC-date>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/radar/ledger.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (append-only, one line per surfaced finding, exact-match dedup)",
+    "pruner_or_cap": "none by decision: radar.record skips an exact repeat (tested), the first line costs 85 B, distinct findings still append without limit (its whole-file read per write is the same shape as gaps.md, not separately measured), and the ledger exists so a finding is never surfaced twice, so trimming it would bring repeats back; no ceiling is enforced because no real ledger exists here to measure; owner the operator; reclaim is editing the file by hand",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (gaps and radar ledger); tests/test_b6_463.py (test_dedup_writers)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/research/",
+    "issue": "#463",
+    "decision": "already bounded once the operator opts in (retention archives by age and a disk-derived byte bound); unbounded until then",
+    "pruner_or_cap": "kg.retain_web, opt-in (web_retention_enabled true, or the operator running `kg.py retain`): archives, never deletes, captures older than 90 days or beyond disk.total x 0.0001 occupancy, oldest first, one same-volume rename each, idempotent; off by default, and the corpus itself exists only when knowledge_graph.enabled is true; one capture costs 824 B for a short query and 2,738 B for a 2 KB URL (the excerpt is capped at 400 characters, the subject is not); owner Sigma; reclaim of the live set is `kg.py retain`",
+    "evidence": "tests/test_kg_retention.py (age, derived byte bound, idempotence, no overwrite, off by default); tests/test_b6_463.py (test_web_retention, test_web_capture_size); docs/launch/b6-knowledge-and-records.md (web captures)"
+  },
+  {
+    "pattern": ".sdlc/knowledge/research/web/",
+    "issue": "#463",
+    "decision": "already bounded once the operator opts in (retention archives by age and a disk-derived byte bound); unbounded until then",
+    "pruner_or_cap": "kg.retain_web, opt-in (web_retention_enabled true, or the operator running `kg.py retain`): archives, never deletes, captures older than 90 days or beyond disk.total x 0.0001 occupancy, oldest first, one same-volume rename each, idempotent; off by default, and the corpus itself exists only when knowledge_graph.enabled is true; one capture costs 824 B for a short query and 2,738 B for a 2 KB URL (the excerpt is capped at 400 characters, the subject is not); owner Sigma; reclaim of the live set is `kg.py retain`",
+    "evidence": "tests/test_kg_retention.py (age, derived byte bound, idempotence, no overwrite, off by default); tests/test_b6_463.py (test_web_retention, test_web_capture_size); docs/launch/b6-knowledge-and-records.md (web captures)"
+  },
+  {
+    "pattern": ".sdlc/pipeline.json",
+    "issue": "#463",
+    "decision": "intentionally unbounded (operator-authored standing document, one file per project)",
+    "pruner_or_cap": "none by decision: one file a person writes and edits in place, so nothing per-run grows it and deleting it deletes the operator's own statement; not measured, absent on the measured checkout, so no ceiling is enforced; owner the operator; reclaim is the operator editing or deleting the file by hand, never a Sigma script",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (standing documents); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/project.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (operator-authored standing document, one file per project)",
+    "pruner_or_cap": "none by decision: one file a person writes and edits in place, so nothing per-run grows it and deleting it deletes the operator's own statement; not measured, absent on the measured checkout, so no ceiling is enforced; owner the operator; reclaim is the operator editing or deleting the file by hand, never a Sigma script",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (standing documents); tests/test_b6_463.py (test_decisions, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/contract-check-<slug>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/debug-<slug>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/migration-check-<slug>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/release-check-<slug>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  },
+  {
+    "pattern": ".sdlc/reviews/security-review-<slug>.md",
+    "issue": "#463",
+    "decision": "intentionally unbounded (report an operator chose to persist, one file per invocation)",
+    "pruner_or_cap": "none by decision: the five review skills write it only if the operator wants it retained, deliberately outside the gitignored knowledge tree, so in an adopter repository it is committed by whoever commits it; written by a model following prose, so sizes are not measurable by code and none exist here; owner the operator; reclaim is a reviewed commit that removes old reports",
+    "evidence": "docs/launch/b6-knowledge-and-records.md (persisted reports); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
+  }
+]
