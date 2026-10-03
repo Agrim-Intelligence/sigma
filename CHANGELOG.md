@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Goal worktrees whose work provably landed can be reclaimed, and every other survivor is reported with
+  its reason** (#465, B6 of #419). A worktree is a full checkout (903 tracked files, 18.5 MB here; 455 MB
+  across the 14 on the measured machine, 3 of them for merged PRs) and nothing reclaimed one whose goal
+  never reached `record done`. `python3 skills/agrim-loop/scripts/worktree_prune.py list-removable .sdlc`
+  shows what would go and why each other tree stays; `... sweep .sdlc [--dry-run] [--limit N]` removes
+  only the checkout, with a plain non-force `git worktree remove`, and only when the PR is positively
+  merged, every commit in the tree was in it, the tree is clean (ignored files must be regenerable
+  caches), the recorded branch is checked out, nothing alive owns the goal and it is not the caller's own
+  tree. It never deletes a branch, a remote ref or the work record. A crash mid-removal is journalled
+  and healed by the next sweep (one restore at most, then left for a human). `loop.py start` and
+  `loop.py record ... done` run one bounded sweep only when `work.enabled` and `work.reclaim_merged_worktrees` are
+  `true` (default `false`: its proof reads GitHub REST quota). Not measured: a 100,000-file repository,
+  Linux or network filesystems, Windows (the sweep refuses without `fcntl`).
+
 - **Claim locks and claim markers whose owner is dead are swept, and session and lock markers have a stated
   cap** (#464, B6 of #419). On the measured checkout `state/claims/` held 82 files after four days
   (47 `.lock`, 35 `.claimed`, about 20 a day) and nothing ever deleted one: `reclaim_stale_claim_lock`

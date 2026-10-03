@@ -4121,7 +4121,7 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
         failures = int(flag.get("close_failures") or 0)
         outcome = _record(sdlc_dir, source, goal, "done",
                           f"PR #{pr} merged (observed by the merge-reconcile pass)",
-                          merged_pr=True,
+                          merged_pr=True, housekeeping=False,
                           retry_close=failures + 1 != MERGE_CLOSE_ATTEMPTS)
         if outcome == "retry":
             n = work.note_close_failure(sdlc_dir, goal)
@@ -4138,8 +4138,11 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
 
 
 def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transition="park",
-            merged_pr=False, retry_close=False):
-    """`merged_pr` (#255 (1)): the caller confirmed the goal's PR merged by a REST read just now;
+            merged_pr=False, retry_close=False, housekeeping=True):
+    """`housekeeping` (#465): False only from the merge-reconcile pass, which holds
+    `merge-reconcile.lock`, so the worktree sweep is not run under it. NOT `merged_pr`: every ordinary
+    `record done` on a PR-bearing goal sets that too.
+    `merged_pr` (#255 (1)): the caller confirmed the goal's PR merged by a REST read just now;
     forwarded to the checkout release so it does not ask GitHub again. `retry_close` (#255 (7)):
     a raising `complete()` returns "retry" having written NOTHING (no park, no ledger, no cursor) --
     only the merge-reconcile pass passes it, and it counts the failure and retries."""
@@ -4344,6 +4347,11 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             _load("liveness_prune").after_start_or_done(sdlc_dir)
         except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
             print(f"loop.py record: claim marker sweep skipped for {goal!r} ({exc})", file=sys.stderr)
+        if housekeeping:
+            try:                              # #465: opt-in sweep of provably finished goal worktrees
+                _load("worktree_prune").after_start_or_done(sdlc_dir, exclude=(str(goal),))
+            except Exception as exc:          # noqa: BLE001 - terminal bookkeeping is already durable
+                print(f"loop.py record: worktree sweep skipped for {goal!r} ({exc})", file=sys.stderr)
     return outcome
 
 
@@ -6077,6 +6085,10 @@ def _dispatch(argv):
             _load("liveness_prune").after_start_or_done(argv[2], config=config)
         except Exception as exc:                  # noqa: BLE001 - housekeeping never blocks a start
             print(f"loop.py start: claim marker sweep skipped ({exc})", file=sys.stderr)
+        try:                                      # #465: opt-in sweep of provably finished goal worktrees
+            _load("worktree_prune").after_start_or_done(argv[2], config=config)
+        except Exception as exc:                  # noqa: BLE001 - housekeeping never blocks a start
+            print(f"loop.py start: worktree sweep skipped ({exc})", file=sys.stderr)
         return 0
     # #712: a standalone reset of JUST the run budget cursor -- unlike `start` above, no config-
     # warning prints and no session-marker write, so a mid-session "begin a fresh run" (or an
