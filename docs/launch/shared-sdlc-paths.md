@@ -61,12 +61,15 @@ that no state was damaged, and it does not cover `work.enabled`, the ledger, fea
   `state_dir`, `sdlc`), and pins one writer it could not reach (`write_unit`, verified to exist by name). A writer built
   from other names is not found.
 - The destination resolver (`growth_audit.py`'s) misses `os.replace` onto a path, `shutil.copy`, `rename`, and a
-  `Path(a, "state", name)` built with commas (measured by the post-PR reviewer). A backstop catches a new function that
-  names a predecessor-written file by its own name (for example `setup-wizard-dismissed.json`) and makes a write-ish call,
-  whatever the method; it cannot tell directories apart and does not apply to wildcard-named files such as `*.lock`, so a
-  writer for those that the resolver misses is not seen.
-- A destination held in a local alias of a path (`p = root / ".sdlc" / "state"` then `p.joinpath(name).write_text(...)`):
-  measured unseen in a scratch copy by the code reviewer.
+  `Path(a, "state", name)` built with commas (measured by a post-PR reviewer). A backstop covers part of that: a new
+  top-level function or method that holds the predecessor-written file's own name as ONE string constant inside it and
+  makes a call from a fixed write-ish list (`write_text`, `open`, `replace`, `rename`, `copy*`, `move`, `mkdir`, `touch`,
+  `dump`, `write`, `symlink`, `mkstemp` and a few more) is refused, whatever the write method among those. It does NOT see:
+  a write at module level or in a lambda; a name held in a module constant, class attribute or returned by a helper; a name
+  built by concatenation, an f-string or `join`; a full-path string (the match is on the bare file name); a write call not
+  on that list (`symlink_to`, `truncate`, `sqlite3.connect`, a logging file handler); any wildcard-named file such as
+  `*.lock`; or a directory distinction (it cannot tell two files of the same name apart).
+- Skipped by design: any file under a path component named `tests`, `*.pyw` and extensionless Python scripts.
 - Only `*.py` is scanned. A shell script under `hooks/` that writes a `.sdlc` path is not seen here (the write-surface
   inventory, `docs/launch/write-surface.md`, tracks shell write sites separately).
 - A file written by a subprocess the Python only names, and any tree outside `skills/` and `hooks/` (the predecessor also
@@ -97,7 +100,8 @@ python3 tools/readiness/shared_paths.py check --sigma . --fixture tests/fixtures
 
 It exits 2, naming the path and the site, when Sigma writes a predecessor-written path from a site that is not vetted, when
 the path has no entry, or when an entry lacks its reason or issue. A new writer function on an already-vetted path is
-refused too. A passing check means every site the scan can resolve is vetted, not that Sigma has no new writer. What it does not
+refused too. An entry with `compatible: false` also passes the check once its sites are vetted: it records a known problem, it does not
+block the site. A passing check means every site the scan can resolve is vetted, not that Sigma has no new writer. What it does not
 see: a second write inside an already vetted function; a writer the scan cannot resolve
 (above); a reason that is true in form and wrong in content (a reason is not verified). If a vetted function is renamed or
 moved the check refuses: vet the new site by hand and edit its entry, do not regenerate the whole list.
