@@ -16,7 +16,9 @@ install copies the whole tracked tree (README "every tracked file is shipped sur
     malformed, also named `opaque-binary`. A UTF-32 file with a truncated tail or a
     group above U+10FFFF is scanned with those groups replaced AND named `opaque-binary`. UNSCANNABLE and
     named: BOM-less UTF-32 (the width cannot be known). UNSCANNABLE and NOT named: UTF-7, EBCDIC, other
-    legacy codecs (read as Latin-1), and compressed or encrypted bytes that happen to be NUL-free.
+    legacy codecs (read as Latin-1), UCS-4 in the 3412 byte order (`FE FF 00 00` reads as UTF-16 BE),
+    a BOM-less UTF-16 file whose first 8192 bytes hold no NUL, and compressed or encrypted bytes that
+    happen to be NUL-free.
   * A file the gate CANNOT scan is a finding, named, never a silent skip: `opaque-binary` (NUL bytes
     that are not UTF-16 or marked UTF-32), `oversize` (over `MAX_BYTES`), `unreadable` (an OS error). Each exits 1.
   * `ALLOW_PATHS` -- `{path: reason}` for a vendored or opaque file the gate may not read. A reason is

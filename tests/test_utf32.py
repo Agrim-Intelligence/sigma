@@ -7,11 +7,14 @@ helpers of `test_leak_scan`), planting a PEM private key and, separately, a home
 built from fragments at run time (the gate scans tests/ too), and every test asserts that no planted value
 reaches stdout or stderr.
 
-The `## Tests` selector of the plan is the functions that go red against the pre-fix gate on an assertion:
-`test_bom`, `test_tail2_le`, `test_badcp_le`, `test_badcp_be`. The rest are guards that pass before the fix as well (the
+The `## Tests` selector of the plan is the four functions that go red on an assertion against the
+pre-fix gate for EVERY parameter: `test_bom`, `test_tail2_le`, `test_badcp_le`, `test_badcp_be`. Measured
+against the pre-fix gate, a few other rows are red too (`test_bom_only_and_empty_are_clean[be]`,
+`test_dual_valid_be`, `test_plant_past_the_first_8192_bytes`); they are guards, not the plan's
+selector. The rest are guards that pass before the fix as well (the
 named-finding behaviour of the BOM-less variants, the odd-tail variants that already failed closed, the
-file that is valid under two decodings, the clean control) and they pin the behaviour so a later change
-cannot trade it away."""
+LE file that is valid under two decodings) and they pin the behaviour so a later change cannot trade it
+away."""
 import codecs
 
 import pytest
