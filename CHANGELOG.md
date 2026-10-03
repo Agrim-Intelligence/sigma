@@ -4,16 +4,16 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-- **CI now measures line coverage of `skills/` and `hooks/` and enforces a floor of 85% on one leg, and the README
-  states only what was measured** (#194, readiness D8). The README once claimed an "85% coverage floor" that CI never
-  enforced; #277 removed the claim, and this measures what it should have been. A full suite run under coverage.py
-  7.16.2 (subprocess tracing on, Python 3.12.13, macOS, local) gave 90.91% line coverage: 34,370 of 37,806
-  statements, 11,569 tests passed. It is a lower bound: scripts that tests copy elsewhere and children started with
-  a scrubbed environment are not traced, and branch coverage, Linux and the other Python versions were not
-  measured. The Linux Python 3.12 leg now runs the suite under coverage and fails below 85% (the measurement minus
-  five points of headroom); the other four legs are unchanged. A test fails if the README's two figures, the floor in
-  the coverage configuration or the CI step disagree with the recorded measurement. Coverage is a CI-only tool,
-  pinned, and no shipped code imports it. The added CI time is stated in the coverage doc.
+- **The README states the one coverage number that was measured, and says CI enforces none** (#194, readiness D8).
+  The README once claimed an "85% coverage floor" that CI never enforced; #277 removed the claim, and this measures
+  what it should have been. A full suite run under coverage.py (subprocess tracing on, Python 3.12, macOS, local) gave
+  90.91% line coverage of `skills/` and `hooks/`: 34,370 of 37,806 statements, 11,569 tests passed. It is a lower
+  bound: scripts that tests copy elsewhere and children started with a scrubbed environment are not traced, and branch
+  coverage and every Python other than 3.12 were not measured. The same run on the Linux Python 3.12 CI leg took 2.1
+  times as long as the plain leg (3,154 s against 1,481 s, near the 60-minute job limit) and a test with a 15-second
+  subprocess timeout failed under tracing before any Linux percentage printed, so no per-PR coverage gate was added.
+  A test fails if the README's figure and the recorded measurement disagree, or if CI starts enforcing coverage while
+  they say it does not. A floor of 85% is recorded as a candidate only; a non-blocking scheduled Linux run is queued.
 
 - **Pruners can no longer be walked out of `.sdlc` through a link, and the fixed-name state files have a stated
   size and owner** (#466, B6 of #419). A control now builds a decoy host configuration root reachable only through

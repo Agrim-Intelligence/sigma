@@ -29,17 +29,28 @@
   "statements": 37806,
   "missing": 3436,
   "line_percent": 90.91,
-  "floor_percent": 85,
-  "floor_rule": "floor = whole-number measured percent (90) minus 5 points of headroom, enforced on ubuntu-latest Python 3.12 only",
-  "enforced_on": "ubuntu-latest, Python 3.12",
-  "ci_baseline_pytest_seconds_ubuntu_3_12": 1481,
-  "ci_baseline_source": "GitHub Actions run 37098147702 on main, the pytest step's started_at to completed_at",
   "not_measured": [
     "scripts that tests copy to another path run from outside the measured source and are not attributed (6 test files)",
     "children started with a scrubbed environment lose COVERAGE_PROCESS_START and are not traced",
     "evals/run.py, which CI runs as its own step",
     "branch coverage",
-    "Linux, Python 3.10/3.11/3.13 and the hosted macOS runner (this run is local macOS 3.12)",
-    "the added CI wall time (see docs/launch/coverage.md)"
-  ]
+    "line coverage on Linux or any Python other than 3.12.13 (the one Linux trial failed before it printed a total)"
+  ],
+  "enforced_in_ci": false,
+  "candidate_floor_percent": 85,
+  "candidate_floor_rule": "whole-number measured percent (90) minus 5 points; not enforced anywhere",
+  "ci_trial": {
+    "what": "the suite under coverage on ubuntu-latest Python 3.12 (this change's own pull request, first head)",
+    "run": "GitHub Actions run 37105964337, job 'test (ubuntu-latest, 3.12)'",
+    "pytest_step_seconds": 3154,
+    "baseline_pytest_step_seconds": 1481,
+    "baseline_source": "GitHub Actions run 37098147702 on main, same leg, plain pytest step",
+    "ratio": 2.13,
+    "job_seconds": 3166,
+    "job_timeout_seconds": 3600,
+    "result": "1 failed, 11569 passed, 28 skipped, 2 xfailed",
+    "failed_test": "test_real_repository_scan_is_bounded_and_keeps_sources_writer_coverage (a 15 s subprocess timeout; killed under tracing)",
+    "line_percent_on_linux": null,
+    "line_percent_note": "not produced: the step stopped at the failing pytest exit, before combine and report ran"
+  }
 }

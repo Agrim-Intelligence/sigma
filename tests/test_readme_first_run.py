@@ -605,8 +605,7 @@ def test_no_shipped_prose_claims_a_coverage_floor_ci_does_not_enforce():
 
 def test_control_a_planted_coverage_claim_is_red_and_an_enforcing_ci_clears_it():
     prose = [("README.md", "CI runs it with an **85% coverage floor** on every push.\n")]
-    # An empty config list, not the real files: they now enforce a floor (#194), which clears any claim.
-    assert coverage_claim_findings(prose, []) == [("README.md", 1)]
+    assert coverage_claim_findings(prose, _ci_and_config_texts()) == [("README.md", 1)]
     assert coverage_claim_findings([("docs/x.md", "a coverage threshold of 80")], []) == \
         [("docs/x.md", 1)]
     assert coverage_claim_findings(prose, ["run: pytest --cov=. --cov-fail-under=85"]) == []
