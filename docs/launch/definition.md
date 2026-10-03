@@ -24,7 +24,9 @@ it.
   repository takes the old name, GitHub's redirects from it stop, so any clone whose `origin`
   still points at the old URL would then point at the public repository. The rename is the
   owner's action, done by hand (no Sigma tool, goal or agent creates, renames or changes a
-  repository), and its sequence is prepared in #397.
+  repository), and its sequence is prepared in #397. The checker and the ordered commands are in
+  [the name handover](../name-handover.md); the export builder is in
+  [the public snapshot](../public-snapshot.md).
 - **Install channel:** the Claude Code plugin marketplace, pointing at the public repository. It is
   the only channel with a recorded end-to-end run.
 - **Version:** `1.0.0`, git-tagged `v1.0.0` in the public repository. `.claude-plugin/plugin.json`

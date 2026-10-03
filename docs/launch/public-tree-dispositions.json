@@ -1,0 +1,40 @@
+{
+  "schema": "sigma.public-tree-dispositions/v1",
+  "entries": [
+    {
+      "path": "skills/agrim-loop/scripts/scrub.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: the secret scrubber names the private-key header in its own redaction pattern and docstring; it is the rule source, not a key"
+    },
+    {
+      "path": "tests/test_leak_scan.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: a fixture that plants a header to prove the commit-time scan finds it; the body is a filler line, not key material"
+    },
+    {
+      "path": "tests/test_ledger.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: a fixture that feeds a header to the ledger redaction control; the body is a filler line, not key material"
+    },
+    {
+      "path": "tests/test_research_capture.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: a fixture that feeds a header to the research-capture redaction control; the body is filler, not key material"
+    },
+    {
+      "path": "tests/test_scrub.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: fixtures that feed headers to the scrubber to prove it redacts them; the bodies are filler lines, not key material"
+    },
+    {
+      "path": "tests/test_work.py",
+      "rule": "private-key-header",
+      "reason": "fixture or regex source: a fixture that feeds a header to the commit-time secret scan; the body is filler, not key material"
+    },
+    {
+      "path": "tests/test_community_files.py",
+      "rule": "owner-placeholder",
+      "reason": "fixture or regex source: the test asserts the placeholder is filled in the community files, so it must name the token"
+    }
+  ]
+}

@@ -1,10 +1,5 @@
 [
   {
-    "path": "tests/boardfake.py",
-    "rule": "gh-token",
-    "reason": "fake token used by tests"
-  },
-  {
     "path": "skills/agrim-loop/scripts/north_star.py",
     "rule": "absolute-home-path",
     "blob": "b783fc7230ce02dbc37b9c0b85b2c0004a8f90ca",
@@ -19,19 +14,238 @@
   {
     "path": "tests/test_readiness_drills.py",
     "rule": "absolute-home-path",
-    "blob": "50f637a6a26606fc1f71b9f21d91c32329e5f82c",
-    "reason": "reviewed readiness-drill red fixture; exact blob only"
-  },
-  {
-    "path": "tests/test_readiness_exposure_scan.py",
-    "rule": "absolute-home-path",
-    "blob": "75ca3fc05f50003ec3252289526a356d0304c638",
-    "reason": "reviewed exposure-scanner red fixture; exact blob only"
+    "reason": "reviewed readiness-drill red fixture (a host-guidance string with a synthetic home path); unpinned because the file is edited often"
   },
   {
     "path": "tests/test_upstream.py",
     "rule": "absolute-home-path",
     "blob": "0b2bc72c0fc8307b289fd8f45db543149acec75b",
     "reason": "reviewed upstream-scrub control literals; exact blob only"
+  },
+  {
+    "path": ".sdlc/plans/258.md",
+    "rule": "auth",
+    "blob": "0378f8af3c0819d8627c8965aae28a1e8f9d6462",
+    "reason": "reviewed: archived goal text: prose or code using the word digest or basic in ordinary English, not a credential (blob-pinned: archived file)"
+  },
+  {
+    "path": ".sdlc/research/258.md",
+    "rule": "auth",
+    "blob": "13379746e7f79250dd563b873383014984a56fc9",
+    "reason": "reviewed: archived goal text: prose or code using the word digest or basic in ordinary English, not a credential (blob-pinned: archived file)"
+  },
+  {
+    "path": ".sdlc/research/277.md",
+    "rule": "credential-assignment",
+    "blob": "a35f350871b758c25a253b08f524b3a5e2a9bd1b",
+    "reason": "reviewed: archived goal text: a constant named for a token or marker holding a fixed non-secret string, or a fixture string asserting that shape (blob-pinned: archived file)"
+  },
+  {
+    "path": ".sdlc/research/277.md",
+    "rule": "absolute-home-path",
+    "blob": "a35f350871b758c25a253b08f524b3a5e2a9bd1b",
+    "reason": "reviewed: archived goal text: a documentation or test-fixture stand-in path naming no real user (blob-pinned: archived file)"
+  },
+  {
+    "path": "skills/agrim-doctor/scripts/migrate.py",
+    "rule": "auth",
+    "reason": "reviewed: prose or code using the word digest or basic in ordinary English, not a credential"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_classify.py",
+    "rule": "credential-assignment",
+    "reason": "reviewed: a constant named for a token or marker holding a fixed non-secret string, or a fixture string asserting that shape"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_doc.py",
+    "rule": "auth",
+    "reason": "reviewed: prose or code using the word digest or basic in ordinary English, not a credential"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_labels.py",
+    "rule": "credential-assignment",
+    "reason": "reviewed: a constant named for a token or marker holding a fixed non-secret string, or a fixture string asserting that shape"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/merge_observation.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/scrub.py",
+    "rule": "aws-key",
+    "reason": "reviewed: the published AWS documentation example key id, kept as a public test fixture"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/upstream.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "skills/agrim-loop/scripts/work.py",
+    "rule": "auth",
+    "reason": "reviewed: prose or code using the word digest or basic in ordinary English, not a credential"
+  },
+  {
+    "path": "skills/agrim-setup/scripts/setup.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_coexist.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_discovery_scan.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_docs.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_doctor.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_feature_owner.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_feature_propagate.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_feature_sync.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_init_flow.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "credential-assignment",
+    "reason": "reviewed: a constant named for a token or marker holding a fixed non-secret string, or a fixture string asserting that shape"
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "auth",
+    "reason": "reviewed: prose or code using the word digest or basic in ordinary English, not a credential"
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "absolute-home-path",
+    "reason": "reviewed: a documentation or test-fixture stand-in path naming no real user"
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_ledger.py",
+    "rule": "private-key",
+    "reason": "reviewed: a synthetic fixture exercising the secret scrubber; the body is a repeated filler line, not key material"
+  },
+  {
+    "path": "tests/test_merge_observation.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_no_autonomous_feature_branch_deletion.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_preflight.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_readiness_exposure_scan.py",
+    "rule": "absolute-home-path",
+    "reason": "reviewed: a documentation or test-fixture stand-in path naming no real user"
+  },
+  {
+    "path": "tests/test_research_capture.py",
+    "rule": "private-key",
+    "reason": "reviewed: a synthetic fixture exercising the secret scrubber; the body is a repeated filler line, not key material"
+  },
+  {
+    "path": "tests/test_scrub.py",
+    "rule": "private-key",
+    "reason": "reviewed: a synthetic fixture exercising the secret scrubber; the body is a repeated filler line, not key material"
+  },
+  {
+    "path": "tests/test_sdlc_init.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_setup.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_test_first_gate.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_unit_completion.py",
+    "rule": "credential-assignment",
+    "reason": "reviewed: a constant named for a token or marker holding a fixed non-secret string, or a fixture string asserting that shape"
+  },
+  {
+    "path": "tests/test_upstream.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_verify_detect.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tests/test_work.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": "tools/leak_scan.py",
+    "rule": "absolute-home-path",
+    "reason": "reviewed: a documentation or test-fixture stand-in path naming no real user"
+  },
+  {
+    "path": "tools/leak_scan.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
+  },
+  {
+    "path": ".sdlc/plans/429.md",
+    "rule": "email-address",
+    "blob": "f3f7e71ef2d831a8da1e012582bd47d8c46052b8",
+    "reason": "reviewed: archived goal text quoting a URL-userinfo test fixture (user and a format placeholder at github.com), not an address (blob-pinned: archived file)"
+  },
+  {
+    "path": "docs/launch/evidence/pin-rollback-2026-10-02.md",
+    "rule": "email-address",
+    "blob": "14c38669e9dce5e0ea8aa4273367ae2525755e62",
+    "reason": "reviewed: a captured git error naming the SSH remote user on github.com (git at github.com), not a person (blob-pinned: archived evidence file)"
+  },
+  {
+    "path": "tests/test_readiness_decide.py",
+    "rule": "email-address",
+    "reason": "reviewed: a git remote-URL or user.email fixture on a reserved or example host, naming no real person"
   }
 ]
