@@ -9,20 +9,20 @@ predecessor plugin and replaces it, with a notice and no refusal, so both plugin
 | | |
 | --- | --- |
 | Predecessor | its installed plugin copy, `<predecessor-install>`, version **1.4.28** |
-| Why that directory | the owner named the installed copy; of the installed set it is the latest by version order (the older ones, including 1.4.24, where the setup wizard was seen writing into this repository, were not scanned) |
+| Why that directory | the owner named the installed plugin copy as the thing to read; the scan picked, of the installed set, the latest by version order (the older ones, including 1.4.24, where the setup wizard was seen writing into this repository, were not scanned) |
 | Files hashed | 1700 |
-| sha256 before the scan | `806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada` |
-| sha256 after the scan | `806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada` |
+| sha256 before the scan | `712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6` |
+| sha256 after the scan | `712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6` |
 | Changed | no (the tool exits 2 without writing anything if the two differ) |
 | Sigma tree | commit `4c8562f` (`skills/` and `hooks/` are the scanned trees) |
 
-The hash is `sha256` over one line per file, `relative path NUL sha256(file bytes)`, files in sorted order, a symlink
+The hash is `sha256` over one line per file, `relative path NUL sha256(file bytes)`, files sorted globally by relative path, a symlink
 hashed by its target text. The predecessor is read only: it is parsed, never imported, and the sample runs execute a
 temporary copy. Nothing is written under the predecessor's directory.
 
 ## Result
 
-61 paths have a writer on both sides, 4 have one writer, 31 are directories (their files carry their own rows).
+60 paths have a writer on both sides, 4 have one writer, 31 are directories (their files carry their own rows).
 
 | Verdict | Count | Meaning |
 | --- | ---: | --- |
@@ -30,7 +30,7 @@ temporary copy. Nothing is written under the predecessor's directory.
 | additive | 3 | same schema; one side writes extra keys |
 | different-format | 3 | schema-id spelling differs, or neither key set contains the other; see Findings |
 | identical-writer | 10 | no sample reached it, but every writer function is the same code on both sides apart from brand spellings (weaker than a sample: helpers are not compared) |
-| unsampled | 32 | no sample and the writers differ: compatibility is **unverified**, not shown |
+| unsampled | 31 | no sample and the writers differ: compatibility is **unverified**, not shown |
 | one-writer | 4 | only one side writes it |
 | directory | 31 | directory creation only |
 
@@ -50,7 +50,7 @@ that no state was damaged, and it does not cover `work.enabled`, the ledger, fea
 - **different-format, corruption not demonstrated: `.sdlc/config.json`.** The key sets differ, each side having keys the
   other lacks. Each side's `setup.py configure`, run over a config the other side wrote, lost no top-level key, in either
   order. Not filed.
-- **32 unsampled paths** are not conflicts found; they are paths this run could not judge. One follow-up,
+- **31 unsampled paths** are not conflicts found; they are paths this run could not judge. One follow-up,
   **#515** (`launch:next`, queued), extends the scenario. Until then their guard entries say `compatible: false` and cite it.
 
 ## What a static scan cannot see
@@ -60,6 +60,11 @@ that no state was damaged, and it does not cover `work.enabled`, the ledger, fea
   `.sdlc/`-prefixed patterns; this tool relaxes that and maps the common parameter names (`features_dir`, `goals_dir`,
   `state_dir`, `sdlc`), and pins one writer it could not reach (`write_unit`, verified to exist by name). A writer built
   from other names is not found.
+- The destination resolver (`growth_audit.py`'s) misses `os.replace` onto a path, `shutil.copy`, `rename`, and a
+  `Path(a, "state", name)` built with commas (measured by the post-PR reviewer). A backstop catches a new function that
+  names a predecessor-written file by its own name (for example `setup-wizard-dismissed.json`) and makes a write-ish call,
+  whatever the method; it cannot tell directories apart and does not apply to wildcard-named files such as `*.lock`, so a
+  writer for those that the resolver misses is not seen.
 - A destination held in a local alias of a path (`p = root / ".sdlc" / "state"` then `p.joinpath(name).write_text(...)`):
   measured unseen in a scratch copy by the code reviewer.
 - Only `*.py` is scanned. A shell script under `hooks/` that writes a `.sdlc` path is not seen here (the write-surface
@@ -115,7 +120,6 @@ on the unmodified copy it exits 0 (`tests/test_shared_sdlc_paths.py` runs both).
 | `.sdlc/features/units/*.json` | two-writer | different-format | not-probed | feature_registry.py | feature_registry.py | 0 / 0 |
 | `.sdlc/goals` | directory | directory | - | pipeline.py, sdlc_init.py, sources.py | pipeline.py, sdlc_init.py, sources.py | 6 / 7 |
 | `.sdlc/goals/*.md` | two-writer | same-format | - | pipeline.py, sdlc_init.py | pipeline.py, sdlc_init.py | 4 / 4 |
-| `.sdlc/goals/0000-demo.md` | two-writer | unsampled | - | pipeline.py, sdlc_init.py | pipeline.py, sdlc_init.py | 4 / 4 |
 | `.sdlc/journey` | directory | directory | - | sources.py | sources.py | 0 / 0 |
 | `.sdlc/journey/*.md` | two-writer | same-format | - | sources.py | sources.py | 1 / 1 |
 | `.sdlc/knowledge` | directory | directory | - | kg.py | kg.py | 1 / 3 |

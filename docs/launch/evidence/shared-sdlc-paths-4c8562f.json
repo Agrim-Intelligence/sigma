@@ -6,12 +6,12 @@
     "identical-writer": 10,
     "one-writer": 4,
     "same-format": 13,
-    "unsampled": 32
+    "unsampled": 31
   },
   "predecessor": {
     "files_hashed": 1700,
-    "sha256_after": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
-    "sha256_before": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
+    "sha256_after": "712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6",
+    "sha256_before": "712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6",
     "unchanged": true,
     "version": "1.4.28"
   },
@@ -26,7 +26,6 @@
     ".sdlc/features/units/*.json",
     ".sdlc/goals",
     ".sdlc/goals/*.md",
-    ".sdlc/goals/0000-demo.md",
     ".sdlc/journey",
     ".sdlc/journey/*.md",
     ".sdlc/knowledge",
@@ -419,33 +418,6 @@
         "skills/agrim-loop/scripts/pipeline.py::propose_goals"
       ],
       "verdict": "same-format"
-    },
-    {
-      "class": "two-writer",
-      "corruption": null,
-      "pattern": ".sdlc/goals/0000-demo.md",
-      "predecessor_reader_count": 4,
-      "predecessor_sample": null,
-      "predecessor_writers": [
-        "pipeline.py::discover",
-        "pipeline.py::main",
-        "pipeline.py::propose_from_discovery",
-        "pipeline.py::propose_goals",
-        "sdlc_init.py::main",
-        "sdlc_init.py::scaffold_demo"
-      ],
-      "sigma_reader_count": 4,
-      "sigma_sample": null,
-      "sigma_writers": [
-        "skills/agrim-init/scripts/sdlc_init.py::main",
-        "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
-        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-        "skills/agrim-loop/scripts/pipeline.py::discover",
-        "skills/agrim-loop/scripts/pipeline.py::main",
-        "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
-        "skills/agrim-loop/scripts/pipeline.py::propose_goals"
-      ],
-      "verdict": "unsampled"
     },
     {
       "class": "directory",
@@ -3052,6 +3024,45 @@
     "skills/",
     "hooks/"
   ],
+  "sigma_literal_writers": {
+    ".last-prune": [
+      "skills/agrim-loop/scripts/ledger.py::_maybe_prune_journal",
+      "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+    ],
+    "STATE.md": [
+      "skills/agrim-loop/scripts/state.py::_state_file"
+    ],
+    "STATE.md.lock": [
+      "skills/agrim-loop/scripts/state.py::_cursor_lock"
+    ],
+    "TEAM.md": [
+      "skills/agrim-loop/scripts/ledger.py::main",
+      "skills/agrim-loop/scripts/sync.py::_write_team"
+    ],
+    "config.json": [
+      "skills/agrim-define/scripts/define.py::main",
+      "skills/agrim-doctor/scripts/migrate.py::_plan_config",
+      "skills/agrim-doctor/scripts/migrate.py::_plan_schemas",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+      "skills/agrim-setup/scripts/setup.py::write_cfg"
+    ],
+    "north-star.md": [
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+    ],
+    "review-queue.md": [
+      "skills/agrim-loop/scripts/state.py::_queue"
+    ],
+    "supervisor.log": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ],
+    "supervisor.run.out": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ],
+    "supervisor.tail": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ]
+  },
   "sigma_written": {
     ".sdlc/acceptance": [
       "skills/agrim-loop/scripts/acceptance.py::record"
@@ -3131,15 +3142,13 @@
       "skills/agrim-loop/scripts/sources.py::create_dependency"
     ],
     ".sdlc/goals/*.md": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
       "skills/agrim-loop/scripts/pipeline.py::discover",
       "skills/agrim-loop/scripts/pipeline.py::main",
       "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
       "skills/agrim-loop/scripts/pipeline.py::propose_goals"
-    ],
-    ".sdlc/goals/0000-demo.md": [
-      "skills/agrim-init/scripts/sdlc_init.py::main",
-      "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
-      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras"
     ],
     ".sdlc/journey": [
       "skills/agrim-loop/scripts/sources.py::note"

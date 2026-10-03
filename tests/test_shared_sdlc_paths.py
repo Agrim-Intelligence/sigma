@@ -369,3 +369,41 @@ def test_control_a_new_writer_on_the_wizard_path_turns_the_documented_gesture_re
     red = _doc_gesture(scratch)
     assert red.returncode == 2, red.stdout + red.stderr
     assert "setup_wizard.py::_control_extra_writer" in red.stderr and WIZARD_PATH in red.stderr
+
+
+VARIANTS = {
+    "os.replace onto the path": "import os\n    os.replace('tmp', str(sdlc_dir / 'state' / 'setup-wizard-dismissed.json'))\n",
+    "shutil.copy to the path": "import shutil\n    shutil.copy('a', str(sdlc_dir) + '/state/' + 'setup-wizard-dismissed.json')\n",
+    "comma-built Path write": "from pathlib import Path\n    Path(sdlc_dir, 'state', 'setup-wizard-dismissed.json').write_text('[]')\n",
+    "rename onto the path": "from pathlib import Path\n    Path('t').rename(Path(sdlc_dir, 'state', 'setup-wizard-dismissed.json'))\n",
+}
+
+
+def test_control_write_methods_the_destination_resolver_misses_are_caught_by_the_literal_backstop(tmp_path):
+    tool, data = _tool(), _fixture()
+    scratch = _scratch_copy(tmp_path)
+    wizard = scratch / "skills" / "agrim-init" / "scripts" / "setup_wizard.py"
+    original = wizard.read_text(encoding="utf-8")
+    base = tool.literal_sites(scratch, tool.literal_basenames(data["predecessor_written"]))
+    assert tool.check(scratch, data, writers=_real_writers(), literals=base) == []
+    for label, body in VARIANTS.items():
+        wizard.write_text(original + "\n\ndef _control_variant(sdlc_dir):\n    " + body, encoding="utf-8")
+        found = tool.check(scratch, data, writers=_real_writers(),
+                           literals=tool.literal_sites(scratch, tool.literal_basenames(data["predecessor_written"])))
+        assert any("_control_variant" in p for p in found), label
+    wizard.write_text(original, encoding="utf-8")
+
+
+def test_tree_hash_does_not_depend_on_directory_walk_order(tmp_path):
+    tool = _tool()
+    for rel in ("b/a.txt", "a/z.txt", "a.txt", "b.txt"):
+        _write(tmp_path, rel, rel)
+    expected = hashlib.sha256()
+    for rel in sorted(["b/a.txt", "a/z.txt", "a.txt", "b.txt"]):
+        body = hashlib.sha256(rel.encode()).hexdigest()
+        expected.update(("%s\0%s\n" % (rel, body)).encode())
+    assert tool.tree_hash(tmp_path)[0] == expected.hexdigest()
+
+
+def test_numbered_goal_files_share_one_pattern():
+    assert _tool().canonical(".sdlc/goals/0000-demo.md") == ".sdlc/goals/*.md"

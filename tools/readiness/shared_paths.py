@@ -49,24 +49,26 @@ STEP_TIMEOUT = 120
 
 
 def tree_hash(directory):
-    """sha256 over (relative path, file sha256) for every file; a symlink hashes its target text."""
-    outer = hashlib.sha256()
-    count = 0
-    for base, dirs, files in os.walk(directory, followlinks=False):
-        dirs.sort()
-        for name in sorted(files):
+    """sha256 over (relative path, file sha256) for every file, sorted globally by relative path.
+
+    A symlink hashes its target text. The line for each file is `<relative path> NUL <sha256>`."""
+    found = []
+    for base, _dirs, files in os.walk(directory, followlinks=False):
+        for name in files:
             full = os.path.join(base, name)
-            if os.path.islink(full):
-                body = hashlib.sha256(os.readlink(full).encode("utf-8", "replace")).hexdigest()
-            else:
-                inner = hashlib.sha256()
-                with open(full, "rb") as handle:
-                    for block in iter(lambda: handle.read(1 << 20), b""):
-                        inner.update(block)
-                body = inner.hexdigest()
-            outer.update(("%s\0%s\n" % (os.path.relpath(full, directory), body)).encode("utf-8", "replace"))
-            count += 1
-    return outer.hexdigest(), count
+            found.append((os.path.relpath(full, directory), full))
+    outer = hashlib.sha256()
+    for rel, full in sorted(found):
+        if os.path.islink(full):
+            body = hashlib.sha256(os.readlink(full).encode("utf-8", "replace")).hexdigest()
+        else:
+            inner = hashlib.sha256()
+            with open(full, "rb") as handle:
+                for block in iter(lambda: handle.read(1 << 20), b""):
+                    inner.update(block)
+            body = inner.hexdigest()
+        outer.update(("%s\0%s\n" % (rel, body)).encode("utf-8", "replace"))
+    return outer.hexdigest(), len(found)
 
 
 def plugin_manifest(directory):
@@ -88,6 +90,7 @@ def canonical(pattern):
         return None
     value = re.sub(r"<[^>]*>", "*", value)
     value = re.sub(r"(?<=/)NNNN-\*", "*", value)
+    value = re.sub(r"(?<=/)\d{4}-[^/*]*(?=\.md$)", "*", value)
     value = re.sub(r"\*+", "*", value)
     value = re.sub(r"(?<=/)\d+(?=\.|/|$)", "*", value)
     value = value.rstrip("/")
@@ -168,6 +171,56 @@ def supplementary_writers(root):
                 rel = path.relative_to(Path(root).resolve()).as_posix()
                 found.setdefault(pattern, []).append("%s::%s" % (rel, name))
     return found
+
+
+_WRITEISH = {"write_text", "write_bytes", "open", "replace", "rename", "copy", "copy2", "copyfile",
+             "copyfileobj", "move", "mkdir", "touch", "dump", "write", "writelines", "symlink", "link",
+             "fdopen", "mkstemp"}
+
+
+def literal_sites(root, basenames):
+    """{basename: sorted site ids}: functions that name a file literally AND make a write-ish call.
+
+    A backstop for what the destination resolver misses (os.replace onto a path, shutil.copy, a
+    `Path(a, "state", name)` built with commas): it keys on the file's own name, so it cannot tell
+    which directory the file is in, and it also flags a function that writes something else while
+    naming the file. Over-flagging costs a vetted entry, never a missed writer of a named file."""
+    root = Path(root).resolve()
+    wanted = set(basenames)
+    found = {}
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        if not rel.startswith(SCOPES) or "tests" in path.relative_to(root).parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        owners = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        owners += [m for c in tree.body if isinstance(c, ast.ClassDef)
+                   for m in c.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for function in owners:
+            docstring = function.body[0].value if (
+                function.body and isinstance(function.body[0], ast.Expr)
+                and isinstance(function.body[0].value, ast.Constant)) else None
+            names = {n.value for n in ast.walk(function)
+                     if isinstance(n, ast.Constant) and isinstance(n.value, str) and n is not docstring}
+            hit = sorted(wanted & names)
+            if not hit:
+                continue
+            writes = any(isinstance(n, ast.Call) and (
+                (isinstance(n.func, ast.Attribute) and n.func.attr in _WRITEISH)
+                or (isinstance(n.func, ast.Name) and n.func.id in _WRITEISH)) for n in ast.walk(function))
+            if writes:
+                for name in hit:
+                    found.setdefault(name, set()).add("%s::%s" % (rel, function.name))
+    return {name: sorted(sites) for name, sites in sorted(found.items())}
+
+
+def literal_basenames(patterns):
+    out = set()
+    for pattern in patterns:
+        last = pattern.rsplit("/", 1)[-1]
+        if "*" not in last and "." in last:
+            out.add(last)
+    return out
 
 
 def _read_target(node):
@@ -611,6 +664,7 @@ def build(sigma_root, predecessor_root, samples=True):
             "scope": list(SCOPES), "counts": counts,
             "predecessor_written_patterns": sorted(pred_w),
             "sigma_written": sigma_w,
+            "sigma_literal_writers": literal_sites(sigma_root, literal_basenames(pred_w)),
             "rows": rows, "samples": _publishable(sample)}
 
 
@@ -635,14 +689,22 @@ def load_fixture(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def check(sigma_root, fixture, writers=None):
+def check(sigma_root, fixture, writers=None, literals=None):
     """-> list of violation strings; empty when every Sigma writer of a predecessor path is vetted.
 
-    `writers` is an already-computed `scan_writers(sigma_root)`, so a caller testing several fixtures
-    against one tree scans it once."""
+    `writers` and `literals` are already-computed `scan_writers` / `literal_sites` results, so a caller
+    testing several fixtures against one tree scans it once."""
     predecessor_paths = list(fixture["predecessor_written"])
     entries = {entry["pattern"]: entry for entry in fixture["entries"]}
     problems = []
+    literal = literal_sites(sigma_root, literal_basenames(predecessor_paths)) if literals is None else literals
+    for owner in predecessor_paths:
+        base = owner.rsplit("/", 1)[-1]
+        entry = entries.get(owner)
+        for site in literal.get(base, []):
+            if entry is None or site not in entry.get("vetted_writers", []):
+                problems.append("%s: new Sigma writer %s names the file literally and writes; it is not in the "
+                                "vetted_writers of the entry for %s" % (owner, site, owner))
     for pattern, sites in (scan_writers(sigma_root) if writers is None else writers).items():
         matched = [p for p in predecessor_paths if overlaps(p, pattern)]
         for owner in matched:
@@ -684,7 +746,9 @@ def guard_fixture(result, finding_issue, followup_issue):
     rows = {row["pattern"]: row for row in result["rows"]}
     entries = []
     for pattern in result["predecessor_written_patterns"]:
-        sites = sorted({site for key, found in sigma_w.items() if overlaps(key, pattern) for site in found})
+        sites = {site for key, found in sigma_w.items() if overlaps(key, pattern) for site in found}
+        sites |= set(result["sigma_literal_writers"].get(pattern.rsplit("/", 1)[-1], []))
+        sites = sorted(sites)
         if not sites:
             continue
         row = rows[pattern]
