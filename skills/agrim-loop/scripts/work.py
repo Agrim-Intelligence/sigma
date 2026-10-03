@@ -6092,6 +6092,154 @@ def prune_terminal_review_copies(sdlc_dir, goal):
 
 
 
+#: Terminal goals whose review generations one `prune_terminal_review_generations` call removes.
+#: A count, not a size: it only keeps one `record done` polite when a restored store holds many.
+REVIEW_PRUNE_GOALS_PER_CALL = 10
+_REVIEW_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def _review_goal_key(value):
+    """The goal identity the work record and action log key on, or None when it is not a safe one.
+
+    Manifests, evidence and posts carry `str(goal)` exactly as the publisher was handed it (a bare
+    issue number, or a goal-file path), so raw strings are never compared."""
+    try:
+        key = stem(str(value))
+    except Exception:                       # noqa: BLE001 - a hostile value is skipped, never raised on
+        return None
+    return None if not key or state.unsafe_goal_reason(key) else key
+
+
+def _review_goal_terminal(sdlc_dir, key, goal_done=False, actionlog=None):
+    """True only for a goal whose work record is GONE (existence, not parseability: `_record` reads
+    a corrupt record as "not started") and which the caller or the action log proves recorded done."""
+    try:
+        if record_path(sdlc_dir, key).exists():
+            return False
+        if goal_done:
+            return True
+        entries = (actionlog or _load("actionlog")).read_goal(sdlc_dir, key)
+    except Exception:                       # noqa: BLE001 - unknown is not terminal
+        return False
+    last = next((e for e in reversed(entries) if e.get("kind") in ("claimed", "recorded")), None)
+    return bool(last and last["kind"] == "recorded" and last.get("result") == "done")
+
+
+def _review_json(path):
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def prune_terminal_review_generations(sdlc_dir, goal=None, limit=REVIEW_PRUNE_GOALS_PER_CALL, goal_done=False):
+    """Remove the generation-keyed review evidence of goals that are finished, nothing else.
+
+    Owned and re-read only while a goal's work record exists (`post_review` and
+    `reconcile_review_post` both start from it; `work.finish` unlinks it), and the merge gate reads
+    the PR's comments, never these files.  A generation is removed only when exactly one goal owns it
+    (a manifest naming it, or its `evidence.json`) and that goal is terminal; a successor's manifest
+    naming it, a symlink, a stray name, or an unattributable evidence-less generation is left alone.
+    Per goal: its posts, then each owned generation's result and directory, then its manifests, each
+    re-read just before the unlink and removed only while they still name a removed generation, so a
+    crash converges on the next call and a goal re-claimed mid-prune keeps its new pointer.
+    At most `limit` goals per call; `goal` (if given) goes first and `goal_done` is the caller's proof
+    that it just recorded done.  Fail-open, idempotent, returns the generation ids removed."""
+    base = pathlib.Path(sdlc_dir)
+    root = base / "state"
+    try:
+        if root.is_symlink() or root.resolve() != base.resolve() / "state":
+            return []
+        dirs = {n: root / n for n in ("review-generations", "review-manifests", "review-posts", "review-results")}
+        for path in dirs.values():
+            if path.is_symlink() or (path.exists() and path.resolve() != root.resolve() / path.name):
+                print(f"work.py: review-evidence cleanup skipped ({path.name} is reached through a link)",
+                      file=sys.stderr)
+                return []
+        owners, manifests, posts, gen_dirs = {}, {}, {}, {}
+        if dirs["review-generations"].is_dir():
+            for entry in dirs["review-generations"].iterdir():
+                if _REVIEW_ID.fullmatch(entry.name) and entry.is_dir() and not entry.is_symlink():
+                    gen_dirs[entry.name] = entry
+                    ev = _review_json(entry / "evidence.json")
+                    key = _review_goal_key(ev.get("goal")) if ev else None
+                    if key:
+                        owners.setdefault(entry.name, set()).add(key)
+        if dirs["review-manifests"].is_dir():
+            for entry in dirs["review-manifests"].glob("*.json"):
+                m = _review_json(entry)
+                key = _review_goal_key(m.get("goal")) if m else None
+                gen = m.get("generation_id") if m else None
+                if key and isinstance(gen, str) and _REVIEW_ID.fullmatch(gen):
+                    manifests[entry] = (key, gen)
+                    owners.setdefault(gen, set()).add(key)
+        if dirs["review-posts"].is_dir():
+            for entry in dirs["review-posts"].glob("*.json"):
+                req = _review_json(entry)
+                key = _review_goal_key(req.get("goal")) if req else None
+                if key:
+                    posts[entry] = key
+    except OSError as exc:
+        print(f"work.py: review-evidence cleanup skipped ({exc})", file=sys.stderr)
+        return []
+
+    first = _review_goal_key(goal) if goal is not None else None
+    log = _load("actionlog")                  # once: loading it re-executes the module (~25 ms)
+    candidates = sorted({k for ks in owners.values() for k in ks} | set(posts.values()))
+    if first in candidates:
+        candidates.remove(first)
+        candidates.insert(0, first)
+    removed, pruned = [], 0
+    for key in candidates:
+        if pruned >= limit:
+            break
+        if not _review_goal_terminal(sdlc_dir, key, goal_done=goal_done and key == first, actionlog=log):
+            continue
+        progress = False
+        for post, owner in posts.items():
+            if owner == key:
+                try:
+                    progress = progress or post.exists()
+                    post.unlink(missing_ok=True)
+                except OSError as exc:
+                    print(f"work.py: review-post cleanup skipped for {post.name} ({exc})", file=sys.stderr)
+        gone = set()
+        for gen, who in owners.items():
+            if who != {key}:
+                continue
+            gen_dir = gen_dirs.get(gen)
+            try:
+                (dirs["review-results"] / (gen + ".json")).unlink(missing_ok=True)
+                if gen_dir is not None:
+                    shutil.rmtree(gen_dir)
+            except Exception as exc:          # noqa: BLE001 - cleanup is terminal fail-open work
+                print(f"work.py: review-evidence cleanup skipped for {gen} ({exc})", file=sys.stderr)
+                continue
+            gone.add(gen)
+            if gen_dir is not None:
+                removed.append(gen)
+                progress = True
+        for path, (owner, gen) in manifests.items():
+            if owner != key or gen not in gone:
+                continue
+            fresh = _review_json(path)           # a re-claimed goal may have published since the index
+            if fresh and fresh.get("generation_id") == gen and _review_goal_terminal(sdlc_dir, key, goal_done=goal_done and key == first, actionlog=log):
+                try:
+                    path.unlink(missing_ok=True)
+                    progress = True
+                except OSError as exc:
+                    print(f"work.py: review-manifest cleanup skipped for {path.name} ({exc})", file=sys.stderr)
+        # Only a goal that made progress spends the budget: one stuck forever (two owners, a failing
+        # delete) must not starve every goal behind it.
+        pruned += progress
+    if removed:
+        print(f"work.py: pruned {len(removed)} review generation(s) of {pruned} terminal goal(s)", file=sys.stderr)
+    return removed
+
+
 #: How many open PRs on one design goal's head branch this will look at before refusing as
 #: ambiguous -- mirrors `SIBLING_PR_LIMIT`'s own reasoning (work.py:3311-3314) exactly: "one head
 #: can legitimately carry PRs to two different bases, and the point of the cap is to SEE the
@@ -6449,6 +6597,28 @@ def main(argv):
         except ValueError as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 3 and argv[1] == "prune-review-generations":
+        usage = "usage: work.py prune-review-generations <sdlc_dir> [<goal> [--done]] [--limit N]"
+        rest, limit, done = list(argv[3:]), REVIEW_PRUNE_GOALS_PER_CALL, False
+        goal = None
+        try:
+            while rest:
+                arg = rest.pop(0)
+                if arg == "--limit":
+                    limit = int(rest.pop(0))
+                elif arg == "--done":
+                    done = True
+                elif arg.startswith("--") or goal is not None:
+                    raise ValueError(arg)
+                else:
+                    goal = arg
+            if limit < 1 or (done and goal is None):
+                raise ValueError("bad value")
+        except (ValueError, IndexError):
+            print(usage, file=sys.stderr)
+            return 2
+        print(json.dumps(prune_terminal_review_generations(argv[2], goal, limit, goal_done=done)))
+        return 0
     if len(argv) >= 4 and argv[1] == "review-evidence":
         manifest, result = _flag(argv, "--manifest"), _flag(argv, "--review-result")
         if not manifest or not result:

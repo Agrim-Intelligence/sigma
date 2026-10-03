@@ -229,6 +229,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/work.py | pr | git-push | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | prune_terminal_review_copies | fs-rmtree | 1 | ungated | high |
+| skills/agrim-loop/scripts/work.py | prune_terminal_review_generations | fs-remove | 3 | ungated | high |
+| skills/agrim-loop/scripts/work.py | prune_terminal_review_generations | fs-rmtree | 1 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-destructive | 3 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
