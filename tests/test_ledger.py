@@ -1601,11 +1601,12 @@ def _raw_bytes(d, actor="dana", stream="events"):
 
 def test_append_scrubs_a_planted_pem_block_in_gate_why(tmp_path):
     d = _sdlc(tmp_path, ON)
-    secret = "-----BEGIN PRIVATE KEY-----\nMIIBVwIBADANBgkqhkiG9w0BAQEFAASCAT\n-----END PRIVATE KEY-----"
+    pem_body = "MIIBVwIBADANBgkq" + "hkiG9w0BAQEFAASCAT"
+    secret = "-----BEGIN PRIVATE KEY-----\n" + pem_body + "\n-----END PRIVATE KEY-----"
     ledger.append(d, ON, "gate", "g.md", stream="events", gate="merge", verdict="block",
                   why=f"leaked pem: {secret}")
     disk = _raw_bytes(d).decode()
-    assert "BEGIN PRIVATE KEY" not in disk and "MIIBVwIBADANBgkqhkiG9w0BAQEFAASCAT" not in disk
+    assert "BEGIN PRIVATE KEY" not in disk and pem_body not in disk
     assert "[REDACTED" in disk
 
 

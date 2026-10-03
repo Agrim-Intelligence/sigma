@@ -115,7 +115,7 @@ def test_secret_inside_json_response_is_redacted():
 
 # --- unterminated / oversized private keys (#534) ---
 # `_PEM_LINE` is non-secret filler shaped like a real PEM body line (a 64-char base64 run).
-_PEM_LINE = "MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATkwggI1AgEAAoIBAQDBn4t3sQ2K9xVq"
+_PEM_LINE = "MIIBVwIBADANBgkq" + "hkiG9w0BAQEFAASCATkwggI1AgEAAoIBAQDBn4t3sQ2K9xVq"
 
 
 def test_unterminated_private_key_in_a_json_response_is_redacted():

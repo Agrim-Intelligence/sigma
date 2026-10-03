@@ -80,7 +80,9 @@ for wrap in (64, 70):
     _g("der", f"rewrap{wrap}", "\n".join(_FLAT_RSA[i:i + wrap] for i in range(0, 400, wrap)), _kb(2))
 _g("der", "blank-every-2-no-der", "\n".join(_RSA12[0:2] + [""] + _RSA12[2:4] + [""] + _RSA12[4:6]), [])
 for i, line in enumerate(["key: {b}", "KEY='{b}'", '{"k": "{b}"}', "x" + " " * 3 + "{b}", "#######-- {b}"]):
-    _g("der-limit", f"not-line-start{i}", line.replace("{b}", _ED_DER[0]), [])
+    _g("der-carrier", f"embedded{i}", line.replace("{b}", _ED_DER[0]), _kb(2))
+for i, line in enumerate(["key: {b}", "KEY='{b}'", '{"k": "{b}"}']):
+    _g("der-carrier-public", f"public{i}", line.replace("{b}", _der_text("certificate", _NOT_PRIVATE)[0]), [])
 
 _hex40 = "".join(random.Random(3).choice("abcdef0123456789") for _ in range(40))
 for what, line in (("slash", "/" * 80), ("sha1", _hex40), ("digitless", _lines([64], seed=2, mixed=False)[0])):
@@ -163,11 +165,12 @@ _g("ambiguity", "anchor-digest-table", f"| {_HDR_PROSE} | a PKCS8 header |\n\n{_
 _g("ambiguity", "anchor-digest-diff", f"@@ -1,0 +1,3 @@\n+- Reads the {_HDR_PROSE} header.\n+\n+{_DIGEST}", _kb(5))
 _g("ambiguity", "cert-added-by-a-diff", "\n".join(["--- /dev/null", "+++ b/ca.pem", "@@ -0,0 +1,12 @@"]
                                                  + ["+" + ln for ln in _public_block("CERTIFICATE").splitlines()]), _kb(6))
-# (4) Indentation other than space / tab, and line separators other than LF / CR, hide a DER first line.
+# (4) Token-mode recognition treats any non-token character as a carrier boundary, so non-ASCII
+# indentation and line separators no longer hide a private DER token on the same physical line.
 for name, ws in (("em-space", " "), ("ideographic-space", "　"), ("vt", "\v"), ("ff", "\f")):
-    _g("ws-limit", f"indent-{name}", ws + _ED_DER[0], [])
+    _g("ws-limit", f"indent-{name}", ws + _ED_DER[0], _kb(2))
 for name, sep in (("u2028", " "), ("u2029", " "), ("nel", "\x85")):
-    _g("ws-limit", f"separator-{name}", sep.join(["x", _ED_DER[0], "y"]), [])
+    _g("ws-limit", f"separator-{name}", sep.join(["x", _ED_DER[0], "y"]), _kb(2))
 
 # Post-PR review 3 (#433), each measured first through the gesture on real throwaway keys. The 2 flagged marker
 # rows and the 12 flagged separator rows are red on a3c913c (it reads no DER line); the other 11 are green there.
@@ -189,14 +192,14 @@ _BODY6 = _lines([64] * 6, seed=150)
 _g("span", "bound-body-after-a-span", _public_block("CERTIFICATE") + "\n\n" + "\n".join(_BODY6), _kb(15))
 _g("span", "bound-body-before-a-span", "\n".join(_BODY6) + "\n\n" + _public_block("CERTIFICATE"), _kb(2))
 _g("span", "bound-body-inside-a-span", "\n".join([_C] + _BODY6 + [_CE]), [])
-# (2) U+2028, U+2029 and NEL do not end a line, so a DER first line that opens the file or follows an LF is
-# still read (whatever separates the rest of the body); only one that follows such a separator is hidden.
+# (2) U+2028, U+2029 and NEL do not end a scanner line; token-mode now also finds the DER token after
+# each separator, while line attribution remains the one physical scanner line.
 _RSA12_DER = _der_text("rsa-pkcs1")[:12]
 for name, sep in (("u2028", " "), ("u2029", " "), ("nel", "\x85")):
     for kind, body in (("p256", _P256_DER), ("rsa12", _RSA12_DER)):
         _g("separator", f"{name}-{kind}-file-start", (sep.join(body) + "\n").encode(), _kb(1))
         _g("separator", f"{name}-{kind}-after-lf", sep.join(body), _kb(2))
-        _g("separator", f"{name}-{kind}-after-separator", "x" + sep + sep.join(body), [])
+        _g("separator", f"{name}-{kind}-after-separator", "x" + sep + sep.join(body), _kb(2))
 
 _ALL = _ROWS + _GUARDS
 
@@ -263,8 +266,8 @@ def test_public_der_is_not_read_as_private(guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
 
-@pytest.mark.parametrize("path,expected", _ids("der-limit"))
-def test_the_limit_a_key_that_is_not_at_the_start_of_its_line_is_not_seen(guard_batch, path, expected):
+@pytest.mark.parametrize("path,expected", _ids("der-carrier") + _ids("der-carrier-public"))
+def test_embedded_der_tokens_are_read_but_public_der_is_not(guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
 
@@ -307,12 +310,12 @@ def test_the_measured_reach_of_a_plus_or_slash_run(guard_batch, path, expected):
 
 
 @pytest.mark.parametrize("path,expected", _ids("ws-limit"))
-def test_the_limit_other_whitespace_and_separators_hide_a_der_line(guard_batch, path, expected):
+def test_token_mode_reads_der_after_other_whitespace_and_separators(guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
 
 @pytest.mark.parametrize("path,expected", _ids("separator"))
-def test_a_der_first_line_that_opens_the_file_or_follows_an_lf_is_seen_whatever_separates_the_rest(
+def test_a_der_token_is_seen_at_file_start_after_lf_or_after_an_inline_separator(
         guard_batch, path, expected):
     _check(guard_batch, path, expected)
 
