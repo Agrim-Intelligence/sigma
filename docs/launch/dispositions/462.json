@@ -1,0 +1,93 @@
+[
+  {
+    "pattern": ".sdlc/acceptance/",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/acceptance/<goal-stem>.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/<epic>-plan.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/<goal-stem>.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/<goal-stem>.slices.json",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/scope/<slug>.plan.json",
+    "issue": "#462",
+    "decision": "intentionally unbounded (local, gitignored: never committed)",
+    "pruner_or_cap": "none by decision: written one set per triage or scope run into a gitignored directory, so it never reaches git; ceiling about 2.3 KB per triage run (one run measured), scope plan size not measured; owner the operator; reclaim is deleting the files by hand",
+    "evidence": "tests/test_b6_462.py (gitignored node: git check-ignore on the triage, scope and reconcile directories); measurement, ownership and reclaim in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/triage/",
+    "issue": "#462",
+    "decision": "intentionally unbounded (local, gitignored: never committed)",
+    "pruner_or_cap": "none by decision: written one set per triage or scope run into a gitignored directory, so it never reaches git; ceiling about 2.3 KB per triage run (one run measured), scope plan size not measured; owner the operator; reclaim is deleting the files by hand",
+    "evidence": "tests/test_b6_462.py (gitignored node: git check-ignore on the triage, scope and reconcile directories); measurement, ownership and reclaim in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.json",
+    "issue": "#462",
+    "decision": "intentionally unbounded (local, gitignored: never committed)",
+    "pruner_or_cap": "none by decision: written one set per triage or scope run into a gitignored directory, so it never reaches git; ceiling about 2.3 KB per triage run (one run measured), scope plan size not measured; owner the operator; reclaim is deleting the files by hand",
+    "evidence": "tests/test_b6_462.py (gitignored node: git check-ignore on the triage, scope and reconcile directories); measurement, ownership and reclaim in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/plans/triage/<UTC-date>-<slug>.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (local, gitignored: never committed)",
+    "pruner_or_cap": "none by decision: written one set per triage or scope run into a gitignored directory, so it never reaches git; ceiling about 2.3 KB per triage run (one run measured), scope plan size not measured; owner the operator; reclaim is deleting the files by hand",
+    "evidence": "tests/test_b6_462.py (gitignored node: git check-ignore on the triage, scope and reconcile directories); measurement, ownership and reclaim in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/research/",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/research/235.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  },
+  {
+    "pattern": ".sdlc/research/<goal-slug>.md",
+    "issue": "#462",
+    "decision": "intentionally unbounded (tracked project history; per-file and per-goal ceiling enforced by test)",
+    "pruner_or_cap": "none by decision: one set of records per goal in git history, so deleting one deletes the audit trail; ceiling 131,072 B per plan or research file, 32,768 B per acceptance file and 32,768 B average per goal, enforced by test; owner the project maintainers; reclaim is a reviewed git commit by a human, never a Sigma script",
+    "evidence": "tests/test_b6_462.py (records_over_ceiling, red on an over-cap record; no_pruner node); readers, measurements, 10x/100x, owner, reclaim and recovery in docs/launch/b6-committed-work-records.md"
+  }
+]
