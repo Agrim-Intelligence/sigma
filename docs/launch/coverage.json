@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "issue": 194,
+  "scope": [
+    "skills/",
+    "hooks/"
+  ],
+  "metric": "line coverage (statements), not branch",
+  "tool": "coverage.py",
+  "tool_version": "7.16.2",
+  "pytest_version": "9.1.1",
+  "python": "3.12.13",
+  "platform": "Darwin 25.6.0 arm64 (macOS 26.6.2), local developer machine, not a CI runner",
+  "revision": "a23f6c6c4d320ffd3f94b3de262554b5f2a7d5b6",
+  "commands": [
+    "python3.12 -m venv <scratch>/venv && <scratch>/venv/bin/pip install pytest coverage",
+    "python -m coverage erase",
+    "python -m coverage run -m pytest tests/ -q",
+    "python -m coverage combine",
+    "python -m coverage report"
+  ],
+  "tests": {
+    "passed": 11569,
+    "skipped": 24,
+    "xfailed": 2,
+    "failed": 0,
+    "pytest_seconds": 2489
+  },
+  "statements": 37806,
+  "missing": 3436,
+  "line_percent": 90.91,
+  "not_measured": [
+    "scripts that tests copy to another path run from outside the measured source and are not attributed (6 test files)",
+    "children started with a scrubbed environment lose COVERAGE_PROCESS_START and are not traced",
+    "evals/run.py, which CI runs as its own step",
+    "branch coverage",
+    "line coverage on Linux or any Python other than 3.12.13 (the one Linux trial failed before it printed a total)"
+  ],
+  "enforced_in_ci": false,
+  "candidate_floor_percent": 85,
+  "candidate_floor_rule": "whole-number measured percent (90) minus 5 points; not enforced anywhere",
+  "ci_trial": {
+    "what": "the suite under coverage on ubuntu-latest Python 3.12 (this change's own pull request, first head)",
+    "run": "GitHub Actions run 37105964337, job 'test (ubuntu-latest, 3.12)'",
+    "pytest_step_seconds": 3154,
+    "baseline_pytest_step_seconds": 1481,
+    "baseline_source": "GitHub Actions run 37098147702 on main, same leg, plain pytest step",
+    "ratio": 2.13,
+    "job_seconds": 3166,
+    "job_timeout_seconds": 3600,
+    "result": "1 failed, 11569 passed, 28 skipped, 2 xfailed",
+    "failed_test": "test_real_repository_scan_is_bounded_and_keeps_sources_writer_coverage (a 15 s subprocess timeout; killed under tracing)",
+    "line_percent_on_linux": null,
+    "line_percent_note": "not produced: the step stopped at the failing pytest exit, before combine and report ran"
+  }
+}

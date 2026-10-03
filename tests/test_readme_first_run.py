@@ -496,6 +496,10 @@ VERSION_ALLOW = {
     ("contract/README.md", "1.1"): "the event contract's own planned version (`in v1.1 or later`)",
     ("docs/bench/preregistration.md", "1.4.26"): "the predecessor arm's measured release on the run date",
     ("docs/launch/evidence/330-control.md", "3.12.13"): "the measured Python interpreter version",
+    ("docs/launch/coverage.md", "7.16.2"): "the measured coverage.py version (#194)",
+    ("docs/launch/coverage.md", "9.1.1"): "the measured pytest version (#194)",
+    ("docs/launch/coverage.md", "3.12.13"): "the measured Python interpreter version (#194)",
+    ("docs/launch/coverage.md", "25.6.0"): "the measured Darwin kernel version (#194)",
 }
 
 

@@ -2172,8 +2172,12 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   suite — including the **leakage gate** (`tools/leak_scan.py`: home paths, secret shapes,
   private-key bodies and links into the owner's other repositories; its docstring lists what it
   cannot see), the **hook behavioral-spec**, and the **Tier-1 quality
-  gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. CI measures **no** code coverage
-  today (no `--cov` run, no minimum); adding one is issue #194.
+  gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. CI neither measures nor
+  enforces code coverage. A one-off local run of the suite under coverage.py (Python 3.12, macOS) gave last measured
+  line coverage of **90.9%** over `skills/` and `hooks/`; it understates, because scripts tests copy elsewhere and
+  children started with a scrubbed environment are not traced. A Linux trial of the same run took 2.1 times as long
+  as the plain leg and tripped a timing test, so it is not a gate yet. Commands, the trial and what is not
+  measured: [docs/launch/coverage.md](docs/launch/coverage.md).
 
 ## Contributing, support and security
 
