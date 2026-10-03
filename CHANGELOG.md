@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The benchmark go threshold is an exact paired test that fits 15 tasks** (#502). The old rule (lower 95% bootstrap
+  bound of the paired difference at least -5 points) passed a result with every task tied and one with 2 wins and no
+  losses, yet failed 3 wins, 1 loss and 11 ties (lower bound -13.3 points), so it did not discriminate at this size.
+  `docs/bench/preregistration.md` now decides each comparison by an exact one-sided binomial test on the discordant
+  tasks (alpha 0.05 and a margin of 0 tasks are recommended owner decisions), with outcomes GO, NO-GO and INCONCLUSIVE;
+  INCONCLUSIVE is never a win. The old text is kept in the deviations log, marked superseded. The document states what the
+  rule does not give: a wrong GO is at most 0.030 likely at 15 tasks when Sigma truly ties, but a true +20 point
+  advantage passes only 0.176 of the time, so most real moderate advantages end INCONCLUSIVE, and no non-inferiority claim
+  is available. `evals/bench/decision_rule.py` (stdlib only, exact fractions) prints the published tables;
+  `python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md` fails if they drift. Tests:
+  `tests/test_bench_preregistration.py`, `tests/test_bench_decision_rule.py`. No benchmark task has run.
+
 - **The README states the one coverage number that was measured, and says CI enforces none** (#194, readiness D8).
   The README once claimed an "85% coverage floor" that CI never enforced; #277 removed the claim, and this measures
   what it should have been. A full suite run under coverage.py (subprocess tracing on, Python 3.12, macOS, local) gave
