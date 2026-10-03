@@ -94,7 +94,10 @@ managed_settings = _load("managed_settings")  # #2571: the file-based reader for
 
 DEFAULTS = {"worktree_dir": ".sdlc/work", "branch_prefix": "sdlc/", "base": "",
             "remote": "origin", "auto_merge": "off", "merge_method": "squash",
-            "max_review_cycles": 3}     # hard cap on the loop's review→fix→re-review loop before it parks
+            "max_review_cycles": 3,     # hard cap on the loop's review→fix→re-review loop before it parks
+            # #465: opt-in. True lets `loop.py start` / `record done` sweep goal worktrees whose PR
+            # provably merged (worktree_prune.py); it spends REST quota, so it is off by default.
+            "reclaim_merged_worktrees": False}
 
 #: THE ENFORCEMENT REGISTRY (#2740). Every gate this module implements, one entry each, read (never
 #: imported) by skills/agrim-doctor/scripts/enforcement_table.py to render docs/enforcement.md.

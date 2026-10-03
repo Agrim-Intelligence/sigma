@@ -1,0 +1,30 @@
+[
+  {
+    "pattern": ".sdlc/work/<goal>",
+    "issue": "#465",
+    "decision": "pruned (provably finished goals; opt-in automatic, operator lever)",
+    "pruner_or_cap": "worktree_prune.sweep removes only the checkout (plain git worktree remove, never --force) of a goal worktree whose PR is positively merged with every commit in the merged PR head, a clean tree with only regenerable ignored files, the recorded branch checked out, no alive agent or live session, not the caller's tree, no awaiting_merge flag; keeps the work record and every branch; automatic triggers (loop.py start, record done) run only when work.reclaim_merged_worktrees is true, the operator lever list-removable and sweep always works; bounded by limit, max_examine, max_pr_reads and a budget, rotating least-recently-examined first",
+    "evidence": "tests/test_worktree_prune.py::test_merged_clean_worktree_is_removed_and_record_and_branch_are_kept and ::test_uncommitted_untracked_and_hidden_changes_are_kept and ::test_commits_beyond_the_merged_pr_are_kept and ::test_only_a_confirmed_merged_pr_on_this_branch_removes and ::test_the_sweep_never_forces_and_makes_no_other_call and ::test_survivors_that_never_qualify_do_not_starve_a_removable_tree; docs/launch/b6-worktrees.md"
+  },
+  {
+    "pattern": ".sdlc/work/<n>",
+    "issue": "#465",
+    "decision": "pruned (provably finished goals; opt-in automatic, operator lever)",
+    "pruner_or_cap": "worktree_prune.sweep removes only the checkout (plain git worktree remove, never --force) of a goal worktree whose PR is positively merged with every commit in the merged PR head, a clean tree with only regenerable ignored files, the recorded branch checked out, no alive agent or live session, not the caller's tree, no awaiting_merge flag; keeps the work record and every branch; automatic triggers (loop.py start, record done) run only when work.reclaim_merged_worktrees is true, the operator lever list-removable and sweep always works; bounded by limit, max_examine, max_pr_reads and a budget, rotating least-recently-examined first",
+    "evidence": "tests/test_worktree_prune.py::test_merged_clean_worktree_is_removed_and_record_and_branch_are_kept and ::test_uncommitted_untracked_and_hidden_changes_are_kept and ::test_commits_beyond_the_merged_pr_are_kept and ::test_only_a_confirmed_merged_pr_on_this_branch_removes and ::test_the_sweep_never_forces_and_makes_no_other_call and ::test_survivors_that_never_qualify_do_not_starve_a_removable_tree; docs/launch/b6-worktrees.md"
+  },
+  {
+    "pattern": ".sdlc/state/worktree-prune.lock",
+    "issue": "#465",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead sweep never leaves it held",
+    "evidence": "tests/test_worktree_prune.py::test_a_held_sweep_lock_makes_a_second_sweep_do_nothing; docs/launch/b6-worktrees.md"
+  },
+  {
+    "pattern": ".sdlc/state/worktree-prune-seen.json",
+    "issue": "#465",
+    "decision": "capped",
+    "pruner_or_cap": "one JSON file holding one number per goal that has a work record; each sweep rewrites it atomically and drops goals with no record, so it is bounded by the record count (about 20 bytes per goal)",
+    "evidence": "tests/test_worktree_prune.py::test_survivors_that_never_qualify_do_not_starve_a_removable_tree; docs/launch/b6-worktrees.md"
+  }
+]

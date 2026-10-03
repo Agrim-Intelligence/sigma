@@ -1905,6 +1905,38 @@
       "risk": "medium"
     },
     {
+      "path": "skills/agrim-loop/scripts/worktree_prune.py",
+      "function": "_atomic_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "the replace over the sweep's own journal or seen file, and unlinking its own temp file next to it; nothing else (#465)",
+      "risk": "low"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/worktree_prune.py",
+      "function": "_atomic_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "the sweep's own state only (state/worktree-prune/<goal>.json journal and state/worktree-prune-seen.json); tmp file then os.replace, under the sweep flock (#465)",
+      "risk": "low"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/worktree_prune.py",
+      "function": "_drop_journal",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "unlinks only state/worktree-prune/<goal>.json, the sweep's own journal, under the sweep flock; missing_ok (#465)",
+      "risk": "low"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/worktree_prune.py",
+      "function": "_heal",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "debris of the sweep's OWN interrupted removal only: a journal exists whose record, branch, path and HEAD still match, the path is exactly <project root>/<worktree_dir>/<goal> and not a symlink, git no longer registers it, and every remaining entry is regenerable or byte-identical to the blob at that path in the journalled HEAD (read in the main repo; a foreign file keeps it); re-checked immediately before the delete; under the sweep flock (#465)",
+      "risk": "high"
+    },
+    {
       "path": "skills/agrim-radar/scripts/radar.py",
       "function": "record",
       "rule": "fs-write",
