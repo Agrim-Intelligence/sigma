@@ -1,0 +1,1332 @@
+{
+ "predecessor_version": "1.4.28",
+ "predecessor_sha256_before": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
+ "predecessor_sha256_after": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
+ "predecessor_written": [
+  ".sdlc/config.json",
+  ".sdlc/context",
+  ".sdlc/context/north-star.md",
+  ".sdlc/events",
+  ".sdlc/events/*-*.*.jsonl",
+  ".sdlc/features",
+  ".sdlc/features/index.json",
+  ".sdlc/features/units/*.json",
+  ".sdlc/goals",
+  ".sdlc/goals/*.md",
+  ".sdlc/goals/0000-demo.md",
+  ".sdlc/journey",
+  ".sdlc/journey/*.md",
+  ".sdlc/knowledge",
+  ".sdlc/knowledge/analysis",
+  ".sdlc/knowledge/analysis/*.md",
+  ".sdlc/knowledge/analysis/goal-*.md",
+  ".sdlc/knowledge/analysis/issue-*.md",
+  ".sdlc/knowledge/gaps.md",
+  ".sdlc/knowledge/radar",
+  ".sdlc/knowledge/radar/ledger.md",
+  ".sdlc/ledger",
+  ".sdlc/ledger/*",
+  ".sdlc/ledger/*/*-*.*.jsonl",
+  ".sdlc/ledger/TEAM.md",
+  ".sdlc/plans",
+  ".sdlc/plans/*-plan.md",
+  ".sdlc/state",
+  ".sdlc/state/STATE.md",
+  ".sdlc/state/STATE.md.lock",
+  ".sdlc/state/agent-watch-cursor.json",
+  ".sdlc/state/agents/*",
+  ".sdlc/state/agents/*/*.active",
+  ".sdlc/state/autowatch-spend.json",
+  ".sdlc/state/channel-notify-cursor.json",
+  ".sdlc/state/claims",
+  ".sdlc/state/claims/*.claimed",
+  ".sdlc/state/claims/*.lock",
+  ".sdlc/state/claims/slack-cmd-*.lock",
+  ".sdlc/state/comment-watch-cursor.json",
+  ".sdlc/state/drift.meta.json",
+  ".sdlc/state/embeddings.json",
+  ".sdlc/state/feature-judge-spend.json",
+  ".sdlc/state/feature-judge-spend.lock",
+  ".sdlc/state/inbox.md",
+  ".sdlc/state/landing",
+  ".sdlc/state/landing/*.json",
+  ".sdlc/state/lease-renew",
+  ".sdlc/state/lease-renew/*.json",
+  ".sdlc/state/ledger-delivery-attempt",
+  ".sdlc/state/ledger-pull-deferrals",
+  ".sdlc/state/log",
+  ".sdlc/state/log/*.jsonl",
+  ".sdlc/state/phase",
+  ".sdlc/state/phase-boundary-stop",
+  ".sdlc/state/phase-boundary-stop/*.json",
+  ".sdlc/state/phase-end-*.lock",
+  ".sdlc/state/phase/*.json",
+  ".sdlc/state/propagation",
+  ".sdlc/state/propagation/*.json",
+  ".sdlc/state/reconcile.meta.json",
+  ".sdlc/state/review-queue.md",
+  ".sdlc/state/run_stop",
+  ".sdlc/state/run_stop/*.json",
+  ".sdlc/state/sessions",
+  ".sdlc/state/sessions/*-*.active",
+  ".sdlc/state/sessions/*.active",
+  ".sdlc/state/sessions/locks",
+  ".sdlc/state/sessions/locks/*.lock",
+  ".sdlc/state/setup-wizard-cache.json",
+  ".sdlc/state/setup-wizard-dismissed.json",
+  ".sdlc/state/slack-commands.heartbeat.json",
+  ".sdlc/state/slack-commands.log",
+  ".sdlc/state/slack-commands.pid",
+  ".sdlc/state/supervisor.log",
+  ".sdlc/state/supervisor.run.out",
+  ".sdlc/state/supervisor.tail",
+  ".sdlc/state/time",
+  ".sdlc/state/time/*",
+  ".sdlc/state/time/*/*.jsonl",
+  ".sdlc/state/time/.last-prune",
+  ".sdlc/state/time/_sessions/*",
+  ".sdlc/state/time/_sessions/*/*.jsonl",
+  ".sdlc/state/time/_sessions/*/open.json",
+  ".sdlc/state/time/_sessions/*/turns.jsonl",
+  ".sdlc/state/unit-tracking",
+  ".sdlc/state/unit-tracking/*.attempt",
+  ".sdlc/state/verify/*.json",
+  ".sdlc/state/withheld",
+  ".sdlc/state/withheld/*.md",
+  ".sdlc/state/witness",
+  ".sdlc/state/witness/*.jsonl",
+  ".sdlc/state/work",
+  ".sdlc/state/work/*.json",
+  ".sdlc/state/worktree-locks",
+  ".sdlc/state/worktree-locks/*.lock"
+ ],
+ "entries": [
+  {
+   "compatible": true,
+   "pattern": ".sdlc/config.json",
+   "reason": "Key sets differ; each side's setup.py configure, run over a config the other side wrote, lost no top-level key in either order (probe).",
+   "verdict": "different-format",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-init/scripts/verify_detect.py::write_verify",
+    "skills/agrim-setup/scripts/setup.py::write_cfg"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/context",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/context/north-star.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/events",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/ledger.py::append",
+    "skills/agrim-loop/scripts/ledger.py::main",
+    "skills/agrim-loop/scripts/ledger.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/sync.py::bootstrap",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/events/*-*.*.jsonl",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/ledger.py::append",
+    "skills/agrim-loop/scripts/ledger.py::main",
+    "skills/agrim-loop/scripts/ledger.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/sync.py::bootstrap",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/features",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_registry.py::write_index"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#514",
+   "pattern": ".sdlc/features/index.json",
+   "reason": "Different format (schema id spelling); the predecessor's own fold empties a registry Sigma wrote (probe); filed as a B1 candidate.",
+   "verdict": "different-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_registry.py::write_index"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#514",
+   "pattern": ".sdlc/features/units/*.json",
+   "reason": "Different format (schema id spelling); the predecessor's own fold empties a registry Sigma wrote (probe); filed as a B1 candidate.",
+   "verdict": "different-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_registry.py::write_unit"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/goals",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-loop/scripts/pipeline.py::discover",
+    "skills/agrim-loop/scripts/pipeline.py::main",
+    "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+    "skills/agrim-loop/scripts/pipeline.py::propose_goals",
+    "skills/agrim-loop/scripts/sources.py::create_dependency"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/goals/*.md",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-loop/scripts/pipeline.py::discover",
+    "skills/agrim-loop/scripts/pipeline.py::main",
+    "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+    "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/goals/0000-demo.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/agrim-loop/scripts/pipeline.py::discover",
+    "skills/agrim-loop/scripts/pipeline.py::main",
+    "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+    "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/journey",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/sources.py::note"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/journey/*.md",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/sources.py::note"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/knowledge",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::gap_log",
+    "skills/agrim-kg/scripts/kg.py::main"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/knowledge/analysis",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::main",
+    "skills/agrim-kg/scripts/kg.py::write_note"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/knowledge/analysis/*.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::main",
+    "skills/agrim-kg/scripts/kg.py::write_note"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/knowledge/analysis/goal-*.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::main",
+    "skills/agrim-kg/scripts/kg.py::write_note"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/knowledge/analysis/issue-*.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::main",
+    "skills/agrim-kg/scripts/kg.py::write_note"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/knowledge/gaps.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-kg/scripts/kg.py::gap_log",
+    "skills/agrim-kg/scripts/kg.py::gap_resolve",
+    "skills/agrim-kg/scripts/kg.py::main"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/knowledge/radar",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-radar/scripts/radar.py::main",
+    "skills/agrim-radar/scripts/radar.py::record"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/knowledge/radar/ledger.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-radar/scripts/radar.py::main",
+    "skills/agrim-radar/scripts/radar.py::record"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/ledger",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/ledger.py::main"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/ledger/*",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/ledger.py::append",
+    "skills/agrim-loop/scripts/ledger.py::main",
+    "skills/agrim-loop/scripts/ledger.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/sync.py::bootstrap",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/ledger/*/*-*.*.jsonl",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/ledger.py::append",
+    "skills/agrim-loop/scripts/ledger.py::main",
+    "skills/agrim-loop/scripts/ledger.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/sync.py::bootstrap",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/ledger/TEAM.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/ledger.py::append",
+    "skills/agrim-loop/scripts/ledger.py::main",
+    "skills/agrim-loop/scripts/ledger.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/sync.py::bootstrap",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/plans",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-scope/scripts/assign.py::execute",
+    "skills/agrim-scope/scripts/assign.py::main"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/plans/*-plan.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-scope/scripts/assign.py::execute",
+    "skills/agrim-scope/scripts/assign.py::main"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/init_flow.py::main",
+    "skills/agrim-init/scripts/sdlc_init.py::main",
+    "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+    "skills/agrim-init/scripts/setup_wizard.py::wizard_status",
+    "skills/agrim-init/scripts/setup_wizard.py::write_dismissed",
+    "skills/agrim-kg/scripts/kg.py::_write_refresh_record",
+    "skills/agrim-kg/scripts/kg.py::main",
+    "skills/agrim-kg/scripts/kg.py::refresh",
+    "skills/agrim-kg/scripts/kg.py::warn",
+    "skills/agrim-loop/scripts/agent_watch.py::tick",
+    "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+    "skills/agrim-loop/scripts/autowatch.py::_tick_inner",
+    "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+    "skills/agrim-loop/scripts/backlog_check.py::cross_check",
+    "skills/agrim-loop/scripts/channel_notify.py::tick",
+    "skills/agrim-loop/scripts/coexist.py::write_owner",
+    "skills/agrim-loop/scripts/comment_watch.py::tick",
+    "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep",
+    "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+    "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+    "skills/agrim-loop/scripts/feature_judge.py::live_judge",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+    "skills/agrim-loop/scripts/loop.py::_merge_reconcile_lock",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_reconcile_awaiting_merges",
+    "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+    "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat",
+    "skills/agrim-loop/scripts/state.py::_cursor_lock",
+    "skills/agrim-loop/scripts/state.py::_patch_cursor",
+    "skills/agrim-loop/scripts/state.py::_queue",
+    "skills/agrim-loop/scripts/state.py::_state_file",
+    "skills/agrim-loop/scripts/state.py::add_tokens",
+    "skills/agrim-loop/scripts/state.py::advance_cursor",
+    "skills/agrim-loop/scripts/state.py::fail",
+    "skills/agrim-loop/scripts/state.py::park",
+    "skills/agrim-loop/scripts/state.py::phase_end_lock",
+    "skills/agrim-loop/scripts/state.py::record_phase_end",
+    "skills/agrim-loop/scripts/state.py::start_run",
+    "skills/agrim-loop/scripts/supervise_daemon.py::main",
+    "skills/agrim-loop/scripts/sync.py::_knowledge_lock",
+    "skills/agrim-loop/scripts/sync.py::_publish_knowledge",
+    "skills/agrim-loop/scripts/sync.py::_pull_knowledge",
+    "skills/agrim-loop/scripts/sync.py::publish",
+    "skills/agrim-loop/scripts/watch.py::main",
+    "skills/agrim-loop/scripts/watch.py::tick",
+    "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
+    "skills/agrim-loop/scripts/worktree_prune.py::main",
+    "skills/agrim-loop/scripts/worktree_prune.py::sweep",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/STATE.md",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/state.py::_patch_cursor",
+    "skills/agrim-loop/scripts/state.py::_state_file",
+    "skills/agrim-loop/scripts/state.py::add_tokens",
+    "skills/agrim-loop/scripts/state.py::advance_cursor",
+    "skills/agrim-loop/scripts/state.py::record_phase_end",
+    "skills/agrim-loop/scripts/state.py::start_run",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/STATE.md.lock",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/state.py::_cursor_lock",
+    "skills/agrim-loop/scripts/state.py::_patch_cursor",
+    "skills/agrim-loop/scripts/state.py::add_tokens",
+    "skills/agrim-loop/scripts/state.py::advance_cursor",
+    "skills/agrim-loop/scripts/state.py::record_phase_end",
+    "skills/agrim-loop/scripts/state.py::start_run",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/agent-watch-cursor.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/agent_watch.py::tick"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/agents/*",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_write",
+    "skills/agrim-loop/scripts/loop.py::agent_start",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/agents/*/*.active",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_write",
+    "skills/agrim-loop/scripts/loop.py::agent_start",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/autowatch-spend.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+    "skills/agrim-loop/scripts/autowatch.py::_tick_inner"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/channel-notify-cursor.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/channel_notify.py::tick"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/claims",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/claims/*.claimed",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/claims/*.lock",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/claims/slack-cmd-*.lock",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/comment-watch-cursor.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/comment_watch.py::tick"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/drift.meta.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+    "skills/agrim-loop/scripts/drift_watch.py::sweep"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/embeddings.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+    "skills/agrim-loop/scripts/backlog_check.py::cross_check"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/feature-judge-spend.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+    "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/feature-judge-spend.lock",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+    "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/inbox.md",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_surface_inbox",
+    "skills/agrim-loop/scripts/watch.py::clear_inbox",
+    "skills/agrim-loop/scripts/watch.py::main",
+    "skills/agrim-loop/scripts/watch.py::tick"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/landing",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+    "skills/agrim-loop/scripts/cross_repo.py::_record",
+    "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/landing/*.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+    "skills/agrim-loop/scripts/cross_repo.py::_record",
+    "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/ledger-delivery-attempt",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+    "skills/agrim-loop/scripts/loop.py::run_loop"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/log",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/actionlog.py::append",
+    "skills/agrim-loop/scripts/actionlog.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/log/*.jsonl",
+   "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
+   "verdict": "additive",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/actionlog.py::append",
+    "skills/agrim-loop/scripts/actionlog.py::safe_append",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_dispatch",
+    "skills/agrim-loop/scripts/loop.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/phase",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/phase_report.py::write_marker"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/phase-end-*.lock",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/agrim-loop/scripts/state.py::phase_end_lock"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/phase/*.json",
+   "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
+   "verdict": "additive",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+    "skills/agrim-loop/scripts/phase_report.py::write_marker"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/propagation",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+    "skills/agrim-loop/scripts/feature_propagate.py::_store"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/propagation/*.json",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+    "skills/agrim-loop/scripts/feature_propagate.py::_store"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/reconcile.meta.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+    "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+    "skills/agrim-loop/scripts/loop.py::next_batch"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/review-queue.md",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/state.py::_queue",
+    "skills/agrim-loop/scripts/state.py::fail",
+    "skills/agrim-loop/scripts/state.py::park"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/run_stop",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/state.py::claim_run_stop"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/run_stop/*.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/state.py::claim_run_stop"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/sessions",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/agrim-loop/scripts/loop.py::_session_claim",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/loop.py::session_start",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/sessions/*-*.active",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_cancel",
+    "skills/agrim-loop/scripts/loop.py::_check_and_write",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_write",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/sessions/*.active",
+   "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
+   "verdict": "additive",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_cancel",
+    "skills/agrim-loop/scripts/loop.py::_check_and_write",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_write",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/sessions/locks",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/agrim-loop/scripts/loop.py::_session_claim",
+    "skills/agrim-loop/scripts/loop.py::_session_locked",
+    "skills/agrim-loop/scripts/loop.py::_session_release",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/loop.py::session_end",
+    "skills/agrim-loop/scripts/loop.py::session_start",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/sessions/locks/*.lock",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+    "skills/agrim-loop/scripts/loop.py::_claim",
+    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+    "skills/agrim-loop/scripts/loop.py::_next",
+    "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/agrim-loop/scripts/loop.py::_session_claim",
+    "skills/agrim-loop/scripts/loop.py::_session_locked",
+    "skills/agrim-loop/scripts/loop.py::_session_release",
+    "skills/agrim-loop/scripts/loop.py::next_batch",
+    "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+    "skills/agrim-loop/scripts/loop.py::run_loop",
+    "skills/agrim-loop/scripts/loop.py::session_end",
+    "skills/agrim-loop/scripts/loop.py::session_start",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/agrim-scope/scripts/assign.py::_start_drain",
+    "skills/agrim-scope/scripts/assign.py::execute"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/setup-wizard-cache.json",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+    "skills/agrim-init/scripts/setup_wizard.py::wizard_status"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-init/scripts/setup_wizard.py::write_dismissed"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/slack-commands.log",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/slack-commands.pid",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/supervisor.log",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/supervisor.run.out",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/supervisor.tail",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time/*",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time/*/*.jsonl",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time/.last-prune",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time/_sessions/*",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/time/_sessions/*/*.jsonl",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "verdict": "same-format",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/time/_sessions/*/open.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/time/_sessions/*/turns.jsonl",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "hooks/time_track.py::handle",
+    "hooks/time_track.py::main",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/timing_store.py::_record_script",
+    "skills/agrim-loop/scripts/timing_store.py::append",
+    "skills/agrim-loop/scripts/timing_store.py::append_session",
+    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/unit-tracking",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/unit-tracking/*.attempt",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/verify/*.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/state.py::reanchor_content",
+    "skills/agrim-loop/scripts/work.py::_reconcile_behind"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/withheld",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/upstream.py::_route",
+    "skills/agrim-loop/scripts/upstream.py::_spill"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/withheld/*.md",
+   "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
+   "verdict": "identical-writer",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/upstream.py::_route",
+    "skills/agrim-loop/scripts/upstream.py::_spill"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/witness",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+    "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/witness.py::record"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/witness/*.jsonl",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+    "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+    "skills/agrim-loop/scripts/loop.py::verify_goal",
+    "skills/agrim-loop/scripts/witness.py::record"
+   ]
+  },
+  {
+   "compatible": true,
+   "pattern": ".sdlc/state/work",
+   "reason": "Directory creation only; the files inside carry their own entries.",
+   "verdict": "directory",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::_save",
+    "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+    "skills/agrim-loop/scripts/work.py::ci_repair",
+    "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+    "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+    "skills/agrim-loop/scripts/work.py::note_close_failure",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-loop/scripts/work.py::pr",
+    "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+    "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+    "skills/agrim-loop/scripts/work.py::start"
+   ]
+  },
+  {
+   "compatible": false,
+   "issue": "#515",
+   "pattern": ".sdlc/state/work/*.json",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "verdict": "unsampled",
+   "vetted_writers": [
+    "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/agrim-loop/scripts/work.py::_save",
+    "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+    "skills/agrim-loop/scripts/work.py::ci_repair",
+    "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+    "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+    "skills/agrim-loop/scripts/work.py::note_close_failure",
+    "skills/agrim-loop/scripts/work.py::post_review",
+    "skills/agrim-loop/scripts/work.py::pr",
+    "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+    "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+    "skills/agrim-loop/scripts/work.py::start"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,3746 @@
+{
+  "counts": {
+    "additive": 3,
+    "different-format": 3,
+    "directory": 31,
+    "identical-writer": 10,
+    "one-writer": 4,
+    "same-format": 13,
+    "unsampled": 32
+  },
+  "predecessor": {
+    "files_hashed": 1700,
+    "sha256_after": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
+    "sha256_before": "806701a216b04725c11399e6f428cd052e23f9197cc5d076b6083c4dab2f5ada",
+    "unchanged": true,
+    "version": "1.4.28"
+  },
+  "predecessor_written_patterns": [
+    ".sdlc/config.json",
+    ".sdlc/context",
+    ".sdlc/context/north-star.md",
+    ".sdlc/events",
+    ".sdlc/events/*-*.*.jsonl",
+    ".sdlc/features",
+    ".sdlc/features/index.json",
+    ".sdlc/features/units/*.json",
+    ".sdlc/goals",
+    ".sdlc/goals/*.md",
+    ".sdlc/goals/0000-demo.md",
+    ".sdlc/journey",
+    ".sdlc/journey/*.md",
+    ".sdlc/knowledge",
+    ".sdlc/knowledge/analysis",
+    ".sdlc/knowledge/analysis/*.md",
+    ".sdlc/knowledge/analysis/goal-*.md",
+    ".sdlc/knowledge/analysis/issue-*.md",
+    ".sdlc/knowledge/gaps.md",
+    ".sdlc/knowledge/radar",
+    ".sdlc/knowledge/radar/ledger.md",
+    ".sdlc/ledger",
+    ".sdlc/ledger/*",
+    ".sdlc/ledger/*/*-*.*.jsonl",
+    ".sdlc/ledger/TEAM.md",
+    ".sdlc/plans",
+    ".sdlc/plans/*-plan.md",
+    ".sdlc/state",
+    ".sdlc/state/STATE.md",
+    ".sdlc/state/STATE.md.lock",
+    ".sdlc/state/agent-watch-cursor.json",
+    ".sdlc/state/agents/*",
+    ".sdlc/state/agents/*/*.active",
+    ".sdlc/state/autowatch-spend.json",
+    ".sdlc/state/channel-notify-cursor.json",
+    ".sdlc/state/claims",
+    ".sdlc/state/claims/*.claimed",
+    ".sdlc/state/claims/*.lock",
+    ".sdlc/state/claims/slack-cmd-*.lock",
+    ".sdlc/state/comment-watch-cursor.json",
+    ".sdlc/state/drift.meta.json",
+    ".sdlc/state/embeddings.json",
+    ".sdlc/state/feature-judge-spend.json",
+    ".sdlc/state/feature-judge-spend.lock",
+    ".sdlc/state/inbox.md",
+    ".sdlc/state/landing",
+    ".sdlc/state/landing/*.json",
+    ".sdlc/state/lease-renew",
+    ".sdlc/state/lease-renew/*.json",
+    ".sdlc/state/ledger-delivery-attempt",
+    ".sdlc/state/ledger-pull-deferrals",
+    ".sdlc/state/log",
+    ".sdlc/state/log/*.jsonl",
+    ".sdlc/state/phase",
+    ".sdlc/state/phase-boundary-stop",
+    ".sdlc/state/phase-boundary-stop/*.json",
+    ".sdlc/state/phase-end-*.lock",
+    ".sdlc/state/phase/*.json",
+    ".sdlc/state/propagation",
+    ".sdlc/state/propagation/*.json",
+    ".sdlc/state/reconcile.meta.json",
+    ".sdlc/state/review-queue.md",
+    ".sdlc/state/run_stop",
+    ".sdlc/state/run_stop/*.json",
+    ".sdlc/state/sessions",
+    ".sdlc/state/sessions/*-*.active",
+    ".sdlc/state/sessions/*.active",
+    ".sdlc/state/sessions/locks",
+    ".sdlc/state/sessions/locks/*.lock",
+    ".sdlc/state/setup-wizard-cache.json",
+    ".sdlc/state/setup-wizard-dismissed.json",
+    ".sdlc/state/slack-commands.heartbeat.json",
+    ".sdlc/state/slack-commands.log",
+    ".sdlc/state/slack-commands.pid",
+    ".sdlc/state/supervisor.log",
+    ".sdlc/state/supervisor.run.out",
+    ".sdlc/state/supervisor.tail",
+    ".sdlc/state/time",
+    ".sdlc/state/time/*",
+    ".sdlc/state/time/*/*.jsonl",
+    ".sdlc/state/time/.last-prune",
+    ".sdlc/state/time/_sessions/*",
+    ".sdlc/state/time/_sessions/*/*.jsonl",
+    ".sdlc/state/time/_sessions/*/open.json",
+    ".sdlc/state/time/_sessions/*/turns.jsonl",
+    ".sdlc/state/unit-tracking",
+    ".sdlc/state/unit-tracking/*.attempt",
+    ".sdlc/state/verify/*.json",
+    ".sdlc/state/withheld",
+    ".sdlc/state/withheld/*.md",
+    ".sdlc/state/witness",
+    ".sdlc/state/witness/*.jsonl",
+    ".sdlc/state/work",
+    ".sdlc/state/work/*.json",
+    ".sdlc/state/worktree-locks",
+    ".sdlc/state/worktree-locks/*.lock"
+  ],
+  "rows": [
+    {
+      "class": "two-writer",
+      "corruption": "not-demonstrated",
+      "pattern": ".sdlc/config.json",
+      "predecessor_reader_count": 20,
+      "predecessor_sample": {
+        "key_count": 53,
+        "keys_sha256": "412889b91405bc5b5b874d85da042056aec8457fa9dba54d01911517c469e7cf",
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "sdlc_init.py::main",
+        "setup.py::write_cfg"
+      ],
+      "sigma_reader_count": 32,
+      "sigma_sample": {
+        "key_count": 50,
+        "keys_sha256": "1956d6bc7877689b26a83293d088ab3e80b4afa748fcba29178a55c460e90873",
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-init/scripts/verify_detect.py::write_verify",
+        "skills/agrim-setup/scripts/setup.py::write_cfg"
+      ],
+      "verdict": "different-format"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/context",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "sdlc_init.py::main",
+        "sdlc_init.py::scaffold_vision"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/context/north-star.md",
+      "predecessor_reader_count": 3,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "sdlc_init.py::main",
+        "sdlc_init.py::scaffold_vision"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/events",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "comment_watch.py::tick",
+        "drift_watch.py::sweep",
+        "ledger.py::append",
+        "ledger.py::main",
+        "ledger.py::renew_lease",
+        "ledger.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "phase_report.py::cmd_start",
+        "sync.py::bootstrap",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/ledger.py::append",
+        "skills/agrim-loop/scripts/ledger.py::main",
+        "skills/agrim-loop/scripts/ledger.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/sync.py::bootstrap",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/events/*-*.*.jsonl",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "comment_watch.py::tick",
+        "drift_watch.py::sweep",
+        "ledger.py::append",
+        "ledger.py::main",
+        "ledger.py::renew_lease",
+        "ledger.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "phase_report.py::cmd_start",
+        "sync.py::bootstrap",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": {
+        "keys": [
+          "actor",
+          "goal",
+          "id",
+          "kind",
+          "reason_class",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/ledger.py::append",
+        "skills/agrim-loop/scripts/ledger.py::main",
+        "skills/agrim-loop/scripts/ledger.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/sync.py::bootstrap",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/features",
+      "predecessor_reader_count": 14,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "feature_registry.py::write_index"
+      ],
+      "sigma_reader_count": 17,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_registry.py::write_index"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": "demonstrated",
+      "pattern": ".sdlc/features/index.json",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": {
+        "keys": [
+          "features",
+          "schema"
+        ],
+        "schema": "features@1",
+        "schema_brand": "predecessor",
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "feature_registry.py::write_index"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": {
+        "keys": [
+          "features",
+          "schema"
+        ],
+        "schema": "features@1",
+        "schema_brand": "sigma",
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_registry.py::write_index"
+      ],
+      "verdict": "different-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": "not-probed",
+      "pattern": ".sdlc/features/units/*.json",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": {
+        "keys": [
+          "features",
+          "schema"
+        ],
+        "schema": "features@1",
+        "schema_brand": "predecessor",
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "feature_registry.py::write_unit"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": {
+        "keys": [
+          "features",
+          "schema"
+        ],
+        "schema": "features@1",
+        "schema_brand": "sigma",
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_registry.py::write_unit"
+      ],
+      "verdict": "different-format"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/goals",
+      "predecessor_reader_count": 6,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "pipeline.py::discover",
+        "pipeline.py::main",
+        "pipeline.py::propose_from_discovery",
+        "pipeline.py::propose_goals",
+        "sdlc_init.py::main",
+        "sdlc_init.py::scaffold_demo",
+        "sources.py::create_dependency"
+      ],
+      "sigma_reader_count": 7,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-loop/scripts/pipeline.py::discover",
+        "skills/agrim-loop/scripts/pipeline.py::main",
+        "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+        "skills/agrim-loop/scripts/pipeline.py::propose_goals",
+        "skills/agrim-loop/scripts/sources.py::create_dependency"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/goals/*.md",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": {
+        "headings": 0,
+        "shape": "md"
+      },
+      "predecessor_writers": [
+        "pipeline.py::discover",
+        "pipeline.py::main",
+        "pipeline.py::propose_from_discovery",
+        "pipeline.py::propose_goals",
+        "sdlc_init.py::main",
+        "sdlc_init.py::scaffold_demo"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "headings": 0,
+        "shape": "md"
+      },
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-loop/scripts/pipeline.py::discover",
+        "skills/agrim-loop/scripts/pipeline.py::main",
+        "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+        "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/goals/0000-demo.md",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "pipeline.py::discover",
+        "pipeline.py::main",
+        "pipeline.py::propose_from_discovery",
+        "pipeline.py::propose_goals",
+        "sdlc_init.py::main",
+        "sdlc_init.py::scaffold_demo"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+        "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+        "skills/agrim-loop/scripts/pipeline.py::discover",
+        "skills/agrim-loop/scripts/pipeline.py::main",
+        "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+        "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/journey",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "sources.py::note"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/sources.py::note"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/journey/*.md",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "predecessor_writers": [
+        "sources.py::note"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/sources.py::note"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::gap_log",
+        "kg.py::main"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::gap_log",
+        "skills/agrim-kg/scripts/kg.py::main"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/analysis",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::main",
+        "kg.py::write_note"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::main",
+        "skills/agrim-kg/scripts/kg.py::write_note"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/analysis/*.md",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::main",
+        "kg.py::write_note"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::main",
+        "skills/agrim-kg/scripts/kg.py::write_note"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/analysis/goal-*.md",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::main",
+        "kg.py::write_note"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::main",
+        "skills/agrim-kg/scripts/kg.py::write_note"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/analysis/issue-*.md",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::main",
+        "kg.py::write_note"
+      ],
+      "sigma_reader_count": 1,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::main",
+        "skills/agrim-kg/scripts/kg.py::write_note"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/gaps.md",
+      "predecessor_reader_count": 3,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "kg.py::gap_log",
+        "kg.py::gap_resolve",
+        "kg.py::main"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-kg/scripts/kg.py::gap_log",
+        "skills/agrim-kg/scripts/kg.py::gap_resolve",
+        "skills/agrim-kg/scripts/kg.py::main"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/radar",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "radar.py::main",
+        "radar.py::record"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-radar/scripts/radar.py::main",
+        "skills/agrim-radar/scripts/radar.py::record"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/knowledge/radar/ledger.md",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "radar.py::main",
+        "radar.py::record"
+      ],
+      "sigma_reader_count": 2,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-radar/scripts/radar.py::main",
+        "skills/agrim-radar/scripts/radar.py::record"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/ledger",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "ledger.py::main"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/ledger.py::main"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/ledger/*",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "predecessor_writers": [
+        "assign.py::execute",
+        "comment_watch.py::tick",
+        "drift_watch.py::sweep",
+        "ledger.py::append",
+        "ledger.py::main",
+        "ledger.py::renew_lease",
+        "ledger.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "phase_report.py::cmd_start",
+        "sync.py::bootstrap",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/ledger.py::append",
+        "skills/agrim-loop/scripts/ledger.py::main",
+        "skills/agrim-loop/scripts/ledger.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/sync.py::bootstrap",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/ledger/*/*-*.*.jsonl",
+      "predecessor_reader_count": 3,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "comment_watch.py::tick",
+        "drift_watch.py::sweep",
+        "ledger.py::append",
+        "ledger.py::main",
+        "ledger.py::renew_lease",
+        "ledger.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "phase_report.py::cmd_start",
+        "sync.py::bootstrap",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/ledger.py::append",
+        "skills/agrim-loop/scripts/ledger.py::main",
+        "skills/agrim-loop/scripts/ledger.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/sync.py::bootstrap",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/ledger/TEAM.md",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "comment_watch.py::tick",
+        "drift_watch.py::sweep",
+        "ledger.py::append",
+        "ledger.py::main",
+        "ledger.py::renew_lease",
+        "ledger.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "phase_report.py::cmd_start",
+        "sync.py::bootstrap",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 2,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/ledger.py::append",
+        "skills/agrim-loop/scripts/ledger.py::main",
+        "skills/agrim-loop/scripts/ledger.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/sync.py::bootstrap",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/plans",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "assign.py::main"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-scope/scripts/assign.py::execute",
+        "skills/agrim-scope/scripts/assign.py::main"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/plans/*-plan.md",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::execute",
+        "assign.py::main"
+      ],
+      "sigma_reader_count": 0,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-scope/scripts/assign.py::execute",
+        "skills/agrim-scope/scripts/assign.py::main"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "agent_watch.py::tick",
+        "assign.py::_start_drain",
+        "autowatch.py::_record_spend",
+        "autowatch.py::_tick_inner",
+        "backlog_check.py::_dense_channel",
+        "backlog_check.py::cross_check",
+        "channel_notify.py::tick",
+        "comment_watch.py::tick",
+        "drift_watch.py::_stamp",
+        "drift_watch.py::sweep",
+        "feature_judge.py::_acquire_spend_lock",
+        "feature_judge.py::_record_spend",
+        "feature_judge.py::live_judge",
+        "loop.py::_ensure_ledger_delivery",
+        "loop.py::_next",
+        "loop.py::_reconcile_stamp",
+        "loop.py::_reconcile_sweep",
+        "loop.py::run_loop",
+        "phase_report.py::_record_end_usage",
+        "setup_wizard.py::_write_cache",
+        "setup_wizard.py::wizard_status",
+        "setup_wizard.py::write_dismissed",
+        "slack_commands_listen.py::_dispatch",
+        "slack_commands_listen.py::_log",
+        "slack_commands_listen.py::_on_request",
+        "slack_commands_listen.py::acquire_single_instance",
+        "slack_commands_listen.py::run",
+        "slack_commands_listen.py::try_claim",
+        "slack_commands_listen.py::write_heartbeat",
+        "state.py::_cursor_lock",
+        "state.py::_patch_cursor",
+        "state.py::_queue",
+        "state.py::_state_file",
+        "state.py::add_tokens",
+        "state.py::advance_cursor",
+        "state.py::fail",
+        "state.py::park",
+        "state.py::phase_end_lock",
+        "state.py::record_phase_end",
+        "state.py::start_run",
+        "supervise_daemon.py::main",
+        "sync.py::_record_pull_outcome",
+        "sync.py::pull",
+        "watch.py::main",
+        "watch.py::tick"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-init/scripts/init_flow.py::main",
+        "skills/agrim-init/scripts/sdlc_init.py::main",
+        "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+        "skills/agrim-init/scripts/setup_wizard.py::wizard_status",
+        "skills/agrim-init/scripts/setup_wizard.py::write_dismissed",
+        "skills/agrim-kg/scripts/kg.py::_write_refresh_record",
+        "skills/agrim-kg/scripts/kg.py::main",
+        "skills/agrim-kg/scripts/kg.py::refresh",
+        "skills/agrim-kg/scripts/kg.py::warn",
+        "skills/agrim-loop/scripts/agent_watch.py::tick",
+        "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+        "skills/agrim-loop/scripts/autowatch.py::_tick_inner",
+        "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+        "skills/agrim-loop/scripts/backlog_check.py::cross_check",
+        "skills/agrim-loop/scripts/channel_notify.py::tick",
+        "skills/agrim-loop/scripts/coexist.py::write_owner",
+        "skills/agrim-loop/scripts/comment_watch.py::tick",
+        "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep",
+        "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+        "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+        "skills/agrim-loop/scripts/feature_judge.py::live_judge",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+        "skills/agrim-loop/scripts/loop.py::_merge_reconcile_lock",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_reconcile_awaiting_merges",
+        "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+        "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat",
+        "skills/agrim-loop/scripts/state.py::_cursor_lock",
+        "skills/agrim-loop/scripts/state.py::_patch_cursor",
+        "skills/agrim-loop/scripts/state.py::_queue",
+        "skills/agrim-loop/scripts/state.py::_state_file",
+        "skills/agrim-loop/scripts/state.py::add_tokens",
+        "skills/agrim-loop/scripts/state.py::advance_cursor",
+        "skills/agrim-loop/scripts/state.py::fail",
+        "skills/agrim-loop/scripts/state.py::park",
+        "skills/agrim-loop/scripts/state.py::phase_end_lock",
+        "skills/agrim-loop/scripts/state.py::record_phase_end",
+        "skills/agrim-loop/scripts/state.py::start_run",
+        "skills/agrim-loop/scripts/supervise_daemon.py::main",
+        "skills/agrim-loop/scripts/sync.py::_knowledge_lock",
+        "skills/agrim-loop/scripts/sync.py::_publish_knowledge",
+        "skills/agrim-loop/scripts/sync.py::_pull_knowledge",
+        "skills/agrim-loop/scripts/sync.py::publish",
+        "skills/agrim-loop/scripts/watch.py::main",
+        "skills/agrim-loop/scripts/watch.py::tick",
+        "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
+        "skills/agrim-loop/scripts/worktree_prune.py::main",
+        "skills/agrim-loop/scripts/worktree_prune.py::sweep",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/STATE.md",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": {
+        "headings": 2,
+        "shape": "md"
+      },
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "loop.py::run_loop",
+        "phase_report.py::_record_end_usage",
+        "state.py::_patch_cursor",
+        "state.py::_state_file",
+        "state.py::add_tokens",
+        "state.py::advance_cursor",
+        "state.py::record_phase_end",
+        "state.py::start_run"
+      ],
+      "sigma_reader_count": 7,
+      "sigma_sample": {
+        "headings": 2,
+        "shape": "md"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/state.py::_patch_cursor",
+        "skills/agrim-loop/scripts/state.py::_state_file",
+        "skills/agrim-loop/scripts/state.py::add_tokens",
+        "skills/agrim-loop/scripts/state.py::advance_cursor",
+        "skills/agrim-loop/scripts/state.py::record_phase_end",
+        "skills/agrim-loop/scripts/state.py::start_run",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/STATE.md.lock",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "loop.py::run_loop",
+        "phase_report.py::_record_end_usage",
+        "state.py::_cursor_lock",
+        "state.py::_patch_cursor",
+        "state.py::add_tokens",
+        "state.py::advance_cursor",
+        "state.py::record_phase_end",
+        "state.py::start_run"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/state.py::_cursor_lock",
+        "skills/agrim-loop/scripts/state.py::_patch_cursor",
+        "skills/agrim-loop/scripts/state.py::add_tokens",
+        "skills/agrim-loop/scripts/state.py::advance_cursor",
+        "skills/agrim-loop/scripts/state.py::record_phase_end",
+        "skills/agrim-loop/scripts/state.py::start_run",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/agent-watch-cursor.json",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "agent_watch.py::tick"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/agent_watch.py::tick"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/agents/*",
+      "predecessor_reader_count": 7,
+      "predecessor_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "predecessor_writers": [
+        "loop.py::_write",
+        "loop.py::agent_start",
+        "slack_commands_listen.py::_dispatch"
+      ],
+      "sigma_reader_count": 11,
+      "sigma_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_write",
+        "skills/agrim-loop/scripts/loop.py::agent_start",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/agents/*/*.active",
+      "predecessor_reader_count": 7,
+      "predecessor_sample": {
+        "keys": [],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "loop.py::_write",
+        "loop.py::agent_start",
+        "slack_commands_listen.py::_dispatch"
+      ],
+      "sigma_reader_count": 11,
+      "sigma_sample": {
+        "keys": [],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_write",
+        "skills/agrim-loop/scripts/loop.py::agent_start",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/autowatch-spend.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "autowatch.py::_record_spend",
+        "autowatch.py::_tick_inner"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+        "skills/agrim-loop/scripts/autowatch.py::_tick_inner"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/channel-notify-cursor.json",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "channel_notify.py::tick"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/channel_notify.py::tick"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/claims",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_try_acquire_claim_lock",
+        "loop.py::reclaim_stale_claim_lock",
+        "loop.py::run_loop",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/claims/*.claimed",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_ensure_claimed"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/claims/*.lock",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "keys": [],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "loop.py::_next",
+        "loop.py::_try_acquire_claim_lock",
+        "loop.py::reclaim_stale_claim_lock",
+        "loop.py::run_loop",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/claims/slack-cmd-*.lock",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "loop.py::_next",
+        "loop.py::_try_acquire_claim_lock",
+        "loop.py::reclaim_stale_claim_lock",
+        "loop.py::run_loop",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/comment-watch-cursor.json",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "comment_watch.py::tick"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/comment_watch.py::tick"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/drift.meta.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "drift_watch.py::_stamp",
+        "drift_watch.py::sweep"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+        "skills/agrim-loop/scripts/drift_watch.py::sweep"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/embeddings.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "backlog_check.py::_dense_channel",
+        "backlog_check.py::cross_check"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+        "skills/agrim-loop/scripts/backlog_check.py::cross_check"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/feature-judge-spend.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "feature_judge.py::_record_spend",
+        "feature_judge.py::live_judge"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+        "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/feature-judge-spend.lock",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "feature_judge.py::_acquire_spend_lock",
+        "feature_judge.py::live_judge"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+        "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/inbox.md",
+      "predecessor_reader_count": 3,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_surface_inbox",
+        "watch.py::clear_inbox",
+        "watch.py::main",
+        "watch.py::tick"
+      ],
+      "sigma_reader_count": 6,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_surface_inbox",
+        "skills/agrim-loop/scripts/watch.py::clear_inbox",
+        "skills/agrim-loop/scripts/watch.py::main",
+        "skills/agrim-loop/scripts/watch.py::tick"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/landing",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "cross_repo.py::_check_at_pick",
+        "cross_repo.py::_record",
+        "cross_repo.py::check_at_pick"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+        "skills/agrim-loop/scripts/cross_repo.py::_record",
+        "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/landing/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "key_count": 15,
+        "keys_sha256": "eec015bfa7c0e06b99c4cf6aff0127515ebf086e45cf5b38a49766f39ecbc7fe",
+        "schema": "landing@1",
+        "schema_brand": "predecessor",
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "cross_repo.py::_check_at_pick",
+        "cross_repo.py::_record",
+        "cross_repo.py::check_at_pick"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+        "skills/agrim-loop/scripts/cross_repo.py::_record",
+        "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/lease-renew",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "ledger.py::_lease_renew_stamp",
+        "ledger.py::renew_lease"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "directory"
+    },
+    {
+      "class": "one-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/lease-renew/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "ledger.py::_lease_renew_stamp",
+        "ledger.py::renew_lease"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "one-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/ledger-delivery-attempt",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_ensure_ledger_delivery",
+        "loop.py::run_loop"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+        "skills/agrim-loop/scripts/loop.py::run_loop"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "one-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/ledger-pull-deferrals",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "slack_commands_listen.py::try_claim",
+        "sync.py::_record_pull_outcome",
+        "sync.py::pull"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "one-writer"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/log",
+      "predecessor_reader_count": 3,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "actionlog.py::append",
+        "actionlog.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 7,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/actionlog.py::append",
+        "skills/agrim-loop/scripts/actionlog.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/log/*.jsonl",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": {
+        "keys": [
+          "actor",
+          "goal",
+          "kind",
+          "thread",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "predecessor_writers": [
+        "actionlog.py::append",
+        "actionlog.py::safe_append",
+        "loop.py::_claim",
+        "loop.py::_dispatch",
+        "loop.py::_verify_goal_locked",
+        "loop.py::verify_goal",
+        "phase_report.py::_record_end_usage",
+        "work.py::post_review"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": {
+        "keys": [
+          "actor",
+          "goal",
+          "kind",
+          "op",
+          "path",
+          "thread",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/actionlog.py::append",
+        "skills/agrim-loop/scripts/actionlog.py::safe_append",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_dispatch",
+        "skills/agrim-loop/scripts/loop.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal"
+      ],
+      "verdict": "additive"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/phase",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "phase_report.py::cmd_start",
+        "phase_report.py::write_marker"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/phase_report.py::write_marker"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/phase-boundary-stop",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::phase_boundary_check",
+        "state.py::write_phase_boundary_stop"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "directory"
+    },
+    {
+      "class": "one-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/phase-boundary-stop/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::phase_boundary_check",
+        "state.py::write_phase_boundary_stop"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "one-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/phase-end-*.lock",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "predecessor_writers": [
+        "phase_report.py::_record_end_usage",
+        "state.py::phase_end_lock"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+        "skills/agrim-loop/scripts/state.py::phase_end_lock"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/phase/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "keys": [
+          "goal",
+          "host_model",
+          "model",
+          "phase",
+          "requested_model",
+          "title",
+          "ts_start",
+          "ts_start_epoch"
+        ],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "phase_report.py::cmd_start",
+        "phase_report.py::write_marker"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "keys": [
+          "goal",
+          "host_model",
+          "model",
+          "phase",
+          "pid",
+          "requested_model",
+          "title",
+          "ts_start",
+          "ts_start_epoch"
+        ],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+        "skills/agrim-loop/scripts/phase_report.py::write_marker"
+      ],
+      "verdict": "additive"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/propagation",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "feature_propagate.py::_propagate_at_pick",
+        "feature_propagate.py::_store"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+        "skills/agrim-loop/scripts/feature_propagate.py::_store"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/propagation/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "feature_propagate.py::_propagate_at_pick",
+        "feature_propagate.py::_store"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+        "skills/agrim-loop/scripts/feature_propagate.py::_store"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/reconcile.meta.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_next",
+        "loop.py::_reconcile_stamp",
+        "loop.py::_reconcile_sweep"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+        "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+        "skills/agrim-loop/scripts/loop.py::next_batch"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/review-queue.md",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "predecessor_writers": [
+        "state.py::_queue",
+        "state.py::fail",
+        "state.py::park"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": {
+        "headings": 1,
+        "shape": "md"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/state.py::_queue",
+        "skills/agrim-loop/scripts/state.py::fail",
+        "skills/agrim-loop/scripts/state.py::park"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/run_stop",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_emit_run_stop_once",
+        "loop.py::_next",
+        "state.py::claim_run_stop"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/state.py::claim_run_stop"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/run_stop/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_emit_run_stop_once",
+        "loop.py::_next",
+        "state.py::claim_run_stop"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "keys": [
+          "claimed"
+        ],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/state.py::claim_run_stop"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/sessions",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "assign.py::execute",
+        "loop.py::_claim",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_reserve_goal_slot",
+        "loop.py::_session_claim",
+        "loop.py::run_loop",
+        "loop.py::session_start",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 6,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+        "skills/agrim-loop/scripts/loop.py::_session_claim",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/loop.py::session_start",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/sessions/*-*.active",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "assign.py::execute",
+        "loop.py::_cancel",
+        "loop.py::_check_and_write",
+        "loop.py::_claim",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_write",
+        "loop.py::run_loop",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 9,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_cancel",
+        "skills/agrim-loop/scripts/loop.py::_check_and_write",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_write",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/sessions/*.active",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": {
+        "keys": [
+          "in_flight",
+          "settled_admissions"
+        ],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "assign.py::execute",
+        "loop.py::_cancel",
+        "loop.py::_check_and_write",
+        "loop.py::_claim",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_write",
+        "loop.py::run_loop",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 9,
+      "sigma_sample": {
+        "keys": [
+          "generation",
+          "in_flight",
+          "settled_admissions"
+        ],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_cancel",
+        "skills/agrim-loop/scripts/loop.py::_check_and_write",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_write",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "additive"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/sessions/locks",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "assign.py::execute",
+        "loop.py::_cancel_goal_slot",
+        "loop.py::_claim",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_prune_dead_session_entries",
+        "loop.py::_reserve_goal_slot",
+        "loop.py::_session_claim",
+        "loop.py::_session_locked",
+        "loop.py::_session_release",
+        "loop.py::run_loop",
+        "loop.py::session_end",
+        "loop.py::session_start",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+        "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+        "skills/agrim-loop/scripts/loop.py::_session_claim",
+        "skills/agrim-loop/scripts/loop.py::_session_locked",
+        "skills/agrim-loop/scripts/loop.py::_session_release",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/loop.py::session_end",
+        "skills/agrim-loop/scripts/loop.py::session_start",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/sessions/locks/*.lock",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "predecessor_writers": [
+        "assign.py::_start_drain",
+        "assign.py::execute",
+        "loop.py::_cancel_goal_slot",
+        "loop.py::_claim",
+        "loop.py::_ensure_claimed",
+        "loop.py::_next",
+        "loop.py::_prune_dead_session_entries",
+        "loop.py::_reserve_goal_slot",
+        "loop.py::_session_claim",
+        "loop.py::_session_locked",
+        "loop.py::_session_release",
+        "loop.py::run_loop",
+        "loop.py::session_end",
+        "loop.py::session_start",
+        "slack_commands_listen.py::try_claim"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": {
+        "empty": true,
+        "shape": "text"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+        "skills/agrim-loop/scripts/loop.py::_claim",
+        "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+        "skills/agrim-loop/scripts/loop.py::_next",
+        "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+        "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+        "skills/agrim-loop/scripts/loop.py::_session_claim",
+        "skills/agrim-loop/scripts/loop.py::_session_locked",
+        "skills/agrim-loop/scripts/loop.py::_session_release",
+        "skills/agrim-loop/scripts/loop.py::next_batch",
+        "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+        "skills/agrim-loop/scripts/loop.py::run_loop",
+        "skills/agrim-loop/scripts/loop.py::session_end",
+        "skills/agrim-loop/scripts/loop.py::session_start",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+        "skills/agrim-scope/scripts/assign.py::_start_drain",
+        "skills/agrim-scope/scripts/assign.py::execute"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/setup-wizard-cache.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "keys": [
+          "checked_at",
+          "needs_wizard"
+        ],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "setup_wizard.py::_write_cache",
+        "setup_wizard.py::wizard_status"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "keys": [
+          "checked_at",
+          "needs_wizard"
+        ],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+        "skills/agrim-init/scripts/setup_wizard.py::wizard_status"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "keys": [
+          "<list>"
+        ],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "setup_wizard.py::write_dismissed"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "keys": [
+          "<list>"
+        ],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-init/scripts/setup_wizard.py::write_dismissed"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "slack_commands_listen.py::_on_request",
+        "slack_commands_listen.py::acquire_single_instance",
+        "slack_commands_listen.py::run",
+        "slack_commands_listen.py::write_heartbeat"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/slack-commands.log",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "slack_commands_listen.py::_dispatch",
+        "slack_commands_listen.py::_log",
+        "slack_commands_listen.py::_on_request",
+        "slack_commands_listen.py::run"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/slack-commands.pid",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "slack_commands_listen.py::acquire_single_instance",
+        "slack_commands_listen.py::run"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+        "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/supervisor.log",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "supervise_daemon.py::main"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/supervise_daemon.py::main"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/supervisor.run.out",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "supervise_daemon.py::main"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/supervise_daemon.py::main"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/supervisor.tail",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "supervise_daemon.py::main"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/supervise_daemon.py::main"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/time",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "timing_store.py::_prune_if_due",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::maybe_prune"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/*",
+      "predecessor_reader_count": 4,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_prune_if_due",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::maybe_prune",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 7,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/*/*.jsonl",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": {
+        "keys": [
+          "goal",
+          "kind",
+          "ms",
+          "name",
+          "started",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": {
+        "keys": [
+          "goal",
+          "kind",
+          "ms",
+          "name",
+          "started",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/.last-prune",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": {
+        "keys": [],
+        "shape": "json"
+      },
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "timing_store.py::_prune_if_due",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::maybe_prune",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": {
+        "keys": [],
+        "shape": "json"
+      },
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/_sessions/*",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/_sessions/*/*.jsonl",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": {
+        "keys": [
+          "kind",
+          "ms",
+          "name",
+          "session",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": {
+        "keys": [
+          "kind",
+          "ms",
+          "name",
+          "session",
+          "ts"
+        ],
+        "shape": "jsonl"
+      },
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "same-format"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/_sessions/*/open.json",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/time/_sessions/*/turns.jsonl",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_verify_goal_locked",
+        "time_track.py::handle",
+        "time_track.py::main",
+        "timing_store.py::_record_script",
+        "timing_store.py::append",
+        "timing_store.py::append_session",
+        "timing_store.py::safe_append"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "hooks/time_track.py::handle",
+        "hooks/time_track.py::main",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/timing_store.py::_record_script",
+        "skills/agrim-loop/scripts/timing_store.py::append",
+        "skills/agrim-loop/scripts/timing_store.py::append_session",
+        "skills/agrim-loop/scripts/timing_store.py::safe_append"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/unit-tracking",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_ensure_unit_tracking"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/unit-tracking/*.attempt",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_ensure_unit_tracking"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/verify/*.json",
+      "predecessor_reader_count": 2,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "state.py::reanchor_content",
+        "work.py::_reconcile_behind"
+      ],
+      "sigma_reader_count": 6,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/state.py::reanchor_content",
+        "skills/agrim-loop/scripts/work.py::_reconcile_behind"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/withheld",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "upstream.py::_route",
+        "upstream.py::_spill"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/upstream.py::_route",
+        "skills/agrim-loop/scripts/upstream.py::_spill"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/withheld/*.md",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "upstream.py::_route",
+        "upstream.py::_spill"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/upstream.py::_route",
+        "skills/agrim-loop/scripts/upstream.py::_spill"
+      ],
+      "verdict": "identical-writer"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/witness",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_diff_revert_verdict",
+        "loop.py::_verify_goal_locked",
+        "loop.py::_witness_verdict",
+        "witness.py::record"
+      ],
+      "sigma_reader_count": 4,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+        "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/witness.py::record"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/witness/*.jsonl",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::_diff_revert_verdict",
+        "loop.py::_verify_goal_locked",
+        "loop.py::_witness_verdict",
+        "witness.py::record"
+      ],
+      "sigma_reader_count": 5,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+        "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+        "skills/agrim-loop/scripts/loop.py::verify_goal",
+        "skills/agrim-loop/scripts/witness.py::record"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/work",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "work.py::_hard_plan_gate_refusal",
+        "work.py::_save",
+        "work.py::_stale_resume_refusal",
+        "work.py::post_review",
+        "work.py::pr",
+        "work.py::start"
+      ],
+      "sigma_reader_count": 6,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::_save",
+        "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+        "skills/agrim-loop/scripts/work.py::ci_repair",
+        "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+        "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+        "skills/agrim-loop/scripts/work.py::note_close_failure",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-loop/scripts/work.py::pr",
+        "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+        "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+        "skills/agrim-loop/scripts/work.py::start"
+      ],
+      "verdict": "directory"
+    },
+    {
+      "class": "two-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/work/*.json",
+      "predecessor_reader_count": 1,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "work.py::_hard_plan_gate_refusal",
+        "work.py::_save",
+        "work.py::_stale_resume_refusal",
+        "work.py::post_review",
+        "work.py::pr",
+        "work.py::start"
+      ],
+      "sigma_reader_count": 8,
+      "sigma_sample": null,
+      "sigma_writers": [
+        "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+        "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+        "skills/agrim-loop/scripts/work.py::_save",
+        "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+        "skills/agrim-loop/scripts/work.py::ci_repair",
+        "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+        "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+        "skills/agrim-loop/scripts/work.py::note_close_failure",
+        "skills/agrim-loop/scripts/work.py::post_review",
+        "skills/agrim-loop/scripts/work.py::pr",
+        "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+        "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+        "skills/agrim-loop/scripts/work.py::start"
+      ],
+      "verdict": "unsampled"
+    },
+    {
+      "class": "directory",
+      "corruption": null,
+      "pattern": ".sdlc/state/worktree-locks",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::verify_goal",
+        "work.py::acquire_worktree_lock",
+        "work.py::worktree_lock"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "directory"
+    },
+    {
+      "class": "one-writer",
+      "corruption": null,
+      "pattern": ".sdlc/state/worktree-locks/*.lock",
+      "predecessor_reader_count": 0,
+      "predecessor_sample": null,
+      "predecessor_writers": [
+        "loop.py::verify_goal",
+        "work.py::acquire_worktree_lock",
+        "work.py::worktree_lock"
+      ],
+      "sigma_reader_count": 3,
+      "sigma_sample": null,
+      "sigma_writers": [],
+      "verdict": "one-writer"
+    }
+  ],
+  "samples": {
+    "config_probe": {
+      "predecessor_config_then_sigma_configure": {
+        "exit": 0,
+        "keys_lost": []
+      },
+      "sigma_config_then_predecessor_configure": {
+        "exit": 0,
+        "keys_lost": []
+      }
+    },
+    "cross_run_anomalies": [],
+    "registry_probe": {
+      "action": "the predecessor's own `feature_sync.py fold`",
+      "exit": 0,
+      "index_schema_brand_after": "predecessor",
+      "index_schema_brand_before": "sigma",
+      "predecessor_message": "<path> <predecessor>: features: a registry document declares schema 'sigma<path>', not '<predecessor><path>', so none of it was read. Upgrade the plugin, or cor",
+      "setup": "Sigma writes .sdlc/features/index.json holding one unit and no unit shard",
+      "sigma_reads_back_exit": 0,
+      "sigma_reads_back_has_unit": false,
+      "units_after": [],
+      "units_before": [
+        "unit-a"
+      ]
+    },
+    "signatures": {
+      "predecessor": {
+        ".sdlc/config.json": {
+          "key_count": 53,
+          "keys_sha256": "412889b91405bc5b5b874d85da042056aec8457fa9dba54d01911517c469e7cf",
+          "shape": "json"
+        },
+        ".sdlc/features/index.json": {
+          "keys": [
+            "features",
+            "schema"
+          ],
+          "schema": "features@1",
+          "schema_brand": "predecessor",
+          "shape": "json"
+        },
+        ".sdlc/features/units/*.json": {
+          "keys": [
+            "features",
+            "schema"
+          ],
+          "schema": "features@1",
+          "schema_brand": "predecessor",
+          "shape": "json"
+        },
+        ".sdlc/goals/*.md": {
+          "headings": 0,
+          "shape": "md"
+        },
+        ".sdlc/journey/*.md": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/ledger/*": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/state/STATE.md": {
+          "headings": 2,
+          "shape": "md"
+        },
+        ".sdlc/state/STATE.md.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/agents/*": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/agents/*/*.active": {
+          "keys": [],
+          "shape": "json"
+        },
+        ".sdlc/state/claims/*.lock": {
+          "keys": [],
+          "shape": "json"
+        },
+        ".sdlc/state/landing/*.json": {
+          "key_count": 15,
+          "keys_sha256": "eec015bfa7c0e06b99c4cf6aff0127515ebf086e45cf5b38a49766f39ecbc7fe",
+          "schema": "landing@1",
+          "schema_brand": "predecessor",
+          "shape": "json"
+        },
+        ".sdlc/state/log/*.jsonl": {
+          "keys": [
+            "actor",
+            "goal",
+            "kind",
+            "thread",
+            "ts"
+          ],
+          "shape": "jsonl"
+        },
+        ".sdlc/state/phase-end-*.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/phase/*.json": {
+          "keys": [
+            "goal",
+            "host_model",
+            "model",
+            "phase",
+            "requested_model",
+            "title",
+            "ts_start",
+            "ts_start_epoch"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/review-queue.md": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/state/sessions/*.active": {
+          "keys": [
+            "in_flight",
+            "settled_admissions"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/sessions/locks/*.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/setup-wizard-cache.json": {
+          "keys": [
+            "checked_at",
+            "needs_wizard"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/setup-wizard-dismissed.json": {
+          "keys": [
+            "<list>"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/time/*/*.jsonl": {
+          "keys": [
+            "goal",
+            "kind",
+            "ms",
+            "name",
+            "started",
+            "ts"
+          ],
+          "shape": "jsonl"
+        },
+        ".sdlc/state/time/.last-prune": {
+          "keys": [],
+          "shape": "json"
+        },
+        ".sdlc/state/time/_sessions/*/*.jsonl": {
+          "keys": [
+            "kind",
+            "ms",
+            "name",
+            "session",
+            "ts"
+          ],
+          "shape": "jsonl"
+        }
+      },
+      "sigma": {
+        ".sdlc/config.json": {
+          "key_count": 50,
+          "keys_sha256": "1956d6bc7877689b26a83293d088ab3e80b4afa748fcba29178a55c460e90873",
+          "shape": "json"
+        },
+        ".sdlc/events/*-*.*.jsonl": {
+          "keys": [
+            "actor",
+            "goal",
+            "id",
+            "kind",
+            "reason_class",
+            "ts"
+          ],
+          "shape": "jsonl"
+        },
+        ".sdlc/features/index.json": {
+          "keys": [
+            "features",
+            "schema"
+          ],
+          "schema": "features@1",
+          "schema_brand": "sigma",
+          "shape": "json"
+        },
+        ".sdlc/features/units/*.json": {
+          "keys": [
+            "features",
+            "schema"
+          ],
+          "schema": "features@1",
+          "schema_brand": "sigma",
+          "shape": "json"
+        },
+        ".sdlc/goals/*.md": {
+          "headings": 0,
+          "shape": "md"
+        },
+        ".sdlc/journey/*.md": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/ledger/*": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/state/STATE.md": {
+          "headings": 2,
+          "shape": "md"
+        },
+        ".sdlc/state/STATE.md.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/agents/*": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/agents/*/*.active": {
+          "keys": [],
+          "shape": "json"
+        },
+        ".sdlc/state/log/*.jsonl": {
+          "keys": [
+            "actor",
+            "goal",
+            "kind",
+            "op",
+            "path",
+            "thread",
+            "ts"
+          ],
+          "shape": "jsonl"
+        },
+        ".sdlc/state/phase-end-*.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/phase/*.json": {
+          "keys": [
+            "goal",
+            "host_model",
+            "model",
+            "phase",
+            "pid",
+            "requested_model",
+            "title",
+            "ts_start",
+            "ts_start_epoch"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/review-queue.md": {
+          "headings": 1,
+          "shape": "md"
+        },
+        ".sdlc/state/run_stop/*.json": {
+          "keys": [
+            "claimed"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/sessions/*.active": {
+          "keys": [
+            "generation",
+            "in_flight",
+            "settled_admissions"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/sessions/locks/*.lock": {
+          "empty": true,
+          "shape": "text"
+        },
+        ".sdlc/state/setup-wizard-cache.json": {
+          "keys": [
+            "checked_at",
+            "needs_wizard"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/setup-wizard-dismissed.json": {
+          "keys": [
+            "<list>"
+          ],
+          "shape": "json"
+        },
+        ".sdlc/state/time/*/*.jsonl": {
+          "keys": [
+            "goal",
+            "kind",
+            "ms",
+            "name",
+            "started",
+            "ts"
+          ],
+          "shape": "jsonl"
+        },
+        ".sdlc/state/time/.last-prune": {
+          "keys": [],
+          "shape": "json"
+        },
+        ".sdlc/state/time/_sessions/*/*.jsonl": {
+          "keys": [
+            "kind",
+            "ms",
+            "name",
+            "session",
+            "ts"
+          ],
+          "shape": "jsonl"
+        }
+      }
+    },
+    "solo_exit_codes": {
+      "predecessor": [
+        [
+          "start",
+          0
+        ],
+        [
+          "next",
+          0
+        ],
+        [
+          "agent-start",
+          0
+        ],
+        [
+          "phase-start",
+          0
+        ],
+        [
+          "note",
+          0
+        ],
+        [
+          "log",
+          0
+        ],
+        [
+          "phase-end",
+          0
+        ],
+        [
+          "record",
+          0
+        ],
+        [
+          "session-end",
+          0
+        ],
+        [
+          "wizard",
+          0
+        ]
+      ],
+      "sigma": [
+        [
+          "start",
+          0
+        ],
+        [
+          "next",
+          0
+        ],
+        [
+          "agent-start",
+          0
+        ],
+        [
+          "phase-start",
+          0
+        ],
+        [
+          "note",
+          0
+        ],
+        [
+          "log",
+          0
+        ],
+        [
+          "phase-end",
+          0
+        ],
+        [
+          "record",
+          0
+        ],
+        [
+          "session-end",
+          0
+        ],
+        [
+          "wizard",
+          0
+        ]
+      ]
+    }
+  },
+  "scope": [
+    "skills/",
+    "hooks/"
+  ],
+  "sigma_written": {
+    ".sdlc/acceptance": [
+      "skills/agrim-loop/scripts/acceptance.py::record"
+    ],
+    ".sdlc/config.json": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+      "skills/agrim-init/scripts/verify_detect.py::write_verify",
+      "skills/agrim-setup/scripts/setup.py::write_cfg"
+    ],
+    ".sdlc/context": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+    ],
+    ".sdlc/context/north-star.md": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+    ],
+    ".sdlc/events": [
+      "skills/agrim-loop/scripts/comment_watch.py::tick",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep",
+      "skills/agrim-loop/scripts/ledger.py::append",
+      "skills/agrim-loop/scripts/ledger.py::main",
+      "skills/agrim-loop/scripts/ledger.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/sync.py::bootstrap",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/events/*-*.*.jsonl": [
+      "skills/agrim-loop/scripts/comment_watch.py::tick",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep",
+      "skills/agrim-loop/scripts/ledger.py::append",
+      "skills/agrim-loop/scripts/ledger.py::main",
+      "skills/agrim-loop/scripts/ledger.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/sync.py::bootstrap",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/events/.last-prune": [
+      "skills/agrim-loop/scripts/ledger.py::_maybe_prune_journal",
+      "skills/agrim-loop/scripts/ledger.py::_prune_journal_if_due",
+      "skills/agrim-loop/scripts/ledger.py::append"
+    ],
+    ".sdlc/features": [
+      "skills/agrim-loop/scripts/feature_registry.py::write_index"
+    ],
+    ".sdlc/features/index.json": [
+      "skills/agrim-loop/scripts/feature_registry.py::write_index"
+    ],
+    ".sdlc/features/units/*.json": [
+      "skills/agrim-loop/scripts/feature_registry.py::write_unit"
+    ],
+    ".sdlc/goals": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
+      "skills/agrim-loop/scripts/pipeline.py::discover",
+      "skills/agrim-loop/scripts/pipeline.py::main",
+      "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+      "skills/agrim-loop/scripts/pipeline.py::propose_goals",
+      "skills/agrim-loop/scripts/sources.py::create_dependency"
+    ],
+    ".sdlc/goals/*.md": [
+      "skills/agrim-loop/scripts/pipeline.py::discover",
+      "skills/agrim-loop/scripts/pipeline.py::main",
+      "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
+      "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+    ],
+    ".sdlc/goals/0000-demo.md": [
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
+      "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras"
+    ],
+    ".sdlc/journey": [
+      "skills/agrim-loop/scripts/sources.py::note"
+    ],
+    ".sdlc/journey/*.md": [
+      "skills/agrim-loop/scripts/sources.py::note"
+    ],
+    ".sdlc/knowledge": [
+      "skills/agrim-kg/scripts/kg.py::gap_log",
+      "skills/agrim-kg/scripts/kg.py::main"
+    ],
+    ".sdlc/knowledge/analysis": [
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::write_note"
+    ],
+    ".sdlc/knowledge/analysis/*.md": [
+      "skills/agrim-kg/scripts/kg.py::write_note"
+    ],
+    ".sdlc/knowledge/analysis/goal-*.md": [
+      "skills/agrim-kg/scripts/kg.py::main"
+    ],
+    ".sdlc/knowledge/analysis/issue-*.md": [
+      "skills/agrim-kg/scripts/kg.py::main"
+    ],
+    ".sdlc/knowledge/archive/research/web": [
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::retain_web"
+    ],
+    ".sdlc/knowledge/archive/research/web/*": [
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::retain_web"
+    ],
+    ".sdlc/knowledge/gaps.md": [
+      "skills/agrim-kg/scripts/kg.py::gap_log",
+      "skills/agrim-kg/scripts/kg.py::gap_resolve",
+      "skills/agrim-kg/scripts/kg.py::main"
+    ],
+    ".sdlc/knowledge/radar": [
+      "skills/agrim-radar/scripts/radar.py::main",
+      "skills/agrim-radar/scripts/radar.py::record"
+    ],
+    ".sdlc/knowledge/radar/ledger.md": [
+      "skills/agrim-radar/scripts/radar.py::main",
+      "skills/agrim-radar/scripts/radar.py::record"
+    ],
+    ".sdlc/ledger": [
+      "skills/agrim-loop/scripts/ledger.py::main"
+    ],
+    ".sdlc/ledger/*": [
+      "skills/agrim-loop/scripts/comment_watch.py::tick",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep",
+      "skills/agrim-loop/scripts/ledger.py::append",
+      "skills/agrim-loop/scripts/ledger.py::main",
+      "skills/agrim-loop/scripts/ledger.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/sync.py::bootstrap",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/ledger/*/*-*.*.jsonl": [
+      "skills/agrim-loop/scripts/comment_watch.py::tick",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep",
+      "skills/agrim-loop/scripts/ledger.py::append",
+      "skills/agrim-loop/scripts/ledger.py::main",
+      "skills/agrim-loop/scripts/ledger.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/sync.py::bootstrap",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/ledger/TEAM.md": [
+      "skills/agrim-loop/scripts/ledger.py::main"
+    ],
+    ".sdlc/plans": [
+      "skills/agrim-scope/scripts/assign.py::execute",
+      "skills/agrim-scope/scripts/assign.py::main"
+    ],
+    ".sdlc/plans/*-plan.md": [
+      "skills/agrim-scope/scripts/assign.py::execute",
+      "skills/agrim-scope/scripts/assign.py::main"
+    ],
+    ".sdlc/state": [
+      "skills/agrim-init/scripts/init_flow.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+      "skills/agrim-init/scripts/setup_wizard.py::wizard_status",
+      "skills/agrim-init/scripts/setup_wizard.py::write_dismissed",
+      "skills/agrim-kg/scripts/kg.py::_write_refresh_record",
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::refresh",
+      "skills/agrim-kg/scripts/kg.py::warn",
+      "skills/agrim-loop/scripts/agent_watch.py::tick",
+      "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+      "skills/agrim-loop/scripts/autowatch.py::_tick_inner",
+      "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+      "skills/agrim-loop/scripts/backlog_check.py::cross_check",
+      "skills/agrim-loop/scripts/channel_notify.py::tick",
+      "skills/agrim-loop/scripts/coexist.py::write_owner",
+      "skills/agrim-loop/scripts/comment_watch.py::tick",
+      "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep",
+      "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+      "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+      "skills/agrim-loop/scripts/feature_judge.py::live_judge",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+      "skills/agrim-loop/scripts/loop.py::_merge_reconcile_lock",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_awaiting_merges",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat",
+      "skills/agrim-loop/scripts/state.py::_cursor_lock",
+      "skills/agrim-loop/scripts/state.py::_patch_cursor",
+      "skills/agrim-loop/scripts/state.py::_queue",
+      "skills/agrim-loop/scripts/state.py::_state_file",
+      "skills/agrim-loop/scripts/state.py::add_tokens",
+      "skills/agrim-loop/scripts/state.py::advance_cursor",
+      "skills/agrim-loop/scripts/state.py::fail",
+      "skills/agrim-loop/scripts/state.py::park",
+      "skills/agrim-loop/scripts/state.py::phase_end_lock",
+      "skills/agrim-loop/scripts/state.py::record_phase_end",
+      "skills/agrim-loop/scripts/state.py::start_run",
+      "skills/agrim-loop/scripts/supervise_daemon.py::main",
+      "skills/agrim-loop/scripts/sync.py::_knowledge_lock",
+      "skills/agrim-loop/scripts/sync.py::_publish_knowledge",
+      "skills/agrim-loop/scripts/sync.py::_pull_knowledge",
+      "skills/agrim-loop/scripts/sync.py::publish",
+      "skills/agrim-loop/scripts/watch.py::main",
+      "skills/agrim-loop/scripts/watch.py::tick",
+      "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
+      "skills/agrim-loop/scripts/worktree_prune.py::main",
+      "skills/agrim-loop/scripts/worktree_prune.py::sweep",
+      "skills/agrim-scope/scripts/assign.py::_start_drain"
+    ],
+    ".sdlc/state/STATE.md": [
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/state.py::_patch_cursor",
+      "skills/agrim-loop/scripts/state.py::_state_file",
+      "skills/agrim-loop/scripts/state.py::add_tokens",
+      "skills/agrim-loop/scripts/state.py::advance_cursor",
+      "skills/agrim-loop/scripts/state.py::record_phase_end",
+      "skills/agrim-loop/scripts/state.py::start_run",
+      "skills/agrim-scope/scripts/assign.py::_start_drain"
+    ],
+    ".sdlc/state/STATE.md.lock": [
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/state.py::_cursor_lock",
+      "skills/agrim-loop/scripts/state.py::_patch_cursor",
+      "skills/agrim-loop/scripts/state.py::add_tokens",
+      "skills/agrim-loop/scripts/state.py::advance_cursor",
+      "skills/agrim-loop/scripts/state.py::record_phase_end",
+      "skills/agrim-loop/scripts/state.py::start_run",
+      "skills/agrim-scope/scripts/assign.py::_start_drain"
+    ],
+    ".sdlc/state/agent-watch-cursor.json": [
+      "skills/agrim-loop/scripts/agent_watch.py::tick"
+    ],
+    ".sdlc/state/agents/*": [
+      "skills/agrim-loop/scripts/loop.py::agent_start",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+    ],
+    ".sdlc/state/agents/*/*.active": [
+      "skills/agrim-loop/scripts/loop.py::_write",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+    ],
+    ".sdlc/state/autowatch-spend.json": [
+      "skills/agrim-loop/scripts/autowatch.py::_record_spend",
+      "skills/agrim-loop/scripts/autowatch.py::_tick_inner"
+    ],
+    ".sdlc/state/channel-notify-cursor.json": [
+      "skills/agrim-loop/scripts/channel_notify.py::tick"
+    ],
+    ".sdlc/state/claims": [
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain"
+    ],
+    ".sdlc/state/claims/*.claimed": [
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed"
+    ],
+    ".sdlc/state/claims/*.lock": [
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-scope/scripts/assign.py::_start_drain"
+    ],
+    ".sdlc/state/claims/slack-cmd-*.lock": [
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim"
+    ],
+    ".sdlc/state/coexist.notice": [
+      "skills/agrim-doctor/scripts/migrate.py::main",
+      "skills/agrim-init/scripts/init_flow.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-loop/scripts/coexist.py::gate"
+    ],
+    ".sdlc/state/comment-watch-cursor.json": [
+      "skills/agrim-loop/scripts/comment_watch.py::tick"
+    ],
+    ".sdlc/state/drift.meta.json": [
+      "skills/agrim-loop/scripts/drift_watch.py::_stamp",
+      "skills/agrim-loop/scripts/drift_watch.py::sweep"
+    ],
+    ".sdlc/state/embeddings.json": [
+      "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
+      "skills/agrim-loop/scripts/backlog_check.py::cross_check"
+    ],
+    ".sdlc/state/feature-judge-spend.json": [
+      "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
+      "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+    ],
+    ".sdlc/state/feature-judge-spend.lock": [
+      "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
+      "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+    ],
+    ".sdlc/state/inbox.md": [
+      "skills/agrim-loop/scripts/loop.py::_surface_inbox",
+      "skills/agrim-loop/scripts/watch.py::clear_inbox",
+      "skills/agrim-loop/scripts/watch.py::main",
+      "skills/agrim-loop/scripts/watch.py::tick"
+    ],
+    ".sdlc/state/kg-refresh.json": [
+      "skills/agrim-kg/scripts/kg.py::_write_refresh_record",
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::refresh"
+    ],
+    ".sdlc/state/kg-warned.stamp": [
+      "skills/agrim-kg/scripts/kg.py::main",
+      "skills/agrim-kg/scripts/kg.py::warn"
+    ],
+    ".sdlc/state/knowledge-sync.lock": [
+      "skills/agrim-loop/scripts/sync.py::_knowledge_lock",
+      "skills/agrim-loop/scripts/sync.py::_publish_knowledge",
+      "skills/agrim-loop/scripts/sync.py::_pull_knowledge",
+      "skills/agrim-loop/scripts/sync.py::publish"
+    ],
+    ".sdlc/state/landing": [
+      "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+      "skills/agrim-loop/scripts/cross_repo.py::_record",
+      "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+    ],
+    ".sdlc/state/landing/*.json": [
+      "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
+      "skills/agrim-loop/scripts/cross_repo.py::_record",
+      "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+    ],
+    ".sdlc/state/ledger-delivery-attempt": [
+      "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
+      "skills/agrim-loop/scripts/loop.py::run_loop"
+    ],
+    ".sdlc/state/log": [
+      "skills/agrim-loop/scripts/actionlog.py::append",
+      "skills/agrim-loop/scripts/actionlog.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal"
+    ],
+    ".sdlc/state/log/*.jsonl": [
+      "skills/agrim-loop/scripts/actionlog.py::append",
+      "skills/agrim-loop/scripts/actionlog.py::safe_append",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main",
+      "skills/agrim-loop/scripts/loop.py::verify_goal"
+    ],
+    ".sdlc/state/merge-reconcile.lock": [
+      "skills/agrim-loop/scripts/loop.py::_merge_reconcile_lock",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_awaiting_merges"
+    ],
+    ".sdlc/state/owner.json": [
+      "skills/agrim-init/scripts/init_flow.py::main",
+      "skills/agrim-init/scripts/sdlc_init.py::main",
+      "skills/agrim-loop/scripts/coexist.py::write_owner",
+      "skills/agrim-loop/scripts/loop.py::_dispatch",
+      "skills/agrim-loop/scripts/loop.py::main"
+    ],
+    ".sdlc/state/phase": [
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/phase_report.py::write_marker"
+    ],
+    ".sdlc/state/phase-end-*.lock": [
+      "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
+      "skills/agrim-loop/scripts/state.py::phase_end_lock"
+    ],
+    ".sdlc/state/phase/*.json": [
+      "skills/agrim-loop/scripts/phase_report.py::cmd_start",
+      "skills/agrim-loop/scripts/phase_report.py::write_marker"
+    ],
+    ".sdlc/state/propagation": [
+      "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+      "skills/agrim-loop/scripts/feature_propagate.py::_store"
+    ],
+    ".sdlc/state/propagation/*.json": [
+      "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
+      "skills/agrim-loop/scripts/feature_propagate.py::_store"
+    ],
+    ".sdlc/state/reconcile.meta.json": [
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
+      "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
+      "skills/agrim-loop/scripts/loop.py::next_batch"
+    ],
+    ".sdlc/state/review-generations/*": [
+      "skills/agrim-loop/scripts/review_context.py::publish_generation",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-loop/scripts/work.py::review_evidence"
+    ],
+    ".sdlc/state/review-generations/*/brief.md": [
+      "skills/agrim-loop/scripts/review_context.py::publish_generation"
+    ],
+    ".sdlc/state/review-generations/*/evidence.json": [
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-loop/scripts/work.py::review_evidence"
+    ],
+    ".sdlc/state/review-posts": [
+      "skills/agrim-loop/scripts/work.py::_review_post_request",
+      "skills/agrim-loop/scripts/work.py::post_review"
+    ],
+    ".sdlc/state/review-posts/*.json": [
+      "skills/agrim-loop/scripts/work.py::_review_post_request",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-loop/scripts/work.py::reconcile_review_post"
+    ],
+    ".sdlc/state/review-queue.md": [
+      "skills/agrim-loop/scripts/state.py::_queue",
+      "skills/agrim-loop/scripts/state.py::fail",
+      "skills/agrim-loop/scripts/state.py::park"
+    ],
+    ".sdlc/state/review-results": [
+      "skills/agrim-loop/scripts/work.py::_write_review_result"
+    ],
+    ".sdlc/state/review-results/*.json": [
+      "skills/agrim-loop/scripts/work.py::_write_review_result"
+    ],
+    ".sdlc/state/run_stop": [
+      "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/state.py::claim_run_stop"
+    ],
+    ".sdlc/state/run_stop/*.json": [
+      "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/state.py::claim_run_stop"
+    ],
+    ".sdlc/state/sessions": [
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+      "skills/agrim-loop/scripts/loop.py::_session_claim",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/loop.py::session_start",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/state/sessions/*-*.active": [
+      "skills/agrim-loop/scripts/loop.py::_cancel",
+      "skills/agrim-loop/scripts/loop.py::_check_and_write",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_write",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/state/sessions/*.active": [
+      "skills/agrim-loop/scripts/loop.py::_cancel",
+      "skills/agrim-loop/scripts/loop.py::_check_and_write",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_write",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/state/sessions/locks": [
+      "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+      "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+      "skills/agrim-loop/scripts/loop.py::_session_claim",
+      "skills/agrim-loop/scripts/loop.py::_session_locked",
+      "skills/agrim-loop/scripts/loop.py::_session_release",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/loop.py::session_end",
+      "skills/agrim-loop/scripts/loop.py::session_start",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/state/sessions/locks/*.lock": [
+      "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
+      "skills/agrim-loop/scripts/loop.py::_claim",
+      "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
+      "skills/agrim-loop/scripts/loop.py::_next",
+      "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
+      "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
+      "skills/agrim-loop/scripts/loop.py::_session_claim",
+      "skills/agrim-loop/scripts/loop.py::_session_locked",
+      "skills/agrim-loop/scripts/loop.py::_session_release",
+      "skills/agrim-loop/scripts/loop.py::next_batch",
+      "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+      "skills/agrim-loop/scripts/loop.py::run_loop",
+      "skills/agrim-loop/scripts/loop.py::session_end",
+      "skills/agrim-loop/scripts/loop.py::session_start",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
+      "skills/agrim-scope/scripts/assign.py::_start_drain",
+      "skills/agrim-scope/scripts/assign.py::execute"
+    ],
+    ".sdlc/state/setup-wizard-cache.json": [
+      "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
+      "skills/agrim-init/scripts/setup_wizard.py::wizard_status"
+    ],
+    ".sdlc/state/setup-wizard-dismissed.json": [
+      "skills/agrim-init/scripts/setup_wizard.py::write_dismissed"
+    ],
+    ".sdlc/state/slack-commands.heartbeat.json": [
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::run",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat"
+    ],
+    ".sdlc/state/slack-commands.log": [
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+    ],
+    ".sdlc/state/slack-commands.pid": [
+      "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+      "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+    ],
+    ".sdlc/state/supervisor.log": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ],
+    ".sdlc/state/supervisor.run.out": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ],
+    ".sdlc/state/supervisor.tail": [
+      "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    ],
+    ".sdlc/state/time": [
+      "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+      "skills/agrim-loop/scripts/timing_store.py::append",
+      "skills/agrim-loop/scripts/timing_store.py::append_session",
+      "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+    ],
+    ".sdlc/state/time/*": [
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/timing_store.py::append",
+      "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    ],
+    ".sdlc/state/time/*/*.jsonl": [
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/timing_store.py::append",
+      "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    ],
+    ".sdlc/state/time/.last-prune": [
+      "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
+      "skills/agrim-loop/scripts/timing_store.py::append",
+      "skills/agrim-loop/scripts/timing_store.py::append_session",
+      "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+    ],
+    ".sdlc/state/time/_sessions/*": [
+      "hooks/time_track.py::handle",
+      "hooks/time_track.py::main",
+      "skills/agrim-loop/scripts/timing_store.py::_record_script",
+      "skills/agrim-loop/scripts/timing_store.py::append_session"
+    ],
+    ".sdlc/state/time/_sessions/*/*.jsonl": [
+      "hooks/time_track.py::handle",
+      "hooks/time_track.py::main",
+      "skills/agrim-loop/scripts/timing_store.py::_record_script",
+      "skills/agrim-loop/scripts/timing_store.py::append_session"
+    ],
+    ".sdlc/state/time/_sessions/*/open.json": [
+      "hooks/time_track.py::handle",
+      "hooks/time_track.py::main"
+    ],
+    ".sdlc/state/time/_sessions/*/turns.jsonl": [
+      "hooks/time_track.py::handle",
+      "hooks/time_track.py::main",
+      "skills/agrim-loop/scripts/timing_store.py::_record_script",
+      "skills/agrim-loop/scripts/timing_store.py::append_session"
+    ],
+    ".sdlc/state/unit-tracking": [
+      "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+    ],
+    ".sdlc/state/unit-tracking/*.attempt": [
+      "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+    ],
+    ".sdlc/state/verify/*.json": [
+      "skills/agrim-loop/scripts/state.py::reanchor_content",
+      "skills/agrim-loop/scripts/work.py::_reconcile_behind"
+    ],
+    ".sdlc/state/watch.owner": [
+      "skills/agrim-loop/scripts/coexist.py::write_watch_owner"
+    ],
+    ".sdlc/state/withheld": [
+      "skills/agrim-loop/scripts/upstream.py::_route",
+      "skills/agrim-loop/scripts/upstream.py::_spill"
+    ],
+    ".sdlc/state/withheld/*.md": [
+      "skills/agrim-loop/scripts/upstream.py::_route",
+      "skills/agrim-loop/scripts/upstream.py::_spill"
+    ],
+    ".sdlc/state/witness": [
+      "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+      "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/witness.py::record"
+    ],
+    ".sdlc/state/witness/*.jsonl": [
+      "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
+      "skills/agrim-loop/scripts/loop.py::_witness_verdict",
+      "skills/agrim-loop/scripts/loop.py::verify_goal",
+      "skills/agrim-loop/scripts/witness.py::record"
+    ],
+    ".sdlc/state/work": [
+      "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::_save",
+      "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+      "skills/agrim-loop/scripts/work.py::ci_repair",
+      "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+      "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+      "skills/agrim-loop/scripts/work.py::note_close_failure",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-loop/scripts/work.py::pr",
+      "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+      "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+      "skills/agrim-loop/scripts/work.py::start"
+    ],
+    ".sdlc/state/work/*.json": [
+      "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
+      "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
+      "skills/agrim-loop/scripts/work.py::_save",
+      "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
+      "skills/agrim-loop/scripts/work.py::ci_repair",
+      "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
+      "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
+      "skills/agrim-loop/scripts/work.py::note_close_failure",
+      "skills/agrim-loop/scripts/work.py::post_review",
+      "skills/agrim-loop/scripts/work.py::pr",
+      "skills/agrim-loop/scripts/work.py::reconcile_review_post",
+      "skills/agrim-loop/scripts/work.py::stamp_merge_check",
+      "skills/agrim-loop/scripts/work.py::start"
+    ],
+    ".sdlc/state/worktree-prune-seen.json": [
+      "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
+      "skills/agrim-loop/scripts/worktree_prune.py::main",
+      "skills/agrim-loop/scripts/worktree_prune.py::sweep"
+    ],
+    ".sdlc/state/worktree-prune.lock": [
+      "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
+      "skills/agrim-loop/scripts/worktree_prune.py::main",
+      "skills/agrim-loop/scripts/worktree_prune.py::sweep"
+    ]
+  }
+}

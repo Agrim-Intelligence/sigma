@@ -2441,6 +2441,46 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/shared_paths.py",
+      "function": "_prepare",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit scan with samples; scratch repository inside a fresh temporary directory; fake HOME",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/shared_paths.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit scan command; caller-supplied --json, --table and --fixture-out paths",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/shared_paths.py",
+      "function": "registry_probe",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit scan with samples; scratch directory inside the temporary work directory",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/shared_paths.py",
+      "function": "sample_run",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "explicit scan with samples; removes only the temporary directory it created",
+      "risk": "high"
+    },
+    {
+      "path": "tools/readiness/shared_paths.py",
+      "function": "sample_run",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit scan with samples; fake HOME inside a fresh temporary directory",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/write_surface.py",
       "function": "main",
       "rule": "fs-write",

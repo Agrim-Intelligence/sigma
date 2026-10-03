@@ -303,4 +303,9 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/injection_drill.py | file_payloads | gh-api-write | 1 | explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and must be private; declared --max-usd; never run by Sigma | high |
 | tools/readiness/review_units.py | main | fs-write | 1 | explicit --json PATH; caller-supplied output path | medium |
 | tools/readiness/seed_defects.py | apply | fs-write | 1 | explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only | medium |
+| tools/readiness/shared_paths.py | _prepare | fs-write | 2 | explicit scan with samples; scratch repository inside a fresh temporary directory; fake HOME | medium |
+| tools/readiness/shared_paths.py | main | fs-write | 3 | explicit scan command; caller-supplied --json, --table and --fixture-out paths | medium |
+| tools/readiness/shared_paths.py | registry_probe | fs-write | 2 | explicit scan with samples; scratch directory inside the temporary work directory | medium |
+| tools/readiness/shared_paths.py | sample_run | fs-rmtree | 1 | explicit scan with samples; removes only the temporary directory it created | high |
+| tools/readiness/shared_paths.py | sample_run | fs-write | 1 | explicit scan with samples; fake HOME inside a fresh temporary directory | medium |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |

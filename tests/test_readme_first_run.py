@@ -499,6 +499,9 @@ VERSION_ALLOW = {
     ("docs/launch/coverage.md", "9.1.1"): "the measured pytest version (#194)",
     ("docs/launch/coverage.md", "3.12.13"): "the measured Python interpreter version (#194)",
     ("docs/launch/coverage.md", "25.6.0"): "the measured Darwin kernel version (#194)",
+    ("docs/launch/shared-sdlc-paths.md", "1.4.28"): "the predecessor release whose installed copy #347 scanned",
+    ("docs/launch/shared-sdlc-paths.md", "1.4.24"): "the predecessor release in which its setup wizard was seen "
+                                                    "writing into this repository (finding 21 of #347)",
 }
 
 

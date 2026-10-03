@@ -529,10 +529,12 @@ def _skill_rows(root, path):
     return rows
 
 
-def scan(root):
-    """Return deterministic code and skill-prose store rows below ``root``."""
-    root = Path(root)
-    paths = [path for path in sorted(root.rglob("*.py")) if "tests" not in path.relative_to(root).parts]
+def function_table(paths):
+    """Return the per-module function/constant/instance-alias table `scan` resolves paths with.
+
+    Split out of `scan` so a second reader of the same source (tools/readiness/shared_paths.py)
+    resolves a path expression exactly as the write-site scan does, rather than reimplementing it.
+    """
     functions = {}
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
@@ -591,6 +593,14 @@ def scan(root):
             for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
             if isinstance(target, ast.Name)
         }
+    return functions
+
+
+def scan(root):
+    """Return deterministic code and skill-prose store rows below ``root``."""
+    root = Path(root)
+    paths = [path for path in sorted(root.rglob("*.py")) if "tests" not in path.relative_to(root).parts]
+    functions = function_table(paths)
     rows = []
     for path in paths:
         rows.extend(_code_rows(root, path, functions))
