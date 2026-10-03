@@ -86,6 +86,22 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     It is the only reach of a header-less one-line Ed25519 key, which is
     otherwise 48 random bytes, the same as a sha384 digest. Explicit EC PARAMETERS (public, and
     shaped like PKCS8 v2) are excluded by their OID.
+    (4) FIRST LINE IN HEX, ENCRYPTED PKCS8 / PKCS12, PGP (#451). The reader behind (3) (`_private_head`, over
+    decoded bytes) also takes a HEX token (either case; at a token boundary, after a literal `\\n`, `\\r`
+    or `\\t`, or after `0x`; 36 characters, 18 bytes, at least) and three more key kinds, in base64 and in
+    hex, anywhere in a line like (3): a hex PKCS1 / PKCS8 / SEC1 / DSA first line, alone or opening a hex
+    body of any length (a hex-encoded 6-line body is caught at its first line); an ENCRYPTED PKCS8,
+    `SEQUENCE { SEQUENCE { OID` with a PBES2, PBES1 (pkcs-5 1, 3, 4, 6, 9, 10, 11) or pkcs-12 PBE scheme
+    (PBKDF2 alone, SPKI and PKCS7 open differently); a PKCS12, `SEQUENCE { INTEGER 3, SEQUENCE { OID data`
+    (DER or BER indefinite lengths; the OID must lie in the 24 bytes read, so the first line needs 32 base64 /
+    44 hex characters, and a `signedData` PFX is not matched; a certificate-only PFX, whose first line is the same, IS, as is a public
+    RFC 3161 time-stamp request in hex, `SEQUENCE { INTEGER 1, SEQUENCE`, which the base64 reader already read); a PGP secret-key or secret-subkey packet
+    (tag 5 / 7, old or new format, version 4 or 6, a packet length under 64 KiB, and public-key material
+    that opens like a key's: an RSA / DSA / ElGamal MPI of 512-16384 bits in whole bytes, an EC curve OID, or a v6
+    length; a PGP 2.x version 2 or 3 packet is not read),
+    which armored opens `l`, `n` or `x`. A hex body is NOT a line-count class (hash lists have the same
+    widths: +4 false positives on the 97-file corpus, #433), only its first line is read. Floors are
+    exact: a first line one step below them is clean (`tests/test_hex_der.py`).
     A finding's line is the block's first line, or the DER line. A trailing allow marker waives a DER
     line (it stays a DER line). There is NO designed waiver for a header-less multi-line body. A marker
     on one of its lines makes that line non-base64, which splits the block, and what remains is judged
@@ -101,7 +117,17 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     False positives, MEASURED against a3c913c's rule: 0 -> 0 findings on the staged tree (826 files:
     821 at origin/main f69d3e1, this change's 2 new test files and its 3 `.sdlc` phase documents); on
     a generated 97-file corpus 34 -> 17 with 1 new (a P-256 body); the CHANGELOG lists the wider
-    populations.
+    populations. #451 (4), MEASURED against origin/main 2b1f07c with the documented gesture: the tracked tree
+    0 -> 0 findings (956 files); the 97-file corpus 63 -> 63 findings, 17 -> 17 `key-body`, the output identical
+    line for line; 12 real shapes (openssl 3.6 / gpg: hex PKCS1 6-line body and first line, hex PKCS8 and SEC1,
+    encrypted PKCS8 PBES2 and PBES1 in base64, hex encrypted PKCS8, PKCS12 in base64, hex and hex `-legacy`,
+    armored PGP and its hex) CLEAN -> 1 `key-body` each, and 5 public lookalikes (hex SPKI, hex and base64
+    certificate, armored PGP public key and its hex) clean before and after; 134,509 text files under a package
+    manager prefix and 34,174 files of a working directory: 0 findings removed, 21 and 9 added, the 21 all hex
+    private test keys in Go and Python crypto tests (true positives) and the 9 the three public-header literals of
+    this repository's own tests in sibling worktrees (split here). CPU, whole gate over the tracked tree, minimum
+    of 3: 5.93 -> 6.61 s; `key-body` alone about 2.2x (46 -> 99 s over 134,509 files); 4 MB adversarial inputs (one hex
+    line, 64-character digest lines, `0x30,` lists, `l`/`n`/`x`-led tokens, `\\n3082...` escapes) 0.18-0.52 s, all linear.
   * secret-file: a tracked path whose NAME is a credential container, whatever it holds: `id_rsa` /
     `id_dsa` / `id_ecdsa` / `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
     `*.ppk`, `.netrc` / `_netrc`, `.pgpass`, `credentials.json`, `service-account*.json`, and `.env` /
@@ -129,17 +155,16 @@ only (the digit+letter post-filter drops them); `key: value` credentials in pros
 (measured: without a byte-order mark, or big-endian with one, it is reported `opaque-binary`;
 little-endian WITH one is mis-decoded as UTF-16 and nothing in it is seen). For `key-body` (each
 planted and run through the gesture, #433):
-hex bodies, and base64url bodies other than a base64url DER token; a PEM base64-wrapped into one
+a hex or base64 body whose first line is missing or wrapped below the (4) floors (a hex body with its first line is caught; hash lists make a hex line-count class unusable); colon- or space-separated hex (`30:82:04`), `0x30, 0x82` / `\\x30\\x82` byte lists and hex under another encoding (UTF-7); base64url bodies other than a base64url DER token; a PEM base64-wrapped into one
 string only when no 24-character DER token remains (a DER-led key in a JSON or shell string,
 after `key:`, or after other text on its physical line is caught);
-a non-DER body (encrypted PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries
+a non-DER body (legacy-encrypted RSA or EC) every line of which carries
 a comment or quote prefix (`# `, `"`, `// `, `> `, ` * `, `+ `), even directly under its header
 (real keys, 48 plants: 0 findings here and on a3c913c);
 a PuTTY `.ppk` key whose `Private-Lines` part is 1-2 lines (Ed25519: 1 line; an RSA `.ppk`'s
 64-wide blocks of 3+ lines ARE flagged, measured, and a file named `*.ppk` is a `secret-file`); a header-less slice of fewer than 3 lines (2 lines with no 28-39 tail); a slice
 with no DER start inside a matching public span, unless a `Key: value` line above it in the span
-names a PRIVATE `BEGIN <label>-----` (then the header anchor flags it, measured); an encrypted PKCS8, PKCS12 or PGP-private body
-from a lone first line; a body wrapped below 24 characters (in every shape); a body wrapped below 40
+names a PRIVATE `BEGIN <label>-----` (then the header anchor flags it, measured); a body wrapped below 24 characters (in every shape); a body wrapped below 40
 whose first line is missing; any non-DER body wrapped below 40, header and END included (no line
 reaches the 40 floor, nor scrub.py's `private-key` 40-character run); an all-lower-case body; a
 body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean) or with
@@ -242,12 +267,19 @@ _PLACEHOLDER_VALUE = re.compile(r"(?i)(?:your[-_ ].*|.*[-_]here|changeme|change[
 #:      candidate (40+ base64, nothing else), and `_key_bodies` strips it there. 7+ then other text: unseen.
 _BODY_LINE = re.compile(r"(?m)^(?:[ \t]*(?P<b>[A-Za-z0-9+/]{40,}={0,2})[ \t]*\r?$"
                         r"|[ \t]*(?:[^A-Za-z0-9\s]{1,3}[ \t]*){0,2}"
-                        r"(?P<k>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
+                        r"(?P<k>[Mlnx][A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
 #: A bounded base64/base64url token at a token boundary: not preceded by a token character, OR directly
 #: after a LITERAL backslash escape `\n`, `\r` or `\t` (a JSON string's newline, whose `n` would otherwise
 #: read as a token character; `\r\n` is covered by its `\n`). Both lookbehinds are fixed-width.
-#: `M` starts DER's outer SEQUENCE; OpenSSH's 20-character constant needs four following base64 characters to meet the 24-character minimum.
-_DER_TOKEN = re.compile(r"(?:(?<![A-Za-z0-9+/_-])|(?<=\\[nrt]))(?P<t>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA[A-Za-z0-9+/_-]{4,})")
+#: `M` starts DER's outer SEQUENCE, `l`, `n` and `x` a PGP secret packet (an `n` right after a backslash is the
+#: letter of a JSON `\n` escape, never a token start: it would swallow the real token that follows); OpenSSH's 20-character constant needs four following base64 characters to meet the 24-character minimum.
+_DER_TOKEN = re.compile(r"(?:(?<![A-Za-z0-9+/_-])|(?<=\\[nrt]))(?P<t>(?:[Mlx]|(?<!\\)n)[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA[A-Za-z0-9+/_-]{4,})")
+#: A HEX token (either case) at a token boundary: not after a letter or digit, OR right after a literal
+#: backslash `\\n`, `\\r` or `\\t`, OR after `0x`. It must open with a byte that can start a private head: `30` (a DER
+#: SEQUENCE), a PGP secret-key packet tag (`94`-`97`, `9c`-`9f`, `c5`, `c7`) or OpenSSH's constant; 36 characters (18 bytes,
+#: the information 24 base64 characters carry) are the floor. `_private_head` reads the decoded bytes.
+_HEX_TOKEN = re.compile(r"(?:(?<![A-Za-z0-9])|(?<=\\[nrt])|(?<=0[xX]))"
+                        r"(?P<t>(?i:30|9[4-7c-f]|c[57]|6f70656e7373682d6b65792d7631)[0-9A-Fa-f]{34,})")
 #: The short last line of a P-256 SEC1 body (64, 64, 36 chars).
 _B64_TAIL = re.compile(r"(?m)[ \t]*[A-Za-z0-9+/]{28,39}={0,2}[ \t]*\r?$")
 #: A PEM/armor BEGIN label. Bounded (`{1,64}`) and dash-free so a line of `-----BEGIN ` repeated cannot
@@ -384,26 +416,101 @@ def _private_label(label):
     return "PRIVATE" in label.upper() or "SECRET" in label.upper()
 
 
-def _der_private(tok):
-    """True for the first line of a private key: OpenSSH's constant, or a DER header `SEQUENCE { INTEGER
-    0|1, SEQUENCE | INTEGER | OCTET STRING ...` in the first 24 bytes. A certificate, CSR, CRL, SPKI,
-    PKCS7 or DH parameters open with SEQUENCE / OID / a long INTEGER instead."""
-    if tok.startswith(_OPENSSH_KEY):
-        return True
-    if tok[:1] != "M" or len(tok) < 24:         # 0x30 (SEQUENCE) is always `M` in base64
-        return False
-    head = base64.urlsafe_b64decode(tok[:24])
-    if head[0] != 0x30:                         # `M` also spans 0x31-0x33
-        return False
-    if head[1] < 0x80:
-        i = 2
-    elif head[1] in (0x81, 0x82, 0x83):
-        i = 2 + (head[1] & 0x7F)
+_PBES1_ARCS = frozenset((1, 3, 4, 6, 9, 10, 11, 13))   # 1.2.840.113549.1.5.<n>: PBES1 schemes and PBES2 (13); 5.12 is PBKDF2 alone
+_PGP_ALGOS = frozenset((1, 2, 3, 16, 17, 18, 19, 20, 22, 25, 26, 27, 28))   # RSA, ElGamal, DSA, ECDH, ECDSA, EdDSA; 25-28 (X/Ed 25519/448) only in a v6 packet
+
+
+def _byte(h, i):
+    """`h[i]`, or -1 past either end: a truncated head is never an IndexError, only a non-match."""
+    return h[i] if 0 <= i < len(h) else -1
+
+
+def _der_len_end(h, i, indefinite=False):
+    """Offset just past the DER length field that starts at `h[i]` (1-3 length octets; `80` only when
+    `indefinite`, as BER writes a PKCS12), or -1 when unreadable."""
+    n = _byte(h, i)
+    if n < 0 or (n == 0x80 and not indefinite):
+        return -1
+    if n < 0x80:
+        return i + 1
+    return i + 1 + (n & 0x7F) if n in (0x80, 0x81, 0x82, 0x83) else -1
+
+
+def _pgp_secret_head(h):
+    """A PGP secret-key (tag 5) or secret-subkey (tag 7) packet, old or new format, version 4 or 6:
+    `95 01 xx 04 <time> 01 08 00 ...`. The packet length must be under 64 KiB and the public-key material must
+    open the way a real key's does: an RSA / DSA / ElGamal MPI of 512-16384 bits in whole bytes, an EC curve OID
+    (a length of 5-12 and a first byte `2a` or `2b`), or, in a v6 packet, a 4-octet material length under 64 KiB.
+    Without those checks a random digest opening `9e d0 57 9d 35 02 ...` read as a key (one sha256 in a lock file of
+    the 97-file corpus), and 75,000 random 40-character base64 tokens led by `l`, `n` or `x` gave 4 hits before the
+    whole-byte and version checks; 94,000 such tokens (and 86,000 random digests opening with a first byte this
+    reader dispatches on) give 0 after. A rate, not a proof: an independent run of 1.5 million random heads accepted 2, so expect a few in a million. Public-key (6, 14),
+    signature and literal packets are other tags; a version 2 or 3 packet (PGP 2.x) is not read. Armored, the
+    first byte reads `l`, `n` (old format) or `x` (new format)."""
+    b = _byte(h, 0)
+    if b & 0xC0 == 0x80:                        # old format: tag in bits 5-2, length type in bits 1-0
+        tag, lt = (b >> 2) & 0x0F, b & 3
+        i = 1 + (1, 2, 4, 0)[lt]
+        sized = lt == 0 or lt == 3 or (_byte(h, 1) == 0 and _byte(h, 2) == 0 if lt == 2 else 0 <= _byte(h, 1) <= 0x40)
+    elif b & 0xC0 == 0xC0:                      # new format: tag in bits 5-0, then a 1, 2 or 5 octet length
+        tag, n = b & 0x3F, _byte(h, 1)
+        i = -1 if n < 0 else 3 if 192 <= n < 224 else 6 if n == 255 else 2
+        sized = n != 255 or (_byte(h, 2) == 0 and _byte(h, 3) == 0)
     else:
         return False
-    if head[i:i + 4] == b"\x02\x01\x01\x30" and head[i + 5:i + 13] == b"\x06\x07\x2a\x86\x48\xce\x3d\x01":
-        return False                            # explicit ECParameters (public) look like PKCS8 v2
-    return head[i] == 0x02 and head[i + 1] == 0x01 and (head[i + 2], head[i + 3]) in _DER_PRIVATE
+    version, algo, m = _byte(h, i), _byte(h, i + 5), i + 6
+    if tag not in (5, 7) or not sized or i < 0 or version not in (4, 6) or algo not in _PGP_ALGOS:
+        return False
+    if version == 6:
+        return _byte(h, m) == 0 and _byte(h, m + 1) == 0
+    if algo in (18, 19, 22):
+        return 5 <= _byte(h, m) <= 12 and _byte(h, m + 1) in (0x2A, 0x2B)
+    bits = _byte(h, m) * 256 + _byte(h, m + 1)
+    return algo in (1, 2, 3, 16, 17, 20) and 512 <= bits <= 16384 and bits % 8 == 0
+
+
+def _private_head(h):
+    """True when the decoded `h` (the first 18-24 bytes of a token, base64 or hex) opens a private key: a DER
+    `SEQUENCE { INTEGER 0|1, SEQUENCE | INTEGER | OCTET STRING ...` (PKCS8 v1/v2, PKCS1 / DSA, SEC1); an encrypted
+    PKCS8, `SEQUENCE { SEQUENCE { OID <PBE scheme> ...` (PBES2, PBES1, PKCS12 PBE); a PKCS12,
+    `SEQUENCE { INTEGER 3, SEQUENCE { OID data ...` (the OID must be inside `h`); a PGP secret packet;
+    or OpenSSH's constant. A certificate, CSR, CRL, SPKI, PKCS7 or DH parameters open with SEQUENCE / OID / a
+    long INTEGER instead, and a signedData PKCS12 or PBKDF2 alone is not a key."""
+    if h.startswith(b"openssh-key-v1\0"):
+        return True
+    if _byte(h, 0) != 0x30:                     # 0x30 (SEQUENCE) is always `M` in base64
+        return _pgp_secret_head(h)
+    i = _der_len_end(h, 1)
+    if i > 0 and _byte(h, i) == 0x02 and _byte(h, i + 1) == 0x01 and (_byte(h, i + 2), _byte(h, i + 3)) in _DER_PRIVATE:
+        # explicit ECParameters (public) look like PKCS8 v2
+        return not (h[i:i + 4] == b"\x02\x01\x01\x30" and h[i + 5:i + 13] == b"\x06\x07\x2a\x86\x48\xce\x3d\x01")
+    if i > 0 and _byte(h, i) == 0x30:           # encrypted PKCS8: the first element is the algorithm
+        m = _der_len_end(h, i + 1)
+        if m > 0 and ((h[m:m + 10] == b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x05"
+                       and _byte(h, m + 10) in _PBES1_ARCS)
+                      or (h[m:m + 11] == b"\x06\x0a\x2a\x86\x48\x86\xf7\x0d\x01\x0c\x01"
+                          and 1 <= _byte(h, m + 11) <= 6)):
+            return True
+    i = _der_len_end(h, 1, indefinite=True)     # PKCS12: version 3, then authSafe's content type `data`
+    if i > 0 and h[i:i + 3] == b"\x02\x01\x03" and _byte(h, i + 3) == 0x30:
+        m = _der_len_end(h, i + 4, indefinite=True)
+        return m > 0 and h[m:m + 11] == b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x07\x01"
+    return False
+
+
+def _der_private(tok):
+    """True for the first line of a private key in BASE64: OpenSSH's constant, or a head `_private_head` reads
+    from its first 24-32 characters (`M` = DER SEQUENCE; `l`, `n`, `x` = a PGP secret packet)."""
+    if tok.startswith(_OPENSSH_KEY):
+        return True
+    if tok[:1] not in ("M", "l", "n", "x") or len(tok) < 24:
+        return False
+    return _private_head(base64.urlsafe_b64decode(tok[:min(len(tok), 32) // 4 * 4]))
+
+
+def _hex_private(tok):
+    """The same for a HEX token: its first 18-24 bytes."""
+    return _private_head(bytes.fromhex(tok[:min(len(tok), 48) // 2 * 2]))
 
 
 def _public_spans(text):
@@ -451,6 +558,9 @@ def _key_bodies(text):
     cands, out = [], []
     for m in _DER_TOKEN.finditer(text):
         if _der_private(m.group("t")):
+            out.append(m.start("t"))
+    for m in _HEX_TOKEN.finditer(text):
+        if _hex_private(m.group("t")):
             out.append(m.start("t"))
     for m in _BODY_LINE.finditer(text):
         tok = (m.group("b") or m.group("k")).lstrip("+/")   # a diff's `+`, a `//`: base64 too, so `b` kept them

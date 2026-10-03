@@ -29,6 +29,19 @@ All notable changes to Sigma are recorded here, newest first.
   against a fake `claude`, zero model spend. No real `claude` has been run: flag spelling, authentication in an empty
   profile and the launcher's containment are unmeasured, and the README lists the limits.
 
+- **leak_scan reads a private key's first line in hex, and an encrypted PKCS8, PKCS12 or PGP first line** (#451, launch
+  blocker class B2). `key-body` recognised a DER header only in base64, so a hex-encoded key, the hex first line of a PKCS1
+  key, and the lone first line of an encrypted PKCS8, a PKCS12 or an armored PGP private key all scanned CLEAN through
+  `python3 tools/leak_scan.py` (#433's undetected-shape run). One structural reader over decoded bytes now takes base64 and
+  hex tokens (anywhere in a line, so #449's embedded keys and #450's UTF-16/UTF-32 text compose) and recognises PKCS1 / PKCS8 /
+  SEC1 / DSA, encrypted PKCS8 (PBES2, PBES1, pkcs-12 PBE OIDs), PKCS12 (version 3 + data OID, DER or BER) and PGP secret-key
+  packets whose material opens like a key's. Hex is a first-line recogniser, not a line-count class (hash lists made that +4 false
+  positives on the corpus). Measured: tracked tree 0 -> 0; 97-file corpus 17 -> 17 `key-body` (output identical); 12 real shapes CLEAN -> caught and 5
+  public lookalikes still clean; 134,509 files under a package prefix: 21 added, all private test keys. Unrecognised and stated in the
+  contract: separated hex (`30:82`), `0x30, 0x82` byte lists, a body with no first line, first lines below the floors (24 base64 /
+  36 hex characters; 32 / 44 for a PKCS12), PGP 2.x packets, base64 of whole PEM. Three public header literals in
+  `tests/test_key_body*.py` were split so the tree still scans to 0. Tests: `tests/test_hex_der.py` (seen red before the code).
+
 - **The benchmark go threshold is an exact paired test that fits 15 tasks** (#502). The old rule (lower 95% bootstrap
   bound of the paired difference at least -5 points) passed a result with every task tied and one with 2 wins and no
   losses, yet failed 3 wins, 1 loss and 11 ties (lower bound -13.3 points), so it did not discriminate at this size.

@@ -101,7 +101,7 @@ for wrap in (16, 20, 23):
 # Review pins (#433 code review 1): seams no other row could see, each seen red against its named mutation
 # of the new gate (`no_len81`, `b_no_pad`, `label_case`). `p256-pkcs8-line1` is RED on a3c913c (its rule
 # reads no DER line); the other six are green there.
-_P256_PKCS8 = {"ec-p256-pkcs8": ("308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420", 138)}
+_P256_PKCS8 = {"ec-p256-pkcs8": ("308187020100301306072a8648ce" "3d020106082a8648ce3d03010704" "6d306b0201010420", 138)}
 _g("pin", "p256-pkcs8-line1", _der_text("ec-p256-pkcs8", _P256_PKCS8)[0], _kb(2))   # the 0x81 length branch
 _pad = _lines([64, 64, 42], seed=120)
 _g("pin", "padded-last-line", "\n".join(_pad[:2] + [_pad[2] + "=="]), _kb(2))     # `={0,2}` in the candidate
