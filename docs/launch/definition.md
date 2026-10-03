@@ -92,10 +92,15 @@ A `supported` cell is launch-blocking: it must work at launch. An `experimental`
 not block launch, and is to be labelled experimental in the README; that labelling belongs to the
 README-claims goal and is not claimed here as done.
 
-The supported cells are launch-blocking REQUIREMENTS, not a statement of what is verified today:
-CI (`.github/workflows/ci.yml`) runs the full suite on Ubuntu with Python 3.10, 3.11, 3.12 and 3.13,
-and on macOS with Python 3.12 only (#338). The macOS cells on Python 3.10, 3.11 and 3.13 have no CI
-leg, so nothing checks them today.
+Every supported cell is a cell CI runs (`.github/workflows/ci.yml`): the full suite on Ubuntu with
+Python 3.10, 3.11, 3.12 and 3.13, and on macOS with Python 3.12 only (#338). The owner decided on
+2026-10-03 that the launch claim goes no further than that, so a claim cannot be false on a cell no
+one checks. A cell CI runs is not a statement that it passes today, only that something would
+notice if it did not. The macOS cells on Python 3.10, 3.11 and 3.13 have no CI leg: they are
+untested, not unsupported. Nothing says they fail; the launch simply does not claim them, and they
+are listed as `untested` in `definition.json`. `tests/test_launch_ci_cells.py` derives the cells CI
+runs from the workflow file and fails when this page, its JSON twin or any other doc claims a
+supported cell CI does not run.
 
 No experimental cell has a recorded END-TO-END run. Two have partial validation:
 
@@ -109,13 +114,14 @@ The goals that would close these gaps are #302, #303 and #305.
 
 | Host | OS | Python | Modes | Cell |
 |---|---|---|---|---|
-| `claude-code` | `macos` | 3.10, 3.11, 3.12, 3.13 | `local-goals`, `github` | `supported` |
+| `claude-code` | `macos` | 3.12 | `local-goals`, `github` | `supported` |
 | `claude-code` | `linux` | 3.10, 3.11, 3.12, 3.13 | `local-goals`, `github` | `supported` |
 | `codex` | any | any | any | `experimental` |
 | `cursor` | any | any | any | `experimental` |
 | any | `windows` | any | any | `experimental` |
 
-A host, OS, Python version or mode that no row names is neither supported nor experimental.
+A host, OS, Python version or mode that no row names is neither supported nor experimental. That
+includes macOS on Python 3.10, 3.11 and 3.13, which is untested (see above).
 
 ## Out of scope
 
@@ -134,4 +140,6 @@ fails when they disagree on the artifact, public repository, version, audience, 
 cells, experimental cells or out-of-scope list. It reads the page from fixed spots: the
 `**Artifact:**`, `**Public repository:**`, `**Version:**` and `**Audience:**` bullets (the first
 backticked value), the first line under Status, the table rows, and the backticked id ending each
-out-of-scope bullet. Keep those shapes.
+out-of-scope bullet. Keep those shapes. `python -m pytest tests/test_launch_ci_cells.py -q` fails when a
+`supported` row names an OS and Python that no CI leg runs, so a change to the table needs a CI leg
+first (a separate goal; adding one is not part of this page).

@@ -5,7 +5,8 @@ confirm the scope.
 
 ## Development setup
 
-Sigma supports Python 3.10 and newer. Install the test dependencies:
+Sigma needs Python 3.10 or newer. CI runs the full suite on Linux with Python 3.10, 3.11, 3.12 and 3.13, and on
+macOS with Python 3.12 only; macOS on other Python versions is untested. Install the test dependencies:
 
 ```sh
 python -m pip install pytest pytest-xdist pyyaml
