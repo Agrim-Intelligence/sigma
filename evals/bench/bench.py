@@ -64,9 +64,9 @@ class Arm:
     """Legacy in-process arm seam; untrusted implementations are refused.
 
     A Python callback executes with the benchmark runner's own authority, so it
-    cannot be an isolation boundary for hidden tests.  Only ``FakeArm`` below
-    is an in-tree, trusted smoke implementation.  All live arms refuse until a
-    separately reviewed, enforceable isolation protocol exists.
+    cannot be an isolation boundary for hidden tests.  Only the exact in-tree
+    classes in ``TRUSTED_ARMS`` run (``FakeArm`` and the three live arms, which
+    start ``claude`` only through the operator launcher); any other subclass is refused.
     """
     name = "unnamed"
 
@@ -386,8 +386,8 @@ def _validate_isolation_launcher(launcher, tasks, hidden_root, scratch_root):
     bytes.  An operator must therefore provide and own the external boundary;
     this runner fails closed until it has an absolute executable outside every
     repository, hidden, task, and scratch tree.  This location check is not a
-    proof of containment; the runner still refuses all live arms until it has
-    a concrete, enforceable isolation protocol.
+    proof of containment: the live arms run through the launcher, and what it
+    contains is the operator's to guarantee.
     """
     if launcher is None:
         raise BenchmarkRefusal("operator-supplied isolation launcher is required")

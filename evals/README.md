@@ -35,7 +35,8 @@ What the harness enforces, and what it does not:
 - **Operator plugins untouched.** The operator's `~/.claude/plugins` (and `$CLAUDE_CONFIG_DIR/plugins`)
   is content-hashed once before anything starts, again before every run and every A3 attempt, and after
   the last run.  Any change aborts the benchmark; do not run other Claude sessions that update plugins
-  meanwhile.
+  meanwhile.  Measured on one machine: 332 MB in 15,953 files hashed in about two seconds, so about 200 hashes over
+  15 tasks is about 7 minutes, linear in the directory's size (not measured at 10x or 100x).
 - **Clean export.** The sigma arm loads `.claude-plugin`, `skills` and `hooks` of the pinned commit.  The
   export is refused if it holds links, escapes its directory, has other top-level entries, or has a path
   component named `evals` or `tests` (a future skill folder with that name fails A1 loudly).  It omits
@@ -53,7 +54,9 @@ What the harness enforces, and what it does not:
   its row's reason names which.  Cost is read from the transcript under the profile, so it is exactly as
   honest as the launcher.
 - **Commands are bounded.** Every launched command runs in its own process group with a timeout and the
-  whole group is killed on expiry or normal exit (a launcher that starts its own session escapes this).
+  whole group is killed on expiry or normal exit (a launcher, or a process an agent or Sigma's own
+  hooks start in a new session, escapes this; a watcher the sigma arm's hooks leave behind can outlive
+  its run directory).
   SIGTERM and SIGHUP unwind the harness the same way (children killed, paid rows kept; a second signal
   during the unwind can cut it short); SIGKILL or a power loss cannot, and a surviving `claude` is then bounded only by its own `--max-budget-usd` belt.
 
