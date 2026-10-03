@@ -16,6 +16,15 @@ All notable changes to Sigma are recorded here, newest first.
   `python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md` fails if they drift. Tests:
   `tests/test_bench_preregistration.py`, `tests/test_bench_decision_rule.py`. No benchmark task has run.
 
+- **The launch definition claims macOS only on Python 3.12, what CI runs** (#493, launch blocker class B3). The supported
+  table and its JSON twin listed macOS on Python 3.10-3.13 while CI runs macOS on 3.12 only, so three supported cells
+  were claimed and never checked. They now list macOS on 3.12 and Linux on 3.10-3.13; the other macOS versions are
+  stated as untested, not unsupported (a new `untested` list in the JSON). CONTRIBUTING no longer says Sigma
+  "supports Python 3.10 and newer". A test derives the cells from the CI workflow and fails when the definition, its
+  JSON twin, a docs table or a docs sentence of the form "macOS with Python ..." names a cell CI does not run; it was
+  seen red on the old text. The definition stays `proposed` (unsigned) and the CI matrix is unchanged. The #330 entry
+  below records the earlier claim and is left as history.
+
 - **The README states the one coverage number that was measured, and says CI enforces none** (#194, readiness D8).
   The README once claimed an "85% coverage floor" that CI never enforced; #277 removed the claim, and this measures
   what it should have been. A full suite run under coverage.py (subprocess tracing on, Python 3.12, macOS, local) gave
