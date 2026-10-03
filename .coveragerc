@@ -1,0 +1,13 @@
+# Test-only coverage configuration (issue #194). Read by `python -m coverage`, never by shipped code.
+# What it measures, what it cannot, and how the floor was derived: docs/launch/coverage.md.
+# `patch = subprocess` makes child processes (the product is mostly scripts run as subprocesses)
+# write their own data files; `combine` merges them. Needs coverage.py 7.10 or newer.
+[run]
+source = skills, hooks
+parallel = True
+patch = subprocess
+data_file = .coverage
+
+[report]
+# A floor with headroom, not a target: measured 90.9% on the first run, see docs/launch/coverage.json.
+fail_under = 85

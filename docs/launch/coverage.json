@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "issue": 194,
+  "scope": [
+    "skills/",
+    "hooks/"
+  ],
+  "metric": "line coverage (statements), not branch",
+  "tool": "coverage.py",
+  "tool_version": "7.16.2",
+  "pytest_version": "9.1.1",
+  "python": "3.12.13",
+  "platform": "Darwin 25.6.0 arm64 (macOS 26.6.2), local developer machine, not a CI runner",
+  "revision": "a23f6c6c4d320ffd3f94b3de262554b5f2a7d5b6",
+  "commands": [
+    "python3.12 -m venv <scratch>/venv && <scratch>/venv/bin/pip install pytest coverage",
+    "python -m coverage erase",
+    "python -m coverage run -m pytest tests/ -q",
+    "python -m coverage combine",
+    "python -m coverage report"
+  ],
+  "tests": {
+    "passed": 11569,
+    "skipped": 24,
+    "xfailed": 2,
+    "failed": 0,
+    "pytest_seconds": 2489
+  },
+  "statements": 37806,
+  "missing": 3436,
+  "line_percent": 90.91,
+  "floor_percent": 85,
+  "floor_rule": "floor = whole-number measured percent (90) minus 5 points of headroom, enforced on ubuntu-latest Python 3.12 only",
+  "enforced_on": "ubuntu-latest, Python 3.12",
+  "ci_baseline_pytest_seconds_ubuntu_3_12": 1481,
+  "ci_baseline_source": "GitHub Actions run 37098147702 on main, the pytest step's started_at to completed_at",
+  "not_measured": [
+    "scripts that tests copy to another path run from outside the measured source and are not attributed (6 test files)",
+    "children started with a scrubbed environment lose COVERAGE_PROCESS_START and are not traced",
+    "evals/run.py, which CI runs as its own step",
+    "branch coverage",
+    "Linux, Python 3.10/3.11/3.13 and the hosted macOS runner (this run is local macOS 3.12)",
+    "the added CI wall time (see docs/launch/coverage.md)"
+  ]
+}

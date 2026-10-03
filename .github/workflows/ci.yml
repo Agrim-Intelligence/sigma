@@ -42,7 +42,17 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip pytest
       - name: pytest
+        # The ubuntu 3.12 leg runs the same suite under coverage instead (next step): one leg, not five.
+        if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python == '3.12') }}
         run: python -m pytest tests/ -rs -q
+      - name: pytest with the line-coverage floor (ubuntu 3.12 only; .coveragerc)
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.12' }}
+        run: |
+          python -m pip install "coverage==7.16.2"
+          python -m coverage erase
+          python -m coverage run -m pytest tests/ -rs -q
+          python -m coverage combine
+          python -m coverage report
       - name: write-surface inventory ratchet
         run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
       - name: quality gate (Tier-1 behavioral drift vs baseline)

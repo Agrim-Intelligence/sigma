@@ -496,6 +496,10 @@ VERSION_ALLOW = {
     ("contract/README.md", "1.1"): "the event contract's own planned version (`in v1.1 or later`)",
     ("docs/bench/preregistration.md", "1.4.26"): "the predecessor arm's measured release on the run date",
     ("docs/launch/evidence/330-control.md", "3.12.13"): "the measured Python interpreter version",
+    ("docs/launch/coverage.md", "7.16.2"): "the measured coverage.py version (#194)",
+    ("docs/launch/coverage.md", "9.1.1"): "the measured pytest version (#194)",
+    ("docs/launch/coverage.md", "3.12.13"): "the measured Python interpreter version (#194)",
+    ("docs/launch/coverage.md", "25.6.0"): "the measured Darwin kernel version (#194)",
 }
 
 
@@ -601,7 +605,8 @@ def test_no_shipped_prose_claims_a_coverage_floor_ci_does_not_enforce():
 
 def test_control_a_planted_coverage_claim_is_red_and_an_enforcing_ci_clears_it():
     prose = [("README.md", "CI runs it with an **85% coverage floor** on every push.\n")]
-    assert coverage_claim_findings(prose, _ci_and_config_texts()) == [("README.md", 1)]
+    # An empty config list, not the real files: they now enforce a floor (#194), which clears any claim.
+    assert coverage_claim_findings(prose, []) == [("README.md", 1)]
     assert coverage_claim_findings([("docs/x.md", "a coverage threshold of 80")], []) == \
         [("docs/x.md", 1)]
     assert coverage_claim_findings(prose, ["run: pytest --cov=. --cov-fail-under=85"]) == []

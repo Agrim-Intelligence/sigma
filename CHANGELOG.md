@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **CI now measures line coverage of `skills/` and `hooks/` and enforces a floor of 85% on one leg, and the README
+  states only what was measured** (#194, readiness D8). The README once claimed an "85% coverage floor" that CI never
+  enforced; #277 removed the claim, and this measures what it should have been. A full suite run under coverage.py
+  7.16.2 (subprocess tracing on, Python 3.12.13, macOS, local) gave 90.91% line coverage: 34,370 of 37,806
+  statements, 11,569 tests passed. It is a lower bound: scripts that tests copy elsewhere and children started with
+  a scrubbed environment are not traced, and branch coverage, Linux and the other Python versions were not
+  measured. The Linux Python 3.12 leg now runs the suite under coverage and fails below 85% (the measurement minus
+  five points of headroom); the other four legs are unchanged. A test fails if the README's two figures, the floor in
+  the coverage configuration or the CI step disagree with the recorded measurement. Coverage is a CI-only tool,
+  pinned, and no shipped code imports it. The added CI time is stated in the coverage doc.
+
 - **Pruners can no longer be walked out of `.sdlc` through a link, and the fixed-name state files have a stated
   size and owner** (#466, B6 of #419). A control now builds a decoy host configuration root reachable only through
   links and records and runs nine pruners over it (`retention`, `goal_state_prune`, `liveness_prune`, the session-marker
