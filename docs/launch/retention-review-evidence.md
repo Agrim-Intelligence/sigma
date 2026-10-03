@@ -53,7 +53,7 @@ its own pruner.
 is absent (existence, not parseability) and the caller (`done` just recorded) or the action log's last `claimed|recorded` entry says done. A generation is removed
 only when exactly one goal owns it. Order: posts, then results and the generation directory, then manifests. Only manifests are re-read just before their unlink and removed only
 while they still name a removed generation (a goal re-claimed mid-prune keeps its new pointer); posts, results and directories are removed from the index
-because their generation ids are never reused. The microseconds between that re-read and the unlink are an accepted race, narrowed by a second terminal check. Symlinks, a linked `state` or `review-*` directory, stray names and
+because their generation ids are never reused. The microseconds between that re-read and the unlink are an accepted race, narrowed by a second terminal check that guards manifests only: a goal re-claimed between the one terminal check per goal and the posts, results and directories being removed loses its superseded generations (never its new pointer). Symlinks, a linked `state` or `review-*` directory, stray names and
 unsafe goal values are skipped. At most 10 goals per call that made progress (a goal stuck forever, such as one whose evidence names another owner, never spends the budget). Goal identity is compared as `work.stem`, since local mode publishes a path.
 
 Left alone on purpose (the residual, unbounded by decision):

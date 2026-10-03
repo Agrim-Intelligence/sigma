@@ -6202,8 +6202,9 @@ def prune_terminal_review_generations(sdlc_dir, goal=None, limit=REVIEW_PRUNE_GO
         for post, owner in posts.items():
             if owner == key:
                 try:
-                    progress = progress or post.exists()
+                    existed = post.exists()
                     post.unlink(missing_ok=True)
+                    progress = progress or existed       # only a delete that happened is progress
                 except OSError as exc:
                     print(f"work.py: review-post cleanup skipped for {post.name} ({exc})", file=sys.stderr)
         gone = set()
