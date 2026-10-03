@@ -17,6 +17,17 @@ All notable changes to Sigma are recorded here, newest first.
   run: no model call, no spend. The script-level tests cannot show that a model obeys injected text; only the drill can.
   Tests: `tests/test_hostile_inputs.py`.
 
+- **Public repository settings have exact owner commands and a read-only verifier** (#398). `docs/launch/repo-settings.md`
+  gives the `gh api` commands the owner runs on the new public repository: branch protection requiring the five CI legs
+  (names taken from `.github/workflows/ci.yml` and asserted against it), no required reviews, administrators bound,
+  auto-merge allowed, secret scanning, push protection, private vulnerability reporting, a read-only workflow token and the
+  maintainers team. It also says why: with no required checks GitHub reports a pending pull request as mergeable, so the
+  loop's `work.py merge` landed one while CI was still running. `tools/readiness/verify_repo_settings.py OWNER/NAME` reads
+  five endpoints with GET only, prints PASS or FAIL per setting with the fix command, and exits 1 on any FAIL; any other
+  method or path is refused before anything is sent. Tests: `tests/test_verify_repo_settings.py` and
+  `tests/test_repo_settings_doc.py`, on reconstructed response shapes, no GitHub call. Not done: the commands have not been
+  applied to any repository (the owner's rehearsal run, #398 item 4), so their request bodies are unmeasured.
+
 - **Reviewer-independence claims say what the code proves, and no more** (#260). The independent-review row in `docs/enforcement.md` stays advice and now lists what the core does not prove (who called the host's task tool; a maker can record its own approving verdict; the route comes from config and session environment variables; the merge check reads the posted comment, not the evidence) and what it does bind (one PR, head and brief generation; evidence refused when the head or diff moved; result and evidence written once per generation; a post needs the current generation and an unchanged head). Sentences in the README, skills, doctor and config template that stated the maker rule as a guarantee now say it is asked, not proved. `tests/test_reviewer_independence_claims.py` pins the row and a short list of removed overclaims. No mechanism changed.
 - **The benchmark harness has its three arms and its isolation rules** (#354). `evals/bench/bench.py run --arm` now
   runs A1 Sigma (a clean `git archive` export of a pinned commit, never the repository), A2 plain and A3 matched-spend
