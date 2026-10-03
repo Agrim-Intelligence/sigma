@@ -15,6 +15,13 @@ All notable changes to Sigma are recorded here, newest first.
   A test fails if the README's figure and the recorded measurement disagree, or if CI starts enforcing coverage while
   they say it does not. A floor of 85% is recorded as a candidate only; a non-blocking scheduled Linux run is queued.
 
+- **Review evidence of finished goals is pruned** (#459, B6 of #419). `loop.py record <goal> done` now removes that goal's
+  review generations, manifest, posts and results once its work record is gone (the merge gate reads the PR's comments,
+  never these files). Only a generation with exactly one owning goal is removed; parked, failed, running or re-claimed
+  goals, a successor's manifest, links and unattributable evidence-less generations are left alone, at most 10 goals per
+  call, and a crash is finished by the next call. Lever: `work.py prune-review-generations <sdlc_dir> [<goal> [--done]]`.
+  Measurements, residuals and the unbounded `review-queue.md` decision: `docs/launch/retention-review-evidence.md`.
+
 - **Pruners can no longer be walked out of `.sdlc` through a link, and the fixed-name state files have a stated
   size and owner** (#466, B6 of #419). A control now builds a decoy host configuration root reachable only through
   links and records and runs nine pruners over it (`retention`, `goal_state_prune`, `liveness_prune`, the session-marker

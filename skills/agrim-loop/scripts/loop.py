@@ -4318,6 +4318,12 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
     if outcome == "done":
         _signal_unit_completion(sdlc_dir, goal)
         _release_checkout(sdlc_dir, goal, merged=merged_pr)
+        # After `finish` has unlinked the work record (the gate's only way back to this evidence), so
+        # a record that survived a refused finish keeps its evidence; the next `done` sweeps it.
+        try:
+            work.prune_terminal_review_generations(sdlc_dir, goal, goal_done=True)
+        except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
+            print(f"loop.py record: review-evidence cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
     # #1562: LAST, for the reason #1478 gives one block up -- every piece of this goal's own
     # bookkeeping has already landed, so a builder that hangs, fails or is missing is structurally
     # incapable of costing any of it.

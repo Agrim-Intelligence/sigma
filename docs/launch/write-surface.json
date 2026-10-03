@@ -1882,6 +1882,22 @@
     },
     {
       "path": "skills/agrim-loop/scripts/work.py",
+      "function": "prune_terminal_review_generations",
+      "rule": "fs-remove",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
+      "function": "prune_terminal_review_generations",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/agrim-loop/scripts/work.py",
       "function": "rebase",
       "rule": "git-destructive",
       "count": 3,

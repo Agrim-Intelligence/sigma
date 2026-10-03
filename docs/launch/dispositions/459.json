@@ -1,0 +1,79 @@
+[
+  {
+    "pattern": ".sdlc/state/review-generations/<generation>",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-generations/<generation>/brief.md",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-generations/<generation_id>",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-generations/<generation_id>/",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-generations/<generation_id>/evidence.json",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-manifests/$goal.json",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-posts",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-posts/<evidence_id>.json",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-results",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-results/<generation_id>.json",
+    "issue": "#459",
+    "decision": "capped",
+    "pruner_or_cap": "work.prune_terminal_review_generations: after `loop.py record <goal> done` and work.finish (record gone), deletes that goal's posts, results, generation dirs and manifests, plus up to 10 goals total per call proven done by the action log; single-owner, symlink-refusing, manifests re-read before unlink; never a goal with a work record, a successor's manifest or an unattributable evidence-less generation",
+    "evidence": "tests/test_b6_459.py (real writers and loop.py record; red when the pruner is a no-op, treats every goal as terminal, drops the single-owner rule or the manifest re-read); measurements, who re-reads what, residuals, recovery in docs/launch/retention-review-evidence.md"
+  },
+  {
+    "pattern": ".sdlc/state/review-queue.md",
+    "issue": "#459",
+    "decision": "intentionally unbounded (human work queue, local-goals mode only)",
+    "pruner_or_cap": "none by decision: one short entry per parked or failed goal is a decision awaiting a person, so a sweep would delete the work it exists to show; ceiling and reclaim owner in the evidence doc",
+    "evidence": "tests/test_b6_459.py (test_named, test_audit); decision, ceiling and who can reclaim in docs/launch/retention-review-evidence.md"
+  }
+]
