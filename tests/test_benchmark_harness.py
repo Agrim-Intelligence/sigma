@@ -63,9 +63,17 @@ def _launcher(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _neutral_environment(monkeypatch):
-    """Each targeted refusal owns its input instead of inheriting CI's guard."""
+def _neutral_environment(monkeypatch, tmp_path):
+    """Each targeted refusal owns its input instead of inheriting CI's guard or the real home.
+
+    The harness content-hashes the operator's plugin directories, so every test runs with HOME
+    pointing at an empty temp directory and never reads the real ``~/.claude``.
+    """
     monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
 
 
 def test_documented_cli_refuses_to_run_without_an_explicit_spend_ceiling(tmp_path, capsys):
@@ -245,8 +253,11 @@ def test_live_arm_stays_refused_even_with_an_accepted_operator_launcher(tmp_path
     assert invoked == []
 
 
-def test_second_task_gets_only_remaining_budget_and_an_overrun_writes_no_report(tmp_path, monkeypatch):
-    """Control: removing the remaining-budget check lets a two-task smoke overspend."""
+def test_second_task_gets_only_remaining_budget_and_an_overrun_writes_a_partial_aborted_report(tmp_path, monkeypatch):
+    """Control: removing the remaining-budget check lets a two-task smoke overspend.
+
+    An overrun still refuses, but the rows already paid for are kept in a report that says it was aborted.
+    """
     bench = _bench()
     manifest = _manifest(tmp_path)
     hidden = _hidden_root(tmp_path)
@@ -273,4 +284,8 @@ def test_second_task_gets_only_remaining_budget_and_an_overrun_writes_no_report(
 
     assert arm.allowances == ["0.01", "0.004"]
     assert scoring == ["visible", "hidden"]
-    assert not results.exists()
+    assert results.exists(), "the rows already paid for must be kept in a partial report"
+    saved = json.loads(results.read_text(encoding="utf-8"))
+    assert [row["task"] for row in saved["runs"]] == ["one"]
+    assert "remaining spend ceiling" in saved["aborted"]["reason"]
+    assert saved["aborted"]["task"] == "two"

@@ -5,6 +5,17 @@ All notable changes to Sigma are recorded here, newest first.
 ## Unreleased
 
 - **Reviewer-independence claims say what the code proves, and no more** (#260). The independent-review row in `docs/enforcement.md` stays advice and now lists what the core does not prove (who called the host's task tool; a maker can record its own approving verdict; the route comes from config and session environment variables; the merge check reads the posted comment, not the evidence) and what it does bind (one PR, head and brief generation; evidence refused when the head or diff moved; result and evidence written once per generation; a post needs the current generation and an unchanged head). Sentences in the README, skills, doctor and config template that stated the maker rule as a guarantee now say it is asked, not proved. `tests/test_reviewer_independence_claims.py` pins the row and a short list of removed overclaims. No mechanism changed.
+- **The benchmark harness has its three arms and its isolation rules** (#354). `evals/bench/bench.py run --arm` now
+  runs A1 Sigma (a clean `git archive` export of a pinned commit, never the repository), A2 plain and A3 matched-spend
+  (the plain agent retried in fresh workdirs until visible tests pass or spend reaches A1's spend for the task),
+  and there is no predecessor arm. Every run gets a fresh `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`; the operator's
+  real plugin directories are content-hashed and any change aborts the benchmark, keeping the paid rows in a results file
+  marked `aborted` (an overrun used to write nothing); each run directory, with the hidden bundle's scoring copy, is
+  deleted right after scoring and the scratch root must start empty; a hidden root inside the scratch root is refused;
+  every launched command is time-bounded and its process group killed. Tests: `tests/test_bench_arms_isolation.py`, all
+  against a fake `claude`, zero model spend. No real `claude` has been run: flag spelling, authentication in an empty
+  profile and the launcher's containment are unmeasured, and the README lists the limits.
+
 - **The benchmark go threshold is an exact paired test that fits 15 tasks** (#502). The old rule (lower 95% bootstrap
   bound of the paired difference at least -5 points) passed a result with every task tied and one with 2 wins and no
   losses, yet failed 3 wins, 1 loss and 11 ties (lower bound -13.3 points), so it did not discriminate at this size.

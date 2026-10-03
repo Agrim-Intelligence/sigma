@@ -1,0 +1,963 @@
+"""Hermetic controls for the #354 benchmark arms and isolation rules.
+
+Three arms exist: A1 ``sigma`` (clean plugin export), A2 ``plain`` and A3 ``matched`` (the plain agent
+retried until visible tests pass or spend reaches A1's spend).  Every test drives the arms against a fake
+``claude`` executable written here: no model, no network, no money, and ``HOME`` is a temp directory so the
+operator's real ``~/.claude/plugins`` is never read or touched.
+
+Refusal tests assert the refusal's own text, because several different refusals share exit code 2.
+Tests gate on ``_need`` so that a missing feature is an assertion failure, not an import error.
+"""
+import importlib.util
+import io
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tarfile
+import time
+
+import pytest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+BENCH_PATH = ROOT / "evals" / "bench" / "bench.py"
+PHASE_REPORT_PATH = ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
+SENTINEL = "HIDDEN-SENTINEL-9f2c"
+
+FAKE_CLAUDE = r'''#!__PY__
+import json, os, pathlib, subprocess, sys, time
+args = sys.argv[1:]
+if "--version" in args:
+    print("fake-claude 0.0.1")
+    sys.exit(0)
+env = os.environ
+
+
+def opt(name):
+    return args[args.index(name) + 1] if name in args else None
+
+
+sys.stdin.read()
+state = pathlib.Path(env["SIGMA_FAKE_STATE"])
+state.mkdir(parents=True, exist_ok=True)
+counter = state / "count"
+n = int(counter.read_text()) + 1 if counter.exists() else 1
+counter.write_text(str(n))
+cwd = pathlib.Path.cwd()
+scratch = pathlib.Path(env["SIGMA_FAKE_SCRATCH"])
+elsewhere, sentinel = [], False
+if scratch.is_dir():
+    for path in scratch.rglob("*"):
+        if not path.is_file():
+            continue
+        if cwd not in path.parents and (path.name == "attempt.txt" or path.name.startswith("solution-")):
+            elsewhere.append(path.name)
+        try:
+            if b"HIDDEN-SENTINEL" in path.read_bytes():
+                sentinel = True
+        except OSError:
+            pass
+plugin = opt("--plugin-dir")
+entries = forbidden = None
+if plugin:
+    entries = sorted(os.listdir(plugin))
+    base = pathlib.Path(plugin)
+    forbidden = any(part in ("evals", "tests", "docs")
+                    for p in base.rglob("*") for part in p.relative_to(base).parts)
+record = {
+    "n": n, "argv": args, "cwd": str(cwd), "home": env.get("HOME"),
+    "config": env.get("CLAUDE_CONFIG_DIR"), "codex": env.get("CODEX_HOME"), "tmp": env.get("TMPDIR"),
+    "pre_existing": sorted(p.name for p in cwd.iterdir()
+                           if p.name == "attempt.txt" or p.name.startswith("solution-")),
+    "elsewhere": elsewhere, "sentinel": sentinel, "plugin_dir": plugin,
+    "plugin_entries": entries, "plugin_forbidden": forbidden, "leak": env.get("LEAK"),
+    "passthrough": env.get("SIGMA_FAKE_PASSTHROUGH"),
+    "bench_vars": sorted(k for k in env if k.startswith("SIGMA_BENCH_")),
+}
+with open(env["SIGMA_FAKE_CLAUDE_LOG"], "a") as handle:
+    handle.write(json.dumps(record) + "\n")
+(cwd / "attempt.txt").write_text(str(n))
+(cwd / ("solution-%d.txt" % n)).write_text("solution")
+pass_on = int(env.get("SIGMA_FAKE_PASS_ON_CALL", "0"))
+if pass_on and n >= pass_on:
+    (cwd / "fixed.txt").write_text("fixed")
+if (cwd / "stale.txt").exists():
+    (cwd / "stale.txt").unlink()
+touch = env.get("SIGMA_FAKE_TOUCH")
+if touch and n == int(env.get("SIGMA_FAKE_TOUCH_ON", "1")):
+    pathlib.Path(touch).write_text("changed")
+tokens = int(env.get("SIGMA_FAKE_SIGMA_TOKENS", "250000")) if plugin \
+    else int(env.get("SIGMA_FAKE_TOKENS", "100000"))
+if env.get("SIGMA_FAKE_HONOR_BUDGET"):
+    tokens = min(tokens, int(round(float(opt("--max-budget-usd")) / 10 * 1000000)))
+skip = env.get("SIGMA_FAKE_NO_TRANSCRIPT_ON")
+if not (skip and n == int(skip)):
+    transcript = pathlib.Path(env["CLAUDE_CONFIG_DIR"]) / "projects" / "-fake" / (opt("--session-id") + ".jsonl")
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text(json.dumps({
+        "type": "assistant", "timestamp": "2026-10-01T00:00:00Z",
+        "message": {"id": "m%d" % n, "role": "assistant", "model": "claude-test",
+                    "usage": {"input_tokens": 0, "output_tokens": tokens, "cache_read_input_tokens": 0,
+                              "cache_creation": {"ephemeral_5m_input_tokens": 0,
+                                                 "ephemeral_1h_input_tokens": 0}}},
+    }) + "\n")
+if env.get("SIGMA_FAKE_LEAVE"):
+    leftover = subprocess.Popen(["sleep", "300"])
+    pathlib.Path(env["SIGMA_FAKE_LEAVE"]).write_text(str(leftover.pid))
+if env.get("SIGMA_FAKE_TERM_PARENT"):
+    import signal
+    os.kill(os.getppid(), signal.SIGTERM)
+    time.sleep(300)
+if env.get("SIGMA_FAKE_SLEEP"):
+    time.sleep(float(env["SIGMA_FAKE_SLEEP"]))
+if env.get("SIGMA_FAKE_HANG"):
+    child = subprocess.Popen(["sleep", "300"])
+    pathlib.Path(env["SIGMA_FAKE_HANG"]).write_text(str(child.pid))
+    time.sleep(300)
+'''
+
+RATES = ("model,rate_kind,usd_per_mtok,usd_per_request,effective_from,effective_to,source\n" +
+         "".join("claude-test,%s,%s,,2026-01-01 00:00:00,,test-local\n" % (kind, price)
+                 for kind, price in (("input", "2"), ("output", "10"), ("cache_read", "0.2"),
+                                     ("cache_write_5m", "2.5"), ("cache_write_1h", "4"))))
+
+
+def _module(path, name):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _bench():
+    return _module(BENCH_PATH, "benchmark_arms")
+
+
+def _need(module, name):
+    assert hasattr(module, name), f"{name} is not implemented"
+    return getattr(module, name)
+
+
+@pytest.fixture(autouse=True)
+def _world(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".claude" / "plugins").mkdir(parents=True)
+    (home / ".claude" / "plugins" / "marketplace.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("CI", "CLAUDE_CONFIG_DIR", "CODEX_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SIGMA_FAKE_CLAUDE_LOG", str(tmp_path / "calls.jsonl"))
+    monkeypatch.setenv("SIGMA_FAKE_STATE", str(tmp_path / "state"))
+    monkeypatch.setenv("SIGMA_FAKE_SCRATCH", str(tmp_path / "scratch"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "claude"
+    fake.write_text(FAKE_CLAUDE.replace("__PY__", sys.executable), encoding="utf-8")
+    fake.chmod(0o755)
+
+
+def _plugins(tmp_path):
+    return tmp_path / "home" / ".claude" / "plugins"
+
+
+def _rates(tmp_path):
+    path = tmp_path / "rates.csv"
+    path.write_text(RATES, encoding="utf-8")
+    return _module(PHASE_REPORT_PATH, "bench_arms_phase_report").load_rate_rows(path)
+
+
+def _launcher(tmp_path, log=None):
+    path = tmp_path / ("logging-sandbox" if log else "operator-sandbox")
+    note = f'printf "%s\\n" "$*" >> "{log}"\n' if log else ""
+    path.write_text("#!/bin/sh\n[ \"$1\" = \"--\" ] || exit 64\nshift\n" + note + "exec \"$@\"\n",
+                    encoding="utf-8")
+    path.chmod(0o700)
+    return path
+
+
+def _manifest(tmp_path, *, visible=None, files=None, ids=("one",), tag="tasks"):
+    tasks = tmp_path / tag
+    tasks.mkdir(exist_ok=True)
+    rows = []
+    for task_id in ids:
+        source = tasks / task_id
+        source.mkdir()
+        (source / "visible.py").write_text("assert True\n", encoding="utf-8")
+        for name, text in (files or {}).items():
+            (source / name).write_text(text, encoding="utf-8")
+        rows.append({"id": task_id, "prompt": f"complete {task_id}", "source": task_id,
+                     "visible_command": visible or [sys.executable, "visible.py"],
+                     "hidden_bundle": task_id})
+    path = tasks / "manifest.json"
+    path.write_text(json.dumps({"schema": "sigma.benchmark-tasks/v1", "tasks": rows}), encoding="utf-8")
+    return path
+
+
+def _hidden(tmp_path, ids=("one",), check="pass", root=None):
+    root = root or tmp_path / "hidden"
+    for task_id in ids:
+        bundle = root / task_id
+        bundle.mkdir(parents=True)
+        (bundle / "sentinel.txt").write_text(SENTINEL, encoding="utf-8")
+        (bundle / "verify.json").write_text(json.dumps({"command": [sys.executable, "-c", check]}),
+                                            encoding="utf-8")
+    return root
+
+
+def _git(repo, *args):
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.test",
+                    "-c", "commit.gpgsign=false", *args], cwd=repo, check=True,
+                   capture_output=True)
+
+
+def _repo(tmp_path, extra=None):
+    repo = tmp_path / "sigma-repo"
+    repo.mkdir()
+    files = {".claude-plugin/plugin.json": "{}", "skills/x/SKILL.md": "# x\n", "hooks/h.sh": "#!/bin/sh\n",
+             "tests/t.py": "assert True\n", "evals/e.py": "x = 1\n", "README.md": "readme\n"}
+    files.update(extra or {})
+    for name, text in files.items():
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    (repo / "hooks" / "h.sh").chmod(0o755)
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "fixture")
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True,
+                         text=True).stdout.strip()
+    return repo, sha
+
+
+def _arm(bench, name, tmp_path, **kwargs):
+    cls = _need(bench, name)
+    options = dict(claude=str(tmp_path / "bin" / "claude"), model="claude-test",
+                   permission_mode="acceptEdits", belt_usd=15.0, rates=_rates(tmp_path))
+    options.update(kwargs)
+    return cls(**options)
+
+
+def _sigma(bench, tmp_path, repo, sha, **kwargs):
+    return _arm(bench, "SigmaArm", tmp_path, repo=repo, commit=sha, **kwargs)
+
+
+def _run(bench, tmp_path, arms, manifest, hidden, *, max_usd=100.0, launcher=None, scratch=None,
+         results="results.json", **kwargs):
+    return bench.run_benchmark(manifest, arms, max_usd=max_usd, hidden_root=hidden,
+                               results_path=tmp_path / results,
+                               scratch_root=scratch or tmp_path / "scratch",
+                               isolation_launcher=launcher or _launcher(tmp_path), **kwargs)
+
+
+def _try(bench, fn):
+    try:
+        fn()
+    except bench.BenchmarkRefusal as exc:
+        return str(exc)
+    return None
+
+
+def _calls(tmp_path):
+    log = tmp_path / "calls.jsonl"
+    if not log.is_file():
+        return []
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _budgets(calls):
+    return [float(call["argv"][call["argv"].index("--max-budget-usd") + 1]) for call in calls]
+
+
+def _row(report, arm):
+    return [row for row in report["runs"] if row["arm"] == arm][0]
+
+
+def _cli(tmp_path, *extra, arm="all", hidden=None, launcher=None, tag=""):
+    manifest = _manifest(tmp_path, tag="tasks" + tag)
+    hidden = hidden or _hidden(tmp_path, root=tmp_path / ("hidden" + tag))
+    launcher = launcher or _launcher(tmp_path)
+    argv = ["run", "--manifest", str(manifest), "--hidden-root", str(hidden),
+            "--results", str(tmp_path / "results.json"), "--scratch-root", str(tmp_path / "scratch"),
+            "--max-usd", "1", "--isolation-launcher", str(launcher), "--arm", arm,
+            "--model", "claude-test", "--claude", str(tmp_path / "bin" / "claude")]
+    return argv + list(extra)
+
+
+FAILS = [sys.executable, "-c", "import sys; sys.exit(1)"]
+FIXED = [sys.executable, "-c",
+         "import pathlib, sys; sys.exit(0 if pathlib.Path('fixed.txt').exists() else 1)"]
+
+
+def test_documented_cli_dry_run_prints_the_three_arms_and_their_isolation_facts(tmp_path, capsys):
+    bench = _bench()
+    _need(bench, "MatchedArm")
+    repo, sha = _repo(tmp_path)
+    argv = _cli(tmp_path, "--permission-mode", "acceptEdits", "--sigma-commit", sha,
+                "--sigma-repo", str(repo), "--dry-run")
+
+    assert bench.main(argv) == 0
+
+    out = capsys.readouterr().out
+    report = json.loads(out)
+    assert [arm["arm"] for arm in report["arms"]] == ["sigma", "plain", "matched"]
+    for arm in report["arms"]:
+        assert arm["status"] == "planned, not observed"
+        assert "not verified" in arm["containment"]
+    export = report["arms"][0]["export"]
+    assert export["top_level"] == [".claude-plugin", "hooks", "skills"]
+    assert export["commit"] == sha
+    assert "predecessor" not in out.lower()
+    assert _calls(tmp_path) == []
+    assert not (tmp_path / "results.json").exists()
+
+
+def test_no_predecessor_option_or_path_exists(tmp_path):
+    """Smoke: red only against an injected option, or once the three-arm surface is missing."""
+    bench = _bench()
+    for name in ("SigmaArm", "PlainArm", "MatchedArm"):
+        _need(bench, name)
+    with pytest.raises(SystemExit) as exc:
+        bench.parse_args(["run", "--manifest", "m", "--hidden-root", "h", "--results", "r",
+                          "--predecessor-dir", "p"])
+    assert exc.value.code == 2
+    sources = sorted((ROOT / "evals" / "bench").rglob("*.py"))
+    assert sources
+    assert [p.name for p in sources if "predecessor" in p.read_text(encoding="utf-8").lower()] == []
+
+
+def test_hidden_root_inside_the_repository_is_refused_by_the_documented_cli(tmp_path, capsys):
+    bench = _bench()
+    _need(bench, "MatchedArm")
+    inside = ROOT / "docs"
+    assert inside.is_dir()
+    argv = _cli(tmp_path, "--permission-mode", "acceptEdits", arm="plain", hidden=inside)
+
+    assert bench.main(argv) == 2
+
+    assert "outside the repository" in capsys.readouterr().err
+    assert _calls(tmp_path) == []
+    assert not (tmp_path / "results.json").exists()
+
+
+def test_hidden_root_inside_the_scratch_root_is_refused(tmp_path):
+    bench = _bench()
+    scratch = tmp_path / "scratch"
+    hidden = _hidden(tmp_path, root=scratch / "hidden")
+    manifest = _manifest(tmp_path)
+    arm = _arm(bench, "PlainArm", tmp_path)
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, hidden, scratch=scratch))
+
+    assert message is not None and "outside the scratch root" in message
+    assert _calls(tmp_path) == []
+
+
+def test_sigma_export_has_skills_and_no_tests_or_evals(tmp_path):
+    bench = _bench()
+    sigma = _need(bench, "arms_sigma")
+    repo, sha = _repo(tmp_path)
+    export = tmp_path / "export"
+
+    info = sigma.export_plugin(repo, sha, export)
+
+    assert sorted(p.name for p in export.iterdir()) == [".claude-plugin", "hooks", "skills"]
+    assert (export / "skills" / "x" / "SKILL.md").is_file()
+    assert not [p for p in export.rglob("*")
+                if {"tests", "evals"} & set(p.relative_to(export).parts)]
+    assert os.access(export / "hooks" / "h.sh", os.X_OK)
+    assert info["commit"] == sha
+
+
+def test_export_refuses_a_tree_that_carries_tests_or_evals(tmp_path):
+    bench = _bench()
+    sigma = _need(bench, "arms_sigma")
+    refusal = _need(bench, "arms_common").ArmRefusal
+    repo, sha = _repo(tmp_path, extra={"skills/x/tests/t.py": "assert True\n"})
+    message = None
+    try:
+        sigma.export_plugin(repo, sha, tmp_path / "export")
+    except refusal as exc:
+        message = str(exc)
+
+    assert message is not None and "tests" in message
+
+
+def test_export_extractor_refuses_links_traversal_and_foreign_top_level_entries(tmp_path):
+    bench = _bench()
+    sigma = _need(bench, "arms_sigma")
+    refusal = _need(bench, "arms_common").ArmRefusal
+
+    def archive(*members):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as tar:
+            for name, kind in members:
+                info = tarfile.TarInfo(name)
+                if kind == "link":
+                    info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
+                    tar.addfile(info)
+                else:
+                    data = b"x"
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        buffer.seek(0)
+        return buffer
+
+    cases = {
+        "link": [("skills/x", "link")],
+        "traversal": [("skills/../../escape", "file")],
+        "absolute": [("/abs/escape", "file")],
+        "foreign": [("docs/guide.md", "file")],
+        "forbidden": [("skills/tests/t.py", "file")],
+    }
+    for label, members in cases.items():
+        dest = tmp_path / ("out-" + label)
+        message = None
+        try:
+            sigma.extract_tar(archive(*members), dest)
+        except refusal as exc:
+            message = str(exc)
+        assert message is not None, label
+        assert not dest.exists() or not list(dest.rglob("*")), label
+    assert not (tmp_path / "escape").exists()
+    sigma.extract_tar(archive(("skills/ok.md", "file")), tmp_path / "out-ok")
+    assert (tmp_path / "out-ok" / "skills" / "ok.md").read_bytes() == b"x"
+
+
+def test_sigma_arm_loads_the_clean_export_never_the_repository(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arm = _sigma(bench, tmp_path, repo, sha)
+
+    report = _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path))
+
+    [call] = _calls(tmp_path)
+    plugin = pathlib.Path(call["plugin_dir"]).resolve()
+    assert plugin not in (ROOT.resolve(), repo.resolve())
+    assert str(plugin).startswith(str((tmp_path / "scratch").resolve()))
+    assert call["plugin_entries"] == [".claude-plugin", "hooks", "skills"]
+    assert call["plugin_forbidden"] is False
+    assert report["provenance"]["sigma_commit"] == sha
+    assert not plugin.exists()
+
+
+def test_every_arm_runs_in_a_fresh_isolated_profile(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "PlainArm", tmp_path),
+            _arm(bench, "MatchedArm", tmp_path)]
+    manifest = _manifest(tmp_path, visible=FAILS)
+
+    _run(bench, tmp_path, arms, manifest, _hidden(tmp_path))
+
+    calls = _calls(tmp_path)
+    assert len(calls) == 5  # sigma 1, plain 1, matched 3 (cap 2.5 reached on the third)
+    real_home = str(tmp_path / "home")
+    scratch = str((tmp_path / "scratch").resolve())
+    for call in calls:
+        values = [call["home"], call["config"], call["codex"]]
+        assert len(set(values)) == 3
+        assert real_home not in values
+        assert all(os.path.realpath(v).startswith(scratch) for v in values)
+        assert os.path.realpath(call["tmp"]).startswith(scratch), "TMPDIR must not be a shared channel"
+    assert len({call["home"] for call in calls}) == len(calls)
+    assert len({call["config"] for call in calls}) == len(calls)
+    assert len({call["codex"] for call in calls}) == len(calls)
+    assert len({call["tmp"] for call in calls}) == len(calls)
+
+
+def test_environment_values_containing_the_hidden_root_are_dropped(tmp_path, monkeypatch):
+    bench = _bench()
+    hidden = _hidden(tmp_path)
+    monkeypatch.setenv("LEAK", str(hidden) + "/one")
+    monkeypatch.setenv("SIGMA_FAKE_PASSTHROUGH", "forwarded")
+    arm = _arm(bench, "PlainArm", tmp_path)
+
+    _run(bench, tmp_path, [arm], _manifest(tmp_path), hidden)
+
+    [call] = _calls(tmp_path)
+    assert call["leak"] is None
+    assert call["passthrough"] == "forwarded"
+    assert call["bench_vars"] == []
+    assert "forwarded" not in (tmp_path / "results.json").read_text(encoding="utf-8")
+
+
+def test_real_plugin_directory_change_aborts_the_whole_benchmark(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_TOUCH", str(_plugins(tmp_path) / "touched"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path)))
+
+    assert message is not None and "plugin directory changed" in message
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert "plugin directory changed" in saved["aborted"]["reason"]
+    operator = tmp_path / "operator-config" / "plugins"
+    operator.mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(operator.parent))
+    monkeypatch.setenv("SIGMA_FAKE_TOUCH", str(operator / "touched"))
+    (tmp_path / "state" / "count").unlink()
+    again = _try(bench, lambda: _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)],
+                                     _manifest(tmp_path, tag="tasks-2"),
+                                     _hidden(tmp_path, root=tmp_path / "hidden-2"), results="second.json"))
+    assert again is not None and "plugin directory changed" in again
+
+
+def test_plugin_change_between_runs_is_caught_before_the_next_run_starts(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_TOUCH", str(_plugins(tmp_path) / "touched"))
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest,
+                                       _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message is not None and "plugin directory changed" in message
+    assert len(_calls(tmp_path)) == 1
+
+
+def test_plugin_change_inside_an_a3_row_stops_before_the_next_attempt(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_TOUCH", str(_plugins(tmp_path) / "touched"))
+    monkeypatch.setenv("SIGMA_FAKE_TOUCH_ON", "2")
+
+    message = _try(bench, lambda: _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS),
+                                       _hidden(tmp_path)))
+
+    assert message is not None and "plugin directory changed" in message
+    assert len(_calls(tmp_path)) == 2
+
+
+def test_abort_keeps_the_rows_already_paid_for(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_NO_TRANSCRIPT_ON", "2")
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest,
+                                       _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message is not None
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert [(row["task"], row["cost_usd"]) for row in saved["runs"]] == [("one", 1.0)]
+    assert saved["aborted"]["task"] == "two"
+    assert saved["aborted"]["arm"] == "plain"
+    assert saved["aborted"]["cost_usd_spent"] == 0.0
+    assert saved["schema"] == "sigma.benchmark-results/v1"
+
+
+def test_unpriced_run_stops_the_benchmark_instead_of_counting_zero(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_NO_TRANSCRIPT_ON", "1")
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest,
+                                       _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message is not None and "could not be priced" in message
+    assert len(_calls(tmp_path)) == 1
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert saved["runs"] == []
+    assert saved["aborted"]["arm"] == "plain"
+
+
+def test_exception_mid_row_writes_the_in_flight_spend_into_aborted(tmp_path, monkeypatch):
+    bench = _bench()
+    common = _need(bench, "arms_common")
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    real = common.run_bounded
+    seen = []
+
+    def interrupt_third_claude(argv, *args, **kwargs):
+        if "-p" in argv:
+            seen.append(argv)
+            if len(seen) == 3:
+                raise KeyboardInterrupt
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(common, "run_bounded", interrupt_third_claude)
+    manifest = _manifest(tmp_path, visible=FAILS)
+
+    with pytest.raises(KeyboardInterrupt):
+        _run(bench, tmp_path, arms, manifest, _hidden(tmp_path))
+
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert [row["arm"] for row in saved["runs"]] == ["sigma"]
+    assert saved["aborted"]["reason"] == "KeyboardInterrupt"
+    assert saved["aborted"]["arm"] == "matched"
+    assert saved["aborted"]["cost_usd_spent"] == 1.0
+    assert list((tmp_path / "scratch").iterdir()) == []
+
+
+def test_matched_arm_stops_at_a_spend_cap_of_two_and_a_half_attempts(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    hidden = _hidden(tmp_path, check="import pathlib; assert pathlib.Path('attempt.txt').read_text() == '4'")
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), hidden)
+
+    row = _row(report, "matched")
+    assert _row(report, "sigma")["cost_usd"] == 2.5
+    assert len(_calls(tmp_path)) == 4
+    assert row["cost_usd"] == 3.0
+    assert "attempts=3" in row["reason"] and "stop=spend-cap" in row["reason"]
+    assert row["hidden_passed"] is True, "the LAST attempt's tree must be the scored one"
+
+
+def test_matched_arm_stops_when_spend_equals_the_cap_exactly(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_SIGMA_TOKENS", "200000")
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path))
+
+    row = _row(report, "matched")
+    assert _row(report, "sigma")["cost_usd"] == 2.0
+    assert "attempts=2" in row["reason"] and "stop=spend-cap" in row["reason"]
+    assert row["cost_usd"] == 2.0
+
+
+def test_matched_arm_stops_at_the_first_visible_pass_and_scores_it(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_PASS_ON_CALL", "3")
+    check = ("import pathlib; assert pathlib.Path('fixed.txt').exists(); "
+             "assert pathlib.Path('attempt.txt').read_text() == '3'")
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FIXED), _hidden(tmp_path, check=check))
+
+    row = _row(report, "matched")
+    assert len(_calls(tmp_path)) == 3
+    assert row["cost_usd"] == 2.0
+    assert "attempts=2" in row["reason"] and "stop=visible-pass" in row["reason"]
+    assert row["visible_passed"] is True and row["hidden_passed"] is True
+
+
+def test_matched_attempts_run_in_fresh_workdirs_and_replace_the_scored_tree(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    check = ("import pathlib; assert not pathlib.Path('stale.txt').exists(); "
+             "assert pathlib.Path('attempt.txt').read_text() == '4'")
+    manifest = _manifest(tmp_path, visible=FAILS, files={"stale.txt": "old"})
+
+    report = _run(bench, tmp_path, arms, manifest, _hidden(tmp_path, check=check))
+
+    calls = _calls(tmp_path)
+    assert [call["pre_existing"] for call in calls] == [[], [], [], []]
+    assert len({call["cwd"] for call in calls}) == 4
+    assert [call["elsewhere"] for call in calls] == [[], [], [], []]
+    assert _row(report, "matched")["hidden_passed"] is True
+
+
+def test_matched_arm_stops_when_an_attempt_cannot_be_priced(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_NO_TRANSCRIPT_ON", "3")
+
+    message = _try(bench, lambda: _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS),
+                                       _hidden(tmp_path)))
+
+    assert message is not None and "could not be priced" in message
+    assert len(_calls(tmp_path)) == 3
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert saved["aborted"]["arm"] == "matched"
+    assert saved["aborted"]["cost_usd_spent"] == 1.0
+
+
+def test_matched_arm_stops_at_the_attempt_bound_and_the_row_deadline(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_TOKENS", "1000")
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path, max_attempts=3)]
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path))
+    row = _row(report, "matched")
+    assert "attempts=3" in row["reason"] and "stop=attempt-bound" in row["reason"]
+    assert len(_calls(tmp_path)) == 4
+
+    (tmp_path / "state" / "count").unlink()
+    monkeypatch.setenv("SIGMA_FAKE_SLEEP", "0.4")
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path, max_attempts=50)]
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS, tag="tasks-2"),
+                  _hidden(tmp_path, root=tmp_path / "hidden-2"), results="again.json", deadline_seconds=3)
+    row = _row(report, "matched")
+    assert "stop=deadline" in row["reason"]
+
+
+def test_matched_arm_stops_when_the_global_ceiling_is_exhausted(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    monkeypatch.setenv("SIGMA_FAKE_HONOR_BUDGET", "1")
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path), max_usd=4.0)
+
+    row = _row(report, "matched")
+    calls = _calls(tmp_path)
+    assert _budgets(calls) == [4.0, 1.5, 0.5]
+    assert all(budget > 0 for budget in _budgets(calls))
+    assert row["cost_usd"] == 1.5 and "stop=ceiling" in row["reason"]
+
+
+def test_matched_arm_without_a_prior_a1_run_is_refused(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    manifest, hidden = _manifest(tmp_path), _hidden(tmp_path)
+
+    alone = _try(bench, lambda: _run(bench, tmp_path, [_arm(bench, "MatchedArm", tmp_path)], manifest, hidden))
+    wrong_order = _try(bench, lambda: _run(bench, tmp_path, [_arm(bench, "MatchedArm", tmp_path),
+                                                              _sigma(bench, tmp_path, repo, sha)],
+                                           manifest, hidden))
+
+    assert alone is not None and "sigma" in alone
+    assert wrong_order is not None and "sigma" in wrong_order
+    assert _calls(tmp_path) == []
+    assert not (tmp_path / "results.json").exists()
+
+
+def test_matched_arm_refuses_more_than_one_repeat(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+
+    message = _try(bench, lambda: _run(bench, tmp_path, arms, _manifest(tmp_path), _hidden(tmp_path),
+                                       repeats=2))
+
+    assert message is not None and "one repeat" in message
+    assert _calls(tmp_path) == []
+
+
+def test_attempt_belt_is_the_smaller_of_the_belt_and_the_remaining_spend(tmp_path):
+    bench = _bench()
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+    hidden = _hidden(tmp_path, ids=("one", "two"))
+
+    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=15.0)], manifest, hidden, max_usd=10.0)
+    assert _budgets(_calls(tmp_path)) == [10.0, 9.0]
+
+    (tmp_path / "calls.jsonl").unlink()
+    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=3.0)], manifest, hidden, max_usd=10.0)
+    assert _budgets(_calls(tmp_path)) == [3.0, 3.0]
+
+
+def test_a_later_arm_cannot_read_an_earlier_arms_tree_or_the_hidden_bundle(tmp_path):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "PlainArm", tmp_path)]
+    ids = ("one", "two")
+
+    _run(bench, tmp_path, arms, _manifest(tmp_path, ids=ids), _hidden(tmp_path, ids=ids))
+
+    calls = _calls(tmp_path)
+    assert len(calls) == 4
+    assert [call["elsewhere"] for call in calls] == [[], [], [], []]
+    assert [call["sentinel"] for call in calls] == [False, False, False, False]
+    assert list((tmp_path / "scratch").iterdir()) == []
+
+
+def test_nonempty_scratch_root_is_refused_and_an_abort_leaves_none_behind(tmp_path, monkeypatch):
+    bench = _bench()
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "leftover").mkdir()
+    manifest, hidden = _manifest(tmp_path), _hidden(tmp_path)
+    arm = _arm(bench, "PlainArm", tmp_path)
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, hidden, scratch=scratch))
+
+    assert message is not None and "scratch root must be empty" in message
+    assert _calls(tmp_path) == []
+    (scratch / "leftover").rmdir()
+    monkeypatch.setenv("SIGMA_FAKE_NO_TRANSCRIPT_ON", "1")
+    assert _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, hidden, scratch=scratch)) is not None
+    assert list(scratch.iterdir()) == []
+    monkeypatch.delenv("SIGMA_FAKE_NO_TRANSCRIPT_ON")
+    (tmp_path / "state" / "count").unlink()
+    assert _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, hidden, scratch=scratch)) is None
+
+
+def test_hung_commands_are_killed_with_their_whole_process_group(tmp_path, monkeypatch):
+    bench = _bench()
+    pidfile = tmp_path / "grandchild.pid"
+    monkeypatch.setenv("SIGMA_FAKE_HANG", str(pidfile))
+    arm = _arm(bench, "PlainArm", tmp_path)
+    pid = None
+    try:
+        report = _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path), deadline_seconds=2)
+        pid = int(pidfile.read_text())
+        alive = True
+        for _ in range(60):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                alive = False
+                break
+            time.sleep(0.05)
+        assert not alive, "the agent's grandchild survived the group kill"
+        assert "wall-clock limit" in report["runs"][0]["reason"]
+    finally:
+        if pid:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+
+def test_a_child_left_behind_by_a_normal_exit_is_killed(tmp_path, monkeypatch):
+    bench = _bench()
+    _need(bench, "BenchmarkSignal")
+    pidfile = tmp_path / "left.pid"
+    monkeypatch.setenv("SIGMA_FAKE_LEAVE", str(pidfile))
+    arm = _arm(bench, "PlainArm", tmp_path)
+    pid = None
+    try:
+        _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path))
+        pid = int(pidfile.read_text())
+        alive = True
+        for _ in range(60):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                alive = False
+                break
+            time.sleep(0.05)
+        assert not alive, "a child outliving claude's normal exit kept running"
+    finally:
+        if pid:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+
+def test_sigterm_unwinds_kills_children_and_keeps_the_report(tmp_path, monkeypatch):
+    import signal
+    bench = _bench()
+    _need(bench, "BenchmarkSignal")
+    monkeypatch.setenv("SIGMA_FAKE_TERM_PARENT", "1")
+    arm = _arm(bench, "PlainArm", tmp_path)
+    before = signal.getsignal(signal.SIGTERM)
+
+    with pytest.raises(bench.BenchmarkSignal):
+        _run(bench, tmp_path, [arm], _manifest(tmp_path, ids=("one", "two")),
+             _hidden(tmp_path, ids=("one", "two")))
+
+    saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert saved["aborted"]["reason"] == "signal SIGTERM"
+    assert saved["aborted"]["arm"] == "plain"
+    assert list((tmp_path / "scratch").iterdir()) == []
+    assert signal.getsignal(signal.SIGTERM) == before
+    assert len(_calls(tmp_path)) == 1
+
+
+def test_scratch_root_inside_the_repository_is_refused(tmp_path):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    scratch = ROOT / "docs" / "never-created-scratch"
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path),
+                                       scratch=scratch))
+
+    assert message is not None and "scratch root must be outside the repository" in message
+    assert not scratch.exists()
+    assert _calls(tmp_path) == []
+
+
+def test_scoring_commands_run_through_the_launcher(tmp_path):
+    bench = _bench()
+    log = tmp_path / "launcher.log"
+    launcher = _launcher(tmp_path, log=log)
+    arm = _arm(bench, "PlainArm", tmp_path)
+
+    _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path, check="print(1)"), launcher=launcher)
+
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4, lines
+    assert "--version" in lines[0]
+    assert " -p " in lines[1]
+    assert "visible.py" in lines[2]
+    assert "print(1)" in lines[3]
+
+
+def test_live_run_refuses_without_a_pinned_commit_a_permission_mode_or_a_posix_host(tmp_path, capsys, monkeypatch):
+    bench = _bench()
+    common = _need(bench, "arms_common")
+    repo, sha = _repo(tmp_path)
+
+    assert bench.main(_cli(tmp_path, "--sigma-commit", sha, "--sigma-repo", str(repo), tag="-a")) == 2
+    assert "--permission-mode" in capsys.readouterr().err
+    assert bench.main(_cli(tmp_path, "--permission-mode", "acceptEdits", "--sigma-repo", str(repo),
+                           arm="sigma", tag="-b")) == 2
+    assert "--sigma-commit" in capsys.readouterr().err
+    monkeypatch.setattr(common, "IS_POSIX", False)
+    assert bench.main(_cli(tmp_path, "--permission-mode", "acceptEdits", arm="plain", tag="-c")) == 2
+    assert "POSIX" in capsys.readouterr().err
+    assert _calls(tmp_path) == []
+
+
+def test_results_path_inside_the_scratch_root_is_refused(tmp_path):
+    bench = _bench()
+    scratch = tmp_path / "scratch"
+    arm = _arm(bench, "PlainArm", tmp_path)
+
+    message = _try(bench, lambda: bench.run_benchmark(
+        _manifest(tmp_path), [arm], max_usd=1.0, hidden_root=_hidden(tmp_path),
+        results_path=scratch / "results.json", scratch_root=scratch,
+        isolation_launcher=_launcher(tmp_path)))
+
+    assert message is not None and "results path must be outside the scratch root" in message
+    assert _calls(tmp_path) == []
+
+
+def test_subclassed_live_arm_is_refused(tmp_path):
+    bench = _bench()
+    plain = _need(bench, "PlainArm")
+    invoked = []
+
+    class Evil(plain):
+        def run(self, *_args):
+            invoked.append(True)
+            return bench.ArmRun(cost_usd=0.0)
+
+    arm = Evil(claude=str(tmp_path / "bin" / "claude"), model="claude-test", permission_mode="acceptEdits",
+               belt_usd=1.0)
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], _manifest(tmp_path), _hidden(tmp_path)))
+
+    assert message is not None and "enforceable isolation boundary" in message
+    assert invoked == []
+
+
+def test_tree_digest_sees_changed_added_and_removed_files(tmp_path):
+    bench = _bench()
+    common = _need(bench, "arms_common")
+    tree = tmp_path / "plugins"
+    tree.mkdir()
+    (tree / "a.txt").write_text("one", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "o.txt").write_text("o", encoding="utf-8")
+    (tree / "link").symlink_to(outside)
+    base = common.tree_digest(tree)
+
+    assert common.tree_digest(tree) == base
+    (outside / "o.txt").write_text("changed outside", encoding="utf-8")
+    assert common.tree_digest(tree) == base, "symlinks must not be followed"
+    (tree / "a.txt").write_text("two", encoding="utf-8")
+    changed = common.tree_digest(tree)
+    assert changed != base
+    (tree / "b.txt").write_text("new", encoding="utf-8")
+    added = common.tree_digest(tree)
+    assert added != changed
+    (tree / "b.txt").unlink()
+    assert common.tree_digest(tree) == changed
+    assert common.tree_digest(tmp_path / "missing") == common.tree_digest(tmp_path / "also-missing") == "absent"
