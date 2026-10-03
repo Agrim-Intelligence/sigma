@@ -234,3 +234,7 @@ def test_readiness_tool_write_metadata_is_specific():
     assert mod._metadata("tools/readiness/seed_defects.py", "apply", "fs-write") == (
         "explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
         "medium")
+    assert mod._metadata("tools/readiness/injection_drill.py", "file_payloads", "gh-api-write") == (
+        "explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and "
+        "must be private; declared --max-usd; never run by Sigma", "high")
+    assert mod._metadata("tools/readiness/injection_drill.py", "_write_json", "fs-write")[1] == "medium"

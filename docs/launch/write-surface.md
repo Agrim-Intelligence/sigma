@@ -80,10 +80,16 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/goal_state_prune.py | sweep | fs-remove | 4 | goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458) | medium |
 | skills/agrim-loop/scripts/ledger.py | _maybe_prune_journal | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/ledger.py | append | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/ledger.py | main | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/ledger.py | prune_journal | fs-remove | 1 | ungated | high |
+| skills/agrim-loop/scripts/liveness_prune.py | _try_remove_lock | fs-remove | 1 | claim lock only: mtime older than max(claim lease TTL, 1 h), no alive or unknown agent marker, goal in no live session's in_flight, this process wins a non-blocking flock opened O_NOFOLLOW (never O_CREAT), the locked inode is still the path's inode, mtime re-checked under the lock (#464) | medium |
+| skills/agrim-loop/scripts/liveness_prune.py | sweep | fs-remove | 1 | claims/<goal>.claimed only: regular non-symlink file in a real claims dir, older than 30 days, no work record, no alive or unknown agent marker; capped by --limit and a wall-clock budget (#464) | medium |
+| skills/agrim-loop/scripts/logroll.py | _acquire | fs-remove | 1 | log rotation lock only: removes a `<log>.rotating` lock file older than 60 s, left by a crashed rotator; never a log; best-effort, never raises | medium |
+| skills/agrim-loop/scripts/logroll.py | _move | fs-remove | 1 | log rotation only: one os.replace of a caller-named log to its own `.N` predecessor in the same directory; atomic, the oldest generation is overwritten by design; best-effort, never raises | medium |
+| skills/agrim-loop/scripts/logroll.py | rotate | fs-remove | 1 | log rotation lock only: releases the `<log>.rotating` lock this call took; never a log; best-effort, never raises | medium |
 | skills/agrim-loop/scripts/loop.py | _end_if_owner | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/loop.py | _ensure_claimed | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/loop.py | _ensure_ledger_delivery | fs-write | 2 | ungated | medium |
@@ -108,6 +114,9 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/loop.py | verify_goal | fs-write | 2 | ungated | medium |
 | skills/agrim-loop/scripts/loop.py | write_session_heartbeat | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/loop.py | write_session_heartbeat | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/managed_settings.py | record_enrolment | fs-remove | 1 | enrolment marker: unique tmp file renamed over (os.replace) or cleaned up; written only after a valid policy file was parsed, best-effort, never raises | low |
+| skills/agrim-loop/scripts/managed_settings.py | record_enrolment | fs-write | 2 | enrolment marker (state dir and git dir), written once after a valid policy file was parsed; local, no network | low |
+| skills/agrim-loop/scripts/managed_settings.py | unenroll | fs-remove | 1 | operator-run `managed_settings.py unenroll`: removes only the enrolment markers; local, idempotent | low |
 | skills/agrim-loop/scripts/merge_observation.py | materialize_snapshot | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/merge_observation.py | write_immutable | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/merge_observation.py | write_immutable | fs-write | 2 | ungated | medium |
@@ -122,6 +131,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/release_manifest.py | publish_to_ledger_branch | git-push | 1 | ungated | high |
 | skills/agrim-loop/scripts/release_manifest.py | write_once | fs-remove | 1 | ungated | high |
 | skills/agrim-loop/scripts/release_manifest.py | write_once | fs-write | 2 | ungated | medium |
+| skills/agrim-loop/scripts/retention.py | _unlink_streams | fs-remove | 1 | retention gate: only a closed-as-done goal's own log and witness file, both older than the window, no fresh owner marker, no symlink, size and mtime re-checked before the unlink; best-effort, never raises | medium |
 | skills/agrim-loop/scripts/review_context.py | _atomic_bytes | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/review_context.py | _atomic_bytes | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/slack_commands_listen.py | _atomic_write_text | fs-remove | 2 | ungated | high |
@@ -234,6 +244,10 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/work.py | rebase | git-destructive | 3 | ungated | high |
 | skills/agrim-loop/scripts/work.py | rebase | git-push | 2 | ungated | high |
 | skills/agrim-loop/scripts/work.py | review_evidence | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/worktree_prune.py | _atomic_write | fs-remove | 2 | the replace over the sweep's own journal or seen file, and unlinking its own temp file next to it; nothing else (#465) | low |
+| skills/agrim-loop/scripts/worktree_prune.py | _atomic_write | fs-write | 2 | the sweep's own state only (state/worktree-prune/<goal>.json journal and state/worktree-prune-seen.json); tmp file then os.replace, under the sweep flock (#465) | low |
+| skills/agrim-loop/scripts/worktree_prune.py | _drop_journal | fs-remove | 1 | unlinks only state/worktree-prune/<goal>.json, the sweep's own journal, under the sweep flock; missing_ok (#465) | low |
+| skills/agrim-loop/scripts/worktree_prune.py | _heal | fs-rmtree | 1 | debris of the sweep's OWN interrupted removal only: a journal exists whose record, branch, path and HEAD still match, the path is exactly <project root>/<worktree_dir>/<goal> and not a symlink, git no longer registers it, and every remaining entry is regenerable or byte-identical to the blob at that path in the journalled HEAD (read in the main repo; a foreign file keeps it); re-checked immediately before the delete; under the sweep flock (#465) | high |
 | skills/agrim-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
 | skills/agrim-rebase/scripts/conflict_walk.py | _resolve_to_stage | git-destructive | 1 | ungated | high |
 | skills/agrim-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
@@ -285,6 +299,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
 | tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
 | tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
+| tools/readiness/injection_drill.py | _write_json | fs-write | 1 | explicit file subcommand; caller-supplied snapshot path that must not exist; validated sigma-drill- repository; declared --max-usd | medium |
+| tools/readiness/injection_drill.py | file_payloads | gh-api-write | 1 | explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and must be private; declared --max-usd; never run by Sigma | high |
 | tools/readiness/review_units.py | main | fs-write | 1 | explicit --json PATH; caller-supplied output path | medium |
 | tools/readiness/seed_defects.py | apply | fs-write | 1 | explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only | medium |
 | tools/readiness/write_surface.py | main | fs-write | 1 | ungated | medium |

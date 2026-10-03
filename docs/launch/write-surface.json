@@ -2409,6 +2409,22 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/injection_drill.py",
+      "function": "_write_json",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit file subcommand; caller-supplied snapshot path that must not exist; validated sigma-drill- repository; declared --max-usd",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/injection_drill.py",
+      "function": "file_payloads",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and must be private; declared --max-usd; never run by Sigma",
+      "risk": "high"
+    },
+    {
       "path": "tools/readiness/review_units.py",
       "function": "main",
       "rule": "fs-write",

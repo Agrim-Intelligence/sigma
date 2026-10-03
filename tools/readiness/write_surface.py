@@ -62,6 +62,12 @@ def _metadata(path, function, rule):
             ("explicit refs scan; local tag listing is read-only", "low"),
         ("tools/readiness/review_units.py", "main", "fs-write"):
             ("explicit --json PATH; caller-supplied output path", "medium"),
+        ("tools/readiness/injection_drill.py", "_write_json", "fs-write"):
+            ("explicit file subcommand; caller-supplied snapshot path that must not exist; "
+             "validated sigma-drill- repository; declared --max-usd", "medium"),
+        ("tools/readiness/injection_drill.py", "file_payloads", "gh-api-write"):
+            ("explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and "
+             "must be private; declared --max-usd; never run by Sigma", "high"),
         ("tools/readiness/seed_defects.py", "apply", "fs-write"):
             ("explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
              "medium"),
