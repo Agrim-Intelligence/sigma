@@ -1,36 +1,73 @@
 # Quality evals — catch drift on every change
 
-## Benchmark harness smoke control
+## Benchmark harness: arms, isolation and the smoke control
 
 The benchmark method is fixed in
-[`docs/bench/preregistration.md`](../docs/bench/preregistration.md).  The runner
-deliberately ships only a zero-spend fake arm until the separately reviewed arm
-implementations are available.  It still exercises the task-copy, post-run
-hidden-test, result-schema, and spend-refusal seams against two local tasks:
+[`docs/bench/preregistration.md`](../docs/bench/preregistration.md).  Three live arms exist, run in
+this order for every task: **A1 `sigma`** (Sigma loaded from a clean `git archive` export of a pinned
+commit, never the repository), **A2 `plain`** (the agent alone) and **A3 `matched`** (the plain agent
+retried in fresh workdirs until the visible tests pass or spend reaches A1's spend for that task; the
+first visible-passing attempt is scored, else the last).  There is no other arm.  A human launches the
+harness; it refuses CI and background execution and nothing here has been run against a real model.
 
 ```bash
 python3 evals/bench/bench.py run --manifest <tasks/manifest.json> \
   --hidden-root <external-hidden-bundles> --results <results.json> \
-  --max-usd 0.01 --isolation-launcher </absolute/operator-sandbox> --fake-arm
+  --max-usd <ceiling> --isolation-launcher </absolute/operator-sandbox> \
+  --arm all --model <pinned-model-id> --permission-mode <mode> --sigma-commit <sha>
 ```
 
-`--max-usd` is mandatory and positive; the command refuses CI and background
-execution.  The hidden root must be outside the repository and every arm
-worktree. The command also refuses until the operator supplies an executable,
-absolute launcher outside the repository, hidden, task, and scratch trees.
-That launcher is an **operator-owned external sandbox or privilege-separation
-boundary**: Sigma validates its location and executable bit, but cannot infer
-that an arbitrary executable’s bytes sandbox a process. Location and executable
-validation cannot establish a boundary, so **all live arms are refused** until
-a separately reviewed, enforceable sandbox/privilege-separation protocol is
-implemented. Arbitrary in-process `Arm.run` callbacks are also refused; the
-built-in fake arm is the sole trusted smoke fixture and never starts an agent.
-The runner never claims that path or environment filtering isolates an
-untrusted agent. Only the parent scorer copies a hidden bundle into a separate
-evaluator scratch tree after the arm exits.
-Each arm receives only the spending allowance left after earlier runs.  If an
-arm reports a cost above that remainder, the run is refused before any results
-report is written.
+Add `--dry-run` to validate everything and print each arm's *planned* isolation facts without starting
+anything.  `--fake-arm` replaces `--arm` for the zero-spend smoke control (two local tasks, no `claude`).
+`--max-usd`, `--model`, `--permission-mode` (identical for every arm) and, for the sigma arm,
+`--sigma-commit` have no defaults.  `--scratch-root` must be empty.
+
+What the harness enforces, and what it does not:
+
+- **Isolated profile.** Every run, and every A3 attempt, gets a fresh `HOME`, `CLAUDE_CONFIG_DIR` and
+  `CODEX_HOME`, and `TMPDIR` points inside that profile (an agent writing to a hard-coded `/tmp` path still shares that
+  channel unless the launcher prevents it).  The
+  rest of the harness environment is forwarded WHOLE, not allow-listed: an `ANTHROPIC_API_KEY` set by
+  the operator reaches `claude`, and so does any other credential in that environment (cloud keys,
+  `GH_TOKEN`), readable by the agent and by agent-authored test code at scoring; launch the benchmark
+  from an environment holding only what it needs.  Only values containing the hidden root and the
+  harness's own `SIGMA_BENCH_*` variables are dropped.
+- **Operator plugins untouched.** The operator's `~/.claude/plugins` (and `$CLAUDE_CONFIG_DIR/plugins`)
+  is content-hashed once before anything starts, again before every run and every A3 attempt, and after
+  the last run.  Any change aborts the benchmark; do not run other Claude sessions that update plugins
+  meanwhile.  Measured on one machine: 332 MB in 15,953 files hashed in about two seconds, so about 200 hashes over
+  15 tasks is about 7 minutes, linear in the directory's size (not measured at 10x or 100x).
+- **Clean export.** The sigma arm loads `.claude-plugin`, `skills` and `hooks` of the pinned commit.  The
+  export is refused if it holds links, escapes its directory, has other top-level entries, or has a path
+  component named `evals` or `tests` (a future skill folder with that name fails A1 loudly).  It omits
+  `docs/`, `tools/` and `contract/`; how A1 behaves without them is not measured.
+- **Hidden tests.** The hidden root must be outside the repository, every task source and the scratch
+  root, and the scratch root must be outside the repository.  Each run directory (worktree, profile, transcripts, scoring copy with the hidden bundle) is
+  deleted right after scoring, so a later arm or attempt cannot read an earlier solution or the bundle.
+  Scoring commands run through the launcher, bounded by `--scoring-timeout-seconds`.
+- **Spend.** Each `claude -p` gets `--max-budget-usd` of the smaller of `--belt-usd` and what is left of
+  `--max-usd`; a run that cannot be priced, or that overshoots, stops the benchmark.  Every stop keeps
+  the rows already paid for in the results file with an `aborted` object (its `cost_usd_spent` is a lower bound: the killed in-flight run's own transcript is
+  deleted unpriced), so a report with `aborted` is partial.  There is no resume: a re-run re-pays every arm.  The last A3 attempt can overshoot A1's spend
+  by up to one attempt; A3 stops on `--max-attempts`, the remaining ceiling or the run deadline too (one deadline shared by all
+  its attempts, where A1 and A2 each get a full one), and
+  its row's reason names which.  Cost is read from the transcript under the profile, so it is exactly as
+  honest as the launcher.
+- **Commands are bounded.** Every launched command runs in its own process group with a timeout and the
+  whole group is killed on expiry or normal exit (a launcher, or a process an agent or Sigma's own
+  hooks start in a new session, escapes this; a watcher the sigma arm's hooks leave behind can outlive
+  its run directory).
+  SIGTERM and SIGHUP unwind the harness the same way (children killed, paid rows kept; a second signal
+  during the unwind can cut it short); SIGKILL or a power loss cannot, and a surviving `claude` is then bounded only by its own `--max-budget-usd` belt.
+
+The launcher is an **operator-owned external sandbox or privilege-separation boundary**: Sigma validates
+its location and executable bit, but cannot infer that an arbitrary executable's bytes contain an agent,
+so hidden-test confidentiality at scoring time (the bundle sits beside agent-authored code) and the
+agent's reach into the real filesystem depend entirely on it.  Arbitrary in-process `Arm` subclasses are
+refused; only the exact in-tree arm classes run.  The `claude` flags (`--plugin-dir`, `--session-id`,
+`--max-budget-usd`, `--permission-mode`, prompt on stdin) are listed by this host's `claude --help` but
+have not been exercised end to end, and the first live run will stop at the unpriced-run guard until the
+operator supplies credentials.
 
 Sigma's "output" is agent *behavior* (does it follow the spine, plan before editing, verify before
 claiming done). Behavior is non-deterministic, so quality is guarded in tiers. Run the whole thing

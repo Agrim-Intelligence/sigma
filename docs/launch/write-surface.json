@@ -1,6 +1,38 @@
 {
   "entries": [
     {
+      "path": "evals/bench/arms/common.py",
+      "function": "isolated_env",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/bench/arms/common.py",
+      "function": "remove_tree",
+      "rule": "fs-rmtree",
+      "count": 2,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only a run, attempt or workdir child directory it was handed",
+      "risk": "high"
+    },
+    {
+      "path": "evals/bench/arms/matched.py",
+      "function": "_replace_tree",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; replaces only the arm's own run workdir",
+      "risk": "high"
+    },
+    {
+      "path": "evals/bench/arms/sigma.py",
+      "function": "extract_tar",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; writes only the three export trees after validating the whole archive",
+      "risk": "medium"
+    },
+    {
       "path": "evals/bench/bench.py",
       "function": "_write_json_atomic",
       "rule": "fs-write",
@@ -10,11 +42,27 @@
     },
     {
       "path": "evals/bench/bench.py",
+      "function": "facts",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "dry run only: removes the temp export directory it created",
+      "risk": "high"
+    },
+    {
+      "path": "evals/bench/bench.py",
       "function": "run",
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",
       "risk": "medium"
+    },
+    {
+      "path": "evals/bench/bench.py",
+      "function": "run_benchmark",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call",
+      "risk": "high"
     },
     {
       "path": "evals/bench/bench.py",
