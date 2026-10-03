@@ -9,10 +9,18 @@ install copies the whole tracked tree (README "every tracked file is shipped sur
 `tests/test_self_contained.py` pins the same), so no directory is exempt.
   * A SYMLINK ships as its target PATH, so that path text is what is scanned (`os.readlink`); the
     link is never followed, so a link to `/etc/hosts` never makes the gate read the host's file.
-  * Text is decoded as UTF-8, UTF-16 (a BOM, or BOM-less with NULs on one byte parity) or, failing
-    UTF-8, Latin-1 -- then scanned like any other text.
+  * Text is decoded as UTF-8, UTF-16 (a BOM, or BOM-less with NULs on one byte parity), UTF-32 (a BOM:
+    `FF FE 00 00` / `00 00 FE FF`, decided before UTF-16 because the first is also the UTF-16 LE mark)
+    or, failing UTF-8, Latin-1 -- then scanned like any other text. A file legal under two readings
+    (a UTF-32 mark then UTF-16 text) is scanned under both and, because its UTF-32 reading of ASCII text is then
+    malformed, also named `opaque-binary`. A UTF-32 file with a truncated tail or a
+    group above U+10FFFF is scanned with those groups replaced AND named `opaque-binary`. UNSCANNABLE and
+    named: BOM-less UTF-32 (the width cannot be known). UNSCANNABLE and NOT named: UTF-7, EBCDIC, other
+    legacy codecs (read as Latin-1), UCS-4 in the 3412 byte order (`FE FF 00 00` reads as UTF-16 BE),
+    a BOM-less UTF-16 file whose first 8192 bytes hold no NUL, and compressed or encrypted bytes that
+    happen to be NUL-free.
   * A file the gate CANNOT scan is a finding, named, never a silent skip: `opaque-binary` (NUL bytes
-    that are not UTF-16), `oversize` (over `MAX_BYTES`), `unreadable` (an OS error). Each exits 1.
+    that are not UTF-16 or marked UTF-32), `oversize` (over `MAX_BYTES`), `unreadable` (an OS error). Each exits 1.
   * `ALLOW_PATHS` -- `{path: reason}` for a vendored or opaque file the gate may not read. A reason is
     mandatory: an empty one REFUSES (exit 2). Empty today: nothing is vendored or opaque.
 A single line opts out of one rule with an in-file marker that must carry a reason, e.g.
@@ -569,6 +577,35 @@ def _decode(data):
         return data.decode("latin-1")
 
 
+_UTF32_MARKS = ((b"\xff\xfe\0\0", "utf-32-le"), (b"\0\0\xfe\xff", "utf-32-be"))
+
+
+def _readings(data):
+    """-> (texts, whole). EVERY plausible reading of `data`, each of which is scanned (#450).
+
+    A UTF-32 mark is decided first: `FF FE 00 00` begins with the UTF-16 LE mark, and decoding it as
+    UTF-16 scans NUL-interleaved noise and reports CLEAN. It is read as UTF-32 (`errors="replace"`, so
+    a truncated tail or a group above U+10FFFF cannot hide the rest of the file) AND, when it is also
+    legal, under `_decode`, because a file such as `FF FE 00 00` then UTF-16 text is valid either way
+    and a reader may take either. `whole` is False when the UTF-32 reading needed a replacement: the
+    caller names the file as `opaque-binary` as well, so a malformed file is never plain CLEAN."""
+    texts, whole = [], True
+    for mark, codec in _UTF32_MARKS:
+        if data.startswith(mark):
+            try:
+                texts.append(data[4:].decode(codec))
+            except UnicodeDecodeError:
+                whole = False
+                texts.append(data[4:].decode(codec, "replace"))
+    other = _decode(data)
+    if data.startswith(_UTF32_MARKS[1][0]):  # `00 00 FE FF` is no UTF-16 mark, so `_decode` skips the
+        try:                                 # reading a UTF-16 BE consumer would take: U+0000 U+FEFF text
+            texts.append(data.decode("utf-16-be"))
+        except UnicodeDecodeError:
+            pass
+    return texts + ([other] if other is not None else []), whole
+
+
 def _scan_path(rel, rules, owner, stats):
     """-> [(line, rule)] for one tracked path, including the whole-file rules (line 0)."""
     path = ROOT / rel
@@ -589,11 +626,16 @@ def _scan_path(rel, rules, owner, stats):
         print(f"leak_scan: {rel}: not scanned (unreadable: {exc.__class__.__name__})",
               file=sys.stderr)
         return found + [(0, "unreadable")]
-    text = _decode(data)
-    if text is None:
+    texts, whole = _readings(data)
+    if not texts:
         print(f"leak_scan: {rel}: not scanned (opaque binary)", file=sys.stderr)
         return found + [(0, "opaque-binary")]
-    return found + scan_text(text, rules, owner, _is_config(rel), stats)
+    if not whole:
+        print(f"leak_scan: {rel}: not scanned in full (malformed UTF-32)", file=sys.stderr)
+        found.append((0, "opaque-binary"))
+    for text in texts:
+        found += scan_text(text, rules, owner, _is_config(rel), stats)
+    return found
 
 
 def main(argv):
