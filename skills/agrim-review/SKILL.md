@@ -30,7 +30,7 @@ claim you can make about yourself. Resolve it before judging anything:
 
 It prints one JSON object; branch on `mechanism`:
 - **`subagent`** — assemble the brief with `review_context.py brief .sdlc "<goal>" --for code-review
-  [--artifact <path|PR#>]`, hand a FRESH subagent **only that**, and let it review. You do not.
+  [--artifact <path|PR#>]`, hand a FRESH subagent **only that**, and let it review. You do not. Sigma cannot prove who ran it; it binds the verdict to one PR, head and brief generation only.
 - **`process`** / **`command`** — run the checked brief with `reviewer.py run` below. It invokes the
   resolved command in a fresh process and enforces `review.timeout_seconds`.
 - **`inline`** — no mechanism is available on this machine. Review inline, and say so in the verdict:
@@ -41,7 +41,7 @@ it does **not** silently become an inline self-review. Fall back to inline, stam
 accordingly, and name the failure in the verdict.
 
 **If this brief already reached you, you ARE the resolved reviewer — do not re-resolve and do not
-dispatch again.** Resolution happens once, at the site that spawns the review.
+dispatch again.**
 
 Whatever the mechanism, the brief is the reviewer's ONLY input. `brief` prints to stdout, so redirect
 it and check the file, naming the scratch directory the maker can write:
@@ -62,14 +62,13 @@ python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/reviewer.py" run .sdlc /tmp/b
 ```
 
 It exits non-zero if the brief NAMES a shared scratch path — a file the maker can write and the
-reviewer would read is a maker→reviewer channel whatever the artifact is. It deliberately does **not**
+reviewer would read is a maker→reviewer channel. It deliberately does **not**
 flag implementation content: a breaker must never see the implementation, but a reviewer must — the
 diff is the artifact under review.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller — you
-have full repo access. A small change with a wide radius is the exact failure a review exists to catch;
-you cannot see it in the diff alone.
+have full repo access. A small change with a wide radius is what a review exists to catch.
 
 **Executor resolution (host-aware):**
 - **Claude Code + the `code-review` plugin installed** → prefer **`/code-review`** +

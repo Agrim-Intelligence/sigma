@@ -55,8 +55,8 @@ The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named 
 (goal `0007-fix-retry` → `.sdlc/plans/<goal-stem>.md`). Four things downstream read the file, not the
 conversation:
 
-- **`agrim-plan-review` runs author-blind** (`review.independent`) — a fresh reviewer that never saw
-  this session opens the plan from disk. A plan that exists only in chat cannot be independently
+- **`agrim-plan-review` is asked to run author-blind** (`review.independent`) — a fresh reviewer that
+  never saw this session opens the plan from disk; code cannot prove it did. A plan that exists only in chat cannot be independently
   reviewed at all; the reviewer arrives with nothing to read.
 - **The hard plan-gate** (`gates.hard_plan_gate`) refuses unplanned source at two points. On Claude
   Code the `PreToolUse` hook denies the EDIT unless a plan under `.sdlc/plans/` is fresher than

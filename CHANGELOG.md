@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Reviewer-independence claims say what the code proves, and no more** (#260). The independent-review row in `docs/enforcement.md` stays advice and now lists what the core does not prove (who called the host's task tool; a maker can record its own approving verdict; the route comes from config and session environment variables; the merge check reads the posted comment, not the evidence) and what it does bind (one PR, head and brief generation; evidence refused when the head or diff moved; result and evidence written once per generation; a post needs the current generation and an unchanged head). Sentences in the README, skills, doctor and config template that stated the maker rule as a guarantee now say it is asked, not proved. `tests/test_reviewer_independence_claims.py` pins the row and a short list of removed overclaims. No mechanism changed.
 - **The benchmark go threshold is an exact paired test that fits 15 tasks** (#502). The old rule (lower 95% bootstrap
   bound of the paired difference at least -5 points) passed a result with every task tied and one with 2 wins and no
   losses, yet failed 3 wins, 1 loss and 11 ties (lower bound -13.3 points), so it did not discriminate at this size.

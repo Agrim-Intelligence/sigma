@@ -160,7 +160,7 @@ which proposes standing-doc changes and parks them for your approval rather than
 
 **`dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779)`** answers a
 question no host-side chokepoint can enforce (a prior goal, #1703, found there is none): when a
-phase runs, did it actually run as its own **dispatched subagent** — the maker≠checker guarantee
+phase runs, did it actually run as its own **dispatched subagent** — the maker≠checker discipline
 `agrim-loop`'s own SKILL.md relies on per-phase subagents for — or did it silently run inline in the
 orchestrator instead? That regression has the exact "no errors, nothing happening" shape `AGENTS.md`'s
 LIVENESS property already names as the dangerous one: nothing crashes, nothing logs an error, the

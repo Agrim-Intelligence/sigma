@@ -58,7 +58,7 @@ the goal's tier in-process and can shell out to record it themselves, no code in
 inside the call that decides dispatch-vs-inline, on any host: there is no chokepoint to hook.
 **The consequence is not the same as resolve-step's, though**: a plan step resolved to the wrong
 model tier is a bounded cost/quality miss, self-correcting next time a human reads it. A phase that
-silently regresses from dispatched to inline breaks, with zero signal, the maker≠checker guarantee
+silently regresses from dispatched to inline breaks, with zero signal, the maker≠checker discipline
 — see the maker≠checker rule below, the reason per-phase subagents exist at all. Accepted here as a
 documented, permanent boundary, not built into code; detecting (never enforcing) the gap after the
 fact is tracked separately in #1779.
@@ -144,9 +144,9 @@ A refusal stops P1 until the source/draft is repaired. Keep the resulting
 `.sdlc/acceptance/<goal-stem>.md` unchanged; copy it into the goal worktree and commit it
 with plan/research. This step applies regardless of companion or portable executor.
 
-**The maker is never the checker (`config.review.independent`, default on).** Every review gate —
-plan-review, the pre-PR code review, and the post-PR review at step 6 — runs as a **fresh subagent
-that never saw the maker's context**. Dispatching it and waiting on it is the same blocking
+**The maker must not be the checker (`config.review.independent`, default on).**
+Every review gate — plan-review, the pre-PR code review, the post-PR review at step 6 — is asked to
+run as a **fresh subagent that never saw the maker's context**. Dispatching it and waiting on it is the same blocking
 dependency `loop.py verify`/`work.py merge` are — see the REQUIRED PATTERN at step 6, which covers
 this dispatch too: your very next action depends on its verdict, so dispatch it foreground/
 blocking rather than inventing a separate "wait" step. Give it the PROJECT, not the author:
@@ -155,15 +155,14 @@ plan-review|code-review|pr-review [--artifact <path|PR#>] > "/tmp/brief-$(basena
 assembles the pack into that file (`basename`: `$goal` is a path in local mode) — north-star +
 conventions + contracts + the goal + a pointer to the artifact — and you hand the subagent **only
 that**. So it re-derives blast radius from the whole repo and can *disagree*, instead of
-rubber-stamping the plan/diff it just wrote (which a lower-tier maker does — that is where a
-self-review adds nothing). A diff-only reviewer cannot see what a small change breaks two files
+rubber-stamping the plan/diff it just wrote (a lower-tier maker does). A diff-only reviewer cannot see what a small change breaks two files
 away; the brief's whole-repo grounding is the point. Where the host has no subagents this is **not**
 a degradation — run `python3 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use the
-mechanism it names (a fresh `process`, or the operator's `command`); every host reaches an
+mechanism it names (a fresh `process`, or the operator's `command`); every host asks for an
 author-blind reviewer by its own route. Only a machine where the resolver returns `inline` reviews
 inline, and that verdict must say so. With
 `review.independent: false` reviews run inline as before (the maker reviews its own work — only for a
-trivial solo repo where the ceremony isn't worth it).
+trivial solo repo).
 
 **Record the plan-review verdict before Implement** (`gates.plan_review`). The dispatching site —
 never the dispatched reviewer — records it from the main checkout (3a), before anything edits the

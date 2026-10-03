@@ -2170,7 +2170,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         # concern, not a board one — must not be gated on project.enabled.
         selfmerge = _self_merge_risk(gh_disc, _block(cfg, "work"), run)
         if selfmerge:
-            out.append(_chk("independent review actually enforced before auto-merge", False, selfmerge))
+            out.append(_chk("an approval from someone other than the author is required before auto-merge", False, selfmerge))
 
         # #2452: independent of work.enabled -- a human working the main checkout by hand strands a
         # branch exactly as easily as the loop can. repo_root is base.parent, inlined the same way
@@ -3505,7 +3505,7 @@ def _dispatch_compliance_state(base, cfg, now=None):
     chokepoint the host's own Task-tool dispatch decision passes through, on any host" finding).
     Cross-references two ALREADY-hardened, already-existing read primitives to answer the question
     #1703 left silent: did a phase the ledger says ran also get dispatched as its own subagent —
-    the maker!=checker guarantee SKILL.md's per-phase-subagent design exists for — or did it run
+    the maker!=checker discipline SKILL.md's per-phase-subagent design exists for — or did it run
     inline in the orchestrator with zero error, zero crash, the exact "no errors, nothing
     happening" shape AGENTS.md's LIVENESS property already names as the dangerous one (the
     five-day event-shipping freeze of 2026-08-22, "zero errors the whole time")?
@@ -4227,7 +4227,7 @@ def _review_independence_state(cfg, sdlc_dir=".sdlc"):
     mechanism is reported alongside it. The default keeps every existing single-argument caller."""
     if _block(cfg, "review").get("independent") is False:
         return "off (INLINE — the maker reviews its own work; a fresh reviewer is not spawned)"
-    return ("ON — a fresh, author-blind reviewer per gate, grounded in the north-star + whole repo"
+    return ("ON — asks for a fresh, author-blind reviewer per gate (advisory; unproved), grounded in the north-star + whole repo"
             + _resolved_mechanism(sdlc_dir))
 
 
@@ -4510,7 +4510,7 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("PR review gate (independent of branch protection)",
          _review_gate_state(wk),
          'config: "work": {"require_review": "approval"}  (off | changes | approval)'),
-        ("independent review (maker is never the checker)",
+        ("independent review (advisory; the code cannot prove who reviewed)",
          _review_independence_state(cfg, sdlc_dir),
          'config: "review": {"independent": true, "host": "auto", "command": "", "timeout_seconds": 900}'),
         ("skill selection vs platform built-ins",

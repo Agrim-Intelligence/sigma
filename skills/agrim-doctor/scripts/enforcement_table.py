@@ -127,10 +127,18 @@ EXTERNAL_CONTROLS = (
      "readme": "Strategy-alignment check"},
     {"control": "Independent review", "kind": "advice", "hosts": "all",
      "enabled_by": ("review.independent",), "settings": (),
-     "mechanism": "The skills ask the agent to dispatch it. An independent reviewer subagent is "
-                  "dispatched with an author-blind brief; the core binds the verdict to one PR, "
-                  "head and brief generation, and cannot prove the maker did not influence the "
-                  "reviewer.",
+     "mechanism": "The skills ask the agent to dispatch an independent reviewer with an "
+                  "author-blind brief; the core cannot prove the maker did not influence the "
+                  "reviewer. It does not observe who called the host's task tool, a maker can "
+                  "record its own approving verdict, the route comes from `review.host`, "
+                  "`review.command` and session environment variables alone, and the merge check "
+                  "reads the posted `sigma:approve`/`sigma:block` comment from any commenter, not "
+                  "the evidence, and the default `require_review: changes` does not require an "
+                  "approval at all. What it does prove, for a PR review: the brief digest, the PR and "
+                  "the head are bound to one generation; evidence is refused if the worktree head "
+                  "or diff moved; a generation's result and evidence are written once per "
+                  "generation, so a re-review needs a new one; a post is refused unless the "
+                  "evidence is the goal's current generation and the PR head is unchanged.",
      "readme": "Independent review (advisory)"},
     {"control": "Irreversible actions park", "kind": "advice", "hosts": "all",
      "enabled_by": (), "settings": ("gates.irreversible_actions", "gates.on_block"),

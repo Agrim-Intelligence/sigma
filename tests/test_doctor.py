@@ -3203,7 +3203,7 @@ def test_check_surfaces_self_merge_risk(tmp_path):
             return ""
         return ""
     checks = {c["name"]: c for c in d.check(base, run=run)}
-    assert checks["independent review actually enforced before auto-merge"]["ok"] is False
+    assert checks["an approval from someone other than the author is required before auto-merge"]["ok"] is False
 
 
 def test_check_surfaces_board_dup_risk(tmp_path):
@@ -3845,7 +3845,7 @@ def test_check_surfaces_unmapped_board_fields(tmp_path):
 
 def test_features_reports_independent_review_states(tmp_path):
     d = _doc()
-    row = "independent review (maker is never the checker)"
+    row = "independent review (advisory; the code cannot prove who reviewed)"
     # default (no block) reads as ON — separation is the default
     assert d._review_independence_state({}).startswith("ON")
     # explicit off is called out as the maker reviewing its own work
@@ -3853,6 +3853,7 @@ def test_features_reports_independent_review_states(tmp_path):
     # and it appears in the live dashboard
     base = _sdlc(tmp_path, {"review": {"independent": True}})
     rows = {name: state for name, state, _ in d.features(base)}
+    assert row in rows, "the doctor row must say the review is advisory"
     assert rows[row].startswith("ON")
 
 
