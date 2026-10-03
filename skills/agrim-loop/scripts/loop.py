@@ -2787,6 +2787,11 @@ def _prune_dead_session_entries(sdlc_dir, config):
     # temp names). The age fallback handles PID reuse and keeps repeated crashes
     # bounded without touching a normal in-progress atomic write.
     session_dir = _session_dir(sdlc_dir)
+    # This deletes (and `_session_locked` below creates a lock directory), and `glob` follows a link:
+    # a linked `state/sessions` or `state` would make it act on whatever that names, so it does
+    # nothing at all, exactly as `liveness_prune._sweep_sessions` already does (B6 #466).
+    if session_dir.is_symlink() or session_dir.parent.is_symlink():
+        return
     now = time.time()
     for temp in session_dir.glob("*.active.*"):
         try:

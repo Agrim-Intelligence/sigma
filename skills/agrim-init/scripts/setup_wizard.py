@@ -222,14 +222,21 @@ def write_dismissed(sdlc_dir, names):
     """Best-effort: a wizard that cannot persist a skip must still let the user proceed with
     their actual request this session -- it would just ask again next time, which is annoying,
     not broken. No-ops entirely (same silent posture) in a repo that has no `.sdlc/` yet -- see
-    `_adopted`."""
+    `_adopted`.
+
+    Only names in `_MODES` are kept (B6 #466): `wizard_status` ignores every other name, so one
+    could never suppress a step, and dropping it here bounds the file to `len(_MODES)` names by
+    code rather than by what the skill prose happens to pass. A non-string entry is dropped too
+    instead of raising out of `sorted`. Version skew: an older plugin rewriting this file drops a
+    name only a newer plugin knows, and the user is asked about that step once more."""
     if not _adopted(sdlc_dir):
         return
     path = _dismissed_path(sdlc_dir)
     try:
+        kept = sorted({n for n in names if isinstance(n, str) and n in _MODES})
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(sorted(names)), encoding="utf-8")
-    except OSError:
+        path.write_text(json.dumps(kept), encoding="utf-8")
+    except (OSError, TypeError):
         pass
 
 
