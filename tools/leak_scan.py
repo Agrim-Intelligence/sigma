@@ -65,7 +65,8 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     (3) DER TOKEN. A base64 or base64url token anywhere in a line whose first 24 characters decode
     to a private key's DER header (`SEQUENCE { INTEGER 0|1, SEQUENCE | INTEGER | OCTET STRING`:
     PKCS8 v1/v2, PKCS1 / DSA, SEC1), or with OpenSSH's `openssh-key-v1` constant; anything may follow
-    it and no span exempts it. Existing line-start handling still reads a LONGER run of `+` and `/`
+    it and no span exempts it. The token may also start right after a LITERAL backslash escape `\\n`,
+    `\\r` or `\\t` (a JSON string's newline; `\\r\\n` via its `\\n`). Public DER stays clean there. Existing line-start handling still reads a LONGER run of `+` and `/`
     only when the whole line, run
     included, is a (1) candidate line, 40+ base64 characters and nothing else: the run is then
     stripped before the DER header is read. MEASURED through the gesture (runs of 1-10 `+`, `/` and
@@ -234,9 +235,11 @@ _PLACEHOLDER_VALUE = re.compile(r"(?i)(?:your[-_ ].*|.*[-_]here|changeme|change[
 _BODY_LINE = re.compile(r"(?m)^(?:[ \t]*(?P<b>[A-Za-z0-9+/]{40,}={0,2})[ \t]*\r?$"
                         r"|[ \t]*(?:[^A-Za-z0-9\s]{1,3}[ \t]*){0,2}"
                         r"(?P<k>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
-#: A bounded base64/base64url token at a token boundary. `M` starts DER's outer SEQUENCE; OpenSSH's
-#: 20-character constant needs four following base64 characters to meet the 24-character minimum.
-_DER_TOKEN = re.compile(r"(?<![A-Za-z0-9+/_-])(?P<t>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA[A-Za-z0-9+/_-]{4,})")
+#: A bounded base64/base64url token at a token boundary: not preceded by a token character, OR directly
+#: after a LITERAL backslash escape `\n`, `\r` or `\t` (a JSON string's newline, whose `n` would otherwise
+#: read as a token character; `\r\n` is covered by its `\n`). Both lookbehinds are fixed-width.
+#: `M` starts DER's outer SEQUENCE; OpenSSH's 20-character constant needs four following base64 characters to meet the 24-character minimum.
+_DER_TOKEN = re.compile(r"(?:(?<![A-Za-z0-9+/_-])|(?<=\\[nrt]))(?P<t>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA[A-Za-z0-9+/_-]{4,})")
 #: The short last line of a P-256 SEC1 body (64, 64, 36 chars).
 _B64_TAIL = re.compile(r"(?m)[ \t]*[A-Za-z0-9+/]{28,39}={0,2}[ \t]*\r?$")
 #: A PEM/armor BEGIN label. Bounded (`{1,64}`) and dash-free so a line of `-----BEGIN ` repeated cannot

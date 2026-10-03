@@ -216,6 +216,12 @@ _row("mixed", "ec-under-header", "\n".join([_EC_PRIV, ""] + _EC), _kb(4))
 for rid, line in (("json", '{{"key":"{b}"}}'), ("shell", "KEY='{b}'"), ("yaml", "key: {b}")):
     _row("embedded", rid, line.format(b=_ED_DER[0]), _kb(2))
 
+# A JSON carrier holds a newline as a LITERAL backslash + n/r/t, so the character before the token is the
+# escape's letter, not a boundary. Runtime-built; nothing contiguous.
+for rid, esc in (("json-esc-n", "\\n"), ("json-esc-r", "\\r"), ("json-esc-t", "\\t"), ("json-esc-rn", "\\r\\n")):
+    _row("embedded", rid, '{{"k":"x{e}{b}"}}'.format(e=esc, b=_ED_DER[0]), _kb(2))
+_row("der", "json-esc-n-public", '{{"k":"x{e}{b}"}}'.format(e="\\n", b=_der_text("spki-ec", _NOT_PRIVATE)[0]), [])
+
 
 def _run_batch(tmp_path_factory, rows):
     """ONE scratch repo holding every row, ONE run of the documented gesture: (proc, {path: ["<line>: <rule>"]})."""
