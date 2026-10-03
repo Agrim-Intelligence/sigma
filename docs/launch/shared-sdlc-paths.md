@@ -14,7 +14,7 @@ predecessor plugin and replaces it, with a notice and no refusal, so both plugin
 | sha256 before the scan | `712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6` |
 | sha256 after the scan | `712a8b6cfac320050be9dd241f21cba42b123afe8d54c7527c4c31384f4a5bf6` |
 | Changed | no (the tool exits 2 without writing anything if the two differ) |
-| Sigma tree | commit `4c8562f` (`skills/` and `hooks/` are the scanned trees) |
+| Sigma tree | base commit `4c8562f` (the PR adds only tools, docs and tests, so `skills/` and `hooks/`, the scanned trees, are those of this commit) |
 
 The hash is `sha256` over one line per file, `relative path NUL sha256(file bytes)`, files sorted globally by relative path, a symlink
 hashed by its target text. The predecessor is read only: it is parsed, never imported, and the sample runs execute a
@@ -43,8 +43,8 @@ that no state was damaged, and it does not cover `work.enabled`, the ledger, fea
 - **different-format with two writers, corruption demonstrated: `.sdlc/features/index.json`.** Sigma's registry index
   carries schema id `sigma/features@1`; the predecessor's reads none of it. The predecessor's own `feature_sync.py fold`
   then replaced an `index.json` holding one Sigma unit with an empty registry in its own schema id, exiting 0, and Sigma read
-  zero units. Filed as **#514** (`launch:blocker`, `readiness`, class B1 candidate, queued, not promoted; the owner confirms
-  the class). Not claimed: only this CLI path was run. The predecessor's module-level `write_unit` also overwrote a
+  zero units. Filed as **#514** (`launch:blocker`, `readiness`, class B1 candidate, filed queued, never promoted by this goal; the owner confirms
+  the class, and its labels may have moved since). Not claimed: only this CLI path was run. The predecessor's module-level `write_unit` also overwrote a
   Sigma-schema unit shard when called directly (`.sdlc/features/units/*.json`, verdict different-format, corruption not
   probed); #514 covers both.
 - **different-format, corruption not demonstrated: `.sdlc/config.json`.** The key sets differ, each side having keys the
@@ -62,9 +62,10 @@ that no state was damaged, and it does not cover `work.enabled`, the ledger, fea
   from other names is not found.
 - The destination resolver (`growth_audit.py`'s) misses `os.replace` onto a path, `shutil.copy`, `rename`, and a
   `Path(a, "state", name)` built with commas (measured by a post-PR reviewer). A backstop covers part of that: a new
-  top-level function or method that holds the predecessor-written file's own name as ONE string constant inside it and
-  makes a call from a fixed write-ish list (`write_text`, `open`, `replace`, `rename`, `copy*`, `move`, `mkdir`, `touch`,
-  `dump`, `write`, `symlink`, `mkstemp` and a few more) is refused, whatever the write method among those. It does NOT see:
+  function (nested, in an `if`/`try` block, async or a method included) that holds the predecessor-written file's own name as ONE string constant inside it and
+  makes a call from a fixed write-ish list (`write_text`, `write_bytes`, `open`, `replace`, `rename`, `copy`, `copy2`, `copyfile`,
+  `copyfileobj`, `copytree`, `move`, `mkdir`, `touch`, `dump`, `write`, `writelines`, `symlink`, `link`, `fdopen`,
+  `mkstemp`) is refused, whatever the write method among those. It does NOT see:
   a write at module level or in a lambda; a name held in a module constant, class attribute or returned by a helper; a name
   built by concatenation, an f-string or `join`; a full-path string (the match is on the bare file name); a write call not
   on that list (`symlink_to`, `truncate`, `sqlite3.connect`, a logging file handler); any wildcard-named file such as
@@ -89,6 +90,8 @@ python3 tools/readiness/shared_paths.py scan --sigma . --predecessor-dir <predec
 scenario runs (verdicts then stop at identical-writer or unsampled).
 
 ## The guard
+
+**Contract.** a best-effort static scan that detects the named write forms below. It does NOT detect: a path built at run time or from config, environment or a directory listing; a write through a helper module the resolver cannot follow; a subprocess or shell write; a shell script under `hooks/`; a destination held in a module constant, class attribute, helper return, local alias, concatenation, f-string or `join`; a write call outside the fixed list; a wildcard-named file through the backstop; a second write inside an already vetted function; anything under a `tests` path component, `*.pyw` or an extensionless script; and any tree outside `skills/` and `hooks/`. A passing check means every site the scan can resolve is vetted. It does not mean Sigma has no new writer.
 
 `tests/fixtures/predecessor_written_paths.json` lists every path the predecessor writes (from this scan) and, for each
 one Sigma also writes, an entry: `compatible: true` with a reason, or `compatible: false` with the filed issue, plus

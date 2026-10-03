@@ -9,6 +9,15 @@ The predecessor is never needed here: the fixture carries what its scan found. T
 (`tools/readiness/shared_paths.py scan`) needs the owner's installed copy and is run by hand; see
 docs/launch/shared-sdlc-paths.md.
 
+GUARD CONTRACT (one claim, no more):
+a best-effort static scan that detects the named write forms below. It does NOT detect: a path built at run
+time or from config, environment or a directory listing; a write through a helper module the resolver cannot follow; a
+subprocess or shell write; a shell script under `hooks/`; a destination held in a module constant, class attribute,
+helper return, local alias, concatenation, f-string or `join`; a write call outside the fixed list; a wildcard-named file
+through the backstop; a second write inside an already vetted function; anything under a `tests` path component, `*.pyw`
+or an extensionless script; and any tree outside `skills/` and `hooks/`. A passing check means every site the scan can
+resolve is vetted. It does not mean Sigma has no new writer.
+
 Timing: the real-tree writer scan is done once per process (about 10 s); the two CLI controls each scan
 a scratch copy of skills/ and hooks/ (about 10 s each).
 """
@@ -375,6 +384,7 @@ VARIANTS = {
     "os.replace onto the path": "import os\n    os.replace('tmp', str(sdlc_dir / 'state' / 'setup-wizard-dismissed.json'))\n",
     "shutil.copy to the path": "import shutil\n    shutil.copy('a', str(sdlc_dir) + '/state/' + 'setup-wizard-dismissed.json')\n",
     "comma-built Path write": "from pathlib import Path\n    Path(sdlc_dir, 'state', 'setup-wizard-dismissed.json').write_text('[]')\n",
+    "copytree to the path": "import shutil\n    shutil.copytree('a', 'setup-wizard-dismissed.json')\n",
     "rename onto the path": "from pathlib import Path\n    Path('t').rename(Path(sdlc_dir, 'state', 'setup-wizard-dismissed.json'))\n",
 }
 
@@ -388,6 +398,17 @@ def test_control_write_methods_the_destination_resolver_misses_are_caught_by_the
     assert tool.check(scratch, data, writers=_real_writers(), literals=base) == []
     for label, body in VARIANTS.items():
         wizard.write_text(original + "\n\ndef _control_variant(sdlc_dir):\n    " + body, encoding="utf-8")
+        found = tool.check(scratch, data, writers=_real_writers(),
+                           literals=tool.literal_sites(scratch, tool.literal_basenames(data["predecessor_written"])))
+        assert any("_control_variant" in p for p in found), label
+    nests = {
+        "inside an if block": "\nif True:\n    def _control_variant(sdlc_dir):\n        open('setup-wizard-dismissed.json', 'w')\n",
+        "inside a try block": "\ntry:\n    def _control_variant(sdlc_dir):\n        open('setup-wizard-dismissed.json', 'w')\nexcept ImportError:\n    pass\n",
+        "an async def": "\nasync def _control_variant(sdlc_dir):\n    open('setup-wizard-dismissed.json', 'w')\n",
+        "a nested function": "\ndef _outer():\n    def _control_variant(sdlc_dir):\n        open('setup-wizard-dismissed.json', 'w')\n",
+    }
+    for label, code in nests.items():
+        wizard.write_text(original + code, encoding="utf-8")
         found = tool.check(scratch, data, writers=_real_writers(),
                            literals=tool.literal_sites(scratch, tool.literal_basenames(data["predecessor_written"])))
         assert any("_control_variant" in p for p in found), label

@@ -14,6 +14,14 @@ temporary copy of DIR, never from DIR itself.
 the committed list of paths the predecessor writes, and exits 2 for any site that has no vetted
 entry (`compatible: true` with a reason, or `compatible: false` naming a filed issue).
 
+GUARD CONTRACT: a best-effort static scan that detects the named write forms below. It does NOT detect: a path built at run
+time or from config, environment or a directory listing; a write through a helper module the resolver cannot follow; a
+subprocess or shell write; a shell script under `hooks/`; a destination held in a module constant, class attribute,
+helper return, local alias, concatenation, f-string or `join`; a write call outside the fixed list; a wildcard-named file
+through the backstop; a second write inside an already vetted function; anything under a `tests` path component, `*.pyw`
+or an extensionless script; and any tree outside `skills/` and `hooks/`. A passing check means every site the scan can
+resolve is vetted. It does not mean Sigma has no new writer.
+
 WHAT A STATIC SCAN CANNOT SEE (stated here, repeated in docs/launch/shared-sdlc-paths.md): a path
 assembled at run time from data (a config value, an environment variable, a directory listing); a
 destination handed through a helper whose parameter this resolver cannot follow; a file written by
@@ -174,7 +182,7 @@ def supplementary_writers(root):
 
 
 _WRITEISH = {"write_text", "write_bytes", "open", "replace", "rename", "copy", "copy2", "copyfile",
-             "copyfileobj", "move", "mkdir", "touch", "dump", "write", "writelines", "symlink", "link",
+             "copyfileobj", "copytree", "move", "mkdir", "touch", "dump", "write", "writelines", "symlink", "link",
              "fdopen", "mkstemp"}
 
 
@@ -193,9 +201,7 @@ def literal_sites(root, basenames):
         if not rel.startswith(SCOPES) or "tests" in path.relative_to(root).parts:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        owners = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-        owners += [m for c in tree.body if isinstance(c, ast.ClassDef)
-                   for m in c.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        owners = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
         for function in owners:
             docstring = function.body[0].value if (
                 function.body and isinstance(function.body[0], ast.Expr)
