@@ -445,18 +445,37 @@ def _try_acquire_claim_lock(sdlc_dir, goal):
         path = _claim_lock_path(sdlc_dir, goal)
     except ValueError:
         return _LOCK_UNAVAILABLE             # unsafe goal — same fail-open posture as an OSError
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
-    except OSError:
-        return _LOCK_UNAVAILABLE             # can't even open it — fail open, see docstring
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _write_claim_lock_liveness(fd)
+    # #464: the liveness sweep (and `reclaim_stale_claim_lock`) unlink stale lock files. A lock won on
+    # an inode that was unlinked between our `open` and our `flock` would let a second process create
+    # a fresh file and win too, so after winning, the fd must still be the inode AT the path (checked
+    # BEFORE the liveness stamp). A swapped file is retried, bounded; exhausted retries read as
+    # contended (`None`), never as a win.
+    for _attempt in range(3):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
+        except OSError:
+            return _LOCK_UNAVAILABLE         # can't even open it — fail open, see docstring
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return None                      # a live sibling holds it right now
+        try:
+            held, here = os.fstat(fd), os.lstat(str(path))
+            same = (held.st_dev, held.st_ino) == (here.st_dev, here.st_ino)
+        except OSError:
+            same = False                     # unlinked under us
+        if not same:
+            os.close(fd)
+            continue
+        try:
+            _write_claim_lock_liveness(fd)
+        except OSError:
+            os.close(fd)
+            return None
         return fd
-    except OSError:
-        os.close(fd)
-        return None                          # a live sibling holds it right now
+    return None
 
 
 def _write_claim_lock_liveness(fd):
@@ -4321,6 +4340,10 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             _load("goal_state_prune").after_done(sdlc_dir, agent_alive=agent_alive)
         except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
             print(f"loop.py record: per-goal state cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
+        try:                                  # #464: stale claim locks and old claim markers
+            _load("liveness_prune").after_start_or_done(sdlc_dir)
+        except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
+            print(f"loop.py record: claim marker sweep skipped for {goal!r} ({exc})", file=sys.stderr)
     return outcome
 
 
@@ -6050,6 +6073,10 @@ def _dispatch(argv):
         # above, so a long-lived repo's registry directory does not grow without bound just because
         # nothing else ever reads it between runs.
         _prune_dead_session_entries(argv[2], config)
+        try:                                      # #464: stale claim locks and old claim markers
+            _load("liveness_prune").after_start_or_done(argv[2], config=config)
+        except Exception as exc:                  # noqa: BLE001 - housekeeping never blocks a start
+            print(f"loop.py start: claim marker sweep skipped ({exc})", file=sys.stderr)
         return 0
     # #712: a standalone reset of JUST the run budget cursor -- unlike `start` above, no config-
     # warning prints and no session-marker write, so a mid-session "begin a fresh run" (or an
