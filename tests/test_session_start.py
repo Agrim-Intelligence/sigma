@@ -178,7 +178,7 @@ def test_enabled_injects_session_start_context(tmp_path):
     d = json.loads(out)                                  # must be valid JSON
     assert d["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     ctx = d["hookSpecificOutput"]["additionalContext"]
-    assert "/agrim-loop" in ctx and "north-star" in ctx and "reviewer is never the author" in ctx
+    assert "/agrim-loop" in ctx and "north-star" in ctx and "reviewer should not be the author" in ctx
 
 
 def test_missing_north_star_adds_a_warning(tmp_path):

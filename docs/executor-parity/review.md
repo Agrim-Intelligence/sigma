@@ -36,8 +36,8 @@ on diff-review correctness, finding format, evidence discipline and the `CLAUDE.
 **Worse on two, and they share a cause: both of the companions' strengths are mechanisms, not
 prose.** `requesting-code-review` makes independence structural — a fresh subagent that never sees the
 session's history — and mandates review *after each task*, not once at the end. `agrim-review` asserts
-independence in its opening line and gets it for real only in the loop, where `review.independent`
-dispatches a subagent per gate; run interactively on a host without subagents, the reviewer is the
+independence in its opening line and asks for it only in the loop, where `review.independent`
+asks for a subagent per gate, which the code cannot prove was independent; run interactively on a host without subagents, the reviewer is the
 author holding a fresh brief, and the skill's "you did not write this code" is then a claim in prose —
 the exact thing its own §"Before you report it" bans. Cadence is unaddressed either way.
 

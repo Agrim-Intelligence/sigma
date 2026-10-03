@@ -128,7 +128,7 @@ the PR. Self-review before the PR is never enough; this is a **fresh, adversaria
 real, mergeable diff** (post-commit, post-CI). **Resolve the mechanism, never assert it** — `python3
 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use what it names (`subagent` /
 `process` / `command`; only a machine where it returns `inline` reviews inline, and that verdict
-must say so). The maker never clears its own PR. Fed the reviewer brief for this gate:
+must say so). The skills ask that the maker not clear its own PR; code cannot stop it. Fed the reviewer brief for this gate:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for pr-review
 --artifact <PR#>` (see the maker≠checker rule, step 3), running `/code-review` on the PR, else
 `/agrim-review` in diff mode. That subagent decides the verdict below. **Create a generation and

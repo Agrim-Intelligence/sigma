@@ -95,9 +95,9 @@ Then repeat until the helper says stop:
    via its **executor**. `$goal` is a **file path** in local mode (read the file) or a **GitHub
    issue number** in github mode (`gh issue view "$goal"` to read it).
 
-   **The maker is never the checker (`config.review.independent`, default on).** Every review gate
-   (plan-review, pre-PR code review, post-PR review at step 6) runs as a **fresh subagent that never
-   saw the maker's context**, given the PROJECT, not the author: `review_context.py brief .sdlc
+   **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
+   Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a
+   **fresh subagent that never saw the maker's context**, given the PROJECT, not the author: `review_context.py brief .sdlc
    "$goal" --for plan-review|code-review|pr-review [--artifact <path|PR#>] >
    "/tmp/brief-$(basename "$goal" .md).md"` writes the pack to that file; hand over **only that**.
    No subagents is **not** a degradation: use the mechanism `reviewer.py resolve .sdlc` names. Only
@@ -216,7 +216,7 @@ Then repeat until the helper says stop:
    **Then REVIEW the PR you just opened, if `config.work.require_review` is set** — a real review AFTER
    the PR. Self-review before the PR is never enough. **Resolve the mechanism, never assert it** —
    `reviewer.py resolve .sdlc` and use what it names, fed the `--for pr-review --artifact <PR#>`
-   brief. The maker never clears its own PR. **No human approves — the loop reviews and clears its
+   brief. The skills ask that the maker not clear its own PR; code cannot stop it. **No human approves — the loop reviews and clears its
    own PR:**
    - **Evidence-bound:** generation → reviewer → `review-evidence` (`references/running.md`).
    - **No blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve`.

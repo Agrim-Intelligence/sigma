@@ -75,7 +75,7 @@ def test_hook_uses_pytest_interpreter_when_fallback_python_is_broken(tmp_path, m
     result = _run_hook(project, path_prefix=str(tools))
 
     assert result.returncode == 0, result.stderr
-    expected = "graphify installed" if wizard else "reviewer is never the author"
+    expected = "graphify installed" if wizard else "reviewer should not be the author"
     assert expected in _ctx(result), (result.stdout, result.stderr)
     assert not broken_called.exists(), "the broken fallback interpreter ran"
 
@@ -187,7 +187,7 @@ def test_a_headless_session_still_gets_the_opt_in_policy_brief(tmp_path):
     ctx = _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path),
                          SIGMA_RUN_ID="supervise-123-456-789"))
     assert "agrim-wizard" not in ctx
-    assert "reviewer is never the author" in ctx       # the policy brief, unchanged
+    assert "reviewer should not be the author" in ctx       # the policy brief, unchanged
 
 
 def test_dual_fire_condition_still_emits_exactly_one_json_object(tmp_path):

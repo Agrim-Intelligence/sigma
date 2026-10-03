@@ -2151,7 +2151,7 @@ def test_session_start_policy_brief_still_runs_beside_the_notice(tmp_path):
     repo = _repo(tmp_path)
     (repo / ".sdlc" / "config.json").write_text('{"session_start":{"enabled":true}}')
     ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
-    assert len(_notices(ctx)) == 1 and "reviewer is never the author" in ctx
+    assert len(_notices(ctx)) == 1 and "reviewer should not be the author" in ctx
 
 
 def test_cli_reports_and_exits_0(tmp_path):

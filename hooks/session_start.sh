@@ -315,7 +315,7 @@ policy = (
     "Goal -> Research -> Plan -> Plan-Review -> Implement -> Review -> Retrospective. "
     "Run /agrim-loop to drain the backlog autonomously, or /agrim-goal for a single goal. "
     "Ground every change in .sdlc/context/north-star.md and the repo's CLAUDE.md. "
-    "Plan before editing source; every changed behavior carries a test; the reviewer is never the author."
+    "Plan before editing source; every changed behavior carries a test; the reviewer should not be the author."
 )
 if warnings:
     policy = "Sigma setup notes: " + " ".join(warnings) + "\n\n" + policy
