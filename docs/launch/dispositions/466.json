@@ -1,0 +1,184 @@
+[
+  {
+    "pattern": ".sdlc/*",
+    "issue": "#466",
+    "decision": "not a store (prose; whole-tree rollup)",
+    "pruner_or_cap": "none: the row is the .gitignore rule `.sdlc/*` quoted in agrim-goal-design's reference, which names no writer; the byte figure is the sum of every .sdlc child, each classified by its own row or slice (this checkout: 1,057,688 KiB, of which evidence/ 563,260, work/ 469,056, state/ 22,956 by du -sk of the direct children)",
+    "evidence": "du -sk of .sdlc's direct children (command in the doc); docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/.sdlc/",
+    "issue": "#466",
+    "decision": "not a store (prose warning); a mistaken scaffold is one-time and idempotent",
+    "pruner_or_cap": "none: agrim-wizard's skill warns that passing .sdlc as the repo root to run_scaffold would create it; measured: one mistaken scaffold writes 7 files, 83,798 B, and repeating it creates nothing (scaffold is skip-if-exists)",
+    "evidence": "sdlc_init.scaffold run twice into a scratch .sdlc (snippet in the doc); docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/config.json",
+    "issue": "#466",
+    "decision": "capped (operator-owned singleton rewritten in place; never pruned)",
+    "pruner_or_cap": "one file the operator owns: verify_detect.write_verify and setup.write_cfg rewrite it in place keeping every other key (atomic replace in the first); the scaffolded template is 76,934 B and this checkout's own is 1,106 B; Sigma never deletes it, deleting it turns Sigma off; not under a host configuration root",
+    "evidence": "skills/agrim-init/scripts/verify_detect.py write_verify, skills/agrim-setup/scripts/setup.py write_cfg; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state",
+    "issue": "#466",
+    "decision": "directory rollup",
+    "pruner_or_cap": "directory rollup, no writer of its own: the sum of its children, each classified by its own row or sibling slice (on the measured checkout state/ is 22,956 KiB, of which time/ 13,424 and verify/ 4,048 by du -sk of its direct children); nothing is pruned at this level",
+    "evidence": "du -sk of .sdlc/state's direct children (command in the doc); docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/",
+    "issue": "#466",
+    "decision": "directory rollup",
+    "pruner_or_cap": "directory rollup, no writer of its own: the sum of its children, each classified by its own row or sibling slice (on the measured checkout state/ is 22,956 KiB, of which time/ 13,424 and verify/ 4,048 by du -sk of its direct children); nothing is pruned at this level",
+    "evidence": "du -sk of .sdlc/state's direct children (command in the doc); docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/STATE.md",
+    "issue": "#466",
+    "decision": "capped (one file; run lists capped at 4096 attempts, reset by start_run)",
+    "pruner_or_cap": "one file rewritten atomically under STATE.md.lock; its three run lists (phase ends, token credits, codex credits) each refuse a 4097th attempt with a message to start a fresh session and are reset by start_run: 340 B after start_run, 340,314 B at the cap through the real record_phase_end (19 s for 4,096 attempts on one machine)",
+    "evidence": "tests/test_b6_466.py::test_state_md_run_lists_stop_at_the_cap_and_start_run_resets_them (the cap patched to 3; the 4096 figure and the 340,314 B and 19 s are measured by snippet D in the doc, not by a test); docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/agent-watch-cursor.json",
+    "issue": "#466",
+    "decision": "intentionally unbounded (opt-in agent_watch); ceiling = confirmed agent deaths, 25 B per key",
+    "pruner_or_cap": "one JSON list of goal:thread:pid strings, one per dead registered agent notified (19 B measured, ceiling 25 B per key); keys come from agent marker directories, not ledger entries, and are never retired when a claim closes, so the ceiling is the number of confirmed agent deaths; reclaim: delete the file (one repeat notification per key, self-healing); retirement of closed-claim keys is queued as #490",
+    "evidence": "tests/test_b6_466.py::test_cursor_bytes_per_key_stay_under_the_documented_ceilings; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/autowatch-spend.json",
+    "issue": "#466",
+    "decision": "capped (rolling 7-day window, pruned on every write)",
+    "pruner_or_cap": "one file; every write drops records older than SPEND_WINDOW_SECONDS (7 days) before appending one 91 B record, so its size is the call rate times the window, not time; the rate is bounded by the driven-run cadence and hop limit (not measured live); a corrupt file is rewritten from empty",
+    "evidence": "tests/test_b6_466.py::test_spend_files_drop_records_older_than_their_window; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/channel-notify-cursor.json",
+    "issue": "#466",
+    "decision": "intentionally unbounded (opt-in channel webhook); ceiling = ledger candidates pushed, 60 B per key",
+    "pruner_or_cap": "one JSON map of ledger candidate id to {hop, attempts}, one entry per candidate pushed (45 B measured, ceiling 60 B per key); keys come from ledger entries, so at most the entries the ledger holds (about 250 B each); reclaim: delete the file (one repeat push per candidate, self-healing); key retirement queued as #490",
+    "evidence": "tests/test_b6_466.py::test_cursor_bytes_per_key_stay_under_the_documented_ceilings; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/coexist.notice",
+    "issue": "#466",
+    "decision": "capped (zero-byte marker, touched in place)",
+    "pruner_or_cap": "a zero-byte marker touched in place when the coexistence notice fires; one file, mtime is the only state; not under a host configuration root",
+    "evidence": "skills/agrim-loop/scripts/coexist.py _mark and _mark_fresh; tests/test_coexist.py::test_gate_admits_with_one_notice_naming_the_uninstall_command; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/comment-watch-cursor.json",
+    "issue": "#466",
+    "decision": "intentionally unbounded (opt-in comment_watch); ceiling = goals with an open claim, 800 B per goal",
+    "pruner_or_cap": "one JSON map of goal to at most 20 comment ids, replaced (not appended) per goal on every tick (630 B per goal measured at 20 ids, ceiling 800 B per goal); keys are goals with an open ledger claim and are never retired when a claim closes, so the ceiling is the goals ever claimed; reclaim: delete the file (re-notified comments are collapsed by the watch cursor's signature); key retirement queued as #490",
+    "evidence": "tests/test_b6_466.py::test_cursor_bytes_per_key_stay_under_the_documented_ceilings; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/drift.meta.json",
+    "issue": "#466",
+    "decision": "capped (one watermark record overwritten in place)",
+    "pruner_or_cap": "one 58 B {schema, swept_at} record rewritten by each sweep; a failed write costs one extra sweep",
+    "evidence": "tests/test_b6_466.py::test_singleton_writers_rewrite_one_small_record_in_place; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/embeddings.json",
+    "issue": "#466",
+    "decision": "capped (2,000 entries, evict oldest; bytes depend on embedder dimension)",
+    "pruner_or_cap": "one identity per file (a provider or model swap discards the old generation) and evict-oldest past _EMBED_CACHE_MAX_ENTRIES = 2,000 entries, opt-in (backlog_check.embed.enabled, default off); the cap is entries, not bytes: 7.8, 31 and 62 KB per entry at 384, 1536 and 3072 dimensions = 15.6, 62.3 and 124.6 MB at the cap, and 87, 341 and 687 ms of json.loads on every pick (measured with a fake embedder, no real provider); reclaim: delete the file (re-embeds, which is paid); a dimension-derived byte ceiling is queued as #491",
+    "evidence": "tests/test_backlog_check.py::test_embed_cache_caps_entries_and_evicts_oldest and ::test_evict_oldest_drops_earliest_inserted_keys_first; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/feature-judge-spend.json",
+    "issue": "#466",
+    "decision": "capped (rolling 24-hour window, pruned on every write)",
+    "pruner_or_cap": "one file; every write drops records older than SPEND_WINDOW_SECONDS (24 hours) before appending one 67 B record; the daily dollar ceiling gates the call rate (not measured live)",
+    "evidence": "tests/test_b6_466.py::test_spend_files_drop_records_older_than_their_window and tests/test_feature_judge.py::test_record_spend_appends_and_prunes; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/inbox.md",
+    "issue": "#466",
+    "decision": "intentionally unbounded between loop picks; ceiling = items addressed to the operator, 600 B per item",
+    "pruner_or_cap": "watch.tick appends one block per tick that has items (196 to 227 B per item in one batch, 517 B per item at one item per tick because the 450 B header repeats, ceiling 600 B per item; about 50 KB a day at 96 ticks, derived) and loop.py next reads, prints and clears it, so it is bounded by the items addressed to the operator since the last pick, about 2x the ledger bytes of those items; reclaim: loop.py next, or delete the file (the cursor has advanced so deleted items do not resurface, and the ledger stays the durable record); a hold-at-cap was designed and withdrawn after plan review found it unsound as a small change: bounded delivery is queued as #490",
+    "evidence": "tests/test_b6_466.py::test_inbox_bytes_per_item_stay_under_the_ceiling_and_a_loop_read_reclaims_them; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/kg-refresh.json",
+    "issue": "#466",
+    "decision": "capped (one record overwritten in place; builder-failure detail cut to 500 characters)",
+    "pruner_or_cap": "one record {at, ok, ran, detail} rewritten by each refresh; detail is cut to 500 characters when the builder ran and failed (565 B at that bound); the success detail is a fixed sentence plus the output root, and the could-not-run-the-builder detail carries an OS error message that is not cut (short in practice, not measured)",
+    "evidence": "tests/test_b6_466.py::test_singleton_writers_rewrite_one_small_record_in_place and tests/test_kg.py::test_refresh_records_the_builders_failure_so_it_outlives_the_goal; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/kg-warned.stamp",
+    "issue": "#466",
+    "decision": "capped (zero-byte marker, touched in place)",
+    "pruner_or_cap": "a zero-byte stamp touched in place once a day when the graph is stale; one file, mtime is the only state",
+    "evidence": "tests/test_kg.py::test_warn_fires_at_most_once_a_day; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/ledger-delivery-attempt",
+    "issue": "#466",
+    "decision": "capped (zero-byte marker, touched in place)",
+    "pruner_or_cap": "a zero-byte marker touched in place by loop._ensure_ledger_delivery, at most one real attempt per cooldown window; one file, mtime is the only state",
+    "evidence": "tests/test_loop.py::test_ensure_ledger_delivery_cooldown_bounds_repeated_attempts and ::test_ensure_ledger_delivery_retries_once_the_cooldown_elapses; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/owner.json",
+    "issue": "#466",
+    "decision": "capped (one 53 B file rewritten only when its body differs)",
+    "pruner_or_cap": "one fixed {schema, plugin} body written by atomic replace and skipped when already identical (53 B); not under a host configuration root",
+    "evidence": "tests/test_b6_466.py::test_singleton_writers_rewrite_one_small_record_in_place and tests/test_coexist.py::test_write_owner_is_atomic_and_idempotent; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/reconcile.meta.json",
+    "issue": "#466",
+    "decision": "capped (one watermark record overwritten in place)",
+    "pruner_or_cap": "one 62 B {schema, swept_at} record rewritten by each reconcile sweep; an unreadable file reads as due, so a lost file costs one extra sweep",
+    "evidence": "tests/test_b6_466.py::test_singleton_writers_rewrite_one_small_record_in_place and tests/test_loop.py::test_reconcile_sweep_treats_a_corrupt_watermark_as_due; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/setup-wizard-cache.json",
+    "issue": "#466",
+    "decision": "capped (one record overwritten in place)",
+    "pruner_or_cap": "one 56 B {checked_at, needs_wizard} record; written only in a repo that has adopted Sigma; an expired or unreadable cache just runs the real check again",
+    "evidence": "tests/test_b6_466.py::test_singleton_writers_rewrite_one_small_record_in_place and tests/test_setup_wizard.py::test_an_expired_cache_runs_the_real_check_again; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/setup-wizard-dismissed.json",
+    "issue": "#466",
+    "decision": "capped (at most one entry per wizard check, enforced in code)",
+    "pruner_or_cap": "write_dismissed keeps only names in _MODES (8 modes, 201 B with all of them) and drops non-string entries instead of raising; wizard_status already ignored every other name, so behaviour is unchanged; before this slice the bound rested on skill prose; version skew: an older plugin rewriting the file drops a newer plugin's mode, which is asked about once more; reclaim: delete the file",
+    "evidence": "tests/test_b6_466.py::test_wizard_dismissed_file_holds_only_known_check_names; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/slack-commands.heartbeat.json",
+    "issue": "#466",
+    "decision": "capped (one record overwritten in place; removed on clean exit)",
+    "pruner_or_cap": "one {pid, last_seen} record rewritten on every confirmed Slack activity by atomic replace and removed by release_single_instance on a clean exit; a stale one is reclaimed by the next listener",
+    "evidence": "tests/test_slack_commands_listen.py::test_write_heartbeat_writes_pid_and_last_seen and ::test_acquire_single_instance_reclaims_when_the_heartbeat_is_stale; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/slack-commands.pid",
+    "issue": "#466",
+    "decision": "capped (one pid written on start, removed on clean exit)",
+    "pruner_or_cap": "one pidfile written under single-instance acquisition and removed on a clean exit; a stale one (dead pid, stale heartbeat) is reclaimed by the next listener, no human step",
+    "evidence": "tests/test_slack_commands_listen.py::test_acquire_single_instance_succeeds_and_writes_pid_and_heartbeat; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": ".sdlc/state/slack-commands.stop",
+    "issue": "#466",
+    "decision": "capped (zero-byte marker the operator creates; the listener never writes it)",
+    "pruner_or_cap": "a zero-byte stop file the operator creates with touch (skills/agrim-loop/SLACK_COMMANDS.md); the listener only checks that it exists and never writes or deletes it, so it is one file at most and the operator removes it before the next start; prose-only writer, no Sigma code creates it",
+    "evidence": "tests/test_slack_commands_listen.py::test_stop_requested_reflects_the_stop_file; docs/launch/b6-singletons-and-home.md"
+  },
+  {
+    "pattern": "<home>/",
+    "issue": "#466",
+    "decision": "out of scope (host-owned); Sigma never prunes a host configuration root",
+    "pruner_or_cap": "the scan row is tools/onboarding_control.py's isolated scratch HOME (iso/<host>/home) inside a tempfile.mkdtemp root that the tool removes in a finally unless --keep; the real profile is only hashed read-only (real_profile_untouched); no Sigma pruner reaches a path outside the project's own .sdlc, pinned by the home-root control over nine pruners with a decoy host root reachable only through links and records, which found and fixed two escapes (review-copy cleanup through a linked .sdlc/evidence, the session-marker prune through a linked state/sessions)",
+    "evidence": "tests/test_b6_466.py::test_no_pruner_acts_outside_the_project_sdlc and ::test_a_symlinked_evidence_root_is_not_followed_by_review_copy_cleanup; docs/launch/b6-singletons-and-home.md"
+  }
+]

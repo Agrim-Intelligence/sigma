@@ -6057,6 +6057,14 @@ def prune_terminal_review_copies(sdlc_dir, goal):
     try:
         if evidence.is_symlink() or not evidence.is_dir():
             return []
+        # `is_symlink()` above sees only the LAST component. A link anywhere above it (`.sdlc/evidence`
+        # itself) would send the `rmtree` below into whatever it names, so the directory must resolve
+        # to exactly where `.sdlc/evidence/<goal>` says it is. Both sides resolve, so a legitimately
+        # relocated `.sdlc` still passes; a link inside it does not (B6 #466).
+        if evidence.resolve() != pathlib.Path(sdlc_dir).resolve() / "evidence" / stem:
+            print(f"work.py: review-copy cleanup skipped for {stem!r} (the evidence directory is "
+                  "reached through a link, so it is not under this .sdlc)", file=sys.stderr)
+            return []
         review_dirs = list(evidence.iterdir())
     except OSError as exc:
         print(f"work.py: review-copy cleanup skipped for {stem!r} ({exc})", file=sys.stderr)

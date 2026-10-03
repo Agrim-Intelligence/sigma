@@ -4,6 +4,21 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Pruners can no longer be walked out of `.sdlc` through a link, and the fixed-name state files have a stated
+  size and owner** (#466, B6 of #419). A control now builds a decoy host configuration root reachable only through
+  links and records and runs nine pruners over it (`retention`, `goal_state_prune`, `liveness_prune`, the session-marker
+  prune in `loop.py`, `worktree_prune`, `logroll`, the review-copy cleanup in `work.py`, the event-journal sweep and the
+  time-store sweep). Two escaped: the review-copy cleanup `rmtree`d a directory outside `.sdlc` when `.sdlc/evidence`
+  was a link, and the session-marker prune (run by `loop.py start` and every pick) deleted matching files in a linked
+  `state/sessions`. Both now refuse and the first prints one stderr line. `setup_wizard.write_dismissed` keeps only the
+  8 known wizard check names (the reader already ignored the rest) and no longer raises on a non-string entry. The 26
+  audit rows (singletons, spend files, `STATE.md`, three watch cursors, `inbox.md`, the embeddings cache) are
+  each classified from their writer with measured sizes: `inbox.md` and the cursors are documented as unbounded
+  between loop picks with a ceiling per item or key, and `embeddings.json` is capped at 2,000 entries whose bytes
+  grow with the embedder's dimension (15.6 MB at 384 dimensions, 124.6 MB at 3072, fake embedder; 687 ms to parse
+  on every pick at the larger size). Bounded inbox delivery and a byte ceiling for the cache are queued (#490, #491).
+  Not measured: any live adopter, a real embedding provider, Linux or Windows.
+
 - **Goal worktrees whose work provably landed can be reclaimed, and every other survivor is reported with
   its reason** (#465, B6 of #419). A worktree is a full checkout (903 tracked files, 18.5 MB here; 455 MB
   across the 14 on the measured machine, 3 of them for merged PRs) and nothing reclaimed one whose goal
