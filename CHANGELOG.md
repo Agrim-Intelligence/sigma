@@ -4,6 +4,19 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Hostile issue, PR and comment text is run through the script-level parsers, and the model-level drill is built** (#362,
+  readiness dimension D10). Twelve fixtures under `tests/fixtures/hostile/` (prompt-injection text, fenced and commented
+  markers, comma-joined refs, a path-traversal unit name, an indented marker, a 1 MB body built at test time, control
+  characters, a forged verdict comment, shell metacharacters in a Slack command, a title holding the field separator, a
+  token-shaped string built at run time) run through the blocker scan, the unit parser, the Slack command parser,
+  `comment_watch`, the scrubbers and `render.py`, each against its own `expect:` line, with a paired positive control
+  per surface so a dead parser cannot pass. Two real defects are pinned as strict expected failures: the blocker scan
+  reads a marker inside a fenced block or an HTML comment (#511), and one non-whitespace control character, marker glyph
+  or separator in a goal title withholds the whole status block (#190). `tools/readiness/injection_drill.py` refuses to
+  run without `--repo OWNER/sigma-drill-NAME` and `--max-usd`, refuses from CI and on a public repository, and has not been
+  run: no model call, no spend. The script-level tests cannot show that a model obeys injected text; only the drill can.
+  Tests: `tests/test_hostile_inputs.py`.
+
 - **Reviewer-independence claims say what the code proves, and no more** (#260). The independent-review row in `docs/enforcement.md` stays advice and now lists what the core does not prove (who called the host's task tool; a maker can record its own approving verdict; the route comes from config and session environment variables; the merge check reads the posted comment, not the evidence) and what it does bind (one PR, head and brief generation; evidence refused when the head or diff moved; result and evidence written once per generation; a post needs the current generation and an unchanged head). Sentences in the README, skills, doctor and config template that stated the maker rule as a guarantee now say it is asked, not proved. `tests/test_reviewer_independence_claims.py` pins the row and a short list of removed overclaims. No mechanism changed.
 - **The benchmark go threshold is an exact paired test that fits 15 tasks** (#502). The old rule (lower 95% bootstrap
   bound of the paired difference at least -5 points) passed a result with every task tied and one with 2 wins and no
