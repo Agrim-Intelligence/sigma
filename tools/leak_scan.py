@@ -62,13 +62,12 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     (each may carry a unified diff's leading `+`): a one-line Ed25519 body or a truncated RSA paste
     under its header, also inside a diff. So a lone 40+ mixed digest under such prose is a finding
     too (KNOWN AMBIGUITIES below).
-    (3) DER FIRST LINE. A line that starts, after space / tab indentation and at most two runs of
-    1-3 symbols (`"`, `# `, `> `, `// `, ` * `, `- "`; `+` and `/` are symbols too, so a diff's `+`
-    or a `//` with no space is one run, and at most 6 of them are read this way), with base64 or
-    base64url whose first 24 characters decode
+    (3) DER TOKEN. A base64 or base64url token anywhere in a line whose first 24 characters decode
     to a private key's DER header (`SEQUENCE { INTEGER 0|1, SEQUENCE | INTEGER | OCTET STRING`:
     PKCS8 v1/v2, PKCS1 / DSA, SEC1), or with OpenSSH's `openssh-key-v1` constant; anything may follow
-    it and no span exempts it. A LONGER run of `+` and `/` is read only when the whole line, run
+    it and no span exempts it. The token may also start right after a LITERAL backslash escape `\\n`,
+    `\\r` or `\\t` (a JSON string's newline; `\\r\\n` via its `\\n`). Public DER stays clean there. Existing line-start handling still reads a LONGER run of `+` and `/`
+    only when the whole line, run
     included, is a (1) candidate line, 40+ base64 characters and nothing else: the run is then
     stripped before the DER header is read. MEASURED through the gesture (runs of 1-10 `+`, `/` and
     `+/`, before a 64-character Ed25519-shaped line and a 24-character P-224 one, each bare and
@@ -122,11 +121,9 @@ only (the digit+letter post-filter drops them); `key: value` credentials in pros
 (measured: without a byte-order mark, or big-endian with one, it is reported `opaque-binary`;
 little-endian WITH one is mis-decoded as UTF-16 and nothing in it is seen). For `key-body` (each
 planted and run through the gesture, #433):
-hex bodies, and base64url bodies other than a base64url DER first line; a PEM base64-wrapped into one
-string; a key inline in a JSON or shell string (`{"k": "<base64>"}`, `KEY='<base64>'`, or a
-multi-line shell string whose body starts on the `KEY="` line), or after other text on its line
-(`key: <base64>`) -- but a DER-led key alone on its line inside one IS caught (measured: a JSON array
-element `  "<Ed25519 line>",`, and a multi-line shell string whose P-256 body starts on its own line);
+hex bodies, and base64url bodies other than a base64url DER token; a PEM base64-wrapped into one
+string only when no 24-character DER token remains (a DER-led key in a JSON or shell string,
+after `key:`, or after other text on its physical line is caught);
 a non-DER body (encrypted PKCS8, legacy-encrypted RSA or EC, PGP-private) every line of which carries
 a comment or quote prefix (`# `, `"`, `// `, `> `, ` * `, `+ `), even directly under its header
 (real keys, 48 plants: 0 findings here and on a3c913c);
@@ -138,12 +135,9 @@ from a lone first line; a body wrapped below 24 characters (in every shape); a b
 whose first line is missing; any non-DER body wrapped below 40, header and END included (no line
 reaches the 40 floor, nor scrub.py's `private-key` 40-character run); an all-lower-case body; a
 body indented with U+00A0 no-break spaces (7 key kinds planted header-less: all clean) or with
-U+2003, U+3000, `\\v` or `\\f`; a body whose lines are separated by U+2028, U+2029 or NEL (U+0085)
-instead of LF / CR, except a DER first line that opens the file or follows an LF / CR: that line is
-still read, whatever separates the rest (real P-256 SEC1, 12-line RSA and Ed25519 bodies: flagged at
-their first line at the start of the file and after an LF line; clean only when one of these
-separators also comes before the first line; a 12-line non-DER RSA slice: clean; only space and tab
-are indentation, only LF and CR end a line); more
+U+2003, U+3000, `\\v` or `\\f` when it has no DER token; a non-DER body whose lines are separated by
+U+2028, U+2029 or NEL (U+0085) instead of LF / CR (DER tokens after those separators are caught on
+the same physical scanner line; only LF and CR end a line); more
 than 8 armor lines, or a line that is not armor, between header and body; a non-DER body under a
 lower-case `begin` header (it does not anchor; a DER first line or a counted block under it is
 still caught: EC, RSA, Ed25519 and P-224 bodies measured). KNOWN AMBIGUITIES (findings, not misses;
@@ -241,6 +235,11 @@ _PLACEHOLDER_VALUE = re.compile(r"(?i)(?:your[-_ ].*|.*[-_]here|changeme|change[
 _BODY_LINE = re.compile(r"(?m)^(?:[ \t]*(?P<b>[A-Za-z0-9+/]{40,}={0,2})[ \t]*\r?$"
                         r"|[ \t]*(?:[^A-Za-z0-9\s]{1,3}[ \t]*){0,2}"
                         r"(?P<k>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA))")
+#: A bounded base64/base64url token at a token boundary: not preceded by a token character, OR directly
+#: after a LITERAL backslash escape `\n`, `\r` or `\t` (a JSON string's newline, whose `n` would otherwise
+#: read as a token character; `\r\n` is covered by its `\n`). Both lookbehinds are fixed-width.
+#: `M` starts DER's outer SEQUENCE; OpenSSH's 20-character constant needs four following base64 characters to meet the 24-character minimum.
+_DER_TOKEN = re.compile(r"(?:(?<![A-Za-z0-9+/_-])|(?<=\\[nrt]))(?P<t>M[A-Za-z0-9+/_-]{23,}|b3BlbnNzaC1rZXktdjEA[A-Za-z0-9+/_-]{4,})")
 #: The short last line of a P-256 SEC1 body (64, 64, 36 chars).
 _B64_TAIL = re.compile(r"(?m)[ \t]*[A-Za-z0-9+/]{28,39}={0,2}[ \t]*\r?$")
 #: A PEM/armor BEGIN label. Bounded (`{1,64}`) and dash-free so a line of `-----BEGIN ` repeated cannot
@@ -442,6 +441,9 @@ def _key_bodies(text):
     """Start offsets of private-key bodies whose header or END is missing (see `key-body`): one per block
     that counts, at its first line, plus one per DER-recognised first line."""
     cands, out = [], []
+    for m in _DER_TOKEN.finditer(text):
+        if _der_private(m.group("t")):
+            out.append(m.start("t"))
     for m in _BODY_LINE.finditer(text):
         tok = (m.group("b") or m.group("k")).lstrip("+/")   # a diff's `+`, a `//`: base64 too, so `b` kept them
         if m.group("b"):

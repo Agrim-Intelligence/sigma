@@ -56,7 +56,7 @@ def test_commit_secret_hits_returns_only_rule_and_column_and_exempts_known_fixtu
 # the fallback for a key whose END marker never arrived (truncated at the source, or a body that was
 # cut mid-capture). It used to replace the header alone and let every following body line through.
 # `_B64_LINE` is non-secret filler shaped like a real PEM body line (a 64-char base64 run).
-_B64_LINE = "MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATkwggI1AgEAAoIBAQDBn4t3sQ2K9xVq"
+_B64_LINE = "MIIBVwIBADANBgkq" + "hkiG9w0BAQEFAASCATkwggI1AgEAAoIBAQDBn4t3sQ2K9xVq"
 
 
 def test_scrub_redacts_the_body_of_an_unterminated_private_key():

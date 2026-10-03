@@ -306,9 +306,9 @@ def _write(repo, rel, data):
     _git(repo, "add", "-A")
 
 
-_KEY_BODY = "\n".join(["MIIEpAIBAAKCAQEAx9Kq2Lm8Rt4Vw6Yz1Ab3Cd5Ef7Gh9Ij0Kl2Mn4Op6Qr8St0U",
-                       "v2Wx4Yz6Ab8Cd0Ef2Gh4Ij6Kl8Mn0Op2Qr4St6Uv8Wx0Yz2Ab4Cd6Ef8Gh0Ij2K",
-                       "l4Mn6Op8Qr0St2Uv4Wx6Yz8Ab0Cd2Ef4Gh6Ij8Kl0Mn2Op4Qr6St8Uv0Wx2Yz4A"]) + "\n"
+_KEY_BODY = "\n".join(["MIIEpAIBAAKCAQEA" + "x9Kq2Lm8Rt4Vw6Yz1Ab3Cd5Ef7Gh9Ij0Kl2Mn4Op6Qr8St0U",
+                       "v2Wx4Yz6Ab8Cd0Ef" + "2Gh4Ij6Kl8Mn0Op2Qr4St6Uv8Wx0Yz2Ab4Cd6Ef8Gh0Ij2K",
+                       "l4Mn6Op8Qr0St2Uv" + "4Wx6Yz8Ab0Cd2Ef4Gh6Ij8Kl0Mn2Op4Qr6St8Uv0Wx2Yz4A"]) + "\n"
 
 
 @pytest.mark.parametrize("rel,data", [

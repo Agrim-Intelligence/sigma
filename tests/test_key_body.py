@@ -210,6 +210,18 @@ _row("der", "allow-marker", _ED_DER[0] + "  # leak-scan" + ": allow key-body tes
      + _ED_DER[0], _kb(3))
 _row("mixed", "ec-under-header", "\n".join([_EC_PRIV, ""] + _EC), _kb(4))
 
+# #449: a DER-led private key may be carried inside a JSON string, a quoted shell value, or a
+# YAML-like assignment. All use the same runtime-built public DER header; old line-start matching
+# misses them through the documented gesture.
+for rid, line in (("json", '{{"key":"{b}"}}'), ("shell", "KEY='{b}'"), ("yaml", "key: {b}")):
+    _row("embedded", rid, line.format(b=_ED_DER[0]), _kb(2))
+
+# A JSON carrier holds a newline as a LITERAL backslash + n/r/t, so the character before the token is the
+# escape's letter, not a boundary. Runtime-built; nothing contiguous.
+for rid, esc in (("json-esc-n", "\\n"), ("json-esc-r", "\\r"), ("json-esc-t", "\\t"), ("json-esc-rn", "\\r\\n")):
+    _row("embedded", rid, '{{"k":"x{e}{b}"}}'.format(e=esc, b=_ED_DER[0]), _kb(2))
+_row("der", "json-esc-n-public", '{{"k":"x{e}{b}"}}'.format(e="\\n", b=_der_text("spki-ec", _NOT_PRIVATE)[0]), [])
+
 
 def _run_batch(tmp_path_factory, rows):
     """ONE scratch repo holding every row, ONE run of the documented gesture: (proc, {path: ["<line>: <rule>"]})."""
@@ -310,6 +322,12 @@ def test_mixed(batch, path, expected):
     _check(batch, path, expected)
 
 
+@pytest.mark.parametrize("path,expected", _ids("embedded"))
+def test_embedded(batch, path, expected):
+    """A DER private-key token inside common one-line carriers is red through the documented gesture."""
+    _check(batch, path, expected)
+
+
 # ---------------------------------------------------------------- mutation controls (run the control)
 # On a3c913c each control fails on an ASSERTION: `_mutate`'s seam-count assert (the seam does not exist
 # there) or, earlier, the control's own "the correct gate flags this" assert.
@@ -331,6 +349,7 @@ _SEAMS = {
                   '_PEM_BEGIN = re.compile(r"(?m)-{4,5} ?BEGIN (.*?) ?-{4,5}[ \\t]*\\r?$")'),
     "span-line": ('_SPAN_LINE = re.compile(r"[ \\t]*(?:(?:[A-Za-z0-9+/=]+|\\.{3}|\\u2026)[ \\t]*|[A-Za-z][A-Za-z0-9 -]*:[^\\r\\n]*)?\\r?$")',
                   '_SPAN_LINE = re.compile(r"[ \\t]*(?:[A-Za-z0-9+/=]+|\\.{3}|\\u2026|[A-Za-z][A-Za-z0-9 -]*:[^\\r\\n]*)?[ \\t]*\\r?$")'),
+    "embedded": ('for m in _DER_TOKEN.finditer(text):', 'for m in ():')
 }
 _CA = "\n".join(["-----BEGIN CERTIFICATE-----"] + [re.sub(r"\d", "q", _lines([64] * 3 + [27], 90)[0])]
                 + _lines([64] * 2 + [27], 91) + ["-----END CERTIFICATE-----"])
@@ -399,6 +418,14 @@ def test_control_tolerance(tmp_path):
     assert _run(repo).returncode == 1
     _mutate(repo, *_SEAMS["tolerance"])
     assert _run(repo).returncode == 0
+
+
+def test_control_embedded_token(tmp_path):
+    """The token iterator, not an accidentally broad line-start rule, catches JSON carriers."""
+    repo = _scratch(tmp_path, '{{"key":"{}"}}'.format(_ED_DER[0]), "embedded.json")
+    assert "embedded.json:2: key-body" in _run(repo).stdout
+    _mutate(repo, *_SEAMS["embedded"])
+    assert "key-body" not in _run(repo).stdout
 
 
 # ---------------------------------------------------------------- linear time: ONE budget for test and control
