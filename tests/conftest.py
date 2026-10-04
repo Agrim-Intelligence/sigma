@@ -81,6 +81,11 @@ def pytest_configure(config):
         "live_gh: this test is allowed to invoke the real `gh` CLI (network, live GitHub "
         "state) -- use only when the test genuinely needs it; see tests/conftest.py.",
     )
+    config.addinivalue_line(
+        "markers",
+        "slow: a label for a test whose cost grows with the repository (#596); nothing deselects it, "
+        "CI runs it, and it carries a large hang guard instead of a short limit.",
+    )
 
 
 @pytest.fixture(autouse=True)

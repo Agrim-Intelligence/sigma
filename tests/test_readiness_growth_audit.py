@@ -280,15 +280,47 @@ def test_scan_does_not_cache_a_cycle_truncated_writer_path_as_absent(tmp_path):
     assert ".sdlc/state/forwarded.json" in patterns
 
 
-def test_real_repository_scan_is_bounded_and_keeps_sources_writer_coverage():
-    """A cyclic helper graph must not make the production scan unbounded."""
-    command = [sys.executable, str(SCRIPT), str(ROOT)]
-    completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15)
-    rows = json.loads(completed.stdout)["rows"]
+# Hang guards, not performance limits (#596): a subprocess scan is given a ceiling only so a wedged one
+# fails instead of stalling CI. The fixture scan takes milliseconds. The whole-repository scan, measured on
+# the repository at the time of the fix: 6.5 s on a developer machine; on an idle CI runner 8.1-8.3 s (ubuntu,
+# 3.10) and 14.1-14.3 s (ubuntu, 3.12), and over 15 s under the full suite's load. It grows with the repo.
+FIXTURE_HANG_GUARD = 120
+WHOLE_REPOSITORY_HANG_GUARD = 600   # about 42x the slowest idle CI scan; CI deliberately still runs this test
 
-    assert any(row["source"] == "code" and row["writer"].startswith(
+
+def _cli_rows(repository, timeout):
+    command = [sys.executable, str(SCRIPT), str(repository)]
+    completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=timeout)
+    return json.loads(completed.stdout)["rows"]
+
+
+def _has_sources_journey_writer(rows):
+    return any(row["source"] == "code" and row["writer"].startswith(
         "skills/agrim-loop/scripts/sources.py:")
         and row["pattern"] == ".sdlc/journey/<goal>.md" for row in rows)
+
+
+def test_cli_scan_over_a_fixture_tree_keeps_sources_writer_coverage_and_ends_on_a_helper_cycle(tmp_path):
+    """The real CLI, over a tree the test builds, so neither repo size nor runner speed decides it."""
+    source = tmp_path / "skills" / "agrim-loop" / "scripts" / "sources.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from pathlib import Path\n"
+        "def note(sdlc_dir, goal):\n"
+        "    (Path(sdlc_dir) / 'journey' / f'{goal}.md').write_text('note')\n"
+        "def a(dst):\n"
+        "    b(dst)\n"
+        "def b(dst):\n"
+        "    a(dst)\n"
+    )
+
+    assert _has_sources_journey_writer(_cli_rows(tmp_path, FIXTURE_HANG_GUARD))
+
+
+@pytest.mark.slow
+def test_slow_whole_repository_cli_scan_keeps_sources_writer_coverage():
+    """SLOW (#596): the one scan of the real repository through the CLI; its cost grows with the repo."""
+    assert _has_sources_journey_writer(_cli_rows(ROOT, WHOLE_REPOSITORY_HANG_GUARD))
 
 
 def test_repository_scan_includes_localsource_journey_and_goal_file_writers():
