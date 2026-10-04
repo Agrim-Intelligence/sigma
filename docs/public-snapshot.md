@@ -38,7 +38,7 @@ case collision, a secret-looking file name, a binary or oversize or non-UTF-8 fi
 
 The build is run by the owner, from a clean detached checkout of the commit to export (the builder
 refuses a dirty checkout or one whose `HEAD` is not the commit, and it compares its own running
-copy of itself and of the three scanners with the commit's bytes). `$PATTERNS` is the private
+copy of itself and of `scrub.py`, `leak_refs.py` and `exposure_scan.py` with the commit's bytes; the commit's own `leak_scan.py` runs from the export itself). `$PATTERNS` is the private
 patterns file kept outside every repository; its content is never printed or hashed anywhere.
 
 ```sh
@@ -167,15 +167,22 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 - `docs/launch/exposure-allowlist.json`: the exposure scanner's allowlist, entries
   `{path, rule, reason}` plus exactly one of `blob` (one exact git blob) or `lines` (sha256 of each
   reviewed matched line). No entry is scoped to a bare path and rule, and the builder refuses a file
-  holding one (`dispositions-malformed`). Regenerate rows with `exposure_scan.py tracked . --propose`
-  and read every row before it is given a reason; a real secret or private reference is removed,
+  holding one (`dispositions-malformed`). Regenerate rows with `python3 tools/readiness/exposure_scan.py tracked . --propose DRAFT.json`
+  (a scratch path outside the repository) and read every row of the draft before it is given a reason; a real secret or private reference is removed,
   never allowlisted.
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason}` plus exactly one of `blob` (the exact 40-hex git
   blob) or `lines` (sha256 of each reviewed matched line, counted, as in the exposure allowlist) for
   the two content rules; the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
   so no disposition suppresses a whole file. A `lines` entry goes stale (REJECTED) when a reviewed
-  line changes or disappears, and a new match is a finding. Every report finding carries its
+  line changes or disappears, and a new match is a finding. Where the builder differs from
+  `exposure_scan.py` (each difference fails closed, as a finding or a stale entry): it hashes the RAW
+  line (a CRLF line hashes with its `\r`, and a hash that `--propose` computed for a line with
+  edge whitespace will not match); it counts one finding per matching line per rule, not per regex
+  match; a trailing newline in a hash passes validation but such an entry can only go stale; the
+  `blob` form takes 40 hex only; the rules are limited to the two content rules, and an entry under
+  an excluded prefix is dropped as moot; a non-UTF-8 file is refused (`non-utf8`) rather than
+  decoded with replacement. Every report finding carries its
   `line_sha256` so an entry can be written from the report. It holds the fixtures and regex sources
   that name a key header or the placeholder on purpose.
 
@@ -255,7 +262,7 @@ failure costs nothing public. Each step is the owner's, and none runs in a loop.
    ```
 
    Exit 0 is every check `ok`; exit 1 prints a `FAIL <check> <detail>` line per failed check; exit 2
-   is a refusal (the report is not a finalised VERIFIED one, or `gh` failed). `visibility` reads the
+   is a refusal, one stderr line with a code: `windows`, `bad-slug`, `gh-failed`, or, for the report, `report-unreadable`, `report-schema` (wrong schema, no export object, or ids that are not 40 hex) and `report-not-verified` (not a finalised VERIFIED build). `visibility` reads the
    reply's `private` field, and a missing or non-boolean one is a `FAIL`, never read as public. The checks are
    `visibility`, `default-branch`, `single-commit`, `root-commit`, `branches`, `tags`, `issues`,
    `pulls`, `tree`, `ci-run`, `ci-legs`.
@@ -284,9 +291,9 @@ Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a lo
 1. Build the export from the commit to publish (above) and read a `VERIFIED` report.
 2. The ORDER matters. `public_repo` in `docs/launch/definition.json` (and the doctor's
    `_MARKETPLACE_REPO` constant, which the builder's doctor-slug scan requires to equal it) still
-   names THIS repository today. The rename pull request (#524) changes both to the new repository's
-   name (`Agrim-Intelligence/sigmaloop`) in a normal pull request on this repository, and it lands
-   BEFORE step 1's build, so the exported tree carries the right name. The builder prints a NOTE in
+   names THIS repository today. A normal pull request on this repository (the #524 change; this
+   repository itself is not renamed) updates both to the new repository's name
+   (`Agrim-Intelligence/sigmaloop`), and it lands BEFORE step 1's build, so the exported tree carries the right name. The builder prints a NOTE in
    the report when `public_repo` still equals the `--repo` source repository. Then, after the build,
    the owner creates the new repository, EMPTY (no README, licence or `.gitignore`: a pre-existing
    commit would make the push a non-fast-forward and the verifier's `single-commit` check fail),

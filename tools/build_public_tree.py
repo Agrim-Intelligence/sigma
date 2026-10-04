@@ -744,6 +744,8 @@ def _load_dispositions(raw):
             raise Refused("dispositions-malformed", "a %s entry needs path, a known rule, a reason and exactly "
                           "one of blob (40-hex) or lines (sha256 of each reviewed matched line): none is "
                           "scoped to a bare path and rule" % DISPOSITIONS_PATH)
+    if any(e["reason"].startswith("TRIAGE REQUIRED") for e in entries):
+        raise Refused("dispositions-malformed", "%s holds an entry with a draft reason" % DISPOSITIONS_PATH)
     keys = [(e["path"], e["rule"]) for e in entries]
     if len(keys) != len(set(keys)):
         raise Refused("dispositions-malformed", "%s has two entries for one path and rule" % DISPOSITIONS_PATH)

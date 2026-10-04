@@ -1027,3 +1027,13 @@ def test_a_plain_version_is_accepted_and_the_note_names_a_public_repo_equal_to_t
     notes = _report(fields)["notes"]
     assert len(notes) == 1 and "BEFORE the export is built" in notes[0], notes
     assert "NOTE:" in _md(fields)
+
+
+def test_a_draft_reason_disposition_is_refused(tmp_path, capsys):
+    mod = _tool()
+    entry = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "TRIAGE REQUIRED: fill in",
+             "lines": [_lh(_header())]}
+    repo, sha = _fixture(tmp_path, name="draft", extra={"docs/keys.txt": _header() + "\n",
+                                                       DISPOSITIONS: _disposition_file([entry])})
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "odraft")))
+    assert rc == 2 and so == "" and "REFUSED [dispositions-malformed]" in se, (rc, so, se)
