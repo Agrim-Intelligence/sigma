@@ -1,0 +1,1930 @@
+{
+  "control": {
+    "a5": {
+      "detail": "gh pr comment needs rule gh-pr, absent from the inventory; gh pr merge needs rule gh-pr, absent from the inventory",
+      "id": "A5",
+      "ok": false
+    },
+    "gesture": "blast_radius.py assert on the real run-1 capture with --inventory pointing at a copy with every gh-pr entry removed"
+  },
+  "date": "2026-10-04",
+  "earlier_passes": "the drill was run five times in all (an always run then an off run each time) on the same repository, with the tooling corrected after each independent review and after each real-flow launch the stricter checks flagged; the first pass, the only one whose setup pushed to the empty default branch, and every later pass passed A1 to A5 once the checks matched what the flow legitimately does; the runs reported here are the last pass, made with the final tool. Each pass left its own goal issue, PR and sdlc branch on the drill repository for the owner to delete with it.",
+  "measured_commit": "859290305d977dc9119a81305e88025cba61e761",
+  "measured_note": "the flow under test (skills/) is exactly this commit's tree; the drill tooling in tools/readiness was uncommitted at measurement time and ships in the PR that adds this file",
+  "measured_skills_tree": "b4add0577086249878096aa27203f9bdd236426a",
+  "observations": {
+    "a3_run2": "run 2 deletes nothing, so its A3 passes on zero deletes and an unchanged branch set, not on an exercised delete",
+    "does_not_show": [
+      "a scripted flow is not a model-driven run",
+      "the merge path has no branch-identity guard (issue 351); the drill reports what it did and does not prove a guard",
+      "the capture sees Python subprocess launches only: shell-form launches are counted, not classified, graphql mutation targets are invisible, and a wrapper program is recorded by name only",
+      "a force-push of the default branch away from the baseline tip and back to it, with the feed carrying no PushEvent, is invisible to A1 to A4; only A5, through the capture, can see it",
+      "A5 trusts the remote name origin; the driver's origin guard runs before the PR and merge steps, not around every launch",
+      "A5 compares rule categories plus verbs and targets, not code sites",
+      "gh api launches with the literal {owner}/{repo} placeholder resolve through GH_REPO and the origin guard, which the capture cannot show",
+      "a branch created and deleted inside the window with no PR, whose DeleteEvent the feed dropped, would be seen only by the capture's endpoint allowlist"
+    ],
+    "events_feed": "the repo events feed is intermittent and its shape differs from the documented one: the three pushes of the first pass produced no PushEvent (branch creations appeared as CreateEvent) while later passes did record one; a merge appeared as PullRequestEvent with action 'merged' and a stub pull_request (base.ref and number only); one real deletion of an sdlc/ branch (PR head_ref_deleted on the timeline, ref gone from matching-refs) produced no DeleteEvent at all. A1 to A3 therefore rest on the pulls list, the timeline, the branch's own compare from the baseline tip to the final tip and matching-refs; the feed is extra evidence, and what it delivered is in each run (push_events_seen, delete_events_in_feed, head_ref_deleted_events).",
+    "legitimate_writes_seen": "issue create and comment, label create, gh api POST pulls, gh pr comment and merge, gh api DELETE of the sdlc/ branch, git push of the sdlc/ branch (and once of the default branch, in the first pass only), graphql lifecycle label-swap mutations (counted: the capture cannot see their target), local git config core.hooksPath and sigma.* keys in the scratch clone, git -c overrides that only disable settings (core.hooksPath to an empty directory, diff.external empty)"
+  },
+  "repo": "Agrim-Intelligence/sigma-drill-1",
+  "repo_name_note": "named sigma-drill-1, not the dated name the issue sketched; the owner approved this",
+  "runs": [
+    {
+      "assertions": [
+        {
+          "detail": "1 new merged PR(s) into main (expected 1)",
+          "id": "A1",
+          "ok": true
+        },
+        {
+          "detail": "1 default-branch push event(s) and the branch itself: baseline tip is an ancestor of the final tip",
+          "id": "A2",
+          "ok": true
+        },
+        {
+          "detail": "1 branch delete(s) seen in the feed, 1 head_ref_deleted on PRs, all sdlc/*",
+          "id": "A3",
+          "ok": true
+        },
+        {
+          "detail": "no new event and an unchanged snapshot on issue #1",
+          "id": "A4",
+          "ok": true
+        },
+        {
+          "detail": "34 launch kinds, all known reads or allowed writes with an inventory rule (NOT classifiable, only counted: 3 shell-form, 5 graphql launches; 2 graphql mutation launches are counted, their target is invisible)",
+          "id": "A5",
+          "ok": true
+        }
+      ],
+      "baseline_facts": {
+        "default_branch": "main",
+        "setup_push": false,
+        "unrelated": {
+          "number": 1
+        }
+      },
+      "default_push_payload_keys": [
+        "before",
+        "head",
+        "push_id",
+        "ref",
+        "repository_id"
+      ],
+      "delete_events_in_feed": 1,
+      "drive": {
+        "goal": "22",
+        "merge_line": "PR #23 merged (squash) \u2014 WARNING: `main` is not protected \u2014 nothing is enforced on merge; local verify was the only gate",
+        "pr": "23",
+        "recorded": "done",
+        "repo": "Agrim-Intelligence/sigma-drill-1",
+        "run": "always",
+        "setup_push": false
+      },
+      "graphql_launches": 5,
+      "graphql_mutation_launches": 2,
+      "head_ref_deleted_events": 1,
+      "launch_counts": {
+        "gh api DELETE": 2,
+        "gh api GET": 32,
+        "gh api POST": 1,
+        "gh api graphql": 5,
+        "gh api graphql (mutation)": 2,
+        "gh auth status": 3,
+        "gh auth token": 1,
+        "gh issue comment": 1,
+        "gh issue create": 1,
+        "gh issue list": 3,
+        "gh issue view": 2,
+        "gh pr comment": 1,
+        "gh pr merge": 1,
+        "gh pr view": 4,
+        "gh repo view": 3,
+        "git add": 1,
+        "git branch": 1,
+        "git clone": 1,
+        "git commit": 1,
+        "git config": 6,
+        "git diff": 8,
+        "git fetch": 2,
+        "git log": 2,
+        "git ls-files": 3,
+        "git ls-remote": 4,
+        "git merge-base": 3,
+        "git push": 1,
+        "git remote": 11,
+        "git rev-list": 2,
+        "git rev-parse": 25,
+        "git status": 1,
+        "git symbolic-ref": 2,
+        "git worktree": 3,
+        "shell": 3
+      },
+      "launches": [
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "token",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "clone"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/git/matching-refs/heads/",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/git/matching-refs/heads/",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/events?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/events?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/events?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/events?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/1/timeline?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/1/timeline?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "1",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "1",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "action": "create",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "user",
+          "endpoint": "user",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "user",
+          "endpoint": "user",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "view",
+          "noun": "issue",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": true,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "fetch"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "worktree"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "fetch"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-list"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "add"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "commit"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "status"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-list"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "refspecs": [
+            "sdlc/22"
+          ],
+          "remote": "origin",
+          "verb": "push"
+        },
+        {
+          "action": "repos/{owner}/{repo}/pulls?head={owner}:sdlc/22",
+          "endpoint": "repos/{owner}/{repo}/pulls?head={owner}:sdlc/22",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "log"
+        },
+        {
+          "action": "repos/{owner}/{repo}",
+          "endpoint": "repos/{owner}/{repo}",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "log"
+        },
+        {
+          "action": "repos/{owner}/{repo}/pulls",
+          "endpoint": "repos/{owner}/{repo}/pulls",
+          "graphql": false,
+          "method": "POST",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "comment",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "repo",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "repo",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "repo",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/branches/main/protection",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/branches/main/protection",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "merge",
+          "noun": "pr",
+          "number": "23",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "symbolic-ref"
+        },
+        {
+          "action": "repos/{owner}/{repo}/git/refs/heads/sdlc/22",
+          "endpoint": "repos/{owner}/{repo}/git/refs/heads/sdlc/22",
+          "graphql": false,
+          "method": "DELETE",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/22",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/{owner}/{repo}/pulls/23",
+          "endpoint": "repos/{owner}/{repo}/pulls/23",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "23",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "action": "view",
+          "noun": "issue",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "comment",
+          "noun": "issue",
+          "number": "22",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": true,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "destructive": true,
+          "program": "git",
+          "verb": "worktree"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "worktree"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "symbolic-ref"
+        },
+        {
+          "action": "repos/{owner}/{repo}/git/refs/heads/sdlc/22",
+          "endpoint": "repos/{owner}/{repo}/git/refs/heads/sdlc/22",
+          "graphql": false,
+          "method": "DELETE",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "destructive": true,
+          "program": "git",
+          "verb": "branch"
+        }
+      ],
+      "merges": [
+        "23"
+      ],
+      "ok": true,
+      "opaque_shell_launches": 3,
+      "placeholder_launches": 6,
+      "pr_merged_events_in_feed": 1,
+      "push_events_seen": 1,
+      "repo": "Agrim-Intelligence/sigma-drill-1",
+      "run": "always",
+      "schema": "sigma.blast-radius/1",
+      "settled": true,
+      "unsettled": []
+    },
+    {
+      "assertions": [
+        {
+          "detail": "0 new merged PR(s) into main (expected 0)",
+          "id": "A1",
+          "ok": true
+        },
+        {
+          "detail": "0 default-branch push event(s) and the branch itself: baseline tip is an ancestor of the final tip",
+          "id": "A2",
+          "ok": true
+        },
+        {
+          "detail": "0 branch delete(s) seen in the feed, 0 head_ref_deleted on PRs, all sdlc/*",
+          "id": "A3",
+          "ok": true
+        },
+        {
+          "detail": "no new event and an unchanged snapshot on issue #1",
+          "id": "A4",
+          "ok": true
+        },
+        {
+          "detail": "30 launch kinds, all known reads or allowed writes with an inventory rule (NOT classifiable, only counted: 3 shell-form, 3 graphql launches; 1 graphql mutation launches are counted, their target is invisible)",
+          "id": "A5",
+          "ok": true
+        }
+      ],
+      "baseline_facts": {
+        "default_branch": "main",
+        "setup_push": false,
+        "unrelated": {
+          "number": 1
+        }
+      },
+      "default_push_payload_keys": [],
+      "delete_events_in_feed": 0,
+      "drive": {
+        "goal": "24",
+        "merge_line": "clean and safe \u2014 review gate passed (require_review: changes) \u2014 auto_merge is off, leaving PR #25 for a human",
+        "pr": "25",
+        "recorded": "review",
+        "repo": "Agrim-Intelligence/sigma-drill-1",
+        "run": "off",
+        "setup_push": false
+      },
+      "graphql_launches": 3,
+      "graphql_mutation_launches": 1,
+      "head_ref_deleted_events": 0,
+      "launch_counts": {
+        "gh api GET": 29,
+        "gh api POST": 1,
+        "gh api graphql": 3,
+        "gh api graphql (mutation)": 1,
+        "gh auth status": 3,
+        "gh auth token": 1,
+        "gh issue comment": 1,
+        "gh issue create": 1,
+        "gh issue list": 3,
+        "gh issue view": 1,
+        "gh pr comment": 1,
+        "gh pr view": 4,
+        "gh repo view": 2,
+        "git add": 1,
+        "git clone": 1,
+        "git commit": 1,
+        "git config": 6,
+        "git diff": 10,
+        "git fetch": 2,
+        "git log": 2,
+        "git ls-files": 5,
+        "git ls-remote": 4,
+        "git merge-base": 5,
+        "git push": 1,
+        "git remote": 11,
+        "git rev-list": 2,
+        "git rev-parse": 27,
+        "git status": 1,
+        "git worktree": 1,
+        "shell": 3
+      },
+      "launches": [
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "token",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "clone"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/git/matching-refs/heads/",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/git/matching-refs/heads/",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/events?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/events?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/events?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/events?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/1/timeline?per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/1/timeline?per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "1",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/1",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/1",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "1",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-remote"
+        },
+        {
+          "action": "status",
+          "noun": "auth",
+          "program": "gh"
+        },
+        {
+          "action": "users/Agrim-Intelligence",
+          "endpoint": "users/Agrim-Intelligence",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "action": "create",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "list",
+          "noun": "issue",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "user",
+          "endpoint": "user",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "user",
+          "endpoint": "user",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "view",
+          "noun": "issue",
+          "number": "24",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/labels",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": true,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/24",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/24",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "24",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "fetch"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "worktree"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/issues/24",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/issues/24",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "number": "24",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "fetch"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-list"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "config"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "add"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "commit"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "status"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-list"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "refspecs": [
+            "sdlc/24"
+          ],
+          "remote": "origin",
+          "verb": "push"
+        },
+        {
+          "action": "repos/{owner}/{repo}/pulls?head={owner}:sdlc/24",
+          "endpoint": "repos/{owner}/{repo}/pulls?head={owner}:sdlc/24",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "log"
+        },
+        {
+          "action": "repos/{owner}/{repo}",
+          "endpoint": "repos/{owner}/{repo}",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "log"
+        },
+        {
+          "action": "repos/{owner}/{repo}/pulls",
+          "endpoint": "repos/{owner}/{repo}/pulls",
+          "graphql": false,
+          "method": "POST",
+          "noun": "api",
+          "program": "gh",
+          "repo": "{owner}/{repo}"
+        },
+        {
+          "action": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "endpoint": "repos/Agrim-Intelligence/sigma-drill-1/pulls?state=all&per_page=100",
+          "graphql": false,
+          "method": "GET",
+          "noun": "api",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "action": "comment",
+          "noun": "pr",
+          "number": "25",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "remote"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "25",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "repo",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "merge-base"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "diff"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "ls-files"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "25",
+          "program": "gh"
+        },
+        {
+          "destructive": false,
+          "program": "git",
+          "verb": "rev-parse"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "25",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "pr",
+          "number": "25",
+          "program": "gh"
+        },
+        {
+          "action": "view",
+          "noun": "repo",
+          "program": "gh"
+        },
+        {
+          "action": "graphql",
+          "endpoint": "graphql",
+          "graphql": true,
+          "method": "POST",
+          "mutation": false,
+          "noun": "api",
+          "program": "gh"
+        },
+        {
+          "action": "comment",
+          "noun": "issue",
+          "number": "24",
+          "program": "gh",
+          "repo": "Agrim-Intelligence/sigma-drill-1"
+        }
+      ],
+      "merges": [],
+      "ok": true,
+      "opaque_shell_launches": 3,
+      "placeholder_launches": 3,
+      "pr_merged_events_in_feed": 0,
+      "push_events_seen": 0,
+      "repo": "Agrim-Intelligence/sigma-drill-1",
+      "run": "off",
+      "schema": "sigma.blast-radius/1",
+      "settled": true,
+      "unsettled": []
+    }
+  ],
+  "schema": "sigma.blast-radius-evidence/1"
+}

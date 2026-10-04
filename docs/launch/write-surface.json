@@ -2409,6 +2409,46 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/blast_radius.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit baseline or assert command; caller-supplied --json path; reads GitHub over REST only",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/blast_radius_drive.py",
+      "function": "drive",
+      "rule": "fs-write",
+      "count": 6,
+      "gate": "explicit drive command; refuses an existing workdir; caller-supplied --baseline-out path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/blast_radius_drive.py",
+      "function": "drive",
+      "rule": "gh-issue",
+      "count": 1,
+      "gate": "explicit drive command; OWNER/sigma-drill- fullmatch; repository read back and must be private, not a fork or archived; refuses under CI; files one goal issue; never run by Sigma",
+      "risk": "high"
+    },
+    {
+      "path": "tools/readiness/blast_radius_drive.py",
+      "function": "drive",
+      "rule": "gh-pr",
+      "count": 1,
+      "gate": "explicit drive command; same repository checks; one approve comment on the goal's own PR",
+      "risk": "high"
+    },
+    {
+      "path": "tools/readiness/blast_radius_drive.py",
+      "function": "drive",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "explicit drive command; same repository checks; origin guard; one setup push only when the repository is empty, never forced",
+      "risk": "high"
+    },
+    {
       "path": "tools/readiness/drills.py",
       "function": "_kill_after_fixture_merge",
       "rule": "fs-write",
