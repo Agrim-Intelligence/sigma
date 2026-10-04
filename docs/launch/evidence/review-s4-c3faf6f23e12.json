@@ -1,0 +1,256 @@
+{
+  "schema": "review-s4/v1",
+  "units_sha": "c3faf6f23e1294cc33dbe5a77121a5b48c507709",
+  "units_schema": "readiness-units/v1",
+  "tier_b_reviewed": false,
+  "tier_b_note": "the 17-unit Tier B sample was not reviewed (owner decision 2026-10-04)",
+  "order": "ranked by the reviewer judgement of risk (units file carries no score): hooks and secret/merge paths first, then state and sync, then the Slack listener",
+  "method": "one fresh sonnet-tier reviewer per unit, then a different fresh verifier per unit; single shallow pass, no seeded defects, no second vendor, medium effort requested in the prompt and not verified",
+  "units": [
+    {
+      "unit": "A01",
+      "lines": 2293,
+      "status": "reviewed",
+      "findings_found": 8,
+      "verified": 8,
+      "dropped": 0,
+      "dropped_ids": [],
+      "severity": {
+        "next": 8
+      },
+      "dimensions": {
+        "safety": 1,
+        "reliability": 1,
+        "correctness": 3,
+        "resiliency": 2,
+        "scalability": 1
+      },
+      "filed_issues": [
+        590
+      ],
+      "review_tokens": 946339,
+      "verify_tokens": 422800,
+      "tokens": 1369139,
+      "dollars": 0.783
+    },
+    {
+      "unit": "A02",
+      "lines": 1894,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A03",
+      "lines": 2741,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A04",
+      "lines": 2507,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A05",
+      "lines": 2983,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A06",
+      "lines": 2988,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A07",
+      "lines": 602,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A08",
+      "lines": 1687,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A09",
+      "lines": 1981,
+      "status": "reviewed",
+      "findings_found": 4,
+      "verified": 4,
+      "dropped": 0,
+      "dropped_ids": [],
+      "severity": {
+        "next": 4
+      },
+      "dimensions": {
+        "liveness": 3,
+        "reliability": 1
+      },
+      "filed_issues": [
+        592
+      ],
+      "review_tokens": 1165274,
+      "verify_tokens": 589327,
+      "tokens": 1754601,
+      "dollars": 0.799
+    },
+    {
+      "unit": "A10",
+      "lines": 2984,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A11",
+      "lines": 2209,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A12",
+      "lines": 2846,
+      "status": "reviewed",
+      "findings_found": 10,
+      "verified": 9,
+      "dropped": 1,
+      "dropped_ids": [
+        "F4"
+      ],
+      "severity": {
+        "next": 9
+      },
+      "dimensions": {
+        "resiliency": 3,
+        "safety": 2,
+        "reliability": 1,
+        "liveness": 1,
+        "scalability": 1,
+        "correctness": 1
+      },
+      "filed_issues": [
+        592
+      ],
+      "review_tokens": 1027694,
+      "verify_tokens": 797038,
+      "tokens": 1824732,
+      "dollars": 0.984
+    },
+    {
+      "unit": "A13",
+      "lines": 1972,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A14",
+      "lines": 2973,
+      "status": "reviewed",
+      "findings_found": 5,
+      "verified": 4,
+      "dropped": 1,
+      "dropped_ids": [
+        "F2"
+      ],
+      "severity": {
+        "blocker-candidate-B2": 1,
+        "next": 3
+      },
+      "dimensions": {
+        "safety": 1,
+        "liveness": 1,
+        "resiliency": 2
+      },
+      "filed_issues": [
+        589,
+        591
+      ],
+      "review_tokens": 1169386,
+      "verify_tokens": 715811,
+      "tokens": 1885197,
+      "dollars": 0.882
+    },
+    {
+      "unit": "A15",
+      "lines": 2956,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    },
+    {
+      "unit": "A16",
+      "lines": 903,
+      "status": "not reached",
+      "reason": "not reached: S4 paused at the owner checkpoint"
+    }
+  ],
+  "totals": {
+    "units_reviewed": 4,
+    "units_not_reached": 12,
+    "lines_reviewed": 10093,
+    "findings_found": 27,
+    "verified": 25,
+    "dropped": 2,
+    "reviewer_and_verifier_tokens": 6833669,
+    "reviewer_and_verifier_dollars": 3.448,
+    "tokens_per_line": 677.1
+  },
+  "slot_overhead": {
+    "tokens": 11658953,
+    "dollars": 7.01,
+    "turns": 81,
+    "note": "the previous goal slot own transcript, metered after it stopped; it includes the re-reading overhead that made the earlier figure far too low"
+  },
+  "counters": {
+    "at_release": 28062829,
+    "this_goal_measured": 19306621,
+    "cumulative": 47369450,
+    "checkpoint": 40000000,
+    "cap": 75000000,
+    "headroom_cap": 27630550,
+    "over_checkpoint": 7369450
+  },
+  "stop_reason": "owner checkpoint exceeded: cumulative 47,369,450 is 7,369,450 over the 40M checkpoint; S4 is PAUSED with 12 of 16 units (A02-A08, A10, A11, A13, A15, A16) and all of Tier B not reviewed; releasing more is the owner's decision",
+  "filed": [
+    {
+      "issue": 589,
+      "label": "launch:blocker",
+      "klass": "B2",
+      "queued": true,
+      "promoted": false
+    },
+    {
+      "issue": 590,
+      "label": "launch:next"
+    },
+    {
+      "issue": 591,
+      "label": "launch:next"
+    },
+    {
+      "issue": 592,
+      "label": "launch:next"
+    }
+  ],
+  "not_covered": [
+    "units not reached: A02, A03, A04, A05, A06, A07, A08, A10, A11, A13, A15, A16",
+    "Tier B sample",
+    "single shallow pass per unit: recall is unmeasured",
+    "no seeded defects, no second vendor",
+    "only a subset of findings was reproduced by running code; the rest are file:line verdicts"
+  ],
+  "scoring": "no dimension is scored; docs/launch/scorecard.json is untouched",
+  "governance": {
+    "tokens": 813999,
+    "reviewers": [
+      "plan review",
+      "pre-PR code review",
+      "post-PR review"
+    ],
+    "note": "processed tokens of the three governance reviewers"
+  },
+  "this_goal_first_wave_total": 19306621,
+  "amendment_note": "Earlier committed figures (cumulative 38,435,581; headroom 1,564,419) were wrong: they excluded the governance reviewers and the slot's later overhead. This amendment and the new reviewer's cost are not included in 47,369,450."
+}
