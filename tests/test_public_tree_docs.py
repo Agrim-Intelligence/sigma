@@ -58,6 +58,8 @@ def test_snapshot_doc_states_the_new_repository_flow():
 def test_the_name_handover_pieces_are_gone_and_unreferenced():
     gone = "handover" + "_check"
     doc = "name-" + "handover"
+    for rel in ("tools/build_public_tree.py", "tools/verify_public_repo.py", "docs/public-snapshot.md"):
+        assert (ROOT / rel).exists(), rel + " is missing"
     for rel in ("tools/%s.py" % gone, "docs/%s.md" % doc):
         assert not (ROOT / rel).exists(), rel
     assert not list((ROOT / "tests").glob("test_%s*.py" % gone))

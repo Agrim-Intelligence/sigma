@@ -16,6 +16,7 @@ import ast
 import importlib.util
 import inspect
 import itertools
+import hashlib
 import json
 import os
 import pathlib
@@ -629,7 +630,9 @@ def test_owner_placeholder_is_rejected(tmp_path, capsys):
 
 def test_exposure_entries_under_an_excluded_prefix_are_moot(tmp_path, capsys):
     mod = _tool()
-    allow = json.dumps([{"path": ".sdlc/plans/1.md", "rule": "email-address", "reason": "fixture"}]) + "\n"
+    line = hashlib.sha256(("contact " + _email()).encode("utf-8")).hexdigest()
+    allow = json.dumps([{"path": ".sdlc/plans/1.md", "rule": "email-address", "reason": "fixture",
+                         "lines": [line]}]) + "\n"
     extra = {".sdlc/plans/1.md": "contact " + _email() + "\n", EXPOSURE_ALLOWLIST: allow}
     repo, sha = _fixture(tmp_path, extra=extra)
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "default")))
@@ -643,8 +646,7 @@ def test_exposure_entries_under_an_excluded_prefix_are_moot(tmp_path, capsys):
     assert rc2 == 0, se2
     report2 = _report(_fields(so2))
     assert report2["dispositions"]["exposure_allowlist"]["moot"] == 0
-    assert {"source": "exposure-allowlist", "path": ".sdlc/plans/1.md", "rule": "email-address"} in \
-        report2["dispositions"]["unpinned_dispositions"]
+    assert not [u for u in report2["dispositions"]["unpinned_dispositions"] if u["source"] == "exposure-allowlist"]
     assert report2["scans"]["exposure"]["findings"] == []
 
 
@@ -927,3 +929,16 @@ def test_builder_source_passes_its_own_content_rules_and_mirrors_the_secret_file
     for number, line in enumerate(TOOL.read_text(encoding="utf-8").splitlines(), 1):
         assert not mod.KEY_HEADER.search(line), "line %d holds a key header" % number
         assert not mod.OWNER_PLACEHOLDER.search(line), "line %d holds the placeholder" % number
+
+
+def test_exposure_allowlist_entry_scoped_to_a_bare_path_is_refused(tmp_path, capsys):
+    """The scanner's schema: exactly one of blob or lines. A path-and-rule entry is refused by the
+    builder with its own one-line refusal, not passed on to the scanner to exit 2."""
+    mod = _tool()
+    for label, entry in (("bare", {}), ("both", {"blob": "0" * 40, "lines": ["0" * 64]}),
+                         ("badlines", {"lines": ["zz"]}), ("emptylines", {"lines": []})):
+        allow = json.dumps([dict({"path": "docs/a.md", "rule": "email-address", "reason": "fixture"}, **entry)]) + "\n"
+        repo, sha = _fixture(tmp_path, name=label, extra={EXPOSURE_ALLOWLIST: allow})
+        rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o" + label)))
+        assert rc == 2 and so == "", (label, rc, so, se)
+        assert "REFUSED [dispositions-malformed]" in se, (label, se)

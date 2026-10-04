@@ -2297,22 +2297,6 @@
       "risk": "high"
     },
     {
-      "path": "tools/handover_check.py",
-      "function": "_write_json_once",
-      "rule": "fs-remove",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "high"
-    },
-    {
-      "path": "tools/handover_check.py",
-      "function": "_write_json_once",
-      "rule": "fs-write",
-      "count": 2,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
       "path": "tools/kg_control.py",
       "function": "_repo",
       "rule": "fs-write",

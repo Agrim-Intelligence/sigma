@@ -736,10 +736,21 @@ def _load_allowlist(raw):
         raise Refused("dispositions-malformed", "%s is not JSON" % EXPOSURE_ALLOWLIST_PATH)
     if not isinstance(data, list) or any(
             not isinstance(x, dict) or not x.get("path") or not x.get("rule") or not x.get("reason")
-            or ("blob" in x and (not isinstance(x["blob"], str) or not _OBJECT_ID.match(x["blob"])))
-            for x in data):
-        raise Refused("dispositions-malformed", "%s entries need path, rule and reason" % EXPOSURE_ALLOWLIST_PATH)
+            or not _content_scoped(x) for x in data):
+        raise Refused("dispositions-malformed", "%s entries need path, rule, reason and exactly one of blob or "
+                      "lines (the exposure scanner's schema)" % EXPOSURE_ALLOWLIST_PATH)
     return data
+
+
+def _content_scoped(entry):
+    """The exposure scanner's own rule: an entry holds exactly one of `blob` (a git object id) or
+    `lines` (a non-empty list of sha256 hex digests), so none is scoped to a bare path and rule."""
+    if ("blob" in entry) == ("lines" in entry):
+        return False
+    if "blob" in entry:
+        return isinstance(entry["blob"], str) and bool(_OBJECT_ID.match(entry["blob"]))
+    return (isinstance(entry["lines"], list) and bool(entry["lines"])
+            and all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in entry["lines"]))
 
 
 def _disposition_matches(entry, finding):
@@ -1225,11 +1236,8 @@ def _main(argv, run, state):
     if verdict != "VERIFIED":
         _unpublish_rejected(partial, run, export_commit)
     dest = out if verdict == "VERIFIED" else rejected
-    stale_keys = set((s["path"], s["rule"]) for s in exposure["stale"])
-    unpinned = [{"source": "exposure-allowlist", "path": e["path"], "rule": e["rule"]}
-                for e in allow_live if "blob" not in e and (e["path"], e["rule"]) not in stale_keys
-                and exposure_ok]
-    unpinned += [{"source": "public-tree", "path": e["path"], "rule": e["rule"]}
+    # Every exposure-allowlist entry is content-scoped (blob or lines): none suppresses a whole file.
+    unpinned = [{"source": "public-tree", "path": e["path"], "rule": e["rule"]}
                  for i, e in enumerate(pt_live) if i in used and "blob" not in e]
     exclusions = []
     for prefix, origin in prefixes:

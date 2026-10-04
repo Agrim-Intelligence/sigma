@@ -143,9 +143,10 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - names absent from the patterns file, and e-mail addresses, which `tools/leak_scan.py` does not
   check;
 - destination GitHub state beyond what `python3 tools/verify_public_repo.py` counts;
-- an unpinned disposition suppresses every match of its rule anywhere in its file, so a NEW real
-  value of that rule in that file would ship. The report's `unpinned_dispositions` lists each one so
-  the owner sees every whole-file suppression.
+- an unpinned disposition in `public-tree-dispositions.json` suppresses every match of its rule
+  anywhere in its file, so a NEW real value of that rule in that file would ship. The report's
+  `unpinned_dispositions` lists each one so the owner sees every whole-file suppression
+  (exposure-allowlist entries are all content-scoped, so none appears there).
 
 The four scans are: `builder` (the header rule `private-key-header`, the placeholder rule
 `owner-placeholder`, and the doctor marketplace slug against `docs/launch/definition.json`),
@@ -162,9 +163,11 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 `docs/launch/` cannot drop them):
 
 - `docs/launch/exposure-allowlist.json`: the exposure scanner's allowlist, entries
-  `{path, rule, reason}`. Entries for archived files (`.sdlc/**`, `docs/launch/evidence/**`) and a
-  few single reviewed literals carry a `blob`, so they are pinned to the exact bytes; the other
-  entries for `tests/`, `skills/` and `tools/` are unpinned because those files change in every goal.
+  `{path, rule, reason}` plus exactly one of `blob` (one exact git blob) or `lines` (sha256 of each
+  reviewed matched line). No entry is scoped to a bare path and rule, and the builder refuses a file
+  holding one (`dispositions-malformed`). Regenerate rows with `exposure_scan.py tracked . --propose`
+  and read every row before it is given a reason; a real secret or private reference is removed,
+  never allowlisted.
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason[, blob]}` for the two content
   rules. It holds the fixtures and regex sources that name a key header or the placeholder on

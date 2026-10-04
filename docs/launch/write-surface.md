@@ -291,8 +291,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/build_public_tree.py | main | fs-rmtree | 1 | ungated | high |
 | tools/build_public_tree.py | materialise | fs-write | 2 | ungated | medium |
 | tools/build_public_tree.py | write_report | fs-remove | 1 | ungated | high |
-| tools/handover_check.py | _write_json_once | fs-remove | 1 | ungated | high |
-| tools/handover_check.py | _write_json_once | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | _repo | fs-write | 7 | ungated | medium |
 | tools/kg_control.py | _write_builder | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | main | fs-write | 2 | ungated | medium |
