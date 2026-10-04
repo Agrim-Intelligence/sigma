@@ -58,6 +58,14 @@ def _coexist_notice(sdlc_dir, surface, once=False):
         _load("coexist").gate(sdlc_dir, surface, once=once)
     except Exception:                # noqa: BLE001 - see the docstring
         pass
+    try:
+        # #514: observe the registry sheet at every gated verb: take Sigma's copy of it, or say loudly
+        # that the previous plugin's fold emptied it. Writes nothing but that copy. One stat when the
+        # repository has no registry. Not silenced by SIGMA_ALLOW_COEXIST: it is protection, not a notice.
+        if (pathlib.Path(sdlc_dir) / "features" / "index.json").is_file():
+            _load("feature_registry").guard_sheet(sdlc_dir)
+    except Exception:                # noqa: BLE001 - fail-open, like the notice above
+        pass
 
 
 def _ensure_watcher(sdlc_dir, config, spawn=None):
