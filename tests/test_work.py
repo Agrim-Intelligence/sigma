@@ -5111,6 +5111,20 @@ def test_post_review_zero_cap_normalizes_to_the_default_instead_of_disabling_it(
     assert out.startswith("PARK:") and "did not converge" in out
 
 
+def test_config_template_comment_states_what_a_cap_below_one_does():
+    """#576: the shipped template's `_max_review_cycles` comment once said `0 = no cap`, while the code
+    resolves any value below 1 to the default. The expected fallback is DERIVED from the cap-resolving
+    code (`_ci_cap`, the same `cap < 1` rule `post_review` applies, pinned by the zero-cap test above),
+    never copied: the comment must say a value below 1 falls back to that number, and must not call it
+    'no cap' as a setting."""
+    tmpl = json.loads((ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8"))
+    comment = tmpl["work"]["_max_review_cycles"]
+    resolved = work._ci_cap({"work": {"max_review_cycles": 0}})
+    assert resolved == work.DEFAULTS["max_review_cycles"] != 0
+    assert "below 1" in comment and f"default of {resolved}" in comment.split("below 1", 1)[1]
+    assert "0 = no cap" not in comment
+
+
 def test_post_review_negative_cap_normalizes_to_the_default_instead_of_parking_on_the_first_block(tmp_path):
     """F20/#343: a negative `max_review_cycles` failed the opposite way — `cap and cycles >= cap` goes
     true the moment `cycles` first reaches 1, parking on the very first block with zero fix attempts.
