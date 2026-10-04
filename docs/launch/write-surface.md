@@ -278,6 +278,21 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-setup/scripts/setup.py | write_cfg | fs-write | 1 | ungated | medium |
 | skills/agrim-status/scripts/merge_queue_enable.py | create_merge_queue_ruleset | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
 | skills/agrim-status/scripts/merge_queue_enable.py | patch_auto_merge | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
+| tools/build_public_tree.py | _drop_partial | fs-rmtree | 1 | ungated | high |
+| tools/build_public_tree.py | _export_repository | fs-rmtree | 1 | ungated | high |
+| tools/build_public_tree.py | _main | fs-rmtree | 1 | ungated | high |
+| tools/build_public_tree.py | _main | fs-write | 2 | ungated | medium |
+| tools/build_public_tree.py | _make_private_dir | fs-write | 1 | ungated | medium |
+| tools/build_public_tree.py | _rename_export | fs-remove | 1 | ungated | high |
+| tools/build_public_tree.py | _unpublish_rejected | git-destructive | 1 | ungated | high |
+| tools/build_public_tree.py | _write_new | fs-remove | 2 | ungated | high |
+| tools/build_public_tree.py | _write_new | fs-write | 1 | ungated | medium |
+| tools/build_public_tree.py | finalise_report | fs-remove | 1 | ungated | high |
+| tools/build_public_tree.py | main | fs-rmtree | 1 | ungated | high |
+| tools/build_public_tree.py | materialise | fs-write | 2 | ungated | medium |
+| tools/build_public_tree.py | write_report | fs-remove | 1 | ungated | high |
+| tools/handover_check.py | _write_json_once | fs-remove | 1 | ungated | high |
+| tools/handover_check.py | _write_json_once | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | _repo | fs-write | 7 | ungated | medium |
 | tools/kg_control.py | _write_builder | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | main | fs-write | 2 | ungated | medium |

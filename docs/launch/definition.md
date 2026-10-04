@@ -18,13 +18,12 @@ it.
 - **Artifact:** `public-snapshot` — a fresh public snapshot repository, built from a reviewed tree.
   The snapshot does not carry this repository's issue and pull-request history or its other
   branches.
-- **Public repository:** `Agrim-Intelligence/sigma`. The owner decided on 2026-10-01 that the
-  public repository takes this name, so this private repository is renamed, to a name the owner
-  has not yet chosen, BEFORE the public repository is created, and it stays private. Once a new
-  repository takes the old name, GitHub's redirects from it stop, so any clone whose `origin`
-  still points at the old URL would then point at the public repository. The rename is the
-  owner's action, done by hand (no Sigma tool, goal or agent creates, renames or changes a
-  repository), and its sequence is prepared in #397.
+- **Public repository:** `Agrim-Intelligence/sigma` is the value `definition.json` records today.
+  The owner decided on 2026-10-05 that the public repository is a NEW repository, created fresh
+  with a clean one-commit snapshot of this one; this repository is not renamed. Its name replaces
+  `public_repo` in `definition.json` in the separate rename. Creating and pushing it is the owner's
+  action, done by hand (no Sigma tool, goal or agent creates or changes a repository); the export
+  builder and the steps are in [the public snapshot](../public-snapshot.md).
 - **Install channel:** the Claude Code plugin marketplace, pointing at the public repository. It is
   the only channel with a recorded end-to-end run.
 - **Version:** `1.0.0`, git-tagged `v1.0.0` in the public repository. `.claude-plugin/plugin.json`
