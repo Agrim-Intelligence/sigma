@@ -1,37 +1,598 @@
 [
   {
-    "path": "tests/boardfake.py",
-    "rule": "gh-token",
-    "reason": "fake token used by tests"
+    "path": ".sdlc/plans/258.md",
+    "rule": "auth",
+    "reason": "plan or research prose using the common word digest, not a credential",
+    "lines": [
+      "2dbf6fd5fe00b65d2e0bfe6bb3b622940ff0d9e3c12af50127b13127c86eb6c6"
+    ]
+  },
+  {
+    "path": ".sdlc/plans/429.md",
+    "rule": "email-address",
+    "reason": "plan text quoting a test URL with a placeholder userinfo password; no real credential",
+    "lines": [
+      "1204433644654f1e8bef22a36547f1a19f3ad23aab9e6530ac145d922e126d0d"
+    ]
+  },
+  {
+    "path": ".sdlc/research/258.md",
+    "rule": "auth",
+    "reason": "plan or research prose using the common word digest, not a credential",
+    "lines": [
+      "b924c6c976f7d7395357ba132da1cd8d75901c7146362d472ec49fff6e67012a"
+    ]
+  },
+  {
+    "path": ".sdlc/research/277.md",
+    "rule": "absolute-home-path",
+    "reason": "research prose quoting an elided placeholder path that the detector allows",
+    "lines": [
+      "65f33ffb16d92a81476ddaf617509aa4c6b4c210a988151554edd3c9e312fd79"
+    ]
+  },
+  {
+    "path": ".sdlc/research/277.md",
+    "rule": "credential-assignment",
+    "reason": "research prose quoting identifiers named *_TOKEN whose values are label-like constants",
+    "lines": [
+      "65f33ffb16d92a81476ddaf617509aa4c6b4c210a988151554edd3c9e312fd79"
+    ]
+  },
+  {
+    "path": "docs/launch/evidence/mutation-70c2c6e96136.json",
+    "rule": "email-address",
+    "reason": "recorded mutation diff text containing a decorator (@contextlib), not an address",
+    "lines": [
+      "865c25f2ae2291f41fe89e72498b541f88ebfd652d22616464e93525ade3c915"
+    ]
+  },
+  {
+    "path": "docs/launch/evidence/pin-rollback-2026-10-02.md",
+    "rule": "email-address",
+    "reason": "recorded ssh error text naming the public git user at github.com, not an address",
+    "lines": [
+      "1117021cf5bc2c9babadbdfad1fb173bbdb3565ac2082de5496e8da3afbb157c",
+      "1117021cf5bc2c9babadbdfad1fb173bbdb3565ac2082de5496e8da3afbb157c"
+    ]
+  },
+  {
+    "path": "skills/agrim-doctor/scripts/migrate.py",
+    "rule": "auth",
+    "reason": "user-facing message text using the common word digest, not a credential",
+    "lines": [
+      "7a70833c86c1bef73268a3aaff0a8303d24d8eebc4b0d93613c6a81e9cfeea82"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_classify.py",
+    "rule": "credential-assignment",
+    "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
+    "lines": [
+      "1010346cb7f84f1cd3971a8164486e76e26f5266fe518923ac19b03129552c5b",
+      "7cd9ae932d032d6ae85c2d6e4846b07fad1a7b039b021feff03a65fbb74e2974",
+      "e319311f36e8e52d1bbe0bede8f08a887687fd2a3ee3a892db859e1378cd9510"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_doc.py",
+    "rule": "auth",
+    "reason": "comments using the common word digest for a marker field, not a credential",
+    "lines": [
+      "5fd8ba8615b704280e64dba61facbf71d6e6e07d564c353a2a68871072c6a835",
+      "c20a14305f5c7f40feb3568ab239beb0b5cbb6a97b06aa7668ff7511ca13162e"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/feature_labels.py",
+    "rule": "credential-assignment",
+    "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
+    "lines": [
+      "0484425d18ed98e599810620485aecf2b9fdfd618df785c2bc8ecd5e1d75a551",
+      "5208172e74c7a90a9dcdab1267d667a16cbeb4988af9ff45a6fbf9c8da634471",
+      "736cef0c7a19b94306e4b31b45c46c1f459223034087cd1b53e68de61c90c3db",
+      "c39f90fdabe9dc937eb002753036f14c7be9e56bf3419afc8a8c1c25ed4314de",
+      "f2b1e8eb383c1d1921f8ad7b12fa2c6a4719c0194ed889adf23618d07d06200e",
+      "f80d66920c9c0e517caa527353c22668e6544376ec1bcfd10d4217184cc32ccb"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/merge_observation.py",
+    "rule": "email-address",
+    "reason": "comment quoting the shape of a git ssh URL; no owner",
+    "lines": [
+      "6a9e07d61c73445b24b63216b954a742308d745c77ab1d63509ac9a3417688c3"
+    ]
   },
   {
     "path": "skills/agrim-loop/scripts/north_star.py",
     "rule": "absolute-home-path",
-    "blob": "b783fc7230ce02dbc37b9c0b85b2c0004a8f90ca",
-    "reason": "reviewed host-agnostic documentation literal; exact blob only"
+    "reason": "documentation literal using an elided placeholder path to describe a git layout; reviewed host-agnostic",
+    "lines": [
+      "75cbd95a9915a070cd7fa12ce45eac56125826621c5263b541b128d1265b00b1",
+      "75cbd95a9915a070cd7fa12ce45eac56125826621c5263b541b128d1265b00b1"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/scrub.py",
+    "rule": "aws-key",
+    "reason": "AWS's published documentation example key, listed as a public test fixture",
+    "lines": [
+      "bccff9fbcab113b4c72fee4690a5a6ee2fef8444da04f534182d164362c7957d"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/upstream.py",
+    "rule": "email-address",
+    "reason": "comment naming an invented example address on a reserved example domain",
+    "lines": [
+      "18fbd06c447355860610d22a4a9bfaecb54b22c33436fb5fa81eede13c98babf"
+    ]
+  },
+  {
+    "path": "skills/agrim-loop/scripts/work.py",
+    "rule": "auth",
+    "reason": "error messages using the common word digest, not a credential",
+    "lines": [
+      "beb7fa02807dff63b963e4d2ebe001e1a83462f770622bd73e17b014b3abc528",
+      "fe73be4fbd5725fa64dc2d8f594cfeadea4ea401861f20adee4143aa4372f5ba"
+    ]
+  },
+  {
+    "path": "skills/agrim-setup/scripts/setup.py",
+    "rule": "email-address",
+    "reason": "comment quoting the shape of a git ssh URL on a public host",
+    "lines": [
+      "543535e382435ee38b2ae0e006e9c1928f7581abef9db98e04e6b9bd8a660cd3"
+    ]
+  },
+  {
+    "path": "tests/test_b6_459.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "d52f4110e356284810d5a605992c8242005e08f626978878c9283ae584abb4ba"
+    ]
+  },
+  {
+    "path": "tests/test_b6_460.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "d52f4110e356284810d5a605992c8242005e08f626978878c9283ae584abb4ba"
+    ]
+  },
+  {
+    "path": "tests/test_b6_461.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "d52f4110e356284810d5a605992c8242005e08f626978878c9283ae584abb4ba"
+    ]
+  },
+  {
+    "path": "tests/test_b6_462.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "719e48910c439c32febdca9208b90c4f3285f640408f939abb58a9b0a7a6221f",
+      "719e48910c439c32febdca9208b90c4f3285f640408f939abb58a9b0a7a6221f"
+    ]
+  },
+  {
+    "path": "tests/test_b6_463.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "7f4607007b3c465c2c9f03264998b0526e1358b462206c53a6d203c64bf323df"
+    ]
+  },
+  {
+    "path": "tests/test_b6_466.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "8e2d9bd3d2bfb20874cd465860b583c4deb41ecd03df0941680501470e7fce8c"
+    ]
+  },
+  {
+    "path": "tests/test_bench_arms_isolation.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "73ea5d75ac4c71cddfb94877c5390346928fb45d8cf948d96852ba4aa1fd0a03"
+    ]
+  },
+  {
+    "path": "tests/test_bench_tasks.py",
+    "rule": "email-address",
+    "reason": "fixture source string containing a pytest fixture decorator, not an address",
+    "lines": [
+      "6ad2c36cc5f8a4c4f035bc16eca41c0d5378b1f046d5bc83d7d1e52bd4323719"
+    ]
   },
   {
     "path": "tests/test_coexist.py",
     "rule": "absolute-home-path",
-    "blob": "1427049357aff8c0aac1a5d8eef40d06413ff8ec",
-    "reason": "reviewed hermetic coexistence-control literals; exact blob only"
+    "reason": "hermetic coexistence-control literals under an invented one-letter user home; no real host path",
+    "lines": [
+      "4ed322b21254986dce458294c7e7171e733a4baa6c7fc3bd1bb56495ba79bfd6",
+      "7cf0362330ceaa2a9bb5ce915d2f8b543479d9f82cca98fdbdc7cf77c46ca863",
+      "c19e57699d05a8b8c5ef8645af5e7ea329acdb2744b958067d4028fc0ef6ef4a",
+      "fa8d637eebcfccf67809b3ce8db61e1360ded88f8a63dd545b79eb537acb9fd5"
+    ]
+  },
+  {
+    "path": "tests/test_coexist.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "dd8053713c5b001dd996a348c37fbbc74fb7ec666d5f77a10731ace6ca24de70"
+    ]
+  },
+  {
+    "path": "tests/test_discovery_scan.py",
+    "rule": "email-address",
+    "reason": "fixture source string containing a pytest decorator, not an address",
+    "lines": [
+      "43beac569ee4bdd24f15c64366ee77967a9b8c6c1f0864beaf5ef8eb6cef0fa7"
+    ]
+  },
+  {
+    "path": "tests/test_docs.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "4d69c1b51b721947ce874a28686c567107456c26cc57ac00c00ceaf5b6046c32"
+    ]
+  },
+  {
+    "path": "tests/test_doctor.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "2e3c6ddac2113257cbcfe41f83feda1592b4f095ae978195c8bdadfb4a0e4e40",
+      "949cad2aa1095958b01a3b6b4bd6cb7893dbbcc1586f33bd8e20415502b07adf",
+      "b15d073a5309df89b1e36aeafb43796634ba344ed7cb8454debfd4169f199186"
+    ]
+  },
+  {
+    "path": "tests/test_feature_owner.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "327c72d7c20ce910efcec14acb436238548c25e9d30a0a56d531c60a676549b0"
+    ]
+  },
+  {
+    "path": "tests/test_feature_propagate.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "30139513095a3cd0e1f9e804f1017a9bf93584b1b90ec17f95a6aa2fa21ab7b7",
+      "5e7f50bd1b63d4aafc887c75296a7d3ec5ee7ccac72bd6689e69ca04a430e5d2"
+    ]
+  },
+  {
+    "path": "tests/test_feature_sync.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "e5fc34fb501af01c42d955e3846fabe55fb2f3b3e383318af28bbd4f730e7bfa"
+    ]
+  },
+  {
+    "path": "tests/test_goal_state_disposition.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "0a829d121c721153cdbf3c9d8984b1d781734ef2ae7b7cfa2bf3296e7eacf345",
+      "122b1bcb76b77068965b496546494cedf52c471a8b168d9ac243092057e79216"
+    ]
+  },
+  {
+    "path": "tests/test_growth_disp.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "463a31fac07efe96c52a98e1d6e70fe512f773ab014b4dbc3514d2e5b97db4ad"
+    ]
+  },
+  {
+    "path": "tests/test_init_flow.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "0de3de95704427a403a39031581b5412ec4eb42755bca5706241bd790a208758"
+    ]
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "absolute-home-path",
+    "reason": "detector fixture prose naming placeholder users (you, <user>, elided) to prove the leak scan's path rule",
+    "lines": [
+      "56635345d34a1760e669713d66c352f77f2b59c642a1d6493005cc8cc4cd221c",
+      "56635345d34a1760e669713d66c352f77f2b59c642a1d6493005cc8cc4cd221c"
+    ]
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "auth",
+    "reason": "detector fixture prose naming the auth schemes the detector looks for, not a credential",
+    "lines": [
+      "79a0d95b3b9d29ed226256d40259faad16257faaacc7219a7343b0e39ac98e7a"
+    ]
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "credential-assignment",
+    "reason": "detector fixtures: label-like *_TOKEN constants, AWS's published documentation example secret (split), a placeholder env reference",
+    "lines": [
+      "36720859947358edfe3b2f6ed858f0d17a2066494b8bac593b794eeb5037e9d1",
+      "be53627d0afcc95785f7c91efd47c3f6b5c442d2c7775f2e977c7a17a97e0711",
+      "cb8f26db56a8fcd95f881eede71ed67282e1e8f261a29c20af60618d707092eb",
+      "f3d2dcefec95e7cd01cbc9ff403ef2349e87a4c46711364c5c1186f9e8f60860"
+    ]
+  },
+  {
+    "path": "tests/test_leak_scan.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs built with an invented owner to prove the leak scan detects them",
+    "lines": [
+      "5606577c59498714fcdeca55a14cbf8c164c16b10f17ebcdbf0780d9d4125daf",
+      "5c2c68761d2f31dd4a36b37d5b1a6eac0106cd542dfedcafeb18264eaedf3fbb",
+      "d5a17ef5f20dab16d4d89266c7bf17f7ec602ebe8fe2ef4a26eba51bcbbfec31"
+    ]
+  },
+  {
+    "path": "tests/test_ledger.py",
+    "rule": "private-key",
+    "reason": "synthetic PEM-shaped string with a short fake base64 body, built to test redaction",
+    "lines": [
+      "9a433a4bf770d56513b0f5d7d99d3edd8778a35828163191e41ff7e756561641"
+    ]
+  },
+  {
+    "path": "tests/test_liveness_disposition.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "0a829d121c721153cdbf3c9d8984b1d781734ef2ae7b7cfa2bf3296e7eacf345",
+      "122b1bcb76b77068965b496546494cedf52c471a8b168d9ac243092057e79216"
+    ]
+  },
+  {
+    "path": "tests/test_merge_observation.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "4a5e1333c8bd05e39cc26395c54ca59300e8e288b3e46ace55eecbcf4c569a87",
+      "d8f7ccadb123b63d662b5438673c4c58e72cc958df07004d63079e37b352e814"
+    ]
+  },
+  {
+    "path": "tests/test_no_autonomous_feature_branch_deletion.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "cef2f237b2386191611bc32c3fb84f20c75ccfb6d4806e1d9f73a1a197dbd5ad"
+    ]
+  },
+  {
+    "path": "tests/test_preflight.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs and a deliberately split placeholder password for credential-masking tests; invented hosts and owners",
+    "lines": [
+      "02e935af30771972ebb319e3069cc5cd28a0c411524cc8227659a0255dfedb78",
+      "0be6f6ba871141d50463ad3f938070c3ad51a16c8f4292cc78fd934dced88c8c",
+      "14d71c769128efa374971e9fd9a370b78c4f3868c93d612e3701b2e5e9307b1e",
+      "2d0fbdbf3f1b5b5a083ce93a39e028c7c93258a1159d77b316cc9ed905fdd703",
+      "68d682aabbb7f76b99ceac19c08f80f4c60b6d7c48398a13b44a60ee4aade559",
+      "76a8a6d0dfa3a9e643783ff58b244634dec3add7ccbc2bbef83d99a9ef25ab67",
+      "76a8a6d0dfa3a9e643783ff58b244634dec3add7ccbc2bbef83d99a9ef25ab67",
+      "8170e5636cb1a2c5ec999cb9183c527f90e2e4f5fbf55a3f8d11231777413921",
+      "82632d29d4e0507f9fb44e11854d5c5fe7eb5f8e9947bd153a8918c1cddd13ad",
+      "8fd9c2b04e36c2049088f06f635ef1c7820019e2fcf424c28b2d478f18778982",
+      "bb5659fe4836c7f9fb44e19e990bad1415fce437d2993132c308e6238519a60e",
+      "bd7aa6c696aa5517b44b8b7203f9c4acfeaf5ed4cf329ef6476c9b8498780fec",
+      "cefb18d66427b5757196d69c5007b9072b46337830cc35725036c662ae517290",
+      "f9fcecf8c222aff223c5008ecb1d246fd33dde6cba031b4e33f7fa24b1d9024d"
+    ]
+  },
+  {
+    "path": "tests/test_readiness_blast_radius.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs with placeholder userinfo (x:y, u:TOKEN) for URL-normalisation tests; invented repo, no real credential",
+    "lines": [
+      "3ca54f50cf39b16129fd670c330670c188e1fcce706bc42db37bc7eac8c06913",
+      "52f9eb92ed61d0f3888fb8bcc945e1344fad7ac155e0ae2580d56c8abb694eeb",
+      "9907169b4a77fd12417d39e9c6267fee9b4745c5d0cab6cd2e267438b5b2eb70"
+    ]
+  },
+  {
+    "path": "tests/test_readiness_decide.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs and a placeholder userinfo password for URL-parsing tests; invented owners",
+    "lines": [
+      "1ac6acccef46ac9124e7de88c3e8fedee8edba6907bb0420c3c65d1ec77b83b8",
+      "3171e14690e17f3b2ccf76de07756a8c8a8278162979188485cc08e7bd155aac",
+      "60d31cc3a4650d8663018409ad8aaaf7d9b6d4536af92bb9bc05c1b7cfab68da",
+      "734c8451c958933dec968c93a96ddef7bd1e8ab258833b3dd8fb9f73768b2ce4",
+      "827ecf15578979f7ddd8af3a149bcca28ea3456f5c0a21dba286bced5b8722ba",
+      "8bca5f0253b78cf4315681376122ef98d1e3129799ceb779194eb096eb538b8d",
+      "bc0e11ae3963a6d1374b11fd29a001a6e78d9f658197b2cf225af7b4547931b6",
+      "d291968042804e5099722437859a17a8265c81aa2c019be65c52d461a5ef5aba",
+      "d40f1b232adae9d146fec2bef545b4faea7f9cc93eb15d666cbff4b4b4a5a463",
+      "eb4369d72834a6b954f82be8a4af3abf808d61600b86e0d5fa62fd9e23d93437"
+    ]
   },
   {
     "path": "tests/test_readiness_drills.py",
     "rule": "absolute-home-path",
-    "blob": "50f637a6a26606fc1f71b9f21d91c32329e5f82c",
-    "reason": "reviewed readiness-drill red fixture; exact blob only"
+    "reason": "readiness-drill red fixture using an invented user (alice); no real host path",
+    "lines": [
+      "6f27738e28715078679470b6bd723a6f7ed8f226748fcaccedff6a70394b290e",
+      "fc0b5e2038e359a145542ea9c644534a6829215f2c7b172636268ee5090eeebb"
+    ]
   },
   {
     "path": "tests/test_readiness_exposure_scan.py",
     "rule": "absolute-home-path",
-    "blob": "75ca3fc05f50003ec3252289526a356d0304c638",
-    "reason": "reviewed exposure-scanner red fixture; exact blob only"
+    "reason": "exposure-scanner red fixtures using an invented user (alice); no real host path",
+    "lines": [
+      "cd2619a82ae0a753539d7787331074bd550fe86626d84dcd146a1398e0fbe93b",
+      "e1f88e3588da81554f8b1dde9cc27b71f997aa3a0d775e91f7d8d1905f1fb213"
+    ]
+  },
+  {
+    "path": "tests/test_readiness_flake_census.py",
+    "rule": "absolute-home-path",
+    "reason": "census input-validation fixtures with invented users (someone, x); no real host path",
+    "lines": [
+      "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052",
+      "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052"
+    ]
+  },
+  {
+    "path": "tests/test_research_capture.py",
+    "rule": "private-key",
+    "reason": "synthetic PEM-shaped string with a fake base64 body, built to test redaction",
+    "lines": [
+      "ca3fb3886c421a89ba11441b0b102112b93a03cc78a5ed28018ab3c4de779368"
+    ]
+  },
+  {
+    "path": "tests/test_scrub.py",
+    "rule": "private-key",
+    "reason": "synthetic PEM-shaped strings with a fake base64 body, built to test redaction",
+    "lines": [
+      "49a2c737409622a6cf1dec62ea76e650f8557a6e6ceb3b74cfc081363bc8c57e",
+      "c6de53831f11f368004ec24a4911fecd18b38262e34fa06633bf2b232a3db409"
+    ]
+  },
+  {
+    "path": "tests/test_sdlc_init.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "881fa98984227e582a7e433c73ace9c56d0a6ec683a7acc1cfa042fac246ea92"
+    ]
+  },
+  {
+    "path": "tests/test_setup.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs on public hosts with invented owners, for URL-parsing tests",
+    "lines": [
+      "039819f2bb7b18d1c7588beb98fb178246dbbcaafe87db7d48d7b8427af4f5bf",
+      "039819f2bb7b18d1c7588beb98fb178246dbbcaafe87db7d48d7b8427af4f5bf",
+      "d71d8d9e97f916bdec61f1c5673f9c3e1dfc8e8e7afcc89ed21457269b862838",
+      "fce143c07ba7cbf60eb30023a49ebd1cfe930fd07041f34da8e0a57c7014b19a"
+    ]
+  },
+  {
+    "path": "tests/test_test_first_gate.py",
+    "rule": "email-address",
+    "reason": "fixture source string containing a pytest decorator, not an address",
+    "lines": [
+      "e268f762018a53209dc35a93ac175f70908ccf127f2b5be358c8bef80900c0e8"
+    ]
+  },
+  {
+    "path": "tests/test_unit_completion.py",
+    "rule": "credential-assignment",
+    "reason": "constant named BACKLOG_TOKEN holding a URL query fragment, not a secret",
+    "lines": [
+      "ebcf534cac1fe572e696ecb80d586906c84c6d62e9a749866ef22cdceb600e24"
+    ]
   },
   {
     "path": "tests/test_upstream.py",
     "rule": "absolute-home-path",
-    "blob": "0b2bc72c0fc8307b289fd8f45db543149acec75b",
-    "reason": "reviewed upstream-scrub control literals; exact blob only"
+    "reason": "upstream-scrub control literal using an invented user and project (bob/secretproj); no real host path",
+    "lines": [
+      "0e8a4b5892f150d67e581b8d6f1b175f576869cf650e8ae7d4be697d5071d62a",
+      "f4c8a13c7c9ef4dca1f53082325ad279b05aef2cd483515d31b3a5c0ae7b0c62"
+    ]
+  },
+  {
+    "path": "tests/test_upstream.py",
+    "rule": "email-address",
+    "reason": "invented contact address on a reserved example domain, used to prove the upstream scrub masks it",
+    "lines": [
+      "0558e6e53147c8225261a97fab6c21916673dc4b40dceacc8b06ae6a6445875b",
+      "3b281983d8b9abfa7f8f5821d93191b057a3f01fa7440b572e33cbe432e4bafd",
+      "5fcee1a6895c4d652197e8521f5da2c76b3bb4c15154187f1b03331f0afb7121",
+      "88bdc2203a704e2cc05ee3aecc7b6c6d642a28fd05039b83809d9c941812595d"
+    ]
+  },
+  {
+    "path": "tests/test_verify_detect.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "74c0426f3325b28385243f07a6a69a82ebd764378ba17edc99f23006aa0074b3"
+    ]
+  },
+  {
+    "path": "tests/test_work.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URL (git@host:owner/repo) for URL-parsing tests; invented owner, no real address",
+    "lines": [
+      "313d29708612876af6c8e800104d4ed5ae6e15ca897086ba2cf6a9aad93c643e",
+      "7e753d956ee162ce2b9da702c2ee33ab3f3449ac1613e561216e0717106c90a6",
+      "cef2f237b2386191611bc32c3fb84f20c75ccfb6d4806e1d9f73a1a197dbd5ad"
+    ]
+  },
+  {
+    "path": "tests/test_worktree_disposition.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "0a829d121c721153cdbf3c9d8984b1d781734ef2ae7b7cfa2bf3296e7eacf345",
+      "122b1bcb76b77068965b496546494cedf52c471a8b168d9ac243092057e79216"
+    ]
+  },
+  {
+    "path": "tests/test_worktree_prune.py",
+    "rule": "email-address",
+    "reason": "git identity on a reserved test domain, set in a throwaway repo by a test",
+    "lines": [
+      "68a74f5322ef61c0e1cb369233c66c3bfa4129ddb3553412356ae495d5979a33",
+      "dfc6bb507bc61747d154620c14b26b48412c16dab105197c7b119907ece903d1"
+    ]
+  },
+  {
+    "path": "tools/leak_scan.py",
+    "rule": "absolute-home-path",
+    "reason": "comment quoting a one-letter placeholder home that the detector exempts",
+    "lines": [
+      "1103da3aefe176058866ace8fd479612cb2a260f3a439726adbbc8c56df4d63a"
+    ]
+  },
+  {
+    "path": "tools/leak_scan.py",
+    "rule": "email-address",
+    "reason": "docstring describing the shapes of git ssh URLs the detector matches; placeholders only",
+    "lines": [
+      "0461775f4548b094cdf32c2e9b8d1e7f50526abdd181633c584eb7f7847902e8",
+      "3a8d3b506409a118663b577047d833e090a6d27f20061430b15edc091bb95c05",
+      "3a8d3b506409a118663b577047d833e090a6d27f20061430b15edc091bb95c05"
+    ]
+  },
+  {
+    "path": "tools/readiness/bench_tasks.py",
+    "rule": "auth",
+    "reason": "Python code using the common word digest as a variable name, not a credential",
+    "lines": [
+      "af2b19a6d7848b53dde6d3c234e4c9fbdd04a1dfda58db432f224bf63b007e83"
+    ]
+  },
+  {
+    "path": "tools/readiness/blast_radius.py",
+    "rule": "email-address",
+    "reason": "code stripping the git ssh user prefix from a repo URL; the literal is the public git user, not an address",
+    "lines": [
+      "2303eab78cb68f28e414b6ee1af2810ae951500e9add0fef5207b544b0f3371a"
+    ]
   }
 ]

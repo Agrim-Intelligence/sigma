@@ -2546,6 +2546,14 @@
     },
     {
       "path": "tools/readiness/exposure_scan.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit tracked scan with --propose; caller-supplied draft path; hashes only",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/exposure_scan.py",
       "function": "scan_refs",
       "rule": "git-destructive",
       "count": 1,

@@ -322,6 +322,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/drills.py | run_d4 | fs-write | 2 | ungated | medium |
 | tools/readiness/egress_capture.py | main | fs-write | 1 | explicit summarize command; caller-supplied JSON path | medium |
 | tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
+| tools/readiness/exposure_scan.py | main | fs-write | 1 | explicit tracked scan with --propose; caller-supplied draft path; hashes only | medium |
 | tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
 | tools/readiness/flake_census.py | run | fs-write | 1 | explicit run command; creates the caller-supplied output directory (pytest writes the JUnit XML into it); refuses to overwrite an observation | medium |
 | tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
