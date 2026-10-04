@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/alecthomas/voluptuous.git",
+  "base_sha": "73237e9014f53da32fd6f90630976f5e8279b420",
+  "fix_sha": "44593ce7c330faf9418252c4b5448f4736144a7f",
+  "pr_number": 542,
+  "issue_number": 541,
+  "issue_url": "https://github.com/alecthomas/voluptuous/issues/541",
+  "pr_url": "https://github.com/alecthomas/voluptuous/pull/542",
+  "pr_created_at": "2026-07-02T08:39:58Z",
+  "pr_merged_at": "2026-07-11T01:16:47Z",
+  "license": "BSD-3-Clause",
+  "stars": 1851,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 6,
+  "hidden_test_files": [
+    "voluptuous/tests/tests.py"
+  ],
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "voluptuous/tests",
+  "tree_sha256": "b971c66701066b7864a7d8ba07db076ac78b2c320296587a4ad3e7993bebd567",
+  "issue_title": "Number validator leaks a raw TypeError on Infinity/NaN instead of raising Invalid",
+  "issue_body_sha256": "7769507a7219756237b6473c29913af0784e91bd815de7f2d0a612dd62e51798",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-07-11T01:16:48Z",
+  "issue_closed_at": "2026-07-11T01:16:48Z"
+}

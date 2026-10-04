@@ -1,0 +1,28 @@
+{
+  "id": "int-refactor-1",
+  "kind": "refactor",
+  "origin": "internal",
+  "trap": false,
+  "status": "ready",
+  "prompt": "`price_for_member` and `price_for_guest` in `pricing.py` repeat the same discount, tax and rounding steps.\n\nRefactor so that both call one shared function `price_with(subtotal, discount_rate)`, which applies the discount rate, then adds tax at `TAX_RATE`, then rounds to cents. The rule that guests get no discount below 100 stays in `price_for_guest`, which picks the rate. Public behaviour must not change for any input.\n\nMake the change in this repository.",
+  "source": "int-refactor-1/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "visible_expected": "fail",
+  "hidden_bundle": "int-refactor-1",
+  "hidden_sha256": "0430c221a3ece0a683694c9a270d6aa6a1c8f286f11a08fa1c39a6d43dc16cb0",
+  "hidden_files": {
+    "files/test_hidden_pricing.py": "91684a6b49463b0e50f6a76bcbca0b5ee00b2db50c8a0dc2bc4c3c827b47fa06",
+    "hidden.json": "4ec8a7c741fe33e74d8b763e948fb148c5f0e1e47807bda1930d08e0f2a3e55f",
+    "reference/pricing.py": "4ad99638a29363db068ecf52c3764a395e7507979337c048630de4160e166f37",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "c7fe2d83e8c1133c1f2512062ecf9f6590c0e15866985dea350b96b2946d7700"
+}

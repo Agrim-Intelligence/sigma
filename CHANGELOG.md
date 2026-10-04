@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The benchmark task set exists in draft: 8 external post-cutoff tasks and 4 internal tasks verified, 3 trap slots awaiting an
+  outside author** (#355, readiness dimension D3; the issue's 30-task scope was reduced by the owner on 2026-10-03).
+  `evals/bench/tasks/manifest.json` is in the format `evals/bench/bench.py` loads and says `"frozen": false`;
+  `tools/readiness/bench_tasks.py` checks it (`check`), scores every task through the harness's own scoring functions in one
+  environment resolved by `lock` into `environment.lock` (`verify`: hidden tests fail on the starting tree with pytest status 1 and pass on the reference fix) and fetches
+  an external task's base tree (`materialize`). Measured once, on one CPython 3.12 on one macOS machine: all 12 non-trap tasks verified,
+  hidden tests on the starting tree failed in every case (pytest exit status 1; 1 to 8 failing tests where pytest printed a count); every hidden run took under 4 seconds and every visible suite under 9. Hidden bundles live only under the
+  operator's hidden root; per-file hashes in `task.json` let CI name a hidden file copied into the repository. Not frozen: the three
+  traps need a person outside the Sigma team (`docs/bench/trap-author-brief.md`), and the freeze (commit sha recorded in the
+  pre-registration) is a later step described in `docs/bench/task-sourcing.md`. The model's training cutoff is a month
+  (Jun 2026) from Anthropic's models page; external pull requests were all created from 2026-07-02 on. Open owner decision: the
+  matched-spend arm stops after one attempt on external tasks, whose visible tests already pass.
+  Tests: `tests/test_bench_tasks.py`.
+
 - **A fold by the old plugin no longer empties Sigma's registry without Sigma saying so and offering a way back** (#514,
   launch blocker class B1, loss of user data). Measured: the old plugin's `feature_sync.py fold`, run from a temporary
   copy of its installed scripts, reads a registry sheet in Sigma's schema as empty, exits 0, and writes `index.json`

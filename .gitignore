@@ -33,3 +33,6 @@ venv/
 .env
 .env.*
 !.env.example
+
+# Benchmark task set: an external task's tree is fetched at run time, never committed.
+/evals/bench/tasks/ext-*/repo/

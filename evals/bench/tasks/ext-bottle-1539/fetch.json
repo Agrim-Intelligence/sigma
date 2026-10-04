@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/bottlepy/bottle.git",
+  "base_sha": "457a8fa82f2c96d18c6f5934288387ad83ac12fa",
+  "fix_sha": "90bd4aa7439419186a85446f2aa05c23e3ba7103",
+  "pr_number": 1541,
+  "issue_number": 1539,
+  "issue_url": "https://github.com/bottlepy/bottle/issues/1539",
+  "pr_url": "https://github.com/bottlepy/bottle/pull/1541",
+  "pr_created_at": "2026-09-15T05:21:37Z",
+  "pr_merged_at": "2026-09-15T07:20:40Z",
+  "license": "MIT",
+  "stars": 8793,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 20,
+  "hidden_test_files": [
+    "test/test_outputfilter.py"
+  ],
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "test",
+  "tree_sha256": "e6a9c0e74c91653618ce68e96e03533f30e63281ea4b2bfff36a48002c9eb513",
+  "issue_title": "JSON configs do nothing (`autojson` / `json.disable` / `json.enable`)",
+  "issue_body_sha256": "9da1c3b5308f706eec55558dd7cceb009258f82a4775c25902d2990fde34df8e",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-09-18T09:11:45Z",
+  "issue_closed_at": "2026-09-18T09:11:45Z"
+}

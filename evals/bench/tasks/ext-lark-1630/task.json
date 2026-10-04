@@ -1,0 +1,28 @@
+{
+  "id": "ext-lark-1630",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "Fix Template.search() to yield zero-variable matches\n\nFix Template.search() in lark/tree_templates.py so it correctly yields matches when the template contains no template variables. Today, Template.match() returns an empty dict when a pattern with no variable placeholders successfully matches a subtree, which is the correct sentinel for \"match found, nothing to bind\". But search() checks the result with a plain truthiness test, and an empty dict is falsy in Python, so every zero-variable match is silently dropped. As a result, search() always returns an empty iterator when the template has no variables, and translate() never replaces anything in that case, even when the source pattern appears in the tree. The fix must distinguish between None (no match) and {} (match with no variable bindings), which is already the contract that match() documents and tests confirm.\n\nTwo existing tests in tests/test_tree_templates.py were written to match the broken behavior and assert an empty result for zero-variable templates; they must be corrected to assert the match that the fixed implementation correctly yields.\n\nMake the change in this repository.",
+  "source": "ext-lark-1630/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-lark-1630",
+  "hidden_sha256": "e6fc1cedc7f1352c61e60d5ba62a271328812f24863ecc086bacc1559667cdaa",
+  "hidden_files": {
+    "files/tests/test_tree_templates.py": "adcebc7acad6a7b899aaf6b715f81d2d7148fa97c691e768e4bb12d33924c5e5",
+    "hidden.json": "44c29cac10a8df86909c206fc87d7406f9f8923c1496d8a62f9ce6f73dcb3dfb",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "7d81064b192e611bd0d72e02aa91fb4fa88dbb4638bbc95ed7d13b94f7907051"
+}

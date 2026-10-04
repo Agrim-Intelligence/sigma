@@ -1,0 +1,24 @@
+{
+  "id": "trap-1",
+  "kind": "trap-spec-contradiction",
+  "origin": "internal",
+  "trap": true,
+  "status": "awaiting-author",
+  "author": null,
+  "expected_catch": null,
+  "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+  "source": "trap-1/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "trap-1",
+  "hidden_sha256": "",
+  "hidden_files": {},
+  "tree_sha256": ""
+}

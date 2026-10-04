@@ -1,0 +1,334 @@
+{
+  "schema": "sigma.benchmark-tasks/v1",
+  "frozen": false,
+  "model": {
+    "id": "claude-sonnet-5-5",
+    "training_cutoff": "2026-06",
+    "cutoff_rule_date": "2026-07-01",
+    "cutoff_source": "https://platform.claude.com/docs/en/about-claude/models/overview (Claude Sonnet 5.5, training data cutoff Jun 2026), read 2026-10-04",
+    "note": "Anthropic publishes the training data cutoff as a month (Jun 2026). The rule date is the first day of the next month, so every external pull request was created after the whole of June 2026. Whether the owner pins this model ID is an owner decision recorded in the pre-registration."
+  },
+  "environment": {
+    "python": "CPython 3.12.13 darwin arm64",
+    "lock": "environment.lock",
+    "lock_sha256": "69c70f7167cea55988c977daec0acc828a701302d44591bb8baa7ad883d9765d",
+    "build": "python3 -m venv ENV && ENV/bin/pip install --only-binary=:all: -r environment.lock, then put ENV/bin first on the PATH that resolves python3 for visible and hidden commands"
+  },
+  "balance": {
+    "external": 8,
+    "internal_non_trap": 4,
+    "traps": 3,
+    "total": 15,
+    "reason": "The pre-registration asks for about 15 tasks balanced as far as the pool permits. The external pool was not the limit (eight verified candidates were found from a short search); the internal side is 4 non-trap tasks (one each of bug fix, feature, refactor and docs) plus the 3 outside-authored traps, 7 internal in all. Eight external and seven internal is as close to even as the 15 total and the three required traps allow."
+  },
+  "tasks": [
+    {
+      "id": "ext-bottle-1539",
+      "prompt": "JSON configs do nothing (`autojson` / `json.disable` / `json.enable`)\n\nHistorically in Bottle you could pass `autojson=False` to the constructor to disable the default JSON plugin, which would allow adding a different or differently-configured JSON plugin. This behavior was broken in e22e38dd as part of the 0.13 config refactor, and now there is no way to disable the JSON plugin any more.\n\nThe bug introduced in e22e38dd is multi-fold:\n\n- `autojson` constructor arg is replaced with a deprecation message saying to use `app.config['json.enable'] = False` instead\n  - ...but then it actually sets `self.config['json.disable'] = True`\n- neither `json.enable` nor `json.disable` configurations do anything in the constructor anyway, because the plugin is now installed regardless:\n```diff\n-        if self.config['autojson']:\n-            self.install(JSONPlugin())\n+        self.install(JSONPlugin())\n```\n- meanwhile in `JSONPlugin` it declares three more configs - `json.ascii`, `json.indent` and `json.dump_func`, all of which also appear to do nothing\n\nIt looks as if perhaps there was an intent to implement behavior around these configs at some future date, but that didn't happen (see #881). The current situation means also any config-related suggestions in #287 to swap out the `dumps` function also no longer work.\n\nIs there an interest in a PR which would implement this functionality? Right now both the code and the docs (https://bottlepy.org/docs/dev/configuration.html) are misleading.\n\nFor the short term it seems the easiest thing to try get a bit more control over the JSON handling is to go through all the plugins and manually adjust the `JSONPlugin` as suggested in https://github.com/bottlepy/bottle/issues/287#issuecomment-4001810\n\nMake the change in this repository.",
+      "source": "ext-bottle-1539/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "test"
+      ],
+      "hidden_bundle": "ext-bottle-1539",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "68cbbaab253f9addf6be68103f18850ff02692049f2e7cadd5f8d61d7fa60c9b",
+      "tree_sha256": "e6a9c0e74c91653618ce68e96e03533f30e63281ea4b2bfff36a48002c9eb513"
+    },
+    {
+      "id": "ext-lark-1618",
+      "prompt": "Bug in lexer_callbacks, causing some callbacks to be skipped in some grammars\n\n## Bug description\n\nWhen two or more terminals each have both an `UnlessCallback` (they absorb a\nsame-priority keyword literal) **and** a `lexer_callbacks` entry, every user\ncallback except the last one silently never fires. The tokens themselves lex\ncorrectly, so nothing surfaces the drop.\n\n\n## Reproduce \n```python\nfrom lark import Lark\n\nfired = []\np = Lark(r'''\n    start: (A | B | AKW | BKW)+\n    A: /[a-z]+/\n    B: /[0-9]+/\n    AKW: \"foo\"\n    BKW: \"123\"\n    %ignore \" \"\n''', parser='lalr', lexer='basic',\n    lexer_callbacks={'A': lambda t: fired.append('A') or t,\n                     'B': lambda t: fired.append('B') or t})\n\nlist(p.lex(\"bar 456\"))\nprint(fired)   # actual: ['B']  — expected: ['A', 'B']\n```\n\n`\"bar\"` lexes as `A` and is never re-typed, yet the `A` callback doesn't run.\n\n## Cause\n\n`_build_scanner` creates each `CallChain` gate inside the loop over\n`user_callbacks`:\n\n```python\nself.callback[type_] = CallChain(self.callback[type_], f,\n                                 lambda t: t.type == type_)\n```\n\nThe lambda closes over the loop **variable** `type_` and only reads it when\ncalled — during lexing, after the loop has finished — so every gate compares\nagainst the *last* terminal's name. In the example above, `A`'s gate asks\n`t.type == \"B\"`.\n\nFix can be a simple one-line. I will create a PR soon, but meanwhile, this issue documents it.\n\nMake the change in this repository.",
+      "source": "ext-lark-1618/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-lark-1618",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "c83b811582969cc1c1a878936926e8612dd7943e74bfba31426f4b6932a58a5e",
+      "tree_sha256": "107eef56ebecb6b3d490504c5b95a2fe62f50471055e0df4e78c77bf3f310e3c"
+    },
+    {
+      "id": "ext-lark-1630",
+      "prompt": "Fix Template.search() to yield zero-variable matches\n\nFix Template.search() in lark/tree_templates.py so it correctly yields matches when the template contains no template variables. Today, Template.match() returns an empty dict when a pattern with no variable placeholders successfully matches a subtree, which is the correct sentinel for \"match found, nothing to bind\". But search() checks the result with a plain truthiness test, and an empty dict is falsy in Python, so every zero-variable match is silently dropped. As a result, search() always returns an empty iterator when the template has no variables, and translate() never replaces anything in that case, even when the source pattern appears in the tree. The fix must distinguish between None (no match) and {} (match with no variable bindings), which is already the contract that match() documents and tests confirm.\n\nTwo existing tests in tests/test_tree_templates.py were written to match the broken behavior and assert an empty result for zero-variable templates; they must be corrected to assert the match that the fixed implementation correctly yields.\n\nMake the change in this repository.",
+      "source": "ext-lark-1630/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-lark-1630",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "e6fc1cedc7f1352c61e60d5ba62a271328812f24863ecc086bacc1559667cdaa",
+      "tree_sha256": "7d81064b192e611bd0d72e02aa91fb4fa88dbb4638bbc95ed7d13b94f7907051"
+    },
+    {
+      "id": "ext-more-itertools-1252",
+      "prompt": "split_before/split_after/split_when disagree with themselves on an empty iterable when maxsplit=0\n\n`split_before`, `split_after` and `split_when` return a different result for an empty iterable when `maxsplit=0` than they do for any other `maxsplit`, even though no split can occur either way.\n\n```python\n>>> import more_itertools as mi\n>>> pred = lambda x: x == 0\n>>> {ms: list(mi.split_before([], pred, maxsplit=ms)) for ms in (-1, 0, 1, 2)}\n{-1: [], 0: [[]], 1: [], 2: []}\n```\n\n`split_after` and `split_when` behave the same way. `split_at` is consistent (`[[]]` at every `maxsplit`, matching `''.split(',', 0) == ['']`).\n\nThe `[]` answer is the one the library already pins: `tests/test_more.py:1548` asserts `list(mi.split_before([], ...)) == []` and `tests/test_more.py:1689` asserts the same for `split_when`. Neither test passes `maxsplit`, so neither reaches the fast path that produces `[[]]`.\n\nThe fast path is:\n\n```python\nif maxsplit == 0:\n    yield list(iterable)\n    return\n```\n\nadded to all four functions in f77823f (2020) as a speed shortcut, when `split_before` still ended with a bare `yield buf` and `[[]]` was its correct empty-input answer. 2e81a56 (2021) later changed the terminal yield to `if buf: yield buf` and added `test_empty_collection`, but did not reach behind the fast path.\n\nHappy to open a PR guarding the fast path the same way the slow path already is, leaving `split_at` alone.\n\n\nMake the change in this repository.",
+      "source": "ext-more-itertools-1252/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-more-itertools-1252",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "1857a10ba0777172c7a3cf1bdba9546fb02cdbe7d475560ffc29a31282326de3",
+      "tree_sha256": "10ee06fc59b9e19a96c01e2effa4bf535ed5db15fd2bcf6d67b45a3977457a11"
+    },
+    {
+      "id": "ext-more-itertools-1304",
+      "prompt": "ichunked(..., 0) raises islice's ValueError on a nonempty iterable\n\n`ichunked` is documented as being like `chunked`, but with lazy chunks. `chunked` treats `n=0` as \"yield nothing\". `ichunked` only does that when the source is already empty; with any remaining items it calls `islice(iterator, n - 1)` and blows up.\n\nI hit this switching a streaming pipeline from `chunked` to `ichunked` so batches would not be materialized as lists. Chunk size comes from the same config in both paths; `0` means \"this stage is disabled, emit nothing.\"\n\n```python\nfrom more_itertools import chunked, ichunked\n\nrows = [\"a\", \"b\", \"c\"]  # e.g. leftover rows from a DB cursor\nchunk_size = 0          # config: skip this sink\n\nprint(list(chunked(rows, chunk_size)))\n# []\n\nprint([list(c) for c in ichunked(rows, chunk_size)])\n# ValueError: Stop argument for islice() must be None or an integer: 0 <= x <= sys.maxsize.\n```\n\n`IchunkedTests.test_zero` only uses `iterable = []`, which never enters the `for first in iterator` loop, so the `islice(..., n - 1)` path is untested.\n\nNegative `n` has the same leak: `chunked` raises `ValueError: n must be at least 0`, `ichunked` raises islice's \"Indices for islice() must be None or an integer...\".\n\nHappy to send a PR.\n\nMake the change in this repository.",
+      "source": "ext-more-itertools-1304/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-more-itertools-1304",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "c87d2c67e450ab08eb9875ef36da48c9715682ff885e7e977d4142c8eee08e67",
+      "tree_sha256": "331cc2f9afa9ab73ceb70810155df645b5c55a727a41b28a6cb34c2409906e89"
+    },
+    {
+      "id": "ext-sqlparse-332",
+      "prompt": "get_real_name can't get name of column where dbname is included.\n\nGet_real_name can't get name of column where dbname is included(like db1.table1.a1), it's real_name returning table1 not a1.\n```\nimport sqlparse\nfrom sqlparse.sql import IdentifierList, Identifier\n\nsql = '''\nselect a, db1.table1.a1    # here\nas BBB\nfrom test_table\n'''\nparsed = sqlparse.parse(sql)\nstmt = parsed[0]  # grab the Statement object\nextract_table_identifiers(stmt)\n\ndef extract_table_identifiers(token_stream):\n    for item in token_stream:\n        if isinstance(item, IdentifierList):\n            for identifier in item.get_identifiers():\n                if identifier.has_alias():\n                    print(identifier.get_real_name())\n                else:\n                    print(identifier.get_name())\n        elif isinstance(item, Identifier):\n            print(item.get_real_name())\n```\n\n\nMake the change in this repository.",
+      "source": "ext-sqlparse-332/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-sqlparse-332",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "33362568b8d2d587a4e21444512fda52e250d68b736c8afd61584ac3dc98cd8e",
+      "tree_sha256": "0bee88b1a6acce42aa95dead91a4d7f669b9ae4fbc7636e0d127ca32d3deff8a"
+    },
+    {
+      "id": "ext-sqlparse-601",
+      "prompt": "Error paring `BETWEEN .. AND ..` clause when decimal's '0' is omitted\n\nAs the title mentioned. Here are my sql query and python script.\n\n```sql\n-- test_sql\nselect\n    l_discount\nfrom\n    lineitem\nwhere\n    l_discount between .03 and .06;\n```\n```python\nstatement = sqlparse.parse(test_sql)[0]\n\nfor token in statement.tokens:\n    if isinstance(token, sqlparse.sql.Where):\n        print(token, '\\n')\n        print(' tokens type '.center(35, '='), ' token value '.center(20, '='))\n        for sub_token in token.tokens:\n            if sub_token.value in [' ', '\\n']: continue\n            print(str(type(sub_token)).ljust(35, ' '),  sub_token)\n```\nThe sqlparse result is:\n```\nwhere\n    l_discount between .03 and .06; \n\n=========== tokens type =========== === token value ====\n<class 'sqlparse.sql.Token'>        where\n<class 'sqlparse.sql.Identifier'>   l_discount between\n<class 'sqlparse.sql.Identifier'>   .03 and\n<class 'sqlparse.sql.Token'>        .06\n<class 'sqlparse.sql.Token'>        ;\n```\nThe `between` and `and` keyword are parsed as `Identifier` with some other content.\nAnd, the result is right when the omitted '0's   are added as following:\n```sql\n-- test_sql\nselect\n    l_discount\nfrom\n    lineitem\nwhere\n    l_discount between 0.03 and 0.06;\n```\n```\nwhere\n    l_discount between 0.03 and 0.06; \n\n=========== tokens type =========== === token value ====\n<class 'sqlparse.sql.Token'>        where\n<class 'sqlparse.sql.Identifier'>   l_discount\n<class 'sqlparse.sql.Token'>        between\n<class 'sqlparse.sql.Token'>        0.03\n<class 'sqlparse.sql.Token'>        and\n<class 'sqlparse.sql.Token'>        0.06\n<class 'sqlparse.sql.Token'>        ;\n```\n\nMake the change in this repository.",
+      "source": "ext-sqlparse-601/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests"
+      ],
+      "hidden_bundle": "ext-sqlparse-601",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "fd77953279e7edbb0a920ba9fe95f4e574e5804dc0eaa5c948304e40126a7771",
+      "tree_sha256": "0572eb6785c43587f0cd017775da89553b75fde7fe241e2285c077563f6469e9"
+    },
+    {
+      "id": "ext-voluptuous-541",
+      "prompt": "Number validator leaks a raw TypeError on Infinity/NaN instead of raising Invalid\n\n### Summary\nThe `Number` validator (with `precision`/`scale`) converts its input to `Decimal` and inspects precision/scale. For `Decimal('Infinity')` / `Decimal('NaN')`, that inspection raises a raw `TypeError(\"infinity and NaN have no precision\")`, which escapes the validator instead of being surfaced as a voluptuous `Invalid`. Callers that expect validators to raise only `Invalid` get an unexpected `TypeError`.\n\n### Reproduction\n```python\nfrom voluptuous import Number\nNumber(precision=6, scale=2)(\"Infinity\")\n# TypeError: infinity and NaN have no precision\n```\n\n### Expected\nA non-finite numeric input is rejected with `Invalid` (the validator contract), not a raw `TypeError`.\n\n### Actual\nAn uncaught `TypeError` leaks out of the validator.\n\n### Fix sketch\nDetect the non-finite case and `raise Invalid(...)`.\n\n### Environment\nvoluptuous 0.16.0 (master @ 87825d6), Python 3.12.\n\n\nMake the change in this repository.",
+      "source": "ext-voluptuous-541/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "voluptuous/tests"
+      ],
+      "hidden_bundle": "ext-voluptuous-541",
+      "kind": "bug-fix",
+      "origin": "external",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "e63979c31fc0fd937b2ec77cca72b43216e4c56d8013cdc58ca31264415a34fa",
+      "tree_sha256": "b971c66701066b7864a7d8ba07db076ac78b2c320296587a4ad3e7993bebd567"
+    },
+    {
+      "id": "int-bugfix-1",
+      "prompt": "`top_words` in `wordcount.py` miscounts: it treats \"The\" and \"the\" as different words, counts \"cat.\" and \"cat\" separately, and returns words with equal counts in an arbitrary order.\n\nMake it count words case-insensitively and return them lowercased; strip leading and trailing punctuation from each word (an apostrophe or hyphen inside a word stays, so \"don't\" and \"well-known\" are single words); drop tokens that are only punctuation; and break ties alphabetically. The existing tests must keep passing.\n\nMake the change in this repository.",
+      "source": "int-bugfix-1/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "int-bugfix-1",
+      "kind": "bug-fix",
+      "origin": "internal",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "5ff5a2d6aead996bf6533b4670d65b5578c001df2fea03b4c659941fba900c46",
+      "tree_sha256": "3f6707e6fcd9b5ac25de41de7ab9ed5cfacf76f67ff030fb2a2a0cc6ee3925d5"
+    },
+    {
+      "id": "int-docs-1",
+      "prompt": "`README.md` does not document the command-line options of `cli.py`.\n\nAdd an `## Options` section with exactly one bullet per option (the positional `name` and every `--flag`), written as a line starting `- ` that names the option in backticks, carries the option's help text exactly as `cli.py` has it, and, for every `--flag` that takes a value, ends with `(default: <value>)`, where <value> is the parser's own default written without quotes. Do not change the example above it.\n\nMake the change in this repository.",
+      "source": "int-docs-1/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "int-docs-1",
+      "kind": "docs",
+      "origin": "internal",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "1f1d98d21fd7bd15a567dab9564e60fc79c35a149e98b28e35909caf1624ea0d",
+      "tree_sha256": "cec9c511d9c2343447b0b4b31bba54a85477bc0ef9b1f192f7cce5c91dceb08d"
+    },
+    {
+      "id": "int-feature-1",
+      "prompt": "Add priorities to `TaskList` in `tasks.py`.\n\n`add(title, priority=\"normal\")` accepts \"high\", \"normal\" or \"low\"; any other value raises `ValueError` and adds nothing (a rejected add must not use up an id). Add a method `open_titles_by_priority()` that returns the titles of the open tasks ordered high, then normal, then low, keeping the order they were added within one priority. Everything that works today keeps working, including the ids `add` returns.\n\nMake the change in this repository.",
+      "source": "int-feature-1/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "int-feature-1",
+      "kind": "feature",
+      "origin": "internal",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "1592d81c2a76929f64af851075c341b601267e747ed5272ff4d5ec09b5158f7c",
+      "tree_sha256": "76362da8a2d9bc0cdf337055df07909b30e1f109c4a2aef8c847ad252e1732ca"
+    },
+    {
+      "id": "int-refactor-1",
+      "prompt": "`price_for_member` and `price_for_guest` in `pricing.py` repeat the same discount, tax and rounding steps.\n\nRefactor so that both call one shared function `price_with(subtotal, discount_rate)`, which applies the discount rate, then adds tax at `TAX_RATE`, then rounds to cents. The rule that guests get no discount below 100 stays in `price_for_guest`, which picks the rate. Public behaviour must not change for any input.\n\nMake the change in this repository.",
+      "source": "int-refactor-1/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "int-refactor-1",
+      "kind": "refactor",
+      "origin": "internal",
+      "trap": false,
+      "status": "ready",
+      "hidden_sha256": "0430c221a3ece0a683694c9a270d6aa6a1c8f286f11a08fa1c39a6d43dc16cb0",
+      "tree_sha256": "c7fe2d83e8c1133c1f2512062ecf9f6590c0e15866985dea350b96b2946d7700"
+    },
+    {
+      "id": "trap-1",
+      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "source": "trap-1/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "trap-1",
+      "kind": "trap-spec-contradiction",
+      "origin": "internal",
+      "trap": true,
+      "status": "awaiting-author",
+      "hidden_sha256": "",
+      "tree_sha256": ""
+    },
+    {
+      "id": "trap-2",
+      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "source": "trap-2/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "trap-2",
+      "kind": "trap-spec-contradiction",
+      "origin": "internal",
+      "trap": true,
+      "status": "awaiting-author",
+      "hidden_sha256": "",
+      "tree_sha256": ""
+    },
+    {
+      "id": "trap-3",
+      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "source": "trap-3/repo",
+      "visible_command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "hidden_bundle": "trap-3",
+      "kind": "trap-plan-defect",
+      "origin": "internal",
+      "trap": true,
+      "status": "awaiting-author",
+      "hidden_sha256": "",
+      "tree_sha256": ""
+    }
+  ]
+}

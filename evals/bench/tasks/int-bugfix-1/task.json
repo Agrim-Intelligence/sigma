@@ -1,0 +1,28 @@
+{
+  "id": "int-bugfix-1",
+  "kind": "bug-fix",
+  "origin": "internal",
+  "trap": false,
+  "status": "ready",
+  "prompt": "`top_words` in `wordcount.py` miscounts: it treats \"The\" and \"the\" as different words, counts \"cat.\" and \"cat\" separately, and returns words with equal counts in an arbitrary order.\n\nMake it count words case-insensitively and return them lowercased; strip leading and trailing punctuation from each word (an apostrophe or hyphen inside a word stays, so \"don't\" and \"well-known\" are single words); drop tokens that are only punctuation; and break ties alphabetically. The existing tests must keep passing.\n\nMake the change in this repository.",
+  "source": "int-bugfix-1/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "visible_expected": "fail",
+  "hidden_bundle": "int-bugfix-1",
+  "hidden_sha256": "5ff5a2d6aead996bf6533b4670d65b5578c001df2fea03b4c659941fba900c46",
+  "hidden_files": {
+    "files/test_hidden_wordcount.py": "5b5357fe0c68180d1f3586b3ef0d5c53dc7f5b57befc92ba7fc3e014487440bc",
+    "hidden.json": "ffea7e5748262024ebc26eaa3dcd40935cc9d046a0093d91b60d2f05366a0a24",
+    "reference/wordcount.py": "b025c2d9b56e808ed8d98e49ba8cabc94acaf4e1ff187aa5cc85fafb85a875bd",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "3f6707e6fcd9b5ac25de41de7ab9ed5cfacf76f67ff030fb2a2a0cc6ee3925d5"
+}

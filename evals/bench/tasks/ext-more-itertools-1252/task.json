@@ -1,0 +1,28 @@
+{
+  "id": "ext-more-itertools-1252",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "split_before/split_after/split_when disagree with themselves on an empty iterable when maxsplit=0\n\n`split_before`, `split_after` and `split_when` return a different result for an empty iterable when `maxsplit=0` than they do for any other `maxsplit`, even though no split can occur either way.\n\n```python\n>>> import more_itertools as mi\n>>> pred = lambda x: x == 0\n>>> {ms: list(mi.split_before([], pred, maxsplit=ms)) for ms in (-1, 0, 1, 2)}\n{-1: [], 0: [[]], 1: [], 2: []}\n```\n\n`split_after` and `split_when` behave the same way. `split_at` is consistent (`[[]]` at every `maxsplit`, matching `''.split(',', 0) == ['']`).\n\nThe `[]` answer is the one the library already pins: `tests/test_more.py:1548` asserts `list(mi.split_before([], ...)) == []` and `tests/test_more.py:1689` asserts the same for `split_when`. Neither test passes `maxsplit`, so neither reaches the fast path that produces `[[]]`.\n\nThe fast path is:\n\n```python\nif maxsplit == 0:\n    yield list(iterable)\n    return\n```\n\nadded to all four functions in f77823f (2020) as a speed shortcut, when `split_before` still ended with a bare `yield buf` and `[[]]` was its correct empty-input answer. 2e81a56 (2021) later changed the terminal yield to `if buf: yield buf` and added `test_empty_collection`, but did not reach behind the fast path.\n\nHappy to open a PR guarding the fast path the same way the slow path already is, leaving `split_at` alone.\n\n\nMake the change in this repository.",
+  "source": "ext-more-itertools-1252/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-more-itertools-1252",
+  "hidden_sha256": "1857a10ba0777172c7a3cf1bdba9546fb02cdbe7d475560ffc29a31282326de3",
+  "hidden_files": {
+    "files/tests/test_more.py": "f0298f705b18aa940cec51936c52408633fcca34967fab90aeb83425e0727602",
+    "hidden.json": "7e61232fdec0076e8170638967a7cf642086d09c0eabffb5237bf69b146cec09",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "10ee06fc59b9e19a96c01e2effa4bf535ed5db15fd2bcf6d67b45a3977457a11"
+}

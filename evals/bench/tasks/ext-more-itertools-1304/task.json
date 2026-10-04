@@ -1,0 +1,28 @@
+{
+  "id": "ext-more-itertools-1304",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "ichunked(..., 0) raises islice's ValueError on a nonempty iterable\n\n`ichunked` is documented as being like `chunked`, but with lazy chunks. `chunked` treats `n=0` as \"yield nothing\". `ichunked` only does that when the source is already empty; with any remaining items it calls `islice(iterator, n - 1)` and blows up.\n\nI hit this switching a streaming pipeline from `chunked` to `ichunked` so batches would not be materialized as lists. Chunk size comes from the same config in both paths; `0` means \"this stage is disabled, emit nothing.\"\n\n```python\nfrom more_itertools import chunked, ichunked\n\nrows = [\"a\", \"b\", \"c\"]  # e.g. leftover rows from a DB cursor\nchunk_size = 0          # config: skip this sink\n\nprint(list(chunked(rows, chunk_size)))\n# []\n\nprint([list(c) for c in ichunked(rows, chunk_size)])\n# ValueError: Stop argument for islice() must be None or an integer: 0 <= x <= sys.maxsize.\n```\n\n`IchunkedTests.test_zero` only uses `iterable = []`, which never enters the `for first in iterator` loop, so the `islice(..., n - 1)` path is untested.\n\nNegative `n` has the same leak: `chunked` raises `ValueError: n must be at least 0`, `ichunked` raises islice's \"Indices for islice() must be None or an integer...\".\n\nHappy to send a PR.\n\nMake the change in this repository.",
+  "source": "ext-more-itertools-1304/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-more-itertools-1304",
+  "hidden_sha256": "c87d2c67e450ab08eb9875ef36da48c9715682ff885e7e977d4142c8eee08e67",
+  "hidden_files": {
+    "files/tests/test_more.py": "0cd2fcebc8b1d801bebeb8bea4a77ef105f5afc4c6cc16ac29fcad24ce0136cf",
+    "hidden.json": "7e61232fdec0076e8170638967a7cf642086d09c0eabffb5237bf69b146cec09",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "331cc2f9afa9ab73ceb70810155df645b5c55a727a41b28a6cb34c2409906e89"
+}
