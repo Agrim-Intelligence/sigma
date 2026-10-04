@@ -167,8 +167,10 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 - `docs/launch/exposure-allowlist.json`: the exposure scanner's allowlist, entries
   `{path, rule, reason}` plus exactly one of `blob` (one exact git blob) or `lines` (sha256 of each
   reviewed matched line). No entry is scoped to a bare path and rule, and the builder refuses a file
-  holding one (`dispositions-malformed`). Regenerate rows with `python3 tools/readiness/exposure_scan.py tracked . --propose DRAFT.json`
-  (a scratch path outside the repository) and read every row of the draft before it is given a reason; a real secret or private reference is removed,
+  holding one (`dispositions-malformed`). Regenerate rows, from a clean committed checkout, with `python3 tools/readiness/exposure_scan.py tracked . --json /tmp/ev.json --propose /tmp/DRAFT.json`
+  (both outputs must be absolute paths outside the repository: the scanner refuses a path inside it, and
+  omitting `--json` writes `docs/launch/evidence/tracked-<sha>.json` and `.md` INTO the tree, leaving it dirty)
+  and read every row of the draft before it is given a reason; a real secret or private reference is removed,
   never allowlisted.
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason}` plus exactly one of `blob` (the exact 40-hex git
