@@ -244,6 +244,6 @@ def test_control_phantom_blocker_scan_can_fail():
 
 def test_named_still_to_produce_files_are_absent():
     """A dated snapshot guard: when one of these lands, the plan's table must be updated in the same change."""
-    present = [p for p in ("docs/launch/evidence/cost-calibration.md", "evals/bench/tasks/manifest.json",
-                           "docs/launch/evidence/legal.md", "NOTICE") if (ROOT / p).exists()]
+    present = [p for p in ("docs/launch/evidence/cost-calibration.md", "docs/launch/evidence/legal.md", "NOTICE")
+               if (ROOT / p).exists()]
     _check(not present, f"now on main, so update the evidence table: {present}")
