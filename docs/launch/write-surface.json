@@ -2409,6 +2409,14 @@
       "risk": "low"
     },
     {
+      "path": "tools/readiness/flake_census.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit run command; creates the caller-supplied output directory (pytest writes the JUnit XML into it); refuses to overwrite an observation",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/growth_audit.py",
       "function": "main",
       "rule": "fs-write",

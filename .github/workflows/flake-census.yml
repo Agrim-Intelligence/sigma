@@ -1,0 +1,41 @@
+name: Flake census
+
+# Operator-dispatched only (#337). This runs the full suite ten times, one run per matrix job, and keeps
+# each run's JUnit file. It never triggers on push, pull_request or a schedule: a full run costs about
+# 15 to 21 Linux runner-minutes, so ten of them (about 150 to 210 minutes) must be an explicit decision.
+# There is no retry anywhere: a test that fails once is data, and `tools/readiness/flake_census.py
+# aggregate` classifies it. See docs/launch/flake-census.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure git identity for tests that create real commits
+        run: |
+          git config --global user.name "sigma-ci"
+          git config --global user.email "sigma-ci@users.noreply.github.com"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pytest
+      - name: full-suite observation (no retry)
+        run: python -m pytest tests/ -q -p no:randomly -p no:rerunfailures -p no:flaky --junitxml=junit-${{ matrix.run }}.xml
+      - name: keep the observation even when the suite failed
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.run }}
+          path: junit-${{ matrix.run }}.xml
+          if-no-files-found: error
+          retention-days: 30
