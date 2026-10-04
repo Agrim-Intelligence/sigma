@@ -237,6 +237,62 @@ found and the cut-over steps, and exits 0.
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |
 
+### A fold by the old plugin (#514)
+
+**What happens.** The old plugin's own `feature_sync.py fold <sdlc_dir>` cannot read a registry in Sigma's
+schema. Measured against its installed scripts, run only from a temporary copy: it says the document declares
+a schema other than its own so none of it was read, **exits 0**, and writes `.sdlc/features/index.json` anyway,
+an empty registry under its own schema id; Sigma then reads no units. With a unit record of its own beside the
+sheet, its fold writes exactly that unit and the Sigma units are lost the same way. Sigma cannot stop another
+program's write, and this is a mitigation, not a sheet that fold leaves alone.
+
+**What Sigma does.**
+
+- It keeps a copy of the sheet at `.sdlc/state/backup/index-sigma.json`, a path the old plugin never reads or
+  writes: the bytes of the last Sigma-schema `index.json` this checkout wrote (`write_index`) or saw (every
+  `loop.py` verb that runs the coexistence notice looks at the sheet; a sheet that arrives by pull is
+  copied then; a fresh clone has no `state/` yet, so it is copied only by a later verb, once `state/` exists). The copy is the union of every unit it has held, the latest sheet's entry winning a shared name: a sheet
+  holding fewer units (an older branch, a pull, or a truncated one that Sigma's own `fold` re-wrote) adds its units
+  and removes none, so the copy neither shrinks nor stops tracking new units, and a unit removed on purpose stays in
+  it until `recover --discard`. It is
+  written for every user, with or without the old plugin, so one installed later is covered, but only inside an
+  initialised repository (an existing `.sdlc/state/`: neither a write nor a check creates it). One file the size of
+  the sheet, rewritten only when its bytes change. Measured once on one machine (a single run each, not a
+  benchmark): at 1,000 units (196 KB) a check that finds nothing to do took under a millisecond, and about 7 ms when
+  the sheet is smaller than the copy (the union is rebuilt each time); at 20,000 units (3.9 MB), 15 ms and 162 ms.
+  It runs at each `loop.py` start, claim and record, and grows linearly with the sheet. It is local untracked state: a fresh clone, or a linked worktree without its own `state/`, has none.
+- When `index.json` is in the old plugin's schema and no longer holds units the copy has, every such verb says so
+  on stderr, loudly, naming the units and both levers. It repeats while the sheet stays that way; it is not
+  silenced by `SIGMA_ALLOW_COEXIST=1`, which silences only the coexistence notice.
+- **Nothing restores the tracked sheet unprompted.** The lever is explicit:
+  `python3 skills/agrim-loop/scripts/feature_sync.py recover .sdlc` adds the missing units (whole units only; the
+  sheet's own entries and any unit record win on a shared name) and writes the sheet in Sigma's schema, normalised
+  like a fold. Review the change with `git diff`. If the sheet is complete on purpose (an older branch, a unit
+  dropped deliberately), `recover .sdlc --discard` renames the copy aside (it is never deleted) and the
+  refusals below stop.
+- Until then Sigma's own `feature_sync.py fold` refuses (exit 2, nothing written) and `migrate.py` does not
+  convert that sheet's schema id (listed as refused, in the dry run too), so neither can make the emptied
+  registry look complete.
+
+**Not covered, plainly.** The old plugin still rewrites `index.json`; between its write and the next `loop.py`
+verb the registry is wrong, and `feature_registry.read` itself is unchanged, so a bare read before `recover`
+returns what the file holds. The watcher's polling does not run the check. A unit record the old plugin
+overwrites directly (its module-level `write_unit` replaced a Sigma-schema record in one measurement; no
+command-line path to that was run) is not covered. A sheet that is truncated, corrupt or deleted, one emptied
+before Sigma ever saw it, and one that kept a unit but lost its goals are not detected (only whole missing units
+are restored). A complete old-schema sheet that arrives from an older branch is also reported, and `recover`
+would add the copy's units to it: read the diff, or use `--discard`. A unit a teammate dropped on purpose can
+return from a stale copy if no Sigma verb ran between the pull and the old plugin's fold (units are closed, not
+dropped, in practice). `recover` rewrites the sheet's file time, so a later `repair` of a legacy record prints
+what it discards instead of refusing. While the old plugin keeps running, its next fold empties the sheet again
+and the signal returns: stop it first (above). Two Sigma processes refreshing the copy at once can leave it
+missing a unit one of them held, until a later verb sees a sheet that has it (the refresh is a compare-and-write on
+the sheet, not a lock). Nothing caps the copy's size, so a copy tampered with locally is restored in full by
+`recover`. The lever is spelled for a POSIX shell (`python3`, single-quoted paths).
+
+The controls run on the real fold (from a temporary copy; skipped with a named reason where the old plugin is not
+installed) and on an in-tree model of it (always): `python3 -m pytest tests/test_registry_survives_predecessor_fold.py`.
+
 **Once per run.** `init`, `loop.py start` and `migrate.py` always print the notice. The per-verb
 surfaces (claim, record, the watcher and its automatic start) stay quiet while
 `.sdlc/state/coexist.notice` is less than 6 hours old; every printed notice refreshes it. So a

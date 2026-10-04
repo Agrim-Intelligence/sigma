@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A fold by the old plugin no longer empties Sigma's registry without Sigma saying so and offering a way back** (#514,
+  launch blocker class B1, loss of user data). Measured: the old plugin's `feature_sync.py fold`, run from a temporary
+  copy of its installed scripts, reads a registry sheet in Sigma's schema as empty, exits 0, and writes `index.json`
+  anyway, so Sigma then reads no units. Sigma cannot stop another program's write, so this is a mitigation, not a
+  sheet that fold leaves alone. Sigma now keeps a copy of the sheet at `.sdlc/state/backup/index-sigma.json` (written on
+  every Sigma write and whenever `loop.py start`, `claim`, `record` or the watcher start sees a Sigma sheet; it is a union
+  of the units it has held, so a smaller sheet never shrinks it),
+  says so loudly at every such verb when the sheet comes back in the old schema without units the copy holds, and adds
+  `feature_sync.py recover <sdlc_dir>` (restores whole missing units; `--discard` sets the copy aside). Until then
+  Sigma's own `fold` refuses and `migrate.py` does not convert that sheet. Nothing restores the tracked sheet unprompted,
+  `read` is unchanged, and a unit record the old plugin overwrites directly, a fresh clone and a truncated sheet are not
+  covered (`docs/upgrading.md`, "A fold by the old plugin"). Tests: `tests/test_registry_survives_predecessor_fold.py`
+  (a real-fold control that skips with a named reason where the old plugin is not installed, and an always-running model).
+
 - **The launch-readiness review plan is a committed document with thresholds, spend ceilings and a per-dimension evidence
   table** (#350). `docs/launch/review-plan.md` lists dimensions D0 to D13 with measurement, pass threshold and gating flag,
   the nine reviewer rules, the S0 to S10 order with a 75M processed-token ceiling and a 40M owner checkpoint (every estimate

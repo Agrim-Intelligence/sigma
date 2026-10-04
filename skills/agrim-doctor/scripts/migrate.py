@@ -408,6 +408,20 @@ def _hold_index(result):
     """#326, the deterministic half of `apply`'s rule: a unit record this run will NOT convert (a
     symlink, unreadable, ambiguous) keeps `features/index.json` in the previous schema too -- said
     in the dry run, so `--apply` never surprises."""
+    reg = _load(_LOOP, "feature_registry")
+    missing = reg.recoverable(result.sdlc_dir / "features")
+    if missing:
+        # #514: the previous plugin's fold emptied the sheet; converting its id would make an empty
+        # SIGMA sheet and Sigma's copy would stop counting those units as missing.
+        for change in [c for c in result.changes if _is_index(result, c.path)]:
+            result.changes.remove(change)
+            result.refused.append((result.rel_link(change.path),
+                                   "not converted: it no longer holds %d unit(s) Sigma wrote (%s). "
+                                   "Restore them first with `%s` (or set Sigma's copy aside with "
+                                   "`%s --discard` if the sheet is complete on purpose), then rerun"
+                                   % (len(missing), ", ".join(missing[:8]),
+                                      reg.recover_hint(result.sdlc_dir),
+                                      reg.recover_hint(result.sdlc_dir))))
     planned = {result.rel_link(c.path) for c in result.changes}
     stuck = [rel for rel in _legacy_units(result) if rel not in planned]
     if not stuck:

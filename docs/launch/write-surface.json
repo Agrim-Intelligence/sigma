@@ -657,6 +657,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/agrim-loop/scripts/feature_sync.py",
+      "function": "recover",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the registry sheet aside, never deletes it",
+      "risk": "medium"
+    },
+    {
       "path": "skills/agrim-loop/scripts/goal_state_prune.py",
       "function": "sweep",
       "rule": "fs-remove",

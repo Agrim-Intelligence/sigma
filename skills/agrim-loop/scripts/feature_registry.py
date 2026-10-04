@@ -116,6 +116,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shlex
 import re
 import sys
 import tempfile
@@ -1229,9 +1230,183 @@ def write_index(features_dir, registry):
     text = dumps(document(registry))
     try:
         if path.read_text(encoding="utf-8") == text:  # universal newlines: same on Windows
+            _refresh_mirror(features_dir, text)
             return path
     except (OSError, ValueError):
         pass                                  # absent, unreadable or undecodable: write it
     _protect(features_dir)
     _atomic_write_text(path, text, schema=SCHEMA)
+    _refresh_mirror(features_dir, text)
     return path
+
+
+# ------------------------------------------------------------ the Sigma-only copy of the sheet (#514)
+#
+# THE DEFECT. The plugin under Sigma's previous name runs `feature_sync.py fold`, which reads a sheet in
+# Sigma's schema as EMPTY, exits 0, and writes `index.json` anyway: an empty registry under its own
+# schema id (measured, #514). Sigma cannot stop another program's write. So: PROTECT (a copy of the
+# sheet at a path that program never reads or writes), DETECT LOUDLY (`guard_sheet`, at every gated
+# verb), and give ONE explicit lever (`feature_sync.py recover`). Nothing rewrites the tracked sheet
+# unprompted, and `read` is unchanged: a "recovered view" inside it would reach `read_index`,
+# `monotonic_violations`, the #314 delta rules and `migrate.py`, each a place to lose or invent data.
+#
+# WHAT THE COPY IS. The bytes of a Sigma-schema `index.json` this checkout wrote (`write_index`) or
+# merely saw (`guard_sheet`), UNIONED with the units it already held (`_refresh_mirror`): a sheet holding
+# fewer units never shrinks it, whoever wrote that sheet (an older branch, a pull, a truncated sheet
+# Sigma's own fold re-wrote), and it keeps tracking the sheet's newer entries and new units. It lives at `<sdlc>/state/backup/index-sigma.json`: outside `features/`, and not matching the
+# one-time backup's `features-*` glob. One file the size of the sheet, rewritten only when its bytes
+# change. Machine-local: a fresh clone, or a linked worktree without its own `state/`, has none.
+#
+# WRITTEN FOR EVERY USER, with or without the predecessor installed, so one installed later is
+# covered. The write is local, untracked state under `.sdlc/state/`, never the registry itself.
+
+MIRROR_NAME = "index-sigma.json"
+MIRROR_DISCARDED = "index-sigma.discarded"
+_LISTED_UNITS = 8
+
+
+def mirror_path(features_dir):
+    """`<sdlc>/state/backup/index-sigma.json` for a `features/` directory."""
+    return pathlib.Path(features_dir).parent / "state" / "backup" / MIRROR_NAME
+
+
+def _regular_text(path):
+    """-> the text of a regular, non-symlink file, else None. Never raises: a symlink is refused so a
+    write or read cannot be steered out of `state/backup`."""
+    try:
+        path = pathlib.Path(path)
+        if path.is_symlink() or not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+
+
+def mirror_units(features_dir):
+    """-> `{name: entry}` the copy holds, or `{}`. Only a regular file that is a document in EXACTLY
+    Sigma's schema counts, and only entries that are objects under a legal unit name: the copy sits
+    beside a program that rewrites its neighbours, so it is read as an untrusted document. Never
+    raises."""
+    text = _regular_text(mirror_path(features_dir))
+    if text is None:
+        return {}
+    try:
+        doc = json.loads(text)
+    except (ValueError, RecursionError):
+        return {}
+    if not isinstance(doc, dict) or doc.get("schema") != SCHEMA or not isinstance(doc.get("features"), dict):
+        return {}
+    doc = {"schema": SCHEMA,
+           "features": {k: v for k, v in doc["features"].items() if isinstance(v, dict)}}
+    return parse(doc)
+
+
+def _refresh_mirror(features_dir, text):
+    """Take the copy from `text`, the exact bytes of the Sigma-schema sheet. -> True if written.
+
+    THE COPY IS THE UNION OF EVERY UNIT IT HAS HELD, the latest sheet's entry winning a shared name. A
+    sheet that does not cover the copy's units (an older branch, a pull, a truncated one that Sigma's
+    own `fold` re-wrote as empty) therefore adds its units and removes none, so the copy neither shrinks
+    nor freezes: Sigma never legitimately drops a unit (a unit is closed, not removed), and those cases
+    are exactly the ones where the copy is the only recovery data. The cost is stated in
+    docs/upgrading.md: a unit removed on purpose lingers until `recover --discard`. When the sheet
+    covers the copy, the copy is the sheet's own bytes.
+
+    COMPARE-AND-WRITE: nothing is written unless the sheet on disk STILL equals `text`, so a caller
+    holding an old read cannot overwrite a newer snapshot (the remaining window is the instant
+    between that check and `os.replace`). `state/` must exist already, and neither it nor `state/backup`
+    may be a symlink: neither a write nor a guard initialises a repository (tests and tools write
+    sheets into bare directories), and a link must not steer the write elsewhere. A symlink or non-file
+    at the copy's own path is left alone. Fail-open: a copy that cannot be taken is said on stderr and
+    never fails the caller."""
+    try:
+        path = mirror_path(features_dir)
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            return False
+        if path.parent.is_symlink() or path.parent.parent.is_symlink():
+            return False
+        if _regular_text(index_path(features_dir)) != text:
+            return False
+        if not path.parent.parent.is_dir():
+            return False                  # a repository with no `state/` is not initialised: never create it
+        if _regular_text(path) == text:
+            return False                  # the common case: nothing changed since the last look
+        sheet = parse(json.loads(text))
+        have = {name.lower() for name in sheet}      # one set, not a scan per unit: linear in the sheet
+        merged = dict(sheet)
+        for name, entry in mirror_units(features_dir).items():
+            if name.lower() not in have:
+                merged[name] = entry
+        out = text if len(merged) == len(sheet) else dumps(document(merged))
+        if _regular_text(path) == out:
+            return False
+        _atomic_write_text(path, out)
+        return True
+    except Exception as exc:              # noqa: BLE001 - see the docstring
+        _note("sigma: features: the recovery copy of %s could not be taken (%s); the registry "
+              "write goes on\n" % (INDEX_NAME, exc))
+        return False
+
+
+def recoverable(features_dir):
+    """-> sorted unit names the copy holds that `read` does not serve, ONLY while `index.json`
+    declares the previous plugin's schema id. `[]` otherwise: a Sigma-schema or absent sheet is never
+    judged, and a shard that serves a unit means it is not lost. Pure read; never raises."""
+    try:
+        doc = _read_json(index_path(features_dir))
+        if not (isinstance(doc, dict) and legacy.is_legacy_schema(doc.get("schema"))):
+            return []
+        held = {name.lower() for name in read(features_dir)}
+        return sorted(name for name in mirror_units(features_dir) if name.lower() not in held)
+    except Exception:                     # noqa: BLE001 - never raises, by contract
+        return []
+
+
+def recover_hint(sdlc_dir):
+    """The exact lever, spelled with this checkout's own script path and the absolute, shell-quoted
+    `.sdlc` (so it pastes from any directory and survives a space in either path)."""
+    script = pathlib.Path(__file__).resolve().with_name("feature_sync.py")
+    return "python3 %s recover %s" % (shlex.quote(str(script)),
+                                       shlex.quote(str(pathlib.Path(sdlc_dir).resolve())))
+
+
+def guard_sheet(sdlc_dir, stream=None):
+    """The gate-side half: OBSERVE the sheet. -> "observed", "signalled" or None. Never raises, and
+    writes nothing but the copy.
+
+    A sheet in Sigma's schema refreshes the copy (observation rules above). A sheet in the previous
+    plugin's schema that no longer holds units the copy has says so, loudly, on `stream` (stderr): the
+    cause, the unit names, and the two levers. It does NOT restore anything -- see the section
+    comment. The line repeats at every gated verb while the sheet stays that way, deliberately: a
+    registry that has silently lost units is the failure this exists to surface."""
+    try:
+        stream = sys.stderr if stream is None else stream
+        features_dir = registry_dir(sdlc_dir)
+        text = _regular_text(index_path(features_dir))
+        if text is None:
+            return None
+        schema = json.loads(text).get("schema")
+        if schema == SCHEMA:
+            _refresh_mirror(features_dir, text)
+            return "observed"
+        if legacy.is_legacy_schema(schema):
+            names = recoverable(features_dir)
+            if names:
+                shown = ", ".join(names[:_LISTED_UNITS])
+                more = len(names) - _LISTED_UNITS
+                stream.write(
+                    "sigma: features: %d unit(s) Sigma wrote are missing from %s: %s%s. It was "
+                    "rewritten in the schema of the plugin under Sigma's previous name (that "
+                    "plugin's own `feature_sync.py fold` cannot read Sigma's schema, reads it as "
+                    "empty, exits 0 and writes the sheet anyway). Sigma's recovery copy under "
+                    "state/backup still has them. NOTHING is restored automatically. To restore "
+                    "the missing units (a change to the tracked sheet; review it with git diff): "
+                    "`%s`. If the sheet is complete on purpose (an older branch), set the copy "
+                    "aside instead: `%s --discard`. See docs/upgrading.md\n"
+                    % (len(names), index_path(features_dir), shown,
+                       (" and %d more" % more) if more > 0 else "", recover_hint(sdlc_dir),
+                       recover_hint(sdlc_dir)))
+                return "signalled"
+        return None
+    except Exception:                     # noqa: BLE001 - a guard must never stop a verb
+        return None

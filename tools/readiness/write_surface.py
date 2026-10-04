@@ -50,6 +50,9 @@ def _metadata(path, function, rule):
             ("http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery", "high"),
         ("skills/agrim-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
             ("work.enabled; base branch cannot close the issue", "high"),
+        ("skills/agrim-loop/scripts/feature_sync.py", "recover", "fs-remove"):
+            ("explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the "
+             "registry sheet aside, never deletes it", "medium"),
         ("tools/readiness/baseline.py", "snapshot", "fs-write"):
             ("explicit snapshot command; empty destination", "medium"),
         ("tools/readiness/baseline.py", "snapshot", "git-destructive"):

@@ -1191,6 +1191,15 @@ def fold(sdlc_dir):
     loss (a goal, or a field/grant of a merged unit) refuses the fold (`FoldRefused`, nothing
     written) with the repair command."""
     features_dir = registry.registry_dir(sdlc_dir)
+    missing = registry.recoverable(features_dir)
+    if missing:
+        raise FoldRefused(
+            "feature_sync: fold refused, nothing written: %s was rewritten in the previous plugin's "
+            "schema and no longer holds %d unit(s) Sigma wrote (%s), so folding it would write the "
+            "emptied registry as if it were complete. Restore them: %s ; or, if the sheet is "
+            "complete on purpose, set Sigma's copy aside: %s --discard (docs/upgrading.md)"
+            % (registry.index_path(features_dir), len(missing), ", ".join(missing[:8]),
+               registry.recover_hint(sdlc_dir), registry.recover_hint(sdlc_dir)))
     merged = registry.read(features_dir)
     lost = registry.monotonic_violations(features_dir, merged)
     if lost:
@@ -1200,6 +1209,77 @@ def fold(sdlc_dir):
             % (registry.INDEX_NAME, "; ".join(lost), registry.delta_recovery(features_dir),
                registry.index_path(features_dir)))
     return registry.write_index(features_dir, merged)
+
+
+class RecoverRefused(Exception):
+    """`recover` had nothing safe to do; the message says why. Nothing was written."""
+
+
+def recover(sdlc_dir, discard=False):
+    """The lever for #514: the previous plugin's own fold left `index.json` in ITS schema without
+    units Sigma's copy holds. -> the unit names restored (or, with `discard`, the path the copy was
+    set aside to).
+
+    EXPLICIT, NEVER AUTOMATIC. It adds only WHOLE missing units: the sheet's own entries and the shards
+    `read` serves win over the copy on every shared name, so what the previous plugin legitimately
+    changed is kept, and a unit it dropped a goal from is NOT repaired (the copy's older entry is
+    not applied over it). The result is written through `write_index` (the one-time backup hook, the
+    legacy-id notice and the unchanged-bytes rule all apply), in Sigma's schema, normalised like any
+    fold. Refuses, writing nothing, when there is nothing to restore or the sheet changed since it
+    was read (a compare against the bytes read: the remaining window is the instant before the
+    replace).
+
+    `discard` is the way out when the sheet is complete on purpose (an older branch, a unit dropped
+    deliberately): the copy is RENAMED, never deleted, so `fold` and `migrate` stop treating its units
+    as missing and nothing is lost."""
+    features_dir = registry.registry_dir(sdlc_dir)
+    path = registry.mirror_path(features_dir)
+    if discard:
+        if path.is_symlink() or not path.is_file():
+            raise RecoverRefused("recover: no recovery copy to set aside at %s" % path)
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        dest = None
+        for n in range(1000):             # a second-resolution name must never replace an earlier copy
+            candidate = path.with_name("%s-%s-%d.json" % (registry.MIRROR_DISCARDED, stamp, n))
+            if not candidate.exists():
+                dest = candidate
+                break
+        if dest is None:
+            raise RecoverRefused("recover: too many discarded copies under %s; remove some" % path.parent)
+        try:
+            os.replace(str(path), str(dest))
+        except OSError as exc:
+            raise RecoverRefused("recover: the copy at %s could not be set aside (%s); nothing was "
+                                 "changed" % (path, exc))
+        return dest
+    sheet = registry.index_path(features_dir)
+    try:
+        seen = sheet.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        seen = None
+    missing = registry.recoverable(features_dir)
+    if not missing:
+        raise RecoverRefused(
+            "recover: nothing to restore in %s -- it is not in the previous plugin's schema, or the "
+            "recovery copy holds no unit it lacks (or there is no copy: it covers only sheets this "
+            "checkout wrote or saw)" % registry.index_path(features_dir))
+    copy_units = registry.mirror_units(features_dir)
+    merged = dict(registry.read(features_dir))
+    for name in missing:
+        merged[name] = copy_units[name]
+    try:
+        now = sheet.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        now = None
+    if now != seen:
+        raise RecoverRefused("recover: %s changed while it was being read; nothing written -- run "
+                             "it again" % sheet)
+    try:
+        registry.write_index(features_dir, merged)
+    except OSError as exc:
+        raise RecoverRefused("recover: %s could not be written (%s); nothing was changed"
+                             % (sheet, exc))
+    return missing
 
 
 #: #327: THE rule for rewriting a legacy delta record lives in the registry beside `write_unit`,
@@ -1299,7 +1379,7 @@ def legacy_delta_segment(sdlc_dir):
 
 
 USAGE = ("usage: feature_sync.py fold <sdlc_dir> | feature_sync.py show <sdlc_dir> | "
-         "feature_sync.py repair <sdlc_dir>")
+         "feature_sync.py repair <sdlc_dir> | feature_sync.py recover <sdlc_dir> [--discard]")
 
 
 def main(argv):
@@ -1309,7 +1389,7 @@ def main(argv):
     reason: the sync belongs to the pick, and a second way to run it is a second answer. `fold` is
     here because it is explicitly NOT part of a pick, and `show` because a record nobody can read is
     not much of a record. `repair` (#314) rewrites a legacy-id record merged as a delta in Sigma's
-    schema."""
+    schema. `recover` (#514) restores units the previous plugin's fold dropped from the sheet."""
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
@@ -1337,6 +1417,19 @@ def main(argv):
         if not done and not refused:
             print("feature_sync: nothing to repair in %s" % argv[2])
         return 2 if refused else 0
+    if len(argv) >= 3 and argv[1] == "recover" and argv[3:] in ([], ["--discard"]):
+        try:
+            done = recover(argv[2], discard=argv[3:] == ["--discard"])
+        except RecoverRefused as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if argv[3:]:
+            print("recover: the recovery copy was set aside at %s" % done)
+        else:
+            shown = ", ".join(done[:8]) + ((" and %d more" % (len(done) - 8)) if len(done) > 8 else "")
+            print("recover: restored %d unit(s) into %s: %s -- review with git diff"
+                  % (len(done), registry.index_path(registry.registry_dir(argv[2])), shown))
+        return 0
     if len(argv) >= 3 and argv[1] == "show":
         print(json.dumps(registry.read(registry.registry_dir(argv[2])), indent=2, sort_keys=True))
         return 0
