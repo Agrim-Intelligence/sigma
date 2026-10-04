@@ -1433,6 +1433,9 @@ _NO_UNIT_NAME = {
     ("feature_registry", "registry_dir"),     # directories: no name reaches them at all
     ("feature_registry", "index_path"),
     ("feature_registry", "units_dir"),
+    # #514: the Sigma-only copy of the SHEET -- `<sdlc>/state/backup/index-sigma.json`, a fixed
+    # filename under the project's state directory; no unit name reaches it.
+    ("feature_registry", "mirror_path"),
     # #314: the recovery TEXT for a legacy-id delta record -- joins this module's own directory
     # with `feature_sync.py` and prints the features dir it was handed; no unit name reaches a path.
     ("feature_registry", "delta_recovery"),
@@ -1793,6 +1796,11 @@ _REGISTRY_WRITE_CALLERS = {
     # and `write_index` writes nothing when the bytes are unchanged (the delta's age survives).
     ("feature_sync", "fold", "write_index"):
         "index only, monotonic-checked; a changed index is the newer file (docs/upgrading.md)",
+    # #514: the explicit lever after the old plugin's fold emptied the sheet. Index only; adds WHOLE
+    # missing units from Sigma's own copy beneath what `read` serves (the sheet and shards win),
+    # refuses when nothing is missing or the sheet moved, and is never run unprompted.
+    ("feature_sync", "recover", "write_index"):
+        "index only; whole missing units, explicit gesture, refused when the sheet changed",
 }
 
 #: Modules OUTSIDE `feature_registry` that both name the registry's files and contain a write
@@ -1806,6 +1814,14 @@ _REGISTRY_ADJACENT_WRITERS = {
     "feature_propagate": "writes a SIBLING repository's record through the host API, destination "
                          "wins every field, and refuses a sibling record in the previous schema",
     "work": "names `.sdlc/features/units/` only to allow-list it in the secret-file check",
+    # #514: `recover --discard` renames Sigma's OWN recovery copy under `state/backup/`; every write
+    # of the sheet itself goes through `write_index` (classified above).
+    "feature_sync": "renames only the recovery copy under `state/backup/`; the sheet and shards "
+                    "are written by `write_index` / `write_unit` through the callers above",
+    # #514: names `features/index.json` only to stat it before calling `guard_sheet`, which
+    # writes nothing but the recovery copy under `state/backup/`.
+    "loop": "stats `features/index.json` before `feature_registry.guard_sheet`, which writes only "
+            "the recovery copy under `state/backup/`",
     "slack_commands_listen": "writes only its own heartbeat/pid files; 'units' is prose",
 }
 
