@@ -13,7 +13,9 @@ they are called and which gate. They must not disagree:
   - every dimension has a row saying what already exists on main and what is still to be produced,
     and every file path cited as existing is on disk;
   - D13 says it is not scoreable until counsel answers; D3 says "as amended" and names 3 arms;
-  - the plan contains no sentence the loop's own blocker scan would read as a dependency edge.
+  - the plan contains no sentence the loop's own blocker scan would read as a dependency edge;
+  - the calibration record (#361) has one section per pilot, each measured or "Not measured" with a reason, its rows
+    add up, and the plan's measured ceilings carry their formulas, the headroom factor and the pilot counters.
 
 Stdlib + pytest only; no network. Short test names and one-line assertion messages on purpose:
 `loop.py verify` reads a red run's reason from pytest's one-line summary.
@@ -244,6 +246,133 @@ def test_control_phantom_blocker_scan_can_fail():
 
 def test_named_still_to_produce_files_are_absent():
     """A dated snapshot guard: when one of these lands, the plan's table must be updated in the same change."""
-    present = [p for p in ("docs/launch/evidence/cost-calibration.md", "docs/launch/evidence/legal.md", "NOTICE")
-               if (ROOT / p).exists()]
+    present = [p for p in ("docs/launch/evidence/legal.md", "NOTICE") if (ROOT / p).exists()]
     _check(not present, f"now on main, so update the evidence table: {present}")
+
+
+CAL = ROOT / "docs" / "launch" / "evidence" / "cost-calibration.md"
+CUM_TOKENS = 3887193
+
+
+def _cal():
+    _check(CAL.exists(), "docs/launch/evidence/cost-calibration.md is missing")
+    return CAL.read_text(encoding="utf-8")
+
+
+def _num(cell):
+    return int(cell.replace(",", ""))
+
+
+def run_rows(text):
+    """Per-run rows of the pilot tables: (tokens in, out, cache read, cache write, processed)."""
+    out = []
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")] if line.startswith("|") else []
+        if len(cells) == 11 and re.fullmatch(r"[\d,]+", cells[2]):
+            out.append([_num(cells[i]) for i in (2, 3, 4, 5, 6)])
+    return out
+
+
+def row_problems(rows):
+    problems = [f"row {r} does not sum" for r in rows if sum(r[:4]) != r[4]]
+    if sum(r[4] for r in rows) != CUM_TOKENS:
+        problems.append(f"rows sum to {sum(r[4] for r in rows)}, not {CUM_TOKENS}")
+    return problems
+
+
+def test_calibration_has_a_section_per_pilot():
+    text = _cal()
+    for pilot in ("P-a", "P-b", "P-c", "P-d"):
+        _check(f"## {pilot}" in text, f"no section for {pilot}")
+    for pilot in ("P-c", "P-d"):
+        body = _section(text, f"## {pilot}")
+        _check("**Not measured:" in body, f"{pilot} is neither measured nor 'Not measured' with a reason")
+    _check("a5c615062313" in text and "e48420fa97f6" in text, "record does not name the commits it measured")
+    _check("unpriced_turns: 0" in text and "cost_usd: null" in text, "the unknown-model control is not recorded")
+
+
+def test_calibration_has_no_host_path():
+    _check("/Users/" not in _cal() and "/home/" not in _cal(), "a host path is in the calibration record")
+
+
+def test_calibration_rows_add_up_to_the_cumulative_spend():
+    rows = run_rows(_cal())
+    _check(len(rows) == 5, f"expected 5 measured runs, found {len(rows)}")
+    _check(not row_problems(rows), "; ".join(row_problems(rows)))
+    _check(f"{CUM_TOKENS:,}" in _cal(), "the cumulative token count is not stated")
+
+
+def test_control_a_wrong_row_is_caught():
+    rows = run_rows(_cal())
+    rows[0][4] += 1
+    _check(row_problems(rows), "a row that does not add up went unseen")
+
+
+def test_plan_measured_ceilings_carry_formulas_and_counters():
+    text = _plan()
+    _check("### Measured ceilings" in text, "the plan has no Measured ceilings section")
+    block = _section(text, "### Measured ceilings", "\n## ")
+    for step in ("S3", "S4, Tier A", "S4, Tier B", "S4 total", "S9"):
+        row = next((r for r in block.splitlines() if r.startswith(f"| {step}")), "")
+        _check(row, f"no measured-ceiling row for {step}")
+        _check(step in ("S3", "S4 total") or "×" in row, f"{step} has no formula")
+    for step in ("S4, Tier A", "S4, Tier B"):
+        row = next(r for r in block.splitlines() if r.startswith(f"| {step}"))
+        _check("× 1.3" in row, f"{step} lacks the headroom factor")
+    _check(f"{40_000_000 - CUM_TOKENS:,}" in text and f"{75_000_000 - CUM_TOKENS:,}" in text,
+           "tokens remaining under 40M and 75M are not stated")
+
+
+def test_plan_records_the_pilot_counting_decision():
+    text = _plan()
+    _check("The owner decided on 2026-10-04" in text, "the pilot-counting decision is not recorded as made")
+    _check("Until the owner decides, the pilots do not start" not in text, "the stale open decision is still there")
+
+
+def pilot_table(text):
+    """{(run kind, unit): (lines or None, processed)} from the record's per-run rows."""
+    out = {}
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")] if line.startswith("|") else []
+        if len(cells) == 11 and re.fullmatch(r"[\d,]+", cells[2]):
+            m = re.fullmatch(r"([AB]\d+)(?: \(([\d,]+)\))?", cells[1])
+            kind = "verify" if cells[0].startswith("verification") else "review"
+            out[(kind, m.group(1))] = (_num(m.group(2)) if m.group(2) else None, _num(cells[6]))
+    return out
+
+
+def recomputed_s4(text, lines_a, lines_b):
+    """(Tier A, Tier B) token ceilings: per-line rates from the record x tier lines x 1.3."""
+    rows = pilot_table(text)
+    (la1, ra1), (la6, ra6) = rows[("review", "A01")], rows[("review", "A06")]
+    rate_a = (ra1 + ra6) / (la1 + la6) + rows[("verify", "A01")][1] / la1
+    lb, rb = rows[("review", "B01")]
+    rate_b = (rb + rows[("verify", "B01")][1]) / lb
+    return rate_a * lines_a * 1.3, rate_b * lines_b * 1.3
+
+
+def stated_millions(row):
+    """The token figure of a Measured ceilings row: its third cell, e.g. `37.03M (28.48M without headroom)`."""
+    return float(re.search(r"([\d.]+)M", row.split("|")[3]).group(1)) * 1e6
+
+
+def test_plan_ceiling_figures_recompute_from_the_record():
+    units = json.loads((ROOT / "docs" / "launch" / "review-units.json").read_text(encoding="utf-8"))
+    lines_a = sum(u["lines"] for u in units["tier_a"])
+    lines_b = sum(u["lines"] for u in units["tier_b_sample"])
+    got_a, got_b = recomputed_s4(_cal(), lines_a, lines_b)
+    block = _section(_plan(), "### Measured ceilings", "\n## ")
+    row_a = next(r for r in block.splitlines() if r.startswith("| S4, Tier A"))
+    row_b = next(r for r in block.splitlines() if r.startswith("| S4, Tier B"))
+    row_t = next(r for r in block.splitlines() if r.startswith("| S4 total"))
+    for stated, want, name in ((stated_millions(row_a), got_a, "Tier A"),
+                               (stated_millions(row_b), got_b, "Tier B")):
+        _check(abs(stated - want) / want < 0.005, f"{name} ceiling states {stated:.0f}, record recomputes {want:.0f}")
+    _check(abs(stated_millions(row_t) - (got_a + got_b)) < 0.02e6,
+           "S4 total is not the sum of the tiers")
+
+
+def test_control_a_changed_line_count_moves_the_recompute():
+    text = _cal().replace("A01 (2,267)", "A01 (2,000)", 1)
+    _check(recomputed_s4(text, 36018, 11972) != recomputed_s4(_cal(), 36018, 11972),
+           "the recompute ignores the line counts in the record")
