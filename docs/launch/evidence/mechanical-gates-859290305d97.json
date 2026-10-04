@@ -1,0 +1,1288 @@
+{
+  "schema": "readiness-mechanical-gates/v1",
+  "frozen": {
+    "sha": "859290305d977dc9119a81305e88025cba61e761",
+    "sha12": "859290305d97",
+    "previous_freeze_sha": "a5c615062313791a86fca8d8b14d7a4ad0713f7f",
+    "commits_since_previous_freeze": 63,
+    "snapshot": {
+      "command": "python3 tools/readiness/baseline.py snapshot <source-repo> --sha 859290305d977dc9119a81305e88025cba61e761 --dest <frozen-clone>",
+      "exit_code": 0,
+      "wall_s": 1,
+      "dest": "<frozen-clone>",
+      "clone": "detached at the sha, origin removed, pre-push hook refuses"
+    },
+    "inventory_file": "docs/launch/evidence/inventory-859290305d97.json",
+    "inventory_surfaces": {
+      "docs_md": {
+        "est_tokens": 235506,
+        "files": 56,
+        "lines": 13171
+      },
+      "python_non_test": {
+        "est_tokens": 1548061,
+        "files": 176,
+        "lines": 106764
+      },
+      "shell": {
+        "est_tokens": 25966,
+        "files": 9,
+        "lines": 1891
+      },
+      "skills_md": {
+        "est_tokens": 163268,
+        "files": 106,
+        "lines": 9669
+      },
+      "tests": {
+        "est_tokens": 2306031,
+        "files": 283,
+        "lines": 181179
+      }
+    },
+    "skills": 42
+  },
+  "environment": {
+    "python_for_gates": "3.12.13 (the venv the configured verify names, first on PATH so a documented python3 resolves to it)",
+    "os": "macOS, one machine under load from other work",
+    "load_note": "wall times were taken on a shared machine and are not benchmarks"
+  },
+  "gates": [
+    {
+      "id": "G01",
+      "name": "configured full verify (first run, launched with nohup)",
+      "dimensions": [
+        "D1",
+        "D2",
+        "D5",
+        "D8",
+        "D10",
+        "D11"
+      ],
+      "command": "<python3.12> -m pytest tests -q -n 4 -p no:cacheprovider",
+      "cwd": "frozen-clone",
+      "exit_code": 1,
+      "wall_s": 774.5,
+      "result": "fail",
+      "tests_passed": 12262,
+      "tests_failed": 1,
+      "note": "1 failed, 12,262 passed. The failing test, test_slack_commands_listen.py::test_seam_installs_handlers_that_release_then_die_by_the_same_signal, fails whenever SIGHUP is inherited as ignored, which is what nohup does; reproduced alone with nohup (fails) and without (passes). Filed as #581."
+    },
+    {
+      "id": "G01b",
+      "name": "configured full verify (re-run once, no nohup)",
+      "dimensions": [
+        "D1",
+        "D2",
+        "D5",
+        "D8",
+        "D10",
+        "D11"
+      ],
+      "command": "<python3.12> -m pytest tests -q -n 4 -p no:cacheprovider",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 676.6,
+      "result": "pass",
+      "tests_passed": 12263,
+      "tests_failed": 0
+    },
+    {
+      "id": "G02",
+      "name": "documented-gesture test",
+      "dimensions": [
+        "D2"
+      ],
+      "command": "python -m pytest tests/test_documented_gestures.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 2.9,
+      "result": "pass",
+      "tests_passed": 6,
+      "tests_failed": 0
+    },
+    {
+      "id": "G03",
+      "name": "doc-claims test",
+      "dimensions": [
+        "D8"
+      ],
+      "command": "python -m pytest tests/test_doc_claims.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.2,
+      "result": "pass",
+      "tests_passed": 3,
+      "tests_failed": 0
+    },
+    {
+      "id": "G04",
+      "name": "known-false-claims test",
+      "dimensions": [
+        "D8"
+      ],
+      "command": "python -m pytest tests/test_known_false_claims.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.1,
+      "result": "pass",
+      "tests_passed": 6,
+      "tests_failed": 0
+    },
+    {
+      "id": "G05",
+      "name": "doc link and anchor test",
+      "dimensions": [
+        "D8"
+      ],
+      "command": "python -m pytest tests/test_doc_links.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.4,
+      "result": "pass",
+      "tests_passed": 6,
+      "tests_failed": 0
+    },
+    {
+      "id": "G06",
+      "name": "release-consistency test",
+      "dimensions": [
+        "D8",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_release_consistency.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.1,
+      "result": "pass",
+      "tests_passed": 3,
+      "tests_failed": 0
+    },
+    {
+      "id": "G07",
+      "name": "skill budget and structure test",
+      "dimensions": [
+        "D2"
+      ],
+      "command": "python -m pytest tests/test_skill_structure.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 2.9,
+      "result": "pass",
+      "tests_passed": 55,
+      "tests_failed": 0
+    },
+    {
+      "id": "G08",
+      "name": "instruction-bill ratchet (phase context budget)",
+      "dimensions": [
+        "D2"
+      ],
+      "command": "python -m pytest tests/test_phase_context_budget.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 2.5,
+      "result": "pass",
+      "tests_passed": 7,
+      "tests_failed": 0
+    },
+    {
+      "id": "G09",
+      "name": "script --help allowlist test",
+      "dimensions": [
+        "D2"
+      ],
+      "command": "python -m pytest tests/test_script_help.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 5.1,
+      "result": "pass",
+      "tests_passed": 4,
+      "tests_failed": 0
+    },
+    {
+      "id": "G10",
+      "name": "write-surface inventory ratchet",
+      "dimensions": [
+        "D5",
+        "D10"
+      ],
+      "command": "python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 1.7,
+      "result": "pass",
+      "note": "static ratchet; control is documented in write-surface.md."
+    },
+    {
+      "id": "G11",
+      "name": "growth-audit gesture (regenerates the audit)",
+      "dimensions": [
+        "D5"
+      ],
+      "command": "python3 tools/readiness/growth_audit.py . --measure-sdlc --b6-issue 419 --json docs/launch/growth-audit.json",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 5.0,
+      "result": "pass",
+      "note": "exit 0; regenerated audit has 754 rows, 176 patterns, 0 unresolved; the committed snapshot has 177 unresolved at revision 64709b3971a5. The clone's file was restored afterwards. Filed as #582."
+    },
+    {
+      "id": "G12",
+      "name": "shared .sdlc paths check",
+      "dimensions": [
+        "D9"
+      ],
+      "command": "python3 tools/readiness/shared_paths.py check --sigma . --fixture tests/fixtures/predecessor_written_paths.json",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 8.1,
+      "result": "pass",
+      "note": "fixture-based check; a static scan, it does not prove Sigma has no new writer."
+    },
+    {
+      "id": "G13",
+      "name": "leak scan, tracked tree, frozen clone",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python3 tools/leak_scan.py",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 6.3,
+      "result": "pass",
+      "note": "0 findings over 1093 files; the origin-owner-url rule is skipped because the frozen clone has no origin remote."
+    },
+    {
+      "id": "G13b",
+      "name": "leak scan, tracked tree, goal worktree (origin present)",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python3 tools/leak_scan.py",
+      "cwd": "goal-worktree",
+      "exit_code": 0,
+      "wall_s": 6.7,
+      "result": "pass",
+      "note": "same rule set with the origin-owner-url rule active; run in the goal worktree, which is at the same commit and has an origin."
+    },
+    {
+      "id": "G14",
+      "name": "launch-definition test",
+      "dimensions": [
+        "D0",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_launch_definition.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.2,
+      "result": "pass",
+      "tests_passed": 16,
+      "tests_failed": 0
+    },
+    {
+      "id": "G15",
+      "name": "launch CI cells test",
+      "dimensions": [
+        "D0",
+        "D6",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_launch_ci_cells.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.2,
+      "result": "pass",
+      "tests_passed": 5,
+      "tests_failed": 0
+    },
+    {
+      "id": "G16",
+      "name": "review-plan consistency test",
+      "dimensions": [
+        "D0",
+        "D3",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_review_plan.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.2,
+      "result": "pass",
+      "tests_passed": 22,
+      "tests_failed": 0
+    },
+    {
+      "id": "G17",
+      "name": "decide.py checker test",
+      "dimensions": [
+        "D0",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_readiness_decide.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 45.4,
+      "result": "pass",
+      "tests_passed": 278,
+      "tests_failed": 0
+    },
+    {
+      "id": "G18",
+      "name": "decide.py verdict",
+      "dimensions": [
+        "D0",
+        "D11"
+      ],
+      "command": "python3 tools/readiness/decide.py .",
+      "cwd": "goal-worktree",
+      "exit_code": 1,
+      "wall_s": 1.3,
+      "result": "verdict",
+      "note": "exit 1 is the documented NO-GO verdict, the expected state while nothing is scored, the definition is proposed and no evidence link exists. Run in the goal worktree because the clone has no origin/main ref."
+    },
+    {
+      "id": "G19",
+      "name": "doctor check",
+      "dimensions": [
+        "D5"
+      ],
+      "command": "python3 skills/agrim-doctor/scripts/doctor.py check .sdlc",
+      "cwd": "frozen-clone, empty HOME",
+      "exit_code": 0,
+      "wall_s": 0.5,
+      "result": "pass",
+      "note": "exit 0, 6 of 7 checks ready; the one not ready is the project layer, because the frozen clone has no .sdlc/config.json. Run with an empty HOME. Vacuous for installation checks."
+    },
+    {
+      "id": "G20",
+      "name": "doctor hygiene",
+      "dimensions": [
+        "D5",
+        "D11"
+      ],
+      "command": "python3 skills/agrim-doctor/scripts/doctor.py hygiene .sdlc .",
+      "cwd": "frozen-clone, empty HOME",
+      "exit_code": 0,
+      "wall_s": 0.1,
+      "result": "pass",
+      "note": "exit 0; it found no standing documents to scan, so it checked nothing. Empty HOME."
+    },
+    {
+      "id": "G21",
+      "name": "quality gate, Tier-1 behavioral drift (evals/run.py)",
+      "dimensions": [
+        "D1",
+        "D2"
+      ],
+      "command": "python3 evals/run.py",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.5,
+      "result": "pass"
+    },
+    {
+      "id": "G22",
+      "name": "decision gate validate and check",
+      "dimensions": [
+        "D1"
+      ],
+      "command": "python3 hooks/decision_gate.py validate . && python3 hooks/decision_gate.py check .",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.0,
+      "result": "pass",
+      "note": "exit 0, but vacuous: no .sdlc/decisions.json registry is tracked, so the gate is off and checked nothing."
+    },
+    {
+      "id": "G23",
+      "name": "SKILL.md frontmatter YAML test",
+      "dimensions": [
+        "D2"
+      ],
+      "command": "python -m pytest tests/test_skill_frontmatter_yaml.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.1,
+      "result": "pass",
+      "tests_passed": 1,
+      "tests_failed": 0
+    },
+    {
+      "id": "G24",
+      "name": "no-private-names test",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python -m pytest tests/test_no_private_names.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 12.3,
+      "result": "pass",
+      "tests_passed": 18,
+      "tests_failed": 0
+    },
+    {
+      "id": "G25",
+      "name": "threat-model and hostile-input tests",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python -m pytest tests/test_threat_model.py tests/test_hostile_inputs.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 2.2,
+      "result": "pass",
+      "tests_passed": 72,
+      "tests_failed": 0
+    },
+    {
+      "id": "G26",
+      "name": "session-start and doctor tests (dead-vs-idle)",
+      "dimensions": [
+        "D5"
+      ],
+      "command": "python -m pytest tests/test_session_start.py tests/test_doctor.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 40.7,
+      "result": "pass",
+      "tests_passed": 570,
+      "tests_failed": 0
+    },
+    {
+      "id": "G27",
+      "name": "self-contained tree test",
+      "dimensions": [
+        "D10",
+        "D11"
+      ],
+      "command": "python -m pytest tests/test_self_contained.py -q",
+      "cwd": "frozen-clone",
+      "exit_code": 0,
+      "wall_s": 0.6,
+      "result": "pass",
+      "tests_passed": 7,
+      "tests_failed": 0
+    },
+    {
+      "id": "G28",
+      "name": "repository settings check (live GitHub state of the private source repository, not the frozen commit; read-only GET)",
+      "dimensions": [
+        "D11"
+      ],
+      "command": "python3 tools/readiness/verify_repo_settings.py Agrim-Intelligence/sigma",
+      "cwd": "frozen-clone",
+      "exit_code": 1,
+      "wall_s": 2.4,
+      "result": "fail",
+      "note": "expected: it judges the private source repository, not the public repository the launch will use, and main there is unprotected (owner action, docs/launch/repo-settings.md). Informative only."
+    },
+    {
+      "id": "E1",
+      "name": "exposure scan, history mode (every blob reachable from every ref of the frozen clone)",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python3 tools/readiness/exposure_scan.py history . --json <scratch>/exp-history.json --patterns <private-patterns-file>",
+      "cwd": "frozen-clone",
+      "exit_code": 1,
+      "wall_s": 24.3,
+      "result": "fail",
+      "note": "exit 1 = findings: 235 over history, none a secret or real private reference (see exposure.triage). Matched values are never printed or recorded."
+    },
+    {
+      "id": "E2",
+      "name": "exposure scan, tracked mode (HEAD)",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python3 tools/readiness/exposure_scan.py tracked . --json <scratch>/exp-tracked.json --patterns <private-patterns-file>",
+      "cwd": "frozen-clone",
+      "exit_code": 1,
+      "wall_s": 12.1,
+      "result": "fail",
+      "note": "exit 1 = 62 findings at HEAD plus 4 stale allowlist entries; all triaged as fixtures or pattern prose. Filed as #583."
+    },
+    {
+      "id": "E3",
+      "name": "exposure scan, refs mode",
+      "dimensions": [
+        "D10"
+      ],
+      "command": "python3 tools/readiness/exposure_scan.py refs . --json <scratch>/exp-refs.json",
+      "cwd": "goal-worktree",
+      "exit_code": 0,
+      "wall_s": 0.7,
+      "result": "pass",
+      "note": "read from the goal worktree (the clone has no origin); lists refs only."
+    },
+    {
+      "id": "N01",
+      "name": "mutation sample",
+      "dimensions": [
+        "D1"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Not re-run, by instruction: it is recorded at its own commit 70c2c6e96136 in docs/launch/evidence/mutation-70c2c6e96136.json (#360). That file is incomplete: 14 modules measured, 19 absent (timeout, not-python, not-run-budget)."
+    },
+    {
+      "id": "N02",
+      "name": "flake census",
+      "dimensions": [
+        "D1"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Not re-run, by instruction: recorded at commit c82e3dfa7420 in docs/launch/evidence/flake-c82e3dfa7420.json (#337): 10 runs on each of Linux and macOS, 0 flaky, measured at that commit, not this one."
+    },
+    {
+      "id": "N03",
+      "name": "crash and restore drills",
+      "dimensions": [
+        "D5"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Not re-run: recorded at cde9869d0cf8 in docs/launch/evidence/drills-cde9869d0cf8.json; hermetic fakes, macOS only."
+    },
+    {
+      "id": "N04",
+      "name": "egress capture",
+      "dimensions": [
+        "D10"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Not re-run: recorded at a9747324eee1 in docs/launch/evidence/egress-full-suite-a9747324eee1.json."
+    },
+    {
+      "id": "N05",
+      "name": "model-level injection drill (tools/readiness/injection_drill.py)",
+      "dimensions": [
+        "D10"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Needs a throwaway repository and a live model; owner-gated, never run."
+    },
+    {
+      "id": "N06",
+      "name": "planted-defect recall (tools/readiness/seed_defects.py)",
+      "dimensions": [
+        "D1"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Needs a real seed set written by a person who will not review; only three made-up examples exist."
+    },
+    {
+      "id": "N07",
+      "name": "review-units re-cut (tools/readiness/review_units.py)",
+      "dimensions": [
+        "D1"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "The tool exits 2 at this commit: Tier A path install.sh is not tracked (deleted by #408). Not edited here; filed as #581. The old units are compared against this commit by diff instead (see units)."
+    },
+    {
+      "id": "N08",
+      "name": "claim check over all docs beyond the named false claims",
+      "dimensions": [
+        "D8"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "No such gate exists on main."
+    },
+    {
+      "id": "N09",
+      "name": "CHANGELOG against git history",
+      "dimensions": [
+        "D8"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "No such gate exists on main."
+    },
+    {
+      "id": "N10",
+      "name": "coverage run",
+      "dimensions": [
+        "D1"
+      ],
+      "command": null,
+      "cwd": null,
+      "exit_code": null,
+      "wall_s": null,
+      "result": "not-run",
+      "reason": "Not a gate: CI neither measures nor enforces coverage (docs/launch/coverage.md); the recorded figure is from another commit."
+    }
+  ],
+  "exposure": {
+    "tool": "tools/readiness/exposure_scan.py",
+    "private_pattern_file": "supplied from outside the repository (2 patterns, content not recorded); private-pattern rules matched 0 times",
+    "history": {
+      "findings": 235,
+      "by_rule": {
+        "absolute-home-path": 20,
+        "auth": 40,
+        "aws-key": 30,
+        "credential-assignment": 32,
+        "email-address": 85,
+        "gh-token": 10,
+        "jwt": 3,
+        "private-key": 12,
+        "sk-key": 1,
+        "slack-token": 1,
+        "url-password": 1
+      },
+      "by_rule_and_location_class": {
+        "absolute-home-path|.sdlc-records": 2,
+        "absolute-home-path|tests": 13,
+        "absolute-home-path|tools/leak_scan.py": 5,
+        "auth|.sdlc-records": 4,
+        "auth|skills-or-tools-code": 29,
+        "auth|tests": 7,
+        "aws-key|skills-or-tools-code": 3,
+        "aws-key|tests": 27,
+        "credential-assignment|.sdlc-records": 1,
+        "credential-assignment|skills-or-tools-code": 6,
+        "credential-assignment|tests": 25,
+        "email-address|.sdlc-records": 1,
+        "email-address|docs": 2,
+        "email-address|skills-or-tools-code": 5,
+        "email-address|tests": 72,
+        "email-address|tools/leak_scan.py": 5,
+        "gh-token|tests": 10,
+        "jwt|tests": 3,
+        "private-key|tests": 12,
+        "sk-key|tests": 1,
+        "slack-token|tests": 1,
+        "url-password|tests": 1
+      },
+      "stale_allowlist_entries": 0,
+      "skipped": {
+        "binary": 0,
+        "oversized": 0
+      },
+      "legacy_issue_reference_count": 35132
+    },
+    "tracked": {
+      "findings": 62,
+      "by_rule": {
+        "absolute-home-path": 7,
+        "auth": 7,
+        "aws-key": 1,
+        "credential-assignment": 5,
+        "email-address": 39,
+        "private-key": 3
+      },
+      "by_rule_and_location_class": {
+        "absolute-home-path|.sdlc-records": 1,
+        "absolute-home-path|tests": 5,
+        "absolute-home-path|tools/leak_scan.py": 1,
+        "auth|.sdlc-records": 2,
+        "auth|skills-or-tools-code": 4,
+        "auth|tests": 1,
+        "aws-key|skills-or-tools-code": 1,
+        "credential-assignment|.sdlc-records": 1,
+        "credential-assignment|skills-or-tools-code": 2,
+        "credential-assignment|tests": 2,
+        "email-address|.sdlc-records": 1,
+        "email-address|docs": 2,
+        "email-address|skills-or-tools-code": 3,
+        "email-address|tests": 32,
+        "email-address|tools/leak_scan.py": 1,
+        "private-key|tests": 3
+      },
+      "stale_allowlist_entries": 4,
+      "skipped": {
+        "binary": 0,
+        "oversized": 0
+      },
+      "legacy_issue_reference_count": 5951
+    },
+    "refs": {
+      "remote_refs": 9,
+      "remote_kinds": {
+        "branch": 9
+      },
+      "local_only_tags": 1
+    },
+    "earlier_scan": {
+      "sha12": "8aee0c74c526",
+      "history_findings": 233,
+      "tracked_findings": 70,
+      "note": "keyed by blob, so edited files appear as added and gone; the rule classes are the same"
+    },
+    "triage": {
+      "method": "every finding's rule, path class and redacted preview were read; the home-path matches were classified by whether the user-name part is a placeholder, printing no name; no matched value is recorded anywhere",
+      "result": "0 secrets and 0 real private references in the tree at HEAD. History holds 1 real developer host path, in .sdlc/plans/258.md line 803 (blob 95410bc9a4ec), already in the earlier scan and routed to #400 (closed); the public snapshot does not carry history (docs/launch/definition.md). All other findings are test fixtures, detector code or prose describing a pattern, or placeholders such as an ellipsis user name.",
+      "blocker_class_findings": 0,
+      "filed": [
+        "#583 (D10, launch:next, queued)"
+      ]
+    },
+    "what_visibility_would_expose": "the tracked tree only: this repository's history is not published, the public repository is a fresh snapshot (docs/launch/definition.md)"
+  },
+  "units_comparison": {
+    "old_units_file": "docs/launch/review-units.json",
+    "old_sha": "a5c615062313791a86fca8d8b14d7a4ad0713f7f",
+    "commits_between": 63,
+    "how_cut": "tools/readiness/review_units.py --sha <sha> --json <path>; the seed is int(sha[:8], 16)",
+    "re_cut": "refused: exit 2, Tier A path install.sh not tracked at this commit; the tool was not edited and the units file was not touched",
+    "old": {
+      "tier_a_units": 17,
+      "tier_a_lines": 36018,
+      "tier_b_population_lines": 58577,
+      "tier_b_sample_units": 10,
+      "tier_b_sample_lines": 11972
+    },
+    "scope_change": {
+      "tier_a_files_removed": [
+        "install.sh"
+      ],
+      "tier_a_files_added": [],
+      "tier_b_population_files_added": 47,
+      "tier_b_population_files_removed": 0
+    },
+    "units_changed": 23,
+    "units_total": 27,
+    "unchanged_units": [
+      "B07",
+      "B08",
+      "B09",
+      "B10"
+    ],
+    "s4_must_re_review": [
+      "A01",
+      "A02",
+      "A03",
+      "A04",
+      "A05",
+      "A06",
+      "A07",
+      "A08",
+      "A09",
+      "A10",
+      "A11",
+      "A12",
+      "A13",
+      "A14",
+      "A15",
+      "A16",
+      "A17",
+      "B01",
+      "B02",
+      "B03",
+      "B04",
+      "B05",
+      "B06"
+    ],
+    "hypothetical_re_cut": {
+      "label": "not committed and not a units file: the tool run in a scratch copy with the deleted path dropped from its list, only to size S4",
+      "tier_a_units": 16,
+      "tier_a_lines": 36519,
+      "tier_b_population_lines": 71855,
+      "tier_b_sample_units": 18,
+      "tier_b_sample_lines": 14885,
+      "note": "a new sha gives a new seed, so a fresh sample draws different files; the old sample's files are 6 changed units out of 10"
+    },
+    "units": [
+      {
+        "unit": "A01",
+        "tier": "A",
+        "lines_old": 2267,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "hooks/agrim_gate.sh",
+            "status": "changed",
+            "added": 1,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "hooks/session_start.sh",
+            "status": "changed",
+            "added": 27,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A02",
+        "tier": "A",
+        "lines_old": 32,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "install.sh",
+            "status": "deleted",
+            "added": 0,
+            "deleted": 32,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A03",
+        "tier": "A",
+        "lines_old": 1887,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-init/scripts/setup_wizard.py",
+            "status": "changed",
+            "added": 10,
+            "deleted": 3,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A04",
+        "tier": "A",
+        "lines_old": 2717,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/channel_notify.py",
+            "status": "changed",
+            "added": 26,
+            "deleted": 2,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A05",
+        "tier": "A",
+        "lines_old": 2502,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/ledger.py",
+            "status": "changed",
+            "added": 8,
+            "deleted": 3,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A06",
+        "tier": "A",
+        "lines_old": 2997,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/loop.py",
+            "status": "changed",
+            "added": 115,
+            "deleted": 25,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A07",
+        "tier": "A",
+        "lines_old": 2967,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/loop.py",
+            "status": "changed",
+            "added": 115,
+            "deleted": 25,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A08",
+        "tier": "A",
+        "lines_old": 519,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/loop.py",
+            "status": "changed",
+            "added": 115,
+            "deleted": 25,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A09",
+        "tier": "A",
+        "lines_old": 1684,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/reconcile.py",
+            "status": "changed",
+            "added": 4,
+            "deleted": 4,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/run_with_timeout.py",
+            "status": "changed",
+            "added": 2,
+            "deleted": 2,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/scrub.py",
+            "status": "changed",
+            "added": 12,
+            "deleted": 9,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/slack_client.py",
+            "status": "changed",
+            "added": 2,
+            "deleted": 2,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A10",
+        "tier": "A",
+        "lines_old": 2994,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+            "status": "changed",
+            "added": 122,
+            "deleted": 27,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/state.py",
+            "status": "changed",
+            "added": 1,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A11",
+        "tier": "A",
+        "lines_old": 2986,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/sources.py",
+            "status": "changed",
+            "added": 15,
+            "deleted": 17,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A12",
+        "tier": "A",
+        "lines_old": 2209,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/sources.py",
+            "status": "changed",
+            "added": 15,
+            "deleted": 17,
+            "old_range_ends_beyond_new_file": true
+          }
+        ]
+      },
+      {
+        "unit": "A13",
+        "tier": "A",
+        "lines_old": 2738,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/supervise_daemon.py",
+            "status": "changed",
+            "added": 26,
+            "deleted": 6,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/sync.py",
+            "status": "changed",
+            "added": 4,
+            "deleted": 4,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A14",
+        "tier": "A",
+        "lines_old": 953,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/watch_daemon.py",
+            "status": "changed",
+            "added": 2,
+            "deleted": 3,
+            "old_range_ends_beyond_new_file": true
+          }
+        ]
+      },
+      {
+        "unit": "A15",
+        "tier": "A",
+        "lines_old": 2970,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/work.py",
+            "status": "changed",
+            "added": 276,
+            "deleted": 10,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A16",
+        "tier": "A",
+        "lines_old": 2917,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/work.py",
+            "status": "changed",
+            "added": 276,
+            "deleted": 10,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "A17",
+        "tier": "A",
+        "lines_old": 679,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/work.py",
+            "status": "changed",
+            "added": 276,
+            "deleted": 10,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B01",
+        "tier": "B",
+        "lines_old": 2975,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-doctor/scripts/doctor.py",
+            "status": "changed",
+            "added": 88,
+            "deleted": 13,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B02",
+        "tier": "B",
+        "lines_old": 1544,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-doctor/scripts/doctor.py",
+            "status": "changed",
+            "added": 88,
+            "deleted": 13,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B03",
+        "tier": "B",
+        "lines_old": 156,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-init/scripts/board_spec.py",
+            "status": "changed",
+            "added": 1,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B04",
+        "tier": "B",
+        "lines_old": 2897,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/autowatch.py",
+            "status": "changed",
+            "added": 346,
+            "deleted": 32,
+            "old_range_ends_beyond_new_file": false
+          },
+          {
+            "path": "skills/agrim-loop/scripts/pipeline.py",
+            "status": "changed",
+            "added": 4,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B05",
+        "tier": "B",
+        "lines_old": 918,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-loop/scripts/slices.py",
+            "status": "changed",
+            "added": 1,
+            "deleted": 1,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B06",
+        "tier": "B",
+        "lines_old": 829,
+        "changed_since_freeze": true,
+        "changed_files": [
+          {
+            "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+            "status": "changed",
+            "added": 2,
+            "deleted": 2,
+            "old_range_ends_beyond_new_file": false
+          }
+        ]
+      },
+      {
+        "unit": "B07",
+        "tier": "B",
+        "lines_old": 1024,
+        "changed_since_freeze": false,
+        "changed_files": []
+      },
+      {
+        "unit": "B08",
+        "tier": "B",
+        "lines_old": 230,
+        "changed_since_freeze": false,
+        "changed_files": []
+      },
+      {
+        "unit": "B09",
+        "tier": "B",
+        "lines_old": 72,
+        "changed_since_freeze": false,
+        "changed_files": []
+      },
+      {
+        "unit": "B10",
+        "tier": "B",
+        "lines_old": 1327,
+        "changed_since_freeze": false,
+        "changed_files": []
+      }
+    ]
+  },
+  "findings_filed": [
+    {
+      "issue": 581,
+      "dimension": "D1",
+      "class": "none (launch:next)",
+      "summary": "signal-seam test fails under an inherited ignored SIGHUP; review-units tool refuses after install.sh was removed"
+    },
+    {
+      "issue": 582,
+      "dimension": "D5",
+      "class": "none (launch:next)",
+      "summary": "committed growth-store audit snapshot is stale against its documented gesture"
+    },
+    {
+      "issue": 583,
+      "dimension": "D10",
+      "class": "none (launch:next)",
+      "summary": "tracked exposure scan cannot exit 0 at main; four blob-scoped allowlist entries are stale"
+    }
+  ],
+  "cost": {
+    "meter": "python3 evals/bench/meter.py --paths <this slot's own transcript> <plan-review transcript 1> <plan-review transcript 2>",
+    "rate_card": "skills/agrim-loop/rates/anthropic_list_prices.csv at the frozen commit (list prices, not a negotiated rate)",
+    "scope": "S1 plus S2: this slot's own transcript and the two fresh plan-review subagents, measured when the evidence was written. NOT included: the pre-PR code review, the post-PR review, CI polling and the merge. Those are metered at the end and posted as a comment on #580; the counters take the larger figure.",
+    "transcripts": 3,
+    "tokens_in": 190,
+    "tokens_out": 68805,
+    "cache_read_tokens": 12792247,
+    "cache_write_tokens": 554242,
+    "processed_tokens": 13415484,
+    "cost_usd": 4.63,
+    "unpriced_turns": 0,
+    "against_estimate": "the issue estimated under 3,000,000 processed tokens, unmeasured. Measured: 13,415,484, about 4.5x the estimate. 95% is cache reads: every turn of a long session re-reads its context, and the plan's unit counts cache reads. The gates themselves cost no tokens (they are scripts); the session turns that ran and read them do.",
+    "counters": {
+      "spent_before_this_run": 3887193,
+      "this_run_measured_so_far": 13415484,
+      "remaining_under_40M": 22697323,
+      "remaining_under_75M": 57697323,
+      "basis": "counters before this run: 3,887,193 (pilots, docs/launch/review-plan.md); 36,112,807 and 71,112,807 remained"
+    }
+  }
+}
