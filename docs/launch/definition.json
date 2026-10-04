@@ -1,8 +1,8 @@
 {
   "schema": "launch-definition/v1",
-  "status": "proposed",
-  "signed_by": null,
-  "signed_on": null,
+  "status": "signed",
+  "signed_by": "swapnil-agrim",
+  "signed_on": "2026-10-04",
   "artifact": "public-snapshot",
   "public_repo": "Agrim-Intelligence/sigma",
   "version": "1.0.0",
