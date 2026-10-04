@@ -61,6 +61,8 @@ def _metadata(path, function, rule):
             ("explicit summarize command; caller-supplied JSON path", "medium"),
         ("tools/readiness/exposure_scan.py", "_write", "fs-write"):
             ("explicit exposure scan; caller-supplied evidence path", "medium"),
+        ("tools/readiness/exposure_scan.py", "main", "fs-write"):
+            ("explicit tracked scan with --propose; caller-supplied draft path; hashes only", "medium"),
         ("tools/readiness/exposure_scan.py", "scan_refs", "git-destructive"):
             ("explicit refs scan; local tag listing is read-only", "low"),
         ("tools/readiness/review_units.py", "main", "fs-write"):

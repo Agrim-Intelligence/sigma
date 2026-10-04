@@ -1,13 +1,39 @@
 #!/usr/bin/env python3
 """Secret-safe launch exposure scanner (#333).
 
-Usage: exposure_scan.py {history|tracked|refs} REPO [--json PATH]
+Usage: exposure_scan.py {history|tracked|refs} REPO [--json PATH] [--propose PATH]
 
 `history` examines reachable text blobs, while `tracked` examines HEAD only.  It never prints a
 matched value: reports identify the rule, location and a redacted preview.  Exit 0 means clean,
 1 means findings (including stale allowlist entries), and 2 means bad input or git failure.
+
+Allowlist (`docs/launch/exposure-allowlist.json`, tracked mode only): an entry names a path and a
+rule and is scoped to content, never to the path alone: `blob` (one exact Git blob) or `lines`
+(sha256 of each reviewed matched line, duplicates counted).  A `lines` entry survives an edit
+elsewhere in the file, and goes stale (the scan exits 1) when a reviewed line changes or is
+removed; a match it does not list, or one more copy of a listed line, is a finding.
+
+Re-triage, run by whoever changes a file that carries an entry or adds a finding, with the
+private-pattern file supplied from outside the repository: run
+`exposure_scan.py tracked . --json <scratch> --propose <scratch-draft>`, read every row the scan
+names, and only for a fixture, detector prose or placeholder copy its entry into the allowlist
+with a one-line reason.  A real secret or private reference is never allowlisted: remove it.
+The history mode never applies the allowlist.  The default allowlist is read from HEAD, never from
+the working tree; the report records its source, blob and how many findings it covered (counts,
+never values).
+
+Limits of "exit 0 means clean" that the allowlist neither causes nor fixes: blobs over 2 MiB and
+blobs holding a NUL byte (binary, UTF-16) are counted as skipped, not scanned; a key block with no
+END line matches nothing; `legacy-issue-reference` is count-only; `private-pattern-N` names are the
+pattern's line number (and are refused as allowlist rules: a private reference is removed, never
+allowed), so re-run the re-triage after the private-pattern file changes.  A CRLF/LF conversion of a
+file holding a key block makes its entry stale (fails closed), and a match spanning many lines (a
+key pattern fixture) goes stale on an edit of any of them: noisy, never blind.  A hash of a
+short guessable line can be confirmed by guessing: never allowlist a line holding a real secret.
 """
 import argparse
+import collections
+import hashlib
 import importlib.util
 import json
 import os
@@ -19,6 +45,8 @@ import sys
 MAX_BLOB_BYTES = 2 * 1024 * 1024
 DEFAULT_ALLOWLIST = "docs/launch/exposure-allowlist.json"
 _OBJECT_ID = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
+_LINE_HASH = re.compile(r"^[0-9a-f]{64}$")
+DRAFT_REASON = "TRIAGE REQUIRED: replace with the reviewed reason"
 PRIVATE_RULES = (
     ("absolute-home-path", re.compile(r"(?:/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|/private/tmp/claude-[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+\\)")),
     ("email-address", re.compile(r"(?i)\b(?!(?:[A-Z0-9._%+-]+@(?:example\.com|example\.invalid|users\.noreply\.github\.com)|noreply@anthropic\.com)\b)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")),
@@ -66,18 +94,42 @@ def _patterns(path=None, repo=None):
     return rules
 
 
-def _allowlist(path):
-    if not path or not pathlib.Path(path).exists():
+def _allowlist(path, text=None):
+    """Load the allowlist.  An entry is scoped to content, never to a bare path and rule.
+
+    ``blob``: the exact reviewed Git blob (any edit of the file makes it stale).
+    ``lines``: sha256 of every reviewed matched line (the whole line, or every line a multi-line
+    match spans), one hash per match, duplicates counted.  It survives an edit elsewhere in the
+    file and goes stale, and the scan fails, when a reviewed line changes or when a match appears
+    that the list does not cover.
+    """
+    if text is None and (not path or not pathlib.Path(path).exists()):
         return []
     try:
-        data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+        data = json.loads(text if text is not None else pathlib.Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError("invalid allowlist: %s" % exc)
+
+    def scoped(x):
+        has_blob, has_lines = "blob" in x, "lines" in x
+        if has_blob == has_lines:
+            return False
+        if has_blob:
+            return isinstance(x["blob"], str) and bool(_OBJECT_ID.fullmatch(x["blob"]))
+        return (isinstance(x["lines"], list) and bool(x["lines"])
+                and all(isinstance(h, str) and _LINE_HASH.fullmatch(h) for h in x["lines"]))
     if not isinstance(data, list) or any(
             not isinstance(x, dict) or not x.get("path") or not x.get("rule") or not x.get("reason")
-            or ("blob" in x and (not isinstance(x["blob"], str) or not _OBJECT_ID.fullmatch(x["blob"])))
-            for x in data):
-        raise ValueError("allowlist entries require path, rule, and reason; blob, when present, is a Git object id")
+            or not scoped(x) for x in data):
+        raise ValueError("allowlist entries require path, rule, reason and exactly one of "
+                         "blob (a Git object id) or lines (sha256 of each reviewed matched line)")
+    if any(str(x["reason"]).startswith("TRIAGE REQUIRED") for x in data):
+        raise ValueError("allowlist entry still carries a draft reason; triage it first")
+    if any(str(x["rule"]).startswith("private-pattern") for x in data):
+        raise ValueError("a private-pattern finding is never allowlisted: remove the reference")
+    keys = [(x["path"], x["rule"]) for x in data]
+    if len(keys) != len(set(keys)):
+        raise ValueError("allowlist has more than one entry for the same path and rule")
     return data
 
 
@@ -91,14 +143,17 @@ def _safe_preview(text, match, rule, rules):
     preview = raw
     for name, rx in rules:
         preview = rx.sub("[REDACTED:%s]" % name, preview)
-    return line, preview[:240]
+    # Allowlist identity: every full line the match spans, so a multi-line match (a key block)
+    # is covered in whole.  Hashed, never stored or printed as text.
+    digest = hashlib.sha256(raw.strip().encode("utf-8", "replace")).hexdigest()
+    return line, preview[:240], digest
 
 
 def _matches(text, rules):
     for rule, rx in rules:
         for match in rx.finditer(text):
-            line, preview = _safe_preview(text, match, rule, rules)
-            yield rule, line, preview
+            line, preview, digest = _safe_preview(text, match, rule, rules)
+            yield rule, line, preview, digest
 
 
 def _history_blobs(repo):
@@ -180,12 +235,31 @@ def _batch_contents(repo, shas):
     return contents
 
 
-def scan(repo, mode, allowlist=None, patterns=None):
+def scan(repo, mode, allowlist=None, patterns=None, propose=None, allowed=None):
     repo = pathlib.Path(repo).resolve()
     if not (repo / ".git").exists():
         raise ValueError("repository must be a working tree")
-    allow = _allowlist(allowlist or repo / DEFAULT_ALLOWLIST)
-    used = set()
+    if mode == "tracked" and _run("git", "status", "--porcelain", "--untracked-files=no", cwd=repo).strip():
+        # The scan reads committed blobs but the allowlist from the working tree: a verdict on a
+        # dirty tree would describe a tree nobody committed.
+        raise ValueError("tracked files differ from HEAD; commit them first (the scan reads HEAD)")
+    # The allowlist is for the tracked tree only.  History is an audit of every reachable blob:
+    # a reviewed line at HEAD says nothing about what an older blob of that path held.
+    # The default allowlist is read from HEAD, like the blobs: an untracked or edited copy in the
+    # working tree cannot make a verdict.  An explicit --allowlist is for hermetic controls and is
+    # recorded in the report as such.
+    allow, source, allow_blob = [], "none", None
+    if mode == "tracked" and allowlist:
+        allow, source = _allowlist(allowlist), "explicit"
+    elif mode == "tracked":
+        try:
+            allow_blob = _run("git", "rev-parse", "HEAD:" + DEFAULT_ALLOWLIST, cwd=repo).strip()
+        except ValueError:
+            allow_blob = None                      # not in HEAD: no allowlist
+        if allow_blob:
+            allow, source = _allowlist(None, _run("git", "show", allow_blob, cwd=repo)), "HEAD"
+    allow_by_key = {(x["path"], x["rule"]): x for x in allow}
+    used, covered_count = set(), 0
     findings, skipped, counts = [], {"oversized": 0, "binary": 0}, {"legacy_issue_references": 0}
     rules = _patterns(patterns, repo)
     blobs = _history_blobs(repo) if mode == "history" else _tracked_blobs(repo)
@@ -210,30 +284,56 @@ def scan(repo, mode, allowlist=None, patterns=None):
         # The output identity is (rule, blob), never one finding per repeated token.  The only
         # public-facing legacy issue signal is its aggregate count, as promised by the goal.
         per_rule = {}
-        for rule, line, preview in _matches(text, rules):
+        for rule, line, preview, digest in _matches(text, rules):
             if rule == "legacy-issue-reference":
                 counts["legacy_issue_references"] += 1
                 continue
             if rule not in per_rule:
-                per_rule[rule] = [line, preview, 0]
+                per_rule[rule] = [line, preview, 0, collections.Counter()]
             per_rule[rule][2] += 1
-        for rule, (line, preview, hit_count) in per_rule.items():
+            per_rule[rule][3][digest] += 1
+        for rule, (line, preview, hit_count, digests) in per_rule.items():
             visible = []
             for path in sorted(paths):
-                matching = [index for index, entry in enumerate(allow)
-                            if entry["path"] == path and entry["rule"] == rule
-                            and ("blob" not in entry or entry["blob"].lower() == sha.lower())]
-                if matching:
-                    used.update(matching)
+                entry = allow_by_key.get((path, rule))
+                if entry is None:
+                    visible.append(path); continue
+                index = allow.index(entry)
+                if "blob" in entry:
+                    covered = entry["blob"].lower() == sha.lower()
+                    if covered:
+                        used.add(index)
                 else:
+                    reviewed = collections.Counter(entry["lines"])
+                    # Covered only when every match is a reviewed line, counted: a new finding,
+                    # or one more copy of a reviewed line, is not covered.  The entry counts as
+                    # live only when it equals the observed matches, so an edited or removed
+                    # reviewed line makes it stale and the scan fails until it is re-triaged.
+                    covered = not (digests - reviewed)
+                    if covered and digests == reviewed:
+                        used.add(index)
+                    elif covered and propose is not None:
+                        # live matches are a strict part of the entry: draft its replacement
+                        propose[(path, rule)] = propose.get((path, rule), collections.Counter()) + digests
+                if not covered:
                     visible.append(path)
+                else:
+                    covered_count += 1
+                    if allowed is not None:
+                        allowed.append((rule, path, line, sha, preview))
             if visible:
                 findings.append({"rule": rule, "path": visible[0], "paths": visible, "line": line,
                                  "blob": sha, "commits": commits, "matches": hit_count, "preview": preview})
+                if propose is not None:
+                    for path in visible:
+                        propose[(path, rule)] = propose.get((path, rule), collections.Counter()) + digests
     stale = [{"path": x["path"], "rule": x["rule"]}
              for index, x in enumerate(allow) if index not in used]
+    # Counts and the allowlist blob only: what the allowlist covered is auditable, never a value.
     return {"schema": "sigma.launch-exposure/v1", "mode": mode, "findings": findings,
-            "stale_allowlist": stale, "skipped": skipped, "counts": counts}
+            "stale_allowlist": stale, "skipped": skipped, "counts": counts,
+            "allowlist": {"source": source, "blob": allow_blob, "entries": len(allow),
+                          "covered_findings": covered_count}}
 
 
 def scan_refs(repo):
@@ -288,9 +388,29 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("verb", choices=("history", "tracked", "refs")); parser.add_argument("repo")
     parser.add_argument("--json"); parser.add_argument("--allowlist"); parser.add_argument("--patterns")
+    parser.add_argument("--list-allowed", action="store_true", help="tracked only: also print every "
+                        "finding an allowlist entry covers (rule, path, line, blob, redacted preview), "
+                        "so a reviewer can read what an allowlist diff hides")
+    parser.add_argument("--propose", help="tracked only: write draft allowlist entries (hashes, no "
+                        "values) for the uncovered findings; each needs a human-written reason")
     args = parser.parse_args(argv)
     try:
-        report = scan_refs(args.repo) if args.verb == "refs" else scan(args.repo, args.verb, args.allowlist, args.patterns)
+        if args.propose and args.verb != "tracked":
+            raise ValueError("--propose is only for the tracked mode")
+        if args.propose:
+            # Draft hashes describe uncovered findings, which may be real: never inside the repo
+            # (committable), and never over the evidence.
+            target = pathlib.Path(args.propose).resolve()
+            root = pathlib.Path(args.repo).resolve()
+            evidence_paths = ({pathlib.Path(args.json).resolve(), pathlib.Path(args.json).with_suffix(".md").resolve()}
+                              if args.json else set())
+            if target == root or root in target.parents or target in evidence_paths:
+                raise ValueError("--propose must name a file outside the repository and not the evidence")
+        if args.list_allowed and args.verb != "tracked":
+            raise ValueError("--list-allowed is only for the tracked mode")
+        drafts = {} if args.propose else None
+        allowed = [] if args.list_allowed else None
+        report = scan_refs(args.repo) if args.verb == "refs" else scan(args.repo, args.verb, args.allowlist, args.patterns, drafts, allowed)
     except ValueError as exc:
         print("exposure-scan: " + str(exc), file=sys.stderr); return 2
     if args.json:
@@ -300,11 +420,17 @@ def main(argv=None):
         stem = "exposure" if args.verb == "history" else args.verb
         evidence = pathlib.Path(args.repo) / "docs" / "launch" / "evidence" / (stem + "-" + sha + ".json")
     _write(report, evidence)
+    if args.propose:
+        pathlib.Path(args.propose).write_text(json.dumps(
+            [{"path": path, "rule": rule, "reason": DRAFT_REASON, "lines": sorted(digests.elements())}
+             for (path, rule), digests in sorted(drafts.items())], indent=2) + "\n", encoding="utf-8")
     if args.verb == "refs":
         print("refs: %d remote; %d local-only tags" % (len(report["remote"]), len(report["local_only_tags"])))
         return 0
     for item in report["findings"]:
         print("%s %s:%d %s %s" % (item["rule"], item["path"], item["line"], item["blob"][:12], item["preview"]))
+    for rule, path, line, sha, preview in sorted(allowed or []):
+        print("allowed %s %s:%d %s %s" % (rule, path, line, sha[:12], preview))
     for item in report["stale_allowlist"]:
         print("stale-allowlist %s %s" % (item["rule"], item["path"]))
     print("skipped: oversized=%d binary=%d" % (report["skipped"]["oversized"], report["skipped"]["binary"]))
