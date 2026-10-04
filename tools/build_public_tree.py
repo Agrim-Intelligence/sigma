@@ -513,6 +513,10 @@ def render_md(report):
         lines.append("- one account opened and merged: not independent review")
     elif review.get("independent") is True:
         lines.append("- the pull request was opened and merged by different accounts")
+    if review.get("public_source_override"):
+        lines.append("- PUBLIC SOURCE OVERRIDE: --allow-public-source was passed; the source repository is public "
+                     "and its history is already public (source_private: %s)" % (
+                         (review.get("levels", {}).get("pr-merged", {}).get("facts", {}).get("source_private"))))
     protection = review.get("branch_protection")
     lines.append("- Branch protection on the base branch, as measured: %s" % (
         protection if protection else "not measured (the review level is below pr-merged)"))
@@ -647,7 +651,7 @@ def _review(args, src, commit, run, patterns):
     levels = dict((name, {"checked": False, "ok": False, "facts": {}}) for name in LEVELS)
     levels["clean"] = {"checked": True, "ok": True, "facts": {"head": commit, "status": "clean"}}
     review = {"requested": args.review_level, "reached": "clean", "levels": levels,
-              "independent": None, "branch_protection": None}
+              "independent": None, "branch_protection": None, "public_source_override": False}
     if want >= 1:
         ref = "refs/remotes/%s/%s" % (args.remote, args.base)
         rc, _out = _git(src, "rev-parse", "--verify", "-q", "--end-of-options", ref + "^{commit}", allow=True)
@@ -669,6 +673,15 @@ def _review(args, src, commit, run, patterns):
         repo = args.repo
         info = _gh_json(run, "repos/%s" % repo, patterns)
         private = info.get("private") if isinstance(info, dict) else None
+        if private is not True:
+            if not args.allow_public_source:
+                raise Refused("review-repo-public", "the review (source) repository is not private; if its "
+                              "history is already public and the new repository is only for a clean "
+                              "one-commit history, pass --allow-public-source")
+            print("build_public_tree: WARNING the source repository is public (or its visibility is "
+                  "unreadable) and its history is already public; --allow-public-source was passed",
+                  file=sys.stderr)
+            review["public_source_override"] = True
         pulls = _gh_json(run, "repos/%s/commits/%s/pulls?per_page=100" % (repo, commit), patterns)
         match = [p for p in (pulls if isinstance(pulls, list) else [])
                  if isinstance(p, dict) and p.get("merged_at") and p.get("merge_commit_sha") == commit
@@ -739,6 +752,13 @@ def _load_allowlist(raw):
             or not _content_scoped(x) for x in data):
         raise Refused("dispositions-malformed", "%s entries need path, rule, reason and exactly one of blob or "
                       "lines (the exposure scanner's schema)" % EXPOSURE_ALLOWLIST_PATH)
+    if any(str(x["reason"]).startswith("TRIAGE REQUIRED") for x in data):
+        raise Refused("dispositions-malformed", "%s holds an entry with a draft reason" % EXPOSURE_ALLOWLIST_PATH)
+    if any(str(x["rule"]).startswith("private-pattern") for x in data):
+        raise Refused("dispositions-malformed", "%s allowlists a private-pattern finding" % EXPOSURE_ALLOWLIST_PATH)
+    keys = [(x["path"], x["rule"]) for x in data]
+    if len(keys) != len(set(keys)):
+        raise Refused("dispositions-malformed", "%s has two entries for one path and rule" % EXPOSURE_ALLOWLIST_PATH)
     return data
 
 
@@ -748,7 +768,7 @@ def _content_scoped(entry):
     if ("blob" in entry) == ("lines" in entry):
         return False
     if "blob" in entry:
-        return isinstance(entry["blob"], str) and bool(_OBJECT_ID.match(entry["blob"]))
+        return isinstance(entry["blob"], str) and bool(_OBJECT_ID.fullmatch(entry["blob"]))
     return (isinstance(entry["lines"], list) and bool(entry["lines"])
             and all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in entry["lines"]))
 
@@ -967,7 +987,7 @@ def _parser():
         prog="build_public_tree.py",
         usage="%(prog)s COMMIT --out DIR [--source DIR] [--patterns FILE] [--sdlc {exclude,include}]\n"
               "       [--exclude PREFIX ...] [--review-level {clean,landed,pr-merged,owner-merged}]\n"
-              "       [--repo OWNER/NAME] [--remote NAME] [--base BRANCH] [--report-dir DIR] [--scan-timeout S]",
+              "       [--repo OWNER/NAME] [--allow-public-source] [--remote NAME] [--base BRANCH] [--report-dir DIR] [--scan-timeout S]",
         description="Build the tree of a fresh one-commit public repository from one commit, deterministic "
                     "and scanned, with its report outside every repository. Exit 0 VERIFIED, 1 REJECTED, "
                     "2 refusal or NOT-VERIFIED.")
@@ -984,7 +1004,10 @@ def _parser():
                         help="leave out a path prefix (repeatable)")
     parser.add_argument("--review-level", choices=LEVELS, default="pr-merged",
                         help="cumulative review proof required (default: pr-merged)")
-    parser.add_argument("--repo", metavar="OWNER/NAME", help="the private review repository (REST levels)")
+    parser.add_argument("--repo", metavar="OWNER/NAME", help="the review (source) repository (REST levels)")
+    parser.add_argument("--allow-public-source", action="store_true",
+                        help="proceed although the source repository is public (its history is already public); "
+                             "recorded in the report")
     parser.add_argument("--remote", default="origin", metavar="NAME", help="remote of the landed ref (default: origin)")
     parser.add_argument("--base", default="main", metavar="BRANCH", help="base branch (default: main)")
     parser.add_argument("--report-dir", metavar="DIR",

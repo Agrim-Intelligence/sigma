@@ -380,8 +380,8 @@ All notable changes to Sigma are recorded here, newest first.
   may reverse with `--sdlc include`. `tools/verify_public_repo.py` proves over read-only REST that
   a pushed export is exactly that commit with CI green on every leg; the repository name is its
   argument. The public repository is a new one (this repository is not renamed), so nothing
-  needs repointing. The builder records, and no longer refuses on, the source repository being
-  public. The exposure baseline is reconciled in `docs/launch/exposure-allowlist.json`, the
+  needs repointing. The builder refuses a non-private source repository unless the owner passes
+  `--allow-public-source`, which warns and records the override in the report. The exposure baseline is reconciled in `docs/launch/exposure-allowlist.json`, the
   builder's own exceptions are in the new `docs/launch/public-tree-dispositions.json`. Runbook:
   `docs/public-snapshot.md`. The rehearsal is prepared and owner-run, not performed.
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).

@@ -49,7 +49,7 @@ PATTERNS="$HOME/.sigma-ops/leak-patterns.txt"
 REVIEW_REPO="OWNER/NAME-OF-THIS-REPOSITORY"
 git worktree add --detach "$SRC" "$COMMIT"
 cd "$SRC"
-python3 tools/build_public_tree.py "$COMMIT" --out "$OUT" --patterns "$PATTERNS" --repo "$REVIEW_REPO"
+python3 tools/build_public_tree.py "$COMMIT" --out "$OUT" --patterns "$PATTERNS" --repo "$REVIEW_REPO" --allow-public-source
 ```
 
 `git fetch` and `git worktree add` write to the shared repository; they are the owner's steps and
@@ -58,7 +58,7 @@ is required and there is no default path.
 
 Flags (`python3 tools/build_public_tree.py --help` is the authority): `--out DIR` (required),
 `--source DIR`, `--patterns FILE`, `--sdlc exclude|include`, `--exclude PREFIX` (repeatable),
-`--review-level clean|landed|pr-merged|owner-merged`, `--repo OWNER/NAME`, `--remote NAME`,
+`--review-level clean|landed|pr-merged|owner-merged`, `--repo OWNER/NAME`, `--allow-public-source`, `--remote NAME`,
 `--base BRANCH`, `--report-dir DIR`, `--scan-timeout S`.
 
 Exit codes and what is on disk:
@@ -82,7 +82,7 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
 `dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`,
-`gh-failed`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
+`gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
 `work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
 `tools/leak_scan.py` and an `--exclude` drops it, so the fourth scan could not run; refused before
@@ -116,8 +116,13 @@ each reported by name, and the report records `requested` and `reached`:
   into the base branch, so a direct push is refused. The report records whether one account opened
   and merged (`independent: false`, with the sentence "one account opened and merged: not
   independent review") and what branch protection was measured on the base branch (`present`,
-  `none`, or `unreadable`) and whether the source repository is private (`source_private`, `null`
-  when GitHub's answer carries no boolean); a public source is recorded, not refused.
+  `none`, or `unreadable`) and whether the source repository is private (`source_private`). A source that is not
+  private (public, or visibility unreadable) is REFUSED (`review-repo-public`) unless
+  `--allow-public-source` is passed. The owner's flow needs the flag: this repository is already
+  public, so its history is already public, and the point of the new repository is a clean
+  one-commit history, not secrecy of the source. The flag prints a loud stderr warning and records
+  `public_source_override: true` (JSON and `.md`) beside `source_private`; every other refusal and
+  all four scans still apply.
 - `owner-merged`: the merger holds the `admin` or `maintain` role on the review repository.
 
 The REST levels need `--repo OWNER/NAME` and make GET-only `gh api` calls; nothing writes. An
@@ -291,6 +296,9 @@ Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a lo
    ```sh
    python3 tools/verify_public_repo.py --repo "$PUBLIC_REPO" --report "$REPORT" --expect-visibility public
    ```
+
+The rehearsal push (a throwaway PRIVATE repository, `--expect-visibility private`) and this push are
+two separate pushes to two repositories: never publish by making the rehearsal repository public.
 
 There is nothing to repoint: this repository keeps its name, so no clone of it changes remote.
 

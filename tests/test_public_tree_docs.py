@@ -69,7 +69,7 @@ def test_the_name_handover_pieces_are_gone_and_unreferenced():
                 "tools/verify_public_repo.py"):
         body = (ROOT / rel).read_text(encoding="utf-8")
         assert gone not in body and doc not in body, rel
-    assert "review-repo-" + "public" not in (ROOT / "tools" / "build_public_tree.py").read_text(encoding="utf-8")
+    assert "--allow-public-source" in (ROOT / "docs" / "public-snapshot.md").read_text(encoding="utf-8")
 
 
 def test_new_docs_gestures_validate():

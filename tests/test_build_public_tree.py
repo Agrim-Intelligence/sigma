@@ -936,9 +936,20 @@ def test_exposure_allowlist_entry_scoped_to_a_bare_path_is_refused(tmp_path, cap
     builder with its own one-line refusal, not passed on to the scanner to exit 2."""
     mod = _tool()
     for label, entry in (("bare", {}), ("both", {"blob": "0" * 40, "lines": ["0" * 64]}),
-                         ("badlines", {"lines": ["zz"]}), ("emptylines", {"lines": []})):
+                         ("badlines", {"lines": ["zz"]}), ("emptylines", {"lines": []}),
+                         ("newlineblob", {"blob": "a" * 40 + "\n"}),
+                         ("draft", {"lines": ["0" * 64], "reason": "TRIAGE REQUIRED: x"}),
+                         ("private", {"lines": ["0" * 64], "rule": "private-pattern-3"})):
         allow = json.dumps([dict({"path": "docs/a.md", "rule": "email-address", "reason": "fixture"}, **entry)]) + "\n"
         repo, sha = _fixture(tmp_path, name=label, extra={EXPOSURE_ALLOWLIST: allow})
         rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o" + label)))
         assert rc == 2 and so == "", (label, rc, so, se)
         assert "REFUSED [dispositions-malformed]" in se, (label, se)
+
+
+def test_exposure_allowlist_duplicate_path_and_rule_is_refused(tmp_path, capsys):
+    mod = _tool()
+    row = {"path": "docs/a.md", "rule": "email-address", "reason": "fixture", "lines": ["0" * 64]}
+    repo, sha = _fixture(tmp_path, name="dup", extra={EXPOSURE_ALLOWLIST: json.dumps([row, dict(row, lines=["1" * 64])])})
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "odup")))
+    assert rc == 2 and so == "" and "REFUSED [dispositions-malformed]" in se, (rc, so, se)

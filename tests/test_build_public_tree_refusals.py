@@ -545,16 +545,46 @@ def test_pr_merged_direct_push_is_refused(tmp_path, capsys):
     assert not case.out.exists()
 
 
-def test_pr_merged_records_a_public_source_repository_without_refusing(tmp_path, capsys):
-    """The source repository may be public (this repository is not renamed; the export goes to a new
-    one): its visibility is a recorded fact, not a refusal."""
+def test_pr_merged_refuses_a_public_source_repository_by_default(tmp_path, capsys):
     mod = _tool()
     repo, sha, case, _ = _rest_case(tmp_path, "pr-merged")
     fake = Fake(mod, _rest_world(sha, **{"repos/%s" % SLUG: (0, {"private": False, "full_name": SLUG}, "")}))
     rc, so, se = _build(mod, capsys, case.argv, run=fake)
+    _one_line_refusal(rc, so, se, "review-repo-public")
+    assert "--allow-public-source" in se
+    assert not case.out.exists()
+
+
+def test_allow_public_source_proceeds_loudly_and_is_recorded(tmp_path, capsys):
+    mod = _tool()
+    repo, sha, case, _ = _rest_case(tmp_path, "pr-merged")
+    fake = Fake(mod, _rest_world(sha, **{"repos/%s" % SLUG: (0, {"private": False, "full_name": SLUG}, "")}))
+    rc, so, se = _build(mod, capsys, case.argv + ["--allow-public-source"], run=fake)
     assert "REFUSED" not in se, se
-    report, _md = _report_of(so)
+    assert "source repository is public" in se and "already public" in se
+    report, md = _report_of(so)
+    assert report["review"]["public_source_override"] is True
     assert report["review"]["levels"]["pr-merged"]["facts"]["source_private"] is False
+    assert "PUBLIC SOURCE OVERRIDE" in md
+
+
+def test_a_private_source_records_no_override(tmp_path, capsys):
+    mod = _tool()
+    repo, sha, case, _ = _rest_case(tmp_path, "pr-merged")
+    rc, so, se = _build(mod, capsys, case.argv, run=Fake(mod, _rest_world(sha)))
+    report, md = _report_of(so)
+    assert report["review"]["public_source_override"] is False
+    assert report["review"]["levels"]["pr-merged"]["facts"]["source_private"] is True
+    assert "PUBLIC SOURCE OVERRIDE" not in md
+
+
+def test_other_refusals_still_apply_with_the_public_source_flag(tmp_path, capsys):
+    mod = _tool()
+    repo, sha, case, _ = _rest_case(tmp_path, "pr-merged")
+    fake = Fake(mod, _rest_world(sha, **{"repos/%s" % SLUG: (0, {"private": False}, ""),
+                                         "repos/%s/commits/%s/pulls" % (SLUG, sha): (0, [], "")}))
+    rc, so, se = _build(mod, capsys, case.argv + ["--allow-public-source"], run=fake)
+    assert rc == 2 and so == "" and "REFUSED [not-pr-merged]" in se, (rc, so, se)
 
 
 def test_pr_merged_same_account_is_reached_but_not_independent(tmp_path, capsys):
