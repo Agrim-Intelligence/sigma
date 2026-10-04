@@ -82,6 +82,13 @@ def _metadata(path, function, rule):
             ("explicit scan with samples; fake HOME inside a fresh temporary directory", "medium"),
         ("tools/readiness/shared_paths.py", "sample_run", "fs-rmtree"):
             ("explicit scan with samples; removes only the temporary directory it created", "high"),
+        ("tools/readiness/mutation_sample.py", "_write", "fs-write"):
+            ("explicit sample command; caller-supplied --out evidence path", "medium"),
+        ("tools/readiness/mutation_sample.py", "_write", "fs-remove"):
+            ("explicit sample command; replaces only its own temporary file beside --out", "medium"),
+        ("tools/readiness/mutation_sample.py", "_restore", "fs-remove"):
+            ("explicit sample command; deletes only mutmut's cache and coverage data inside the clean "
+             "frozen clone it was given, never a tracked file", "medium"),
         ("tools/readiness/seed_defects.py", "apply", "fs-write"):
             ("explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
              "medium"),

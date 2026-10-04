@@ -97,7 +97,7 @@ def test_CONTROL_a_crashing_tool_is_absent_not_a_pass():
         raise OSError("mutmut exploded")
 
     r = m.run("/r", ["src/x.py"], run_cmd=boom, which=_tool())
-    assert r["verdict"] == m.ABSENT and "could not run" in r["reason"]
+    assert r["verdict"] == m.ABSENT and "could not run" in r["reason"] and r["code"] == "crash"
 
 
 def test_CONTROL_a_timeout_is_absent_not_a_pass_and_not_a_merge_freeze():
@@ -108,6 +108,7 @@ def test_CONTROL_a_timeout_is_absent_not_a_pass_and_not_a_merge_freeze():
 
     r = m.run("/r", ["src/x.py"], run_cmd=slow, which=_tool())
     assert r["verdict"] == m.ABSENT and "timed out" in r["reason"]
+    assert r["code"] == "timeout", "callers branch on the code, not on the wording"
 
 
 def test_a_run_producing_no_mutants_is_absent_not_a_perfect_score():
@@ -166,3 +167,162 @@ def test_a_waiver_with_a_reason_is_recorded_as_a_queryable_witness():
 def test_the_verdict_vocabulary_is_the_shared_one():
     m = _m()
     assert (m.VERIFIED, m.UNVERIFIED, m.ABSENT) == ("verified", "unverified", "absent")
+
+
+# --- the parser against REAL mutmut output (#360) -----------------------------------------------
+#
+# The fixtures are the stdout of a real `mutmut run` and `mutmut results`, mutmut 2.5.1 on Python 3.12,
+# captured on a one-function project (`def is_valid_age(age): return 0 <= age <= 120`, a test asserting
+# is_valid_age(0), is_valid_age(120) and not is_valid_age(-1)). Commands, run in that project:
+#   mutmut run --paths-to-mutate age.py --runner "<py> -m pytest -x -q tests/test_age.py"      -> 2.5.1-run.txt
+#   mutmut run --simple-output (same arguments)                                                -> 2.5.1-run-simple.txt
+#   mutmut results                                                                             -> 2.5.1-results.txt
+#   mutmut results, after a run whose test asserted only is_valid_age(25)                      -> 2.5.1-results-ranges.txt
+# Real outcome: 4 mutants, 3 killed, 1 survived. mutmut prints the emoji BEFORE its count and redraws
+# one progress line with carriage returns, so only the LAST redraw is the answer.
+
+FIX = pathlib.Path(__file__).parent / "fixtures" / "mutmut"
+
+
+def _fx(name):
+    return (FIX / name).read_text(encoding="utf-8")
+
+
+def test_the_real_default_output_parses_to_the_real_counts():
+    assert _m()._parse_results(_fx("2.5.1-run.txt")) == (3, 1)
+
+
+def test_the_real_simple_output_parses_to_the_real_counts():
+    assert _m()._parse_results(_fx("2.5.1-run-simple.txt")) == (3, 1)
+
+
+def test_the_parser_source_carries_no_mis_encoded_bytes():
+    """The old pattern was written with mojibake instead of the emoji, which matched nothing mutmut
+    prints. Plain ASCII source, emoji spelled as escapes, cannot be re-corrupted by an editor."""
+    import inspect
+    m = _m()
+    for name in ("_parse_results", "_parse_counts", "parse_survivor_ids"):
+        fn = getattr(m, name, None)
+        assert fn is not None, name + " is missing"
+        assert inspect.getsource(fn).isascii(), name + " carries non-ASCII source"
+
+
+def test_run_turns_the_real_output_into_a_kill_rate():
+    m = _m()
+    r = m.run("/r", ["age.py"], min_kill_rate=0.8,
+              run_cmd=_runner(_fx("2.5.1-run.txt"), 2), which=_tool())
+    assert (r["killed"], r["survived"], r["kill_rate"]) == (3, 1, 0.75)
+    assert r["verdict"] == m.UNVERIFIED
+
+
+def test_survivor_ids_are_read_from_the_real_results_output():
+    parse = getattr(_m(), "parse_survivor_ids", None)
+    assert parse is not None, "parse_survivor_ids is missing"
+    assert parse(_fx("2.5.1-results.txt")) == [4]
+    assert parse(_fx("2.5.1-results-ranges.txt")) == [1, 2, 3, 4]
+
+
+def test_the_argv_names_the_runner_the_tool_and_plain_output():
+    m = _m(); seen = {}
+
+    def capture(root, argv, timeout):
+        seen["argv"] = argv
+        return (0, "KILLED 1  TIMEOUT 0  SUSPICIOUS 0  SURVIVED 0  SKIPPED 0")
+
+    try:
+        r = m.run("/r", ["src/x.py"], run_cmd=capture, which=_tool(),
+                  tool="/v/bin/mutmut", runner="/v/bin/python -m pytest -x -q tests/t.py")
+    except TypeError as exc:
+        r = None
+        why = str(exc)
+    assert r is not None, "run() does not accept tool= and runner=: " + (why if r is None else "")
+    assert seen["argv"][0] == "/v/bin/mutmut"
+    assert seen["argv"][seen["argv"].index("--runner") + 1] == "/v/bin/python -m pytest -x -q tests/t.py"
+    assert "--simple-output" in seen["argv"]
+    assert r["killed"] == 1
+
+
+def test_timed_out_suspicious_and_skipped_mutants_are_counted_but_not_in_the_rate():
+    m = _m()
+    text = "4/9  KILLED 2  TIMEOUT 5  SUSPICIOUS 1  SURVIVED 2  SKIPPED 1"
+    r = m.run("/r", ["x.py"], run_cmd=_runner(text), which=_tool())
+    assert r["kill_rate"] == 0.5
+    assert r.get("counts") == {"killed": 2, "timeout": 5, "suspicious": 1, "survived": 2, "skipped": 1}
+
+
+def test_a_timeout_kills_the_whole_process_group_not_just_the_direct_child(tmp_path):
+    """mutmut spawns the test runner through a shell. Killing only mutmut would leave that runner
+    (and a mutated source file) behind, so the overrun kill must reach the whole group."""
+    import os, signal, time
+    pidfile = tmp_path / "child.pid"
+    argv = ["sh", "-c", "sleep 30 & echo $! > %s; wait" % pidfile]
+    try:
+        began = time.time()
+        try:
+            _m()._default_run(str(tmp_path), argv, 1)
+            raise AssertionError("expected a timeout")
+        except subprocess.TimeoutExpired:
+            pass
+        assert time.time() - began < 10, "the kill waited for the grandchild to finish on its own"
+        child = int(pidfile.read_text())
+        deadline = time.time() + 5
+        alive = True
+        while alive and time.time() < deadline:
+            try:
+                os.kill(child, 0)
+                time.sleep(0.1)
+            except OSError:
+                alive = False
+        assert not alive, "the grandchild survived the timeout"
+    finally:
+        if pidfile.exists():
+            try:
+                os.kill(int(pidfile.read_text()), signal.SIGKILL)
+            except OSError:
+                pass
+
+
+def test_a_truncated_real_tally_is_absent_not_a_guess_from_the_legacy_wording():
+    """`4/4  KILLED 3` with no survivor count must not be read as '4 killed': a half tally is nothing."""
+    m = _m()
+    r = m.run("/r", ["x.py"], run_cmd=_runner("4/4  KILLED 3  TIMEOUT 0"), which=_tool())
+    assert r["verdict"] == m.ABSENT and r["kill_rate"] is None
+    assert m._parse_results("4/4  KILLED 3") == (0, 0)
+
+
+def test_an_interrupt_during_the_run_also_kills_the_whole_process_group(tmp_path):
+    """Ctrl-C or SIGTERM mid-run must not leave mutmut (and its test runner) mutating the clone."""
+    import os, signal, time
+    pidfile = tmp_path / "child.pid"
+    argv = ["sh", "-c", "sleep 30 & echo $! > %s; wait" % pidfile]
+
+    def interrupt(signum, frame):
+        raise KeyboardInterrupt
+
+    old = signal.signal(signal.SIGALRM, interrupt)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 1.0)
+        try:
+            _m()._default_run(str(tmp_path), argv, 60)
+            raise AssertionError("expected the interrupt")
+        except KeyboardInterrupt:
+            pass
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+        child = int(pidfile.read_text())
+        deadline = time.time() + 5
+        alive = True
+        while alive and time.time() < deadline:
+            try:
+                os.kill(child, 0)
+                time.sleep(0.1)
+            except OSError:
+                alive = False
+        assert not alive, "the grandchild survived the interrupt"
+    finally:
+        signal.signal(signal.SIGALRM, old)
+        if pidfile.exists():
+            try:
+                os.kill(int(pidfile.read_text()), signal.SIGKILL)
+            except OSError:
+                pass
