@@ -13,6 +13,10 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | evals/bench/bench.py | run | fs-write | 1 | ungated | medium |
 | evals/bench/bench.py | run_benchmark | fs-rmtree | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call | high |
 | evals/bench/bench.py | run_benchmark | fs-write | 1 | ungated | medium |
+| evals/bench/launcher/sigma_bench_launcher.py | _launch | fs-rmtree | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; removes only the --dry-run profile it just made with mkdtemp | high |
+| evals/bench/launcher/sigma_bench_launcher.py | alert_to | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; one line per refusal or trip into launcher-alerts.log, bounded at 1 MiB | medium |
+| evals/bench/launcher/sigma_bench_launcher.py | fresh_profile | fs-write | 2 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; --dry-run only: a fresh mkdtemp profile with four empty directories | medium |
+| evals/bench/launcher/sigma_bench_launcher.py | trip | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; the latch file written when the real plugin surface changed during a run | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
 | hooks/gate_state.py | _stripe_lock | fs-remove | 2 | ungated | high |

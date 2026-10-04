@@ -60,7 +60,8 @@ What the harness enforces, and what it does not:
   SIGTERM and SIGHUP unwind the harness the same way (children killed, paid rows kept; a second signal
   during the unwind can cut it short); SIGKILL or a power loss cannot, and a surviving `claude` is then bounded only by its own `--max-budget-usd` belt.
 
-The launcher is an **operator-owned external sandbox or privilege-separation boundary**: Sigma validates
+[`evals/bench/launcher/`](bench/launcher/README.md) is the operator launcher written for this harness (install it outside the
+repository; its README states what it does and does not guarantee).  The launcher is an **operator-owned external sandbox or privilege-separation boundary**: Sigma validates
 its location and executable bit, but cannot infer that an arbitrary executable's bytes contain an agent,
 so hidden-test confidentiality at scoring time (the bundle sits beside agent-authored code) and the
 agent's reach into the real filesystem depend entirely on it.  Arbitrary in-process `Arm` subclasses are

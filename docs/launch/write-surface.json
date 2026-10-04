@@ -73,6 +73,38 @@
       "risk": "medium"
     },
     {
+      "path": "evals/bench/launcher/sigma_bench_launcher.py",
+      "function": "_launch",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; removes only the --dry-run profile it just made with mkdtemp",
+      "risk": "high"
+    },
+    {
+      "path": "evals/bench/launcher/sigma_bench_launcher.py",
+      "function": "alert_to",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; one line per refusal or trip into launcher-alerts.log, bounded at 1 MiB",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/bench/launcher/sigma_bench_launcher.py",
+      "function": "fresh_profile",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; --dry-run only: a fresh mkdtemp profile with four empty directories",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/bench/launcher/sigma_bench_launcher.py",
+      "function": "trip",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; the latch file written when the real plugin surface changed during a run",
+      "risk": "medium"
+    },
+    {
       "path": "hooks/gate_state.py",
       "function": "_open_child",
       "rule": "fs-write",
