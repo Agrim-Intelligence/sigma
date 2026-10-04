@@ -88,6 +88,14 @@ def _copy(sdlc):
     return sdlc / "state" / "backup" / "index-sigma.json"
 
 
+def _copy_text(sdlc):
+    """The copy's bytes, or None when there is none -- so a missing copy is an assertion failure."""
+    try:
+        return _copy(sdlc).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def _units(sdlc):
     return sorted(registry.read(sdlc / "features"))
 
@@ -201,7 +209,7 @@ def test_sheet_delivered_without_write_index_is_snapshotted_by_the_guard(tmp_pat
     _sheet(sdlc).write_text(delivered, encoding="utf-8")
 
     assert _gated_verb(sdlc).returncode == 0
-    assert _copy(sdlc).read_text(encoding="utf-8") == delivered
+    assert _copy_text(sdlc) == delivered
 
     model_fold(sdlc)
     assert _units(sdlc) == []
@@ -285,15 +293,15 @@ def test_a_shrunken_sigma_sheet_does_not_replace_the_copy(tmp_path):
     destroy the only recovery data, and the copy keeps tracking new units: it is the union."""
     sdlc = _scaffolded(tmp_path)
     _sigma_writes(sdlc, ["alpha", "beta"])
-    kept = _copy(sdlc).read_text(encoding="utf-8")
+    kept = _copy_text(sdlc)
+    assert kept is not None and "beta" in kept
     _sheet(sdlc).write_text(_text(["alpha"]), encoding="utf-8")
 
     assert _gated_verb(sdlc).returncode == 0
-    assert _copy(sdlc).read_text(encoding="utf-8") == kept
-    assert "beta" in kept
+    assert _copy_text(sdlc) == kept
     _sheet(sdlc).write_text("{ truncated", encoding="utf-8")          # and a corrupt one, then Sigma's fold
     _run([LOOP / "feature_sync.py", "fold", sdlc])
-    assert _copy(sdlc).read_text(encoding="utf-8") == kept
+    assert _copy_text(sdlc) == kept
 
     _sigma_writes(sdlc, ["alpha", "gamma"])           # a smaller sheet, then one with a NEW unit
     assert sorted(registry.mirror_units(sdlc / "features")) == ["alpha", "beta", "gamma"]
