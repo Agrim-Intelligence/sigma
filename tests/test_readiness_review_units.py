@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "readiness" / "review_units.py"
 COMMITTED = ROOT / "docs" / "launch" / "review-units.json"
 DOC = ROOT / "docs" / "launch" / "seeded-defects.md"
-FROZEN = "a5c615062313791a86fca8d8b14d7a4ad0713f7f"
+FROZEN = "c3faf6f23e1294cc33dbe5a77121a5b48c507709"
 
 
 def _tool():
@@ -76,9 +76,9 @@ def _cli(*args):
                           text=True, capture_output=True, timeout=30)
 
 
-# The issue's 22 named paths, written out again here so a typo in the tool's constant is a failure.
+# The 21 named paths (the issue's 22 less install.sh, retired by #408 and removed from the tool's list in
+# #581), written out again here so a typo in the tool's constant is a failure.
 ISSUE_TIER_A = {
-    "install.sh",
     "skills/agrim-loop/scripts/work.py", "skills/agrim-loop/scripts/sources.py",
     "skills/agrim-loop/scripts/feature_rebase.py", "skills/agrim-loop/scripts/ledger.py",
     "skills/agrim-loop/scripts/sync.py", "skills/agrim-loop/scripts/scrub.py",
@@ -106,11 +106,12 @@ def test_count_lines_by_newline_not_splitlines():
     assert ru.count_lines(b"") == 0
 
 
-def test_tier_a_files_is_22_unique():
+def test_tier_a_files_is_21_unique():
     ru = _tool()
 
-    assert len(ru.TIER_A_FILES) == 22
-    assert len(set(ru.TIER_A_FILES)) == 22
+    assert len(ru.TIER_A_FILES) == 21
+    assert len(set(ru.TIER_A_FILES)) == 21
+    assert "install.sh" not in ru.TIER_A_FILES
     assert set(ru.TIER_A_FILES) == ISSUE_TIER_A
     # The constant alone is not the claim: the named paths must also sort into Tier A, every one.
     assert ru.classify(list(ru.TIER_A_FILES)) == (sorted(ISSUE_TIER_A), [])
@@ -490,9 +491,9 @@ def test_cli_seed_is_derived_from_resolved_sha_and_is_byte_identical(tmp_path):
     assert payload["seed"] == int(sha[:8], 16)
     assert first.stdout == json.dumps(payload, indent=2) + "\n"
     # work.py is split at its def boundaries; the 17 one-line Tier A files of its directory pack.
-    assert [unit["unit"] for unit in payload["tier_a"]] == ["A%02d" % i for i in range(1, 8)]
-    assert [unit["lines"] for unit in payload["tier_a"]] == [1, 2, 3, 17, 3000, 3000, 1000]
-    assert [(f["start"], f["end"]) for unit in payload["tier_a"][4:] for f in unit["files"]] == [
+    assert [unit["unit"] for unit in payload["tier_a"]] == ["A%02d" % i for i in range(1, 7)]
+    assert [unit["lines"] for unit in payload["tier_a"]] == [1, 3, 17, 3000, 3000, 1000]
+    assert [(f["start"], f["end"]) for unit in payload["tier_a"][3:] for f in unit["files"]] == [
         (1, 3000), (3001, 6000), (6001, 7000)]
     # Tier B is the 20 tools files only: the Tier A stubs under skills/ are not in its population.
     assert payload["tier_b_population_lines"] == 2000
@@ -544,7 +545,7 @@ def test_cli_writes_only_the_json_path(tmp_path):
 
 
 def test_missing_tier_a_path_exits_2_and_writes_nothing(tmp_path):
-    for index, missing in enumerate((WORK.replace("work", "state"), "install.sh")):
+    for index, missing in enumerate((WORK.replace("work", "state"), WORK.replace("work", "loop"))):
         repo, sha = _units_repo(tmp_path, name="repo%d" % index, skip=(missing,))
         target = tmp_path / ("units%d.json" % index)
 
@@ -556,6 +557,20 @@ def test_missing_tier_a_path_exits_2_and_writes_nothing(tmp_path):
             assert done.stderr.startswith("review_units.py: ") and missing in done.stderr
             assert done.stdout == ""
         assert not target.exists()
+
+
+def test_a_commit_without_the_retired_install_sh_re_cuts(tmp_path):
+    # #581: install.sh was removed from main by #408 and the tool refused every later commit. A commit
+    # that has no install.sh now re-cuts; a commit that still tracks one does not pull it into Tier A.
+    ru = _tool()
+    repo, sha = _units_repo(tmp_path, skip=("install.sh",))
+    done = _cli(repo, "--sha", sha)
+    payload = _json_of(done)
+    covered = {entry["path"] for unit in payload["tier_a"] for entry in unit["files"]}
+    assert "install.sh" not in covered and set(ru.TIER_A_FILES) <= covered
+    _write(repo, "install.sh", "#!/bin/sh\ntrue\n")
+    again = _json_of(_cli(repo, "--sha", _commit(repo)))
+    assert "install.sh" not in {e["path"] for u in again["tier_a"] + again["tier_b_sample"] for e in u["files"]}
 
 
 def test_empty_tier_b_exits_2(tmp_path):
@@ -648,7 +663,7 @@ def test_validate_payload_lists_every_problem(tmp_path):
     def gap(p): p["tier_a"][5]["files"][0]["start"] += 1
     def duplicate_id(p): p["tier_a"][1]["unit"] = "A01"
     def over_cap(p): p["tier_a"][4]["files"][0]["end"] += 1; p["tier_a"][4]["lines"] += 1
-    def shared_path(p): p["tier_b_sample"][0]["files"][0]["path"] = "install.sh"
+    def shared_path(p): p["tier_b_sample"][0]["files"][0]["path"] = p["tier_a"][0]["files"][0]["path"]
     def extra_key(p): p["extra"] = 1
     def reordered(p): p["tier_a"], p["tier_b_sample"] = p["tier_b_sample"], p["tier_a"]
 
@@ -687,8 +702,8 @@ def test_committed_review_units_is_structurally_valid():
     assert list(payload) == FIRST_KEYS
     assert payload["schema"] == "readiness-units/v1"
     assert len(payload["sha"]) == 40 and set(payload["sha"]) <= set("0123456789abcdef")
-    assert payload["sha"] == FROZEN and payload["sha"][:12] == "a5c615062313"
-    assert payload["seed"] == int(payload["sha"][:8], 16) == 2781222150
+    assert payload["sha"] == FROZEN and payload["sha"][:12] == "c3faf6f23e12"
+    assert payload["seed"] == int(payload["sha"][:8], 16) == 3288004338
     sampled = sum(unit["lines"] for unit in payload["tier_b_sample"])
     population = payload["tier_b_population_lines"]
     assert population * 15 <= sampled * 100 <= population * 25
@@ -696,7 +711,7 @@ def test_committed_review_units_is_structurally_valid():
         ids = [unit["unit"] for unit in payload[tier]]
         assert ids == ["%s%02d" % (prefix, number) for number in range(1, len(ids) + 1)]
         assert max(unit["lines"] for unit in payload[tier]) <= 3000
-    # Tier A is in full: every one of the 22 named files is covered, and so is hooks/.
+    # Tier A is in full: every one of the 21 named files is covered, and so is hooks/.
     covered = {entry["path"] for unit in payload["tier_a"] for entry in unit["files"]}
     assert set(ru.TIER_A_FILES) <= covered
     assert any(path.startswith("hooks/") for path in covered)

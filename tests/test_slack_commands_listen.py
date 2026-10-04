@@ -2705,6 +2705,12 @@ def _no_real_death(monkeypatch):
 @pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="no SIGHUP on this platform")
 def test_seam_installs_handlers_that_release_then_die_by_the_same_signal(
         tmp_path, _restore_signals, _no_real_death):
+    # The starting disposition is the test's own, not whatever this process inherited: under `nohup`
+    # SIGHUP arrives ignored and the production code leaves an ignored signal alone on purpose
+    # (test_seam_an_inherited_ignored_sighup_stays_ignored pins that). `_restore_signals` puts the
+    # inherited dispositions back afterwards.
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGHUP, signal.SIG_DFL)
     d = _sdlc(tmp_path)
     uninstall = sc._install_signal_cleanup(d)
     try:

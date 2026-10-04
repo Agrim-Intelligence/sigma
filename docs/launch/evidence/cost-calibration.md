@@ -1,6 +1,7 @@
 # Cost calibration pilots (#361)
 
-Measured on 2026-10-04. Review units are the ones in [review-units.json](../review-units.json), cut from the frozen
+Measured on 2026-10-04. Review units are the ones in [review-units-a5c615062313.json](review-units-a5c615062313.json) (the first cut; #581
+re-cut `../review-units.json` at a later commit, and these unit ids and line counts are the first cut's), cut from the frozen
 commit `a5c615062313` and reviewed in a snapshot made by `tools/readiness/baseline.py snapshot`. The meter and rate
 card are those of main at `e48420fa97f6` (`evals/bench/meter.py`, `skills/agrim-loop/rates/anthropic_list_prices.csv`,
 sha256 prefix `b19f38838649ca5d`). Every figure below is the meter's own output for the reviewer's transcript;

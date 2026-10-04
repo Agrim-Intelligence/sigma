@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The review-units tool cuts units at current main again, and the signal-seam test no longer depends on how it was launched**
+  (#581, readiness dimension D1, `launch:next`). `tools/readiness/review_units.py` refused every commit after #408 deleted
+  `install.sh`, a path it names for Tier A. The refusal stays the intended re-cut lever (a missing named path is never dropped
+  silently); its docstring now gives the exact edit, and `install.sh` is out of the list (21 paths). `docs/launch/review-units.json`
+  is re-cut at `c3faf6f23e12`: 16 Tier A units of 36,519 lines (was 17 of 36,018) and a 17-unit sample of 14,792 of 71,855 lines
+  (was 10 units of 11,972 of 58,577; the new sha gives a different draw). The first cut is kept unchanged at
+  `docs/launch/evidence/review-units-a5c615062313.json`. The S4 ceiling in `docs/launch/review-plan.md` is recomputed from the new
+  line counts (43.73M, was 42.03M), with the old per-line rates, not re-metered. The seam test in
+  `tests/test_slack_commands_listen.py` set its own SIGHUP and SIGTERM dispositions: it failed under `nohup` (inherited ignored
+  SIGHUP, which the production code respects on purpose) and passes with or without it. No production code changed.
+
 - **The benchmark task set exists in draft: 8 external post-cutoff tasks and 4 internal tasks verified, 3 trap slots awaiting an
   outside author** (#355, readiness dimension D3; the issue's 30-task scope was reduced by the owner on 2026-10-03).
   `evals/bench/tasks/manifest.json` is in the format `evals/bench/bench.py` loads and says `"frozen": false`;
