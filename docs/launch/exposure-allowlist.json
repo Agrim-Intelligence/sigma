@@ -400,6 +400,16 @@
     ]
   },
   {
+    "path": "tests/test_readiness_blast_radius.py",
+    "rule": "email-address",
+    "reason": "fixture git remote URLs with placeholder userinfo (x:y, u:TOKEN) for URL-normalisation tests; invented repo, no real credential",
+    "lines": [
+      "3ca54f50cf39b16129fd670c330670c188e1fcce706bc42db37bc7eac8c06913",
+      "52f9eb92ed61d0f3888fb8bcc945e1344fad7ac155e0ae2580d56c8abb694eeb",
+      "9907169b4a77fd12417d39e9c6267fee9b4745c5d0cab6cd2e267438b5b2eb70"
+    ]
+  },
+  {
     "path": "tests/test_readiness_decide.py",
     "rule": "email-address",
     "reason": "fixture git remote URLs and a placeholder userinfo password for URL-parsing tests; invented owners",
@@ -575,6 +585,14 @@
     "reason": "Python code using the common word digest as a variable name, not a credential",
     "lines": [
       "af2b19a6d7848b53dde6d3c234e4c9fbdd04a1dfda58db432f224bf63b007e83"
+    ]
+  },
+  {
+    "path": "tools/readiness/blast_radius.py",
+    "rule": "email-address",
+    "reason": "code stripping the git ssh user prefix from a repo URL; the literal is the public git user, not an address",
+    "lines": [
+      "2303eab78cb68f28e414b6ee1af2810ae951500e9add0fef5207b544b0f3371a"
     ]
   }
 ]

@@ -244,7 +244,7 @@ def test_a_new_finding_of_another_rule_in_an_allowlisted_file_still_fails(tmp_pa
     _commit(repo)
     result, report = _tracked(tmp_path, repo, [entry])
     assert result.returncode == 1 and planted not in result.stdout
-    assert [x["rule"] for x in report["findings"]] == ["gh-planted"]
+    assert [x["rule"] for x in report["findings"]] == ["gh-token"]
     assert report["stale_allowlist"] == []          # the reviewed finding itself is unchanged
 
 
