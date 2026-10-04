@@ -81,9 +81,6 @@ NOT_COVERED = (
     "leak_scan.py's origin-owner rule is skipped (the export has no origin)",
     "names absent from the patterns file",
     "destination GitHub state beyond what verify_public_repo.py counts",
-    "an unpinned disposition suppresses every match of its rule anywhere in its file, so a new real "
-    "value of that rule in that file would ship (e-mails are not covered by leak_scan either); see "
-    "unpinned_dispositions",
 )
 
 #: Content rules over every exported blob, one finding per matching line. Built from fragments so
@@ -98,6 +95,10 @@ SECRET_FILE = re.compile(
     r"|[._]netrc|\.pgpass|credentials\.json|service[-_]?account.*\.json"
     r"|\.env(?:\.(?!(?:example|sample|template|dist|defaults)$)[^/]+)?)$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+#: The only shape a plugin version may take before it enters the export commit message: that message
+#: comes from a file the `--exclude` can drop, so no file scan reads what it carries.
+_VERSION = re.compile(r"^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-(?:alpha|beta|rc)(?:\.\d{1,6})?)?$")
 _OBJECT_ID = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 _LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
 _BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -374,7 +375,8 @@ def materialise(src_root, entries, dest, excluded=()):
             for number, line in enumerate(text.split("\n"), 1):
                 for rule, rx in (("private-key-header", KEY_HEADER), ("owner-placeholder", OWNER_PLACEHOLDER)):
                     if rx.search(line):
-                        findings.append({"rule": rule, "path": path, "line": number, "blob": oid})
+                        findings.append({"rule": rule, "path": path, "line": number, "blob": oid,
+                                         "line_sha256": hashlib.sha256(line.encode("utf-8")).hexdigest()})
                 if refs_rx is not None:
                     for named in set(m.group(0) for m in refs_rx.finditer(line)):
                         references[named] += 1
@@ -560,8 +562,8 @@ def render_md(report):
     lines += ["", "## Dispositions", ""]
     lines.append("- exposure allowlist: %s" % json.dumps(disp.get("exposure_allowlist")))
     lines.append("- public-tree dispositions: %s" % json.dumps(disp.get("public_tree")))
-    for item in disp.get("unpinned_dispositions") or []:
-        lines.append("  - unpinned (whole file): %s %s %s" % (item.get("source"), item.get("path"), item.get("rule")))
+    for note in report.get("notes") or []:
+        lines.append("- NOTE: " + note)
     lines += ["", "## Not covered", ""]
     lines += ["- " + item for item in report.get("not_covered") or []]
     return "\n".join(lines) + "\n"
@@ -735,10 +737,16 @@ def _load_dispositions(raw):
     for entry in entries:
         if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or not entry.get("path")
                 or entry.get("rule") not in CONTENT_RULES or not isinstance(entry.get("reason"), str)
-                or not entry.get("reason").strip()
-                or ("blob" in entry and not (isinstance(entry["blob"], str) and _HEX40.match(entry["blob"].lower())))):
-            raise Refused("dispositions-malformed", "a %s entry needs path, a known rule, a reason and an "
-                          "optional 40-hex blob" % DISPOSITIONS_PATH)
+                or not entry.get("reason").strip() or ("blob" in entry) == ("lines" in entry)
+                or ("blob" in entry and not (isinstance(entry["blob"], str) and _HEX40.match(entry["blob"].lower())))
+                or ("lines" in entry and not (isinstance(entry["lines"], list) and entry["lines"]
+                                              and all(isinstance(h, str) and _HEX64.match(h) for h in entry["lines"])))):
+            raise Refused("dispositions-malformed", "a %s entry needs path, a known rule, a reason and exactly "
+                          "one of blob (40-hex) or lines (sha256 of each reviewed matched line): none is "
+                          "scoped to a bare path and rule" % DISPOSITIONS_PATH)
+    keys = [(e["path"], e["rule"]) for e in entries]
+    if len(keys) != len(set(keys)):
+        raise Refused("dispositions-malformed", "%s has two entries for one path and rule" % DISPOSITIONS_PATH)
     return entries
 
 
@@ -773,9 +781,33 @@ def _content_scoped(entry):
             and all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in entry["lines"]))
 
 
-def _disposition_matches(entry, finding):
-    return (entry["path"] == finding["path"] and entry["rule"] == finding["rule"]
-            and ("blob" not in entry or entry["blob"].lower() == (finding.get("blob") or "").lower()))
+def _disposition_covers(entries, findings):
+    """-> (uncovered findings, used entry indexes). A `blob` entry covers the findings of its path and
+    rule in that exact blob. A `lines` entry covers them only when every one is a reviewed line,
+    counted; it is USED only when the reviewed lines equal the observed ones, so an edited or removed
+    reviewed line leaves it unused (stale, REJECTED) and a new match is not covered."""
+    uncovered, used = [], set()
+    by_key = {}
+    for finding in findings:
+        by_key.setdefault((finding["path"], finding["rule"]), []).append(finding)
+    for key, group in by_key.items():
+        index = next((i for i, e in enumerate(entries) if (e["path"], e["rule"]) == key), None)
+        if index is None:
+            uncovered += group
+            continue
+        entry = entries[index]
+        if "blob" in entry:
+            ok = all(entry["blob"].lower() == (f.get("blob") or "").lower() for f in group)
+            reviewed_equal = ok
+        else:
+            reviewed, seen = Counter(entry["lines"]), Counter(f.get("line_sha256") for f in group)
+            ok, reviewed_equal = not (seen - reviewed), seen == reviewed
+        if ok:
+            if reviewed_equal:
+                used.add(index)
+        else:
+            uncovered += group
+    return uncovered, used
 
 
 def _doctor_slug(partial, definition_raw, blobs):
@@ -1181,6 +1213,9 @@ def _main(argv, run, state):
         except (UnicodeDecodeError, ValueError):
             plugin_version = None
     plugin_version = plugin_version if isinstance(plugin_version, str) else None
+    if plugin_version is not None and not _VERSION.match(plugin_version):
+        raise Refused("bad-version", ".claude-plugin/plugin.json's version is not a plain version number "
+                      "(it enters the export commit message, which no file scan reads)")
     pt_live = [e for e in pt_entries if not _under(e["path"], names)]
     allow_live = [e for e in allow_entries if not _under(e["path"], names)]
 
@@ -1218,6 +1253,10 @@ def _main(argv, run, state):
 
     # 13. the export repository
     message = "Initial public snapshot (Sigma %s)" % (plugin_version or "unknown")
+    if not re.fullmatch(r"[0-9]{1,12}", ct):
+        raise Refused("bad-commit", "the source commit's date is not a plain timestamp")
+    if any(rx.search(message) for rx in (KEY_HEADER, OWNER_PLACEHOLDER)):
+        raise Refused("bad-version", "the export commit message matches a content rule")
     export_commit = _export_repository(partial, plan, planned_py, ct, message)
     mark = lap("export-repository", mark)
 
@@ -1225,12 +1264,7 @@ def _main(argv, run, state):
     blobs = dict((path, oid) for path, _mode, oid in plan)
     used = set()
     builder_findings = []
-    for finding in mat["findings"]:
-        hit = [i for i, e in enumerate(pt_live) if _disposition_matches(e, finding)]
-        if hit:
-            used.update(hit)
-        else:
-            builder_findings.append(finding)
+    builder_findings, used = _disposition_covers(pt_live, mat["findings"])
     for index, entry in enumerate(pt_live):
         if index not in used:
             builder_findings.append({"rule": "stale-disposition", "path": entry["path"], "line": 0,
@@ -1259,9 +1293,6 @@ def _main(argv, run, state):
     if verdict != "VERIFIED":
         _unpublish_rejected(partial, run, export_commit)
     dest = out if verdict == "VERIFIED" else rejected
-    # Every exposure-allowlist entry is content-scoped (blob or lines): none suppresses a whole file.
-    unpinned = [{"source": "public-tree", "path": e["path"], "rule": e["rule"]}
-                 for i, e in enumerate(pt_live) if i in used and "blob" not in e]
     exclusions = []
     for prefix, origin in prefixes:
         mine = [(path, row) for path, row in excluded_rows if _under(path, [prefix])]
@@ -1269,6 +1300,15 @@ def _main(argv, run, state):
                            "bytes": sum(row[4] for _p, row in mine),
                            "references_remaining": sum(mat["references_remaining"].get(path, 0) for path, _r in mine)})
     timings["total"] = round(time.monotonic() - started, 3)
+    notes = []
+    try:
+        public_repo = json.loads(definition_raw.decode("utf-8")).get("public_repo") if definition_raw else None
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        public_repo = None
+    if isinstance(public_repo, str) and args.repo and public_repo.lower() == args.repo.lower():
+        notes.append("public_repo in docs/launch/definition.json still names the SOURCE repository: the rename "
+                     "pull request must change it (and the doctor's marketplace constant) to the new "
+                     "repository's name BEFORE the export is built, so the exported tree carries the right name")
     report = {
         "schema": SCHEMA,
         "verdict": "NOT-VERIFIED" if verdict == "VERIFIED" else verdict,
@@ -1287,10 +1327,10 @@ def _main(argv, run, state):
         "dispositions": {
             "exposure_allowlist": {"entries": len(allow_entries), "moot": len(allow_entries) - len(allow_live)},
             "public_tree": {"present": pt_raw is not None, "entries": len(pt_entries),
-                            "moot": len(pt_entries) - len(pt_live)},
-            "unpinned_dispositions": unpinned},
+                            "moot": len(pt_entries) - len(pt_live)}},
         "scans": {"builder": {"exit": 1 if builder_findings else 0, "findings": builder_findings},
                   "doctor_slug": doctor_slug, "leak_refs": leak_refs, "exposure": exposure, "leak_scan": leak_scan},
+        "notes": notes,
         "not_covered": list(NOT_COVERED),
         "timings": timings,
     }

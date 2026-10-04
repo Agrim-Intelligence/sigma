@@ -4,37 +4,65 @@
     {
       "path": "skills/agrim-loop/scripts/scrub.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: the secret scrubber names the private-key header in its own redaction pattern and docstring; it is the rule source, not a key"
+      "reason": "fixture or regex source: the secret scrubber names the private-key header in its own redaction pattern and docstring; it is the rule source, not a key",
+      "lines": [
+        "4e0883b20c6b975243c4e888b8b848504c708ac735fcad773e06eb1428b38e6b"
+      ]
     },
     {
       "path": "tests/test_leak_scan.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: a fixture that plants a header to prove the commit-time scan finds it; the body is a filler line, not key material"
+      "reason": "fixture or regex source: a fixture that plants a header to prove the commit-time scan finds it; the body is a filler line, not key material",
+      "lines": [
+        "e10815d21b15e5bb027841a3f99502169ed0af323e7193eb32b14d666a569049"
+      ]
     },
     {
       "path": "tests/test_ledger.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: a fixture that feeds a header to the ledger redaction control; the body is a filler line, not key material"
+      "reason": "fixture or regex source: a fixture that feeds a header to the ledger redaction control; the body is a filler line, not key material",
+      "lines": [
+        "d4bffcc02e0186621679634718e0caa2aa289dd059d8f6f9187e33f27012f314"
+      ]
     },
     {
       "path": "tests/test_research_capture.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: a fixture that feeds a header to the research-capture redaction control; the body is filler, not key material"
+      "reason": "fixture or regex source: a fixture that feeds a header to the research-capture redaction control; the body is filler, not key material",
+      "lines": [
+        "b214986f428eafe26f0cc7bae269824a0ab57102de2ff6685a5fa99c3842d12f",
+        "8304ad30039a7a97ac297fa3bdaae7e8ecaeabbe0625e5538b87bca41a363696"
+      ]
     },
     {
       "path": "tests/test_scrub.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: fixtures that feed headers to the scrubber to prove it redacts them; the bodies are filler lines, not key material"
+      "reason": "fixture or regex source: fixtures that feed headers to the scrubber to prove it redacts them; the bodies are filler lines, not key material",
+      "lines": [
+        "bb8ae5bdf15b214f926a979705528120bfbbb65d1beb0607a5fb343a9ee67b21",
+        "3ee4be405c1de56b9c1d9607f6cd26cbc7c56c6405b4a94c325d6d4b7f52e7d6",
+        "42e3cb9f4fda8ed13d1337e4cc552ef7894dbdb11943c0779c998ddf6951284e",
+        "16e0a59ed18377060fa7c293c8d4a9836f642a4a7da4646dc44bd61a72f45794",
+        "e3d7041dbebced7f316f9602336d75703e38e7db94cabcb1259d38a1a4326abb",
+        "0f478179530d87038704ce51cd1ec59ccfc1586b5d96e8f748a750d89e7c1e82",
+        "6370b4bf52e4292cd7f5057d8ec259c0bafabf8000510d196f3356b854c8426b"
+      ]
     },
     {
       "path": "tests/test_work.py",
       "rule": "private-key-header",
-      "reason": "fixture or regex source: a fixture that feeds a header to the commit-time secret scan; the body is filler, not key material"
+      "reason": "fixture or regex source: a fixture that feeds a header to the commit-time secret scan; the body is filler, not key material",
+      "lines": [
+        "0395a8b4cf4d1713cfea7f8aa50b2e82b498201ba9d44799aaeb4c1ec6496849"
+      ]
     },
     {
       "path": "tests/test_community_files.py",
       "rule": "owner-placeholder",
-      "reason": "fixture or regex source: the test asserts the placeholder is filled in the community files, so it must name the token"
+      "reason": "fixture or regex source: the test asserts the placeholder is filled in the community files, so it must name the token",
+      "lines": [
+        "b12edaf63c8fc9d3dd78ed08d55377e9aa2c60626d522123278b2e96f9dd00a9"
+      ]
     }
   ]
 }

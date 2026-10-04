@@ -35,7 +35,7 @@ WRITE_SURFACE = ROOT / "tools" / "readiness" / "write_surface.py"
 
 SCHEMA = "sigma.public-tree-report/v1"
 REPORT_KEYS = {"schema", "verdict", "finalise", "generated_at", "source", "tools", "review", "sdlc",
-               "exclusions", "patterns", "export", "dispositions", "scans", "not_covered", "timings"}
+               "exclusions", "patterns", "export", "dispositions", "scans", "notes", "not_covered", "timings"}
 FORBIDDEN_GH_FLAGS = ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input", "--jq")
 SYNTHETIC = "# synthetic\nzq-planted-[0-9]+\n"
 DISPOSITIONS = "docs/launch/public-tree-dispositions.json"
@@ -566,6 +566,10 @@ def test_key_header_shapes_are_rejected(tmp_path, capsys, shape):
         assert _body().splitlines()[0] not in blob
 
 
+def _lh(line):
+    return hashlib.sha256(line.encode("utf-8")).hexdigest()
+
+
 def _disposition_file(entries):
     return json.dumps({"schema": "sigma.public-tree-dispositions/v1", "entries": entries}) + "\n"
 
@@ -573,16 +577,17 @@ def _disposition_file(entries):
 def test_disposition_suppresses_a_header_and_a_stale_entry_rejects(tmp_path, capsys):
     mod = _tool()
     keys = {"docs/keys.txt": _header() + "\n# fixture\n" + _body()}
-    used = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "a fixture, not a key"}
+    used = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "a fixture, not a key",
+            "lines": [_lh(_header())]}
     repo, sha = _fixture(tmp_path, name="used", extra=dict(keys, **{DISPOSITIONS: _disposition_file([used])}))
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o1")))
     assert rc == 0, se
     report = _report(_fields(so))
     assert report["scans"]["builder"]["findings"] == []
     assert report["dispositions"]["public_tree"] == {"present": True, "entries": 1, "moot": 0}
-    listed = report["dispositions"]["unpinned_dispositions"]
-    assert {"source": "public-tree", "path": "docs/keys.txt", "rule": "private-key-header"} in listed
-    stale = {"path": "docs/keys.txt", "rule": "owner-placeholder", "reason": "nothing matches this any more"}
+    assert "unpinned_dispositions" not in report["dispositions"]
+    stale = {"path": "docs/keys.txt", "rule": "owner-placeholder", "reason": "nothing matches this any more",
+             "lines": ["0" * 64]}
     repo2, sha2 = _fixture(tmp_path, name="stale", extra=dict(keys, **{DISPOSITIONS: _disposition_file([used, stale])}))
     rc2, so2, se2 = _build(mod, capsys, _argv(tmp_path, repo2, sha2, out=_out(tmp_path, "o2")))
     assert rc2 == 1, se2
@@ -606,7 +611,6 @@ def test_pinned_disposition_must_match_the_blob(tmp_path, capsys):
         results[label] = (rc, _report(_fields(so)))
     right_rc, right = results["right"]
     assert right_rc == 0
-    assert right["dispositions"]["unpinned_dispositions"] == []
     wrong_rc, wrong = results["wrong"]
     assert wrong_rc == 1
     assert "private-key-header" in [f["rule"] for f in wrong["scans"]["builder"]["findings"]]
@@ -639,14 +643,12 @@ def test_exposure_entries_under_an_excluded_prefix_are_moot(tmp_path, capsys):
     assert rc == 0, se
     report = _report(_fields(so))
     assert report["dispositions"]["exposure_allowlist"]["moot"] == 1
-    assert not [u for u in report["dispositions"]["unpinned_dispositions"] if u["source"] == "exposure-allowlist"]
     assert report["scans"]["exposure"]["stale"] == []
     rc2, so2, se2 = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "include"),
                                               extra=["--sdlc", "include"]))
     assert rc2 == 0, se2
     report2 = _report(_fields(so2))
     assert report2["dispositions"]["exposure_allowlist"]["moot"] == 0
-    assert not [u for u in report2["dispositions"]["unpinned_dispositions"] if u["source"] == "exposure-allowlist"]
     assert report2["scans"]["exposure"]["findings"] == []
 
 
@@ -674,7 +676,7 @@ def test_doctor_slug_mismatch_rejects(tmp_path, capsys):
 def test_report_is_outside_the_repo_names_the_commit_and_is_private(tmp_path):
     mod = _tool()
     keys = _header() + "\n# fixture\n" + _body()
-    entry = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "a fixture"}
+    entry = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "a fixture", "lines": [_lh(_header())]}
     repo, sha = _fixture(tmp_path, extra={"docs/keys.txt": keys, DISPOSITIONS: _disposition_file([entry])})
     home = tmp_path / "home"
     argv = [sha, "--out", _out(tmp_path), "--source", repo, "--patterns", _patterns(tmp_path), "--review-level", "clean"]
@@ -698,8 +700,7 @@ def test_report_is_outside_the_repo_names_the_commit_and_is_private(tmp_path):
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", report["generated_at"])
     assert report["patterns"] == {"source": "flag", "count": 1}
     assert "zq-planted" not in path.read_text(encoding="utf-8")
-    assert {"source": "public-tree", "path": "docs/keys.txt", "rule": "private-key-header"} in \
-        report["dispositions"]["unpinned_dispositions"]
+    assert "unpinned_dispositions" not in report["dispositions"]
     assert report["scans"]["leak_scan"]["status"] == "absent"
     assert "reviewed commit" not in twin.read_text(encoding="utf-8")
 
@@ -953,3 +954,74 @@ def test_exposure_allowlist_duplicate_path_and_rule_is_refused(tmp_path, capsys)
     repo, sha = _fixture(tmp_path, name="dup", extra={EXPOSURE_ALLOWLIST: json.dumps([row, dict(row, lines=["1" * 64])])})
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "odup")))
     assert rc == 2 and so == "" and "REFUSED [dispositions-malformed]" in se, (rc, so, se)
+
+
+def test_a_bare_path_and_rule_disposition_is_refused(tmp_path, capsys):
+    """A new file with a key header must not ship under an entry that names only its path and rule."""
+    mod = _tool()
+    for label, extra in (("bare", {}), ("both", {"blob": "0" * 40, "lines": ["0" * 64]}),
+                         ("emptylines", {"lines": []}), ("badhash", {"lines": ["zz"]})):
+        entry = dict({"path": "docs/keys.txt", "rule": "private-key-header", "reason": "x"}, **extra)
+        repo, sha = _fixture(tmp_path, name=label, extra={"docs/keys.txt": _header() + "\n" + _body(),
+                                                         DISPOSITIONS: _disposition_file([entry])})
+        rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o" + label)))
+        assert rc == 2 and so == "" and "REFUSED [dispositions-malformed]" in se, (label, rc, so, se)
+
+
+def test_a_lines_disposition_covers_only_the_reviewed_lines(tmp_path, capsys):
+    mod = _tool()
+    entry = {"path": "docs/keys.txt", "rule": "private-key-header", "reason": "fixture", "lines": [_lh(_header())]}
+    cases = (("same", _header() + "\n# fixture\n", 0),
+             ("moved-line", "# fixture\n" + _header() + "\n", 0),
+             ("second-header", _header() + "\n" + _header("EC ") + "\n", 1),
+             ("copy", _header() + "\n" + _header() + "\n", 1),
+             ("edited", _header("EC ") + "\n", 1))
+    for label, text, want in cases:
+        repo, sha = _fixture(tmp_path, name=label, extra={"docs/keys.txt": text,
+                                                         DISPOSITIONS: _disposition_file([entry])})
+        rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o" + label)))
+        assert rc == want, (label, rc, se)
+
+
+def _version_case(tmp_path, capsys, version, label):
+    mod = _tool()
+    plugin = json.dumps({"name": "demo", "version": version}) + "\n"
+    repo, sha = _fixture(tmp_path, name=label, extra={".claude-plugin/plugin.json": plugin})
+    return _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o" + label),
+                                     extra=["--exclude", ".claude-plugin"]))
+
+
+def test_a_version_that_would_carry_a_value_into_the_commit_message_is_refused(tmp_path, capsys):
+    """The version enters the export commit message through a file `--exclude` can drop: no file scan
+    reads it, so only its shape protects the export. Values are built at run time."""
+    planted = {
+        "shape-a": "1.0.0 " + "AK" + "IA" + "A" * 16,
+        "shape-b": "1.0.0-" + "AK" + "IA" + "A" * 16,
+        "private-name": "1.0.0 zq-planted-12345",
+        "too-long": "1." + "0" * 80 + ".0",
+        "newline": "1.0.0\nAuthor: x",
+        "key-header": "1.0.0 " + _header(),
+        "empty": "",
+    }
+    for label, version in planted.items():
+        rc, so, se = _version_case(tmp_path, capsys, version, label)
+        assert rc == 2 and so == "" and "REFUSED [bad-version]" in se, (label, rc, so, se)
+        assert "zq-planted" not in se and "AKIA" not in se
+
+
+def test_a_plain_version_is_accepted_and_the_note_names_a_public_repo_equal_to_the_source(tmp_path, capsys):
+    mod = _tool()
+    for version in ("1.0.0", "12.3.45-rc.2"):
+        rc, so, se = _version_case(tmp_path, capsys, version, "v" + version.replace(".", "-"))
+        assert rc == 0, (version, se)
+        assert _report(_fields(so))["source"]["plugin_version"] == version
+    definition = json.dumps({"public_repo": "acme/demo"})
+    repo, sha = _fixture(tmp_path, name="note", extra={"docs/launch/definition.json": definition})
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "onote")))
+    assert _report(_fields(so))["notes"] == []
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "onote2"),
+                                           extra=["--repo", "Acme/Demo"]))
+    fields = _fields(so)
+    notes = _report(fields)["notes"]
+    assert len(notes) == 1 and "BEFORE the export is built" in notes[0], notes
+    assert "NOTE:" in _md(fields)

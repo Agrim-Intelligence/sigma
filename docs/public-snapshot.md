@@ -29,7 +29,8 @@ git and `gh api` GET calls, and nothing depends on a hook or on a host.
   commit, the verdict and every scan.
 
 The builder never runs a hook, never uses `git add` or `git archive`, never writes to the source
-repository (it reads it with `--no-optional-locks` and a private object directory), and refuses
+repository (its git reads use a private object directory, and its status read is `git status
+--no-optional-locks`), and refuses
 loudly where a guarantee cannot be made: Windows, a non-sha1 repository, a symlink, a gitlink, a
 case collision, a secret-looking file name, a binary or oversize or non-UTF-8 file.
 
@@ -78,7 +79,7 @@ Exit codes and what is on disk:
 The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `patterns-unreadable`, `pattern-compile`, `pattern-matches-empty`, `zero-patterns`, `out-exists`
 (for `OUT` and for `OUT.rejected`), `out-inside-work-tree`, `report-dir-inside-work-tree`,
-`not-a-repo`, `bad-commit`, `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
+`not-a-repo`, `bad-commit`, `bad-version` (the plugin version is not a plain `N.N.N[-alpha|beta|rc[.N]]` number, or the export commit message matches a content rule: the version enters the commit message, which no file scan reads), `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
 `dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`,
@@ -148,10 +149,6 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - names absent from the patterns file, and e-mail addresses, which `tools/leak_scan.py` does not
   check;
 - destination GitHub state beyond what `python3 tools/verify_public_repo.py` counts;
-- an unpinned disposition in `public-tree-dispositions.json` suppresses every match of its rule
-  anywhere in its file, so a NEW real value of that rule in that file would ship. The report's
-  `unpinned_dispositions` lists each one so the owner sees every whole-file suppression
-  (exposure-allowlist entries are all content-scoped, so none appears there).
 
 The four scans are: `builder` (the header rule `private-key-header`, the placeholder rule
 `owner-placeholder`, and the doctor marketplace slug against `docs/launch/definition.json`),
@@ -174,9 +171,13 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
   and read every row before it is given a reason; a real secret or private reference is removed,
   never allowlisted.
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
-  `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason[, blob]}` for the two content
-  rules. It holds the fixtures and regex sources that name a key header or the placeholder on
-  purpose.
+  `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason}` plus exactly one of `blob` (the exact 40-hex git
+  blob) or `lines` (sha256 of each reviewed matched line, counted, as in the exposure allowlist) for
+  the two content rules; the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
+  so no disposition suppresses a whole file. A `lines` entry goes stale (REJECTED) when a reviewed
+  line changes or disappears, and a new match is a finding. Every report finding carries its
+  `line_sha256` so an entry can be written from the report. It holds the fixtures and regex sources
+  that name a key header or the placeholder on purpose.
 
 An entry under an excluded prefix is moot (dropped, counted in the report). Any other unused entry
 is stale and REJECTS the build, so a fixed file cannot leave a hole behind. A finding that is new
@@ -281,16 +282,23 @@ slug; nothing here creates or changes a real repository.
 Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a loop.
 
 1. Build the export from the commit to publish (above) and read a `VERIFIED` report.
-2. Owner: create the new repository, EMPTY (no README, licence or `.gitignore`: a pre-existing
-   commit would make the push a non-fast-forward and the verifier's `single-commit` check fail).
-   Its name is the one `docs/launch/definition.json` records as `public_repo`.
+2. The ORDER matters. `public_repo` in `docs/launch/definition.json` (and the doctor's
+   `_MARKETPLACE_REPO` constant, which the builder's doctor-slug scan requires to equal it) still
+   names THIS repository today. The rename pull request (#524) changes both to the new repository's
+   name (`Agrim-Intelligence/sigmaloop`) in a normal pull request on this repository, and it lands
+   BEFORE step 1's build, so the exported tree carries the right name. The builder prints a NOTE in
+   the report when `public_repo` still equals the `--repo` source repository. Then, after the build,
+   the owner creates the new repository, EMPTY (no README, licence or `.gitignore`: a pre-existing
+   commit would make the push a non-fast-forward and the verifier's `single-commit` check fail),
+   named exactly as `public_repo` says.
 3. Owner: push the one commit.
 
    ```sh
    git -C "$OUT" push "https://github.com/$PUBLIC_REPO.git" main
    ```
 
-4. Wait for CI on every leg, then verify read-only. It checks the one commit, that no other branch
+4. Wait for CI on every leg, then verify read-only (`--branch` names the branch holding the export,
+   default `main`; `--legs` the expected number of CI jobs, default 5, the `ci.yml` matrix). It checks the one commit, that no other branch
    or tag exists, the CI legs and that the tree id equals the report's:
 
    ```sh
