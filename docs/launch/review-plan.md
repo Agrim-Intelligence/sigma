@@ -114,7 +114,7 @@ The unit is processed tokens: input, including cache reads, plus output, as the 
 | S1 | freeze commit, inventory, exposure scans, legal | < 0.5M | not measured |
 | S2 | mechanical gates | 1–2M | not measured |
 | S3 | calibration pilots (the pilot goal, #361) | 20–50M | 3.89M spent (measured, $2.50; P-a and P-b only, P-c and P-d unmeasured) |
-| S4 | high-risk code review + sample + verification | 25–45M | 42.0M (37.0M + 5.0M, formulas below; shallow single passes, second vendor excluded) |
+| S4 | high-risk code review + sample + verification | 25–45M | measured so far: 4 of 16 Tier A units (10,093 lines), 6,833,669 tokens ($3.448) for reviewers and verifiers, 677.1 per line, plus slot overhead; the other 12 units and Tier B are not reached ([review-s4-c3faf6f23e12.md](evidence/review-s4-c3faf6f23e12.md)); the 43.73M ceiling row below is unchanged and stays the estimate for the rest; these figures exclude this goal's own governance and slot overhead, which the evidence records |
 | S5 | phase-skill review | 8–15M | not measured |
 | S6 | host runs, migration, drills, red team | 20–50M | not measured |
 | S7 | outside first-run | 0 | not applicable |
