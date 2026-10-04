@@ -2,10 +2,8 @@
 
 The launch threshold for correctness is "0 flaky tests" (readiness issue #337). This page is how that is
 measured: run the full suite ten times on each of Linux and macOS, keep every run's JUnit file, and
-classify each test by what it did across the runs. **This change adds the means to take the census. It
-records no census result:** no evidence file under `docs/launch/evidence/` comes from it, and nothing here
-says the suite is or is not free of flaky tests. The result lands in a separate change, after the
-workflow below has been dispatched for real.
+classify each test by what it did across the runs. The first census is recorded in
+[Recorded result](#recorded-result).
 
 ## What is measured
 
@@ -40,7 +38,8 @@ macOS half runs `-n 4` (xdist), so ordering effects differ between the two halve
 
 The Linux half is ten parallel matrix jobs on `ubuntu-latest`. A full CI leg takes about 15 to 21 minutes,
 so one dispatch is about 150 to 210 Linux runner-minutes (each job rounds up to a whole minute). That is an
-estimate from the CI legs, not a measurement of this workflow. The workflow is `workflow_dispatch` only: it
+estimate from the CI legs. The first real dispatch measured more: its ten jobs summed to about 354
+job-minutes (each job about 35 minutes), so budget about 360 runner-minutes, not 150 to 210. The workflow is `workflow_dispatch` only: it
 never runs on a push, a pull request or a schedule, so nothing consumes the quota unless an operator
 dispatches it. macOS runs on the operator's own machine and uses no Actions minutes.
 
@@ -103,3 +102,29 @@ python3 tools/readiness/flake_census.py aggregate tests/fixtures/flake_census --
 To see the control red, change the `flaky` rule in `aggregate` to "failed at least once" only and run
 `python3 -m pytest tests/test_readiness_flake_census.py -q`, then the gesture above: `b` is wrongly reported
 as flaky and the tests fail. Restore the rule afterwards.
+
+## Recorded result
+
+Evidence: `docs/launch/evidence/flake-c82e3dfa7420.json`, composed by `combine` from two independent
+censuses of commit `c82e3dfa7420e92465a7cf991a1dcf5166403973`. The commit is operator-asserted (`combine`
+takes it on trust): the Linux runs are Actions run 37187467571, whose head commit was read back from the run
+over REST, and the macOS runs were made in a detached checkout of that same commit.
+
+| | Linux | macOS |
+|---|---|---|
+| Runs | 10 | 10 |
+| How | dispatched workflow, ten parallel jobs, Python 3.12, one process | local, `-n 4` (xdist), verify interpreter, Python 3.12 |
+| Test cases per run | 12,170 in every run | 12,170 in every run |
+| `flaky` | none | none |
+| `always_failing` | none | none |
+| `mixed_nonpassing` | none | none |
+| `missing` | none | none |
+| `skipped_only` | 38 | 31 |
+
+**None observed in 10 runs on each platform.** That is all it says: ten runs cannot prove zero flaky
+tests, only that none showed instability in these twenty observations of this commit, on Python 3.12, in
+these two process models. Every run reported the same test count, so none was hollow, and every macOS `run`
+exited with pytest code 0. The skipped-only tests are skipped on every run of their platform; 7 of the Linux
+ones run on macOS (a difference in the environment, such as an optional package, not investigated here). No unstable or always-failing test
+was found, so no issue was filed for a defect. The Python 3.10, 3.11 and 3.13 legs and macOS on those
+versions were not run.

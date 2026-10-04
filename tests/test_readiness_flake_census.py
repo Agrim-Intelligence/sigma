@@ -569,12 +569,20 @@ def test_doc_control_gesture_copied_from_the_doc_reports_the_fixture_classificat
     assert result["flaky"] == [node("test_c")] and node("test_b") in result["always_failing"]
 
 
-def test_doc_states_cost_limits_and_that_no_result_is_recorded():
+def test_doc_states_cost_limits_and_the_recorded_result():
     text = _doc()
-    for required in ("workflow_dispatch", "150", "210", "runner-minutes", "cannot prove", "no census result",
+    for required in ("workflow_dispatch", "150", "210", "runner-minutes", "cannot prove", "## Recorded result",
                      "always_failing", "mixed_nonpassing", "missing", "skipped_only", "red", "3.12"):
         assert required in text, required
     assert "flaky and missing" in text.replace("`", "")
+    assert "records no census result" not in text and "no evidence file" not in text
+    recorded = text.split("## Recorded result", 1)[1].split("\n## ", 1)[0]
+    evidence = sorted((ROOT / "docs" / "launch" / "evidence").glob("flake-*.json"))
+    assert evidence, "the recorded-result section must point at a committed evidence file"
+    for path in evidence:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        assert doc["sha"] in recorded and path.name in recorded
+        assert "10 runs" in recorded and "37187467571" in recorded
 
 
 def test_no_host_path_or_secret_shaped_text_in_the_new_files():
