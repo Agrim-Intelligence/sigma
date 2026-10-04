@@ -1,0 +1,2743 @@
+{
+ "schema": "readiness-mutation/v1",
+ "sha": "70c2c6e96136ca147adfaa58f32eb63ba557aa67",
+ "sha12": "70c2c6e96136",
+ "complete": false,
+ "mutmut": "2.5.1",
+ "python": "3.12.13",
+ "venv": "<sigma-ops>/readiness/venv-mutmut",
+ "budget": {
+  "module_timeout_seconds": 900,
+  "total_seconds": 10800,
+  "max_load_1min": 10.0,
+  "used_seconds": 10800.1,
+  "deviation_from_issue": "the issue allows 60 minutes per module and no overall cap; this run used the per-module timeout and total cap above on a shared machine, sequentially, under nice"
+ },
+ "how_to_read": "kill_rate is killed / (killed + survived) over the mutants mutmut generated on lines the scoped test files execute (coverage-scoped), so it measures how strongly THOSE TESTS check THAT MODULE, not how well the module is tested overall. A low rate does not by itself mean a defect: survivors include equivalent mutants that change no behaviour, and tests outside the scoped files may kill them. Timeout, suspicious and skipped mutants are reported in counts and are not in the rate (rate_range_all_mutants is [only killed count, killed + timeout + suspicious count], over killed + timeout + suspicious + survived; skipped mutants are in neither). A rate over few mutants is thin evidence: read it with counts. `verdict` compares the rate with mutation.py's default 0.8 and is NOT a decision; the owner sets the threshold. A module with no number is absent and says why; it is never recorded as 0. To retry a timeout, run the same command with a larger --module-timeout: a timeout recorded with a smaller allowance is retried.",
+ "modules": {
+  "hooks/_py.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/agrim_gate.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/completion_gate.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/decision_gate.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.7286,
+   "killed": 247,
+   "survived": 92,
+   "tests_used": [
+    "tests/test_decision_gate.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.73 < 0.80 -- 92 mutant(s) survived",
+   "seconds": 168.6,
+   "counts": {
+    "killed": 247,
+    "timeout": 2,
+    "suspicious": 1,
+    "survived": 92,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 92,
+    "shown": 60,
+    "items": [
+     {
+      "id": 4,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -38,7 +38,7 @@\n-EDIT_TOOLS = (\"Edit\", \"Write\", \"MultiEdit\", \"NotebookEdit\")\n+EDIT_TOOLS = (\"Edit\", \"XXWriteXX\", \"MultiEdit\", \"NotebookEdit\")"
+     },
+     {
+      "id": 5,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -38,7 +38,7 @@\n-EDIT_TOOLS = (\"Edit\", \"Write\", \"MultiEdit\", \"NotebookEdit\")\n+EDIT_TOOLS = (\"Edit\", \"Write\", \"XXMultiEditXX\", \"NotebookEdit\")"
+     },
+     {
+      "id": 6,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -38,7 +38,7 @@\n-EDIT_TOOLS = (\"Edit\", \"Write\", \"MultiEdit\", \"NotebookEdit\")\n+EDIT_TOOLS = (\"Edit\", \"Write\", \"MultiEdit\", \"XXNotebookEditXX\")"
+     },
+     {
+      "id": 9,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -39,7 +39,7 @@\n-OPS = (\"eq\", \"ge\", \"le\", \"in\")\n+OPS = (\"eq\", \"XXgeXX\", \"le\", \"in\")"
+     },
+     {
+      "id": 19,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -62,7 +62,7 @@\n-    env = os.environ.get(\"CLAUDE_PROJECT_DIR\")\n+    env = os.environ.get(\"XXCLAUDE_PROJECT_DIRXX\")"
+     },
+     {
+      "id": 20,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -62,7 +62,7 @@\n-    env = os.environ.get(\"CLAUDE_PROJECT_DIR\")\n+    env = None"
+     },
+     {
+      "id": 21,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -63,7 +63,7 @@\n-    if env and (Path(env) / REGISTRY_REL).exists():\n+    if env and (Path(env) * REGISTRY_REL).exists():"
+     },
+     {
+      "id": 56,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -131,7 +131,7 @@\n-            continue\n+            break"
+     },
+     {
+      "id": 58,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -136,7 +136,7 @@\n-    if tool_name in (\"Write\", \"NotebookEdit\"):\n+    if tool_name in (\"XXWriteXX\", \"NotebookEdit\"):"
+     },
+     {
+      "id": 59,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -136,7 +136,7 @@\n-    if tool_name in (\"Write\", \"NotebookEdit\"):\n+    if tool_name in (\"Write\", \"XXNotebookEditXX\"):"
+     },
+     {
+      "id": 63,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -139,7 +139,7 @@\n-        return ti.get(\"new_string\") or \"\"\n+        return ti.get(\"new_string\") or \"XXXX\""
+     },
+     {
+      "id": 65,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -146,7 +146,7 @@\n-    if tok in (\"true\", \"false\"):\n+    if tok not in (\"true\", \"false\"):"
+     },
+     {
+      "id": 66,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -146,7 +146,7 @@\n-    if tok in (\"true\", \"false\"):\n+    if tok in (\"XXtrueXX\", \"false\"):"
+     },
+     {
+      "id": 67,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -146,7 +146,7 @@\n-    if tok in (\"true\", \"false\"):\n+    if tok in (\"true\", \"XXfalseXX\"):"
+     },
+     {
+      "id": 70,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -156,7 +156,7 @@\n-            if isinstance(expected, bool) or isinstance(actual, bool):\n+            if isinstance(expected, bool) and isinstance(actual, bool):"
+     },
+     {
+      "id": 72,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -158,7 +158,7 @@\n-            if isinstance(expected, float) or isinstance(actual, float):\n+            if isinstance(expected, float) and isinstance(actual, float):"
+     },
+     {
+      "id": 73,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -159,7 +159,7 @@\n-                return math.isclose(float(actual), float(expected), rel_tol=1e-9, abs_tol=1e-12)\n+                return math.isclose(float(actual), float(expected), rel_tol=2e-09, abs_tol=1e-12)"
+     },
+     {
+      "id": 74,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -159,7 +159,7 @@\n-                return math.isclose(float(actual), float(expected), rel_tol=1e-9, abs_tol=1e-12)\n+                return math.isclose(float(actual), float(expected), rel_tol=1e-9, abs_tol=2e-12)"
+     },
+     {
+      "id": 76,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -161,7 +161,7 @@\n-        if op == \"ge\":\n+        if op == \"XXgeXX\":"
+     },
+     {
+      "id": 79,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -164,7 +164,7 @@\n-            return actual <= expected\n+            return actual < expected"
+     },
+     {
+      "id": 84,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -182,7 +182,7 @@\n-            if ch == quote:\n+            if ch != quote:"
+     },
+     {
+      "id": 87,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -184,7 +184,7 @@\n-        elif ch in \"\\\"'\":\n+        elif ch in \"XX\\\"'XX\":"
+     },
+     {
+      "id": 88,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -185,7 +185,7 @@\n-            quote = ch\n+            quote = None"
+     },
+     {
+      "id": 93,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -209,7 +209,7 @@\n-            if ch == quote:\n+            if ch != quote:"
+     },
+     {
+      "id": 94,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -210,7 +210,7 @@\n-                quote = None\n+                quote = \"\""
+     },
+     {
+      "id": 96,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -211,7 +211,7 @@\n-        elif ch in \"\\\"'\":\n+        elif ch in \"XX\\\"'XX\":"
+     },
+     {
+      "id": 97,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -212,7 +212,7 @@\n-            quote = ch\n+            quote = None"
+     },
+     {
+      "id": 99,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -213,7 +213,7 @@\n-        elif ch in \",}];\":\n+        elif ch in \"XX,}];XX\":"
+     },
+     {
+      "id": 108,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -237,7 +237,7 @@\n-        if quote and m.start() > 0 and code[m.start() - 1] == quote:\n+        if quote and m.start() >= 0 and code[m.start() - 1] == quote:"
+     },
+     {
+      "id": 109,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -237,7 +237,7 @@\n-        if quote and m.start() > 0 and code[m.start() - 1] == quote:\n+        if quote and m.start() > 1 and code[m.start() - 1] == quote:"
+     },
+     {
+      "id": 113,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -237,7 +237,7 @@\n-        if quote and m.start() > 0 and code[m.start() - 1] == quote:\n+        if quote or m.start() > 0 and code[m.start() - 1] == quote:"
+     },
+     {
+      "id": 115,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -238,7 +238,7 @@\n-            check_idx = m.start() - 1\n+            check_idx = m.start() - 2"
+     },
+     {
+      "id": 116,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -238,7 +238,7 @@\n-            check_idx = m.start() - 1\n+            check_idx = None"
+     },
+     {
+      "id": 117,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -240,7 +240,7 @@\n-            check_idx = m.start()\n+            check_idx = None"
+     },
+     {
+      "id": 120,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -249,7 +249,7 @@\n-        code = line.split(\"#\", 1)[0]          # naive comment strip; errs toward NOT blocking\n+        code = line.split(\"XX#XX\", 1)[0]          # naive comment strip; errs toward NOT blocking"
+     },
+     {
+      "id": 121,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -249,7 +249,7 @@\n-        code = line.split(\"#\", 1)[0]          # naive comment strip; errs toward NOT blocking\n+        code = line.split(\"#\", 2)[0]          # naive comment strip; errs toward NOT blocking"
+     },
+     {
+      "id": 130,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -252,7 +252,7 @@\n-            if not name or p.get(\"op\") not in OPS:\n+            if not name and p.get(\"op\") not in OPS:"
+     },
+     {
+      "id": 134,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -262,7 +262,7 @@\n-                    continue                       # not a literal \u2014 nothing this gate can judge\n+                    break                       # not a literal \u2014 nothing this gate can judge"
+     },
+     {
+      "id": 143,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -286,7 +286,7 @@\n-    fp = ti.get(\"file_path\") or ti.get(\"filePath\") or ti.get(\"notebook_path\")\n+    fp = ti.get(\"file_path\") or ti.get(\"XXfilePathXX\") or ti.get(\"notebook_path\")"
+     },
+     {
+      "id": 144,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -286,7 +286,7 @@\n-    fp = ti.get(\"file_path\") or ti.get(\"filePath\") or ti.get(\"notebook_path\")\n+    fp = ti.get(\"file_path\") or ti.get(\"filePath\") or ti.get(\"XXnotebook_pathXX\")"
+     },
+     {
+      "id": 151,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -294,7 +294,7 @@\n-        return \"ask\", (\"This edits the decision registry itself. Changing a recorded decision is a \"\n+        return \"ask\", (\"XXThis edits the decision registry itself. Changing a recorded decision is a XX\""
+     },
+     {
+      "id": 157,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -306,7 +306,7 @@\n-              if isinstance(d, dict) and d.get(\"status\", \"active\") == \"active\"\n+              if isinstance(d, dict) and d.get(\"status\", \"XXactiveXX\") == \"active\""
+     },
+     {
+      "id": 169,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -315,7 +315,7 @@\n-        ident = f\"{d.get('id', '?')} {d.get('title', '')}\".strip()\n+        ident = f\"{d.get('id', 'XX?XX')} {d.get('title', '')}\".strip()"
+     },
+     {
+      "id": 170,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -315,7 +315,7 @@\n-        ident = f\"{d.get('id', '?')} {d.get('title', '')}\".strip()\n+        ident = f\"{d.get('id', '?')} {d.get('XXtitleXX', '')}\".strip()"
+     },
+     {
+      "id": 171,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -315,7 +315,7 @@\n-        ident = f\"{d.get('id', '?')} {d.get('title', '')}\".strip()\n+        ident = f\"{d.get('id', '?')} {d.get('title', 'XXXX')}\".strip()"
+     },
+     {
+      "id": 176,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -320,7 +320,7 @@\n-            ask.append(f\"{ident}: {d.get('statement', '')}\".strip())\n+            ask.append(f\"{ident}: {d.get('statement', 'XXXX')}\".strip())"
+     },
+     {
+      "id": 177,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -320,7 +320,7 @@\n-            ask.append(f\"{ident}: {d.get('statement', '')}\".strip())\n+            ask.append(f\"XX{ident}: {d.get('statement', '')}XX\".strip())"
+     },
+     {
+      "id": 180,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -322,7 +322,7 @@\n-            msg = (f\"{ident}: {name}={actual!r} violates {p['op']} {p.get('value')!r}. \"\n+            msg = (f\"{ident}: {name}={actual!r} violates {p['op']} {p.get('XXvalueXX')!r}. \""
+     },
+     {
+      "id": 183,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -323,7 +323,7 @@\n-                   f\"{d.get('statement', '')}\").strip()\n+                   f\"{d.get('statement', 'XXXX')}\").strip()"
+     },
+     {
+      "id": 184,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -323,7 +323,7 @@\n-                   f\"{d.get('statement', '')}\").strip()\n+                   f\"XX{d.get('statement', '')}XX\").strip()"
+     },
+     {
+      "id": 190,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -326,7 +326,7 @@\n-                msg += f\" (Why: {why})\"\n+                msg += f\"XX (Why: {why})XX\""
+     },
+     {
+      "id": 196,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -335,7 +335,7 @@\n-        decision_id = \" | \".join(dict.fromkeys(deny_ids)) or None\n+        decision_id = \"XX | XX\".join(dict.fromkeys(deny_ids)) or None"
+     },
+     {
+      "id": 200,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -336,7 +336,7 @@\n-        return \"deny\", (\" | \".join(deny) + \" \u2014 This is a recorded INVARIANT. If it genuinely needs \"\n+        return \"deny\", (\"XX | XX\".join(deny) + \" \u2014 This is a recorded INVARIANT. If it genuinely needs \""
+     },
+     {
+      "id": 202,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -336,7 +336,7 @@\n-        return \"deny\", (\" | \".join(deny) + \" \u2014 This is a recorded INVARIANT. If it genuinely needs \"\n+        return \"deny\", (\" | \".join(deny) + \"XX \u2014 This is a recorded INVARIANT. If it genuinely needs XX\""
+     },
+     {
+      "id": 203,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -337,7 +337,7 @@\n-                        f\"to change, supersede it in {REGISTRY_REL} first; that is a decision, not \"\n+                        f\"XXto change, supersede it in {REGISTRY_REL} first; that is a decision, not XX\""
+     },
+     {
+      "id": 204,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -338,7 +338,7 @@\n-                        \"an edit.\"), decision_id\n+                        \"XXan edit.XX\"), decision_id"
+     },
+     {
+      "id": 206,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -340,7 +340,7 @@\n-        return \"ask\", \" | \".join(ask), None\n+        return \"ask\", \"XX | XX\".join(ask), None"
+     },
+     {
+      "id": 214,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -354,7 +354,7 @@\n-        if not isinstance(d, dict) or d.get(\"status\", \"active\") != \"active\" \\\n+        if not isinstance(d, dict) or d.get(\"XXstatusXX\", \"active\") != \"active\" \\"
+     },
+     {
+      "id": 215,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -354,7 +354,7 @@\n-        if not isinstance(d, dict) or d.get(\"status\", \"active\") != \"active\" \\\n+        if not isinstance(d, dict) or d.get(\"status\", \"XXactiveXX\") != \"active\" \\"
+     },
+     {
+      "id": 220,
+      "diff": "--- hooks/decision_gate.py\n+++ hooks/decision_gate.py\n@@ -354,7 +354,7 @@\n-        if not isinstance(d, dict) or d.get(\"status\", \"active\") != \"active\" \\\n+        if not isinstance(d, dict) and d.get(\"status\", \"active\") != \"active\" \\"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.7222,
+    0.731
+   ]
+  },
+  "hooks/gate_state.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_hooks_adoption.py",
+    "tests/test_enforcement_table.py",
+    "tests/test_hook.py",
+    "tests/test_hook_setup_wizard.py",
+    "tests/test_no_cross_boundary_paths.py"
+   ],
+   "test_rule": "references(max5)",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 882.788440875s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "hooks/hooks.json": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/issue_field_gate.py": {
+   "verdict": "verified",
+   "kill_rate": 0.8085,
+   "killed": 38,
+   "survived": 9,
+   "tests_used": [
+    "tests/test_issue_field_gate.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.81 >= 0.80",
+   "seconds": 9.1,
+   "counts": {
+    "killed": 38,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 9,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 9,
+    "shown": 9,
+    "items": [
+     {
+      "id": 4,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -45,7 +45,7 @@\n-_SEPARATORS = (\"&&\", \"||\", \";\", \"|\", \"&\")\n+_SEPARATORS = (\"&&\", \"XX||XX\", \";\", \"|\", \"&\")"
+     },
+     {
+      "id": 5,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -45,7 +45,7 @@\n-_SEPARATORS = (\"&&\", \"||\", \";\", \"|\", \"&\")\n+_SEPARATORS = (\"&&\", \"||\", \"XX;XX\", \"|\", \"&\")"
+     },
+     {
+      "id": 6,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -45,7 +45,7 @@\n-_SEPARATORS = (\"&&\", \"||\", \";\", \"|\", \"&\")\n+_SEPARATORS = (\"&&\", \"||\", \";\", \"XX|XX\", \"&\")"
+     },
+     {
+      "id": 7,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -45,7 +45,7 @@\n-_SEPARATORS = (\"&&\", \"||\", \";\", \"|\", \"&\")\n+_SEPARATORS = (\"&&\", \"||\", \";\", \"|\", \"XX&XX\")"
+     },
+     {
+      "id": 9,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -48,7 +48,7 @@\n-    \"BLOCKED: `gh issue create` without a `priority:P<n>` label.\\n\"\n+    \"XXBLOCKED: `gh issue create` without a `priority:P<n>` label.\\nXX\""
+     },
+     {
+      "id": 18,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -87,7 +87,7 @@\n-    if not segment or segment[0] != \"gh\":\n+    if not segment and segment[0] != \"gh\":"
+     },
+     {
+      "id": 33,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -101,7 +101,7 @@\n-            values.append(token.split(\"=\", 1)[1])\n+            values.append(token.split(\"=\", 2)[1])"
+     },
+     {
+      "id": 40,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -110,7 +110,7 @@\n-    for segment in _segments(tool_input.get(\"command\") or \"\"):\n+    for segment in _segments(tool_input.get(\"command\") or \"XXXX\"):"
+     },
+     {
+      "id": 47,
+      "diff": "--- hooks/issue_field_gate.py\n+++ hooks/issue_field_gate.py\n@@ -150,6 +150,6 @@\n-if __name__ == \"__main__\":\n+if __name__ == \"XX__main__XX\":"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.8085,
+    0.8085
+   ]
+  },
+  "hooks/plan_gate.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/research_capture.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.7,
+   "killed": 63,
+   "survived": 27,
+   "tests_used": [
+    "tests/test_research_capture.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.70 < 0.80 -- 27 mutant(s) survived",
+   "seconds": 41.3,
+   "counts": {
+    "killed": 63,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 27,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 27,
+    "shown": 27,
+    "items": [
+     {
+      "id": 4,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -15,7 +15,7 @@\n-_EXCERPT_CHARS = 400\n+_EXCERPT_CHARS = 401"
+     },
+     {
+      "id": 19,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -43,7 +43,7 @@\n-        spec = importlib.util.spec_from_file_location(\"_research_capture_scrub\", _SCRUB_PATH)\n+        spec = importlib.util.spec_from_file_location(\"XX_research_capture_scrubXX\", _SCRUB_PATH)"
+     },
+     {
+      "id": 23,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -44,7 +44,7 @@\n-        if spec is None or spec.loader is None:\n+        if spec is None and spec.loader is None:"
+     },
+     {
+      "id": 25,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -51,7 +51,7 @@\n-    _SCRUB_MOD = mod\n+    _SCRUB_MOD = None"
+     },
+     {
+      "id": 26,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -74,7 +74,7 @@\n-def _slug(text, n=48):\n+def _slug(text, n=49):"
+     },
+     {
+      "id": 28,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -75,7 +75,7 @@\n-    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"\").lower()).strip(\"-\")\n+    s = re.sub(r\"[^a-z0-9]+\", \"XX-XX\", (text or \"\").lower()).strip(\"-\")"
+     },
+     {
+      "id": 29,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -75,7 +75,7 @@\n-    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"\").lower()).strip(\"-\")\n+    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"XXXX\").lower()).strip(\"-\")"
+     },
+     {
+      "id": 30,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -75,7 +75,7 @@\n-    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"\").lower()).strip(\"-\")\n+    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text and \"\").lower()).strip(\"-\")"
+     },
+     {
+      "id": 31,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -75,7 +75,7 @@\n-    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"\").lower()).strip(\"-\")\n+    s = re.sub(r\"[^a-z0-9]+\", \"-\", (text or \"\").lower()).strip(\"XX-XX\")"
+     },
+     {
+      "id": 33,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -76,7 +76,7 @@\n-    return (s[:n] or \"untitled\").strip(\"-\")\n+    return (s[:n] or \"XXuntitledXX\").strip(\"-\")"
+     },
+     {
+      "id": 34,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -76,7 +76,7 @@\n-    return (s[:n] or \"untitled\").strip(\"-\")\n+    return (s[:n] and \"untitled\").strip(\"-\")"
+     },
+     {
+      "id": 35,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -76,7 +76,7 @@\n-    return (s[:n] or \"untitled\").strip(\"-\")\n+    return (s[:n] or \"untitled\").strip(\"XX-XX\")"
+     },
+     {
+      "id": 53,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -98,7 +98,7 @@\n-    raw = tool_input.get(\"query\", \"\") if tool_name == \"WebSearch\" else tool_input.get(\"url\", \"\")\n+    raw = tool_input.get(\"query\", \"\") if tool_name == \"WebSearch\" else tool_input.get(\"url\", \"XXXX\")"
+     },
+     {
+      "id": 62,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -105,7 +105,7 @@\n-    ts = now.isoformat(timespec=\"microseconds\")\n+    ts = None"
+     },
+     {
+      "id": 63,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -106,7 +106,7 @@\n-    stamp = now.strftime(\"%Y-%m-%dT%H%M%S-%f\")          # collision-safe to the microsecond\n+    stamp = now.strftime(\"XX%Y-%m-%dT%H%M%S-%fXX\")          # collision-safe to the microsecond"
+     },
+     {
+      "id": 67,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -107,7 +107,7 @@\n-    heading = subject.replace(\"\\n\", \" \").replace(\"\\r\", \" \")[:200]  # one-line, can't break the markdown\n+    heading = subject.replace(\"\\n\", \" \").replace(\"XX\\rXX\", \" \")[:200]  # one-line, can't break the markdown"
+     },
+     {
+      "id": 68,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -107,7 +107,7 @@\n-    heading = subject.replace(\"\\n\", \" \").replace(\"\\r\", \" \")[:200]  # one-line, can't break the markdown\n+    heading = subject.replace(\"\\n\", \" \").replace(\"\\r\", \"XX XX\")[:200]  # one-line, can't break the markdown"
+     },
+     {
+      "id": 69,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -107,7 +107,7 @@\n-    heading = subject.replace(\"\\n\", \" \").replace(\"\\r\", \" \")[:200]  # one-line, can't break the markdown\n+    heading = subject.replace(\"\\n\", \" \").replace(\"\\r\", \" \")[:201]  # one-line, can't break the markdown"
+     },
+     {
+      "id": 71,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -108,7 +108,7 @@\n-    body = tool_response if isinstance(tool_response, str) else json.dumps(tool_response, ensure_ascii=False)\n+    body = tool_response if isinstance(tool_response, str) else json.dumps(tool_response, ensure_ascii=True)"
+     },
+     {
+      "id": 74,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -114,7 +114,7 @@\n-    md = (\"---\\n\"\n+    md = (\"XX---\\nXX\""
+     },
+     {
+      "id": 75,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -115,7 +115,7 @@\n-          f\"source: {tool_name.lower()}\\n\"\n+          f\"XXsource: {tool_name.lower()}\\nXX\""
+     },
+     {
+      "id": 76,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -116,7 +116,7 @@\n-          f\"subject: {json.dumps(subject, ensure_ascii=False)}\\n\"\n+          f\"subject: {json.dumps(subject, ensure_ascii=True)}\\n\""
+     },
+     {
+      "id": 77,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -116,7 +116,7 @@\n-          f\"subject: {json.dumps(subject, ensure_ascii=False)}\\n\"\n+          f\"XXsubject: {json.dumps(subject, ensure_ascii=False)}\\nXX\""
+     },
+     {
+      "id": 78,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -117,7 +117,7 @@\n-          f\"captured_at: {ts}\\n\"\n+          f\"XXcaptured_at: {ts}\\nXX\""
+     },
+     {
+      "id": 79,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -120,7 +120,7 @@\n-          f\"# {tool_name}: {heading}\\n\\n\"\n+          f\"XX# {tool_name}: {heading}\\n\\nXX\""
+     },
+     {
+      "id": 80,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -121,7 +121,7 @@\n-          f\"{excerpt}\\n\")\n+          f\"XX{excerpt}\\nXX\")"
+     },
+     {
+      "id": 86,
+      "diff": "--- hooks/research_capture.py\n+++ hooks/research_capture.py\n@@ -129,7 +129,7 @@\n-        project_dir = os.environ.get(\"CLAUDE_PROJECT_DIR\", \".\")\n+        project_dir = os.environ.get(\"CLAUDE_PROJECT_DIR\", \"XX.XX\")"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.7,
+    0.7
+   ]
+  },
+  "hooks/session_start.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "hooks/time_track.py": {
+   "verdict": "verified",
+   "kill_rate": 0.8261,
+   "killed": 114,
+   "survived": 24,
+   "tests_used": [
+    "tests/test_time_track.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.83 >= 0.80",
+   "seconds": 38.4,
+   "counts": {
+    "killed": 114,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 24,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 24,
+    "shown": 24,
+    "items": [
+     {
+      "id": 30,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -76,7 +76,7 @@\n-    if ms < 0:\n+    if ms <= 0:"
+     },
+     {
+      "id": 31,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -76,7 +76,7 @@\n-    if ms < 0:\n+    if ms < 1:"
+     },
+     {
+      "id": 44,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -106,7 +106,7 @@\n-        match = _SLASH.match(prompt or \"\")\n+        match = _SLASH.match(prompt or \"XXXX\")"
+     },
+     {
+      "id": 56,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -114,7 +114,7 @@\n-        state[\"skill\"] = str(skill).strip() if skill and str(skill).strip() else state[\"skill\"]\n+        state[\"skill\"] = str(skill).strip() if skill or str(skill).strip() else state[\"skill\"]"
+     },
+     {
+      "id": 57,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -114,7 +114,7 @@\n-        state[\"skill\"] = str(skill).strip() if skill and str(skill).strip() else state[\"skill\"]\n+        state[\"skill\"] = str(skill).strip() if skill and str(skill).strip() else state[\"XXskillXX\"]"
+     },
+     {
+      "id": 66,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -130,7 +130,7 @@\n-    text = _NAME_OK.sub(\"\", str(value or \"\")).strip()[:80]\n+    text = _NAME_OK.sub(\"XXXX\", str(value or \"\")).strip()[:80]"
+     },
+     {
+      "id": 67,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -130,7 +130,7 @@\n-    text = _NAME_OK.sub(\"\", str(value or \"\")).strip()[:80]\n+    text = _NAME_OK.sub(\"\", str(value or \"XXXX\")).strip()[:80]"
+     },
+     {
+      "id": 69,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -130,7 +130,7 @@\n-    text = _NAME_OK.sub(\"\", str(value or \"\")).strip()[:80]\n+    text = _NAME_OK.sub(\"\", str(value or \"\")).strip()[:81]"
+     },
+     {
+      "id": 85,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -154,7 +154,7 @@\n-        if isinstance(data, dict) and \"skill\" in data and \"started\" in data:\n+        if isinstance(data, dict) or \"skill\" in data and \"started\" in data:"
+     },
+     {
+      "id": 90,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -159,7 +159,7 @@\n-                skill = None\n+                skill = \"\""
+     },
+     {
+      "id": 103,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -187,7 +187,7 @@\n-    now_ms = int(round(time.time() * 1000)) if now_ms is None else int(now_ms)\n+    now_ms = int(round(time.time() / 1000)) if now_ms is None else int(now_ms)"
+     },
+     {
+      "id": 104,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -187,7 +187,7 @@\n-    now_ms = int(round(time.time() * 1000)) if now_ms is None else int(now_ms)\n+    now_ms = int(round(time.time() * 1001)) if now_ms is None else int(now_ms)"
+     },
+     {
+      "id": 111,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -197,7 +197,7 @@\n-    skill = prompt = None\n+    skill = prompt = \"\""
+     },
+     {
+      "id": 113,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -198,7 +198,7 @@\n-    if event == \"skill\":\n+    if event == \"XXskillXX\":"
+     },
+     {
+      "id": 124,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -208,7 +208,7 @@\n-                                    closed[\"ms\"], started=closed[\"started\"], now=now_ms / 1000.0)\n+                                    closed[\"ms\"], started=closed[\"started\"], now=now_ms * 1000.0)"
+     },
+     {
+      "id": 125,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -208,7 +208,7 @@\n-                                    closed[\"ms\"], started=closed[\"started\"], now=now_ms / 1000.0)\n+                                    closed[\"ms\"], started=closed[\"started\"], now=now_ms / 1001.0)"
+     },
+     {
+      "id": 128,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -211,7 +211,7 @@\n-    marker.write_text(json.dumps(new_state, sort_keys=True), encoding=\"utf-8\")\n+    marker.write_text(json.dumps(new_state, sort_keys=False), encoding=\"utf-8\")"
+     },
+     {
+      "id": 130,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"XXUserPromptSubmitXX\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}"
+     },
+     {
+      "id": 131,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"UserPromptSubmit\": \"XXpromptXX\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}"
+     },
+     {
+      "id": 132,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"XXPreToolUseXX\": \"skill\", \"Stop\": \"stop\"}"
+     },
+     {
+      "id": 133,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"XXskillXX\", \"Stop\": \"stop\"}"
+     },
+     {
+      "id": 134,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"XXStopXX\": \"stop\"}"
+     },
+     {
+      "id": 135,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"XXstopXX\"}"
+     },
+     {
+      "id": 136,
+      "diff": "--- hooks/time_track.py\n+++ hooks/time_track.py\n@@ -217,7 +217,7 @@\n-_EVENT_NAMES = {\"UserPromptSubmit\": \"prompt\", \"PreToolUse\": \"skill\", \"Stop\": \"stop\"}\n+_EVENT_NAMES = None"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.8261,
+    0.8261
+   ]
+  },
+  "install.sh": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-python",
+   "seconds": 0.0,
+   "reason": "not a Python file; mutmut mutates Python only"
+  },
+  "skills/agrim-init/scripts/board_setup.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6945,
+   "killed": 557,
+   "survived": 245,
+   "tests_used": [
+    "tests/test_board_setup.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.69 < 0.80 -- 245 mutant(s) survived",
+   "seconds": 556.8,
+   "counts": {
+    "killed": 557,
+    "timeout": 3,
+    "suspicious": 1,
+    "survived": 245,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 245,
+    "shown": 60,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -73,7 +73,7 @@\n-_HERE = pathlib.Path(__file__).resolve().parent\n+_HERE = None"
+     },
+     {
+      "id": 3,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -78,7 +78,7 @@\n-    spec = importlib.util.spec_from_file_location(name, path)\n+    spec = None"
+     },
+     {
+      "id": 4,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -79,7 +79,7 @@\n-    module = importlib.util.module_from_spec(spec)\n+    module = None"
+     },
+     {
+      "id": 5,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -84,7 +84,7 @@\n-pf = _load(_HERE / \"preflight.py\", \"board_setup_preflight\")\n+pf = _load(_HERE * \"preflight.py\", \"board_setup_preflight\")"
+     },
+     {
+      "id": 6,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -84,7 +84,7 @@\n-pf = _load(_HERE / \"preflight.py\", \"board_setup_preflight\")\n+pf = _load(_HERE / \"XXpreflight.pyXX\", \"board_setup_preflight\")"
+     },
+     {
+      "id": 7,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -84,7 +84,7 @@\n-pf = _load(_HERE / \"preflight.py\", \"board_setup_preflight\")\n+pf = _load(_HERE / \"preflight.py\", \"XXboard_setup_preflightXX\")"
+     },
+     {
+      "id": 9,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -85,7 +85,7 @@\n-_LOOP = _HERE.parent.parent / \"agrim-loop\" / \"scripts\"\n+_LOOP = _HERE.parent.parent * \"agrim-loop\" / \"scripts\""
+     },
+     {
+      "id": 11,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -85,7 +85,7 @@\n-_LOOP = _HERE.parent.parent / \"agrim-loop\" / \"scripts\"\n+_LOOP = _HERE.parent.parent / \"agrim-loop\" * \"scripts\""
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -96,7 +96,7 @@\n-        _SOURCES.append(_load(_LOOP / \"sources.py\", \"board_setup_sources\"))\n+        _SOURCES.append(_load(_LOOP / \"sources.py\", \"XXboard_setup_sourcesXX\"))"
+     },
+     {
+      "id": 22,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -108,7 +108,7 @@\n-    timeout = pf.call_timeout() if timeout is None else timeout\n+    timeout = pf.call_timeout() if timeout is not None else timeout"
+     },
+     {
+      "id": 23,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -108,7 +108,7 @@\n-    timeout = pf.call_timeout() if timeout is None else timeout\n+    timeout = None"
+     },
+     {
+      "id": 27,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -112,7 +112,7 @@\n-    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\",\n+    env = dict(os.environ, GH_PROMPT_DISABLED=\"XX1XX\", GH_NO_UPDATE_NOTIFIER=\"1\","
+     },
+     {
+      "id": 28,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -112,7 +112,7 @@\n-    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\",\n+    env = dict(os.environ, GH_PROMPT_DISABLEDXX=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\","
+     },
+     {
+      "id": 29,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -112,7 +112,7 @@\n-    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\",\n+    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"XX1XX\","
+     },
+     {
+      "id": 30,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -112,7 +112,7 @@\n-    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\",\n+    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIERXX=\"1\","
+     },
+     {
+      "id": 31,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -113,7 +113,7 @@\n-               GIT_TERMINAL_PROMPT=\"0\")\n+               GIT_TERMINAL_PROMPT=\"XX0XX\")"
+     },
+     {
+      "id": 32,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -113,7 +113,7 @@\n-               GIT_TERMINAL_PROMPT=\"0\")\n+               GIT_TERMINAL_PROMPTXX=\"0\")"
+     },
+     {
+      "id": 33,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -112,8 +112,7 @@\n-    env = dict(os.environ, GH_PROMPT_DISABLED=\"1\", GH_NO_UPDATE_NOTIFIER=\"1\",\n-               GIT_TERMINAL_PROMPT=\"0\")\n+    env = None"
+     },
+     {
+      "id": 34,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -114,7 +114,7 @@\n-    group = {\"creationflags\": pf._NEW_GROUP} if os.name == \"nt\" else {\"start_new_session\": True}\n+    group = {\"XXcreationflagsXX\": pf._NEW_GROUP} if os.name == \"nt\" else {\"start_new_session\": True}"
+     },
+     {
+      "id": 36,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -114,7 +114,7 @@\n-    group = {\"creationflags\": pf._NEW_GROUP} if os.name == \"nt\" else {\"start_new_session\": True}\n+    group = {\"creationflags\": pf._NEW_GROUP} if os.name == \"XXntXX\" else {\"start_new_session\": True}"
+     },
+     {
+      "id": 38,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -114,7 +114,7 @@\n-    group = {\"creationflags\": pf._NEW_GROUP} if os.name == \"nt\" else {\"start_new_session\": True}\n+    group = {\"creationflags\": pf._NEW_GROUP} if os.name == \"nt\" else {\"start_new_session\": False}"
+     },
+     {
+      "id": 40,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -116,7 +116,7 @@\n-        proc = subprocess.Popen([exe, *argv[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,\n+        proc = subprocess.Popen([exe, /argv[1:]], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,"
+     },
+     {
+      "id": 42,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -117,7 +117,7 @@\n-                                stderr=subprocess.PIPE, text=True, encoding=\"utf-8\",\n+                                stderr=subprocess.PIPE, text=False, encoding=\"utf-8\","
+     },
+     {
+      "id": 44,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -118,7 +118,7 @@\n-                                errors=\"replace\", env=env, **group)\n+                                errors=\"XXreplaceXX\", env=env, **group)"
+     },
+     {
+      "id": 47,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -126,7 +126,7 @@\n-    return proc.returncode, out or \"\", err or \"\"\n+    return proc.returncode, out or \"XXXX\", err or \"\""
+     },
+     {
+      "id": 49,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -126,7 +126,7 @@\n-    return proc.returncode, out or \"\", err or \"\"\n+    return proc.returncode, out or \"\", err or \"XXXX\""
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -126,7 +126,7 @@\n-    return proc.returncode, out or \"\", err or \"\"\n+    return proc.returncode, out or \"\", err and \"\""
+     },
+     {
+      "id": 51,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -140,7 +140,7 @@\n-COLORS = (\"GRAY\", \"BLUE\", \"GREEN\", \"YELLOW\", \"ORANGE\", \"RED\", \"PINK\", \"PURPLE\")\n+COLORS = (\"XXGRAYXX\", \"BLUE\", \"GREEN\", \"YELLOW\", \"ORANGE\", \"RED\", \"PINK\", \"PURPLE\")"
+     },
+     {
+      "id": 60,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -145,7 +145,7 @@\n-_WIN_UNSAFE = frozenset('\"%$`!')\n+_WIN_UNSAFE = frozenset('XX\"%$`!XX')"
+     },
+     {
+      "id": 63,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -149,7 +149,7 @@\n-    return os.name == \"nt\"\n+    return os.name == \"XXntXX\""
+     },
+     {
+      "id": 64,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -153,7 +153,7 @@\n-    return pf.printable(pf.redact(str(text or \"\").strip()))[:400]\n+    return pf.printable(pf.redact(str(text or \"XXXX\").strip()))[:400]"
+     },
+     {
+      "id": 66,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -153,7 +153,7 @@\n-    return pf.printable(pf.redact(str(text or \"\").strip()))[:400]\n+    return pf.printable(pf.redact(str(text or \"\").strip()))[:401]"
+     },
+     {
+      "id": 68,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -167,7 +167,7 @@\n-    def __init__(self, sdlc_dir, runner=None, out=print, host=\"github.com\"):\n+    def __init__(self, sdlc_dir, runner=None, out=print, host=\"XXgithub.comXX\"):"
+     },
+     {
+      "id": 69,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -168,7 +168,7 @@\n-        self.sdlc = pathlib.Path(os.path.abspath(str(sdlc_dir)))\n+        self.sdlc = None"
+     },
+     {
+      "id": 75,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -172,7 +172,7 @@\n-        self.failed = False\n+        self.failed = None"
+     },
+     {
+      "id": 77,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -173,7 +173,7 @@\n-        self.refused = False\n+        self.refused = None"
+     },
+     {
+      "id": 79,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -177,7 +177,7 @@\n-        argv = [\"gh\", *args]\n+        argv = [\"gh\", /args]"
+     },
+     {
+      "id": 83,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -178,7 +178,7 @@\n-        if self.host != \"github.com\" and args and args[0] == \"api\":\n+        if self.host != \"github.com\" and args and args[1] == \"api\":"
+     },
+     {
+      "id": 84,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -178,7 +178,7 @@\n-        if self.host != \"github.com\" and args and args[0] == \"api\":\n+        if self.host != \"github.com\" and args and args[0] != \"api\":"
+     },
+     {
+      "id": 85,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -178,7 +178,7 @@\n-        if self.host != \"github.com\" and args and args[0] == \"api\":\n+        if self.host != \"github.com\" and args and args[0] == \"XXapiXX\":"
+     },
+     {
+      "id": 90,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -182,7 +182,7 @@\n-            raise Failed(_clean(err or out or f\"gh exited {rc}\"))\n+            raise Failed(_clean(err or out or f\"XXgh exited {rc}XX\"))"
+     },
+     {
+      "id": 93,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -186,7 +186,7 @@\n-        return json.loads(self.gh(\"api\", path) or \"null\")\n+        return json.loads(self.gh(\"api\", path) or \"XXnullXX\")"
+     },
+     {
+      "id": 97,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -189,7 +189,7 @@\n-        data = json.loads(self.gh(\"api\", \"graphql\", \"-f\", \"query=\" + doc) or \"{}\")\n+        data = json.loads(self.gh(\"api\", \"graphql\", \"XX-fXX\", \"query=\" + doc) or \"{}\")"
+     },
+     {
+      "id": 100,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -189,7 +189,7 @@\n-        data = json.loads(self.gh(\"api\", \"graphql\", \"-f\", \"query=\" + doc) or \"{}\")\n+        data = json.loads(self.gh(\"api\", \"graphql\", \"-f\", \"query=\" + doc) or \"XX{}XX\")"
+     },
+     {
+      "id": 103,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -190,7 +190,7 @@\n-        if data.get(\"errors\"):\n+        if data.get(\"XXerrorsXX\"):"
+     },
+     {
+      "id": 106,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -194,7 +194,7 @@\n-    def step(self, tag, what, detail=\"\"):\n+    def step(self, tag, what, detail=\"XXXX\"):"
+     },
+     {
+      "id": 115,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -199,7 +199,7 @@\n-        self.out(f\"  [{tag}] {what}\" + (f\": {detail}\" if detail else \"\"))\n+        self.out(f\"XX  [{tag}] {what}XX\" + (f\": {detail}\" if detail else \"\"))"
+     },
+     {
+      "id": 117,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -199,7 +199,7 @@\n-        self.out(f\"  [{tag}] {what}\" + (f\": {detail}\" if detail else \"\"))\n+        self.out(f\"  [{tag}] {what}\" + (f\"XX: {detail}XX\" if detail else \"\"))"
+     },
+     {
+      "id": 118,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -199,7 +199,7 @@\n-        self.out(f\"  [{tag}] {what}\" + (f\": {detail}\" if detail else \"\"))\n+        self.out(f\"  [{tag}] {what}\" + (f\": {detail}\" if detail else \"XXXX\"))"
+     },
+     {
+      "id": 146,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -251,7 +251,7 @@\n-    return made is not None and made == (int(number), str(owner or \"\").strip().casefold())\n+    return made is not None and made == (int(number), str(owner or \"XXXX\").strip().casefold())"
+     },
+     {
+      "id": 184,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -294,7 +294,7 @@\n-        out(\"  \" + line)\n+        out(\"XX  XX\" + line)"
+     },
+     {
+      "id": 186,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -296,7 +296,7 @@\n-    out(\"  (no command printed: a value contains a character cmd/PowerShell would expand or end \"\n+    out(\"XX  (no command printed: a value contains a character cmd/PowerShell would expand or end XX\""
+     },
+     {
+      "id": 188,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -298,7 +298,7 @@\n-        + (f\", adding --number {int(number)}\" if number is not None else \"\") + \".\")\n+        + (f\"XX, adding --number {int(number)}XX\" if number is not None else \"\") + \".\")"
+     },
+     {
+      "id": 190,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -298,7 +298,7 @@\n-        + (f\", adding --number {int(number)}\" if number is not None else \"\") + \".\")\n+        + (f\", adding --number {int(number)}\" if number is not None else \"XXXX\") + \".\")"
+     },
+     {
+      "id": 192,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -298,7 +298,7 @@\n-        + (f\", adding --number {int(number)}\" if number is not None else \"\") + \".\")\n+        + (f\", adding --number {int(number)}\" if number is not None else \"\") + \"XX.XX\")"
+     },
+     {
+      "id": 193,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -301,7 +301,7 @@\n-def workflows_url(kind, owner, number, host=\"github.com\"):\n+def workflows_url(kind, owner, number, host=\"XXgithub.comXX\"):"
+     },
+     {
+      "id": 194,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -302,7 +302,7 @@\n-    return f\"https://{host}/{kind}/{owner}/projects/{int(number)}/workflows\"\n+    return f\"XXhttps://{host}/{kind}/{owner}/projects/{int(number)}/workflowsXX\""
+     },
+     {
+      "id": 195,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -305,7 +305,7 @@\n-def migrate_command(owner, number, src, backlog=\"<lane your queued goals sit in>\"):\n+def migrate_command(owner, number, src, backlog=\"XX<lane your queued goals sit in>XX\"):"
+     },
+     {
+      "id": 197,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -308,7 +308,7 @@\n-    script = _HERE.parent.parent / \"agrim-doctor\" / \"scripts\" / \"board_migrate.py\"\n+    script = _HERE.parent.parent / \"XXagrim-doctorXX\" / \"scripts\" / \"board_migrate.py\""
+     },
+     {
+      "id": 199,
+      "diff": "--- skills/agrim-init/scripts/board_setup.py\n+++ skills/agrim-init/scripts/board_setup.py\n@@ -308,7 +308,7 @@\n-    script = _HERE.parent.parent / \"agrim-doctor\" / \"scripts\" / \"board_migrate.py\"\n+    script = _HERE.parent.parent / \"agrim-doctor\" / \"XXscriptsXX\" / \"board_migrate.py\""
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6911,
+    0.696
+   ]
+  },
+  "skills/agrim-init/scripts/init_flow.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_init_flow.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 865.1267267920002s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-init/scripts/setup_wizard.py": {
+   "verdict": "verified",
+   "kill_rate": 0.8364,
+   "killed": 138,
+   "survived": 27,
+   "tests_used": [
+    "tests/test_setup_wizard.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.84 >= 0.80",
+   "seconds": 38.7,
+   "counts": {
+    "killed": 138,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 27,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 27,
+    "shown": 27,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -25,7 +25,7 @@\n-def _doctor_check(sdlc_dir=\".sdlc\", run=None, scheduled_tasks_dir=None, site_packages_dirs=None):\n+def _doctor_check(sdlc_dir=\"XX.sdlcXX\", run=None, scheduled_tasks_dir=None, site_packages_dirs=None):"
+     },
+     {
+      "id": 9,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -44,7 +44,7 @@\n-    spec = importlib.util.spec_from_file_location(\"doctor\", path)\n+    spec = importlib.util.spec_from_file_location(\"XXdoctorXX\", path)"
+     },
+     {
+      "id": 12,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -50,7 +50,7 @@\n-                        cheap_only=True)\n+                        cheap_only=False)"
+     },
+     {
+      "id": 17,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -82,7 +82,7 @@\n-    \"gh installed\": (\"human_command\",\n+    \"XXgh installedXX\": (\"human_command\","
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -82,7 +82,7 @@\n-    \"gh installed\": (\"human_command\",\n+    \"gh installed\": (\"XXhuman_commandXX\","
+     },
+     {
+      "id": 20,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -86,7 +86,7 @@\n-    \"gh project scope\": (\"human_command\",\n+    \"gh project scope\": (\"XXhuman_commandXX\","
+     },
+     {
+      "id": 27,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -104,7 +104,7 @@\n-    \"graphify installed\": (\"auto_fixable\",\n+    \"XXgraphify installedXX\": (\"auto_fixable\","
+     },
+     {
+      "id": 28,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -104,7 +104,7 @@\n-    \"graphify installed\": (\"auto_fixable\",\n+    \"graphify installed\": (\"XXauto_fixableXX\","
+     },
+     {
+      "id": 57,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -183,7 +183,7 @@\n-        if (base / \"config.json\").exists():\n+        if (base / \"XXconfig.jsonXX\").exists():"
+     },
+     {
+      "id": 69,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -193,7 +193,7 @@\n-INIT_FLOW = pathlib.Path(__file__).resolve().parent / \"init_flow.py\"\n+INIT_FLOW = pathlib.Path(__file__).resolve().parent * \"init_flow.py\""
+     },
+     {
+      "id": 70,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -193,7 +193,7 @@\n-INIT_FLOW = pathlib.Path(__file__).resolve().parent / \"init_flow.py\"\n+INIT_FLOW = pathlib.Path(__file__).resolve().parent / \"XXinit_flow.pyXX\""
+     },
+     {
+      "id": 71,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -193,7 +193,7 @@\n-INIT_FLOW = pathlib.Path(__file__).resolve().parent / \"init_flow.py\"\n+INIT_FLOW = None"
+     },
+     {
+      "id": 72,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -203,7 +203,7 @@\n-        \"setup_wizard_verify_detect\", str(pathlib.Path(__file__).resolve().parent / \"verify_detect.py\"))\n+        \"XXsetup_wizard_verify_detectXX\", str(pathlib.Path(__file__).resolve().parent / \"verify_detect.py\"))"
+     },
+     {
+      "id": 81,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -212,7 +212,7 @@\n-        \"fix\": f\"re-run /agrim-init (Codex/Cursor: {_init_gesture()}): .sdlc/ is Sigma's but has no \"\n+        \"fix\": f\"XXre-run /agrim-init (Codex/Cursor: {_init_gesture()}): .sdlc/ is Sigma's but has no XX\""
+     },
+     {
+      "id": 85,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -233,7 +233,7 @@\n-        kept = sorted({n for n in names if isinstance(n, str) and n in _MODES})\n+        kept = sorted({n for n in names if isinstance(n, str) or n in _MODES})"
+     },
+     {
+      "id": 87,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -234,7 +234,7 @@\n-        path.parent.mkdir(parents=True, exist_ok=True)\n+        path.parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 88,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -234,7 +234,7 @@\n-        path.parent.mkdir(parents=True, exist_ok=True)\n+        path.parent.mkdir(parents=True, exist_ok=False)"
+     },
+     {
+      "id": 90,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -250,7 +250,7 @@\n-_CACHE_TTL_SECONDS = 3600\n+_CACHE_TTL_SECONDS = 3601"
+     },
+     {
+      "id": 100,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -271,7 +271,7 @@\n-                and not isinstance(data.get(\"checked_at\"), bool)\n+                and not isinstance(data.get(\"XXchecked_atXX\"), bool)"
+     },
+     {
+      "id": 106,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -285,7 +285,7 @@\n-        _cache_path(sdlc_dir).parent.mkdir(parents=True, exist_ok=True)\n+        _cache_path(sdlc_dir).parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 115,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -303,7 +303,7 @@\n-        if sigma_scaffold_interrupted(sdlc_dir) and \"project layer\" not in (\n+        if sigma_scaffold_interrupted(sdlc_dir) and \"XXproject layerXX\" not in ("
+     },
+     {
+      "id": 119,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -305,7 +305,7 @@\n-            mode, degraded = _classify(\"project layer\")\n+            mode, degraded = _classify(\"XXproject layerXX\")"
+     },
+     {
+      "id": 124,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -306,7 +306,7 @@\n-            return {\"needs_wizard\": True, \"steps\": [dict(_interrupted_step(), mode=mode, degraded=degraded)]}\n+            return {\"needs_wizard\": True, \"steps\": [dict(_interrupted_step(), modeXX=mode, degraded=degraded)]}"
+     },
+     {
+      "id": 134,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -316,7 +316,7 @@\n-                and 0 <= (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):\n+                and 1 <= (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):"
+     },
+     {
+      "id": 135,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -316,7 +316,7 @@\n-                and 0 <= (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):\n+                and 0 < (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):"
+     },
+     {
+      "id": 136,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -316,7 +316,7 @@\n-                and 0 <= (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):\n+                and 0 <= (now + cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):"
+     },
+     {
+      "id": 138,
+      "diff": "--- skills/agrim-init/scripts/setup_wizard.py\n+++ skills/agrim-init/scripts/setup_wizard.py\n@@ -316,7 +316,7 @@\n-                and 0 <= (now - cached[\"checked_at\"]) < _CACHE_TTL_SECONDS):\n+                and 0 <= (now - cached[\"checked_at\"]) <= _CACHE_TTL_SECONDS):"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.8364,
+    0.8364
+   ]
+  },
+  "skills/agrim-loop/scripts/blockers.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.7089,
+   "killed": 151,
+   "survived": 62,
+   "tests_used": [
+    "tests/test_blockers.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.71 < 0.80 -- 62 mutant(s) survived",
+   "seconds": 205.7,
+   "counts": {
+    "killed": 151,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 62,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 62,
+    "shown": 60,
+    "items": [
+     {
+      "id": 12,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -61,7 +61,7 @@\n-PICKABLE = \"pickable\"        # already in the queue; blocking_priority_override sorts it first\n+PICKABLE = \"XXpickableXX\"        # already in the queue; blocking_priority_override sorts it first"
+     },
+     {
+      "id": 14,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -62,7 +62,7 @@\n-CHAINED = \"chained\"          # parked -- a human owns it; never auto-undone\n+CHAINED = \"XXchainedXX\"          # parked -- a human owns it; never auto-undone"
+     },
+     {
+      "id": 16,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -63,7 +63,7 @@\n-PROMOTED = \"promoted\"        # Sigma's own unruled proposal, and real work waits on it\n+PROMOTED = \"XXpromotedXX\"        # Sigma's own unruled proposal, and real work waits on it"
+     },
+     {
+      "id": 17,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -63,7 +63,7 @@\n-PROMOTED = \"promoted\"        # Sigma's own unruled proposal, and real work waits on it\n+PROMOTED = None        # Sigma's own unruled proposal, and real work waits on it"
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -64,7 +64,7 @@\n-NEEDS_HUMAN = \"needs_human\"  # a HUMAN filed the proposal; promoting would override their decision\n+NEEDS_HUMAN = \"XXneeds_humanXX\"  # a HUMAN filed the proposal; promoting would override their decision"
+     },
+     {
+      "id": 19,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -64,7 +64,7 @@\n-NEEDS_HUMAN = \"needs_human\"  # a HUMAN filed the proposal; promoting would override their decision\n+NEEDS_HUMAN = None  # a HUMAN filed the proposal; promoting would override their decision"
+     },
+     {
+      "id": 20,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -65,7 +65,7 @@\n-ROUTED = \"routed\"            # someone else's; grant membership and address it to them\n+ROUTED = \"XXroutedXX\"            # someone else's; grant membership and address it to them"
+     },
+     {
+      "id": 21,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -65,7 +65,7 @@\n-ROUTED = \"routed\"            # someone else's; grant membership and address it to them\n+ROUTED = None            # someone else's; grant membership and address it to them"
+     },
+     {
+      "id": 22,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -66,7 +66,7 @@\n-UNMANAGED = \"unmanaged\"      # not in Sigma's world at all; surface, never adopt\n+UNMANAGED = \"XXunmanagedXX\"      # not in Sigma's world at all; surface, never adopt"
+     },
+     {
+      "id": 23,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -66,7 +66,7 @@\n-UNMANAGED = \"unmanaged\"      # not in Sigma's world at all; surface, never adopt\n+UNMANAGED = None      # not in Sigma's world at all; surface, never adopt"
+     },
+     {
+      "id": 24,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -67,7 +67,7 @@\n-STALE = \"stale\"              # closed -- not a blocker\n+STALE = \"XXstaleXX\"              # closed -- not a blocker"
+     },
+     {
+      "id": 25,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -67,7 +67,7 @@\n-STALE = \"stale\"              # closed -- not a blocker\n+STALE = None              # closed -- not a blocker"
+     },
+     {
+      "id": 49,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -170,7 +170,7 @@\n-                           \"--json\", \"labels,assignees,state,stateReason\"])\n+                           \"XX--jsonXX\", \"labels,assignees,state,stateReason\"])"
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -170,7 +170,7 @@\n-                           \"--json\", \"labels,assignees,state,stateReason\"])\n+                           \"--json\", \"XXlabels,assignees,state,stateReasonXX\"])"
+     },
+     {
+      "id": 52,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -171,7 +171,7 @@\n-        data = json.loads(raw or \"{}\")\n+        data = json.loads(raw or \"XX{}XX\")"
+     },
+     {
+      "id": 58,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -172,7 +172,7 @@\n-        if not isinstance(data, dict) or \"state\" not in data:\n+        if not isinstance(data, dict) and \"state\" not in data:"
+     },
+     {
+      "id": 61,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -174,7 +174,7 @@\n-        return {\"labels\": {(l.get(\"name\") or \"\") for l in (data.get(\"labels\") or [])},\n+        return {\"labels\": {(l.get(\"name\") or \"XXXX\") for l in (data.get(\"labels\") or [])},"
+     },
+     {
+      "id": 67,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -175,7 +175,7 @@\n-                \"assignees\": [(a.get(\"login\") or \"\") for a in (data.get(\"assignees\") or [])],\n+                \"assignees\": [(a.get(\"login\") or \"XXXX\") for a in (data.get(\"assignees\") or [])],"
+     },
+     {
+      "id": 73,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -176,7 +176,7 @@\n-                \"closed\": blocker_scan.closed_state(str(data.get(\"state\") or \"\").upper(),\n+                \"closed\": blocker_scan.closed_state(str(data.get(\"state\") or \"XXXX\").upper(),"
+     },
+     {
+      "id": 75,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -177,7 +177,7 @@\n-                                                    data.get(\"stateReason\") or \"\")}\n+                                                    data.get(\"XXstateReasonXX\") or \"\")}"
+     },
+     {
+      "id": 77,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -177,7 +177,7 @@\n-                                                    data.get(\"stateReason\") or \"\")}\n+                                                    data.get(\"stateReason\") and \"\")}"
+     },
+     {
+      "id": 88,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -196,7 +196,7 @@\n-        out[\"results\"] = [{\"ref\": str(r), \"verdict\": UNMANAGED, \"acted\": False,\n+        out[\"results\"] = [{\"XXrefXX\": str(r), \"verdict\": UNMANAGED, \"acted\": False,"
+     },
+     {
+      "id": 90,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -196,7 +196,7 @@\n-        out[\"results\"] = [{\"ref\": str(r), \"verdict\": UNMANAGED, \"acted\": False,\n+        out[\"results\"] = [{\"ref\": str(r), \"verdict\": UNMANAGED, \"XXactedXX\": False,"
+     },
+     {
+      "id": 91,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -196,7 +196,7 @@\n-        out[\"results\"] = [{\"ref\": str(r), \"verdict\": UNMANAGED, \"acted\": False,\n+        out[\"results\"] = [{\"ref\": str(r), \"verdict\": UNMANAGED, \"acted\": True,"
+     },
+     {
+      "id": 93,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -197,7 +197,7 @@\n-                           \"detail\": \"blocker resolution needs github discovery mode\"}\n+                           \"detail\": \"XXblocker resolution needs github discovery modeXX\"}"
+     },
+     {
+      "id": 101,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -207,7 +207,7 @@\n-            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"acted\": False,\n+            out[\"results\"].append({\"XXrefXX\": r, \"verdict\": UNMANAGED, \"acted\": False,"
+     },
+     {
+      "id": 102,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -207,7 +207,7 @@\n-            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"acted\": False,\n+            out[\"results\"].append({\"ref\": r, \"XXverdictXX\": UNMANAGED, \"acted\": False,"
+     },
+     {
+      "id": 103,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -207,7 +207,7 @@\n-            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"acted\": False,\n+            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"XXactedXX\": False,"
+     },
+     {
+      "id": 104,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -207,7 +207,7 @@\n-            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"acted\": False,\n+            out[\"results\"].append({\"ref\": r, \"verdict\": UNMANAGED, \"acted\": True,"
+     },
+     {
+      "id": 106,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -208,7 +208,7 @@\n-                                   \"detail\": \"could not read #%s \u2014 treat it as unresolved\" % r})\n+                                   \"detail\": \"XXcould not read #%s \u2014 treat it as unresolvedXX\" % r})"
+     },
+     {
+      "id": 109,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -210,7 +210,7 @@\n-            continue\n+            break"
+     },
+     {
+      "id": 123,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -238,7 +238,7 @@\n-            return (\"#%s is itself blocked by something else \u2014 the sweep resumes it when that \"\n+            return (\"XX#%s is itself blocked by something else \u2014 the sweep resumes it when that XX\""
+     },
+     {
+      "id": 124,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -239,7 +239,7 @@\n-                    \"closes, and this goal follows\" % ref), False\n+                    \"XXcloses, and this goal followsXX\" % ref), False"
+     },
+     {
+      "id": 126,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -239,7 +239,7 @@\n-                    \"closes, and this goal follows\" % ref), False\n+                    \"closes, and this goal follows\" % ref), True"
+     },
+     {
+      "id": 129,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -241,7 +241,7 @@\n-            return \"#%s is being worked right now\" % ref, False\n+            return \"XX#%s is being worked right nowXX\" % ref, False"
+     },
+     {
+      "id": 131,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -241,7 +241,7 @@\n-            return \"#%s is being worked right now\" % ref, False\n+            return \"#%s is being worked right now\" % ref, True"
+     },
+     {
+      "id": 132,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -242,7 +242,7 @@\n-        return \"#%s already carries %s \u2014 the loop will pick it\" % (ref, goal_label), False\n+        return \"XX#%s already carries %s \u2014 the loop will pick itXX\" % (ref, goal_label), False"
+     },
+     {
+      "id": 134,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -242,7 +242,7 @@\n-        return \"#%s already carries %s \u2014 the loop will pick it\" % (ref, goal_label), False\n+        return \"#%s already carries %s \u2014 the loop will pick it\" % (ref, goal_label), True"
+     },
+     {
+      "id": 136,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -244,7 +244,7 @@\n-        return \"#%s is closed \u2014 not a blocker\" % ref, False\n+        return \"XX#%s is closed \u2014 not a blockerXX\" % ref, False"
+     },
+     {
+      "id": 138,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -244,7 +244,7 @@\n-        return \"#%s is closed \u2014 not a blocker\" % ref, False\n+        return \"#%s is closed \u2014 not a blocker\" % ref, True"
+     },
+     {
+      "id": 140,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -246,7 +246,7 @@\n-        return (\"#%s is parked \u2014 a human owns that decision, so this chain needs one too. \"\n+        return (\"XX#%s is parked \u2014 a human owns that decision, so this chain needs one too. XX\""
+     },
+     {
+      "id": 141,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -247,7 +247,7 @@\n-                \"Run /agrim-unpark on #%s.\" % (ref, ref)), False\n+                \"XXRun /agrim-unpark on #%s.XX\" % (ref, ref)), False"
+     },
+     {
+      "id": 145,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -249,7 +249,7 @@\n-        return (\"#%s is awaiting approval and a HUMAN filed it \u2014 promoting it would override a \"\n+        return (\"XX#%s is awaiting approval and a HUMAN filed it \u2014 promoting it would override a XX\""
+     },
+     {
+      "id": 146,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -250,7 +250,7 @@\n-                \"real decision. Run /agrim-promote on #%s.\" % (ref, ref)), False\n+                \"XXreal decision. Run /agrim-promote on #%s.XX\" % (ref, ref)), False"
+     },
+     {
+      "id": 150,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -252,7 +252,7 @@\n-        return (\"#%s carries no Sigma label and nobody is assigned \u2014 it is outside the loop's \"\n+        return (\"XX#%s carries no Sigma label and nobody is assigned \u2014 it is outside the loop's XX\""
+     },
+     {
+      "id": 151,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -253,7 +253,7 @@\n-                \"world, so it will not be picked up on its own\" % ref), False\n+                \"XXworld, so it will not be picked up on its ownXX\" % ref), False"
+     },
+     {
+      "id": 153,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -253,7 +253,7 @@\n-                \"world, so it will not be picked up on its own\" % ref), False\n+                \"world, so it will not be picked up on its own\" % ref), True"
+     },
+     {
+      "id": 161,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -259,7 +259,7 @@\n-        return (\"would grant %s to #%s so it can be picked\" % (goal_label, ref)), False\n+        return (\"XXwould grant %s to #%s so it can be pickedXX\" % (goal_label, ref)), False"
+     },
+     {
+      "id": 163,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -259,7 +259,7 @@\n-        return (\"would grant %s to #%s so it can be picked\" % (goal_label, ref)), False\n+        return (\"would grant %s to #%s so it can be picked\" % (goal_label, ref)), True"
+     },
+     {
+      "id": 165,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -264,7 +264,7 @@\n-            return \"could not make #%s pickable: %s\" % (ref, exc), False\n+            return \"XXcould not make #%s pickable: %sXX\" % (ref, exc), False"
+     },
+     {
+      "id": 168,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -266,7 +266,7 @@\n-            source._set_board_status(ref, source.col[\"ready\"])\n+            source._set_board_status(ref, source.col[\"XXreadyXX\"])"
+     },
+     {
+      "id": 169,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -269,7 +269,7 @@\n-    _comment(source, ref, \"Unblocking #%s: this issue is what it is waiting on, so it now carries \"\n+    _comment(source, ref, \"XXUnblocking #%s: this issue is what it is waiting on, so it now carries XX\""
+     },
+     {
+      "id": 170,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -270,7 +270,7 @@\n-                          \"`%s` and the loop can pick it up.\" % (goal, goal_label))\n+                          \"XX`%s` and the loop can pick it up.XX\" % (goal, goal_label))"
+     },
+     {
+      "id": 176,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -275,7 +275,7 @@\n-                % (ref, \", \".join(\"@\" + a for a in others) or \"another owner\",\n+                % (ref, \"XX, XX\".join(\"@\" + a for a in others) or \"another owner\","
+     },
+     {
+      "id": 179,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -275,7 +275,7 @@\n-                % (ref, \", \".join(\"@\" + a for a in others) or \"another owner\",\n+                % (ref, \", \".join(\"@\" + a for a in others) or \"XXanother ownerXX\","
+     },
+     {
+      "id": 182,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -277,7 +277,7 @@\n-    return \"#%s was Sigma's own unapproved follow-up \u2014 promoted, real work waits on it\" % ref, True\n+    return \"XX#%s was Sigma's own unapproved follow-up \u2014 promoted, real work waits on itXX\" % ref, True"
+     },
+     {
+      "id": 187,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -298,7 +298,7 @@\n-                           why=\"blocks goal #%s \u2014 made pickable so it can be worked\" % goal)\n+                           why=\"XXblocks goal #%s \u2014 made pickable so it can be workedXX\" % goal)"
+     },
+     {
+      "id": 195,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -313,7 +313,7 @@\n-        lines.append(\"  [%s] #%s: %s\" % (r[\"verdict\"], r[\"ref\"], r[\"detail\"]))\n+        lines.append(\"XX  [%s] #%s: %sXX\" % (r[\"verdict\"], r[\"ref\"], r[\"detail\"]))"
+     },
+     {
+      "id": 201,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -315,7 +315,7 @@\n-        lines.append(\"  no blockers named\")\n+        lines.append(\"XX  no blockers namedXX\")"
+     },
+     {
+      "id": 202,
+      "diff": "--- skills/agrim-loop/scripts/blockers.py\n+++ skills/agrim-loop/scripts/blockers.py\n@@ -316,7 +316,7 @@\n-    return \"\\n\".join(lines)\n+    return \"XX\\nXX\".join(lines)"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.7089,
+    0.7089
+   ]
+  },
+  "skills/agrim-loop/scripts/channel_notify.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6718,
+   "killed": 88,
+   "survived": 43,
+   "tests_used": [
+    "tests/test_channel_notify.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.67 < 0.80 -- 43 mutant(s) survived",
+   "seconds": 67.7,
+   "counts": {
+    "killed": 88,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 43,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 43,
+    "shown": 43,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -43,7 +43,7 @@\n-_HERE = pathlib.Path(__file__).resolve().parent\n+_HERE = None"
+     },
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -47,7 +47,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE * f\"{name}.py\")"
+     },
+     {
+      "id": 3,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -47,7 +47,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE / f\"XX{name}.pyXX\")"
+     },
+     {
+      "id": 4,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -47,7 +47,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = None"
+     },
+     {
+      "id": 5,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -48,7 +48,7 @@\n-    m = importlib.util.module_from_spec(spec)\n+    m = None"
+     },
+     {
+      "id": 6,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -53,7 +53,7 @@\n-ledger = _load(\"ledger\")\n+ledger = _load(\"XXledgerXX\")"
+     },
+     {
+      "id": 8,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -54,7 +54,7 @@\n-autowatch = _load(\"autowatch\")\n+autowatch = _load(\"XXautowatchXX\")"
+     },
+     {
+      "id": 10,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -56,7 +56,7 @@\n-CURSOR = \"channel-notify-cursor.json\"\n+CURSOR = \"XXchannel-notify-cursor.jsonXX\""
+     },
+     {
+      "id": 13,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -60,7 +60,7 @@\n-    return pathlib.Path(sdlc_dir) / \"state\" / CURSOR\n+    return pathlib.Path(sdlc_dir) / \"XXstateXX\" / CURSOR"
+     },
+     {
+      "id": 27,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -89,7 +89,7 @@\n-                    notified[cid] = {\"hop\": int(value.get(\"hop\") or 0),\n+                    notified[cid] = {\"hop\": int(value.get(\"XXhopXX\") or 0),"
+     },
+     {
+      "id": 28,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -89,7 +89,7 @@\n-                    notified[cid] = {\"hop\": int(value.get(\"hop\") or 0),\n+                    notified[cid] = {\"hop\": int(value.get(\"hop\") or 1),"
+     },
+     {
+      "id": 29,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -89,7 +89,7 @@\n-                    notified[cid] = {\"hop\": int(value.get(\"hop\") or 0),\n+                    notified[cid] = {\"hop\": int(value.get(\"hop\") and 0),"
+     },
+     {
+      "id": 38,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -100,7 +100,7 @@\n-    path.parent.mkdir(parents=True, exist_ok=True)\n+    path.parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 40,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -101,7 +101,7 @@\n-    path.write_text(json.dumps(cursor, sort_keys=True), encoding=\"utf-8\")\n+    path.write_text(json.dumps(cursor, sort_keys=False), encoding=\"utf-8\")"
+     },
+     {
+      "id": 44,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -119,7 +119,7 @@\n-        print(f\"channel_notify: POST failed (non-fatal): {exc}\", file=sys.stderr)\n+        print(f\"XXchannel_notify: POST failed (non-fatal): {exc}XX\", file=sys.stderr)"
+     },
+     {
+      "id": 49,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -132,7 +132,7 @@\n-        if parsed.scheme not in {\"http\", \"https\"}:\n+        if parsed.scheme not in {\"http\", \"XXhttpsXX\"}:"
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -134,7 +134,7 @@\n-        if settings.get(\"allow_remote_webhook\") is True:\n+        if settings.get(\"XXallow_remote_webhookXX\") is True:"
+     },
+     {
+      "id": 51,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -134,7 +134,7 @@\n-        if settings.get(\"allow_remote_webhook\") is True:\n+        if settings.get(\"allow_remote_webhook\") is not True:"
+     },
+     {
+      "id": 52,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -134,7 +134,7 @@\n-        if settings.get(\"allow_remote_webhook\") is True:\n+        if settings.get(\"allow_remote_webhook\") is False:"
+     },
+     {
+      "id": 55,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -136,7 +136,7 @@\n-        return parsed.hostname in {\"127.0.0.1\", \"::1\", \"localhost\"}\n+        return parsed.hostname in {\"127.0.0.1\", \"XX::1XX\", \"localhost\"}"
+     },
+     {
+      "id": 56,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -136,7 +136,7 @@\n-        return parsed.hostname in {\"127.0.0.1\", \"::1\", \"localhost\"}\n+        return parsed.hostname in {\"127.0.0.1\", \"::1\", \"XXlocalhostXX\"}"
+     },
+     {
+      "id": 58,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -154,7 +154,7 @@\n-    return sum(1 for e in entries\n+    return sum(2 for e in entries"
+     },
+     {
+      "id": 66,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -155,7 +155,7 @@\n-               if e.get(\"kind\") == \"note\" and e.get(\"actor\") == me and e.get(\"ref\") == ref)\n+               if e.get(\"kind\") == \"note\" or e.get(\"actor\") == me and e.get(\"ref\") == ref)"
+     },
+     {
+      "id": 80,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -173,7 +173,7 @@\n-    hop = max(int(candidate.get(\"autowatch_hop\") or 0),\n+    hop = max(int(candidate.get(\"XXautowatch_hopXX\") or 0),"
+     },
+     {
+      "id": 81,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -173,7 +173,7 @@\n-    hop = max(int(candidate.get(\"autowatch_hop\") or 0),\n+    hop = max(int(candidate.get(\"autowatch_hop\") or 1),"
+     },
+     {
+      "id": 96,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -187,7 +187,7 @@\n-    target = str(candidate.get(\"issue\") or candidate.get(\"goal\"))\n+    target = str(candidate.get(\"XXissueXX\") or candidate.get(\"goal\"))"
+     },
+     {
+      "id": 108,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -194,7 +194,7 @@\n-               \"id\": cid}\n+               \"XXidXX\": cid}"
+     },
+     {
+      "id": 111,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -196,7 +196,7 @@\n-        return \"push failed (non-fatal) \u2014 will retry next tick\"\n+        return \"XXpush failed (non-fatal) \u2014 will retry next tickXX\""
+     },
+     {
+      "id": 112,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -197,7 +197,7 @@\n-    notified[cid] = {\"hop\": hop, \"attempts\": attempts}\n+    notified[cid] = {\"XXhopXX\": hop, \"attempts\": attempts}"
+     },
+     {
+      "id": 115,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -199,7 +199,7 @@\n-    return f\"pushed channel notification for {target} ({candidate.get('kind')})\"\n+    return f\"pushed channel notification for {target} ({candidate.get('XXkindXX')})\""
+     },
+     {
+      "id": 116,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -199,7 +199,7 @@\n-    return f\"pushed channel notification for {target} ({candidate.get('kind')})\"\n+    return f\"XXpushed channel notification for {target} ({candidate.get('kind')})XX\""
+     },
+     {
+      "id": 117,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -202,7 +202,7 @@\n-USAGE = \"usage: channel_notify.py [sdlc_dir]\"\n+USAGE = \"XXusage: channel_notify.py [sdlc_dir]XX\""
+     },
+     {
+      "id": 118,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -202,7 +202,7 @@\n-USAGE = \"usage: channel_notify.py [sdlc_dir]\"\n+USAGE = None"
+     },
+     {
+      "id": 119,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -206,7 +206,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[2:] in ([\"-h\"], [\"--help\"]):"
+     },
+     {
+      "id": 121,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -206,7 +206,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"XX-hXX\"], [\"--help\"]):"
+     },
+     {
+      "id": 122,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -206,7 +206,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"-h\"], [\"XX--helpXX\"]):"
+     },
+     {
+      "id": 124,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -209,7 +209,7 @@\n-    sdlc_dir = argv[1] if len(argv) > 1 else \".sdlc\"\n+    sdlc_dir = argv[1] if len(argv) >= 1 else \".sdlc\""
+     },
+     {
+      "id": 125,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -209,7 +209,7 @@\n-    sdlc_dir = argv[1] if len(argv) > 1 else \".sdlc\"\n+    sdlc_dir = argv[1] if len(argv) > 2 else \".sdlc\""
+     },
+     {
+      "id": 126,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -209,7 +209,7 @@\n-    sdlc_dir = argv[1] if len(argv) > 1 else \".sdlc\"\n+    sdlc_dir = argv[1] if len(argv) > 1 else \"XX.sdlcXX\""
+     },
+     {
+      "id": 127,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -209,7 +209,7 @@\n-    sdlc_dir = argv[1] if len(argv) > 1 else \".sdlc\"\n+    sdlc_dir = None"
+     },
+     {
+      "id": 128,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -213,7 +213,7 @@\n-        print(f\"channel_notify: tick failed (non-fatal): {exc}\", file=sys.stderr)\n+        print(f\"XXchannel_notify: tick failed (non-fatal): {exc}XX\", file=sys.stderr)"
+     },
+     {
+      "id": 130,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -218,6 +218,6 @@\n-if __name__ == \"__main__\":\n+if __name__ != \"__main__\":"
+     },
+     {
+      "id": 131,
+      "diff": "--- skills/agrim-loop/scripts/channel_notify.py\n+++ skills/agrim-loop/scripts/channel_notify.py\n@@ -218,6 +218,6 @@\n-if __name__ == \"__main__\":\n+if __name__ == \"XX__main__XX\":"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6718,
+    0.6718
+   ]
+  },
+  "skills/agrim-loop/scripts/feature_rebase.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_feature_rebase.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 828.6805326670001s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/gh_session.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6,
+   "killed": 3,
+   "survived": 2,
+   "tests_used": [
+    "tests/test_gh_session.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.60 < 0.80 -- 2 mutant(s) survived",
+   "seconds": 1.8,
+   "counts": {
+    "killed": 3,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 2,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 2,
+    "shown": 2,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-loop/scripts/gh_session.py\n+++ skills/agrim-loop/scripts/gh_session.py\n@@ -59,7 +59,7 @@\n-    \"a Claude Code Remote session's proxy is blocking this gh call, independent of GH_TOKEN \u2014 this \"\n+    \"XXa Claude Code Remote session's proxy is blocking this gh call, independent of GH_TOKEN \u2014 this XX\""
+     },
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/gh_session.py\n+++ skills/agrim-loop/scripts/gh_session.py\n@@ -72,7 +72,7 @@\n-        haystack = str(text or \"\").lower()\n+        haystack = str(text or \"XXXX\").lower()"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6,
+    0.6
+   ]
+  },
+  "skills/agrim-loop/scripts/ledger.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_ledger.py",
+    "tests/test_ledger_addressing.py",
+    "tests/test_ledger_contract.py",
+    "tests/test_ledger_docs.py",
+    "tests/test_ledger_journal_switch.py",
+    "tests/test_ledger_prune.py",
+    "tests/test_ledger_publish.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 883.6677308340004s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/loop.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-run-budget",
+   "seconds": 0.0,
+   "reason": "the overall wall-clock cap was reached before this module was reached"
+  },
+  "skills/agrim-loop/scripts/reconcile.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_reconcile.py",
+    "tests/test_reconcile_tick.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 892.3945091670003s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/run_with_timeout.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6667,
+   "killed": 22,
+   "survived": 11,
+   "tests_used": [
+    "tests/test_run_with_timeout.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.67 < 0.80 -- 11 mutant(s) survived",
+   "seconds": 85.8,
+   "counts": {
+    "killed": 22,
+    "timeout": 0,
+    "suspicious": 2,
+    "survived": 11,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 11,
+    "shown": 11,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -42,7 +42,7 @@\n-CREATE_NEW_PROCESS_GROUP = getattr(subprocess, \"CREATE_NEW_PROCESS_GROUP\", 0x00000200)\n+CREATE_NEW_PROCESS_GROUP = getattr(subprocess, \"XXCREATE_NEW_PROCESS_GROUPXX\", 0x00000200)"
+     },
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -42,7 +42,7 @@\n-CREATE_NEW_PROCESS_GROUP = getattr(subprocess, \"CREATE_NEW_PROCESS_GROUP\", 0x00000200)\n+CREATE_NEW_PROCESS_GROUP = getattr(subprocess, \"CREATE_NEW_PROCESS_GROUP\", 513)"
+     },
+     {
+      "id": 3,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -42,7 +42,7 @@\n-CREATE_NEW_PROCESS_GROUP = getattr(subprocess, \"CREATE_NEW_PROCESS_GROUP\", 0x00000200)\n+CREATE_NEW_PROCESS_GROUP = None"
+     },
+     {
+      "id": 4,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -45,7 +45,7 @@\n-USAGE = \"usage: run_with_timeout.py <seconds> <script> [args...]\"\n+USAGE = \"XXusage: run_with_timeout.py <seconds> <script> [args...]XX\""
+     },
+     {
+      "id": 5,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -45,7 +45,7 @@\n-USAGE = \"usage: run_with_timeout.py <seconds> <script> [args...]\"\n+USAGE = None"
+     },
+     {
+      "id": 6,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -50,7 +50,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[2:] in ([\"-h\"], [\"--help\"]):"
+     },
+     {
+      "id": 8,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -50,7 +50,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"XX-hXX\"], [\"--help\"]):"
+     },
+     {
+      "id": 9,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -50,7 +50,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"-h\"], [\"XX--helpXX\"]):"
+     },
+     {
+      "id": 30,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -116,7 +116,7 @@\n-                            capture_output=True)\n+                            capture_output=False)"
+     },
+     {
+      "id": 31,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -123,7 +123,7 @@\n-        print(f\"run_with_timeout: {' '.join(cmd)!r} timed out after {seconds:g}s (killed)\",\n+        print(f\"run_with_timeout: {'XX XX'.join(cmd)!r} timed out after {seconds:g}s (killed)\","
+     },
+     {
+      "id": 32,
+      "diff": "--- skills/agrim-loop/scripts/run_with_timeout.py\n+++ skills/agrim-loop/scripts/run_with_timeout.py\n@@ -123,7 +123,7 @@\n-        print(f\"run_with_timeout: {' '.join(cmd)!r} timed out after {seconds:g}s (killed)\",\n+        print(f\"XXrun_with_timeout: {' '.join(cmd)!r} timed out after {seconds:g}s (killed)XX\","
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6286,
+    0.6857
+   ]
+  },
+  "skills/agrim-loop/scripts/scrub.py": {
+   "verdict": "verified",
+   "kill_rate": 0.8026,
+   "killed": 61,
+   "survived": 15,
+   "tests_used": [
+    "tests/test_scrub.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.80 >= 0.80",
+   "seconds": 17.7,
+   "counts": {
+    "killed": 61,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 15,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 15,
+    "shown": 15,
+    "items": [
+     {
+      "id": 21,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -52,7 +52,7 @@\n-    (\"slack-webhook\", re.compile(r\"hooks\\.slack\\.com/[s]ervices/(T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{16,})\")),\n+    (\"XXslack-webhookXX\", re.compile(r\"hooks\\.slack\\.com/[s]ervices/(T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{16,})\")),"
+     },
+     {
+      "id": 23,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -53,7 +53,7 @@\n-    (\"url-password\", re.compile(r\"(?i)\\b[a-z][a-z0-9+.-]{0,31}://[^\\s/:@'\\\"]*:([^\\s/'\\\"]{6,})@\"\n+    (\"XXurl-passwordXX\", re.compile(r\"(?i)\\b[a-z][a-z0-9+.-]{0,31}://[^\\s/:@'\\\"]*:([^\\s/'\\\"]{6,})@\""
+     },
+     {
+      "id": 25,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -55,7 +55,7 @@\n-    (\"credential-assignment\", re.compile(\n+    (\"XXcredential-assignmentXX\", re.compile("
+     },
+     {
+      "id": 33,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -69,7 +69,7 @@\n-    return lambda m: m.group(0)[:m.start(1) - m.start(0)] + label + m.group(0)[m.end(1) - m.start(0):]\n+    return lambda m: m.group(0)[:m.start(1) + m.start(0)] + label + m.group(0)[m.end(1) - m.start(0):]"
+     },
+     {
+      "id": 42,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -76,7 +76,7 @@\n-    (\"private-key\", re.compile(r\"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----.*?-----END[ A-Z]*PRIVATE KEY(?: BLOCK)?-----\", re.DOTALL),\n+    (\"XXprivate-keyXX\", re.compile(r\"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----.*?-----END[ A-Z]*PRIVATE KEY(?: BLOCK)?-----\", re.DOTALL),"
+     },
+     {
+      "id": 45,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -105,7 +105,7 @@\n-    (\"private-key\", re.compile(r\"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----\"\n+    (\"XXprivate-keyXX\", re.compile(r\"-----BEGIN[ A-Z]*PRIVATE KEY(?: BLOCK)?-----\""
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -110,7 +110,7 @@\n-    (\"aws-key\", re.compile(r\"(?:AKIA|ASIA)[0-9A-Z]{16}\"), \"[REDACTED:aws-key]\"),\n+    (\"aws-key\", re.compile(r\"(?:AKIA|ASIA)[0-9A-Z]{16}\"), \"XX[REDACTED:aws-key]XX\"),"
+     },
+     {
+      "id": 51,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -111,7 +111,7 @@\n-    (\"gh-token\", re.compile(r\"gh[pousr]_[0-9A-Za-z]{20,}\"), \"[REDACTED:gh-token]\"),\n+    (\"XXgh-tokenXX\", re.compile(r\"gh[pousr]_[0-9A-Za-z]{20,}\"), \"[REDACTED:gh-token]\"),"
+     },
+     {
+      "id": 54,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -112,7 +112,7 @@\n-    (\"jwt\", re.compile(r\"eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\"), \"[REDACTED:jwt]\"),\n+    (\"XXjwtXX\", re.compile(r\"eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\"), \"[REDACTED:jwt]\"),"
+     },
+     {
+      "id": 56,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -112,7 +112,7 @@\n-    (\"jwt\", re.compile(r\"eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\"), \"[REDACTED:jwt]\"),\n+    (\"jwt\", re.compile(r\"eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\"), \"XX[REDACTED:jwt]XX\"),"
+     },
+     {
+      "id": 57,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -113,7 +113,7 @@\n-    (\"auth\", re.compile(r\"(?i)\\b(?:bearer|basic|digest)\\s+[A-Za-z0-9+/=._\\-]{8,}\"), \"[REDACTED:auth]\"),\n+    (\"XXauthXX\", re.compile(r\"(?i)\\b(?:bearer|basic|digest)\\s+[A-Za-z0-9+/=._\\-]{8,}\"), \"[REDACTED:auth]\"),"
+     },
+     {
+      "id": 59,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -113,7 +113,7 @@\n-    (\"auth\", re.compile(r\"(?i)\\b(?:bearer|basic|digest)\\s+[A-Za-z0-9+/=._\\-]{8,}\"), \"[REDACTED:auth]\"),\n+    (\"auth\", re.compile(r\"(?i)\\b(?:bearer|basic|digest)\\s+[A-Za-z0-9+/=._\\-]{8,}\"), \"XX[REDACTED:auth]XX\"),"
+     },
+     {
+      "id": 61,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -116,7 +116,7 @@\n-    (\"credential-assignment\", re.compile(r\"(?i)\\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|\"\n+    (\"XXcredential-assignmentXX\", re.compile(r\"(?i)\\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|\""
+     },
+     {
+      "id": 63,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -119,7 +119,7 @@\n-     r\"\\1: [REDACTED]\"),\n+     r\"XX\\1: [REDACTED]XX\"),"
+     },
+     {
+      "id": 72,
+      "diff": "--- skills/agrim-loop/scripts/scrub.py\n+++ skills/agrim-loop/scripts/scrub.py\n@@ -145,7 +145,7 @@\n-                continue\n+                break"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.8026,
+    0.8026
+   ]
+  },
+  "skills/agrim-loop/scripts/slack_client.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6238,
+   "killed": 63,
+   "survived": 38,
+   "tests_used": [
+    "tests/test_slack_client.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.62 < 0.80 -- 38 mutant(s) survived",
+   "seconds": 27.1,
+   "counts": {
+    "killed": 63,
+    "timeout": 0,
+    "suspicious": 3,
+    "survived": 38,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 38,
+    "shown": 38,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -30,7 +30,7 @@\n-_HERE = pathlib.Path(__file__).resolve().parent\n+_HERE = None"
+     },
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -34,7 +34,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE * f\"{name}.py\")"
+     },
+     {
+      "id": 3,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -34,7 +34,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE / f\"XX{name}.pyXX\")"
+     },
+     {
+      "id": 4,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -34,7 +34,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = None"
+     },
+     {
+      "id": 5,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -35,7 +35,7 @@\n-    m = importlib.util.module_from_spec(spec)\n+    m = None"
+     },
+     {
+      "id": 6,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -40,7 +40,7 @@\n-scrub = _load(\"scrub\")\n+scrub = _load(\"XXscrubXX\")"
+     },
+     {
+      "id": 8,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -41,7 +41,7 @@\n-ledger = _load(\"ledger\")\n+ledger = _load(\"XXledgerXX\")"
+     },
+     {
+      "id": 10,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -42,7 +42,7 @@\n-legacy = _load(\"legacy\")    # #239: the token variable and the channel key under the previous name\n+legacy = _load(\"XXlegacyXX\")    # #239: the token variable and the channel key under the previous name"
+     },
+     {
+      "id": 12,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -44,7 +44,7 @@\n-DEFAULT_TOKEN_ENV = \"SIGMA_SLACK_BOT_TOKEN\"\n+DEFAULT_TOKEN_ENV = \"XXSIGMA_SLACK_BOT_TOKENXX\""
+     },
+     {
+      "id": 14,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -45,7 +45,7 @@\n-SLACK_POST_URL = \"https://slack.com/api/chat.postMessage\"\n+SLACK_POST_URL = \"XXhttps://slack.com/api/chat.postMessageXX\""
+     },
+     {
+      "id": 15,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -45,7 +45,7 @@\n-SLACK_POST_URL = \"https://slack.com/api/chat.postMessage\"\n+SLACK_POST_URL = None"
+     },
+     {
+      "id": 16,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -46,7 +46,7 @@\n-TIMEOUT_SECONDS = 10\n+TIMEOUT_SECONDS = 11"
+     },
+     {
+      "id": 17,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -46,7 +46,7 @@\n-TIMEOUT_SECONDS = 10\n+TIMEOUT_SECONDS = None"
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -47,7 +47,7 @@\n-STUB_PREVIEW_CHARS = 80\n+STUB_PREVIEW_CHARS = 81"
+     },
+     {
+      "id": 36,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -100,7 +100,7 @@\n-        print(\"slack_client: no channel_id given \u2014 nothing to post\", file=sys.stderr)\n+        print(\"XXslack_client: no channel_id given \u2014 nothing to postXX\", file=sys.stderr)"
+     },
+     {
+      "id": 38,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -102,7 +102,7 @@\n-    text = scrub.scrub(text) if text else (text or \"\")\n+    text = scrub.scrub(text) if text else (text or \"XXXX\")"
+     },
+     {
+      "id": 39,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -102,7 +102,7 @@\n-    text = scrub.scrub(text) if text else (text or \"\")\n+    text = scrub.scrub(text) if text else (text and \"\")"
+     },
+     {
+      "id": 46,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -106,7 +106,7 @@\n-        preview = text[:STUB_PREVIEW_CHARS]\n+        preview = None"
+     },
+     {
+      "id": 47,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -107,7 +107,7 @@\n-        ellipsis = \"...\" if len(text) > STUB_PREVIEW_CHARS else \"\"\n+        ellipsis = \"XX...XX\" if len(text) > STUB_PREVIEW_CHARS else \"\""
+     },
+     {
+      "id": 48,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -107,7 +107,7 @@\n-        ellipsis = \"...\" if len(text) > STUB_PREVIEW_CHARS else \"\"\n+        ellipsis = \"...\" if len(text) >= STUB_PREVIEW_CHARS else \"\""
+     },
+     {
+      "id": 49,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -107,7 +107,7 @@\n-        ellipsis = \"...\" if len(text) > STUB_PREVIEW_CHARS else \"\"\n+        ellipsis = \"...\" if len(text) > STUB_PREVIEW_CHARS else \"XXXX\""
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -107,7 +107,7 @@\n-        ellipsis = \"...\" if len(text) > STUB_PREVIEW_CHARS else \"\"\n+        ellipsis = None"
+     },
+     {
+      "id": 51,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -108,7 +108,7 @@\n-        print(\"slack_client: [stub] slack post to %s: %s%s\" % (channel_id, preview, ellipsis),\n+        print(\"XXslack_client: [stub] slack post to %s: %s%sXX\" % (channel_id, preview, ellipsis),"
+     },
+     {
+      "id": 56,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -115,7 +115,7 @@\n-        print(\"slack_client: POST failed (non-fatal): %s\" % exc, file=sys.stderr)\n+        print(\"XXslack_client: POST failed (non-fatal): %sXX\" % exc, file=sys.stderr)"
+     },
+     {
+      "id": 68,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -139,7 +139,7 @@\n-        return None, ('drift_watch.channels.%s is not set in config.json -- fill it in, or pass a '\n+        return None, ('XXdrift_watch.channels.%s is not set in config.json -- fill it in, or pass a XX'"
+     },
+     {
+      "id": 69,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -140,7 +140,7 @@\n-                       'literal channel id instead' % channel)\n+                       'XXliteral channel id insteadXX' % channel)"
+     },
+     {
+      "id": 72,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -143,7 +143,7 @@\n-    return None, ('%r is neither \"sigma\"/\"org\" nor a channel-id-shaped string '\n+    return None, ('XX%r is neither \"sigma\"/\"org\" nor a channel-id-shaped string XX'"
+     },
+     {
+      "id": 73,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -144,7 +144,7 @@\n-                   '(e.g. \"C0123456\")' % (channel,))\n+                   'XX(e.g. \"C0123456\")XX' % (channel,))"
+     },
+     {
+      "id": 75,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -147,7 +147,7 @@\n-USAGE = \"usage: slack_client.py post <sigma|org|channel-id> <text...>\"\n+USAGE = \"XXusage: slack_client.py post <sigma|org|channel-id> <text...>XX\""
+     },
+     {
+      "id": 77,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -170,7 +170,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[2:] in ([\"-h\"], [\"--help\"]):"
+     },
+     {
+      "id": 79,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -170,7 +170,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"XX-hXX\"], [\"--help\"]):"
+     },
+     {
+      "id": 80,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -170,7 +170,7 @@\n-    if argv[1:] in ([\"-h\"], [\"--help\"]):\n+    if argv[1:] in ([\"-h\"], [\"XX--helpXX\"]):"
+     },
+     {
+      "id": 93,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -180,7 +180,7 @@\n-        print(\"slack_client: could not read %s/config.json (%s) -- channel aliases \"\n+        print(\"XXslack_client: could not read %s/config.json (%s) -- channel aliases XX\""
+     },
+     {
+      "id": 94,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -181,7 +181,7 @@\n-              \"unavailable; a literal channel id still works\" % (DEFAULT_SDLC_DIR, exc),\n+              \"XXunavailable; a literal channel id still worksXX\" % (DEFAULT_SDLC_DIR, exc),"
+     },
+     {
+      "id": 96,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -183,7 +183,7 @@\n-        config = {}\n+        config = None"
+     },
+     {
+      "id": 99,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -186,7 +186,7 @@\n-        print(\"slack_client: %s\" % error, file=sys.stderr)\n+        print(\"XXslack_client: %sXX\" % error, file=sys.stderr)"
+     },
+     {
+      "id": 103,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -192,6 +192,6 @@\n-if __name__ == \"__main__\":\n+if __name__ != \"__main__\":"
+     },
+     {
+      "id": 104,
+      "diff": "--- skills/agrim-loop/scripts/slack_client.py\n+++ skills/agrim-loop/scripts/slack_client.py\n@@ -192,6 +192,6 @@\n-if __name__ == \"__main__\":\n+if __name__ == \"XX__main__XX\":"
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6058,
+    0.6346
+   ]
+  },
+  "skills/agrim-loop/scripts/slack_commands_listen.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_slack_commands_listen.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 867.619312958s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/sources.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_sources.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 312.5885546249997s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 338.1,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/state.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.7447,
+   "killed": 245,
+   "survived": 84,
+   "tests_used": [
+    "tests/test_state.py",
+    "tests/test_state_retention.py",
+    "tests/test_state_retention_branches.py",
+    "tests/test_state_retention_seams.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.74 < 0.80 -- 84 mutant(s) survived",
+   "seconds": 733.7,
+   "counts": {
+    "killed": 245,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 84,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 84,
+    "shown": 60,
+    "items": [
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -12,7 +12,7 @@\n-_spec = importlib.util.spec_from_file_location(\"frontmatter\", _HERE / \"frontmatter.py\")\n+_spec = importlib.util.spec_from_file_location(\"XXfrontmatterXX\", _HERE / \"frontmatter.py\")"
+     },
+     {
+      "id": 10,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -38,7 +38,7 @@\n-            f\"no config.json under {sdlc_dir} \u2014 this .sdlc directory was never initialized. \"\n+            f\"XXno config.json under {sdlc_dir} \u2014 this .sdlc directory was never initialized. XX\""
+     },
+     {
+      "id": 13,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -44,7 +44,7 @@\n-            f\"config.json under {sdlc_dir} does not contain a JSON object (is {type(parsed).__name__} instead). \"\n+            f\"XXconfig.json under {sdlc_dir} does not contain a JSON object (is {type(parsed).__name__} instead). XX\""
+     },
+     {
+      "id": 16,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -70,7 +70,7 @@\n-_MAX_RUN_TOKEN_CREDITS = 4096\n+_MAX_RUN_TOKEN_CREDITS = 4097"
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -72,8 +72,6 @@\n-\n-@contextlib.contextmanager"
+     },
+     {
+      "id": 34,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -197,7 +197,7 @@\n-    lock_path = pathlib.Path(sdlc_dir) / \"state\" / \"STATE.md.lock\"\n+    lock_path = pathlib.Path(sdlc_dir) / \"XXstateXX\" / \"STATE.md.lock\""
+     },
+     {
+      "id": 36,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -197,7 +197,7 @@\n-    lock_path = pathlib.Path(sdlc_dir) / \"state\" / \"STATE.md.lock\"\n+    lock_path = pathlib.Path(sdlc_dir) / \"state\" / \"XXSTATE.md.lockXX\""
+     },
+     {
+      "id": 38,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -199,7 +199,7 @@\n-        lock_path.parent.mkdir(parents=True, exist_ok=True)\n+        lock_path.parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 77,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -283,7 +283,7 @@\n-    return line_re.sub(lambda _: new, text) if line_re.search(text) else text.rstrip() + f\"\\n{new}\\n\"\n+    return line_re.sub(lambda _: new, text) if line_re.search(text) else text.rstrip() + f\"XX\\n{new}\\nXX\""
+     },
+     {
+      "id": 84,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -302,7 +302,7 @@\n-        text = _set_line(text, \"run_tokens\", 0)\n+        text = _set_line(text, \"XXrun_tokensXX\", 0)"
+     },
+     {
+      "id": 87,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -303,7 +303,7 @@\n-        text = _set_line(text, \"run_token_credits\", \"[]\")\n+        text = _set_line(text, \"XXrun_token_creditsXX\", \"[]\")"
+     },
+     {
+      "id": 88,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -303,7 +303,7 @@\n-        text = _set_line(text, \"run_token_credits\", \"[]\")\n+        text = _set_line(text, \"run_token_credits\", \"XX[]XX\")"
+     },
+     {
+      "id": 93,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -305,7 +305,7 @@\n-        text = _set_line(text, \"run_codex_token_credits\", \"{}\")\n+        text = _set_line(text, \"XXrun_codex_token_creditsXX\", \"{}\")"
+     },
+     {
+      "id": 94,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -305,7 +305,7 @@\n-        text = _set_line(text, \"run_codex_token_credits\", \"{}\")\n+        text = _set_line(text, \"run_codex_token_credits\", \"XX{}XX\")"
+     },
+     {
+      "id": 96,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -306,7 +306,7 @@\n-        return _set_line(text, \"run_phase_ends\", \"[]\")\n+        return _set_line(text, \"XXrun_phase_endsXX\", \"[]\")"
+     },
+     {
+      "id": 97,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -306,7 +306,7 @@\n-        return _set_line(text, \"run_phase_ends\", \"[]\")\n+        return _set_line(text, \"run_phase_ends\", \"XX[]XX\")"
+     },
+     {
+      "id": 104,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -327,7 +327,7 @@\n-    return hashlib.sha256(str(phase_attempt).encode(\"utf-8\")).hexdigest()[:24]\n+    return hashlib.sha256(str(phase_attempt).encode(\"utf-8\")).hexdigest()[:25]"
+     },
+     {
+      "id": 111,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -343,7 +343,7 @@\n-    if codex_amount is not None and codex_amount < 0:\n+    if codex_amount is not None and codex_amount <= 0:"
+     },
+     {
+      "id": 112,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -343,7 +343,7 @@\n-    if codex_amount is not None and codex_amount < 0:\n+    if codex_amount is not None and codex_amount < 1:"
+     },
+     {
+      "id": 120,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -349,7 +349,7 @@\n-        if run_start and float(started_at) < run_start:\n+        if run_start and float(started_at) <= run_start:"
+     },
+     {
+      "id": 125,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -352,7 +352,7 @@\n-        ends_match = re.search(r\"^run_phase_ends:\\s*(\\[.*\\])$\", text, re.MULTILINE)\n+        ends_match = re.search(r\"XX^run_phase_ends:\\s*(\\[.*\\])$XX\", text, re.MULTILINE)"
+     },
+     {
+      "id": 126,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -352,7 +352,7 @@\n-        ends_match = re.search(r\"^run_phase_ends:\\s*(\\[.*\\])$\", text, re.MULTILINE)\n+        ends_match = None"
+     },
+     {
+      "id": 127,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -353,7 +353,7 @@\n-        credit_match = re.search(r\"^run_token_credits:\\s*(\\[.*\\])$\", text, re.MULTILINE)\n+        credit_match = re.search(r\"XX^run_token_credits:\\s*(\\[.*\\])$XX\", text, re.MULTILINE)"
+     },
+     {
+      "id": 128,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -353,7 +353,7 @@\n-        credit_match = re.search(r\"^run_token_credits:\\s*(\\[.*\\])$\", text, re.MULTILINE)\n+        credit_match = None"
+     },
+     {
+      "id": 139,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -361,7 +361,7 @@\n-            if len(ends) >= _MAX_RUN_TOKEN_CREDITS:\n+            if len(ends) > _MAX_RUN_TOKEN_CREDITS:"
+     },
+     {
+      "id": 143,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -366,7 +366,7 @@\n-            text = _set_line(text, \"run_phase_ends\", json.dumps(ends, separators=(\",\", \":\")))\n+            text = _set_line(text, \"XXrun_phase_endsXX\", json.dumps(ends, separators=(\",\", \":\")))"
+     },
+     {
+      "id": 144,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -366,7 +366,7 @@\n-            text = _set_line(text, \"run_phase_ends\", json.dumps(ends, separators=(\",\", \":\")))\n+            text = _set_line(text, \"run_phase_ends\", json.dumps(ends, separators=(\"XX,XX\", \":\")))"
+     },
+     {
+      "id": 145,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -366,7 +366,7 @@\n-            text = _set_line(text, \"run_phase_ends\", json.dumps(ends, separators=(\",\", \":\")))\n+            text = _set_line(text, \"run_phase_ends\", json.dumps(ends, separators=(\",\", \"XX:XX\")))"
+     },
+     {
+      "id": 150,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -368,7 +368,7 @@\n-            if len(credits) >= _MAX_RUN_TOKEN_CREDITS:\n+            if len(credits) > _MAX_RUN_TOKEN_CREDITS:"
+     },
+     {
+      "id": 155,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -373,7 +373,7 @@\n-            text = _set_line(text, \"run_tokens\", _read_int(text, \"run_tokens\") + amount)\n+            text = _set_line(text, \"run_tokens\", _read_int(text, \"XXrun_tokensXX\") + amount)"
+     },
+     {
+      "id": 158,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -374,7 +374,7 @@\n-            text = _set_line(text, \"run_token_credits\", json.dumps(credits, separators=(\",\", \":\")))\n+            text = _set_line(text, \"XXrun_token_creditsXX\", json.dumps(credits, separators=(\",\", \":\")))"
+     },
+     {
+      "id": 159,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -374,7 +374,7 @@\n-            text = _set_line(text, \"run_token_credits\", json.dumps(credits, separators=(\",\", \":\")))\n+            text = _set_line(text, \"run_token_credits\", json.dumps(credits, separators=(\"XX,XX\", \":\")))"
+     },
+     {
+      "id": 160,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -374,7 +374,7 @@\n-            text = _set_line(text, \"run_token_credits\", json.dumps(credits, separators=(\",\", \":\")))\n+            text = _set_line(text, \"run_token_credits\", json.dumps(credits, separators=(\",\", \"XX:XX\")))"
+     },
+     {
+      "id": 163,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -375,7 +375,7 @@\n-        if codex_amount is not None and codex_amount > codex_credits.get(key, 0):\n+        if codex_amount is not None and codex_amount >= codex_credits.get(key, 0):"
+     },
+     {
+      "id": 164,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -375,7 +375,7 @@\n-        if codex_amount is not None and codex_amount > codex_credits.get(key, 0):\n+        if codex_amount is not None and codex_amount > codex_credits.get(key, 1):"
+     },
+     {
+      "id": 166,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -376,7 +376,7 @@\n-            if key not in codex_credits and len(codex_credits) >= _MAX_RUN_TOKEN_CREDITS:\n+            if key  in codex_credits and len(codex_credits) >= _MAX_RUN_TOKEN_CREDITS:"
+     },
+     {
+      "id": 167,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -376,7 +376,7 @@\n-            if key not in codex_credits and len(codex_credits) >= _MAX_RUN_TOKEN_CREDITS:\n+            if key not in codex_credits and len(codex_credits) > _MAX_RUN_TOKEN_CREDITS:"
+     },
+     {
+      "id": 169,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -379,7 +379,7 @@\n-            delta = codex_amount - codex_credits.get(key, 0)\n+            delta = codex_amount + codex_credits.get(key, 0)"
+     },
+     {
+      "id": 173,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -381,7 +381,7 @@\n-            outcome[1] = True\n+            outcome[2] = True"
+     },
+     {
+      "id": 174,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -381,7 +381,7 @@\n-            outcome[1] = True\n+            outcome[1] = False"
+     },
+     {
+      "id": 175,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -381,7 +381,7 @@\n-            outcome[1] = True\n+            outcome[1] = None"
+     },
+     {
+      "id": 177,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -383,7 +383,7 @@\n-                             _read_int(text, \"run_codex_raw_tokens\") + delta)\n+                             _read_int(text, \"XXrun_codex_raw_tokensXX\") + delta)"
+     },
+     {
+      "id": 181,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -385,7 +385,7 @@\n-                             json.dumps(codex_credits, separators=(\",\", \":\")))\n+                             json.dumps(codex_credits, separators=(\"XX,XX\", \":\")))"
+     },
+     {
+      "id": 215,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -520,7 +520,7 @@\n-    q.parent.mkdir(parents=True, exist_ok=True)\n+    q.parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 220,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -522,7 +522,7 @@\n-        fd = os.open(str(q), os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_APPEND, 0o644)\n+        fd = os.open(str(q), os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_APPEND, 421)"
+     },
+     {
+      "id": 235,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -568,7 +568,7 @@\n-    if any(c in text for c in (\"/\", \"\\\\\", \":\")) or \"..\" in text:\n+    if any(c in text for c in (\"/\", \"\\\\\", \":\")) or \"XX..XX\" in text:"
+     },
+     {
+      "id": 238,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -569,7 +569,7 @@\n-        return \"must not contain '/', '\\\\', ':', or '..' once reduced to a path component\"\n+        return \"XXmust not contain '/', '\\\\', ':', or '..' once reduced to a path componentXX\""
+     },
+     {
+      "id": 242,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -577,7 +577,7 @@\n-        raise ValueError(f\"unsafe goal {goal!r} for verify evidence: {reason}\")\n+        raise ValueError(f\"XXunsafe goal {goal!r} for verify evidence: {reason}XX\")"
+     },
+     {
+      "id": 244,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -578,7 +578,7 @@\n-    return pathlib.Path(sdlc_dir) / \"state\" / \"verify\" / f\"{stem}.json\"\n+    return pathlib.Path(sdlc_dir) / \"XXstateXX\" / \"verify\" / f\"{stem}.json\""
+     },
+     {
+      "id": 246,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -578,7 +578,7 @@\n-    return pathlib.Path(sdlc_dir) / \"state\" / \"verify\" / f\"{stem}.json\"\n+    return pathlib.Path(sdlc_dir) / \"state\" / \"XXverifyXX\" / f\"{stem}.json\""
+     },
+     {
+      "id": 253,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -634,7 +634,7 @@\n-    if pid <= 0:\n+    if pid <= 1:"
+     },
+     {
+      "id": 256,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -648,7 +648,7 @@\n-        raise ValueError(f\"unsafe run id {run_id!r} for run_stop marker: {reason}\")\n+        raise ValueError(f\"XXunsafe run id {run_id!r} for run_stop marker: {reason}XX\")"
+     },
+     {
+      "id": 274,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -915,7 +915,7 @@\n-    spec = importlib.util.spec_from_file_location(\"acceptance\", _HERE / \"acceptance.py\")\n+    spec = importlib.util.spec_from_file_location(\"XXacceptanceXX\", _HERE / \"acceptance.py\")"
+     },
+     {
+      "id": 279,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -988,7 +988,7 @@\n-    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"python3\")\n+    py = next((n for n in (\"XXpython3XX\", \"python\", \"py\") if shutil.which(n)), \"python3\")"
+     },
+     {
+      "id": 280,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -988,7 +988,7 @@\n-    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"python3\")\n+    py = next((n for n in (\"python3\", \"XXpythonXX\", \"py\") if shutil.which(n)), \"python3\")"
+     },
+     {
+      "id": 281,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -988,7 +988,7 @@\n-    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"python3\")\n+    py = next((n for n in (\"python3\", \"python\", \"XXpyXX\") if shutil.which(n)), \"python3\")"
+     },
+     {
+      "id": 282,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -988,7 +988,7 @@\n-    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"python3\")\n+    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"XXpython3XX\")"
+     },
+     {
+      "id": 283,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -988,7 +988,7 @@\n-    py = next((n for n in (\"python3\", \"python\", \"py\") if shutil.which(n)), \"python3\")\n+    py = None"
+     },
+     {
+      "id": 284,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -989,7 +989,7 @@\n-    return (f\"set one: {py} <installed-sigma>/skills/agrim-init/scripts/verify_detect.py \"\n+    return (f\"XXset one: {py} <installed-sigma>/skills/agrim-init/scripts/verify_detect.py XX\""
+     },
+     {
+      "id": 285,
+      "diff": "--- skills/agrim-loop/scripts/state.py\n+++ skills/agrim-loop/scripts/state.py\n@@ -1004,7 +1004,7 @@\n-    {\"control\": \"Verify evidence before `record done`\", \"function\": \"done_refusal\",\n+    {\"XXcontrolXX\": \"Verify evidence before `record done`\", \"function\": \"done_refusal\","
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.7447,
+    0.7447
+   ]
+  },
+  "skills/agrim-loop/scripts/supervise_daemon.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_supervise.py",
+    "tests/test_state.py",
+    "tests/test_windows_real.py",
+    "tests/test_b6_460.py",
+    "tests/test_hook_setup_wizard.py"
+   ],
+   "test_rule": "references(max5)",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 862.2615626249999s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/sync.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_coexist.py",
+    "tests/test_watch.py",
+    "tests/test_ledger_docs.py",
+    "tests/test_feature_sync.py",
+    "tests/test_watcher_staleness_single_source.py"
+   ],
+   "test_rule": "references(max5)",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 760.08613625s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/upstream.py": {
+   "verdict": "unverified",
+   "kill_rate": 0.6601,
+   "killed": 371,
+   "survived": 191,
+   "tests_used": [
+    "tests/test_upstream.py"
+   ],
+   "test_rule": "filename",
+   "reason_code": null,
+   "reason": "kill rate 0.66 < 0.80 -- 191 mutant(s) survived",
+   "seconds": 248.5,
+   "counts": {
+    "killed": 371,
+    "timeout": 0,
+    "suspicious": 0,
+    "survived": 191,
+    "skipped": 0
+   },
+   "survivors": {
+    "total": 191,
+    "shown": 60,
+    "items": [
+     {
+      "id": 1,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -171,7 +171,7 @@\n-_HERE = pathlib.Path(__file__).resolve().parent\n+_HERE = None"
+     },
+     {
+      "id": 2,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -175,7 +175,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE * f\"{name}.py\")"
+     },
+     {
+      "id": 3,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -175,7 +175,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = importlib.util.spec_from_file_location(name, _HERE / f\"XX{name}.pyXX\")"
+     },
+     {
+      "id": 4,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -175,7 +175,7 @@\n-    spec = importlib.util.spec_from_file_location(name, _HERE / f\"{name}.py\")\n+    spec = None"
+     },
+     {
+      "id": 5,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -176,7 +176,7 @@\n-    m = importlib.util.module_from_spec(spec)\n+    m = None"
+     },
+     {
+      "id": 6,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -181,7 +181,7 @@\n-ledger = _load(\"ledger\")            # the `to`-addressed transport that already exists\n+ledger = _load(\"XXledgerXX\")            # the `to`-addressed transport that already exists"
+     },
+     {
+      "id": 8,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -182,7 +182,7 @@\n-state = _load(\"state\")              # `unsafe_goal_reason`, the shared path-component guard\n+state = _load(\"XXstateXX\")              # `unsafe_goal_reason`, the shared path-component guard"
+     },
+     {
+      "id": 10,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -183,7 +183,7 @@\n-work = _load(\"work\")                # `stem`: the one goal -> filename rule in this plugin\n+work = _load(\"XXworkXX\")                # `stem`: the one goal -> filename rule in this plugin"
+     },
+     {
+      "id": 12,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -184,7 +184,7 @@\n-legacy = _load(\"legacy\")            # #239: an index written under the previous name reads too\n+legacy = _load(\"XXlegacyXX\")            # #239: an index written under the previous name reads too"
+     },
+     {
+      "id": 18,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -208,7 +208,7 @@\n-KIT, PROJECT = \"kit\", \"project\"\n+KIT, PROJECT = \"XXkitXX\", \"project\""
+     },
+     {
+      "id": 19,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -208,7 +208,7 @@\n-KIT, PROJECT = \"kit\", \"project\"\n+KIT, PROJECT = \"kit\", \"XXprojectXX\""
+     },
+     {
+      "id": 20,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -208,7 +208,7 @@\n-KIT, PROJECT = \"kit\", \"project\"\n+KIT, PROJECT = None"
+     },
+     {
+      "id": 25,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -216,7 +216,7 @@\n-GRANTED, UNKNOWN = \"granted\", \"unknown\"\n+GRANTED, UNKNOWN = None"
+     },
+     {
+      "id": 44,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -274,7 +274,7 @@\n-_GOAL_MASK_MIN = 3\n+_GOAL_MASK_MIN = 4"
+     },
+     {
+      "id": 46,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -282,7 +282,7 @@\n-_UPSTREAM_PER_GOAL_CAP = 3\n+_UPSTREAM_PER_GOAL_CAP = 4"
+     },
+     {
+      "id": 48,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -286,7 +286,7 @@\n-INDEX_SCHEMA = \"sigma/withheld@1\"\n+INDEX_SCHEMA = \"XXsigma/withheld@1XX\""
+     },
+     {
+      "id": 49,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -286,7 +286,7 @@\n-INDEX_SCHEMA = \"sigma/withheld@1\"\n+INDEX_SCHEMA = None"
+     },
+     {
+      "id": 50,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -290,7 +290,7 @@\n-_HEADING_CHARS = 120\n+_HEADING_CHARS = 121"
+     },
+     {
+      "id": 52,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -295,7 +295,7 @@\n-_UPSTREAM_CHARS = 20_000\n+_UPSTREAM_CHARS = 20001"
+     },
+     {
+      "id": 53,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -295,7 +295,7 @@\n-_UPSTREAM_CHARS = 20_000\n+_UPSTREAM_CHARS = None"
+     },
+     {
+      "id": 54,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -301,7 +301,7 @@\n-_SCAN_CHARS = 64_000\n+_SCAN_CHARS = 64001"
+     },
+     {
+      "id": 59,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -330,7 +330,7 @@\n-    raw = raw.strip() if isinstance(raw, str) else \"\"\n+    raw = raw.strip() if isinstance(raw, str) else \"XXXX\""
+     },
+     {
+      "id": 69,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -383,7 +383,7 @@\n-    for raw in _TOKEN_RE.findall(text[:_SCAN_CHARS] if isinstance(text, str) else \"\"):\n+    for raw in _TOKEN_RE.findall(text[:_SCAN_CHARS] if isinstance(text, str) else \"XXXX\"):"
+     },
+     {
+      "id": 70,
+      "diff": "(withheld: the changed line looks like a credential assignment to the repository's commit scan; a string-literal mutation of a path-trimming line in skills/agrim-loop/scripts/upstream.py, mutmut id 70)"
+     },
+     {
+      "id": 82,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -390,7 +390,7 @@\n-            continue\n+            break"
+     },
+     {
+      "id": 88,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -422,7 +422,7 @@\n-            if not (here.exists() and _under(plugin, here)) or _under(project, here):\n+            if not (here.exists() or _under(plugin, here)) or _under(project, here):"
+     },
+     {
+      "id": 89,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -422,7 +422,7 @@\n-            if not (here.exists() and _under(plugin, here)) or _under(project, here):\n+            if not (here.exists() and _under(plugin, here)) and _under(project, here):"
+     },
+     {
+      "id": 98,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -429,7 +429,7 @@\n-        top = parts[0] if parts else \"\"\n+        top = parts[0] if parts else \"XXXX\""
+     },
+     {
+      "id": 110,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -445,7 +445,7 @@\n-                    \"why\": \"the kit is installed inside this project tree, so its files are this \"\n+                    \"why\": \"XXthe kit is installed inside this project tree, so its files are this XX\""
+     },
+     {
+      "id": 115,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -453,7 +453,7 @@\n-        return {\"origin\": PROJECT, \"self_hosted\": False, \"evidence\": [],\n+        return {\"origin\": PROJECT, \"XXself_hostedXX\": False, \"evidence\": [],"
+     },
+     {
+      "id": 116,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -453,7 +453,7 @@\n-        return {\"origin\": PROJECT, \"self_hosted\": False, \"evidence\": [],\n+        return {\"origin\": PROJECT, \"self_hosted\": True, \"evidence\": [],"
+     },
+     {
+      "id": 119,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -454,7 +454,7 @@\n-                \"why\": \"the finding's origin could not be measured (%s), so it is treated as this \"\n+                \"why\": \"XXthe finding's origin could not be measured (%s), so it is treated as this XX\""
+     },
+     {
+      "id": 120,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -456,7 +456,7 @@\n-                       \"on one\" % exc}\n+                       \"XXon oneXX\" % exc}"
+     },
+     {
+      "id": 127,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -459,7 +459,7 @@\n-                \"why\": \"nothing in this finding points into the plugin's install path\"}\n+                \"XXwhyXX\": \"nothing in this finding points into the plugin's install path\"}"
+     },
+     {
+      "id": 128,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -459,7 +459,7 @@\n-                \"why\": \"nothing in this finding points into the plugin's install path\"}\n+                \"why\": \"XXnothing in this finding points into the plugin's install pathXX\"}"
+     },
+     {
+      "id": 130,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -460,7 +460,7 @@\n-    return {\"origin\": KIT, \"self_hosted\": False, \"evidence\": evidence,\n+    return {\"origin\": KIT, \"XXself_hostedXX\": False, \"evidence\": evidence,"
+     },
+     {
+      "id": 131,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -460,7 +460,7 @@\n-    return {\"origin\": KIT, \"self_hosted\": False, \"evidence\": evidence,\n+    return {\"origin\": KIT, \"self_hosted\": True, \"evidence\": evidence,"
+     },
+     {
+      "id": 134,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -461,7 +461,7 @@\n-            \"why\": \"the evidence points into the plugin's install path and at nothing in this \"\n+            \"why\": \"XXthe evidence points into the plugin's install path and at nothing in this XX\""
+     },
+     {
+      "id": 135,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -462,7 +462,7 @@\n-                   \"project: %s\" % \", \".join(evidence)}\n+                   \"XXproject: %sXX\" % \", \".join(evidence)}"
+     },
+     {
+      "id": 137,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -462,7 +462,7 @@\n-                   \"project: %s\" % \", \".join(evidence)}\n+                   \"project: %s\" % \"XX, XX\".join(evidence)}"
+     },
+     {
+      "id": 140,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -474,7 +474,7 @@\n-        raise ValueError(\"a withheld finding needs a goal to be filed under, and %r reduces to \"\n+        raise ValueError(\"XXa withheld finding needs a goal to be filed under, and %r reduces to XX\""
+     },
+     {
+      "id": 141,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -475,7 +475,7 @@\n-                         \"nothing\" % (goal,))\n+                         \"XXnothingXX\" % (goal,))"
+     },
+     {
+      "id": 144,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -478,7 +478,7 @@\n-        raise ValueError(\"unsafe goal %r for the withheld record: %s\" % (goal, reason))\n+        raise ValueError(\"XXunsafe goal %r for the withheld record: %sXX\" % (goal, reason))"
+     },
+     {
+      "id": 153,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -497,7 +497,7 @@\n-    parts = [\" \".join(str(v or \"\").split()).casefold() for v in (title, why, body)]\n+    parts = [\"XX XX\".join(str(v or \"\").split()).casefold() for v in (title, why, body)]"
+     },
+     {
+      "id": 154,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -497,7 +497,7 @@\n-    parts = [\" \".join(str(v or \"\").split()).casefold() for v in (title, why, body)]\n+    parts = [\" \".join(str(v or \"XXXX\").split()).casefold() for v in (title, why, body)]"
+     },
+     {
+      "id": 157,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -498,7 +498,7 @@\n-    return hashlib.sha256(\"\\x00\".join(parts).encode(\"utf-8\")).hexdigest()[:16]\n+    return hashlib.sha256(\"XX\\x00XX\".join(parts).encode(\"utf-8\")).hexdigest()[:16]"
+     },
+     {
+      "id": 159,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -498,7 +498,7 @@\n-    return hashlib.sha256(\"\\x00\".join(parts).encode(\"utf-8\")).hexdigest()[:16]\n+    return hashlib.sha256(\"\\x00\".join(parts).encode(\"utf-8\")).hexdigest()[:17]"
+     },
+     {
+      "id": 175,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -526,7 +526,7 @@\n-    if got.get(\"schema\") != INDEX_SCHEMA:  # #239: said aloud, and only when it is the old id\n+    if got.get(\"XXschemaXX\") != INDEX_SCHEMA:  # #239: said aloud, and only when it is the old id"
+     },
+     {
+      "id": 176,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -526,7 +526,7 @@\n-    if got.get(\"schema\") != INDEX_SCHEMA:  # #239: said aloud, and only when it is the old id\n+    if got.get(\"schema\") == INDEX_SCHEMA:  # #239: said aloud, and only when it is the old id"
+     },
+     {
+      "id": 177,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -529,7 +529,7 @@\n-    got[\"schema\"] = INDEX_SCHEMA          # #239: `_remember` writes this dict back -- in Sigma's id\n+    got[\"XXschemaXX\"] = INDEX_SCHEMA          # #239: `_remember` writes this dict back -- in Sigma's id"
+     },
+     {
+      "id": 179,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -530,7 +530,7 @@\n-    got.setdefault(\"findings\", {})\n+    got.setdefault(\"XXfindingsXX\", {})"
+     },
+     {
+      "id": 180,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -531,7 +531,7 @@\n-    got.setdefault(\"upstream\", [])\n+    got.setdefault(\"XXupstreamXX\", [])"
+     },
+     {
+      "id": 185,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -532,7 +532,7 @@\n-    if not isinstance(got[\"findings\"], dict) or not isinstance(got[\"upstream\"], list):\n+    if not isinstance(got[\"findings\"], dict) and not isinstance(got[\"upstream\"], list):"
+     },
+     {
+      "id": 189,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -541,7 +541,7 @@\n-        record[\"findings\"][report[\"digest\"]] = {\"at\": now or _stamp(),\n+        record[\"findings\"][report[\"digest\"]] = {\"XXatXX\": now or _stamp(),"
+     },
+     {
+      "id": 190,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -541,7 +541,7 @@\n-        record[\"findings\"][report[\"digest\"]] = {\"at\": now or _stamp(),\n+        record[\"findings\"][report[\"digest\"]] = {\"at\": now and _stamp(),"
+     },
+     {
+      "id": 196,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -544,7 +544,7 @@\n-            record[\"upstream\"].append(\"%s#%s\" % (report[\"upstream\"], report[\"issue\"]))\n+            record[\"upstream\"].append(\"XX%s#%sXX\" % (report[\"upstream\"], report[\"issue\"]))"
+     },
+     {
+      "id": 201,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -546,7 +546,7 @@\n-        path.parent.mkdir(parents=True, exist_ok=True)\n+        path.parent.mkdir(parents=False, exist_ok=True)"
+     },
+     {
+      "id": 203,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -547,7 +547,7 @@\n-        path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding=\"utf-8\")\n+        path.write_text(json.dumps(record, indent=3, sort_keys=True), encoding=\"utf-8\")"
+     },
+     {
+      "id": 204,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -547,7 +547,7 @@\n-        path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding=\"utf-8\")\n+        path.write_text(json.dumps(record, indent=2, sort_keys=False), encoding=\"utf-8\")"
+     },
+     {
+      "id": 206,
+      "diff": "--- skills/agrim-loop/scripts/upstream.py\n+++ skills/agrim-loop/scripts/upstream.py\n@@ -549,7 +549,7 @@\n-        _note(\"sigma: upstream: this goal's withheld-findings record could not be updated \"\n+        _note(\"XXsigma: upstream: this goal's withheld-findings record could not be updated XX\""
+     }
+    ]
+   },
+   "coverage_scoped": true,
+   "rate_range_all_mutants": [
+    0.6601,
+    0.6601
+   ]
+  },
+  "skills/agrim-loop/scripts/watch_daemon.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [
+    "tests/test_watch.py",
+    "tests/test_coexist.py",
+    "tests/test_onboarding_control.py",
+    "tests/test_readme_first_run.py",
+    "tests/test_windows_real.py"
+   ],
+   "test_rule": "references(max5)",
+   "reason_code": "timeout",
+   "reason": "mutmut timed out after 554.546034125s -- not measured, deliberately neither a pass nor a merge freeze",
+   "seconds": 900.0,
+   "counts": {}
+  },
+  "skills/agrim-loop/scripts/work.py": {
+   "verdict": "absent",
+   "kill_rate": null,
+   "killed": null,
+   "survived": null,
+   "tests_used": [],
+   "reason_code": "not-run-budget",
+   "seconds": 0.0,
+   "reason": "the overall wall-clock cap was reached before this module was reached"
+  }
+ },
+ "summary": {
+  "measured": [
+   "hooks/decision_gate.py",
+   "hooks/issue_field_gate.py",
+   "hooks/research_capture.py",
+   "hooks/time_track.py",
+   "skills/agrim-init/scripts/board_setup.py",
+   "skills/agrim-init/scripts/setup_wizard.py",
+   "skills/agrim-loop/scripts/blockers.py",
+   "skills/agrim-loop/scripts/channel_notify.py",
+   "skills/agrim-loop/scripts/gh_session.py",
+   "skills/agrim-loop/scripts/run_with_timeout.py",
+   "skills/agrim-loop/scripts/scrub.py",
+   "skills/agrim-loop/scripts/slack_client.py",
+   "skills/agrim-loop/scripts/state.py",
+   "skills/agrim-loop/scripts/upstream.py"
+  ],
+  "absent": {
+   "hooks/_py.sh": "not-python",
+   "hooks/agrim_gate.sh": "not-python",
+   "hooks/completion_gate.sh": "not-python",
+   "hooks/gate_state.py": "timeout",
+   "hooks/hooks.json": "not-python",
+   "hooks/plan_gate.sh": "not-python",
+   "hooks/session_start.sh": "not-python",
+   "install.sh": "not-python",
+   "skills/agrim-init/scripts/init_flow.py": "timeout",
+   "skills/agrim-loop/scripts/feature_rebase.py": "timeout",
+   "skills/agrim-loop/scripts/ledger.py": "timeout",
+   "skills/agrim-loop/scripts/loop.py": "not-run-budget",
+   "skills/agrim-loop/scripts/reconcile.py": "timeout",
+   "skills/agrim-loop/scripts/slack_commands_listen.py": "timeout",
+   "skills/agrim-loop/scripts/sources.py": "timeout",
+   "skills/agrim-loop/scripts/supervise_daemon.py": "timeout",
+   "skills/agrim-loop/scripts/sync.py": "timeout",
+   "skills/agrim-loop/scripts/watch_daemon.py": "timeout",
+   "skills/agrim-loop/scripts/work.py": "not-run-budget"
+  }
+ },
+ "notes": [
+  "Measured commit: the sha above (a frozen clean clone); the unit list is docs/launch/review-units.json (cut at an older commit, every listed file still existed). mutmut 2.5.1 on Python 3.12, installed in a throwaway virtualenv outside the repository with coverage and pytest.",
+  "Compute budget (owner constraint, a documented deviation from the issue's 60 minutes per module): 15 minutes per module, about 3 hours overall, one module at a time, started under nice and with the tool pausing between modules while the 1-minute load average exceeded budget.max_load_1min (operator-reported: the file records neither the nice value nor any pause). 14 modules have a kill rate; modules over the per-module timeout are absent/timeout, never a number; loop.py and work.py were not reached before the overall cap (absent/not-run-budget).",
+  "skills/agrim-loop/scripts/sources.py was given only the 338 s left under the overall cap (the other timeouts had 900 s, less the time its coverage step took), so its timeout is not comparable to the others (operator-reported; allowed_seconds was not recorded by this run); entries recorded by this run carry no allowed_seconds field, entries from a later version of the tool do.",
+  "The sample was run in two sittings (the first background task hit the host's 2 hour limit; the second resumed from the recorded file and the persisted budget). The second sitting ran a copy of the tool that also deletes mutmut's leftover .bak files and scrubs other users' home paths; neither changes a measured number.",
+  "Test files per module are chosen by filename (tests/test_<module>*.py), else the at most five files that reference the module; the rule and the files are listed per module. This differs from the issue's grep -l rule, which selects 100-220 files for the large modules (the whole suite per mutant).",
+  "survivors.items holds mutmut's own diffs for at most 60 survivors per module (survivors.total is the full count); a module's number is over the mutants mutmut generated on lines the scoped tests execute (coverage-scoped).",
+  "Survivor diffs are mutmut's own, reduced to the header, hunk marker and the changed lines (context lines dropped when the file was written).",
+  "Entries from this run carry no allowed_seconds; a re-run treats a timeout without one as recorded under this file's budget.module_timeout_seconds (900).",
+  "One survivor diff (in upstream.py) is withheld and replaced by a marker because its source line, an identifier named token assigned from a string method, trips the repository's credential-assignment commit scan; it is a false positive, and mutmut's own diff is unchanged in the run that produced it."
+ ]
+}

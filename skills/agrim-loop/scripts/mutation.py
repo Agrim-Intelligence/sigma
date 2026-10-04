@@ -37,8 +37,10 @@ TDD. That is the shared vocabulary #1934 and this module were designed against t
 docs/superpowers/specs/2026-09-01-test-trust-shared-vocabulary-1934-1935.md.
 """
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import time
 
@@ -55,10 +57,10 @@ DEFAULT_TIMEOUT = 900
 _TOOL = "mutmut"
 
 
-def tool_available(which=None):
+def tool_available(which=None, tool=None):
     """True iff the mutation tool is actually runnable. Checked rather than assumed -- the whole
     `absent` path exists because on most machines this is False."""
-    return (which or shutil.which)(_TOOL) is not None
+    return (which or shutil.which)(tool or _TOOL) is not None
 
 
 def changed_lines(diff_text):
@@ -88,22 +90,71 @@ def changed_lines(diff_text):
     return out
 
 
-def _parse_results(output):
-    """(killed, survived) from mutmut's own summary. Tolerant of both its emoji and plain forms."""
-    killed = survived = 0
-    for pat, add in ((r"(\d+)\s*(?:üéâ|killed)", "k"), (r"(\d+)\s*(?:üôÅ|survived)", "s")):
-        m = re.search(pat, output or "", re.I)
+#: mutmut prints one progress line per mutant, redrawn in place with carriage returns, and the LAST
+#: redraw is the tally. In its default output each count FOLLOWS an emoji; with --simple-output it
+#: follows a plain word. Measured on mutmut 2.5.1 (tests/fixtures/mutmut/). The emoji are written as
+#: \N escapes so this source stays plain ASCII and cannot be mis-encoded again.
+_LABELS = {
+    "killed": r"(?:\N{PARTY POPPER}|KILLED)",
+    "timeout": r"(?:\N{ALARM CLOCK}|TIMEOUT)",
+    "suspicious": r"(?:\N{THINKING FACE}|SUSPICIOUS)",
+    "survived": r"(?:\N{SLIGHTLY FROWNING FACE}|SURVIVED)",
+    "skipped": r"(?:\N{SPEAKER WITH CANCELLATION STROKE}|SKIPPED)",
+}
+
+
+def _parse_counts(output):
+    """{killed, timeout, suspicious, survived, skipped} from the LAST tally mutmut printed.
+
+    A tally missing killed OR survived is not a tally: {} (which `run` turns into `absent`), never a
+    rate computed from half of it. The legacy lowercase `N killed, M survived` wording is accepted ONLY
+    when neither mutmut label appears at all, so a truncated real tally cannot fall through to it: its
+    `4/4  KILLED 3` would otherwise read as 4 killed (the bug this module had)."""
+    text = output or ""
+    counts = {}
+    for name, label in _LABELS.items():
+        found = re.findall(label + r"\s+(\d+)", text)
+        if found:
+            counts[name] = int(found[-1])
+    if counts:
+        return counts if "killed" in counts and "survived" in counts else {}
+    legacy = {}
+    for name in ("killed", "survived"):
+        m = re.search(r"(\d+) " + name + r"\b", text)
         if m:
-            if add == "k":
-                killed = int(m.group(1))
-            else:
-                survived = int(m.group(1))
-    return killed, survived
+            legacy[name] = int(m.group(1))
+    return legacy if len(legacy) == 2 else {}
+
+
+def _parse_results(output):
+    """(killed, survived) from mutmut's own tally. A tally the parser cannot read is (0, 0), which
+    `run` turns into `absent`, never into a rate."""
+    c = _parse_counts(output)
+    return c.get("killed", 0), c.get("survived", 0)
+
+
+def parse_survivor_ids(results_text):
+    """Mutant ids under the `Survived` heading of `mutmut results` (ranges like `1-4, 7` expanded)."""
+    ids, in_survived = [], False
+    for line in (results_text or "").splitlines():
+        head = re.match(r"^(Timed out|Suspicious|Survived|Skipped)\b", line)
+        if head:
+            in_survived = head.group(1) == "Survived"
+            continue
+        if in_survived and re.fullmatch(r"[\d\s,\-]+", line) and line.strip():
+            for part in line.split(","):
+                lo, _, hi = part.strip().partition("-")
+                if lo.isdigit():
+                    ids.extend(range(int(lo), int(hi or lo) + 1))
+    return ids
 
 
 def run(root, targets, min_kill_rate=DEFAULT_MIN_KILL_RATE, timeout=DEFAULT_TIMEOUT,
-        run_cmd=None, which=None):
-    """-> {"verdict", "kill_rate", "killed", "survived", "reason", "ms"}.
+        run_cmd=None, which=None, tool=None, runner=None, use_coverage=True):
+    """-> {"verdict", "kill_rate", "killed", "survived", "reason", "ms", "counts", "code"}.
+
+    `code` names why nothing was measured (no-targets, tool-missing, timeout, crash, no-mutants) and
+    is None when a rate was; callers branch on it, never on the wording of `reason`.
 
     THREE STATES, AND `absent` IS NOT A PASS:
       verified    -- measured, kill_rate >= min_kill_rate
@@ -113,42 +164,71 @@ def run(root, targets, min_kill_rate=DEFAULT_MIN_KILL_RATE, timeout=DEFAULT_TIME
     `kill_rate` is emitted as a NUMBER whenever it was measured, per #1935's "the measured rate is
     emitted as a number, not a boolean" -- and is None, never 0.0, when it was not. A fabricated
     zero would read as "every mutant survived", which is the opposite of "we did not look".
+
+    `kill_rate` is killed / (killed + survived). Timed-out, suspicious and skipped mutants are
+    reported in `counts` and are NOT in the denominator, so a module with many of them is read with
+    `counts` beside the rate.
+
+    `tool` is the mutmut executable (a throwaway virtualenv's, never one on the verify path),
+    `runner` the shell command mutmut runs per mutant (scoped test files, never the full suite).
     """
     started = time.perf_counter()
 
-    def out(verdict, reason, killed=0, survived=0, rate=None):
+    def out(verdict, reason, killed=0, survived=0, rate=None, counts=None, code=None):
         return {"verdict": verdict, "kill_rate": rate, "killed": killed, "survived": survived,
-                "reason": reason, "ms": int((time.perf_counter() - started) * 1000)}
+                "reason": reason, "ms": int((time.perf_counter() - started) * 1000),
+                "counts": counts or {}, "code": code}
 
     if not targets:
-        return out(ABSENT, "no changed lines to mutate")
-    if not tool_available(which):
+        return out(ABSENT, "no changed lines to mutate", code="no-targets")
+    exe = tool or _TOOL
+    if not tool_available(which, exe):
         return out(ABSENT, "%s is not installed -- `pip install %s` to enable this gate"
-                            % (_TOOL, _TOOL))
-    argv = [_TOOL, "run", "--paths-to-mutate", ",".join(sorted(targets)), "--use-coverage"]
+                            % (_TOOL, _TOOL), code="tool-missing")
+    argv = [exe, "run", "--paths-to-mutate", ",".join(sorted(targets)), "--simple-output"]
+    if use_coverage:
+        argv.append("--use-coverage")
+    if runner:
+        argv += ["--runner", runner]
     try:
         proc = (run_cmd or _default_run)(root, argv, timeout)
     except subprocess.TimeoutExpired:
         return out(ABSENT, "%s timed out after %ss -- not measured, deliberately neither a pass "
-                            "nor a merge freeze" % (_TOOL, timeout))
+                            "nor a merge freeze" % (_TOOL, timeout), code="timeout")
     except Exception as exc:                # noqa: BLE001 - a tool outage is `absent`, never a pass
-        return out(ABSENT, "%s could not run (%s) -- not measured" % (_TOOL, exc))
+        return out(ABSENT, "%s could not run (%s) -- not measured" % (_TOOL, exc), code="crash")
     code, text = proc
-    killed, survived = _parse_results(text)
+    counts = _parse_counts(text)
+    killed, survived = counts.get("killed", 0), counts.get("survived", 0)
     total = killed + survived
     if total == 0:
-        return out(ABSENT, "%s produced no mutants (exit %s) -- not measured" % (_TOOL, code))
+        tail = " | ".join(l.strip() for l in text.strip().splitlines()[-2:])[:200]
+        return out(ABSENT, "%s produced no mutants (exit %s: %s) -- not measured"
+                            % (_TOOL, code, tail), counts=counts, code="no-mutants")
     rate = round(killed / total, 4)
     if rate >= min_kill_rate:
         return out(VERIFIED, "kill rate %.2f >= %.2f" % (rate, min_kill_rate),
-                    killed, survived, rate)
+                    killed, survived, rate, counts)
     return out(UNVERIFIED, "kill rate %.2f < %.2f -- %d mutant(s) survived"
-                            % (rate, min_kill_rate, survived), killed, survived, rate)
+                            % (rate, min_kill_rate, survived), killed, survived, rate, counts)
 
 
 def _default_run(root, argv, timeout):
-    p = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=timeout)
-    return (p.returncode, (p.stdout or "") + (p.stderr or ""))
+    """Run in its own process group and kill the WHOLE group on overrun: mutmut applies a mutant to
+    the file in place and spawns the test runner through a shell, so killing only the direct child
+    would leave a mutated source file and an orphaned test run behind."""
+    p = subprocess.Popen(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, errors="replace", start_new_session=True)
+    try:
+        text, _ = p.communicate(timeout=timeout)
+    except BaseException:                   # a timeout, Ctrl-C or SIGTERM: never leave the group running
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (OSError, AttributeError):   # no process groups on this platform: kill what we can
+            p.kill()
+        p.communicate()
+        raise
+    return (p.returncode, text or "")
 
 
 def waive(sdlc_dir, goal, mutant, reason, witness_mod):

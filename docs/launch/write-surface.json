@@ -2433,6 +2433,30 @@
       "risk": "high"
     },
     {
+      "path": "tools/readiness/mutation_sample.py",
+      "function": "_restore",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "explicit sample command; deletes only mutmut's cache and coverage data inside the clean frozen clone it was given, never a tracked file",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/mutation_sample.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "explicit sample command; replaces only its own temporary file beside --out",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/mutation_sample.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit sample command; caller-supplied --out evidence path",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/review_units.py",
       "function": "main",
       "rule": "fs-write",
