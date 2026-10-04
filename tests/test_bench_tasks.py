@@ -710,15 +710,19 @@ def _local_external(tmp_path, tool):
     return tasks, hidden, scratch / "verify", fetch
 
 
-def test_external_verification_end_to_end_on_a_local_repository_and_records_a_red_visible_suite_on_the_fix(tmp_path):
+def test_external_verification_end_to_end_on_a_local_repository_and_records_a_red_visible_suite_on_the_fix(tmp_path, monkeypatch):
     """verify_external over a local origin: the visible suite on the fix is measured (one old test the pull request did not
     update stays red) and recorded, not required."""
     tool = _tool()
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)  # as on CI; a developer shell that sets it hides the bug
     tasks, hidden, scratch, _ = _local_external(tmp_path, tool)
     result = tool.verify_external(tasks, hidden, "ext-x", tool.load_tasks(tasks)["ext-x"], scratch, sys.executable)
     assert result["status"] == "verified", result
     assert (result["visible_on_start"], result["hidden_on_start"], result["hidden_on_reference"]) == ("pass", "fail", "pass")
     assert result["hidden_on_start_exit"] == 1 and result["visible_on_reference"] == "fail"
+    # Deterministic control for a timing-dependent failure seen on CI: no bytecode may be written into the trees under
+    # test, or a stale .pyc (same size, same whole-second mtime) can replay an old test after the hidden file is overlaid.
+    assert not list(scratch.rglob("__pycache__")), "bytecode was written into a tree under test"
 
 
 def test_external_verification_refuses_a_base_tree_that_is_not_the_recorded_one(tmp_path):

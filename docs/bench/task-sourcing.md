@@ -75,23 +75,23 @@ Command: `python3 tools/readiness/bench_tasks.py verify --hidden-root ~/.sigma-o
 2026-10-04 on one macOS arm64 machine, in the one environment built from `evals/bench/tasks/environment.lock` (CPython 3.12). Scoring goes through
 `bench._command_passed` and `bench._hidden_passed` behind a pass-through launcher with the harness's `isolated_env` (so the working directory, the `.sigma-hidden/` copy and
 the `verify.json` argv are the harness's), and a second plain run of the same command must agree. A hidden run on the starting tree must exit with pytest status 1 (tests ran and failed), not a collection error.
-Result: **12 verified, 0 failed, 3 skipped (the trap slots)**, every hidden run under 3 seconds (the longest, 2.92 s, `ext-more-itertools-1304`) and every visible suite under 10 seconds (the longest, 9.47 s, `ext-more-itertools-1304`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
+Result: **12 verified, 0 failed, 3 skipped (the trap slots)**, every hidden run under 4 seconds (the longest, 3.21 s, `ext-more-itertools-1304`) and every visible suite under 9 seconds (the longest, 8.76 s, `ext-more-itertools-1252`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
 `docs/launch/evidence/355-bench-task-verification.json`, which names the base commit and the sha256 of the tool, manifest and lock it measured.
 
 | Task | Visible tests on the starting tree | Hidden on the starting tree | Hidden on the reference fix |
 |---|---|---|---|
-| `ext-bottle-1539` | pass | 2 failed, 25 passed in 0.07s | 27 passed in 0.05s |
+| `ext-bottle-1539` | pass | 2 failed, 25 passed in 0.06s | 27 passed in 0.04s |
 | `ext-lark-1618` | pass | no pytest count line | no pytest count line |
 | `ext-lark-1630` | pass | no pytest count line | no pytest count line |
-| `ext-more-itertools-1252` | pass | 3 failed, 598 passed, 11206 subtests passed in 2.62s | 598 passed, 11209 subtests passed in 2.45s |
-| `ext-more-itertools-1304` | pass | 2 failed, 617 passed, 11318 subtests passed in 2.75s | 619 passed, 11318 subtests passed in 2.61s |
+| `ext-more-itertools-1252` | pass | 3 failed, 598 passed, 11206 subtests passed in 2.56s | 598 passed, 11209 subtests passed in 2.40s |
+| `ext-more-itertools-1304` | pass | 2 failed, 617 passed, 11318 subtests passed in 3.05s | 619 passed, 11318 subtests passed in 2.55s |
 | `ext-sqlparse-332` | pass | 1 failed, 87 passed in 0.09s | 88 passed in 0.08s |
 | `ext-sqlparse-601` | pass | 2 failed, 91 passed, 1 xpassed in 0.10s | 93 passed, 1 xpassed in 0.09s |
-| `ext-voluptuous-541` | pass | 1 failed, 180 passed in 0.18s | 181 passed in 0.14s |
+| `ext-voluptuous-541` | pass | 1 failed, 180 passed in 0.17s | 181 passed in 0.14s |
 | `int-bugfix-1` | fail (pytest exit 1, for the headline behaviour) | 4 failed, 2 passed in 0.01s | 6 passed in 0.00s |
-| `int-docs-1` | fail (pytest exit 1, for the headline behaviour) | 3 failed, 1 passed in 0.02s | 4 passed in 0.00s |
-| `int-feature-1` | fail (pytest exit 1, for the headline behaviour) | 8 failed in 0.02s | 8 passed in 0.01s |
-| `int-refactor-1` | fail (pytest exit 1, for the headline behaviour) | 2 failed, 1 passed in 0.02s | 3 passed in 0.01s |
+| `int-docs-1` | fail (pytest exit 1, for the headline behaviour) | 3 failed, 1 passed in 0.01s | 4 passed in 0.00s |
+| `int-feature-1` | fail (pytest exit 1, for the headline behaviour) | 8 failed in 0.02s | 8 passed in 0.00s |
+| `int-refactor-1` | fail (pytest exit 1, for the headline behaviour) | 2 failed, 1 passed in 0.01s | 3 passed in 0.01s |
 
 The lark rows show no count line because that project's own pytest configuration adds `-q` to the harness's `-q` (`-qq` prints none): the result there is the exit status, 1 on the starting tree and 0 on the fix. Running the two hidden files directly without the extra `-q` shows the counts: 1 failed and 26 passed for `ext-lark-1618`, 3 failed and 18 passed for `ext-lark-1630`, each an assertion failure.
 

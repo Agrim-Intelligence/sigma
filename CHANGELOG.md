@@ -10,7 +10,7 @@ All notable changes to Sigma are recorded here, newest first.
   `tools/readiness/bench_tasks.py` checks it (`check`), scores every task through the harness's own scoring functions in one
   environment resolved by `lock` into `environment.lock` (`verify`: hidden tests fail on the starting tree with pytest status 1 and pass on the reference fix) and fetches
   an external task's base tree (`materialize`). Measured once, on one CPython 3.12 on one macOS machine: all 12 non-trap tasks verified,
-  hidden tests on the starting tree failed in every case (pytest exit status 1; 1 to 8 failing tests where pytest printed a count); every hidden run took under 3 seconds and every visible suite under 10. Hidden bundles live only under the
+  hidden tests on the starting tree failed in every case (pytest exit status 1; 1 to 8 failing tests where pytest printed a count); every hidden run took under 4 seconds and every visible suite under 9. Hidden bundles live only under the
   operator's hidden root; per-file hashes in `task.json` let CI name a hidden file copied into the repository. Not frozen: the three
   traps need a person outside the Sigma team (`docs/bench/trap-author-brief.md`), and the freeze (commit sha recorded in the
   pre-registration) is a later step described in `docs/bench/task-sourcing.md`. The model's training cutoff is a month

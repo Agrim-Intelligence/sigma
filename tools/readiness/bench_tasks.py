@@ -450,6 +450,9 @@ def clean_env(profile_dir):
             if not any(marker in key.upper() for marker in SECRET_MARKERS)
             and not key.upper().startswith(SECRET_PREFIXES)}
     kept["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    # No bytecode is written into the trees under test: a stale .pyc (same size, same whole-second mtime as a file that
+    # was just replaced, which a fast run can hit) would make an overlaid hidden test run its old compiled version.
+    kept["PYTHONDONTWRITEBYTECODE"] = "1"
     # The fresh HOME would hide an interpreter's user-site packages (pytest itself, on some machines), so the user base
     # stays pointed at the real one. A virtualenv, which verification uses, ignores the user site altogether.
     kept.setdefault("PYTHONUSERBASE", site.getuserbase())
