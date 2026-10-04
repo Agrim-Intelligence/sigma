@@ -7,10 +7,11 @@ has a ceiling. This page is a plan: nothing in it has been scored, and no dimens
 ## Status
 
 Proposed. The ceilings are the owner's decision, made on 2026-10-03 and recorded here from the owner's
-chat answer (Question 2 of 8: 75M tokens with a checkpoint at 40M; the pilot ceiling to be decided when
-#361 is ready). No other committed file or issue holds those figures yet, so the owner's merge of this page
-confirms them. They are provisional: the calibration pilots (#361) recompute them from measured spend. Until then every spend estimate below
-is unmeasured, and this page says so wherever it quotes one. The two pages it is built on keep their
+chat answer (Question 2 of 8: 75M tokens with a checkpoint at 40M). The pilot ceiling was set later, at $75 as a hard
+stop (2026-10-04, recorded in a comment on #361). No other committed file or issue holds those figures yet, so the owner's merge of this page
+confirms them. They are provisional: the calibration pilots (#361) have run, and the section "Measured ceilings" below recomputes them
+from the measured spend in [the calibration record](evidence/cost-calibration.md). A step the pilots did not measure keeps its
+unmeasured estimate, and this page says so wherever it quotes one. The two pages it is built on keep their
 own status: [definition.md](definition.md) is still `proposed`, and signing it is the owner's merge.
 [decision-rule.md](decision-rule.md) fixes which dimensions exist, what they are called and which
 gate; `tools/readiness/decide.py` enforces that, and `tests/test_review_plan.py` keeps this page and
@@ -75,7 +76,7 @@ few named "still to produce" files are still absent, so landing one forces this 
 | D0 | `docs/launch/definition.json` (`status: proposed`), `docs/launch/definition.md`, `tests/test_launch_definition.py`, `tests/test_launch_ci_cells.py` | `status: signed`, `signed_by` and `signed_on` | the owner's merge of the definition page |
 | D1 | `tools/readiness/baseline.py`, `docs/launch/evidence/inventory-a5c615062313.json`, `docs/launch/review-units.json` (17 high-risk units and a 10-unit sample at frozen commit `a5c615062313`), `tools/readiness/seed_defects.py`, `docs/launch/seeded-defects.md`, `docs/launch/coverage.json`, `skills/agrim-loop/scripts/flake_check.py`, `skills/agrim-loop/scripts/mutation.py` | the line-by-line review itself (S4); a real seed set (only the three made-up examples in `tests/fixtures/readiness_seed_examples` exist); a flake census of 10 runs on Linux and 10 on macOS (#337, open); a mutation kill rate per module (#360, open: no kill rate is recorded on main); the open B1 blocker #514 closed with its fix (the D1 threshold is 0 open B1/B8); the second-vendor pass; a re-freeze, because the units are cut from `a5c615062313` and main has moved | a person who will not review writes the seeds |
 | D2 | `tests/test_skill_structure.py`, `evals/skill_budget_waivers.json` (`waivers` is empty), `evals/phase_context_budget.json` (instruction bill per phase, a down-only ratchet, #262), `tests/test_documented_gestures.py` (copyable Python gestures in shipped docs resolve, #339), `tests/test_script_help.py` | resolution of documented verbs and flags that are not copyable Python gestures; the model review of the 10 phase skills (S5); a count of gate-skip ambiguities on supported cells | none |
-| D3 | `docs/bench/preregistration.md` (reduced design, exact paired sign test), `evals/bench/decision_rule.py`, `evals/bench/bench.py`, `evals/bench/arms/sigma.py`, `evals/bench/arms/matched.py`, `evals/bench/meter.py`, `docs/launch/evidence/meter-sonnet-5-5-cf31b72c6967.json`, `tests/test_bench_decision_rule.py`, `tests/test_benchmark_harness.py`, `evals/bench/tasks/manifest.json` (a draft: 8 external and 4 internal tasks verified, three trap slots empty, `frozen` false), `tools/readiness/bench_tasks.py`, `tests/test_bench_tasks.py`, `docs/bench/task-sourcing.md`, `docs/bench/trap-author-brief.md`, `docs/launch/evidence/355-bench-task-verification.json` | the freeze of the task set and the hash of its manifest at the freeze commit (the draft is not frozen); three traps written by someone outside the Sigma team; the hidden tests of those traps; the run (#275, open) and its results file under `docs/launch/evidence/`, which the scorecard names in `benchmark_results` (still null); the S9 spend ceiling | a trap author; the four open choices listed in the pre-registration; the S9 ceiling |
+| D3 | `docs/bench/preregistration.md` (reduced design, exact paired sign test), `docs/launch/evidence/cost-calibration.md` (review cost measured; benchmark cost not measured), `evals/bench/decision_rule.py`, `evals/bench/bench.py`, `evals/bench/arms/sigma.py`, `evals/bench/arms/matched.py`, `evals/bench/meter.py`, `docs/launch/evidence/meter-sonnet-5-5-cf31b72c6967.json`, `tests/test_bench_decision_rule.py`, `tests/test_benchmark_harness.py`, `evals/bench/tasks/manifest.json` (a draft: 8 external and 4 internal tasks verified, three trap slots empty, `frozen` false), `tools/readiness/bench_tasks.py`, `tests/test_bench_tasks.py`, `docs/bench/task-sourcing.md`, `docs/bench/trap-author-brief.md`, `docs/launch/evidence/355-bench-task-verification.json` | the freeze of the task set and the hash of its manifest at the freeze commit (the draft is not frozen); three traps written by someone outside the Sigma team; the hidden tests of those traps; the run (#275, open) and its results file under `docs/launch/evidence/`, which the scorecard names in `benchmark_results` (still null); the S9 spend ceiling | a trap author; the four open choices listed in the pre-registration; the S9 ceiling |
 | D5 | `tools/readiness/drills.py`, `docs/launch/evidence/drills-cde9869d0cf8.json` (4 hermetic drills, 5 runs each, on macOS), `tools/readiness/growth_audit.py`, `docs/launch/growth-audit.md`, `docs/launch/growth-audit.json`, the retention decisions `docs/launch/b6-worktrees.md` and the other `docs/launch/b6-*.md`, `hooks/session_start.sh` and `skills/agrim-doctor/scripts/doctor.py` (the dead-vs-idle staleness check, #265) with `tests/test_session_start.py` and `tests/test_doctor.py` | the drills against a real host rather than hermetic fakes, and on Linux; a 10x/100x table across every per-item path (the retention pages state a growth figure per store, not one table); a recorded live control of dead-vs-idle on a really stopped watcher (`tests/test_session_start.py` has a dead-loop fixture, which is a hermetic control, not that record) | none |
 | D6 | `.github/workflows/ci.yml` (five legs: Linux 3.10 to 3.13, macOS 3.12), `docs/launch/evidence/ci-supported-cells-bd969b48018a.json`, `tests/test_launch_ci_cells.py`, `tools/onboarding_control.py` and `docs/onboarding-control.md` (a control run against stubbed tools and a stateful fake `gh`, not a live run) | one live run per supported cell: a live-model loop run on Claude Code (#300, open) and github mode against real GitHub (#301, open), on both operating systems; the CI result on the launch commit | a throwaway repository for the live drills (none exists yet) |
 | D7 | `tools/onboarding_control.py`, `docs/onboarding-control.md`, `tests/test_onboarding_control.py`, `docs/launch/evidence/egress-onboarding-local.json` | timed first runs by agents and by 2 to 3 outside people; the list of every refusal message with its fix | the outside people |
@@ -87,8 +88,8 @@ few named "still to produce" files are still absent, so landing one forces this 
 | D13 | `LICENSE` (MIT) | the whole of #343: the dependency licence list, the provenance notice, the dated name search | the legal review (#343): the owner is getting counsel, and D13 is not scoreable until counsel answers |
 
 Four pieces are owner-gated across the whole review: a throwaway repository for the live drills (D6,
-D10), a trap author (D3), the legal and naming review (D13), and a pilot spend ceiling (#361). The
-pilots do not start until the owner states a number. Two more are needed and are not yet arranged:
+D10), a trap author (D3), the legal and naming review (D13), and a pilot spend ceiling (#361, set on 2026-10-04 at $75,
+and the pilots have run). Two more are needed and are not yet arranged:
 a seed author (D1) and the outside people (D7).
 
 ## Reviewer rules
@@ -107,33 +108,70 @@ a seed author (D1) and the outside people (D7).
 
 The unit is processed tokens: input, including cache reads, plus output, as the host reports them.
 
-| Step | Work | Estimate (unmeasured) |
-|---|---|---|
-| S0 | owner decisions | 0 |
-| S1 | freeze commit, inventory, exposure scans, legal | < 0.5M |
-| S2 | mechanical gates | 1–2M |
-| S3 | calibration pilots (the pilot goal, #361) | 20–50M |
-| S4 | high-risk code review + sample + verification | 25–45M |
-| S5 | phase-skill review | 8–15M |
-| S6 | host runs, migration, drills, red team | 20–50M |
-| S7 | outside first-run | 0 |
-| S8 | market scan | 3–6M |
-| S9 | benchmark (own ceiling) | set from the pilots |
-| S10 | synthesis | 1–2M |
+| Step | Work | Estimate (unmeasured) | Measured ceiling (#361 pilots) |
+|---|---|---|---|
+| S0 | owner decisions | 0 | not applicable |
+| S1 | freeze commit, inventory, exposure scans, legal | < 0.5M | not measured |
+| S2 | mechanical gates | 1–2M | not measured |
+| S3 | calibration pilots (the pilot goal, #361) | 20–50M | 3.89M spent (measured, $2.50; P-a and P-b only, P-c and P-d unmeasured) |
+| S4 | high-risk code review + sample + verification | 25–45M | 42.0M (37.0M + 5.0M, formulas below; shallow single passes, second vendor excluded) |
+| S5 | phase-skill review | 8–15M | not measured |
+| S6 | host runs, migration, drills, red team | 20–50M | not measured |
+| S7 | outside first-run | 0 | not applicable |
+| S8 | market scan | 3–6M | not measured |
+| S9 | benchmark (own ceiling) | set from the pilots | not measured: the benchmark pilot did not run |
+| S10 | synthesis | 1–2M | not measured |
 
-These estimates are **unmeasured**. No pilot has run, and none starts until the owner states the pilot
-spend ceiling in #361. When the pilots finish, each estimate is replaced by the measured number from
-the calibration record that goal commits.
+Where the last column says "not measured", the estimate in the column before it still stands and is still
+**unmeasured**. The pilots measured review and verification passes only (S3, S4). When another step is measured, its
+estimate is replaced by a measured number in the same way.
+
+### Measured ceilings
+
+Source: [the calibration record](evidence/cost-calibration.md), measured on 2026-10-04 on the frozen commit's units. All
+numbers are processed tokens (input including cache reads and writes, plus output). The per-line figures come from one
+run per unit, so each carries the spread the record shows (152 to 422 tokens per line for a review pass).
+
+| Step | Formula | Tokens | Dollars |
+|---|---|---|---|
+| S3 | the sum of the five metered runs in the record (A06's review is one of them) | 3,887,193 (spent) | $2.50 (spent) |
+| S4, Tier A (high-risk, 36,018 lines) | (review 379.6 tokens per line, the line-weighted mean of A01 and A06 + verification 411.2, A01 only) × 36,018 lines × 1.3 headroom | 37.03M (28.48M without headroom) | $20.25 |
+| S4, Tier B sample (11,972 lines) | (review 151.7 + verification 169.9, B01 only) × 11,972 lines × 1.3 | 5.01M (3.85M without headroom) | $4.04 |
+| S4 total | Tier A + Tier B | 42.03M (32.33M without headroom; shallow single passes with no seeds, and no second-vendor pass) | $24.30 |
+| S9 benchmark | measured per-run cost per arm × runs in the pre-registration × 1.3 | not measured: no run exists | not measured |
+
+Two extrapolations are in S4 and are labelled so: the verification rate was measured on one Tier A unit and one Tier B
+unit and is applied to every line of its tier (verification cost follows the number of findings, not the lines); the
+Tier A review rate averages two units and is not applied to Tier B. A second-vendor pass over about 20% of the units
+(reviewer rule 4) is **not included and not measured**. The measured passes also had no planted defects and were shallower than the plan's review.
 
 The review ceiling is **75M processed tokens** for S1–S8 plus S10, with an owner checkpoint at **40M**.
 The owner chose both on 2026-10-03; the epic's earlier 150M ceiling and 75M checkpoint are replaced.
-Both are to be recomputed from the pilots, and S9 gets its own owner-approved ceiling, which the
-pilots also set.
+The pilots' measured numbers are applied to both below (a step the pilots did not measure stays unmeasured), and S9 gets its own
+owner-approved ceiling, which the benchmark pilot would have set and did not.
 
-**At 75M the review will cover less than the plan describes.** The lower bounds of the estimates
-above sum to about 78M (counting S1 as 0), and the upper bounds to about 170M, so the ceiling is below
-even the optimistic reading. That is a stated fact about unmeasured numbers, not a forecast. What the
-plan does when the ceiling binds:
+**What the 40M checkpoint counts: decided.** The owner decided on 2026-10-04, in chat, that pilot spend counts toward
+both counters, as this page had recommended. The counter is the running sum of processed tokens, as the hosts report
+them, over S1–S8 plus S10: the same counter as the 75M ceiling, and S3 (the pilots) is part of it. The $75 pilot
+ceiling stays the hard stop on pilot dollars. Pilot spend so far: 3,887,193 processed tokens and $2.50, so
+**36,112,807 tokens remain under the 40M checkpoint and 71,112,807 under the 75M ceiling** for the rest of the review.
+The checkpoint is a stop-and-ask, not a failure.
+
+**What the measured numbers imply for the caps.** S4 at its measured ceiling is 42.03M (32.33M without headroom).
+Counted on top of the pilots, that is 45.9M (36.2M without headroom), so the 40M checkpoint is reached inside S4 when
+headroom is used, and is not reached at all when it is not (3.8M to spare). The full review does **not** fit under 75M on these
+numbers: after the pilots and S4 at its ceiling, 29.08M remain, and the still-unmeasured steps S1, S2, S5, S6, S8 and S10
+have lower bounds that sum to 33.5M (0.5 + 1 + 8 + 20 + 3 + 1), a shortfall of at least 4.4M before any of them reaches
+its upper bound (their upper bounds sum to 75.5M). Without S4's headroom the lower bounds fit (38.8M remain), but the
+upper bounds do not. Covering S4 in full, S1, S2, S5, S8 and S10 at their lower bounds costs 13.5M and leaves 15.6M for
+S6, against its estimate of 20–50M: S6 (host runs, drills, red team) is the step that would be cut, and the cap rules
+below say how. These statements rest on the unmeasured estimates for six steps; they are not a forecast.
+
+OWNER DECISION (open, #361): approve the measured ceilings above as the review's S3 and S4 ceilings. Recommendation:
+approve them, keep 75M and 40M as set, and measure S5 and S6 in their own first runs before either is raised. S9 has no
+measured basis until the benchmark pilot runs, and this page does not choose its ceiling.
+
+**At 75M the review will cover less than the plan describes.** What the plan does when the ceiling binds:
 
 1. High-risk units are reviewed in full first. Nothing else runs ahead of them.
 2. The sample rate is reduced before any high-risk unit is cut.
@@ -142,17 +180,6 @@ plan does when the ceiling binds:
    the strength of the part that ran.
 4. At 40M the review stops and the owner decides whether to continue, cut scope, or raise the ceiling.
    Nobody raises it unrecorded.
-
-**What the 40M checkpoint counts, and an open owner decision.** The counter is the running sum of
-processed tokens, as the hosts report them, over S1–S8 plus S10: the same counter as the 75M ceiling, and
-S3 (the pilots) is part of it. The lower bounds of S3 and S4 alone are 20M and 25M, which is 45M and already
-past the checkpoint, so the checkpoint is reached while the pilots or the first high-risk reviews run.
-OWNER DECISION: whether pilot spend counts toward 40M and 75M, and what to do if the owner sets a pilot
-ceiling above 40M. Recommendation: count the pilots in both counters (they are real spend), treat the
-checkpoint as a stop-and-ask and not a failure, and state the pilot ceiling in tokens as well as dollars, well
-under 40M, so the checkpoint falls inside the high-risk review where the owner can see what the pilots
-measured. Until the owner decides, the pilots do not start (no pilot ceiling exists) and this page does not
-choose.
 
 ## Facts as of 2026-10-03
 
@@ -188,7 +215,7 @@ Source: the plan review of 2026-09-29 (findings 4, 8, 9, 14, 15, 19 and 22), wri
 - Dimensions 6, 7 and 9 no longer start "without a ceiling": each holds live-model runs. Every spend
   now sits in a step with an estimate, an order and a ceiling.
 - The spend estimates are marked unmeasured, and the ceiling was cut from 150M to 75M on the owner's
-  decision, to be recomputed from pilots (RELIABILITY: a claim carries its measurement).
+  decision, recomputed from the pilots on 2026-10-04 for S3 and S4 (RELIABILITY: a claim carries its measurement).
 - The benchmark shrank from four arms and three or more repeats to three arms, about 15 tasks and one
   repeat, with the exact paired sign test of `docs/bench/preregistration.md`. At this size the
   likely outcome is INCONCLUSIVE, and the pre-registration says what that permits.
