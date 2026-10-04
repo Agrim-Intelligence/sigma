@@ -44,6 +44,7 @@ import os
 import re
 import shutil
 import signal
+import site
 import subprocess
 import sys
 import tempfile
@@ -449,6 +450,9 @@ def clean_env(profile_dir):
             if not any(marker in key.upper() for marker in SECRET_MARKERS)
             and not key.upper().startswith(SECRET_PREFIXES)}
     kept["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    # The fresh HOME would hide an interpreter's user-site packages (pytest itself, on some machines), so the user base
+    # stays pointed at the real one. A virtualenv, which verification uses, ignores the user site altogether.
+    kept.setdefault("PYTHONUSERBASE", site.getuserbase())
     return _bench_module().arms_common.isolated_env(kept, Path(profile_dir))
 
 

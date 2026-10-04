@@ -492,6 +492,8 @@ def test_third_party_code_runs_without_secret_shaped_environment_values(tmp_path
     assert not [k for k in env if k in ("GH_TOKEN", "ANTHROPIC_API_KEY", "MY_SECRET_VALUE", "AWS_PROFILE", "SSH_AUTH_SOCK")]
     assert env["BENCH_TASKS_HARMLESS"] == "kept"
     assert env["HOME"] != str(pathlib.Path.home()) and str(tmp_path) in env["HOME"]
+    import site
+    assert env["PYTHONUSERBASE"] == site.getuserbase(), "the user base must survive the fresh HOME"
 
 
 def test_materialize_uses_an_operator_cache_so_run_time_needs_no_network(tmp_path):
