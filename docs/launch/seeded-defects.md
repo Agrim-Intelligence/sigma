@@ -25,17 +25,22 @@ and the tool cannot enforce it.
 ## What is reviewed
 
 `review_units.py` turns one frozen commit into a fixed list of review units of at most 3,000 lines.
-The frozen commit is `a5c615062313`, the baseline pinned by #332 (closed). The units for it are in
-[`review-units.json`](review-units.json), made by this gesture, run from the repository root:
+The frozen commit is `c3faf6f23e12`: the units were re-cut there by #581, because the first freeze
+(`a5c615062313`, the baseline pinned by #332, closed) has 63 commits behind it and the tool refused any later
+commit. The units for it are in [`review-units.json`](review-units.json), made by this gesture, run from the
+repository root. The first cut is kept unchanged as
+[`review-units-a5c615062313.json`](evidence/review-units-a5c615062313.json):
 
 ```
-python3 tools/readiness/review_units.py . --sha a5c615062313 --json docs/launch/review-units.json
+python3 tools/readiness/review_units.py . --sha c3faf6f23e12 --json docs/launch/review-units.json
 ```
 
-- **Tier A is reviewed in full:** every tracked file under `hooks/` and the 22 files named in the
+- **Tier A is reviewed in full:** every tracked file under `hooks/` and the 21 files named in the
   tool's `TIER_A_FILES`. The list is tied to the frozen commit. A commit that has since deleted one
-  of those files is refused with exit 2 rather than reviewed with less: `install.sh` is gone from
-  main, so `--sha HEAD` there exits 2 and names it.
+  of those files is refused with exit 2 rather than reviewed with less, and that refusal is the re-cut
+  lever: a person deletes the path from `TIER_A_FILES` (and from the test's list) in the change that
+  re-cuts. `install.sh` was removed from main by #408 and from the list by #581; units cut before that
+  cannot be reproduced by the current list.
 - **Tier B is sampled:** tracked `.py` and `.sh` files under `skills/`, `tools/` and `evals/` that
   are not tests and not in Tier A (`contract/` and `examples/` are outside both tiers). Whole files
   are drawn with `random.Random`, seeded with the first 8 hex digits of the commit read as an
@@ -45,20 +50,22 @@ python3 tools/readiness/review_units.py . --sha a5c615062313 --json docs/launch/
   offers its methods, because `sources.py` is one 4,300-line class. A smaller file is one unit, or
   is packed with its directory neighbours.
 
-At the frozen commit Tier A is 17 units, 36,018 lines, the largest 2,997. The Tier B population is
-58,577 lines and the sample is 15 files, 11,972 lines, 20.44% of it. The 88.1k lines the request
-quoted is 94,876 at this commit: the [inventory](evidence/inventory-a5c615062313.json) counts 139
-non-test Python and shell files.
+At the frozen commit Tier A is 16 units, 36,519 lines, the largest 2,988. The Tier B population is
+71,855 lines and the sample is 37 files, 14,792 lines, 20.59% of it. The new sha gives a new seed, so
+this sample is a different draw from the first cut's (17 units, 36,018 lines and a 15-file sample of
+11,972 lines, 20.44% of 58,577). The 88.1k lines the request quoted is 108,655 at this code: the
+[inventory](evidence/inventory-859290305d97.json) counts 185 non-test Python and shell files
+(the only commit after it changes records, not code).
 
 Two limits of the sample:
 
 - **Large files are under-drawn.** The draw skips a file that would take the total past 22% of the
   population, so large files are picked less often than their size implies. `doctor.py` is 7.7% of the
-  Tier B lines and is in the sample for 15.3% of 3,000 seeds at the 22% ceiling, 18.6% at 25% and
+  Tier B lines at the first freeze and is in the sample for 15.3% of 3,000 seeds at the 22% ceiling, 18.6% at 25% and
   21.9% with no ceiling. 22% is kept because every sample then lands between 20.00% and 21.99%,
   inside the 15-25% band.
-- **`doctor.py` is sampled, not in Tier A.** It is 4,519 lines at the frozen commit and runs on
-  every machine. This sample happens to include it. Whether it joins Tier A is an owner decision, still
+- **`doctor.py` is sampled, not in Tier A.** It is 4,519 lines and runs on
+  every machine. The first cut's sample happened to include it; this one does not. Whether it joins Tier A is an owner decision, still
   pending (see #412).
 
 ## Seed rules

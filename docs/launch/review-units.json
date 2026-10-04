@@ -1,7 +1,7 @@
 {
   "schema": "readiness-units/v1",
-  "sha": "a5c615062313791a86fca8d8b14d7a4ad0713f7f",
-  "seed": 2781222150,
+  "sha": "c3faf6f23e1294cc33dbe5a77121a5b48c507709",
+  "seed": 3288004338,
   "tier_a": [
     {
       "unit": "A01",
@@ -54,7 +54,7 @@
         {
           "path": "hooks/session_start.sh",
           "start": 1,
-          "end": 302
+          "end": 328
         },
         {
           "path": "hooks/time_track.py",
@@ -62,21 +62,10 @@
           "end": 238
         }
       ],
-      "lines": 2267
+      "lines": 2293
     },
     {
       "unit": "A02",
-      "files": [
-        {
-          "path": "install.sh",
-          "start": 1,
-          "end": 32
-        }
-      ],
-      "lines": 32
-    },
-    {
-      "unit": "A03",
       "files": [
         {
           "path": "skills/agrim-init/scripts/board_setup.py",
@@ -91,13 +80,13 @@
         {
           "path": "skills/agrim-init/scripts/setup_wizard.py",
           "start": 1,
-          "end": 334
+          "end": 341
         }
       ],
-      "lines": 1887
+      "lines": 1894
     },
     {
-      "unit": "A04",
+      "unit": "A03",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/blockers.py",
@@ -107,7 +96,7 @@
         {
           "path": "skills/agrim-loop/scripts/channel_notify.py",
           "start": 1,
-          "end": 198
+          "end": 222
         },
         {
           "path": "skills/agrim-loop/scripts/feature_rebase.py",
@@ -120,54 +109,54 @@
           "end": 78
         }
       ],
-      "lines": 2717
+      "lines": 2741
+    },
+    {
+      "unit": "A04",
+      "files": [
+        {
+          "path": "skills/agrim-loop/scripts/ledger.py",
+          "start": 1,
+          "end": 2507
+        }
+      ],
+      "lines": 2507
     },
     {
       "unit": "A05",
       "files": [
         {
-          "path": "skills/agrim-loop/scripts/ledger.py",
+          "path": "skills/agrim-loop/scripts/loop.py",
           "start": 1,
-          "end": 2502
+          "end": 2983
         }
       ],
-      "lines": 2502
+      "lines": 2983
     },
     {
       "unit": "A06",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/loop.py",
-          "start": 1,
-          "end": 2997
+          "start": 2984,
+          "end": 5971
         }
       ],
-      "lines": 2997
+      "lines": 2988
     },
     {
       "unit": "A07",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/loop.py",
-          "start": 2998,
-          "end": 5964
+          "start": 5972,
+          "end": 6573
         }
       ],
-      "lines": 2967
+      "lines": 602
     },
     {
       "unit": "A08",
-      "files": [
-        {
-          "path": "skills/agrim-loop/scripts/loop.py",
-          "start": 5965,
-          "end": 6483
-        }
-      ],
-      "lines": 519
-    },
-    {
-      "unit": "A09",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/reconcile.py",
@@ -182,7 +171,7 @@
         {
           "path": "skills/agrim-loop/scripts/scrub.py",
           "start": 1,
-          "end": 157
+          "end": 160
         },
         {
           "path": "skills/agrim-loop/scripts/slack_client.py",
@@ -190,159 +179,286 @@
           "end": 196
         }
       ],
-      "lines": 1684
+      "lines": 1687
+    },
+    {
+      "unit": "A09",
+      "files": [
+        {
+          "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+          "start": 1,
+          "end": 1981
+        }
+      ],
+      "lines": 1981
     },
     {
       "unit": "A10",
       "files": [
         {
-          "path": "skills/agrim-loop/scripts/slack_commands_listen.py",
+          "path": "skills/agrim-loop/scripts/sources.py",
           "start": 1,
-          "end": 1886
-        },
-        {
-          "path": "skills/agrim-loop/scripts/state.py",
-          "start": 1,
-          "end": 1108
+          "end": 2984
         }
       ],
-      "lines": 2994
+      "lines": 2984
     },
     {
       "unit": "A11",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/sources.py",
-          "start": 1,
-          "end": 2986
-        }
-      ],
-      "lines": 2986
-    },
-    {
-      "unit": "A12",
-      "files": [
-        {
-          "path": "skills/agrim-loop/scripts/sources.py",
-          "start": 2987,
-          "end": 5195
+          "start": 2985,
+          "end": 5193
         }
       ],
       "lines": 2209
     },
     {
-      "unit": "A13",
+      "unit": "A12",
       "files": [
+        {
+          "path": "skills/agrim-loop/scripts/state.py",
+          "start": 1,
+          "end": 1108
+        },
         {
           "path": "skills/agrim-loop/scripts/supervise_daemon.py",
           "start": 1,
-          "end": 466
+          "end": 486
         },
         {
           "path": "skills/agrim-loop/scripts/sync.py",
           "start": 1,
           "end": 1252
-        },
+        }
+      ],
+      "lines": 2846
+    },
+    {
+      "unit": "A13",
+      "files": [
         {
           "path": "skills/agrim-loop/scripts/upstream.py",
           "start": 1,
           "end": 1020
+        },
+        {
+          "path": "skills/agrim-loop/scripts/watch_daemon.py",
+          "start": 1,
+          "end": 952
         }
       ],
-      "lines": 2738
+      "lines": 1972
     },
     {
       "unit": "A14",
       "files": [
         {
-          "path": "skills/agrim-loop/scripts/watch_daemon.py",
+          "path": "skills/agrim-loop/scripts/work.py",
           "start": 1,
-          "end": 953
+          "end": 2973
         }
       ],
-      "lines": 953
+      "lines": 2973
     },
     {
       "unit": "A15",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/work.py",
-          "start": 1,
-          "end": 2970
+          "start": 2974,
+          "end": 5929
         }
       ],
-      "lines": 2970
+      "lines": 2956
     },
     {
       "unit": "A16",
       "files": [
         {
           "path": "skills/agrim-loop/scripts/work.py",
-          "start": 2971,
-          "end": 5887
+          "start": 5930,
+          "end": 6832
         }
       ],
-      "lines": 2917
-    },
-    {
-      "unit": "A17",
-      "files": [
-        {
-          "path": "skills/agrim-loop/scripts/work.py",
-          "start": 5888,
-          "end": 6566
-        }
-      ],
-      "lines": 679
+      "lines": 903
     }
   ],
-  "tier_b_population_lines": 58577,
+  "tier_b_population_lines": 71855,
   "tier_b_sample": [
     {
       "unit": "B01",
       "files": [
         {
-          "path": "skills/agrim-doctor/scripts/doctor.py",
+          "path": "evals/bench/arms/__init__.py",
           "start": 1,
-          "end": 2975
+          "end": 5
+        },
+        {
+          "path": "evals/bench/arms/common.py",
+          "start": 1,
+          "end": 237
         }
       ],
-      "lines": 2975
+      "lines": 242
     },
     {
       "unit": "B02",
       "files": [
         {
-          "path": "skills/agrim-doctor/scripts/doctor.py",
-          "start": 2976,
-          "end": 4519
+          "path": "evals/bench/decision_rule.py",
+          "start": 1,
+          "end": 334
         }
       ],
-      "lines": 1544
+      "lines": 334
     },
     {
       "unit": "B03",
       "files": [
         {
-          "path": "skills/agrim-init/scripts/board_spec.py",
+          "path": "evals/bench/tasks/int-docs-1/repo/cli.py",
           "start": 1,
-          "end": 156
+          "end": 27
+        },
+        {
+          "path": "evals/bench/tasks/int-docs-1/repo/test_cli.py",
+          "start": 1,
+          "end": 14
         }
       ],
-      "lines": 156
+      "lines": 41
     },
     {
       "unit": "B04",
       "files": [
         {
-          "path": "skills/agrim-loop/scripts/autowatch.py",
+          "path": "evals/bench/tasks/int-feature-1/repo/test_tasks.py",
           "start": 1,
-          "end": 925
+          "end": 29
+        }
+      ],
+      "lines": 29
+    },
+    {
+      "unit": "B05",
+      "files": [
+        {
+          "path": "evals/bench/tasks/trap-2/repo/module.py",
+          "start": 1,
+          "end": 1
+        }
+      ],
+      "lines": 1
+    },
+    {
+      "unit": "B06",
+      "files": [
+        {
+          "path": "evals/phase_context_budget.py",
+          "start": 1,
+          "end": 223
         },
         {
-          "path": "skills/agrim-loop/scripts/feature_doc.py",
+          "path": "evals/run.py",
           "start": 1,
-          "end": 967
+          "end": 97
+        }
+      ],
+      "lines": 320
+    },
+    {
+      "unit": "B07",
+      "files": [
+        {
+          "path": "skills/agrim-doctor/scripts/board_migrate.py",
+          "start": 1,
+          "end": 257
+        },
+        {
+          "path": "skills/agrim-doctor/scripts/migrate.py",
+          "start": 1,
+          "end": 729
+        }
+      ],
+      "lines": 986
+    },
+    {
+      "unit": "B08",
+      "files": [
+        {
+          "path": "skills/agrim-init/scripts/sdlc_init.py",
+          "start": 1,
+          "end": 778
+        }
+      ],
+      "lines": 778
+    },
+    {
+      "unit": "B09",
+      "files": [
+        {
+          "path": "skills/agrim-kg/scripts/kg.py",
+          "start": 1,
+          "end": 790
+        }
+      ],
+      "lines": 790
+    },
+    {
+      "unit": "B10",
+      "files": [
+        {
+          "path": "skills/agrim-loop/scripts/actionlog.py",
+          "start": 1,
+          "end": 424
+        },
+        {
+          "path": "skills/agrim-loop/scripts/decision_tier.py",
+          "start": 1,
+          "end": 189
+        },
+        {
+          "path": "skills/agrim-loop/scripts/discovery-scan.sh",
+          "start": 1,
+          "end": 94
+        },
+        {
+          "path": "skills/agrim-loop/scripts/discovery.py",
+          "start": 1,
+          "end": 228
+        },
+        {
+          "path": "skills/agrim-loop/scripts/drift_tick.py",
+          "start": 1,
+          "end": 63
+        },
+        {
+          "path": "skills/agrim-loop/scripts/feature_propagate.py",
+          "start": 1,
+          "end": 1036
+        }
+      ],
+      "lines": 2034
+    },
+    {
+      "unit": "B11",
+      "files": [
+        {
+          "path": "skills/agrim-loop/scripts/feature_registry.py",
+          "start": 1,
+          "end": 1412
+        },
+        {
+          "path": "skills/agrim-loop/scripts/flake_check.py",
+          "start": 1,
+          "end": 166
+        },
+        {
+          "path": "skills/agrim-loop/scripts/managed_settings.py",
+          "start": 1,
+          "end": 383
         },
         {
           "path": "skills/agrim-loop/scripts/mirror.py",
@@ -350,47 +466,63 @@
           "end": 401
         },
         {
+          "path": "skills/agrim-loop/scripts/owners.py",
+          "start": 1,
+          "end": 143
+        }
+      ],
+      "lines": 2505
+    },
+    {
+      "unit": "B12",
+      "files": [
+        {
+          "path": "skills/agrim-loop/scripts/phase_report.py",
+          "start": 1,
+          "end": 2395
+        },
+        {
           "path": "skills/agrim-loop/scripts/pipeline.py",
           "start": 1,
-          "end": 369
+          "end": 372
         },
+        {
+          "path": "skills/agrim-loop/scripts/reconcile_tick.py",
+          "start": 1,
+          "end": 96
+        }
+      ],
+      "lines": 2863
+    },
+    {
+      "unit": "B13",
+      "files": [
         {
           "path": "skills/agrim-loop/scripts/release_manifest.py",
           "start": 1,
           "end": 235
-        }
-      ],
-      "lines": 2897
-    },
-    {
-      "unit": "B05",
-      "files": [
-        {
-          "path": "skills/agrim-loop/scripts/slices.py",
-          "start": 1,
-          "end": 658
         },
         {
-          "path": "skills/agrim-loop/scripts/supervise_classify.py",
+          "path": "skills/agrim-loop/scripts/witness.py",
           "start": 1,
-          "end": 260
+          "end": 222
         }
       ],
-      "lines": 918
+      "lines": 457
     },
     {
-      "unit": "B06",
+      "unit": "B14",
       "files": [
         {
-          "path": "skills/agrim-rebase/scripts/rebase_brief.py",
+          "path": "skills/agrim-rebase/scripts/verify_merge.py",
           "start": 1,
-          "end": 829
+          "end": 532
         }
       ],
-      "lines": 829
+      "lines": 532
     },
     {
-      "unit": "B07",
+      "unit": "B15",
       "files": [
         {
           "path": "skills/agrim-scope/scripts/assign.py",
@@ -398,45 +530,49 @@
           "end": 651
         },
         {
-          "path": "skills/agrim-scope/scripts/brainstorm.py",
+          "path": "skills/agrim-scope/scripts/dedup.py",
           "start": 1,
-          "end": 373
+          "end": 189
+        },
+        {
+          "path": "skills/agrim-scope/scripts/scope.py",
+          "start": 1,
+          "end": 144
         }
       ],
-      "lines": 1024
+      "lines": 984
     },
     {
-      "unit": "B08",
+      "unit": "B16",
       "files": [
         {
-          "path": "skills/agrim-status/scripts/merge_queue.py",
+          "path": "skills/agrim-status/scripts/status.py",
           "start": 1,
-          "end": 230
+          "end": 445
         }
       ],
-      "lines": 230
+      "lines": 445
     },
     {
-      "unit": "B09",
+      "unit": "B17",
       "files": [
         {
-          "path": "skills/agrim-velocity/scripts/velocity.py",
+          "path": "tools/readiness/baseline.py",
           "start": 1,
-          "end": 72
-        }
-      ],
-      "lines": 72
-    },
-    {
-      "unit": "B10",
-      "files": [
+          "end": 199
+        },
         {
-          "path": "tools/leak_refs.py",
+          "path": "tools/readiness/decide.py",
           "start": 1,
-          "end": 1327
+          "end": 853
+        },
+        {
+          "path": "tools/readiness/seed_defects.py",
+          "start": 1,
+          "end": 399
         }
       ],
-      "lines": 1327
+      "lines": 1451
     }
   ]
 }

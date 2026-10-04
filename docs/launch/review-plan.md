@@ -74,7 +74,7 @@ few named "still to produce" files are still absent, so landing one forces this 
 | # | Evidence that already exists on main | Evidence still to be produced | Owner-gated |
 |---|---|---|---|
 | D0 | `docs/launch/definition.json` (`status: proposed`), `docs/launch/definition.md`, `tests/test_launch_definition.py`, `tests/test_launch_ci_cells.py` | `status: signed`, `signed_by` and `signed_on` | the owner's merge of the definition page |
-| D1 | `tools/readiness/baseline.py`, `docs/launch/evidence/inventory-a5c615062313.json`, `docs/launch/review-units.json` (17 high-risk units and a 10-unit sample at frozen commit `a5c615062313`), `tools/readiness/seed_defects.py`, `docs/launch/seeded-defects.md`, `docs/launch/coverage.json`, `skills/agrim-loop/scripts/flake_check.py`, `skills/agrim-loop/scripts/mutation.py` | the line-by-line review itself (S4); a real seed set (only the three made-up examples in `tests/fixtures/readiness_seed_examples` exist); a flake census of 10 runs on Linux and 10 on macOS (#337, open); a mutation kill rate per module (#360, open: no kill rate is recorded on main); the open B1 blocker #514 closed with its fix (the D1 threshold is 0 open B1/B8); the second-vendor pass; a re-freeze, because the units are cut from `a5c615062313` and main has moved | a person who will not review writes the seeds |
+| D1 | `tools/readiness/baseline.py`, `docs/launch/evidence/inventory-859290305d97.json`, `docs/launch/review-units.json` (16 high-risk units and a 17-unit sample at frozen commit `c3faf6f23e12`, re-cut by #581; the first cut is kept at `docs/launch/evidence/review-units-a5c615062313.json`), `tools/readiness/seed_defects.py`, `docs/launch/seeded-defects.md`, `docs/launch/coverage.json`, `skills/agrim-loop/scripts/flake_check.py`, `skills/agrim-loop/scripts/mutation.py` | the line-by-line review itself (S4); a real seed set (only the three made-up examples in `tests/fixtures/readiness_seed_examples` exist); a flake census of 10 runs on Linux and 10 on macOS (#337, open); a mutation kill rate per module (#360, open: no kill rate is recorded on main); the open B1 blocker #514 closed with its fix (the D1 threshold is 0 open B1/B8); the second-vendor pass; the units are cut at `c3faf6f23e12` and the S2 gates ran at `859290305d97`, whose tracked code is the same, so no further re-freeze is open unless main moves again | a person who will not review writes the seeds |
 | D2 | `tests/test_skill_structure.py`, `evals/skill_budget_waivers.json` (`waivers` is empty), `evals/phase_context_budget.json` (instruction bill per phase, a down-only ratchet, #262), `tests/test_documented_gestures.py` (copyable Python gestures in shipped docs resolve, #339), `tests/test_script_help.py` | resolution of documented verbs and flags that are not copyable Python gestures; the model review of the 10 phase skills (S5); a count of gate-skip ambiguities on supported cells | none |
 | D3 | `docs/bench/preregistration.md` (reduced design, exact paired sign test), `docs/launch/evidence/cost-calibration.md` (review cost measured; benchmark cost not measured), `evals/bench/decision_rule.py`, `evals/bench/bench.py`, `evals/bench/arms/sigma.py`, `evals/bench/arms/matched.py`, `evals/bench/meter.py`, `docs/launch/evidence/meter-sonnet-5-5-cf31b72c6967.json`, `tests/test_bench_decision_rule.py`, `tests/test_benchmark_harness.py`, `evals/bench/tasks/manifest.json` (a draft: 8 external and 4 internal tasks verified, three trap slots empty, `frozen` false), `tools/readiness/bench_tasks.py`, `tests/test_bench_tasks.py`, `docs/bench/task-sourcing.md`, `docs/bench/trap-author-brief.md`, `docs/launch/evidence/355-bench-task-verification.json` | the freeze of the task set and the hash of its manifest at the freeze commit (the draft is not frozen); three traps written by someone outside the Sigma team; the hidden tests of those traps; the run (#275, open) and its results file under `docs/launch/evidence/`, which the scorecard names in `benchmark_results` (still null); the S9 spend ceiling | a trap author; the four open choices listed in the pre-registration; the S9 ceiling |
 | D5 | `tools/readiness/drills.py`, `docs/launch/evidence/drills-cde9869d0cf8.json` (4 hermetic drills, 5 runs each, on macOS), `tools/readiness/growth_audit.py`, `docs/launch/growth-audit.md`, `docs/launch/growth-audit.json`, the retention decisions `docs/launch/b6-worktrees.md` and the other `docs/launch/b6-*.md`, `hooks/session_start.sh` and `skills/agrim-doctor/scripts/doctor.py` (the dead-vs-idle staleness check, #265) with `tests/test_session_start.py` and `tests/test_doctor.py` | the drills against a real host rather than hermetic fakes, and on Linux; a 10x/100x table across every per-item path (the retention pages state a growth figure per store, not one table); a recorded live control of dead-vs-idle on a really stopped watcher (`tests/test_session_start.py` has a dead-loop fixture, which is a hermetic control, not that record) | none |
@@ -128,16 +128,16 @@ estimate is replaced by a measured number in the same way.
 
 ### Measured ceilings
 
-Source: [the calibration record](evidence/cost-calibration.md), measured on 2026-10-04 on the frozen commit's units. All
+Source: [the calibration record](evidence/cost-calibration.md), measured on 2026-10-04 on the first cut's units (`a5c615062313`); the per-line rates are applied here to the lines of the re-cut units (#581), which were not metered. All
 numbers are processed tokens (input including cache reads and writes, plus output). The per-line figures come from one
 run per unit, so each carries the spread the record shows (152 to 422 tokens per line for a review pass).
 
 | Step | Formula | Tokens | Dollars |
 |---|---|---|---|
 | S3 | the sum of the five metered runs in the record (A06's review is one of them) | 3,887,193 (spent) | $2.50 (spent) |
-| S4, Tier A (high-risk, 36,018 lines) | (review 379.6 tokens per line, the line-weighted mean of A01 and A06 + verification 411.2, A01 only) × 36,018 lines × 1.3 headroom | 37.03M (28.48M without headroom) | $20.25 |
-| S4, Tier B sample (11,972 lines) | (review 151.7 + verification 169.9, B01 only) × 11,972 lines × 1.3 | 5.01M (3.85M without headroom) | $4.04 |
-| S4 total | Tier A + Tier B | 42.03M (32.33M without headroom; shallow single passes with no seeds, and no second-vendor pass) | $24.30 |
+| S4, Tier A (high-risk, 36,519 lines) | (review 379.6 tokens per line, the line-weighted mean of A01 and A06 + verification 411.2, A01 only) × 36,519 lines × 1.3 headroom | 37.54M (28.88M without headroom) | $20.53 |
+| S4, Tier B sample (14,792 lines) | (review 151.7 + verification 169.9, B01 only) × 14,792 lines × 1.3 | 6.18M (4.76M without headroom) | $4.99 |
+| S4 total | Tier A + Tier B | 43.73M (33.64M without headroom; shallow single passes with no seeds, and no second-vendor pass) | $25.52 |
 | S9 benchmark | measured per-run cost per arm × runs in the pre-registration × 1.3 | not measured: no run exists | not measured |
 
 Two extrapolations are in S4 and are labelled so: the verification rate was measured on one Tier A unit and one Tier B
@@ -157,13 +157,13 @@ ceiling stays the hard stop on pilot dollars. Pilot spend so far: 3,887,193 proc
 **36,112,807 tokens remain under the 40M checkpoint and 71,112,807 under the 75M ceiling** for the rest of the review.
 The checkpoint is a stop-and-ask, not a failure.
 
-**What the measured numbers imply for the caps.** S4 at its measured ceiling is 42.03M (32.33M without headroom).
-Counted on top of the pilots, that is 45.9M (36.2M without headroom), so the 40M checkpoint is reached inside S4 when
-headroom is used, and is not reached at all when it is not (3.8M to spare). The full review does **not** fit under 75M on these
-numbers: after the pilots and S4 at its ceiling, 29.08M remain, and the still-unmeasured steps S1, S2, S5, S6, S8 and S10
-have lower bounds that sum to 33.5M (0.5 + 1 + 8 + 20 + 3 + 1), a shortfall of at least 4.4M before any of them reaches
-its upper bound (their upper bounds sum to 75.5M). Without S4's headroom the lower bounds fit (38.8M remain), but the
-upper bounds do not. Covering S4 in full, S1, S2, S5, S8 and S10 at their lower bounds costs 13.5M and leaves 15.6M for
+**What the measured numbers imply for the caps.** S4 at its measured ceiling is 43.73M (33.64M without headroom).
+Counted on top of the pilots, that is 47.6M (37.5M without headroom), so the 40M checkpoint is reached inside S4 when
+headroom is used, and is not reached at all when it is not (2.5M to spare). The full review does **not** fit under 75M on these
+numbers: after the pilots and S4 at its ceiling, 27.38M remain, and the still-unmeasured steps S1, S2, S5, S6, S8 and S10
+have lower bounds that sum to 33.5M (0.5 + 1 + 8 + 20 + 3 + 1), a shortfall of at least 6.1M before any of them reaches
+its upper bound (their upper bounds sum to 75.5M). Without S4's headroom the lower bounds fit (37.5M remain), but the
+upper bounds do not. Covering S4 in full, S1, S2, S5, S8 and S10 at their lower bounds costs 13.5M and leaves 13.9M for
 S6, against its estimate of 20–50M: S6 (host runs, drills, red team) is the step that would be cut, and the cap rules
 below say how. These statements rest on the unmeasured estimates for six steps; they are not a forecast.
 

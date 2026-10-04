@@ -757,7 +757,7 @@
     "what_visibility_would_expose": "the tracked tree only: this repository's history is not published, the public repository is a fresh snapshot (docs/launch/definition.md)"
   },
   "units_comparison": {
-    "old_units_file": "docs/launch/review-units.json",
+    "old_units_file": "docs/launch/evidence/review-units-a5c615062313.json",
     "old_sha": "a5c615062313791a86fca8d8b14d7a4ad0713f7f",
     "commits_between": 63,
     "how_cut": "tools/readiness/review_units.py --sha <sha> --json <path>; the seed is int(sha[:8], 16)",

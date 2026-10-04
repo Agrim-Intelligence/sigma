@@ -20,11 +20,18 @@ schema, sha (the full 40 hex digits), seed, tier_a, tier_b_population_lines, tie
 {"unit": "A01", "files": [{"path", "start", "end"}], "lines": n}: start and end are 1-based and
 inclusive, and a unit holds at most 3,000 lines. build() validates its own output before anything
 is printed or written.
-  * Tier A, in full: every tracked file under hooks/ plus the 22 paths in TIER_A_FILES. A named
+  * Tier A, in full: every tracked file under hooks/ plus the 21 paths in TIER_A_FILES. A named
     path that is not tracked at the commit exits 2 naming it, because skipping it would quietly
     shrink what "reviewed in full" covers. The list is tied to the frozen commit: a later commit
     that deletes one of those files is refused the same way. doctor.py is NOT in Tier A; it is
     sampled, so the draw can miss it.
+    RE-CUT LEVER. The refusal is the intended behaviour, not a defect: a deleted file is dropped by
+    a person, in the change that re-cuts, never by the tool. The exact edit is to delete that one
+    path from TIER_A_FILES here and from ISSUE_TIER_A in tests/test_readiness_review_units.py, then
+    run the tool and commit the new units file. Done once, for install.sh (removed by #408, which
+    made the old list refuse every later commit). The cost of the edit: the list no longer names
+    that file, so this tool cannot reproduce units for a commit from before the deletion; the
+    pre-deletion units stay as a record in docs/launch/evidence/review-units-a5c615062313.json.
   * Tier B, sampled: tracked *.py and *.sh under skills/, tools/ and evals/, with no tests path
     component, that are not in Tier A. contract/ and examples/ are outside both tiers.
   * Lines are counted by newline (a last line without one counts), never with splitlines(): one
@@ -42,7 +49,7 @@ is printed or written.
     window, else at the limit, and says so on stderr.
 
 KNOWN BIAS. The 22% ceiling skips a file that would overshoot it, so large files are drawn less
-often than their size. At the frozen commit doctor.py (4,519 of 58,577 Tier B lines, 7.7%) is in
+often than their size. At the first frozen commit (a5c615062313) doctor.py (4,519 of 58,577 Tier B lines, 7.7%) is in
 the sample for 15.3% of 3,000 seeds at the 22% ceiling, 18.6% at 25% and 21.9% with no ceiling
 (measured by running draw() over seeds 0 to 2,999). The ceiling keeps every one of those samples
 between 20.00% and 21.99% of the population, inside the 15-25% band, and that is what it costs.
@@ -88,7 +95,6 @@ TIER_B_SUFFIXES = (".py", ".sh")
 KEYS = ["schema", "sha", "seed", "tier_a", "tier_b_population_lines", "tier_b_sample"]
 HEX40 = re.compile(r"[0-9a-f]{40}")
 TIER_A_FILES = (
-    "install.sh",
     "skills/agrim-loop/scripts/work.py",
     "skills/agrim-loop/scripts/sources.py",
     "skills/agrim-loop/scripts/feature_rebase.py",
