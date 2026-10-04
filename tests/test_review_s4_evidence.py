@@ -35,7 +35,9 @@ def test_every_unit_is_reviewed_or_not_reached_with_a_reason_and_totals_add_up()
     assert t["reviewer_and_verifier_tokens"] == sum(u["tokens"] for u in rev)
     c = ev["counters"]
     assert c["cumulative"] == c["at_release"] + c["this_goal_measured"]
-    assert c["headroom_checkpoint"] == c["checkpoint"] - c["cumulative"]
+    assert c["over_checkpoint"] == c["cumulative"] - c["checkpoint"] == 7369450
+    assert c["headroom_cap"] == c["cap"] - c["cumulative"]
+    assert c["cumulative"] == c["at_release"] + ev["this_goal_first_wave_total"]
 
 
 def test_per_unit_lines_and_totals_tie_to_the_units_file_and_the_md():
@@ -47,7 +49,7 @@ def test_per_unit_lines_and_totals_tie_to_the_units_file_and_the_md():
     assert t["findings_found"] == sum(u["findings_found"] for u in rev)
     assert t["verified"] == sum(u["verified"] for u in rev)
     assert all(sum(u["dimensions"].values()) == u["verified"] for u in rev)
-    assert c["this_goal_measured"] == t["reviewer_and_verifier_tokens"] + ev["slot_overhead"]["tokens"]
+    assert c["this_goal_measured"] == t["reviewer_and_verifier_tokens"] + ev["governance"]["tokens"] + ev["slot_overhead"]["tokens"]
     blockers = [f for f in ev["filed"] if f["label"] == "launch:blocker"]
     assert blockers and all(f["queued"] and not f["promoted"] for f in blockers)
     md = EVID.with_suffix(".md").read_text()

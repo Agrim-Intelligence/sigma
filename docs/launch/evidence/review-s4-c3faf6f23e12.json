@@ -37,43 +37,43 @@
       "unit": "A02",
       "lines": 1894,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A03",
       "lines": 2741,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A04",
       "lines": 2507,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A05",
       "lines": 2983,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A06",
       "lines": 2988,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A07",
       "lines": 602,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A08",
       "lines": 1687,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A09",
@@ -102,13 +102,13 @@
       "unit": "A10",
       "lines": 2984,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A11",
       "lines": 2209,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A12",
@@ -143,7 +143,7 @@
       "unit": "A13",
       "lines": 1972,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A14",
@@ -177,13 +177,13 @@
       "unit": "A15",
       "lines": 2956,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     },
     {
       "unit": "A16",
       "lines": 903,
       "status": "not reached",
-      "reason": "checkpoint reserve: remaining headroom under the 40M checkpoint was kept for this goal governance (plan review, code reviews, CI)"
+      "reason": "not reached: S4 paused at the owner checkpoint"
     }
   ],
   "totals": {
@@ -198,21 +198,21 @@
     "tokens_per_line": 677.1
   },
   "slot_overhead": {
-    "tokens": 3539083,
-    "dollars": 1.179,
-    "turns": 32,
-    "note": "this goal slot own transcript metered at evidence generation; later governance cost is not in this figure"
+    "tokens": 11658953,
+    "dollars": 7.01,
+    "turns": 81,
+    "note": "the previous goal slot own transcript, metered after it stopped; it includes the re-reading overhead that made the earlier figure far too low"
   },
   "counters": {
     "at_release": 28062829,
-    "this_goal_measured": 10372752,
-    "cumulative": 38435581,
+    "this_goal_measured": 19306621,
+    "cumulative": 47369450,
     "checkpoint": 40000000,
     "cap": 75000000,
-    "headroom_checkpoint": 1564419,
-    "headroom_cap": 36564419
+    "headroom_cap": 27630550,
+    "over_checkpoint": 7369450
   },
-  "stop_reason": "checkpoint reserve: stopped before the next wave because the remaining headroom under the 40M checkpoint would not cover another wave plus this goal governance; 12 of 16 units not reached",
+  "stop_reason": "owner checkpoint exceeded: cumulative 47,369,450 is 7,369,450 over the 40M checkpoint; S4 is PAUSED with 12 of 16 units (A02-A08, A10, A11, A13, A15, A16) and all of Tier B not reviewed; releasing more is the owner's decision",
   "filed": [
     {
       "issue": 589,
@@ -241,5 +241,16 @@
     "no seeded defects, no second vendor",
     "only a subset of findings was reproduced by running code; the rest are file:line verdicts"
   ],
-  "scoring": "no dimension is scored; docs/launch/scorecard.json is untouched"
+  "scoring": "no dimension is scored; docs/launch/scorecard.json is untouched",
+  "governance": {
+    "tokens": 813999,
+    "reviewers": [
+      "plan review",
+      "pre-PR code review",
+      "post-PR review"
+    ],
+    "note": "processed tokens of the three governance reviewers"
+  },
+  "this_goal_first_wave_total": 19306621,
+  "amendment_note": "Earlier committed figures (cumulative 38,435,581; headroom 1,564,419) were wrong: they excluded the governance reviewers and the slot's later overhead. This amendment and the new reviewer's cost are not included in 47,369,450."
 }
