@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/more-itertools/more-itertools.git",
+  "base_sha": "d92f081a089714e0aa92434c797fdd1a06da1290",
+  "fix_sha": "3e87c08ac878f4bb79349d38ac69ba75c45dc5bf",
+  "pr_number": 1253,
+  "issue_number": 1252,
+  "issue_url": "https://github.com/more-itertools/more-itertools/issues/1252",
+  "pr_url": "https://github.com/more-itertools/more-itertools/pull/1253",
+  "pr_created_at": "2026-09-03T21:47:21Z",
+  "pr_merged_at": "2026-09-04T19:14:50Z",
+  "license": "MIT",
+  "stars": 4098,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 13,
+  "issue_title": "split_before/split_after/split_when disagree with themselves on an empty iterable when maxsplit=0",
+  "issue_body_sha256": "3783ba5331320c8567ba4244748df7e60dc9b1dc6240da4c33b7e5aed092f784",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-09-04T19:14:51Z",
+  "issue_closed_at": "2026-09-04T19:14:51Z",
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "tests",
+  "hidden_test_files": [
+    "tests/test_more.py"
+  ],
+  "tree_sha256": "10ee06fc59b9e19a96c01e2effa4bf535ed5db15fd2bcf6d67b45a3977457a11"
+}

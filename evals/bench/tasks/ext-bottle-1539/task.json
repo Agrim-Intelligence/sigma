@@ -1,0 +1,28 @@
+{
+  "id": "ext-bottle-1539",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "JSON configs do nothing (`autojson` / `json.disable` / `json.enable`)\n\nHistorically in Bottle you could pass `autojson=False` to the constructor to disable the default JSON plugin, which would allow adding a different or differently-configured JSON plugin. This behavior was broken in e22e38dd as part of the 0.13 config refactor, and now there is no way to disable the JSON plugin any more.\n\nThe bug introduced in e22e38dd is multi-fold:\n\n- `autojson` constructor arg is replaced with a deprecation message saying to use `app.config['json.enable'] = False` instead\n  - ...but then it actually sets `self.config['json.disable'] = True`\n- neither `json.enable` nor `json.disable` configurations do anything in the constructor anyway, because the plugin is now installed regardless:\n```diff\n-        if self.config['autojson']:\n-            self.install(JSONPlugin())\n+        self.install(JSONPlugin())\n```\n- meanwhile in `JSONPlugin` it declares three more configs - `json.ascii`, `json.indent` and `json.dump_func`, all of which also appear to do nothing\n\nIt looks as if perhaps there was an intent to implement behavior around these configs at some future date, but that didn't happen (see #881). The current situation means also any config-related suggestions in #287 to swap out the `dumps` function also no longer work.\n\nIs there an interest in a PR which would implement this functionality? Right now both the code and the docs (https://bottlepy.org/docs/dev/configuration.html) are misleading.\n\nFor the short term it seems the easiest thing to try get a bit more control over the JSON handling is to go through all the plugins and manually adjust the `JSONPlugin` as suggested in https://github.com/bottlepy/bottle/issues/287#issuecomment-4001810\n\nMake the change in this repository.",
+  "source": "ext-bottle-1539/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "test"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-bottle-1539",
+  "hidden_sha256": "68cbbaab253f9addf6be68103f18850ff02692049f2e7cadd5f8d61d7fa60c9b",
+  "hidden_files": {
+    "files/test/test_outputfilter.py": "39747a7cec22890d034bc3928643196246d971f6f2fad4bcceb7ff33d92af406",
+    "hidden.json": "685d1c31fd6cbb883867b255ff030e5bbed28f743dbf86f33f1984d0f4840c99",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "e6a9c0e74c91653618ce68e96e03533f30e63281ea4b2bfff36a48002c9eb513"
+}

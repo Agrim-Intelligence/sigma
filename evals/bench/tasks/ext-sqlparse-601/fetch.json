@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/andialbrecht/sqlparse.git",
+  "base_sha": "cd4c1b66cb0a148b40f742d435c527f27cf0a9fb",
+  "fix_sha": "a194d3187b04b0aed7a935c3401f068236fb6264",
+  "pr_number": 868,
+  "issue_number": 601,
+  "issue_url": "https://github.com/andialbrecht/sqlparse/issues/601",
+  "pr_url": "https://github.com/andialbrecht/sqlparse/pull/868",
+  "pr_created_at": "2026-07-25T12:14:28Z",
+  "pr_merged_at": "2026-07-25T15:08:10Z",
+  "license": "BSD-3-Clause",
+  "stars": 4021,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 10,
+  "hidden_test_files": [
+    "tests/test_regressions.py"
+  ],
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "tests",
+  "tree_sha256": "0572eb6785c43587f0cd017775da89553b75fde7fe241e2285c077563f6469e9",
+  "issue_title": "Error paring `BETWEEN .. AND ..` clause when decimal's '0' is omitted",
+  "issue_body_sha256": "d57050d957d9151cc1e154a6682fccdad22e4660a13ba9041f2f830f1aad9a51",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-07-25T15:08:11Z",
+  "issue_closed_at": "2026-07-25T15:08:11Z"
+}

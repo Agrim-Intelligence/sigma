@@ -1,0 +1,28 @@
+{
+  "id": "ext-sqlparse-332",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "get_real_name can't get name of column where dbname is included.\n\nGet_real_name can't get name of column where dbname is included(like db1.table1.a1), it's real_name returning table1 not a1.\n```\nimport sqlparse\nfrom sqlparse.sql import IdentifierList, Identifier\n\nsql = '''\nselect a, db1.table1.a1    # here\nas BBB\nfrom test_table\n'''\nparsed = sqlparse.parse(sql)\nstmt = parsed[0]  # grab the Statement object\nextract_table_identifiers(stmt)\n\ndef extract_table_identifiers(token_stream):\n    for item in token_stream:\n        if isinstance(item, IdentifierList):\n            for identifier in item.get_identifiers():\n                if identifier.has_alias():\n                    print(identifier.get_real_name())\n                else:\n                    print(identifier.get_name())\n        elif isinstance(item, Identifier):\n            print(item.get_real_name())\n```\n\n\nMake the change in this repository.",
+  "source": "ext-sqlparse-332/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-sqlparse-332",
+  "hidden_sha256": "33362568b8d2d587a4e21444512fda52e250d68b736c8afd61584ac3dc98cd8e",
+  "hidden_files": {
+    "files/tests/test_parse.py": "1a6b78f29812893ccf6b3bffd6aaeb7eff4f42c97558c3d1a8034ed5aa190369",
+    "hidden.json": "36e469320ad640184022476a1ade4e6322a76644b503d05e5717f6b27be8ebd8",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "0bee88b1a6acce42aa95dead91a4d7f669b9ae4fbc7636e0d127ca32d3deff8a"
+}

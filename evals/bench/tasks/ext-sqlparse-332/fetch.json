@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/andialbrecht/sqlparse.git",
+  "base_sha": "df8e28495a87954a9d52de70c33ef7225c53b28f",
+  "fix_sha": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+  "pr_number": 865,
+  "issue_number": 332,
+  "issue_url": "https://github.com/andialbrecht/sqlparse/issues/332",
+  "pr_url": "https://github.com/andialbrecht/sqlparse/pull/865",
+  "pr_created_at": "2026-07-19T06:55:44Z",
+  "pr_merged_at": "2026-07-25T09:44:58Z",
+  "license": "BSD-3-Clause",
+  "stars": 4021,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 7,
+  "issue_title": "get_real_name can't get name of column where dbname is included.",
+  "issue_body_sha256": "084c74640c1cf2198b1df591a7501e9f09fb04e6f6be3ba22d7dfb85c702f021",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-07-25T09:45:42Z",
+  "issue_closed_at": "2026-07-25T09:44:59Z",
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "tests",
+  "hidden_test_files": [
+    "tests/test_parse.py"
+  ],
+  "tree_sha256": "0bee88b1a6acce42aa95dead91a4d7f669b9ae4fbc7636e0d127ca32d3deff8a"
+}

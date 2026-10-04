@@ -89,6 +89,40 @@ def _metadata(path, function, rule):
         ("tools/readiness/mutation_sample.py", "_restore", "fs-remove"):
             ("explicit sample command; deletes only mutmut's cache and coverage data inside the clean "
              "frozen clone it was given, never a tracked file", "medium"),
+        ("tools/readiness/bench_tasks.py", "_verify_command", "fs-write"):
+            ("explicit verify --json PATH; caller-supplied output path", "medium"),
+        ("tools/readiness/bench_tasks.py", "build_manifest", "fs-write"):
+            ("explicit build-manifest command; manifest.json beside the task directories only", "medium"),
+        ("tools/readiness/bench_tasks.py", "export_tree", "fs-write"):
+            ("explicit verify --external or hidden-from-pr (a fresh directory under the caller-supplied --scratch path) "
+             "or materialize (the task's own git-ignored repo/); one commit fetched read-only, no history kept",
+             "medium"),
+        ("tools/readiness/bench_tasks.py", "harness_accepts", "fs-write"):
+            ("check and verify; stand-in directories inside a fresh temporary directory", "medium"),
+        ("tools/readiness/bench_tasks.py", "hidden_from_pr", "fs-write"):
+            ("explicit hidden-from-pr command; one hidden bundle under the hidden root, outside the "
+             "repository", "medium"),
+        ("tools/readiness/bench_tasks.py", "__init__", "fs-write"):
+            ("explicit verify; a pass-through launcher script inside a fresh temporary directory", "medium"),
+        ("tools/readiness/bench_tasks.py", "_write_manifest", "fs-write"):
+            ("check and verify with a hidden root write a copy of manifest.json inside a fresh temporary directory; "
+             "the explicit lock command rewrites the manifest's environment record in place", "medium"),
+        ("tools/readiness/bench_tasks.py", "write_lock", "fs-write"):
+            ("explicit lock command; environment.lock beside the manifest and the manifest's environment record; "
+             "the environment is built under the caller-supplied --scratch path", "medium"),
+        ("tools/readiness/bench_tasks.py", "harness_validates", "fs-write"):
+            ("check and verify with a hidden root; stand-in directories inside a fresh temporary directory",
+             "medium"),
+        ("tools/readiness/bench_tasks.py", "materialize_task", "fs-rmtree"):
+            ("explicit materialize command; removes only the tree it just fetched, when its digest is not the "
+             "recorded one", "high"),
+        ("tools/readiness/bench_tasks.py", "materialize_task", "fs-write"):
+            ("explicit materialize command; the task's own git-ignored repo/ (refused if it exists) and, with "
+             "--record-digest, its fetch.json", "medium"),
+        ("tools/readiness/bench_tasks.py", "verify_external", "fs-write"):
+            ("explicit verify --external; fresh directories under the caller-supplied --scratch path", "medium"),
+        ("tools/readiness/bench_tasks.py", "seal", "fs-write"):
+            ("explicit seal command; the named task's task.json only", "medium"),
         ("tools/readiness/seed_defects.py", "apply", "fs-write"):
             ("explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
              "medium"),

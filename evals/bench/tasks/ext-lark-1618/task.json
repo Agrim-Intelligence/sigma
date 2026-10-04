@@ -1,0 +1,28 @@
+{
+  "id": "ext-lark-1618",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "Bug in lexer_callbacks, causing some callbacks to be skipped in some grammars\n\n## Bug description\n\nWhen two or more terminals each have both an `UnlessCallback` (they absorb a\nsame-priority keyword literal) **and** a `lexer_callbacks` entry, every user\ncallback except the last one silently never fires. The tokens themselves lex\ncorrectly, so nothing surfaces the drop.\n\n\n## Reproduce \n```python\nfrom lark import Lark\n\nfired = []\np = Lark(r'''\n    start: (A | B | AKW | BKW)+\n    A: /[a-z]+/\n    B: /[0-9]+/\n    AKW: \"foo\"\n    BKW: \"123\"\n    %ignore \" \"\n''', parser='lalr', lexer='basic',\n    lexer_callbacks={'A': lambda t: fired.append('A') or t,\n                     'B': lambda t: fired.append('B') or t})\n\nlist(p.lex(\"bar 456\"))\nprint(fired)   # actual: ['B']  — expected: ['A', 'B']\n```\n\n`\"bar\"` lexes as `A` and is never re-typed, yet the `A` callback doesn't run.\n\n## Cause\n\n`_build_scanner` creates each `CallChain` gate inside the loop over\n`user_callbacks`:\n\n```python\nself.callback[type_] = CallChain(self.callback[type_], f,\n                                 lambda t: t.type == type_)\n```\n\nThe lambda closes over the loop **variable** `type_` and only reads it when\ncalled — during lexing, after the loop has finished — so every gate compares\nagainst the *last* terminal's name. In the example above, `A`'s gate asks\n`t.type == \"B\"`.\n\nFix can be a simple one-line. I will create a PR soon, but meanwhile, this issue documents it.\n\nMake the change in this repository.",
+  "source": "ext-lark-1618/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-lark-1618",
+  "hidden_sha256": "c83b811582969cc1c1a878936926e8612dd7943e74bfba31426f4b6932a58a5e",
+  "hidden_files": {
+    "files/tests/test_grammar.py": "b34f3c95ad1df4ce8ac04a26756a5a5998c47cbc04f41e165adda08156c2ec21",
+    "hidden.json": "04586a2775d949be122e0db91bbe49b09b0a6e5d7319bbde99a25ab1118cf3d0",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "107eef56ebecb6b3d490504c5b95a2fe62f50471055e0df4e78c77bf3f310e3c"
+}

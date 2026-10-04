@@ -73,6 +73,32 @@ Sigma's "output" is agent *behavior* (does it follow the spine, plan before edit
 claiming done). Behavior is non-deterministic, so quality is guarded in tiers. Run the whole thing
 on every change; a drop below the committed baseline fails the build.
 
+### The task set (`evals/bench/tasks/`)
+
+`manifest.json` (schema `sigma.benchmark-tasks/v1`, the file `--manifest` takes) is derived from the per-task
+`task.json` files and says `"frozen": false` until the three traps have been authored and the freeze step in
+[`docs/bench/task-sourcing.md`](../docs/bench/task-sourcing.md) has been done; a draft manifest cannot run, because the
+harness refuses a task whose hidden bundle is missing and the three trap slots have none. `tools/readiness/bench_tasks.py`
+checks and verifies it:
+
+```bash
+python3 tools/readiness/bench_tasks.py check [--hidden-root ~/.sigma-ops/bench/hidden]
+python3 tools/readiness/bench_tasks.py verify --hidden-root ~/.sigma-ops/bench/hidden --external --scratch <empty dir>
+python3 -m pytest tests/test_bench_tasks.py -q
+```
+
+Internal tasks commit their starting repository (`<id>/repo/`). External tasks commit only `fetch.json` (repository,
+base and fix commit, pull request, license, stars, dependencies, a digest of the base tree); `bench_tasks.py
+materialize <id>` fetches the base commit's tree, without history or the fix, into the git-ignored `<id>/repo/`,
+which the harness then copies like any other source. Hidden bundles never enter the repository: they live under the
+operator's hidden root, and their per-file hashes are in `task.json`, so `tests/test_bench_tasks.py` goes red naming a
+hidden file copied anywhere under `evals/bench/`. `verify` scores each task through the harness's own
+`_command_passed` and `_hidden_passed` behind a pass-through launcher (a real isolation launcher is the operator's);
+the hidden tests must fail on the starting tree (pytest exit 1) and pass on the reference fix, and the visible result must be
+the recorded one. Every task is scored in one environment, because the harness resolves every argv on one PATH:
+`evals/bench/tasks/environment.lock` (resolved by `bench_tasks.py lock`, hash and interpreter in the manifest) is what the run
+must build and put first on that PATH; the harness does not enforce it.
+
 ## Tier 0 — structural gate over every `SKILL.md` (free, runs in CI)
 
 The product *is* the skill prompts, and Tier 1 below scores the intent hook, not one word of them.

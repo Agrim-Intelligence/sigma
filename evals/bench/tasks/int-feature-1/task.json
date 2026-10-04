@@ -1,0 +1,28 @@
+{
+  "id": "int-feature-1",
+  "kind": "feature",
+  "origin": "internal",
+  "trap": false,
+  "status": "ready",
+  "prompt": "Add priorities to `TaskList` in `tasks.py`.\n\n`add(title, priority=\"normal\")` accepts \"high\", \"normal\" or \"low\"; any other value raises `ValueError` and adds nothing (a rejected add must not use up an id). Add a method `open_titles_by_priority()` that returns the titles of the open tasks ordered high, then normal, then low, keeping the order they were added within one priority. Everything that works today keeps working, including the ids `add` returns.\n\nMake the change in this repository.",
+  "source": "int-feature-1/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "visible_expected": "fail",
+  "hidden_bundle": "int-feature-1",
+  "hidden_sha256": "1592d81c2a76929f64af851075c341b601267e747ed5272ff4d5ec09b5158f7c",
+  "hidden_files": {
+    "files/test_hidden_tasks.py": "6fc4f9a4ce034a599e9cea775343e43ee71a047df613ff6a1e771d33a7880b5b",
+    "hidden.json": "f47e71bf7f9671a44423a440c27e192b0797d83e0cb2db0cb8663dd010190ac6",
+    "reference/tasks.py": "61e5de8b1f1b2a3844b6632bca20dc1cc41fd9f1989bbfbb905dcf7e2ccdf202",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "76362da8a2d9bc0cdf337055df07909b30e1f109c4a2aef8c847ad252e1732ca"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "ext-sqlparse-601",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "Error paring `BETWEEN .. AND ..` clause when decimal's '0' is omitted\n\nAs the title mentioned. Here are my sql query and python script.\n\n```sql\n-- test_sql\nselect\n    l_discount\nfrom\n    lineitem\nwhere\n    l_discount between .03 and .06;\n```\n```python\nstatement = sqlparse.parse(test_sql)[0]\n\nfor token in statement.tokens:\n    if isinstance(token, sqlparse.sql.Where):\n        print(token, '\\n')\n        print(' tokens type '.center(35, '='), ' token value '.center(20, '='))\n        for sub_token in token.tokens:\n            if sub_token.value in [' ', '\\n']: continue\n            print(str(type(sub_token)).ljust(35, ' '),  sub_token)\n```\nThe sqlparse result is:\n```\nwhere\n    l_discount between .03 and .06; \n\n=========== tokens type =========== === token value ====\n<class 'sqlparse.sql.Token'>        where\n<class 'sqlparse.sql.Identifier'>   l_discount between\n<class 'sqlparse.sql.Identifier'>   .03 and\n<class 'sqlparse.sql.Token'>        .06\n<class 'sqlparse.sql.Token'>        ;\n```\nThe `between` and `and` keyword are parsed as `Identifier` with some other content.\nAnd, the result is right when the omitted '0's   are added as following:\n```sql\n-- test_sql\nselect\n    l_discount\nfrom\n    lineitem\nwhere\n    l_discount between 0.03 and 0.06;\n```\n```\nwhere\n    l_discount between 0.03 and 0.06; \n\n=========== tokens type =========== === token value ====\n<class 'sqlparse.sql.Token'>        where\n<class 'sqlparse.sql.Identifier'>   l_discount\n<class 'sqlparse.sql.Token'>        between\n<class 'sqlparse.sql.Token'>        0.03\n<class 'sqlparse.sql.Token'>        and\n<class 'sqlparse.sql.Token'>        0.06\n<class 'sqlparse.sql.Token'>        ;\n```\n\nMake the change in this repository.",
+  "source": "ext-sqlparse-601/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-sqlparse-601",
+  "hidden_sha256": "fd77953279e7edbb0a920ba9fe95f4e574e5804dc0eaa5c948304e40126a7771",
+  "hidden_files": {
+    "files/tests/test_regressions.py": "b372227d1bd5ed3bca90173092bfd633f53ea6a958c139ca6862edfe53c71510",
+    "hidden.json": "23b4e8f29701b914fc4d2ae82677efb8f04ad700508efb3bcaf4bc52f9204666",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "0572eb6785c43587f0cd017775da89553b75fde7fe241e2285c077563f6469e9"
+}

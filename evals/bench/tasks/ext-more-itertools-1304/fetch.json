@@ -1,0 +1,29 @@
+{
+  "repo_url": "https://github.com/more-itertools/more-itertools.git",
+  "base_sha": "790bb0bb2c03e7a07282e5f16f4b1fde35b8fcf5",
+  "fix_sha": "1ea82a711c69f590054987b5cb194157f8ce8ac4",
+  "pr_number": 1305,
+  "issue_number": 1304,
+  "issue_url": "https://github.com/more-itertools/more-itertools/issues/1304",
+  "pr_url": "https://github.com/more-itertools/more-itertools/pull/1305",
+  "pr_created_at": "2026-09-29T15:59:51Z",
+  "pr_merged_at": "2026-09-29T20:28:23Z",
+  "license": "MIT",
+  "stars": 4098,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 6,
+  "issue_title": "ichunked(..., 0) raises islice's ValueError on a nonempty iterable",
+  "issue_body_sha256": "cf7e75970eabeeecbaacf9b0009f7a0ad12b42e64c11799179d587b310e5b77d",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-09-29T20:28:25Z",
+  "issue_closed_at": "2026-09-29T20:28:25Z",
+  "install": [
+    "pytest"
+  ],
+  "pytest_args": [],
+  "tests_dir": "tests",
+  "hidden_test_files": [
+    "tests/test_more.py"
+  ],
+  "tree_sha256": "331cc2f9afa9ab73ceb70810155df645b5c55a727a41b28a6cb34c2409906e89"
+}

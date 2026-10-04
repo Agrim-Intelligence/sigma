@@ -1,0 +1,28 @@
+{
+  "id": "int-docs-1",
+  "kind": "docs",
+  "origin": "internal",
+  "trap": false,
+  "status": "ready",
+  "prompt": "`README.md` does not document the command-line options of `cli.py`.\n\nAdd an `## Options` section with exactly one bullet per option (the positional `name` and every `--flag`), written as a line starting `- ` that names the option in backticks, carries the option's help text exactly as `cli.py` has it, and, for every `--flag` that takes a value, ends with `(default: <value>)`, where <value> is the parser's own default written without quotes. Do not change the example above it.\n\nMake the change in this repository.",
+  "source": "int-docs-1/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "visible_expected": "fail",
+  "hidden_bundle": "int-docs-1",
+  "hidden_sha256": "1f1d98d21fd7bd15a567dab9564e60fc79c35a149e98b28e35909caf1624ea0d",
+  "hidden_files": {
+    "files/test_hidden_docs.py": "f0910be6aa9805d76905698cd75fd3bad7117b5dbe03dae82a207baa6b514cfb",
+    "hidden.json": "1f127cdd740b556c96b49f04357634d61b386b62bc146c1ecba8c68a987d6779",
+    "reference/README.md": "0668cbd99d60cf5530d763d29acae4d36eb7ef4558649b9ae164f24fe28c08c8",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "cec9c511d9c2343447b0b4b31bba54a85477bc0ef9b1f192f7cce5c91dceb08d"
+}

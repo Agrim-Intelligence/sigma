@@ -1,0 +1,28 @@
+{
+  "id": "ext-voluptuous-541",
+  "kind": "bug-fix",
+  "origin": "external",
+  "trap": false,
+  "status": "ready",
+  "prompt": "Number validator leaks a raw TypeError on Infinity/NaN instead of raising Invalid\n\n### Summary\nThe `Number` validator (with `precision`/`scale`) converts its input to `Decimal` and inspects precision/scale. For `Decimal('Infinity')` / `Decimal('NaN')`, that inspection raises a raw `TypeError(\"infinity and NaN have no precision\")`, which escapes the validator instead of being surfaced as a voluptuous `Invalid`. Callers that expect validators to raise only `Invalid` get an unexpected `TypeError`.\n\n### Reproduction\n```python\nfrom voluptuous import Number\nNumber(precision=6, scale=2)(\"Infinity\")\n# TypeError: infinity and NaN have no precision\n```\n\n### Expected\nA non-finite numeric input is rejected with `Invalid` (the validator contract), not a raw `TypeError`.\n\n### Actual\nAn uncaught `TypeError` leaks out of the validator.\n\n### Fix sketch\nDetect the non-finite case and `raise Invalid(...)`.\n\n### Environment\nvoluptuous 0.16.0 (master @ 87825d6), Python 3.12.\n\n\nMake the change in this repository.",
+  "source": "ext-voluptuous-541/repo",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "voluptuous/tests"
+  ],
+  "visible_expected": "pass",
+  "hidden_bundle": "ext-voluptuous-541",
+  "hidden_sha256": "e63979c31fc0fd937b2ec77cca72b43216e4c56d8013cdc58ca31264415a34fa",
+  "hidden_files": {
+    "files/voluptuous/tests/tests.py": "76bd14a7a24bbb801e074e70649586b578f24da2c6e975ddb2b2a7d7242bea60",
+    "hidden.json": "e8d245891296d93e9797bf3ab4e3c184c8a32592da4a1f2befa50c04183eecfc",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "a1f15540365f6fc512a98f541e8f4f757ed3c8138d20aa2376607a0e0beddd31"
+  },
+  "tree_sha256": "b971c66701066b7864a7d8ba07db076ac78b2c320296587a4ad3e7993bebd567"
+}

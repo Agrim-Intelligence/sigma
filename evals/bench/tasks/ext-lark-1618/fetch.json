@@ -1,0 +1,30 @@
+{
+  "repo_url": "https://github.com/lark-parser/lark.git",
+  "base_sha": "5892df12bd6badd3ee555db3b2ae54a4e5911147",
+  "fix_sha": "332acf8982f1320a0b29a7c074e0da29a6d32b98",
+  "pr_number": 1619,
+  "issue_number": 1618,
+  "issue_url": "https://github.com/lark-parser/lark/issues/1618",
+  "pr_url": "https://github.com/lark-parser/lark/pull/1619",
+  "pr_created_at": "2026-07-08T14:10:01Z",
+  "pr_merged_at": "2026-07-19T07:41:13Z",
+  "license": "MIT",
+  "stars": 5999,
+  "stars_read_on": "2026-10-04",
+  "nontest_lines_changed": 9,
+  "issue_title": "Bug in lexer_callbacks, causing some callbacks to be skipped in some grammars",
+  "issue_body_sha256": "2e9561f32eace740cf203b619298ea7ea40731743fce98c7912ca6b4d40bd990",
+  "issue_fetched_at": "2026-10-04",
+  "issue_updated_at": "2026-07-19T07:41:14Z",
+  "issue_closed_at": "2026-07-19T07:41:14Z",
+  "install": [
+    "pytest",
+    "regex"
+  ],
+  "pytest_args": [],
+  "tests_dir": "tests",
+  "hidden_test_files": [
+    "tests/test_grammar.py"
+  ],
+  "tree_sha256": "107eef56ebecb6b3d490504c5b95a2fe62f50471055e0df4e78c77bf3f310e3c"
+}

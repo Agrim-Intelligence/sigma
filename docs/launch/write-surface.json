@@ -2305,6 +2305,110 @@
       "risk": "medium"
     },
     {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "__init__",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit verify; a pass-through launcher script inside a fresh temporary directory",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "_verify_command",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit verify --json PATH; caller-supplied output path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "_write_manifest",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "check and verify with a hidden root write a copy of manifest.json inside a fresh temporary directory; the explicit lock command rewrites the manifest's environment record in place",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "build_manifest",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit build-manifest command; manifest.json beside the task directories only",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "export_tree",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit verify --external or hidden-from-pr (a fresh directory under the caller-supplied --scratch path) or materialize (the task's own git-ignored repo/); one commit fetched read-only, no history kept",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "harness_accepts",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "check and verify; stand-in directories inside a fresh temporary directory",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "harness_validates",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "check and verify with a hidden root; stand-in directories inside a fresh temporary directory",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "hidden_from_pr",
+      "rule": "fs-write",
+      "count": 5,
+      "gate": "explicit hidden-from-pr command; one hidden bundle under the hidden root, outside the repository",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "materialize_task",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "explicit materialize command; removes only the tree it just fetched, when its digest is not the recorded one",
+      "risk": "high"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "materialize_task",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit materialize command; the task's own git-ignored repo/ (refused if it exists) and, with --record-digest, its fetch.json",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "seal",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit seal command; the named task's task.json only",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "verify_external",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit verify --external; fresh directories under the caller-supplied --scratch path",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/bench_tasks.py",
+      "function": "write_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit lock command; environment.lock beside the manifest and the manifest's environment record; the environment is built under the caller-supplied --scratch path",
+      "risk": "medium"
+    },
+    {
       "path": "tools/readiness/drills.py",
       "function": "_kill_after_fixture_merge",
       "rule": "fs-write",
