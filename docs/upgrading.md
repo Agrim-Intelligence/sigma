@@ -250,8 +250,8 @@ program's write, and this is a mitigation, not a sheet that fold leaves alone.
 
 - It keeps a copy of the sheet at `.sdlc/state/backup/index-sigma.json`, a path the old plugin never reads or
   writes: the bytes of the last Sigma-schema `index.json` this checkout wrote (`write_index`) or saw (every
-  `loop.py` verb that runs the coexistence notice looks at the sheet; a sheet that arrives by pull or clone is
-  copied then). The copy is the union of every unit it has held, the latest sheet's entry winning a shared name: a sheet
+  `loop.py` verb that runs the coexistence notice looks at the sheet; a sheet that arrives by pull is
+  copied then; a fresh clone has no `state/` yet, so it is copied only by a later verb, once `state/` exists). The copy is the union of every unit it has held, the latest sheet's entry winning a shared name: a sheet
   holding fewer units (an older branch, a pull, or a truncated one that Sigma's own `fold` re-wrote) adds its units
   and removes none, so the copy neither shrinks nor stops tracking new units, and a unit removed on purpose stays in
   it until `recover --discard`. It is
