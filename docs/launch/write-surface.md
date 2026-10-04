@@ -298,6 +298,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/egress_capture.py | main | fs-write | 1 | explicit summarize command; caller-supplied JSON path | medium |
 | tools/readiness/exposure_scan.py | _write | fs-write | 3 | explicit exposure scan; caller-supplied evidence path | medium |
 | tools/readiness/exposure_scan.py | scan_refs | git-destructive | 1 | explicit refs scan; local tag listing is read-only | low |
+| tools/readiness/flake_census.py | run | fs-write | 1 | explicit run command; creates the caller-supplied output directory (pytest writes the JUnit XML into it); refuses to overwrite an observation | medium |
 | tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
 | tools/readiness/injection_drill.py | _write_json | fs-write | 1 | explicit file subcommand; caller-supplied snapshot path that must not exist; validated sigma-drill- repository; declared --max-usd | medium |
 | tools/readiness/injection_drill.py | file_payloads | gh-api-write | 1 | explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and must be private; declared --max-usd; never run by Sigma | high |

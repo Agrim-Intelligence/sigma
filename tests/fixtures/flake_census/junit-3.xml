@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites name="pytest tests">
+<testsuite name="pytest" errors="1" failures="1" skipped="1" tests="6" time="0.03">
+<testcase classname="tests.test_x" name="test_a" time="0.003"/>
+<testcase classname="tests.test_x" name="test_b" time="0.003"><failure message="assert 1 == 2">assert 1 == 2</failure></testcase>
+<testcase classname="tests.test_x" name="test_c" time="0.003"><failure message="assert 1 == 2">assert 1 == 2</failure></testcase>
+<testcase classname="tests.test_x" name="test_d" time="0.003"/>
+<testcase classname="tests.test_x" name="test_s" time="0.003"><skipped type="pytest.skip" message="not here">skipped</skipped></testcase>
+<testcase classname="tests.test_x" name="test_err" time="0.003"><error message="fixture setup failed">setup failed</error></testcase>
+</testsuite>
+</testsuites>
