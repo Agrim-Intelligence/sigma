@@ -1,0 +1,236 @@
+{
+  "limits": [
+    "Ten runs observe instability; they cannot prove zero flaky tests. By arithmetic, not measurement, a test that fails 1 run in 20 passes all ten runs about 60 percent of the time.",
+    "Only Python 3.12 was run. The launch definition lists 3.10 to 3.13.",
+    "Linux runs each suite in one process; macOS runs with -n 4 (xdist), so ordering effects differ.",
+    "A test that passes in some runs and is skipped in others is counted clean, not flaky.",
+    "A node absent from some run is listed under missing as well as in its other class.",
+    "An xfail that passes counts as passed. combine trusts --sha: both halves must have been run on that commit."
+  ],
+  "linux": {
+    "always_failing": [],
+    "context": {
+      "python": "3.12",
+      "run_url": "https://github.com/Agrim-Intelligence/sigma/actions/runs/37187467571",
+      "runner": "ubuntu-latest"
+    },
+    "duplicate_node_ids": [],
+    "flaky": [],
+    "missing": [],
+    "mixed_nonpassing": [],
+    "os": "linux",
+    "per_run": [
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 38,
+        "tests": 12170
+      }
+    ],
+    "runs": 10,
+    "schema": "flake-census/v1",
+    "skipped_only": [
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@6f41743a-pick]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@6f41743a-set-priority]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@9d2f40fd-pick]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@9d2f40fd-set-priority]",
+      "tests.test_coexist::test_a_sigma_pick_never_silently_drops_a_legacy_delta_value[real@6f41743a]",
+      "tests.test_coexist::test_a_sigma_pick_never_silently_drops_a_legacy_delta_value[real@9d2f40fd]",
+      "tests.test_coexist::test_a_unit_refused_mid_migrate_keeps_the_index_legacy_and_loses_nothing[real]",
+      "tests.test_coexist::test_classify_reopen_never_silently_drops_a_legacy_delta_value[real@6f41743a]",
+      "tests.test_coexist::test_classify_reopen_never_silently_drops_a_legacy_delta_value[real@9d2f40fd]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@6f41743a-closed]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@6f41743a-open]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@9d2f40fd-closed]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@9d2f40fd-open]",
+      "tests.test_coexist::test_review_block_2_pick_claim_pick_loses_nothing[real]",
+      "tests.test_coexist::test_review_block_2_set_priority_on_an_index_only_unit_loses_nothing[real]",
+      "tests.test_community_files::test_issue_templates_parse_and_bug_report_collects_environment",
+      "tests.test_conflict_walk::test_292_known_limit_force_rewritten_upstream_erases_deletion_provenance",
+      "tests.test_feature_rebase::test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H02-mirror-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H03-mirror-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-1]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-2]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H11-slots-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H11-slots-1]",
+      "tests.test_readiness_review_units::test_frozen_sha_regeneration_matches_committed_json",
+      "tests.test_readiness_seed_defects::test_apply_accepts_a_clone_typed_in_another_case",
+      "tests.test_readiness_seed_defects::test_apply_refuses_seed_dir_reached_in_another_case",
+      "tests.test_readme_first_run::test_the_plugin_grammar_matches_the_cli_where_it_is_installed[claude]",
+      "tests.test_readme_first_run::test_the_plugin_grammar_matches_the_cli_where_it_is_installed[codex]",
+      "tests.test_registry_survives_predecessor_fold::test_real_predecessor_fold_is_signalled_and_recover_restores_the_unit",
+      "tests.test_skill_frontmatter_yaml",
+      "tests.test_validate_schema::test_validate_passes_on_real_ledger_entries",
+      "tests.test_windows_real::test_run_with_timeout_taskkill_actually_kills_the_real_tree",
+      "tests.test_windows_real::test_supervise_relaunch_stop_file_and_run_id_through_a_quoted_windows_command",
+      "tests.test_windows_real::test_supervise_stop_file_halts_on_windows",
+      "tests.test_windows_real::test_watch_daemon_stop_file_halts_on_windows",
+      "tests.test_windows_real::test_win32_pid_alive_against_real_processes"
+    ],
+    "totals": {
+      "always_failing": 0,
+      "clean": 12132,
+      "flaky": 0,
+      "missing": 0,
+      "mixed_nonpassing": 0,
+      "skipped_only": 38,
+      "tests": 12170
+    }
+  },
+  "macos": {
+    "always_failing": [],
+    "context": {
+      "python": "3.12",
+      "runner": "local-macos-xdist-4"
+    },
+    "duplicate_node_ids": [],
+    "flaky": [],
+    "missing": [],
+    "mixed_nonpassing": [],
+    "os": "macos",
+    "per_run": [
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      },
+      {
+        "failed": 0,
+        "skipped": 31,
+        "tests": 12170
+      }
+    ],
+    "runs": 10,
+    "schema": "flake-census/v1",
+    "skipped_only": [
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@6f41743a-pick]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@6f41743a-set-priority]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@9d2f40fd-pick]",
+      "tests.test_coexist::test_a_second_migrate_never_bare_converts_a_post_conversion_delta[real@9d2f40fd-set-priority]",
+      "tests.test_coexist::test_a_sigma_pick_never_silently_drops_a_legacy_delta_value[real@6f41743a]",
+      "tests.test_coexist::test_a_sigma_pick_never_silently_drops_a_legacy_delta_value[real@9d2f40fd]",
+      "tests.test_coexist::test_a_unit_refused_mid_migrate_keeps_the_index_legacy_and_loses_nothing[real]",
+      "tests.test_coexist::test_classify_reopen_never_silently_drops_a_legacy_delta_value[real@6f41743a]",
+      "tests.test_coexist::test_classify_reopen_never_silently_drops_a_legacy_delta_value[real@9d2f40fd]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@6f41743a-closed]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@6f41743a-open]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@9d2f40fd-closed]",
+      "tests.test_coexist::test_model_no_sequence_of_five_steps_loses_what_sigma_served[real@9d2f40fd-open]",
+      "tests.test_coexist::test_review_block_2_pick_claim_pick_loses_nothing[real]",
+      "tests.test_coexist::test_review_block_2_set_priority_on_an_index_only_unit_loses_nothing[real]",
+      "tests.test_conflict_walk::test_292_known_limit_force_rewritten_upstream_erases_deletion_provenance",
+      "tests.test_feature_rebase::test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H02-mirror-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H03-mirror-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-1]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H08-slots-2]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H11-slots-0]",
+      "tests.test_hostile_inputs::test_hostile_fixture_outcome[H11-slots-1]",
+      "tests.test_readme_first_run::test_the_plugin_grammar_matches_the_cli_where_it_is_installed[codex]",
+      "tests.test_validate_schema::test_validate_passes_on_real_ledger_entries",
+      "tests.test_windows_real::test_run_with_timeout_taskkill_actually_kills_the_real_tree",
+      "tests.test_windows_real::test_supervise_relaunch_stop_file_and_run_id_through_a_quoted_windows_command",
+      "tests.test_windows_real::test_supervise_stop_file_halts_on_windows",
+      "tests.test_windows_real::test_watch_daemon_stop_file_halts_on_windows",
+      "tests.test_windows_real::test_win32_pid_alive_against_real_processes"
+    ],
+    "totals": {
+      "always_failing": 0,
+      "clean": 12139,
+      "flaky": 0,
+      "missing": 0,
+      "mixed_nonpassing": 0,
+      "skipped_only": 31,
+      "tests": 12170
+    }
+  },
+  "schema": "flake-census/v1",
+  "sha": "c82e3dfa7420e92465a7cf991a1dcf5166403973"
+}
