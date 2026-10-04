@@ -4,8 +4,14 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
+| evals/bench/arms/common.py | isolated_env | fs-write | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root | medium |
+| evals/bench/arms/common.py | remove_tree | fs-rmtree | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only a run, attempt or workdir child directory it was handed | high |
+| evals/bench/arms/matched.py | _replace_tree | fs-remove | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; replaces only the arm's own run workdir | high |
+| evals/bench/arms/sigma.py | extract_tar | fs-write | 3 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; writes only the three export trees after validating the whole archive | medium |
 | evals/bench/bench.py | _write_json_atomic | fs-write | 1 | ungated | medium |
+| evals/bench/bench.py | facts | fs-rmtree | 1 | dry run only: removes the temp export directory it created | high |
 | evals/bench/bench.py | run | fs-write | 1 | ungated | medium |
+| evals/bench/bench.py | run_benchmark | fs-rmtree | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call | high |
 | evals/bench/bench.py | run_benchmark | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
@@ -80,6 +86,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/agrim-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
+| skills/agrim-loop/scripts/feature_sync.py | recover | fs-remove | 1 | explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the registry sheet aside, never deletes it | medium |
 | skills/agrim-loop/scripts/goal_state_prune.py | sweep | fs-remove | 4 | goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458) | medium |
 | skills/agrim-loop/scripts/ledger.py | _maybe_prune_journal | fs-write | 1 | ungated | medium |
 | skills/agrim-loop/scripts/ledger.py | append | fs-write | 1 | ungated | medium |
@@ -285,6 +292,24 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/onboarding_control.py | run_readme_gestures | fs-write | 1 | ungated | medium |
 | tools/readiness/baseline.py | snapshot | fs-write | 2 | explicit snapshot command; empty destination | medium |
 | tools/readiness/baseline.py | snapshot | git-destructive | 1 | explicit snapshot command; empty destination; detached push-disabled clone | medium |
+| tools/readiness/bench_tasks.py | __init__ | fs-write | 3 | explicit verify; a pass-through launcher script inside a fresh temporary directory | medium |
+| tools/readiness/bench_tasks.py | _verify_command | fs-write | 1 | explicit verify --json PATH; caller-supplied output path | medium |
+| tools/readiness/bench_tasks.py | _write_manifest | fs-write | 1 | check and verify with a hidden root write a copy of manifest.json inside a fresh temporary directory; the explicit lock command rewrites the manifest's environment record in place | medium |
+| tools/readiness/bench_tasks.py | build_manifest | fs-write | 1 | explicit build-manifest command; manifest.json beside the task directories only | medium |
+| tools/readiness/bench_tasks.py | export_tree | fs-write | 1 | explicit verify --external or hidden-from-pr (a fresh directory under the caller-supplied --scratch path) or materialize (the task's own git-ignored repo/); one commit fetched read-only, no history kept | medium |
+| tools/readiness/bench_tasks.py | harness_accepts | fs-write | 2 | check and verify; stand-in directories inside a fresh temporary directory | medium |
+| tools/readiness/bench_tasks.py | harness_validates | fs-write | 2 | check and verify with a hidden root; stand-in directories inside a fresh temporary directory | medium |
+| tools/readiness/bench_tasks.py | hidden_from_pr | fs-write | 5 | explicit hidden-from-pr command; one hidden bundle under the hidden root, outside the repository | medium |
+| tools/readiness/bench_tasks.py | materialize_task | fs-rmtree | 1 | explicit materialize command; removes only the tree it just fetched, when its digest is not the recorded one | high |
+| tools/readiness/bench_tasks.py | materialize_task | fs-write | 1 | explicit materialize command; the task's own git-ignored repo/ (refused if it exists) and, with --record-digest, its fetch.json | medium |
+| tools/readiness/bench_tasks.py | seal | fs-write | 1 | explicit seal command; the named task's task.json only | medium |
+| tools/readiness/bench_tasks.py | verify_external | fs-write | 1 | explicit verify --external; fresh directories under the caller-supplied --scratch path | medium |
+| tools/readiness/bench_tasks.py | write_lock | fs-write | 1 | explicit lock command; environment.lock beside the manifest and the manifest's environment record; the environment is built under the caller-supplied --scratch path | medium |
+| tools/readiness/blast_radius.py | main | fs-write | 2 | explicit baseline or assert command; caller-supplied --json path; reads GitHub over REST only | medium |
+| tools/readiness/blast_radius_drive.py | drive | fs-write | 6 | explicit drive command; refuses an existing workdir; caller-supplied --baseline-out path | medium |
+| tools/readiness/blast_radius_drive.py | drive | gh-issue | 1 | explicit drive command; OWNER/sigma-drill- fullmatch; repository read back and must be private, not a fork or archived; refuses under CI; files one goal issue; never run by Sigma | high |
+| tools/readiness/blast_radius_drive.py | drive | gh-pr | 1 | explicit drive command; same repository checks; one approve comment on the goal's own PR | high |
+| tools/readiness/blast_radius_drive.py | drive | git-push | 1 | explicit drive command; same repository checks; origin guard; one setup push only when the repository is empty, never forced | high |
 | tools/readiness/drills.py | _kill_after_fixture_merge | fs-write | 2 | ungated | medium |
 | tools/readiness/drills.py | _real_fixture | fs-write | 9 | ungated | medium |
 | tools/readiness/drills.py | _scratch_sdlc | fs-write | 2 | ungated | medium |
@@ -302,6 +327,9 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | tools/readiness/growth_audit.py | main | fs-write | 1 | ungated | medium |
 | tools/readiness/injection_drill.py | _write_json | fs-write | 1 | explicit file subcommand; caller-supplied snapshot path that must not exist; validated sigma-drill- repository; declared --max-usd | medium |
 | tools/readiness/injection_drill.py | file_payloads | gh-api-write | 1 | explicit file subcommand; OWNER/sigma-drill- name fullmatch; repository read back and must be private; declared --max-usd; never run by Sigma | high |
+| tools/readiness/mutation_sample.py | _restore | fs-remove | 1 | explicit sample command; deletes only mutmut's cache and coverage data inside the clean frozen clone it was given, never a tracked file | medium |
+| tools/readiness/mutation_sample.py | _write | fs-remove | 1 | explicit sample command; replaces only its own temporary file beside --out | medium |
+| tools/readiness/mutation_sample.py | _write | fs-write | 1 | explicit sample command; caller-supplied --out evidence path | medium |
 | tools/readiness/review_units.py | main | fs-write | 1 | explicit --json PATH; caller-supplied output path | medium |
 | tools/readiness/seed_defects.py | apply | fs-write | 1 | explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only | medium |
 | tools/readiness/shared_paths.py | _prepare | fs-write | 2 | explicit scan with samples; scratch repository inside a fresh temporary directory; fake HOME | medium |

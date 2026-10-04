@@ -123,6 +123,20 @@ def _metadata(path, function, rule):
             ("explicit verify --external; fresh directories under the caller-supplied --scratch path", "medium"),
         ("tools/readiness/bench_tasks.py", "seal", "fs-write"):
             ("explicit seal command; the named task's task.json only", "medium"),
+        ("tools/readiness/blast_radius.py", "main", "fs-write"):
+            ("explicit baseline or assert command; caller-supplied --json path; reads GitHub over REST only",
+             "medium"),
+        ("tools/readiness/blast_radius_drive.py", "drive", "fs-write"):
+            ("explicit drive command; refuses an existing workdir; caller-supplied --baseline-out path", "medium"),
+        ("tools/readiness/blast_radius_drive.py", "drive", "gh-issue"):
+            ("explicit drive command; OWNER/sigma-drill- fullmatch; repository read back and must be private, "
+             "not a fork or archived; refuses under CI; files one goal issue; never run by Sigma", "high"),
+        ("tools/readiness/blast_radius_drive.py", "drive", "gh-pr"):
+            ("explicit drive command; same repository checks; one approve comment on the goal's own PR",
+             "high"),
+        ("tools/readiness/blast_radius_drive.py", "drive", "git-push"):
+            ("explicit drive command; same repository checks; origin guard; one setup push only when the "
+             "repository is empty, never forced", "high"),
         ("tools/readiness/seed_defects.py", "apply", "fs-write"):
             ("explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only",
              "medium"),

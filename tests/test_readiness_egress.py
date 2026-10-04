@@ -77,3 +77,30 @@ def test_summarize_groups_loopback(tmp_path: Path) -> None:
     assert summary["destinations"]["socket:127.0.0.1:9"]["loopback"] is True
     assert summary["destinations"]["socket:example.invalid:443"]["count"] == 1
     assert summary["destinations"]["urllib:GET:localhost"]["loopback"] is True
+
+
+def _fake_bin(tmp_path: Path, name: str) -> dict[str, str]:
+    fake = tmp_path / name
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(tmp_path) + os.pathsep + env["PATH"]
+    return env
+
+
+def test_hook_records_the_git_verb_and_destructive_flag(tmp_path: Path) -> None:
+    env = _fake_bin(tmp_path, "git")
+    events = capture(tmp_path, "import subprocess; subprocess.run(['git', '-C', '/x', 'push', 'origin', '+a', 'sdlc/1'])",
+                     env=env)
+    push = next(e for e in events if e.get("program") == "git")
+    assert (push.get("verb"), push.get("remote"), push.get("refspecs")) == ("push", "origin", ["+a", "sdlc/1"])
+    assert push.get("destructive") is True
+
+
+def test_hook_records_the_gh_api_method_target_and_number_without_field_values(tmp_path: Path) -> None:
+    env = _fake_bin(tmp_path, "gh")
+    events = capture(tmp_path, "import subprocess; subprocess.run(['gh', 'api', '-X', 'PATCH', "
+                     "'repos/o/r/issues/7?head=o:b', '-f', 'body=SECRET'])", env=env)
+    rec = next(e for e in events if e.get("program") == "gh")
+    assert (rec.get("method"), rec.get("repo"), rec.get("number")) == ("PATCH", "o/r", "7")
+    assert rec.get("endpoint") == "repos/o/r/issues/7?head=o:b" and "SECRET" not in json.dumps(events)
