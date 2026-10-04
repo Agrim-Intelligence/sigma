@@ -1000,6 +1000,8 @@ def test_a_version_that_would_carry_a_value_into_the_commit_message_is_refused(t
         "private-name": "1.0.0 zq-planted-12345",
         "too-long": "1." + "0" * 80 + ".0",
         "newline": "1.0.0\nAuthor: x",
+        "trailing-newline": "1.0.0\n",
+        "unicode-digits": "\u0661.\u0660.\u0660",
         "key-header": "1.0.0 " + _header(),
         "empty": "",
     }

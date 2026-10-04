@@ -98,7 +98,7 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 #: The only shape a plugin version may take before it enters the export commit message: that message
 #: comes from a file the `--exclude` can drop, so no file scan reads what it carries.
-_VERSION = re.compile(r"^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-(?:alpha|beta|rc)(?:\.\d{1,6})?)?$")
+_VERSION = re.compile(r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:-(?:alpha|beta|rc)(?:\.[0-9]{1,6})?)?")
 _OBJECT_ID = re.compile(r"^[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?$")
 _LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
 _BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
@@ -1213,7 +1213,7 @@ def _main(argv, run, state):
         except (UnicodeDecodeError, ValueError):
             plugin_version = None
     plugin_version = plugin_version if isinstance(plugin_version, str) else None
-    if plugin_version is not None and not _VERSION.match(plugin_version):
+    if plugin_version is not None and not _VERSION.fullmatch(plugin_version):
         raise Refused("bad-version", ".claude-plugin/plugin.json's version is not a plain version number "
                       "(it enters the export commit message, which no file scan reads)")
     pt_live = [e for e in pt_entries if not _under(e["path"], names)]
