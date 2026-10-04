@@ -436,7 +436,7 @@ def test_drive_environment_carries_the_hook_gh_dir_gh_repo_and_no_token_in_evide
     hook = (READINESS / "egress" / "sitecustomize.py").read_text()
     assert "environ" not in hook.replace("os.environ.get(\"SIGMA_EGRESS_LOG\")", "")
     # the written drill summary holds step names, return codes and seconds, never output tails
-    assert "stdout_tail" not in json.dumps(drv.drive.__code__.co_consts)
+    assert "stdout_tail" not in (READINESS / "blast_radius_drive.py").read_text()
 
 
 def test_drive_generated_text_never_references_the_unrelated_issue():
