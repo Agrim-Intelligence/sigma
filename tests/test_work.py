@@ -981,6 +981,16 @@ def test_commit_refuses_when_add_A_staged_a_dotenv(tmp_path):
     assert not any(c.startswith("git commit") for c in run.calls)
 
 
+def _fake_rows(rows):
+    """A stand-in for `_staged_added_rows`: `{path: [(line, text)]}` passed through the caller's `keep`."""
+    def read(_path, keep):
+        out = {}
+        for name, added in rows.items():
+            out[name] = [k for k in (keep(line, text) for line, text in added) if k is not None]
+        return out
+    return read
+
+
 def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(tmp_path, monkeypatch):
     """The public `work.py commit` gesture must inspect additions, not only filenames."""
     d = _sdlc(tmp_path)
@@ -990,8 +1000,7 @@ def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(t
         ("--name-status -z", "A\0src/settings.py\0"),
         ("diff --cached --name-only", "src/settings.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_rows", lambda _path:
-                        {"src/settings.py": [(1, "ACCESS_KEY = " + fixture)]})
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"src/settings.py": [(1, "ACCESS_KEY = " + fixture)]}))
     out = work.commit(d, ON, goal, run=run, message="test: content gate")
     assert out.startswith("REFUSED")
     assert "aws-key" in out and "src/settings.py:1" in out
@@ -1007,7 +1016,7 @@ def test_documented_work_commit_refuses_when_the_added_content_scan_is_unavailab
     fixture = "AKIA" + "Z" * 16
     run = _runner([("diff --cached --name-only", "src/settings.py")])
 
-    def unavailable(_path):
+    def unavailable(_path, _keep):
         raise RuntimeError("scanner failed near " + fixture)
 
     monkeypatch.setattr(work, "_staged_added_rows", unavailable)
@@ -1027,8 +1036,7 @@ def test_documented_work_commit_allows_the_explicit_synthetic_fixture_value(tmp_
     run = _runner([
         ("diff --cached --name-only", "tests/test_fixture.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_rows", lambda _path:
-                        {"tests/test_fixture.py": [(1, "fixture = " + fixture)]})
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"tests/test_fixture.py": [(1, "fixture = " + fixture)]}))
     assert work.commit(d, ON, goal, run=run, message="test: fixture") == "committed on sdlc/0001-x"
 
 
@@ -1352,7 +1360,7 @@ def test_staged_content_scan_reads_bytes_without_running_git_textconv(tmp_path):
     (repo / "input.fixture").write_text("SOURCE_BYTES\n")
     subprocess.run(["git", "-C", str(repo), "add", "input.fixture"], check=True)
 
-    rows = work._staged_added_rows(repo)
+    rows = work._staged_added_rows(repo, lambda line, text: (line, text))
     assert rows["input.fixture"] == [(1, "SOURCE_BYTES")]
 
 
@@ -1534,9 +1542,10 @@ def test_scan_refuses_on_each_way_the_diff_cannot_be_accounted_for(tmp_path, mon
     monkeypatch.setattr(work, "_staged_raw_paths", lambda *a: [])     # counts now agree at zero, so
     assert _raises(lambda: work._added_secret_hits(repo))             # only the exit status can refuse
     head = b"diff --git a/f b/f\n"
-    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1,2 @@\n", b"+x\n"])))
-    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1 @@\n", b"zzz\n"])))
-    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ nonsense @@\n"])))
+    _keep = lambda line, text: (line, text)                           # noqa: E731
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1,2 @@\n", b"+x\n"]), _keep))
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1 @@\n", b"zzz\n"]), _keep))
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ nonsense @@\n"]), _keep))
 
 
 def test_a_content_only_refusal_does_not_offer_the_name_allowlist_as_its_fix(tmp_path):
@@ -1558,11 +1567,20 @@ def test_editing_a_file_with_no_final_newline_still_commits(tmp_path):
     assert work.commit(d, ON, "0001-x.md", message="test: no newline") == "committed on sdlc/0001-x"
 
 
-def test_scan_streams_a_large_binary_without_holding_the_patch(tmp_path):
+def test_scan_does_not_hold_the_rows_it_has_already_scanned(tmp_path):
+    """Memory follows the longest line, not the staged size: a 20 MB binary must not be held in rows."""
+    import tracemalloc
     repo, _d, _committed = _real_repo(tmp_path)
-    (repo / "blob.bin").write_bytes(bytes(range(256)) * 20000 + b"\0")
+    (repo / "blob.bin").write_bytes(bytes(range(256)) * 80000 + b"\0")
     _g589(repo, "add", "-A")
-    assert work._added_secret_hits(repo) == {}
+    tracemalloc.start()
+    try:
+        found = work._added_secret_hits(repo)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert found == {}
+    assert peak < 5_000_000, peak
 
 
 def test_scan_is_not_broken_by_a_dangling_diff_order_file(tmp_path):
@@ -1623,7 +1641,7 @@ def test_added_secret_hit_under_an_unnamed_path_still_refuses(tmp_path, monkeypa
     d = _sdlc(tmp_path)
     goal = _started(d)
     run = _runner([("--name-status -z", "A\0other.py\0"), ("diff --cached --name-only", "other.py")])
-    monkeypatch.setattr(work, "_staged_added_rows", lambda _path: {"elsewhere.py": [(1, "K = " + _key())]},
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"elsewhere.py": [(1, "K = " + _key())]}),
                         raising=False)
     out = work.commit(d, ON, goal, run=run, message="test: unnamed")
     assert out.startswith("REFUSED") and "elsewhere.py" in out and _key() not in out
@@ -1650,8 +1668,7 @@ def test_content_refusal_does_not_echo_a_credential_shaped_filename(tmp_path, mo
         ("--name-status -z", "A\0" + raw + "\0"),
         ("diff --cached --name-only", raw),
     ])
-    monkeypatch.setattr(work, "_staged_added_rows", lambda _path:
-                        {raw: [(1, "ACCESS_KEY = " + fixture)]})
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({raw: [(1, "ACCESS_KEY = " + fixture)]}))
     refusal = work.commit(d, ON, goal, run=run, message="test: safe diagnostic")
     assert refusal.startswith("REFUSED")
     assert fixture not in refusal and "[REDACTED:aws-key]" in refusal
@@ -1664,8 +1681,7 @@ def test_documented_work_commit_allows_a_fixture_assignment(tmp_path, monkeypatc
     run = _runner([
         ("diff --cached --name-only", "tests/test_fixture.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_rows", lambda _path:
-                        {"tests/test_fixture.py": [(1, "SECRET = " + fixture)]})
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"tests/test_fixture.py": [(1, "SECRET = " + fixture)]}))
     assert work.commit(d, ON, goal, run=run, message="test: fixture assignment") == "committed on sdlc/0001-x"
 
 

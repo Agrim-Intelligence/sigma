@@ -2621,11 +2621,12 @@ def _staged_raw_paths(path, clean_env):
     return names
 
 
-def _parse_added_rows(stream):
-    """One list of `(new_line, text)` per `diff --git` section, read from a binary line stream.
+def _parse_added_rows(stream, keep):
+    """One list per `diff --git` section: `keep(new_line, text)` for each added row, when it is not None.
 
-    Streamed, so memory is bounded by the longest line rather than by the size of the patch (`--text`
-    makes a staged binary a patch of its own bytes). Lines are split on `\n` alone."""
+    Streamed and filtered as it is read, so memory is bounded by the longest line plus what `keep`
+    retains, not by the size of the patch (`--text` makes a staged binary a patch of its own bytes);
+    the credential scan keeps only its hits. Lines are split on `\n` alone."""
     def rows():
         for raw in stream:
             yield (raw[:-1] if raw.endswith(b"\n") else raw).decode("utf-8", "replace")
@@ -2649,7 +2650,9 @@ def _parse_added_rows(stream):
                 if kind == "\\":
                     continue
                 if kind == "+" and new:
-                    sections[-1].append((new_line, text))
+                    kept = keep(new_line, text)
+                    if kept is not None:
+                        sections[-1].append(kept)
                     new, new_line = new - 1, new_line + 1
                 elif kind == "-" and old:
                     old -= 1
@@ -2660,8 +2663,8 @@ def _parse_added_rows(stream):
     return sections
 
 
-def _staged_added_rows(path):
-    """`{raw_path: [(line, text)]}` for every row the index adds, read by STRUCTURE, never by text.
+def _staged_added_rows(path, keep):
+    """`{raw_path: [keep(line, text)]}` for every row the index adds, read by STRUCTURE, never by text.
 
     Files are attributed by position — the n-th `diff --git` section of the patch is the n-th entry of
     the `--raw -z` list, and a count mismatch refuses — so no path is ever parsed out of a header. A
@@ -2681,7 +2684,7 @@ def _staged_added_rows(path):
     proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--unified=0"], cwd=str(path),
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     try:
-        sections = _parse_added_rows(proc.stdout)
+        sections = _parse_added_rows(proc.stdout, keep)
     finally:
         proc.stdout.close()
         returncode = proc.wait()
@@ -2695,6 +2698,12 @@ def _staged_added_rows(path):
     return found
 
 
+def _row_hits(line, text):
+    """`[(rule, line, column)]` for one added row, or None. Location only; the text is not kept."""
+    found = scrub_module.commit_secret_hits(text)
+    return [(rule, line, column) for rule, column in found] or None
+
+
 def _added_secret_hits(path):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
@@ -2704,10 +2713,9 @@ def _added_secret_hits(path):
     matched value.
     """
     hits = {}
-    for name, added in _staged_added_rows(path).items():
-        for line, text in added:
-            for rule, column in scrub_module.commit_secret_hits(text):
-                hits.setdefault(name, []).append((rule, line, column))
+    for name, per_row in _staged_added_rows(path, _row_hits).items():
+        for found in per_row:
+            hits.setdefault(name, []).extend(found)
     return hits
 
 
