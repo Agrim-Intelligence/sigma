@@ -702,6 +702,7 @@ def test_init_writes_a_skeleton_in_an_adopted_repo_with_no_registry(tmp_path):
     r = _init(tmp_path)
     assert r.returncode == 0, r.stderr
     reg = tmp_path / ".sdlc" / "decisions.json"
+    assert reg.is_file(), "init wrote no registry"
     assert json.loads(reg.read_text()) == {"version": 1, "decisions": []}
     assert str(reg.resolve()) in r.stdout
 
