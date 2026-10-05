@@ -18,8 +18,10 @@ receiving updates**. Nothing removes it for you: `/sigma-doctor` prints the comm
 **What is kept.** `.sdlc/` data is kept as is: goals, plans, state, the action log, labels and the board are not
 touched by any of these steps. Only the plugin install changes.
 
-**Claude Code.** Run each line yourself, in this order. Add `--scope project` (and run it from that project's
-directory) for an install recorded under a project scope; `/sigma-doctor` lists every recorded scope.
+**Claude Code.** Run each line yourself, in this order. Add `--scope project` or `--scope local` (and run it from that project's
+directory) for an install recorded under that scope; `/sigma-doctor` lists every recorded scope. The reinstall is at user
+scope. If `sigmaloop@sigmaloop` is already installed too, run only the uninstall (and the marketplace removal): adding the
+old source again would repoint the working install at it.
 
 ```
 claude plugin uninstall sigma@sigma

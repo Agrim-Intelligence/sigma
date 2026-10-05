@@ -1790,6 +1790,9 @@ def _recorded_source(marketplace=None, codex_entry=None, known_marketplaces_path
         source = record.get("source") if isinstance(record, dict) else None
         if isinstance(source, dict) and source.get("source") == "github":
             return _slug_or_none(source.get("repo"))
+        if isinstance(source, dict) and source.get("source") == "git" and isinstance(source.get("url"), str):
+            m = _CODEX_GIT_SOURCE_RE.match(source["url"])         # a fork added by git URL is a fork
+            return _slug_or_none(m.group(1)) if m else None
     except Exception:                        # noqa: BLE001 - an unreadable record is "cannot tell"
         pass
     return None
@@ -1828,40 +1831,52 @@ def _is_pre_launch_install(plugin_id, source):
     return source.lower() == _OLD_REPO.lower()
 
 
-def _old_install_row(host, ours, others_on_marketplace=()):
+def _old_install_row(host, ours, others_on_marketplace=(), new_present=False):
     """The row for installs recorded under the pre-launch id, or None. It PRINTS the removal and the
     reinstall for `host` and runs none of them: `ours` is `[(id, scope, projectPath, source)]`."""
     if not ours:
         return None
+    import shlex
+    q = shlex.quote
     ids = sorted({o[0] for o in ours})
     # What the install recorded; when it recorded nothing readable the row says so instead of naming the
     # public repository (which may not exist yet, and is not where a private copy came from).
-    source = next((o[3] for o in ours if o[3]), None) or "<the repository or checkout your install came from>"
+    source = q(next((o[3] for o in ours if o[3]), None) or "") if any(o[3] for o in ours) \
+        else "<the repository or checkout your install came from>"
     steps = []
     if host == "codex":
         for pid in ids:
-            steps.append("codex plugin remove %s" % pid)
-        steps += ["codex plugin marketplace add %s" % source,
-                  "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
+            steps.append("codex plugin remove %s" % q(pid))
+        if not new_present:
+            steps += ["codex plugin marketplace add %s" % source,
+                      "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
         note = ("the removal verb is the one codex-cli 0.154 lists; confirm with `codex plugin --help` on this "
                 "host before running it. These Codex steps were not run end to end on a real host")
     else:
         for pid, scope, path, _src in sorted(ours, key=lambda o: (o[0], o[1], o[2] or "")):
-            cmd = "claude plugin uninstall %s" % pid
-            if scope != "user":
+            cmd = "claude plugin uninstall %s" % q(pid)
+            if scope in ("project", "local"):
                 cmd += " --scope %s" % scope
+            elif scope != "user":
+                steps.append("scope %s of %s is managed by whoever set it up; this command cannot remove it" % (q(scope), q(pid)))
+                continue
             if path:
-                cmd += " (run it from %s)" % path
+                cmd += " (run it from %s)" % q(path)
             steps.append(cmd)
         for market in sorted({pid.split("@", 1)[1] for pid in ids if "@" in pid}):
             if market in others_on_marketplace:
                 steps.append("keep marketplace %s: other installed plugins use it" % market)
             else:
-                steps.append("claude plugin marketplace remove %s" % market)
-        steps += ["claude plugin marketplace add %s" % source,
-                  "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
-        note = ("Each uninstall is per scope" + ("; with a marketplace shared by other plugins this exact sequence "
-                "was not run end to end" if others_on_marketplace else ""))
+                steps.append("claude plugin marketplace remove %s" % q(market))
+        if not new_present:
+            steps += ["claude plugin marketplace add %s" % source,
+                      "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
+        note = ("Each uninstall is per scope; the reinstall is at user scope" + (
+                "; with a marketplace shared by other plugins this exact sequence was not run end to end"
+                if others_on_marketplace else ""))
+    if new_present:
+        note += (". %s is already installed here: do NOT add the old source again or install it again (the host "
+                 "would repoint the working install at that source); remove the old install only" % _PLUGIN)
     return _chk("Sigma Loop plugin installed under the pre-launch id %s (it no longer receives updates)"
                 % ", ".join(ids), False,
                 "the plugin was renamed to %s, so an install under the old id silently stopped updating. "
@@ -1892,10 +1907,11 @@ def _claude_old_install_row(installed_plugins_path=None, known_marketplaces_path
                     path = e.get("projectPath")
                     ours.append((pid, str(e.get("scope") or "user"),
                                  str(path) if isinstance(path, str) and path.strip() else None, target))
+        new_present = any(str(pid).split("@")[0] == _PLUGIN for pid in plugins)
         others = {str(pid).split("@", 1)[1] for pid in plugins
                   if "@" in str(pid) and str(pid).split("@", 1)[1] in ours_markets
                   and not any(o[0] == str(pid) for o in ours)}
-        return _old_install_row("claude", ours, others)
+        return _old_install_row("claude", ours, others, new_present)
     except Exception:                        # noqa: BLE001 - cannot read == cannot tell, never an alarm
         return None
 
@@ -1906,7 +1922,9 @@ def _codex_old_install_row(plugins):
         ours = [(str(e.get("pluginId", "")), "user", None, _recorded_target(codex_entry=e))
                 for e in (plugins or []) if isinstance(e, dict) and e.get("installed") is True
                 and _is_pre_launch_install(e.get("pluginId", ""), _recorded_source(codex_entry=e))]
-        return _old_install_row("codex", ours)
+        new_present = any(isinstance(e, dict) and str(e.get("pluginId", "")).split("@")[0] == _PLUGIN
+                          and e.get("installed") is True for e in (plugins or []))
+        return _old_install_row("codex", ours, new_present=new_present)
     except Exception:                        # noqa: BLE001
         return None
 
