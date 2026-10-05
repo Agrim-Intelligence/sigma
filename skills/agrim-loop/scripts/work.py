@@ -38,7 +38,6 @@ merge, so it is stated here rather than left to be found: without it every issue
 feature branch stays open, and every goal declaring `Blocked by: #N` stays held behind it.
 """
 import contextlib
-import ast
 import importlib.util
 import hashlib
 import io
@@ -153,8 +152,13 @@ ENFORCEMENT_GATES = (
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
      "settings": ("work.allow_secret_paths",),
      "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename or an "
-                  "added staged line matches scrub.py's credential shapes; diagnostics name only rule "
-                  "and file position, never a matched value; `work.allow_secret_paths` lists exact "
+                  "added staged line matches scrub.py's credential shapes; the staged diff is read with "
+                  "fixed flags and parsed by hunk structure, so diff config, file attributes and "
+                  "file names cannot hide a row, and a diff it cannot account for refuses; every "
+                  "staged file is read as text (cost is linear in staged bytes, and a compiled file "
+                  "that hits is committed by hand outside the loop or kept out of the repo, since "
+                  "the allowlist clears a name only); UTF-16 text is not matched; diagnostics name "
+                  "only rule and file position, never a matched value; `work.allow_secret_paths` lists exact "
                   "repo-relative filename exceptions and a small explicit synthetic-fixture list "
                   "exempts known test values"},
     {"control": "Plan must be on the goal branch before PR", "function": "_plan_missing_from_branch",
@@ -1263,6 +1267,11 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     return {**record, "path": path}
 
 
+_GIT_LOCATION_ENV = frozenset((
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"))
+
+
 def _run(cwd, argv):
     """Run `argv` in `cwd`. sync.py's runner is git-only and prepends the binary; this one carries
     it, because the merge gate needs `gh` as well and one injection point beats two.
@@ -1274,7 +1283,13 @@ def _run(cwd, argv):
     any `gh` failure that ISN'T this proxy block) never matches, so this is a no-op for every other
     error this function has always raised — the raw detail is still there, just no longer the whole
     story when there's a better one to tell."""
-    proc = subprocess.run([str(a) for a in argv], cwd=str(cwd), capture_output=True, text=True)
+    env = None
+    if str(argv[0]) == "git":
+        # A caller's repository-location variables (a hook's GIT_INDEX_FILE, a stray GIT_DIR) would send
+        # `git add`/`commit` to a different index than the one `_staged_added_rows` scans, which reads
+        # this worktree's own. Both must see the same repository: the one `cwd` names (#589).
+        env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
+    proc = subprocess.run([str(a) for a in argv], cwd=str(cwd), capture_output=True, text=True, env=env)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip()
         block = gh_session.proxy_session_block(detail)
@@ -2565,62 +2580,128 @@ def _unstage(path, raw_paths, run):
         return False
 
 
-def _diff_header_path(header):
-    """Decode Git's C-quoted `+++ b/<path>` identity to the raw `-z` path form.
-
-    Patch headers quote tabs, quotes, backslashes and non-ASCII names while `--name-status -z`
-    returns the raw pathname.  The commit control joins the two reads, so treating the display
-    spelling as identity would create a content-scan bypass.  Git's octal byte escapes are decoded
-    through a Latin-1 byte preservation step before UTF-8 decoding.
-    """
-    if not (header.startswith('"') and header.endswith('"')):
-        return header
-    try:
-        decoded = ast.literal_eval(header)
-        try:
-            return decoded.encode("latin1").decode("utf-8")
-        except UnicodeError:
-            return decoded
-    except (SyntaxError, ValueError):
-        return header
-
-
 def _diagnostic_path(raw):
     """A pathname fit for diagnostics, never a channel for a credential-shaped filename."""
     return scrub(raw)
 
 
-def _staged_added_diff(path):
-    """Read the staged zero-context patch outside the injected git-operation channel.
+#: Every flag the content scan's two git reads share. The scan's input must be the same bytes on every
+#: machine, whatever the operator's git config says, so nothing it depends on is left to config or to
+#: the display form of a header: no prefix is parsed (a header's `b/` is `diff.noprefix` /
+#: `diff.mnemonicPrefix` dependent), colour is off, every file is read as text (`--text` overrides a
+#: `-diff`/`binary` attribute and NUL detection, which otherwise replace the rows with a one-line
+#: "Binary files differ"), no external driver or textconv runs, `-z` keeps paths raw, and `-M` is
+#: explicit so a pure rename still scans as no added rows (rename detection never hides an added row),
+#: and an empty order file stops a missing `diff.orderFile` from making git fail every commit.
+_SCAN_FLAGS = ["--cached", "-M", "--no-ext-diff", "--no-textconv", "--no-color", "--text",
+               "--submodule=short", "--inter-hunk-context=0", "-O" + os.devnull]
+_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
-    The injected `run` channel is the public work lifecycle's ordered mutation/evidence trace.
-    Content scanning is an internal read, like `_risk_categories`; routing it through `run` changes
-    that trace and can consume a caller's next expected response.  This local subprocess has no
-    network, no shell, and no mutation.  At 10 changed files it remains one linear Git patch read;
-    at 100 it remains the same single read, rather than one fork per file.
-    """
-    # Do not use `subprocess.run`: risk-event tests deliberately replace that call to model the
-    # later risk detector.  This independent read must neither consume that fixture nor reorder
-    # the detector's observable commit-after-scan lifecycle.
-    # Direct unit callers can supply a synthetic `run` trace without creating a repository.  Their
-    # fake worktree has no `.git`, so there is no staged diff to inspect; the real CLI reaches this
-    # function only after `git add -A` succeeded and therefore always has Git metadata.  Do not
-    # mask an actual Git failure below: once a repository is present, an unreadable diff refuses.
-    if not (pathlib.Path(path) / ".git").exists():
-        return ""
-    # A caller can inherit GIT_DIR/GIT_WORK_TREE (or an alternate index) from an unrelated shell.
-    # `cwd` does not override those variables: Git would scan that other repository and return a
-    # clean diff while this goal's staged credential remains unseen.  The scan's authority is its
-    # recorded worktree, so discard every Git-specific override rather than trying to maintain an
-    # incomplete denylist as Git adds new environment controls.
-    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    proc = subprocess.Popen(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv", "--unified=0"],
-                            cwd=str(path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            text=True, env=clean_env)
+
+def _staged_raw_paths(path, clean_env):
+    """The index's changed paths in git's own order, as raw `-z` names: `[new_path, ...]`."""
+    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--raw", "-z"], cwd=str(path),
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     out, _ = proc.communicate()
     if proc.returncode:
+        raise RuntimeError("staged-path scan failed")
+    fields, names, i = out.decode("utf-8", "surrogateescape").split("\0"), [], 0
+    while i + 1 < len(fields) and fields[i].startswith(":"):
+        status = fields[i].split(" ")[-1]
+        if status[:1] == "U":           # unmerged: no patch section to attribute, so it cannot balance a count
+            raise RuntimeError("staged-path scan failed")
+        span = 2 if status[:1] in ("R", "C") else 1       # a rename/copy lists source THEN destination
+        if i + span >= len(fields):
+            raise RuntimeError("staged-path scan failed")
+        # A type change (file <-> symlink, or gitlink) is one raw entry but TWO patch sections.
+        names.extend([fields[i + span]] * (2 if status[:1] == "T" else 1))
+        i += span + 1
+    if i < len(fields) and fields[i]:
+        raise RuntimeError("staged-path scan failed")
+    return names
+
+
+def _parse_added_rows(stream, keep):
+    """One list per `diff --git` section: `keep(new_line, text)` for each added row, when it is not None.
+
+    Streamed and filtered as it is read, so memory is bounded by the longest line plus what `keep`
+    retains, not by the size of the patch (`--text` makes a staged binary a patch of its own bytes);
+    the credential scan keeps only its hits. Lines are split on `\n` alone."""
+    def rows():
+        for raw in stream:
+            yield (raw[:-1] if raw.endswith(b"\n") else raw).decode("utf-8", "replace")
+    it, sections = rows(), []
+    for row in it:
+        if row.startswith("diff --git "):
+            sections.append([])
+        elif row.startswith("Binary files ") or row.startswith("GIT binary patch"):
+            raise RuntimeError("staged-diff scan failed")
+        elif row.startswith("@@") and sections:
+            match = _HUNK_HEADER.match(row)
+            if not match:
+                raise RuntimeError("staged-diff scan failed")
+            old = int(match.group(1) or 1)
+            new_line, new = int(match.group(2)), int(match.group(3) or 1)
+            while old or new:
+                row = next(it, None)
+                if row is None:
+                    raise RuntimeError("staged-diff scan failed")
+                kind, text = row[:1], row[1:]
+                if kind == "\\":
+                    continue
+                if kind == "+" and new:
+                    kept = keep(new_line, text)
+                    if kept is not None:
+                        sections[-1].append(kept)
+                    new, new_line = new - 1, new_line + 1
+                elif kind == "-" and old:
+                    old -= 1
+                elif kind == " " and old and new:
+                    old, new, new_line = old - 1, new - 1, new_line + 1
+                else:
+                    raise RuntimeError("staged-diff scan failed")
+    return sections
+
+
+def _staged_added_rows(path, keep):
+    """`{raw_path: [keep(line, text)]}` for every row the index adds, read by STRUCTURE, never by text.
+
+    Files are attributed by position — the n-th `diff --git` section of the patch is the n-th entry of
+    the `--raw -z` list, and a count mismatch refuses — so no path is ever parsed out of a header. A
+    row is a header only OUTSIDE a hunk, and where a hunk ends is decided by the counts in its own
+    `@@` line, so an added line that reads `++ x` or `+++ x` is data. Lines split on `\n` alone
+    (`str.splitlines` would also cut on `\r`, form-feed and U+2028 inside a row and desynchronise the
+    counts). Anything git emitted that this cannot account for raises, and `_secret_refusal` turns a
+    raise into a refusal: an unreadable diff is never a clean one.
+
+    This is an internal read outside the injected `run` channel (see `_secret_refusal` for why), a
+    single patch read plus a single raw read however many files change. A caller's `GIT_*` variables
+    are dropped because they would redirect git at another repository."""
+    if not (pathlib.Path(path) / ".git").exists():
+        return {}                        # a synthetic worktree used by unit callers has no index to read
+    clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    names = _staged_raw_paths(path, clean_env)
+    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--unified=0"], cwd=str(path),
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
+    try:
+        sections = _parse_added_rows(proc.stdout, keep)
+    finally:
+        proc.stdout.close()
+        returncode = proc.wait()
+    if returncode:
         raise RuntimeError("staged-diff scan failed")
-    return out
+    if len(sections) != len(names):
+        raise RuntimeError("staged-diff scan failed")
+    found = {}
+    for name, added in zip(names, sections):
+        found.setdefault(name, []).extend(added)
+    return found
+
+
+def _row_hits(line, text):
+    """`[(rule, line, column)]` for one added row, or None. Location only; the text is not kept."""
+    found = scrub_module.commit_secret_hits(text)
+    return [(rule, line, column) for rule, column in found] or None
 
 
 def _added_secret_hits(path):
@@ -2631,22 +2712,10 @@ def _added_secret_hits(path):
     The returned metadata is location-only; a diagnostic can never accidentally interpolate a
     matched value.
     """
-    diff = _staged_added_diff(path)
-    hits, current, line = {}, "", 0
-    for row in diff.splitlines():
-        if row.startswith("+++ "):
-            header = _diff_header_path(row[4:])
-            current = header[2:] if header.startswith("b/") else ""
-            continue
-        if row.startswith("@@"):
-            match = re.search(r"\+(\d+)(?:,(\d+))?", row)
-            line = int(match.group(1)) if match else 0
-            continue
-        if current and line and row.startswith("+") and not row.startswith("+++"):
-            found = scrub_module.commit_secret_hits(row[1:])
-            if found:
-                hits.setdefault(current, []).extend((rule, line, column) for rule, column in found)
-            line += 1
+    hits = {}
+    for name, per_row in _staged_added_rows(path, _row_hits).items():
+        for found in per_row:
+            hits.setdefault(name, []).extend(found)
     return hits
 
 
@@ -2702,6 +2771,10 @@ def _secret_refusal(path, staged, config, run):
         offenders = [("?", _unquoted(line), content_hits.get(_unquoted(line), ()))
                      for line in staged.splitlines()
                      if _is_offender(line, allowed) or _unquoted(line) in content_hits]
+    # A hit whose path the status read did not name (a rename's other spelling, a name the fallback
+    # split wrongly) is still a credential: it becomes an offender rather than being dropped.
+    named = {raw for _, raw, _hits in offenders}
+    offenders += [("?", raw, hits_) for raw, hits_ in content_hits.items() if raw not in named]
     if not offenders:
         return ""                       # every candidate was a deletion, or was allowed outright
     unstaged = _unstage(path, [raw for _, raw, _hits in offenders], run) if rows else False
@@ -2715,7 +2788,10 @@ def _secret_refusal(path, staged, config, run):
             locations = ", ".join("%s at %s:%d:%d" % (rule, shown, line, column)
                                   for rule, line, column in hits)
             lines.append("  * %s — added content matched %s; no matched value is shown. Remove or "
-                         "replace it, then re-run `work.py commit`." % (shown, locations))
+                         "replace it, then re-run `work.py commit`. A file that must hold such bytes "
+                         "(a compiled artifact) is committed by hand outside the loop: "
+                         "`work.allow_secret_paths` clears a path's NAME, never its content."
+                         % (shown, locations))
             continue
         pattern = _gitignore_pattern(raw)
         shown = _diagnostic_path(raw)
@@ -2740,16 +2816,18 @@ def _secret_refusal(path, staged, config, run):
                   "Nothing was committed. The index could NOT be cleaned up, so those paths are "
                   "STILL STAGED — unstage them yourself before the ignore rule can take effect. "
                   "Every file is still on disk, untouched.")
+    named = [raw for _, raw, hits_ in offenders if not hits_ or _is_offender(raw, allowed)]
+    allow_hint = ("  Deliberate (a fixture, a test key, a certificate)? Add the EXACT path to "
+                  "`work.allow_secret_paths` in .sdlc/config.json — e.g. \"work\": "
+                  "{\"allow_secret_paths\": [%s]} — then re-run. Exact paths only: a glob would be an "
+                  "off switch, not an allowlist.\n"
+                  % ", ".join(json.dumps(_diagnostic_path(raw)) for raw in named)) if named else ""
     return ("REFUSED — `git add -A` staged %d path(s) or added-content match(es) requiring attention "
             "in this goal's worktree. %s\n%s\n"
-            "  Deliberate (a fixture, a test key, a certificate)? Add the EXACT path to "
-            "`work.allow_secret_paths` in .sdlc/config.json — e.g. \"work\": "
-            "{\"allow_secret_paths\": [%s]} — then re-run. Exact paths only: a glob would be an off "
-            "switch, not an allowlist.\n  Added-content checks read only added staged-diff lines; "
+            "%s  Added-content checks read only added staged-diff lines; "
             "diagnostics never show matched values. It refuses rather than warns because a wedged "
             "run costs minutes and a pushed credential must be rotated."
-            % (len(offenders), state_line, "\n".join(lines),
-               ", ".join(json.dumps(_diagnostic_path(raw)) for _, raw, _hits in offenders)))
+            % (len(offenders), state_line, "\n".join(lines), allow_hint))
 
 
 #: #910: risk-detect.sh's own three category names -> the `gate` vocabulary value each records

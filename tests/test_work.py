@@ -981,6 +981,16 @@ def test_commit_refuses_when_add_A_staged_a_dotenv(tmp_path):
     assert not any(c.startswith("git commit") for c in run.calls)
 
 
+def _fake_rows(rows):
+    """A stand-in for `_staged_added_rows`: `{path: [(line, text)]}` passed through the caller's `keep`."""
+    def read(_path, keep):
+        out = {}
+        for name, added in rows.items():
+            out[name] = [k for k in (keep(line, text) for line, text in added) if k is not None]
+        return out
+    return read
+
+
 def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(tmp_path, monkeypatch):
     """The public `work.py commit` gesture must inspect additions, not only filenames."""
     d = _sdlc(tmp_path)
@@ -990,8 +1000,7 @@ def test_documented_work_commit_refuses_an_added_cloud_key_without_printing_it(t
         ("--name-status -z", "A\0src/settings.py\0"),
         ("diff --cached --name-only", "src/settings.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
-                        "+++ b/src/settings.py\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n")
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"src/settings.py": [(1, "ACCESS_KEY = " + fixture)]}))
     out = work.commit(d, ON, goal, run=run, message="test: content gate")
     assert out.startswith("REFUSED")
     assert "aws-key" in out and "src/settings.py:1" in out
@@ -1007,10 +1016,10 @@ def test_documented_work_commit_refuses_when_the_added_content_scan_is_unavailab
     fixture = "AKIA" + "Z" * 16
     run = _runner([("diff --cached --name-only", "src/settings.py")])
 
-    def unavailable(_path):
+    def unavailable(_path, _keep):
         raise RuntimeError("scanner failed near " + fixture)
 
-    monkeypatch.setattr(work, "_staged_added_diff", unavailable)
+    monkeypatch.setattr(work, "_staged_added_rows", unavailable)
     out = work.commit(d, ON, goal, run=run, message="test: scan unavailable")
     assert out.startswith("REFUSED")
     assert "could not be scanned" in out
@@ -1027,8 +1036,7 @@ def test_documented_work_commit_allows_the_explicit_synthetic_fixture_value(tmp_
     run = _runner([
         ("diff --cached --name-only", "tests/test_fixture.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
-                        "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+fixture = " + fixture + "\n")
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"tests/test_fixture.py": [(1, "fixture = " + fixture)]}))
     assert work.commit(d, ON, goal, run=run, message="test: fixture") == "committed on sdlc/0001-x"
 
 
@@ -1352,9 +1360,8 @@ def test_staged_content_scan_reads_bytes_without_running_git_textconv(tmp_path):
     (repo / "input.fixture").write_text("SOURCE_BYTES\n")
     subprocess.run(["git", "-C", str(repo), "add", "input.fixture"], check=True)
 
-    diff = work._staged_added_diff(repo)
-    assert "+SOURCE_BYTES" in diff
-    assert "TRANSFORMED" not in diff
+    rows = work._staged_added_rows(repo, lambda line, text: (line, text))
+    assert rows["input.fixture"] == [(1, "SOURCE_BYTES")]
 
 
 def test_content_scan_ignores_external_git_directory_and_worktree_overrides(tmp_path, monkeypatch):
@@ -1380,6 +1387,266 @@ def test_content_scan_ignores_external_git_directory_and_worktree_overrides(tmp_
     assert not any(c.startswith("git commit") for c in run.calls)
 
 
+def _key():
+    return "AK" + "IA" + "Q" * 16
+
+
+def _head(repo):
+    import subprocess
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+
+def _g589_tracked(repo):
+    import subprocess
+    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "--name-only", "-z", "HEAD"],
+                         capture_output=True, text=True, check=True).stdout
+    return {n for n in out.split("\0") if n}
+
+
+def _g589(repo, *args):
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+
+# (id, git config pairs, .gitattributes text, file name, file bytes): every way a staged credential
+# used to read as clean. The first four are #589's own reproducer.
+_SCAN_BLIND_SPOTS = [
+    ("noprefix", [("diff.noprefix", "true")], "", "s.py", b"K = %KEY%\n"),
+    ("mnemonic", [("diff.mnemonicPrefix", "true")], "", "s.py", b"K = %KEY%\n"),
+    ("spaced-name", [], "", "my file.py", b"K = %KEY%\n"),
+    ("plus-plus-row", [], "", "s.py", b"++ x\nK = %KEY%\n"),
+    ("plus-plus-plus-row", [], "", "s.py", b"+++ %KEY%\n"),
+    ("hunk-looks-like-header", [], "", "s.py", b"++ b/other.py\n@@ -1 +1 @@\nK = %KEY%\n"),
+    ("combined", [("diff.noprefix", "true")], "", "my file.py", b"++ x\nK = %KEY%\n"),
+    ("binary-attribute", [], "*.py binary\n", "s.py", b"K = %KEY%\n"),
+    ("no-diff-attribute", [], "*.py -diff\n", "s.py", b"K = %KEY%\n"),
+    ("nul-byte", [], "", "s.py", b"\0K = %KEY%\n"),
+    ("colour-always", [("color.diff", "always"), ("color.ui", "always")], "", "s.py", b"K = %KEY%\n"),
+    ("newline-in-name", [], "", "a\nb.py", b"K = %KEY%\n"),
+    ("quote-in-name", [], "", 'a"b.py', b"K = %KEY%\n"),
+    ("submodule-log", [("diff.submodule", "log")], "", "s.py", b"K = %KEY%\n"),
+    ("crlf", [], "", "s.py", b"K = %KEY%\r\n"),
+    ("form-feed-splits-a-row", [], "", "s.py", b"x\x0c+++ b/y\nK = %KEY%\n"),
+    ("no-final-newline", [], "", "s.py", b"K = %KEY%"),
+]
+
+
+@pytest.mark.parametrize("name,config,attributes,filename,body", _SCAN_BLIND_SPOTS,
+                         ids=[c[0] for c in _SCAN_BLIND_SPOTS])
+def test_work_commit_refuses_a_credential_whatever_the_diff_config_or_filename(
+        tmp_path, name, config, attributes, filename, body):
+    """#589: the scan read the diff's display form, so a diff config option, a space in a file name,
+    or a row that looks like a header made a staged credential invisible. Each case commits through
+    the documented `work.py commit`, and none may reach the branch or be echoed."""
+    repo, d, committed = _real_repo(tmp_path)
+    before = _head(repo)
+    for key, value in config:
+        _g589(repo, "config", key, value)
+    if attributes:
+        (repo / ".gitattributes").write_text(attributes)
+    (repo / filename).write_bytes(body.replace(b"%KEY%", _key().encode()))
+
+    refusal = work.commit(d, ON, "0001-x.md", message="test: blind spot")
+    assert refusal.startswith("REFUSED") and "aws-key" in refusal, refusal
+    assert _key() not in refusal
+    assert _head(repo) == before
+
+
+def test_work_commit_still_commits_a_clean_change_under_the_same_config(tmp_path):
+    """Positive control: the hardened scan does not refuse what is clean."""
+    repo, d, committed = _real_repo(tmp_path)
+    _g589(repo, "config", "diff.noprefix", "true")
+    (repo / "my file.py").write_bytes(b"++ x\n+++ y\nvalue = 1\n")
+    assert work.commit(d, ON, "0001-x.md", message="test: clean") == "committed on sdlc/0001-x"
+    assert _g589_tracked(repo) == {"a.py", ".gitignore", "my file.py"}
+
+
+def test_work_commit_still_refuses_the_original_baseline(tmp_path):
+    repo, d, _committed = _real_repo(tmp_path)
+    (repo / "s.py").write_text("K = " + _key() + "\n")
+    refusal = work.commit(d, ON, "0001-x.md", message="test: baseline")
+    assert refusal.startswith("REFUSED") and "aws-key at s.py:1:" in refusal and _key() not in refusal
+
+
+@pytest.mark.parametrize("to_symlink", [True, False], ids=["file-to-symlink", "symlink-to-file"])
+def test_a_type_change_is_scanned_and_a_clean_one_still_commits(tmp_path, to_symlink):
+    """git lists a file<->symlink change once in the raw read and as two patch sections."""
+    repo, d, _committed = _real_repo(tmp_path)
+    target = repo / "t.py"
+    if to_symlink:
+        target.write_text("x = 1\n")
+    else:
+        target.symlink_to("a.py")
+    _g589(repo, "add", "-A")
+    _g589(repo, "commit", "-qm", "seed")
+
+    def change(content):
+        target.unlink()
+        if to_symlink:
+            target.symlink_to(content)
+        else:
+            target.write_text(content + "\n")
+
+    change("K = " + _key())
+    refusal = work.commit(d, ON, "0001-x.md", message="test: secret type change")
+    assert refusal.startswith("REFUSED") and "aws-key" in refusal and _key() not in refusal
+    change("a.py" if to_symlink else "y = 2")
+    assert work.commit(d, ON, "0001-x.md", message="test: clean type change") == "committed on sdlc/0001-x"
+
+
+def test_work_commit_scans_the_index_it_commits_when_the_caller_exports_git_index_file(
+        tmp_path, monkeypatch):
+    """A caller (a hook) can export GIT_INDEX_FILE. `commit` must stage, scan and commit one index."""
+    repo, d, committed = _real_repo(tmp_path)
+    before = _head(repo)
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "other-index"))
+    (repo / "s.py").write_text("K = " + _key() + "\n")
+    refusal = work.commit(d, ON, "0001-x.md", message="test: other index")
+    assert refusal.startswith("REFUSED") and "aws-key" in refusal and _key() not in refusal
+    assert _head(repo) == before
+
+
+def test_an_allowlisted_name_does_not_exempt_the_added_content(tmp_path):
+    """`allow_secret_paths` clears a secret-shaped NAME (a deliberate `.env`); a credential added
+    inside it is still refused."""
+    repo, d, _committed = _real_repo(tmp_path)
+    cfg = {**ON, "work": {**ON["work"], "allow_secret_paths": [".env"]}}
+    (repo / ".env").write_text("APP=1\n")
+    assert work.commit(d, cfg, "0001-x.md", message="test: env") == "committed on sdlc/0001-x"
+    (repo / ".env").write_text("APP=1\nK = " + _key() + "\n")
+    refusal = work.commit(d, cfg, "0001-x.md", message="test: env secret")
+    assert refusal.startswith("REFUSED") and "aws-key" in refusal and _key() not in refusal
+
+
+def _raises(call):
+    try:
+        call()
+    except RuntimeError:
+        return True
+    return False
+
+
+def test_scan_refuses_on_each_way_the_diff_cannot_be_accounted_for(tmp_path, monkeypatch):
+    """Each safety net on its own: a count mismatch, a git failure, a cut-off hunk, an unknown row."""
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / "s.py").write_text("x = 2\n")
+    _g589(repo, "add", "-A")
+    assert work._added_secret_hits(repo) == {}                        # the control: it reads cleanly
+    real = work._staged_raw_paths
+    monkeypatch.setattr(work, "_staged_raw_paths", lambda *a: real(*a) + ["extra.py"])
+    assert _raises(lambda: work._added_secret_hits(repo))             # one more path than sections
+    monkeypatch.setattr(work, "_staged_raw_paths", real)
+    monkeypatch.setattr(work, "_SCAN_FLAGS", work._SCAN_FLAGS + ["--no-such-option"])
+    assert _raises(lambda: work._added_secret_hits(repo))             # git itself fails
+    monkeypatch.setattr(work, "_staged_raw_paths", lambda *a: [])     # counts now agree at zero, so
+    assert _raises(lambda: work._added_secret_hits(repo))             # only the exit status can refuse
+    head = b"diff --git a/f b/f\n"
+    _keep = lambda line, text: (line, text)                           # noqa: E731
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1,2 @@\n", b"+x\n"]), _keep))
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ -0,0 +1 @@\n", b"zzz\n"]), _keep))
+    assert _raises(lambda: work._parse_added_rows(iter([head, b"@@ nonsense @@\n"]), _keep))
+
+
+def test_a_content_only_refusal_does_not_offer_the_name_allowlist_as_its_fix(tmp_path):
+    repo, d, _committed = _real_repo(tmp_path)
+    (repo / "bg.bin").write_bytes(b"\0K = " + _key().encode() + b"\n")
+    refusal = work.commit(d, ON, "0001-x.md", message="test: content only")
+    assert refusal.startswith("REFUSED") and "bg.bin" in refusal
+    assert "by hand outside the loop" in refusal and "NAME, never its content" in refusal
+    assert "Add the EXACT path" not in refusal
+
+
+def test_editing_a_file_with_no_final_newline_still_commits(tmp_path):
+    """git puts a `\\ No newline` marker INSIDE the hunk; reading it as an unknown row would refuse."""
+    repo, d, _committed = _real_repo(tmp_path)
+    (repo / "n.py").write_bytes(b"x = 1")
+    _g589(repo, "add", "-A")
+    _g589(repo, "commit", "-qm", "seed")
+    (repo / "n.py").write_bytes(b"x = 2")
+    assert work.commit(d, ON, "0001-x.md", message="test: no newline") == "committed on sdlc/0001-x"
+
+
+def test_scan_does_not_hold_the_rows_it_has_already_scanned(tmp_path):
+    """Memory follows the longest line, not the staged size: a 20 MB binary must not be held in rows."""
+    import tracemalloc
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / "blob.bin").write_bytes(bytes(range(256)) * 80000 + b"\0")
+    _g589(repo, "add", "-A")
+    tracemalloc.start()
+    try:
+        found = work._added_secret_hits(repo)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert found == {}
+    assert peak < 5_000_000, peak
+
+
+def test_scan_is_not_broken_by_a_dangling_diff_order_file(tmp_path):
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / "s.py").write_text("K = " + _key() + "\n")
+    _g589(repo, "add", "-A")
+    _g589(repo, "config", "diff.orderFile", "nowhere")
+    try:
+        found = work._added_secret_hits(repo)
+    except RuntimeError:
+        found = None
+    assert found is not None and list(found) == ["s.py"]
+
+
+def test_scan_reports_the_real_line_number_after_header_shaped_rows(tmp_path):
+    repo, _d, _committed = _real_repo(tmp_path)
+    (repo / "s.py").write_bytes(b"++ one\n+++ two\nK = " + _key().encode() + b"\n")
+    _g589(repo, "add", "-A")
+    assert work._added_secret_hits(repo) == {"s.py": [("aws-key", 3, 5)]}
+
+
+def test_scan_sees_an_added_row_in_a_renamed_file_but_not_the_renamed_content(tmp_path):
+    """Rename detection must neither hide an added credential nor re-flag moved content."""
+    repo, _d, _committed = _real_repo(tmp_path)
+    body = "".join("line %d\n" % i for i in range(40))
+    (repo / "old.py").write_text(body + "K = " + _key() + "\n")
+    _g589(repo, "add", "-A")
+    _g589(repo, "commit", "-qm", "seed (already in history)")
+    _g589(repo, "config", "diff.renames", "false")                   # the scan must not depend on it
+    (repo / "old.py").rename(repo / "new.py")
+    _g589(repo, "add", "-A")
+    assert work._added_secret_hits(repo) == {}                       # moved, not added
+    (repo / "new.py").write_text(body + "J = " + _key() + "\n")
+    _g589(repo, "add", "-A")
+    assert list(work._added_secret_hits(repo)) == ["new.py"]
+
+
+def test_scan_refuses_rather_than_return_clean_when_the_diff_cannot_be_accounted_for(tmp_path):
+    """An unmerged index entry has a raw record and no patch section: unreadable, so refuse."""
+    repo, d, _committed = _real_repo(tmp_path)
+    _g589(repo, "checkout", "-qb", "other")
+    (repo / "a.py").write_text("x = 2\n")
+    _g589(repo, "commit", "-qam", "other")
+    _g589(repo, "checkout", "-q", "-")
+    (repo / "a.py").write_text("x = 3\n")
+    _g589(repo, "commit", "-qam", "mine")
+    import subprocess
+    subprocess.run(["git", "-C", str(repo), "merge", "other"], capture_output=True)
+    try:
+        found = work._added_secret_hits(repo)
+    except RuntimeError:
+        found = "raised"
+    assert found == "raised"
+
+
+def test_added_secret_hit_under_an_unnamed_path_still_refuses(tmp_path, monkeypatch):
+    """A hit whose path the status read did not list is an offender, never silently dropped."""
+    d = _sdlc(tmp_path)
+    goal = _started(d)
+    run = _runner([("--name-status -z", "A\0other.py\0"), ("diff --cached --name-only", "other.py")])
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"elsewhere.py": [(1, "K = " + _key())]}),
+                        raising=False)
+    out = work.commit(d, ON, goal, run=run, message="test: unnamed")
+    assert out.startswith("REFUSED") and "elsewhere.py" in out and _key() not in out
+
+
 def test_real_git_refuses_content_in_a_non_ascii_path(tmp_path):
     """Git C-quotes patch headers, but their identity must still join the raw status path."""
     repo, d, _committed = _real_repo(tmp_path)
@@ -1401,8 +1668,7 @@ def test_content_refusal_does_not_echo_a_credential_shaped_filename(tmp_path, mo
         ("--name-status -z", "A\0" + raw + "\0"),
         ("diff --cached --name-only", raw),
     ])
-    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
-                        "+++ b/" + raw + "\n@@ -0,0 +1 @@\n+ACCESS_KEY = " + fixture + "\n")
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({raw: [(1, "ACCESS_KEY = " + fixture)]}))
     refusal = work.commit(d, ON, goal, run=run, message="test: safe diagnostic")
     assert refusal.startswith("REFUSED")
     assert fixture not in refusal and "[REDACTED:aws-key]" in refusal
@@ -1415,8 +1681,7 @@ def test_documented_work_commit_allows_a_fixture_assignment(tmp_path, monkeypatc
     run = _runner([
         ("diff --cached --name-only", "tests/test_fixture.py"),
     ])
-    monkeypatch.setattr(work, "_staged_added_diff", lambda _path:
-                        "+++ b/tests/test_fixture.py\n@@ -0,0 +1 @@\n+SECRET = " + fixture + "\n")
+    monkeypatch.setattr(work, "_staged_added_rows", _fake_rows({"tests/test_fixture.py": [(1, "SECRET = " + fixture)]}))
     assert work.commit(d, ON, goal, run=run, message="test: fixture assignment") == "committed on sdlc/0001-x"
 
 
