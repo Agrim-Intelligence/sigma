@@ -274,6 +274,36 @@ def _read_json(path):
         return {}
 
 
+class ConfigUnreadable(Exception):
+    """config.json exists but is not a JSON object: writing a fresh one would destroy the user's keys."""
+
+
+def read_config_strict(path):
+    """-> the config dict; `{}` ONLY when the file is absent. Raises ConfigUnreadable (with the lever)
+    for a present file that cannot be read, parsed, or is not a JSON object (#625), so no writer of
+    config.json can replace a corrupt file with a fresh one."""
+    path = pathlib.Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:                 # UnicodeDecodeError is a ValueError
+        problem = "cannot be read (%s)" % exc.__class__.__name__
+    else:
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            problem = "is not valid JSON (%s; truncated or hand-edited?)" % exc
+        else:
+            if isinstance(data, dict):
+                return data
+            problem = "is JSON but not an object (top level is %s)" % type(data).__name__
+    raise ConfigUnreadable(
+        f"{path} {problem}. Nothing was written and the file is untouched. Fix it: repair the JSON "
+        f"by hand (your keys are still in the file), or back it up (`cp {path.name} {path.name}.bak`) "
+        f"and delete it on purpose so /sigma-init writes a fresh one.")
+
+
 def _write_json(path, data):
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,7 +327,7 @@ def apply_config(sdlc, res, repo, repo_flag=False):
     run; -> the lines saying what the mode is. A key config.json already answers ("kept") is never
     rewritten, and a value already equal is not rewritten either (idempotent)."""
     path = pathlib.Path(sdlc) / "config.json"
-    cfg = _read_json(path)
+    cfg = read_config_strict(path)                      # #625: raises on a corrupt/non-object file
     before = json.dumps(cfg, sort_keys=True)
     lines = []
     disc = _child(cfg, "discovery")
@@ -614,7 +644,11 @@ def main(argv):
 
     answered, scaffolded = load_memory(sdlc)
     cfg_path = pathlib.Path(sdlc) / "config.json"
-    cfg0 = _read_json(cfg_path)
+    try:
+        cfg0 = read_config_strict(cfg_path)             # #625: refuse BEFORE any write of this run
+    except ConfigUnreadable as exc:
+        print(f"sigma-init: REFUSED - {exc}", file=sys.stderr)
+        return 2
     detected = detect_github_repo(target)
     res = resolve_answers(opts, answered, scaffolded, config_answers(cfg0),
                           "github" if detected else "local-goals")

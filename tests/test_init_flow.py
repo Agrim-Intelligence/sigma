@@ -1304,3 +1304,92 @@ def test_trust_line_withholds_a_gesture_for_a_path_with_a_control_character(tmp_
     (sdlc / "config.json").write_text(json.dumps({"verify": {"command": "pytest -q", "enforce": True}}))
     text = "\n".join(flow.verify_step(str(d), str(sdlc), {})[0])
     assert "[ok] verify" not in text and "git -C" not in text and "control character" in text, text
+
+# ---------------------------------------------------------------- #625: never clobber a bad config
+
+_BAD_CONFIGS = [("truncated", b'{"a": 1, "discovery": {"source": "gith'), ("array", b"[1, 2]"),
+                ("string", b'"hello"'), ("null", b"null"), ("empty", b""),
+                ("not-utf8", b'{"a": "\xff\xfe"}')]
+
+
+@pytest.mark.parametrize("name,raw", _BAD_CONFIGS, ids=[n for n, _ in _BAD_CONFIGS])
+def test_corrupt_config_is_refused_and_left_byte_identical(tmp_path, name, raw):
+    """The documented gesture (`init_flow.py <repo> --mode local-goals`) on a present-but-bad
+    config.json: exit 2, the file named with the lever, bytes identical, nothing else written."""
+    w = _world(tmp_path, origin=None)
+    w["sdlc"].mkdir()
+    cfg = w["sdlc"] / "config.json"
+    cfg.write_bytes(raw)
+    # the bare gesture SKILL.md prints, and a flagged one
+    for argv in ([FLOW, w["repo"]], [FLOW, w["repo"], "--mode", "local-goals", "--no-verify"]):
+        r = _run(w, argv)
+        assert r.returncode == 2, r.stdout + r.stderr
+        assert "REFUSED" in r.stderr and "config.json" in r.stderr and "back it up" in r.stderr, r.stderr
+        assert cfg.read_bytes() == raw
+        assert sorted(p.name for p in w["sdlc"].iterdir()) == ["config.json"]  # no scaffold, no tmp
+
+
+@pytest.mark.parametrize("name,raw", _BAD_CONFIGS, ids=[n for n, _ in _BAD_CONFIGS])
+def test_apply_config_refuses_unreadable_config_directly(tmp_path, name, raw):
+    flow = _load_flow()
+    (tmp_path / "config.json").write_bytes(raw)
+    res = {"mode": ("local-goals", "flag"), "work": (None, "open"), "ledger": (None, "open"),
+           "board": (None, "open")}
+    raised = None
+    try:
+        flow.apply_config(str(tmp_path), res, "")
+    except Exception as exc:                            # asserted below, so the red is an assertion
+        raised = exc
+    assert type(raised).__name__ == "ConfigUnreadable", raised
+    assert "config.json" in str(raised)
+    assert (tmp_path / "config.json").read_bytes() == raw
+    assert [p.name for p in tmp_path.iterdir()] == ["config.json"]
+
+
+def test_valid_config_still_updated_and_written_atomically(tmp_path):
+    flow = _load_flow()
+    assert hasattr(flow, "read_config_strict")
+    (tmp_path / "config.json").write_text(json.dumps({"keep": {"me": 1}, "discovery": {"source": "github"}}))
+    res = {"mode": ("local-goals", "flag"), "work": (None, "open"), "ledger": (None, "open"),
+           "board": (None, "open")}
+    flow.apply_config(str(tmp_path), res, "")
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    assert cfg["keep"] == {"me": 1} and cfg["discovery"]["source"] == "local-goals"
+    assert [p.name for p in tmp_path.iterdir()] == ["config.json"]              # no tmp left behind
+    assert flow.read_config_strict(tmp_path / "missing.json") == {}              # absent is not corrupt
+
+
+def test_setup_configure_refuses_corrupt_config(tmp_path):
+    w = _world(tmp_path, origin=None)
+    w["sdlc"].mkdir()
+    for raw in (b'{"a": 1', b"[1]"):
+        (w["sdlc"] / "config.json").write_bytes(raw)
+        r = _run(w, [SETUP, "configure", w["sdlc"], "--source", "local-goals"])
+        assert r.returncode == 2 and "REFUSED" in r.stderr and "Traceback" not in r.stderr, r.stderr
+        assert (w["sdlc"] / "config.json").read_bytes() == raw
+
+
+def test_setup_write_cfg_is_atomic(tmp_path, monkeypatch):
+    """The new content reaches config.json only through os.replace: a failure at the rename leaves
+    the old file whole and no temp file behind (a truncate-in-place writer cannot pass this)."""
+    spec = importlib.util.spec_from_file_location("setup_under_test", SETUP)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    path = tmp_path / "config.json"
+    path.write_text('{"old": true}\n')
+    real = os.replace
+
+    def boom(*a, **k):
+        raise OSError("simulated crash at the rename")
+    monkeypatch.setattr(os, "replace", boom)
+    failure = None
+    try:
+        mod.write_cfg(str(tmp_path), {"new": 1})
+    except OSError as exc:
+        failure = exc
+    assert failure is not None, "the new content reached config.json without os.replace"
+    assert json.loads(path.read_text()) == {"old": True}
+    assert [p.name for p in tmp_path.iterdir()] == ["config.json"]
+    monkeypatch.setattr(os, "replace", real)
+    mod.write_cfg(str(tmp_path), {"new": 1})
+    assert json.loads(path.read_text()) == {"new": 1}

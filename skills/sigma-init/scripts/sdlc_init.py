@@ -656,7 +656,7 @@ def scaffold_extras(target, flags):
             cfg = json.loads(cfgp.read_text(encoding="utf-8"))
             if cfg.get("companions") != "off":
                 cfg["companions"] = "off"
-                cfgp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+                _verify_detect()._atomic_write_json(cfgp, cfg)       # #625: never a truncating write
         except Exception:
             pass
         if rules_created:
