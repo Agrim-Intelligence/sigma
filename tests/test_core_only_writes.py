@@ -28,7 +28,7 @@ TWO WAYS THIS TEST COULD PASS WHILE PROVING NOTHING, both guarded below:
 
 THE GATE LEG IS A CONSTRUCTED PRECONDITION, AND SAYS SO HERE RATHER THAN HIDING IT.
 `.sdlc/decisions.json` is NOT something `/sigma-init` writes -- `/sigma-decide` authors it
-interactively, out of a conversation with a human. So this one leg of the sequence departs from
+interactively (skeleton via `decision_gate.py init`), out of a conversation with a human. So this one leg of the sequence departs from
 "the gesture a new user makes", and the fixture seeds a minimal registry by hand. It is kept rather
 than dropped because `hooks/decision_gate.py` is the ONLY EVENTS writer outside
 `skills/sigma-loop/scripts/`: a separate process that cross-loads `ledger.py` from `hooks/` by

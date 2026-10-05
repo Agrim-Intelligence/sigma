@@ -20,7 +20,8 @@ files matching its OWN decision's protected_paths, only in assignment shape (`na
 `name: <literal>`), with comments stripped. Prose mentions and same-named tokens elsewhere never
 trip it, and a new value that still SATISFIES the constraint is allowed.
 
-OFF until a repo authors `.sdlc/decisions.json` — no registry, no behavior. Set
+OFF until an ADOPTED repo (`.sdlc/config.json` present) authors `.sdlc/decisions.json` — no registry,
+no behavior, and no hook without the adoption marker. `init` writes the skeleton and refuses otherwise. Set
 `gates.decision_gate.enabled: false` in `.sdlc/config.json` to disable without deleting the registry
 (useful mid-refactor).
 
@@ -79,8 +80,8 @@ def load_registry(root):
 
 
 def enabled(root):
-    """Authoring a registry IS the opt-in — a config flag you had to discover would make the
-    feature silently do nothing. `enabled: false` turns it off without deleting the file."""
+    """Within an adopted repo, authoring a registry is the opt-in — a config flag you had to discover
+    would make the feature silently do nothing (hook mode separately needs `.sdlc/config.json`). `enabled: false` turns it off without deleting the file."""
     try:
         cfg = json.loads((Path(root) / ".sdlc" / "config.json").read_text(encoding="utf-8"))
         gate = (cfg.get("gates") or {}).get("decision_gate") or {}
@@ -527,7 +528,49 @@ def _emit(decision, reason):
     sys.exit(0)
 
 
+def init(root):
+    """`init [root]`: write the skeleton registry, but only inside an adopted repository (#622).
+
+    The hook is inert without `.sdlc/config.json`, so writing a registry elsewhere would hand the
+    author a gate that is off. Refuses (exit 2, nothing written) when `gate_state.adopted_root()` finds
+    none, naming the adoption command. Create-only via open(..., "x"): an existing registry is never
+    touched. `adopted_root` walks upward and returns a realpath, so the path written is printed."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import gate_state
+    found = gate_state.adopted_root(str(root))
+    if found is None:
+        print("decision_gate.py: refusing to write a registry: this repository is not adopted "
+              "(no .sdlc/config.json). Run /sigma-init first; the decision gate does nothing without it.",
+              file=sys.stderr)
+        return 2
+    target = Path(found) / REGISTRY_REL
+    try:
+        with open(target, "x", encoding="utf-8") as fh:
+            fh.write(json.dumps({"version": 1, "decisions": []}, indent=2) + "\n")
+    except FileExistsError:
+        print(f"decision_gate.py: {target} already exists; not overwriting it", file=sys.stderr)
+        return 1
+    except OSError as e:
+        print(f"decision_gate.py: could not write {target}: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {target}")
+    return 0
+
+
+def _note_if_unadopted(root):
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import gate_state
+        if gate_state.adopted_root(str(root)) is None:
+            print("  [NOTE] not an adopted repository (no .sdlc/config.json): the edit-time hook is "
+                  "inert until /sigma-init; `check` and `validate` still work.")
+    except Exception:
+        pass
+
+
 def main(argv):
+    if len(argv) >= 2 and argv[1] == "init":
+        return init(argv[2] if len(argv) > 2 else ".")
     if len(argv) >= 2 and argv[1] in ("check", "validate"):
         root = argv[2] if len(argv) > 2 else "."
         if not (Path(root) / REGISTRY_REL).exists():
@@ -538,6 +581,7 @@ def main(argv):
             for p in problems:
                 print(f"  [PROBLEM] {p}")
             print(f"decision registry: {'valid' if not problems else str(len(problems)) + ' problem(s)'}")
+            _note_if_unadopted(root)
             return 1 if problems else 0
         found = check(root)
         for rel, ident, name, actual in found:

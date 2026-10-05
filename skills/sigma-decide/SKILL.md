@@ -13,7 +13,7 @@ discipline a model is asked to follow — and a model can talk itself past disci
 3am on iteration forty of an autonomous run. A registered invariant is different: the edit is refused
 by a script that does not negotiate.
 
-Registry: `.sdlc/decisions.json`. **Authoring it is the opt-in** — no registry, no behavior.
+Registry: `.sdlc/decisions.json`. In an **adopted repo** (`.sdlc/config.json`, from `/sigma-init`), authoring it is the opt-in — no registry, no behavior. The edit-time hook does nothing without the adoption marker.
 
 ## What belongs in here (and what doesn't)
 
@@ -40,7 +40,13 @@ that's the expected outcome — say so rather than manufacturing entries to fill
 
 ## Recording a decision
 
-Add an entry to `.sdlc/decisions.json`:
+Create the skeleton first; it refuses (exit 2, names `/sigma-init`) when the repo is not adopted:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/decision_gate.py" init .
+```
+
+Then add an entry to `.sdlc/decisions.json`:
 
 ```json
 {

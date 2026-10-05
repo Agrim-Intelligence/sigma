@@ -116,7 +116,7 @@ loop's does, not merely the same mechanism wired in.
 
 Each phase runs via an **executor**, resolved per host: on Claude with the companion installed, the
 `superpowers` / `code-review` skill; otherwise Sigma's **portable `sigma-*` executor** — each with a
-committed [parity review](docs/executor-parity/) showing it's at-par-or-better. Phase 4 is always
+committed [parity review](docs/executor-parity/) showing where it is at par, better or lighter. Phase 4 is always
 Sigma's own; no companion ships it.
 
 1. **Goal** — restate the objective as one concrete, checkable goal. For feature/creative work, this
@@ -392,7 +392,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Context recall** | Pulls the relevant slice of project memory into context before each goal | `/sigma-context` |
 | **Blast-radius research** | Maps every site a goal touches, records the query so Review can re-run it, inventories the debt already there, and sizes the goal into a lane | `/sigma-research` |
 | **Ceremony proportional to the work** | Both orchestrators route on that lane — a small goal plans in a few lines, a large one earns design work first. Plan-Review never skips | `discovery.py lane` |
-| **Decisions that actually hold** | Record an architectural invariant once; on Claude Code, an edit that breaks it is **denied** by a hook, not discouraged by a prompt — the one guardrail here a model can't talk past. Cursor and Codex have no hook: there it is a manual `decision_gate.py check .`, not a gate | `/sigma-decide` · [enforcement](docs/enforcement.md) |
+| **Decisions that actually hold** | Record an architectural invariant once; on Claude Code in an adopted repo, an edit that breaks it is **denied** by a hook, not discouraged by a prompt — the one guardrail here a model can't talk past. Cursor and Codex have no hook: there it is a manual `decision_gate.py check .`, not a gate | `/sigma-decide` · [enforcement](docs/enforcement.md) |
 | **Cumulative-drift audit** | Reads a *window* of shipped goals against your stated bets — catches the drift no single plan or goal reveals | `/sigma-align` |
 | **Periodic whole-repo audit** | Measures the codebase as it now stands, then judges it on four lenses — conformance to its own rules, structural erosion, measured debt, fitness for purpose. Where `/sigma-align` reads the *work*, this reads the *artifact*: the god-object no single diff revealed | `/sigma-audit` |
 | **Velocity calibration** | Size work from real git throughput, not "this feels like weeks" | `/sigma-velocity` |
@@ -1987,8 +1987,8 @@ and 6 runs *best on Claude* through two companion plugins:
 **Zero action required — Sigma auto-detects them.** If a companion is **already in your plugin
 list**, each phase uses its richer skill; if it isn't, that phase falls to Sigma's **portable
 `sigma-*` executor**. You **install nothing** to get a working, disciplined spine — the portable
-executors each carry a committed [parity review](docs/executor-parity/) showing they're
-at-par-or-better, so absence is never a downgrade you have to fix.
+executors each carry a committed [parity review](docs/executor-parity/) showing where each is
+at par, better or lighter, so you can see what a missing companion costs.
 
 **How resolution works, per phase:** each phase skill carries a host-aware resolution header — on
 Claude *with the companion installed* it prefers the companion's richer skill; **otherwise** (companion

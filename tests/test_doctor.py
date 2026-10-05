@@ -6915,3 +6915,16 @@ def test_runner_failure_contract_reaches_the_pinned_board_row_235():
     assert state == "gone" and "#13" in fix
     offline = [_sys.executable, "-c", "import sys; sys.stderr.write('error connecting'); sys.exit(1)"]
     assert d._pinned_board_state(gh, lambda _a: d._real_run(offline))[0] == "unverifiable"
+
+
+def test_decision_gate_state_is_not_on_when_the_repo_is_not_adopted(tmp_path):
+    """#622: the hook is inert without .sdlc/config.json, so a registry alone must not read ON.
+    Only a direct call reaches this branch (`_sdlc` always writes config.json)."""
+    d = _doc()
+    base = tmp_path / ".sdlc"; base.mkdir()
+    (base / "decisions.json").write_text(json.dumps({"decisions": [
+        {"id": "INV-1", "class": "invariant", "status": "active"}]}))
+    state = d._decision_gate_state(str(base), {})
+    assert not state.startswith("ON") and "not adopted" in state.lower() and "/sigma-init" in state
+    (base / "config.json").write_text("{}")
+    assert d._decision_gate_state(str(base), {}).startswith("ON")
