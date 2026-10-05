@@ -17,8 +17,8 @@ All notable changes to Sigma are recorded here, newest first.
   entries of this changelog, and the recorded launch evidence files (captured at a named commit, so a
   rewrite would claim output that commit never produced). **Moving over.** (1) Rebase any open branch
   onto this change: every renamed path conflicts, so take the new path and re-run
-  `python3 tools/rename_prefix.py` on your branch. (2) Delete the empty leftover folders git cannot
-  remove (`rm -rf skills/agrim-*`; they hold only `__pycache__`), or a test that lists `skills/` reds.
+  `python3 tools/rename_prefix.py` on your branch. (2) Delete the leftover folders git cannot
+  remove from a checkout that already ran code (`rm -rf skills/agrim-*`; they hold only `__pycache__`).
   (3) Cursor: `scaffold_cursor_rules` never overwrites an existing rule file, so delete
   `.cursor/rules/sdlc.mdc` and `.cursor/rules/output-contract.mdc` and run `/sigma-init --cursor`; Codex:
   run `/sigma-init --codex` (it refreshes its block). (4) A host or script that calls

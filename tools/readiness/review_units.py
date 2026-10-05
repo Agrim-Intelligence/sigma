@@ -149,6 +149,7 @@ def tracked_files(repo, sha):
     except UnicodeDecodeError as exc:
         raise UsageError("a path tracked at %s is not valid UTF-8; unsupported" % sha) from exc
     paths = []
+    _AT_COMMIT.clear()
     for record in text.split("\0"):
         meta, _tab, path = record.partition("\t")
         fields = meta.split(" ")

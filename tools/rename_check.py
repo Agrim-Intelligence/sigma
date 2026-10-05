@@ -29,7 +29,7 @@ OLD = "agr" + "im"
 ORG = (OLD.capitalize() + "-Intelligence", OLD.capitalize() + " Intelligence", "swapnil-" + OLD)
 #: (path, tokens): tokens removed from that file's lines before matching.
 FILE_TOKENS = {
-    "tests/test_no_private_names.py": (OLD.capitalize() + " Pi", '"%s/"' % OLD),
+    "tests/test_no_private_names.py": (OLD.capitalize() + " P" + "i", '"%s/"' % OLD),
     "tests/test_public_bootstrap_control.py": ('r"%s"' % OLD.capitalize(),),
 }
 #: First line of the CHANGELOG rename entry; everything from it down is history.
@@ -61,7 +61,7 @@ def scan(top, tracked):
     """Return the findings for the tracked paths under `top`, as printable strings."""
     out = []
     for rel in tracked:
-        if _hit(rel.encode()):
+        if _hit(rel.encode("utf-8", "surrogateescape")):
             out.append(rel)
         if rel in EVIDENCE:
             continue

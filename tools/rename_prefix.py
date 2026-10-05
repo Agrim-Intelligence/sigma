@@ -56,14 +56,15 @@ def main(argv):
     if not top:
         sys.stderr.write("rename_prefix.py: REFUSED [not-a-git-repo]: run inside a git repository\n")
         return 2
-    first = True
     while True:
         moves = plan_moves(_files(top))
         if not moves:
             break
         clash = [n for n in moves.values() if os.path.lexists(os.path.join(top, n))]
         if clash:
-            sys.stderr.write("rename_prefix.py: REFUSED [destination-exists] %s: nothing moved\n" % ", ".join(sorted(clash)))
+            sys.stderr.write("rename_prefix.py: REFUSED [destination-exists] %s: nothing moved. A branch that added "
+                             "files under an old folder name: `git mv` those files into the existing new "
+                             "folder by hand, then run this tool again.\n" % ", ".join(sorted(clash)))
             return 2
         for old, new in sorted(moves.items()):
             print("move %s -> %s" % (old, new))
@@ -71,7 +72,6 @@ def main(argv):
                 subprocess.run(["git", "mv", old, new], cwd=top, check=True)
         if dry:
             break
-        first = False
     for rel in _files(top, others=True):
         if rel in SKIP:
             continue

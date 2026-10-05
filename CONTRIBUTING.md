@@ -28,6 +28,9 @@ rename tool once more, from the repository root:
 python3 tools/rename_prefix.py
 ```
 
+It refuses (exit 2, nothing moved) if the new folder already exists; `git mv` the files your branch
+added under the old folder name into it by hand, then run it again.
+
 ## Working rules
 
 Shipped code is stdlib-only. Every guard must be deliberately seen red once before its green run.
