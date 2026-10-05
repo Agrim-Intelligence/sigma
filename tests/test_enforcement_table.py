@@ -1,9 +1,9 @@
 """`docs/enforcement.md` is generated, and the registries it is generated from are complete (#2740).
 
 Three things are pinned here. (1) The committed table byte-equals what
-`skills/agrim-doctor/scripts/enforcement_table.py` prints, so a gate, a hook or a template default
+`skills/sigma-doctor/scripts/enforcement_table.py` prints, so a gate, a hook or a template default
 that changes without the doc regenerating goes red. (2) Every module-level function in
-`skills/agrim-loop/scripts/{work,state,loop}.py` whose name follows the gate convention is listed in
+`skills/sigma-loop/scripts/{work,state,loop}.py` whose name follows the gate convention is listed in
 that module's `ENFORCEMENT_GATES` or `ENFORCEMENT_EXEMPT`, so a new gate cannot ship undocumented.
 (3) The README's feature-table rows that name a control link to the table, and a row the table
 marks `advice` does not call itself a gate.
@@ -15,7 +15,7 @@ forget.
 Regenerate after any change to a registry, `hooks/hooks.json`, the config template, or the
 generator itself:
 
-    python3 skills/agrim-doctor/scripts/enforcement_table.py > docs/enforcement.md
+    python3 skills/sigma-doctor/scripts/enforcement_table.py > docs/enforcement.md
 """
 import importlib.util
 import json
@@ -26,15 +26,15 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-GEN = ROOT / "skills" / "agrim-doctor" / "scripts" / "enforcement_table.py"
+GEN = ROOT / "skills" / "sigma-doctor" / "scripts" / "enforcement_table.py"
 
 #: Exactly what the generator reads (plus the doc it must match and the README it checks).
 _CORE = (
-    "skills/agrim-loop/scripts/work.py",
-    "skills/agrim-loop/scripts/state.py",
-    "skills/agrim-loop/scripts/loop.py",
+    "skills/sigma-loop/scripts/work.py",
+    "skills/sigma-loop/scripts/state.py",
+    "skills/sigma-loop/scripts/loop.py",
     "hooks/hooks.json",
-    "skills/agrim-init/templates/config.json.tmpl",
+    "skills/sigma-init/templates/config.json.tmpl",
     "docs/enforcement.md",
     "README.md",
 )
@@ -82,7 +82,7 @@ def test_a_planted_unregistered_gate_fails(tmp_path):
     gen = _load()
     tmp = _core_copy(tmp_path)
     assert gen.problems(tmp) == [], "the copy is incomplete; a red below would not be the plant's"
-    work = tmp / "skills/agrim-loop/scripts/work.py"
+    work = tmp / "skills/sigma-loop/scripts/work.py"
     work.write_text(work.read_text(encoding="utf-8") + "\n\ndef _planted_refusal():\n    return None\n",
                     encoding="utf-8")
     found = gen.problems(tmp)
@@ -93,7 +93,7 @@ def test_a_planted_unregistered_gate_fails(tmp_path):
 def test_a_registered_gate_that_was_renamed_fails(tmp_path):
     gen = _load()
     tmp = _core_copy(tmp_path)
-    _replace_once(tmp / "skills/agrim-loop/scripts/work.py",
+    _replace_once(tmp / "skills/sigma-loop/scripts/work.py",
                   "def _dirty_root_refusal(", "def _dirty_root_check(")
     found = gen.problems(tmp)
     assert any("_dirty_root_refusal" in p for p in found), found
@@ -123,7 +123,7 @@ def test_hooks_json_and_hook_facts_match_both_ways(tmp_path):
 def test_every_template_gates_key_has_a_row(tmp_path):
     gen = _load()
     tmp = _core_copy(tmp_path)
-    tmpl = tmp / "skills/agrim-init/templates/config.json.tmpl"
+    tmpl = tmp / "skills/sigma-init/templates/config.json.tmpl"
     data = json.loads(tmpl.read_text(encoding="utf-8"))
     data["gates"]["planted_key"] = True
     tmpl.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -134,7 +134,7 @@ def test_every_template_gates_key_has_a_row(tmp_path):
 def test_generator_refuses_on_a_structural_problem(tmp_path, capsys):
     gen = _load()
     tmp = _core_copy(tmp_path)
-    work = tmp / "skills/agrim-loop/scripts/work.py"
+    work = tmp / "skills/sigma-loop/scripts/work.py"
     work.write_text(work.read_text(encoding="utf-8") + "\n\ndef _planted_refusal():\n    return None\n",
                     encoding="utf-8")
     rc = gen.main([], root=tmp)
@@ -150,7 +150,7 @@ def test_help_prints_usage_without_rendering(tmp_path, capsys):
     `problems()` or `render()` would refuse (rc 2) or emit the table -- either fails here."""
     gen = _load()
     tmp = _core_copy(tmp_path)
-    work = tmp / "skills/agrim-loop/scripts/work.py"
+    work = tmp / "skills/sigma-loop/scripts/work.py"
     work.write_text(work.read_text(encoding="utf-8") + "\n\ndef _planted_refusal():\n    return None\n",
                     encoding="utf-8")
     for flag in ("--help", "-h"):
@@ -158,7 +158,7 @@ def test_help_prints_usage_without_rendering(tmp_path, capsys):
         out, err = capsys.readouterr()
         assert rc == 0, (flag, rc, err)
         assert "usage" in out.lower(), (flag, out)
-        assert "python3 skills/agrim-doctor/scripts/enforcement_table.py > docs/enforcement.md" in out, out
+        assert "python3 skills/sigma-doctor/scripts/enforcement_table.py > docs/enforcement.md" in out, out
         assert "GENERATED" not in out and "| Control |" not in out, out
         assert err == "", err
 
@@ -223,7 +223,7 @@ def test_plan_gate_row_qualifies_the_sentinel_by_org_lock():
 # ---------------------------------------------------------------- Task 2: render + committed doc
 
 DOC = ROOT / "docs" / "enforcement.md"
-REGENERATE = "python3 skills/agrim-doctor/scripts/enforcement_table.py > docs/enforcement.md"
+REGENERATE = "python3 skills/sigma-doctor/scripts/enforcement_table.py > docs/enforcement.md"
 
 
 def _tables(text):
@@ -270,7 +270,7 @@ def test_drift_is_caught_both_ways(tmp_path):
     assert gen.render(tmp).encode("utf-8") != doc.read_bytes()
     shutil.copy2(ROOT / "docs" / "enforcement.md", doc)
     assert gen.render(tmp).encode("utf-8") == doc.read_bytes()
-    tmpl = tmp / "skills/agrim-init/templates/config.json.tmpl"
+    tmpl = tmp / "skills/sigma-init/templates/config.json.tmpl"
     data = json.loads(tmpl.read_text(encoding="utf-8"))
     # #228: `verify.enforce` SHIPS false again (#2741 had it true with an empty command, which
     # refused every `done`). The test only needs SOME value change to prove `gen.render` reacts to

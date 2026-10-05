@@ -26,7 +26,7 @@ import pathlib
 import types
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 P = SCRIPTS / "feature_owner.py"
 
 
@@ -793,7 +793,7 @@ def test_only_one_place_branches_on_the_board_owner_wins_arm():
     is `refusal_clause`'s.
 
     `promote.py` IS NOW THE FOURTH CHANNEL and is held to the same rule (#1569). It renders a
-    refusal for the operator running `/agrim-promote`, and the way it was allowed to do that was by
+    refusal for the operator running `/sigma-promote`, and the way it was allowed to do that was by
     CALLING `refusal_clause` -- which is what this module's docstring says a fourth channel may
     do -- so the constant must not appear there either."""
     src = (SCRIPTS / "feature_owner.py").read_text(encoding="utf-8")
@@ -809,7 +809,7 @@ def test_only_one_place_branches_on_the_board_owner_wins_arm():
 
 
 def test_no_channel_offers_promote_alone_as_a_way_to_clear_the_hold(tmp_path):
-    """#1569. `/agrim-promote` swaps two labels; this gate reads none of them, so the goal came back
+    """#1569. `/sigma-promote` swaps two labels; this gate reads none of them, so the goal came back
     and the next pick set it aside again. All three channels used to name it as a remedy -- the
     issue comment offered it as the FIRST of "three ways to clear it"."""
     sdlc, source = _sdlc(tmp_path), _Source(author="nobody")
@@ -818,7 +818,7 @@ def test_no_channel_offers_promote_alone_as_a_way_to_clear_the_hold(tmp_path):
     comment, note = source.notes[0][1], _notes(sdlc)[0]["why"]
     assert "three ways to clear it" not in comment.lower()
     assert "does not clear this hold" in comment
-    assert "/agrim-promote will not" in note
+    assert "/sigma-promote will not" in note
     # and the remedy it DOES name is the one that changes what the gate measures
     for said in (comment, note):
         assert "repos.%s.authorized = true" % HERE in said
@@ -834,7 +834,7 @@ def test_the_remedy_survives_the_ledgers_two_hundred_character_cap(tmp_path):
     stored = _notes(sdlc)[0]["why"]
     assert len(stored) <= _ledger().FREE_TEXT_CAP
     assert UNIT in stored and "repos.%s.authorized = true" % HERE in stored
-    assert "/agrim-promote will not" in stored
+    assert "/sigma-promote will not" in stored
 
 
 def test_the_filing_report_names_the_registry_route_too(tmp_path):
@@ -843,7 +843,7 @@ def test_the_filing_report_names_the_registry_route_too(tmp_path):
     _seed(sdlc)
     report = _file_one(sdlc, source)
     stored = _notes(sdlc)[0]["why"]
-    assert "authorized = true" in stored and "/agrim-promote will not" in stored
+    assert "authorized = true" in stored and "/sigma-promote will not" in stored
     assert any("as a proposal" in w for w in report["warnings"])
 
 
@@ -923,7 +923,7 @@ def test_an_empty_repos_block_names_no_board(tmp_path):
     assert _mod()._claimable_board(None, HERE) is None
 
 
-# ------------------------------------------------- the predicate `/agrim-promote` asks
+# ------------------------------------------------- the predicate `/sigma-promote` asks
 
 
 def test_would_hold_answers_exactly_what_the_gate_answers(tmp_path):
@@ -947,7 +947,7 @@ def test_would_hold_answers_exactly_what_the_gate_answers(tmp_path):
 
 
 def test_would_hold_refuses_nobody_where_it_cannot_answer(tmp_path):
-    """FAIL-OPEN ON EVERY AXIS -- a wrong refusal inside /agrim-promote is the dead end that command
+    """FAIL-OPEN ON EVERY AXIS -- a wrong refusal inside /sigma-promote is the dead end that command
     exists to remove, while a missing one costs only what shipped before it."""
     m = _mod()
     unadopted = _sdlc(tmp_path / "u", adopted=False)
@@ -962,7 +962,7 @@ def test_would_hold_refuses_nobody_where_it_cannot_answer(tmp_path):
 
 
 def test_would_hold_names_the_repo_it_answered_about(tmp_path):
-    """So the refusal `/agrim-promote` prints can name `repos.<repo>.authorized` without resolving
+    """So the refusal `/sigma-promote` prints can name `repos.<repo>.authorized` without resolving
     the slug a second time -- `tell_at_filing`'s lesson, one module over."""
     sdlc = _sdlc(tmp_path)
     _seed(sdlc)
@@ -1235,7 +1235,7 @@ def test_treating_a_named_board_as_claimable_is_a_mutant_this_suite_kills(tmp_pa
     score it differently -- which is stated rather than hidden. On the WRITE side a loosened version
     is invisible: `_needs_owner` and `claim`'s own absence guard both refuse it a second time, so no
     byte changes. On `would_hold`'s side it IS the answer, and the loosened version reads a board
-    that already has an owner as "a pick would name one and proceed" -- after which /agrim-promote
+    that already has an owner as "a pick would name one and proceed" -- after which /sigma-promote
     stops refusing the promotion it exists to refuse. That is where this scores it."""
     mutant = _mod_with(
         'return key if isinstance(one, dict) and not _named(one.get("owner")) else None',

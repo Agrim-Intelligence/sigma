@@ -10,7 +10,7 @@ import tempfile
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 @pytest.fixture(autouse=True)
@@ -594,13 +594,13 @@ def test_255_4_awaiting_merge_age_is_reported_by_doctor_and_status():
         assert report[0]["goal"] == "0001" and report[0]["stuck"] and not report[0]["unwatched"]
         assert lp.work.awaiting_merge_line(base, now=now).startswith("awaiting merge: 1 (")
         assert "0001 PR #7 for 3d" in lp.work.awaiting_merge_line(base, now=now)
-        doctor = _load_skill("agrim-doctor", "doctor")
+        doctor = _load_skill("sigma-doctor", "doctor")
         row = doctor._awaiting_merge_row(base, now=now)
         assert row["ok"] is False and "for 3d" in row["name"] and "PR #7" in row["fix"]
         # Nothing reading it for a day is the OTHER death: the pass is not running at all.
         row = doctor._awaiting_merge_row(base, now=1_000_000 + 3 * 86400 + 2 * 86400)
         assert row["ok"] is False and "no PR read for" in row["name"]
-        status = _load_skill("agrim-status", "status")
+        status = _load_skill("sigma-status", "status")
         assert "awaiting merge: 1" in status._awaiting_merge_segment(base, now=now)
         # A fresh wait, read a minute ago, is idle, not dead.
         lp.work.stamp_merge_check(base, "0001", now=now)
@@ -630,7 +630,7 @@ def _log_rows(base, rows):
 def test_255_4_log_keeps_a_review_goal_in_flight_and_says_how_long_it_has_waited():
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d)
-        log = _load_skill("agrim-log", "log")
+        log = _load_skill("sigma-log", "log")
         lp = _load("loop")
         _started(lp, base, "0001")
         lp.work.mark_awaiting_merge(base, "0001")
@@ -793,7 +793,7 @@ def test_324_policy_thresholds_are_configurable_and_doctor_uses_them():
         lp.work.mark_awaiting_merge(base, "0001", now=1000)
         row = lp.work.awaiting_merge_report(base, now=1000 + 3 * 86400)[0]
         assert not row["stuck"] and not row["unwatched"]
-        doctor = _load_skill("agrim-doctor", "doctor")
+        doctor = _load_skill("sigma-doctor", "doctor")
         row = doctor._awaiting_merge_row(base, now=1000 + 8 * 86400)
         assert not row["ok"] and "waiting over 7d" in row["name"]
 
@@ -830,7 +830,7 @@ def test_324_log_orphaned_review_is_blocked_not_forever_in_flight(problem):
         if problem == "disabled":
             _started(lp, base, "0001")
             lp.work.mark_awaiting_merge(base, "0001")
-        log = _load_skill("agrim-log", "log")
+        log = _load_skill("sigma-log", "log")
         _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
                          ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
                          ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])
@@ -942,7 +942,7 @@ def test_324_real_process_lock_recovers_after_holder_is_killed():
 def test_324_orphan_remains_visible_alongside_running_goals(running):
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d, {"work": {"enabled": True}, "action_log": {"enabled": True}})
-        log = _load_skill("agrim-log", "log")
+        log = _load_skill("sigma-log", "log")
         _log_rows(base, [("2026-01-01T00:00:00.000Z", "claimed", {}),
                          ("2026-01-01T00:10:00.000Z", "agent_dispatch", {"phase": "retro"}),
                          ("2026-01-01T01:00:00.000Z", "recorded", {"result": "review"})])

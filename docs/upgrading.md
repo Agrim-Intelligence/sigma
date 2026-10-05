@@ -14,19 +14,19 @@ and the table below uses `<old>` for the name and `<OLD>_` for its environment-v
 |---|---|---|
 | `<old>/features@1`, `<old>/landing@1`, `<old>/withheld@1`, `<old>/propagation@1` schema ids | `.sdlc/features/`, `.sdlc/state/landing/`, `.sdlc/state/withheld/`, `.sdlc/state/propagation/` | Reads them as the Sigma ids. The next write uses the Sigma id. A different version (for example `@2`) is refused, exactly as Sigma's own `@2` is. |
 | `<!-- <old>:begin managed … -->` / `<!-- <old>:end managed -->` | `.sdlc/features/<unit>.md` | Manages the block and respells its markers on the next sync. If the file also has a Sigma block, Sigma manages only its own block and leaves the other one alone. |
-| `<!-- <old>:codex:start/end -->` | `AGENTS.md` | `/agrim-init --codex` replaces the old block in place. |
+| `<!-- <old>:codex:start/end -->` | `AGENTS.md` | `/sigma-init --codex` replaces the old block in place. |
 | `<OLD>_*` environment variables | your shell or launcher | Reads each operator setting under the old prefix when the `SIGMA_*` name is unset or empty. **`SIGMA_*` wins when both are set.** `SIGMA_RUN_ID` and `SIGMA_AUTOWATCH_HOP` are Sigma's own hand-off variables, so they are never read under the old prefix. |
 | `*_env` config values naming `<OLD>_*` | `.sdlc/config.json` | Reads the `SIGMA_*` spelling first, then the named one. |
 | `drift_watch.channels.<old>` | `.sdlc/config.json` | Reads it when `channels.sigma` is unset or blank. |
 | `<old>:approve` / `block` / `unblock`, `keep-parked`, `dismissed-finding`, decomposition and design markers, Q&A blocks, flag watermarks | GitHub issue and PR bodies and comments | Recognises them. A `<old>:block` comment on an open PR still blocks it. |
 
-The single reader for all of these is `skills/agrim-loop/scripts/legacy.py`.
+The single reader for all of these is `skills/sigma-loop/scripts/legacy.py`.
 
 ## The one-shot migration
 
 ```
-python3 skills/agrim-doctor/scripts/migrate.py .sdlc            # dry run: lists every change, writes nothing
-python3 skills/agrim-doctor/scripts/migrate.py .sdlc --apply    # writes, then prints what it changed
+python3 skills/sigma-doctor/scripts/migrate.py .sdlc            # dry run: lists every change, writes nothing
+python3 skills/sigma-doctor/scripts/migrate.py .sdlc --apply    # writes, then prints what it changed
 ```
 
 The migration rewrites only these:
@@ -61,7 +61,7 @@ Some things are **left as is and listed**, on purpose:
 - a feature doc or `AGENTS.md` that carries both spellings, since the other block belongs to a
   teammate still on the old plugin;
 - the old journal config block, because turning the journal on is an explicit opt-in that
-  `/agrim-doctor` reports.
+  `/sigma-doctor` reports.
 
 Environment variables are listed by **name only, never value**. Rename them where you set them.
 
@@ -105,7 +105,7 @@ of a merged unit). If anything would be lost, it refuses (exit 2, nothing writte
 loss and the repair:
 
 ```
-python3 skills/agrim-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record in Sigma's schema: the index entry plus what the record adds
+python3 skills/sigma-loop/scripts/feature_sync.py repair .sdlc   # rewrites each such record in Sigma's schema: the index entry plus what the record adds
 ```
 
 `migrate.py --apply` does not convert such a record: it refuses it and names `repair`, because
@@ -122,7 +122,7 @@ the value is most likely an edit the old plugin made after the conversion, which
 and you may still want. Copy the values you want into `index.json`, or delete them from the record,
 then rerun `repair`.
 
-You can tell such records exist without reading stderr: `/agrim-doctor` shows a `legacy delta
+You can tell such records exist without reading stderr: `/sigma-doctor` shows a `legacy delta
 records` row, and `status.py` adds a `legacy delta records: N (M would be refused)` segment, each
 naming the `repair` command. Both are silent when there are none.
 
@@ -179,7 +179,7 @@ These are why the order is: stop the old plugin on the repository **before** con
 The cut-over, per machine:
 
 1. **Install Sigma** next to the old plugin (README Quickstart). Nothing needs disabling first.
-2. **Run it.** `/agrim-init`, `/agrim-loop`, `/agrim-goal` and the watcher all work. Each run
+2. **Run it.** `/sigma-init`, `/sigma-loop`, `/sigma-goal` and the watcher all work. Each run
    prints one line, once:
    `sigma: notice: the plugin previously published as '<old>' is also enabled here; Sigma is
    handling this repository -- uninstall it when ready: claude plugin uninstall <old>@<marketplace>;
@@ -221,19 +221,19 @@ not needed for anything to run.
 
 ### What Sigma does while both are installed
 
-The detector is `skills/agrim-loop/scripts/coexist.py`. `coexist.py check .sdlc` prints what it
+The detector is `skills/sigma-loop/scripts/coexist.py`. `coexist.py check .sdlc` prints what it
 found and the cut-over steps, and exits 0.
 
 | Surface | When the old plugin is active |
 |---|---|
-| `/agrim-init` (`init_flow.py`, `sdlc_init.py`) | Proceeds, prints the notice, records Sigma as the owner, and offers the migration dry run in an adopted repository. |
+| `/sigma-init` (`init_flow.py`, `sdlc_init.py`) | Proceeds, prints the notice, records Sigma as the owner, and offers the migration dry run in an adopted repository. |
 | `loop.py start` | The same. |
-| `loop.py claim` / `record` (the `/agrim-goal` path) and the automatic watcher start | Proceed; the notice at most once per run (below). |
+| `loop.py claim` / `record` (the `/sigma-goal` path) and the automatic watcher start | Proceed; the notice at most once per run (below). |
 | `watch_daemon.py` | Proceeds to the shared lock; the notice goes to `.sdlc/state/watch.log`. |
 | `migrate.py` | The dry run proceeds with the notice. `--apply` waits for the old plugin to be stopped on this repository (exit 2, dry run shown, the exact disable step) unless `--replace-old-plugin` is given, which takes the `.sdlc/features` backup first. `--apply` still refuses while a watcher is live. This is the only step that waits: it is the one that converts the registry the old plugin cannot read. |
 | Registry writes (`.sdlc/features`) | Proceed. The first one saves the one-time copy to `.sdlc/state/backup/features-<time>/`. |
 | Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` (and any Sigma write to that unit: a pick, a claim, `set-priority`, a classification reopen) rewrites such records in Sigma's schema, lists each record value it discards, and refuses when there is one and the record is at least as new as `index.json`; the doctor row and the status segment `legacy delta records` count them. `migrate.py --apply` converts `index.json` only once every unit record has converted (and puts it back if one appears during the run), and refuses to convert such a delta record, naming `repair`. |
-| `/agrim-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
+| `/sigma-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
 | Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |
 
@@ -265,7 +265,7 @@ program's write, and this is a mitigation, not a sheet that fold leaves alone.
   on stderr, loudly, naming the units and both levers. It repeats while the sheet stays that way; it is not
   silenced by `SIGMA_ALLOW_COEXIST=1`, which silences only the coexistence notice.
 - **Nothing restores the tracked sheet unprompted.** The lever is explicit:
-  `python3 skills/agrim-loop/scripts/feature_sync.py recover .sdlc` adds the missing units (whole units only; the
+  `python3 skills/sigma-loop/scripts/feature_sync.py recover .sdlc` adds the missing units (whole units only; the
   sheet's own entries and any unit record win on a shared name) and writes the sheet in Sigma's schema, normalised
   like a fold. Review the change with `git diff`. If the sheet is complete on purpose (an older branch, a unit
   dropped deliberately), `recover .sdlc --discard` renames the copy aside (it is never deleted) and the

@@ -5,7 +5,7 @@ SECRET-SAFETY (a candidate carries the marker LOCATION + count, never the marker
 contain a secret)."""
 import json, os, re, subprocess, pathlib
 
-SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "discovery-scan.sh"
+SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "discovery-scan.sh"
 
 
 def _git(repo, *a):

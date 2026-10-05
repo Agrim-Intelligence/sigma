@@ -1,4 +1,4 @@
-"""#228: /agrim-init leaves a working verify command, never enforce ON with an empty one.
+"""#228: /sigma-init leaves a working verify command, never enforce ON with an empty one.
 
 Portable by construction: every command a test RUNS is built from `sys.executable` (never a bare
 `python3`, absent on many Windows installs), and no test shells out to bash."""
@@ -13,10 +13,10 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-init" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-init" / "scripts"
 DETECT = SCRIPTS / "verify_detect.py"
 INIT = SCRIPTS / "sdlc_init.py"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py"
 
 
 def _load(path, name):
@@ -171,7 +171,7 @@ def test_cli_decline_writes_enforce_off_with_the_reason(tmp_path):
     assert v["enforce"] is False and "declined" in v["_why"] and "go test ./..." in v["_why"]
 
 
-# ---------------------------------------------------------------- /agrim-init integration
+# ---------------------------------------------------------------- /sigma-init integration
 
 def test_fresh_scaffold_never_ships_enforce_on_with_an_empty_command(tmp_path):
     """The template is the shipped default, so check what scaffold() really writes."""
@@ -216,8 +216,8 @@ def test_init_with_no_tests_says_enforce_is_off(tmp_path):
 
 
 def test_skill_and_templates_no_longer_send_the_command_to_project_md():
-    skill = (ROOT / "skills" / "agrim-init" / "SKILL.md").read_text(encoding="utf-8")
-    tmpl = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
+    skill = (ROOT / "skills" / "sigma-init" / "SKILL.md").read_text(encoding="utf-8")
+    tmpl = (ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     assert "fill its **Verify command**" not in skill
     assert "fill in Verify command in project.md" not in tmpl
     assert "verify_detect.py\" confirm .sdlc <n> <id>" in skill and "decline" in skill
@@ -305,7 +305,7 @@ def test_record_done_names_the_missing_command_not_run_verify_first(tmp_path):
 def test_the_shipped_template_itself_never_holds_the_trap():
     """Defence in depth: scaffold() rewrites the verify block, but the template is what any other
     copier of it would ship -- it must not hold enforce ON with an empty command either."""
-    raw = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
+    raw = (ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     v = json.loads(raw)["verify"]
     assert not (v.get("enforce") and not v.get("command")), v
 
@@ -435,14 +435,14 @@ def _confirm_lines(stdout):
     a filter blind to `set` would let this test pass against the very bug it targets)."""
     return [l.strip() for l in stdout.splitlines()
             if "verify_detect.py" in l and (" confirm " in l or " set " in l)
-            and not l.strip().startswith(("agrim-init", "{", "other candidate", "or "))]
+            and not l.strip().startswith(("sigma-init", "{", "other candidate", "or "))]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="executes the printed gesture through a POSIX shell")
 @pytest.mark.parametrize("kind", ["substitution", "backticks", "quote-breakout", "chain", "benign"])
 def test_pasting_the_printed_confirm_gesture_runs_nothing_and_stores_what_was_shown(tmp_path, kind):
     """The review's reproduction, as a test: scaffold a repo whose only candidate is a CI step,
-    take the confirm line /agrim-init PRINTS, paste it into `sh -c` exactly as a user would, and
+    take the confirm line /sigma-init PRINTS, paste it into `sh -c` exactly as a user would, and
     assert no side-effect file appears and the stored command equals the one shown."""
     mark = tmp_path / "PWNED"
     run_line = 'pytest -m "not slow"' if kind == "benign" else _hostile(mark)[kind]
@@ -473,7 +473,7 @@ def test_pasting_the_printed_confirm_gesture_runs_nothing_and_stores_what_was_sh
 # reviewer's two repositories: one new root entry between the report and the confirm (AGENTS.md
 # written by --codex AFTER the report was printed; .pytest_cache from running pytest once) pushed
 # the pytest test file past the scan cap, and `confirm .sdlc 1` stored the next candidate instead
-# -- a hostile CI step, or `make test`. These tests take the gesture /agrim-init PRINTS and run it.
+# -- a hostile CI step, or `make test`. These tests take the gesture /sigma-init PRINTS and run it.
 
 def _argv(line):
     """A printed gesture line split the way the host's shell would split it."""
@@ -552,7 +552,7 @@ def test_confirm_refuses_when_the_candidate_changed_since_the_report(tmp_path):
     (repo / "test_z.py").unlink()                           # candidate 1 is now the CI step
     c = _run(*argv, cwd=repo)
     assert c.returncode == 2 and "REFUSED" in c.stderr, (c.stdout, c.stderr)
-    assert "repository changed since the report" in c.stderr and "Re-run /agrim-init" in c.stderr
+    assert "repository changed since the report" in c.stderr and "Re-run /sigma-init" in c.stderr
     assert _stored(repo)["enforce"] is False and _stored(repo)["command"] == ""
     assert not mark.exists()
 

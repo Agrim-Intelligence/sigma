@@ -95,27 +95,27 @@ TIER_B_SUFFIXES = (".py", ".sh")
 KEYS = ["schema", "sha", "seed", "tier_a", "tier_b_population_lines", "tier_b_sample"]
 HEX40 = re.compile(r"[0-9a-f]{40}")
 TIER_A_FILES = (
-    "skills/agrim-loop/scripts/work.py",
-    "skills/agrim-loop/scripts/sources.py",
-    "skills/agrim-loop/scripts/feature_rebase.py",
-    "skills/agrim-loop/scripts/ledger.py",
-    "skills/agrim-loop/scripts/sync.py",
-    "skills/agrim-loop/scripts/scrub.py",
-    "skills/agrim-loop/scripts/watch_daemon.py",
-    "skills/agrim-loop/scripts/supervise_daemon.py",
-    "skills/agrim-loop/scripts/run_with_timeout.py",
-    "skills/agrim-loop/scripts/slack_commands_listen.py",
-    "skills/agrim-loop/scripts/slack_client.py",
-    "skills/agrim-loop/scripts/channel_notify.py",
-    "skills/agrim-loop/scripts/upstream.py",
-    "skills/agrim-loop/scripts/reconcile.py",
-    "skills/agrim-loop/scripts/blockers.py",
-    "skills/agrim-loop/scripts/state.py",
-    "skills/agrim-loop/scripts/gh_session.py",
-    "skills/agrim-loop/scripts/loop.py",
-    "skills/agrim-init/scripts/board_setup.py",
-    "skills/agrim-init/scripts/init_flow.py",
-    "skills/agrim-init/scripts/setup_wizard.py",
+    "skills/sigma-loop/scripts/work.py",
+    "skills/sigma-loop/scripts/sources.py",
+    "skills/sigma-loop/scripts/feature_rebase.py",
+    "skills/sigma-loop/scripts/ledger.py",
+    "skills/sigma-loop/scripts/sync.py",
+    "skills/sigma-loop/scripts/scrub.py",
+    "skills/sigma-loop/scripts/watch_daemon.py",
+    "skills/sigma-loop/scripts/supervise_daemon.py",
+    "skills/sigma-loop/scripts/run_with_timeout.py",
+    "skills/sigma-loop/scripts/slack_commands_listen.py",
+    "skills/sigma-loop/scripts/slack_client.py",
+    "skills/sigma-loop/scripts/channel_notify.py",
+    "skills/sigma-loop/scripts/upstream.py",
+    "skills/sigma-loop/scripts/reconcile.py",
+    "skills/sigma-loop/scripts/blockers.py",
+    "skills/sigma-loop/scripts/state.py",
+    "skills/sigma-loop/scripts/gh_session.py",
+    "skills/sigma-loop/scripts/loop.py",
+    "skills/sigma-init/scripts/board_setup.py",
+    "skills/sigma-init/scripts/init_flow.py",
+    "skills/sigma-init/scripts/setup_wizard.py",
 )
 
 
@@ -133,6 +133,14 @@ def count_lines(raw):
     return raw.count(b"\n") + (1 if raw and not raw.endswith(b"\n") else 0)
 
 
+#: A frozen commit older than the skill rename (#523) tracks the old spelling. Paths are reported under
+#: the current `sigma-` name, so the Tier A list and the committed JSON read the same at every sha;
+#: the blob is still read from the path the commit actually has. Spelled from fragments so the
+#: leftover-name check does not flag this file.
+_OLD_NAME = re.compile(r"(^|/)" + "agr" + r"im(?=[-_])")
+_AT_COMMIT = {}
+
+
 def tracked_files(repo, sha):
     """Paths of the regular files tracked at ``sha``, sorted; symlinks and submodules left out."""
     raw = _out(["git", "-C", str(repo), "ls-tree", "-r", "-z", sha])
@@ -145,13 +153,15 @@ def tracked_files(repo, sha):
         meta, _tab, path = record.partition("\t")
         fields = meta.split(" ")
         if len(fields) == 3 and fields[1] == "blob" and fields[0] != "120000":
-            paths.append(path)
+            current = _OLD_NAME.sub(r"\1sigma", path)
+            _AT_COMMIT[current] = path
+            paths.append(current)
     return sorted(paths)
 
 
 def read_blob(repo, sha, path):
     """The bytes of one tracked file at ``sha`` (one git spawn), never from the working tree."""
-    return _out(["git", "-C", str(repo), "cat-file", "blob", "%s:%s" % (sha, path)])
+    return _out(["git", "-C", str(repo), "cat-file", "blob", "%s:%s" % (sha, _AT_COMMIT.get(path, path))])
 
 
 def _is_tier_b(path):

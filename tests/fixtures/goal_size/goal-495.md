@@ -10,7 +10,7 @@ together:
   exactly the string typed at `viz users add <username>` (`viz/accounts/users.py`).
 - **Analytics side**: `viz_event.actor_id` / `viz_note.sent_by` / `viz_note.sent_to` /
   `viz_review.actor` are populated at ingest time from the SDLC loop's own `ledger.actor`
-  config key, else `gh api user -q .login`, else `$USER` (`skills/agrim-loop/scripts/ledger.py`'s
+  config key, else `gh api user -q .login`, else `$USER` (`skills/sigma-loop/scripts/ledger.py`'s
   `actor()`).
 
 `viz/cli/actor.py`'s own module docstring already names this exact failure shape for the

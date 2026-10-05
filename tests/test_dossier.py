@@ -1,4 +1,4 @@
-"""#1824: dossier.py -- the Business-stage entry point (`agrim-dossier`).
+"""#1824: dossier.py -- the Business-stage entry point (`sigma-dossier`).
 
 Real `sources.GitHubSource`/`sources.LocalSource` throughout, driven by an injectable runner for the
 GitHub-mode tests -- same convention `tests/test_unpark.py` already establishes. No `gqlfake` needed:
@@ -7,8 +7,8 @@ GitHub-mode tests -- same convention `tests/test_unpark.py` already establishes.
 """
 import json, pathlib, importlib.util, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
-D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-dossier" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
+D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-dossier" / "scripts"
 
 
 def _mod(name, base=S):
@@ -551,7 +551,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 def test_dossier_skill_documents_the_bounded_follow_up_mechanism():
     """The cap is enforced in `dossier.py` precisely because prose is all a host without hooks has
     (AGENTS.md). The prose still has to state the same number, or the two drift."""
-    text = (ROOT / "skills" / "agrim-dossier" / "SKILL.md").read_text(encoding="utf-8")
+    text = (ROOT / "skills" / "sigma-dossier" / "SKILL.md").read_text(encoding="utf-8")
     assert "at most %d follow-up" % dossier.MAX_FOLLOWUPS in text
     assert dossier.FOLLOWUP_PREFIX in text and dossier.OPEN_PREFIX in text
     assert "followups" in text                      # the verb that serves the policy
@@ -559,7 +559,7 @@ def test_dossier_skill_documents_the_bounded_follow_up_mechanism():
 
 def test_goal_design_skill_carries_dossier_open_questions_into_doubts():
     """The unresolved half is only worth recording if the next stage reads it."""
-    text = (ROOT / "skills" / "agrim-goal-design" / "SKILL.md").read_text(encoding="utf-8")
+    text = (ROOT / "skills" / "sigma-goal-design" / "SKILL.md").read_text(encoding="utf-8")
     assert dossier.OPEN_PREFIX in text
     assert "Doubts" in text
 
@@ -567,7 +567,7 @@ def test_goal_design_skill_carries_dossier_open_questions_into_doubts():
 # ------------------------------------------------ #1954: the front door states what the route costs
 
 def _dossier_skill():
-    return (ROOT / "skills" / "agrim-dossier" / "SKILL.md").read_text(encoding="utf-8")
+    return (ROOT / "skills" / "sigma-dossier" / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_the_handoff_says_what_the_product_stage_will_cost():

@@ -13,7 +13,7 @@ catastrophic for an adopted one — which is why this has its own builder and do
 """
 import json, pathlib, re, importlib.util
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts"
 
 
 def _mod():

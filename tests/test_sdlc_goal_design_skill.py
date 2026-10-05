@@ -1,4 +1,4 @@
-"""#1911-#1915: the operational contract of `agrim-goal-design` is pure SKILL.md prose, and an E2E
+"""#1911-#1915: the operational contract of `sigma-goal-design` is pure SKILL.md prose, and an E2E
 validation run on a live board found five ways it did not hold -- a frontmatter grant that cannot
 perform the skill's own step 5, a stale handoff sentence that got a false statement published to a
 real issue, an artifact whose consumer reads sections the producer was never told to write, no
@@ -8,8 +8,8 @@ The same reasoning `tests/test_sdlc_goal_review_skill.py` applies to its own sib
 primitive here is prose, so what is pinned is the CONTRACT -- structural claims, the grant shape,
 the required headings, the ordering -- never the wording around them.
 
-One test in here is CROSS-FILE on purpose. `agrim-goal-review` step 1 names the sections it reads
-out of `.sdlc/design/<n>.md`; `agrim-goal-design` step 5 is what writes them. That coupling was
+One test in here is CROSS-FILE on purpose. `sigma-goal-review` step 1 names the sections it reads
+out of `.sdlc/design/<n>.md`; `sigma-goal-design` step 5 is what writes them. That coupling was
 completely unpinned (#1914), which is how two runs could produce structurally different artifacts
 with nothing failing. Pinning both ends is the only thing that makes it a contract rather than a
 coincidence."""
@@ -20,7 +20,7 @@ import re
 from skill_corpus import skill_corpus
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-_SKILL_DIR = ROOT / "skills" / "agrim-goal-design"
+_SKILL_DIR = ROOT / "skills" / "sigma-goal-design"
 SKILL_PATH = _SKILL_DIR / "SKILL.md"
 SKILL = SKILL_PATH.read_text(encoding="utf-8")
 #: #2107 relocated step 2 and step 5 wholesale, verbatim, into their own reference files -- every
@@ -31,15 +31,15 @@ SKILL = SKILL_PATH.read_text(encoding="utf-8")
 #: sections still read `SKILL` directly.
 MAPPING = (_SKILL_DIR / "references" / "mapping-the-codebase.md").read_text(encoding="utf-8")
 ARTIFACT = (_SKILL_DIR / "references" / "writing-the-artifact.md").read_text(encoding="utf-8")
-#: #2108 split agrim-goal-review into a body + references/*.md -- "the skill", not just the file.
-REVIEW = skill_corpus("agrim-goal-review")
+#: #2108 split sigma-goal-review into a body + references/*.md -- "the skill", not just the file.
+REVIEW = skill_corpus("sigma-goal-review")
 #: The one section of REVIEW a test here needs SCOPED (not just "somewhere in the corpus") --
-#: #2108 moved agrim-goal-review's whole step 1 wholesale into this reference file, so a bounded
+#: #2108 moved sigma-goal-review's whole step 1 wholesale into this reference file, so a bounded
 #: `_section(REVIEW, "## 1. Read the target", "## 2.")` on the (now short-bodied) corpus would
 #: only capture the pointer paragraph left behind in the body, not the relocated content.
-REVIEW_STEP1 = (ROOT / "skills" / "agrim-goal-review" / "references" /
+REVIEW_STEP1 = (ROOT / "skills" / "sigma-goal-review" / "references" /
                 "reading-the-target.md").read_text(encoding="utf-8")
-DESIGN_GOAL = (ROOT / "skills" / "agrim-loop" / "scripts" /
+DESIGN_GOAL = (ROOT / "skills" / "sigma-loop" / "scripts" /
                "design_goal.py").read_text(encoding="utf-8")
 
 
@@ -52,9 +52,9 @@ def _mod(name, base):
 
 #: The LIVE module #2032's `sweep-budget` verb documents -- loaded so the schema and Python numbers
 #: are pinned to agree, the same reasoning `test_sdlc_goal_review_skill.py` applies to `compile_plan`.
-goal_design_py = _mod("goal_design", ROOT / "skills" / "agrim-goal-design" / "scripts")
+goal_design_py = _mod("goal_design", ROOT / "skills" / "sigma-goal-design" / "scripts")
 
-#: Everything `agrim-goal-review` step 1 says it reads back out of the artifact. Lower-cased because
+#: Everything `sigma-goal-review` step 1 says it reads back out of the artifact. Lower-cased because
 #: one end is a heading and the other is a sentence. `premise check` and `out of scope` joined it
 #: with #1976/#1975: a section the consumer never opens is one the producer can leave empty, which
 #: is precisely the state both issues found.
@@ -81,8 +81,8 @@ def test_allowed_tools_permits_the_comment_step_5_mandates():
 
 
 def test_allowed_tools_carries_no_per_verb_gh_entry():
-    # The kit's own granularity is the NOUN (`Bash(gh issue *)` in agrim-define, agrim-promote,
-    # agrim-scope, agrim-triage, agrim-unpark, agrim-retro, agrim-context, agrim-align, agrim-dossier).
+    # The kit's own granularity is the NOUN (`Bash(gh issue *)` in sigma-define, sigma-promote,
+    # sigma-scope, sigma-triage, sigma-unpark, sigma-retro, sigma-context, sigma-align, sigma-dossier).
     # A per-verb entry reads as a read-only posture this skill does not have and cannot enforce.
     assert "gh issue view *" not in _frontmatter()
     assert "gh issue comment *" not in _frontmatter()
@@ -139,7 +139,7 @@ def test_the_schema_is_named_as_a_contract_with_its_consumer():
 # --------------------------------------------------------------- #1913: how it reaches a reader
 
 def test_step_5_does_not_assume_the_artifact_can_be_committed():
-    # `.sdlc/` is gitignored wholesale in Sigma's own repo, while agrim-setup's RUNTIME_IGNORES
+    # `.sdlc/` is gitignored wholesale in Sigma's own repo, while sigma-setup's RUNTIME_IGNORES
     # deliberately leaves `.sdlc/design/` trackable for an adopter. The guidance has to be measured,
     # not assumed -- and the measurement is the check-ignore call.
     schema = _section(ARTIFACT, "## 5. Write the artifact", "## 6. Handoff")
@@ -160,7 +160,7 @@ def test_step_5_covers_the_path_that_has_no_branch_at_all():
 def test_step_5_gives_the_dossier_path_a_move_when_the_artifact_is_trackable():
     # The landing rule names ONE branchless case -- step 6's "Design #N" meta-issue. The Product
     # path is branchless too, for a different reason: a Dossier is `story`-labelled and never
-    # `sdlc:goal` (`agrim-dossier` SKILL.md: "the loop must never try to execute a Dossier"), so no
+    # `sdlc:goal` (`sigma-dossier` SKILL.md: "the loop must never try to execute a Dossier"), so no
     # `sdlc/*` worktree is ever cut for it and `work.py commit` returns "not started -- run
     # `work.py start` first (nothing committed)". Left unnamed, a repo that TRACKS `.sdlc/design/`
     # puts the Dossier path back in exactly the zero-guidance state #1913 filed -- forbidden from
@@ -465,7 +465,7 @@ import importlib.util as _ilu   # noqa: E402 -- placed with the section it serve
 
 def _live_compile_plan():
     spec = _ilu.spec_from_file_location(
-        "compile_plan", ROOT / "skills" / "agrim-scope" / "scripts" / "compile_plan.py")
+        "compile_plan", ROOT / "skills" / "sigma-scope" / "scripts" / "compile_plan.py")
     m = _ilu.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
@@ -609,7 +609,7 @@ def test_the_id_forms_the_schema_mandates_are_the_ones_compile_plan_recognises()
     schema minted a different shape, that refusal would stop recognising the document it names."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "compile_plan", ROOT / "skills" / "agrim-scope" / "scripts" / "compile_plan.py")
+        "compile_plan", ROOT / "skills" / "sigma-scope" / "scripts" / "compile_plan.py")
     compile_plan = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compile_plan)
     for ident in ("BR-1", "D-1", "B-1"):
@@ -681,7 +681,7 @@ def test_the_precedence_step_2_states_is_the_live_one():
     """CROSS-FILE. `loop.py` resolves `gdz.get("mode") or "full"` then falls back to `"lane"` on
     anything outside `_DESIGN_MODES`. A skill stating a different precedence would have the two
     paths running at different depths off one config value."""
-    loop = (ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
+    loop = (ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
     assert '_DESIGN_MODES = ("full", "lane")' in loop, "the live mode set moved -- re-check this pin"
     assert 'gdz.get("mode") or "full"' in loop, "the live absent-default moved -- re-check this pin"
     depth = _section(MAPPING, "## 2. Map to the codebase", "## 3.")
@@ -701,7 +701,7 @@ def test_enabled_is_stated_not_to_gate_the_depth_read():
 def test_the_target_is_sized_on_both_modes_not_only_on_lane():
     """The measured defect: `mode` is repo config, so a `--quiet` flag on a `full`-configured repo
     bought the treatment a six-component schema change gets -- 33 blast-radius rows, 24 queries, a
-    31KB artifact. `agrim-goal`'s own Lane routing already scales ceremony to measured size; this is
+    31KB artifact. `sigma-goal`'s own Lane routing already scales ceremony to measured size; this is
     that, one stage up. Pinned as "both modes", because sizing only under `lane` is the state that
     produced the defect."""
     depth = _section(MAPPING, "## 2. Map to the codebase", "## 3.")
@@ -724,7 +724,7 @@ def test_step_2_does_not_claim_discovery_py_can_size_a_dossier():
     number here returns DEFAULT_LANE -- safe, but it is not a lane lookup'. A Dossier IS an issue
     number, so a skill that told the pass to shell out for its lane would get `medium` every time
     and never know."""
-    discovery = (ROOT / "skills" / "agrim-loop" / "scripts" /
+    discovery = (ROOT / "skills" / "sigma-loop" / "scripts" /
                  "discovery.py").read_text(encoding="utf-8")
     assert "it is not a lane lookup" in discovery, "the live caveat moved -- re-check this pin"
     depth = _section(MAPPING, "## 2. Map to the codebase", "## 3.")
@@ -762,7 +762,7 @@ def test_the_light_path_matches_what_compile_plan_actually_does():
     """CROSS-FILE. The 'no Epic' half is not a judgement call -- `compile_plan` creates the wrapper
     only for a plan carrying more than one issue. If that condition ever changed, a one-slice design
     would silently start producing an Epic and this claim would be false."""
-    compile_plan = (ROOT / "skills" / "agrim-scope" / "scripts" /
+    compile_plan = (ROOT / "skills" / "sigma-scope" / "scripts" /
                     "compile_plan.py").read_text(encoding="utf-8")
     assert "if epic_data and len(items) > 1:" in compile_plan, \
         "the live epic-or-not condition moved -- re-check this pin"
@@ -795,7 +795,7 @@ def test_the_lane_field_is_mandatory_and_records_what_ran():
 
 def test_step_5_no_longer_claims_the_artifact_is_gitignored_on_most_repos():
     """It was never true and is now false twice over: `setup.RUNTIME_IGNORES` omits `.sdlc/design/`
-    deliberately, so every `/agrim-setup` repo tracks it, and Sigma's own repo tracks it too
+    deliberately, so every `/sigma-setup` repo tracks it, and Sigma's own repo tracks it too
     (#1953). The residual case -- a repo with its own blanket rule -- is what the check-ignore
     measurement is for, which is why the measurement stays and the claim goes."""
     assert "gitignored on most repos" not in SKILL, \
@@ -945,7 +945,7 @@ def test_the_schema_states_the_rule_behind_the_out_of_scope_heading():
 
 # ============ #1976: a source claim that did not survive contact with the code has a slot
 # §1 has always said to treat every claim in the source as a hypothesis to verify, and on the
-# re-run it fired -- the Dossier claimed `/agrim-doctor` "stops dead at the repo boundary" and the
+# re-run it fired -- the Dossier claimed `/sigma-doctor` "stops dead at the repo boundary" and the
 # sweep found it crosses in six places. But the pinned schema had no heading for the verdict and §5
 # says to put nothing the consumer needs outside the headings, so the correction went into `Intent`
 # as prose. `goal-review` adjudicates Doubts and Blockers BY ID; a falsified premise is neither, so
@@ -1020,7 +1020,7 @@ def test_a_falsified_premise_obliges_intent_and_the_slices_not_just_a_note():
 def test_the_premise_check_cites_the_run_that_produced_it():
     step1 = _section(SKILL, "## 1. Read the target", "## 2. Map to the codebase")
     flat = re.sub(r"\s+", " ", step1)
-    assert "/agrim-doctor" in flat and "six places" in flat, \
+    assert "/sigma-doctor" in flat and "six places" in flat, \
         "the measured case is gone; without it the rule reads as a hypothetical"
 
 
@@ -1272,5 +1272,5 @@ def test_goal_design_py_exists_and_the_documented_verb_is_real():
 
 
 def test_goal_design_scripts_directory_is_where_the_skill_points():
-    assert (ROOT / "skills" / "agrim-goal-design" / "scripts" / "goal_design.py").is_file(), \
+    assert (ROOT / "skills" / "sigma-goal-design" / "scripts" / "goal_design.py").is_file(), \
         "the engine script §2 points at does not exist on disk"

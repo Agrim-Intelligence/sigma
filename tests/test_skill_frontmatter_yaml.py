@@ -2,9 +2,9 @@
 
 A host decides when to use a skill from its `description:`, and reads that frontmatter as YAML. In an
 unquoted value ` #` starts a comment and `: ` is a scanner error. Measured 2026-09-14 on the installed
-1.4.12 plugin: Claude Code listed agrim-slack's description as 63 of its 422 characters, cut at
-"(Epic #2335)" before any of its "Use when" triggers, and cut agrim-wizard, agrim-goal-design and
-agrim-goal-review at their own ` #`; PyYAML rejected agrim-brainstorm's and agrim-review's frontmatter.
+1.4.12 plugin: Claude Code listed sigma-slack's description as 63 of its 422 characters, cut at
+"(Epic #2335)" before any of its "Use when" triggers, and cut sigma-wizard, sigma-goal-design and
+sigma-goal-review at their own ` #`; PyYAML rejected sigma-brainstorm's and sigma-review's frontmatter.
 
 PyYAML is the oracle on purpose: the property is "what a YAML parser reads", and a hand-written scalar
 check would be a second implementation of the rule it polices. Like any test that needs a third-party

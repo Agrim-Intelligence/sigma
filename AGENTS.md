@@ -82,7 +82,7 @@ exit) — no such supervisor exists in this codebase today, so today the answer 
 ## Before you run the loop
 
 If the installed Sigma plugin is older than 1.0.0, do not start the loop; run
-`/agrim-doctor` and update the installed plugin first. The exact update gesture and
+`/sigma-doctor` and update the installed plugin first. The exact update gesture and
 its failure modes are in [agent-rules detail](docs/agent-rules-detail.md).
 
 ## Labels
@@ -95,8 +95,8 @@ needs-confirmation stand alone. Prefer the atomic promote/unpark gestures. See
 ## The Dossier pipeline — where work comes from
 
 Start with [the walkthrough](docs/how-the-dossier-pipeline-works.md), then read
-[the contract](docs/dossier-pipeline.md) before `/agrim-dossier`,
-`/agrim-goal-design`, `/agrim-goal-review`, hand-writing a story/epic body, or
+[the contract](docs/dossier-pipeline.md) before `/sigma-dossier`,
+`/sigma-goal-design`, `/sigma-goal-review`, hand-writing a story/epic body, or
 enabling `goal_design`. Dossiers and Spec/Epics are upper tiers and
 never `sdlc:goal`; confirmed slices are ordinary goals. The retrofit gate is
 OFF by default. `sdlc:designed` has one writer and exactly one reader:
@@ -130,7 +130,7 @@ commits. See [branching-model §3/§15](docs/branching-model.md) and
 
 ## Watch-loop timeouts and session-start staleness
 
-`skills/agrim-loop/scripts/watch_daemon.py`'s tick-loop subprocess calls (`sync.py pull`, `watch.py`,
+`skills/sigma-loop/scripts/watch_daemon.py`'s tick-loop subprocess calls (`sync.py pull`, `watch.py`,
 `agent_watch.py`, `comment_watch.py`, `reconcile_tick.py`, `channel_notify.py`, `drift_tick.py`,
 `sync.py publish`) run through `run_with_timeout.py`, which kills the **whole process group** —
 not just the direct child — on overrun, so a hung call (or anything it spawned) is killed and logged
@@ -141,7 +141,7 @@ convention).
 Session start (`hooks/session_start.sh`) also runs a proactive ledger-watcher staleness check,
 firing automatically once `ledger.enabled: true` (no separate opt-in of its own), that duplicates
 (never imports) `doctor.py`'s own heartbeat/staleness math and warns at session start if the
-watcher looks stale, dead, or has never run, pointing at `/agrim-doctor`. This is an **accelerator
+watcher looks stale, dead, or has never run, pointing at `/sigma-doctor`. This is an **accelerator
 layered on top of the existing `_ensure_watcher` restart mechanism** — it narrows the detection
 gap, not the restart path.
 
@@ -153,6 +153,6 @@ calls alone are not triggers. Dispatch labels include goal ref and phase.
 Requested reports or explanations are given in full.
 
 A status block is constructed, never hand-written: pass facts to
-`skills/agrim-loop/scripts/render.py status|event|decision` and relay its stdout verbatim —
-`python3 skills/agrim-log/scripts/log.py slots .sdlc` is the live Block A, and `phase_report.py end`
+`skills/sigma-loop/scripts/render.py status|event|decision` and relay its stdout verbatim —
+`python3 skills/sigma-log/scripts/log.py slots .sdlc` is the live Block A, and `phase_report.py end`
 prints Block B at every phase boundary. A refusal (stderr, exit 2, empty stdout) means fix the facts.

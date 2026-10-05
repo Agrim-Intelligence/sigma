@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/breaker.py (issue #1936).
+"""Tests for skills/sigma-loop/scripts/breaker.py (issue #1936).
 
 The isolation guarantee is asserted STRUCTURALLY here, not in prose -- #1936 requires "no channel
 exists between maker and breaker: verified by construction (spawn topology + no shared scratch
@@ -8,7 +8,7 @@ failed once.
 import importlib.util
 import pathlib
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _b():

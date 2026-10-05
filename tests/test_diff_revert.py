@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/diff_revert.py (issue #2240).
+"""Tests for skills/sigma-loop/scripts/diff_revert.py (issue #2240).
 
 Two families. The first is fake-runner unit tests (mirroring flake_check.py's/mutation.py's own
 style) for every branch of `run()` -- absence, the scope bound, and the restore-on-entry contract.
@@ -13,7 +13,7 @@ import pathlib
 import subprocess
 import tempfile
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _dr():

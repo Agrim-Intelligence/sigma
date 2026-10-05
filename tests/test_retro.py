@@ -1,11 +1,11 @@
-"""agrim-retro: the Retrospective/learning executor. Pins that the skill is well-formed, does its three
+"""sigma-retro: the Retrospective/learning executor. Pins that the skill is well-formed, does its three
 things (structural + product reflection, intent-vs-shipped, three-store harvest routed to Sigma's
 OWN stores), stays advisory (proposes/parks standing changes), is wired into BOTH orchestrators'
 Retrospective phase, and leaks nothing from the source repo it was genericized from."""
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-RETRO = ROOT / "skills" / "agrim-retro" / "SKILL.md"
+RETRO = ROOT / "skills" / "sigma-retro" / "SKILL.md"
 
 
 def _t():
@@ -15,7 +15,7 @@ def _t():
 def test_skill_exists_with_frontmatter():
     assert RETRO.exists()
     t = _t()
-    assert "name: agrim-retro" in t
+    assert "name: sigma-retro" in t
     assert "description:" in t and "allowed-tools:" in t
 
 
@@ -41,9 +41,9 @@ def test_advisory_and_fail_open():
 
 
 def test_wired_into_both_orchestrators_retrospective_phase():
-    for orch in ("agrim-goal", "agrim-loop"):
+    for orch in ("sigma-goal", "sigma-loop"):
         t = (ROOT / "skills" / orch / "SKILL.md").read_text()
-        assert "agrim-retro" in t, f"{orch} does not run agrim-retro"
+        assert "sigma-retro" in t, f"{orch} does not run sigma-retro"
         assert "Retrospective" in t, f"{orch} has no Retrospective phase step"
 
 
@@ -52,7 +52,7 @@ def test_no_source_repo_leakage():
               "episode", "lipsync", "screenplay", "media-orch")
     t = _t()
     for b in banned:
-        assert b not in t, f"agrim-retro leaked '{b}'"
+        assert b not in t, f"sigma-retro leaked '{b}'"
 
 
 def test_proposes_standing_doc_retirements_not_just_additions():
@@ -72,13 +72,13 @@ def test_proposes_standing_doc_retirements_not_just_additions():
 def test_rot_pass_defers_the_mechanical_half_to_doctor():
     """Split by blast radius: doctor reports references that provably don't resolve and needs no
     approval; retro changes meaning, so it asks."""
-    assert "agrim-doctor" in _t()
+    assert "sigma-doctor" in _t()
 
 
 def test_leaves_a_kg_corpus_note_gated_on_knowledge_graph_enabled():
     """#1050: retro is the going-forward half of the historical KG backfill -- every goal that
     completes with knowledge_graph.enabled should leave one compact note at
-    .sdlc/knowledge/analysis/<id>.md, the same gate `agrim-kg`/`agrim-context` already use, so a
+    .sdlc/knowledge/analysis/<id>.md, the same gate `sigma-kg`/`sigma-context` already use, so a
     project that never opted in sees zero behavior change."""
     t = _t()
     assert "knowledge_graph.enabled" in t

@@ -8,7 +8,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / 'skills/agrim-loop/scripts'
+SCRIPTS = ROOT / 'skills/sigma-loop/scripts'
 
 
 def load(name):

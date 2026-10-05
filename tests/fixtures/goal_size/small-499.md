@@ -1,6 +1,6 @@
 \`log.py::read_goal()\` returns \`[]\` both when a goal genuinely has no log entries AND when the goal string itself is rejected by \`_unsafe_goal_reason()\` (e.g. a path-traversal-shaped goal). \`goal_view()\`/\`status()\` then print the generic hint:
 
-> no log entries for \<goal\> (config needs "action_log": {"enabled": true} — see /agrim-log)
+> no log entries for \<goal\> (config needs "action_log": {"enabled": true} — see /sigma-log)
 
 even when the real reason is "this goal was refused as unsafe" — which is misleading: it tells the operator to check their config when the actual problem is the goal argument itself.
 

@@ -5,7 +5,7 @@ import importlib.util
 import json
 import pathlib
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -158,7 +158,7 @@ def test_tick_repushes_once_autowatch_has_recorded_a_later_hop(tmp_path):
     assert "pushed" in first
     # simulate autowatch itself recording a retried, still-unresolved outcome at hop 1
     ledger.safe_append(d, "note", "42", config=cfg, ref=entry["id"], autowatch_hop="1",
-                        why="driven /agrim-loop recorded the goal as failed")
+                        why="driven /sigma-loop recorded the goal as failed")
     second = channel_notify.tick(d, config=cfg, run_post=run_post)
     assert "pushed" in second
     assert len(posts) == 2

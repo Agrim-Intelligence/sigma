@@ -377,7 +377,7 @@ def test_source_extensions_match_works_own_copy():
     check a constant that can simply be read."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "work", HOOK.parent.parent / "skills" / "agrim-loop" / "scripts" / "work.py")
+        "work", HOOK.parent.parent / "skills" / "sigma-loop" / "scripts" / "work.py")
     work = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(work)
     shell = _source_extensions(HOOK.read_text(encoding="utf-8"), "plan_gate.sh")
@@ -404,7 +404,7 @@ def test_the_python_gate_and_this_hook_agree_on_every_path(tmp_path):
     narrowing nobody wrote down is drift, and this is the only place that would notice it."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "work", HOOK.parent.parent / "skills" / "agrim-loop" / "scripts" / "work.py")
+        "work", HOOK.parent.parent / "skills" / "sigma-loop" / "scripts" / "work.py")
     work = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(work)
 
@@ -534,7 +534,7 @@ def test_org_lock_hook_and_gated_check_classify_alike(tmp_path):
     non-dict `locked` cases are the control for the `isinstance(locked, dict)` guard: `gated_check`
     reads them as ok-with-no-locks, so the hook must too."""
     import importlib.util
-    scripts = HOOK.parent.parent / "skills" / "agrim-loop" / "scripts"
+    scripts = HOOK.parent.parent / "skills" / "sigma-loop" / "scripts"
 
     def load(name):
         spec = importlib.util.spec_from_file_location(name, scripts / (name + ".py"))

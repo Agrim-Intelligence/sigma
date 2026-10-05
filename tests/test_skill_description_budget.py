@@ -9,11 +9,11 @@ maintainer-facing provenance ("which platform companion this defers to", "why th
 Ten skills carried an identical maintainer-boilerplate tail in their `description:` field, in two
 families:
   - "Portable executor — prefer superpowers:X on Claude when installed; this is the built-in
-    equivalent for every other host." (agrim-brainstorm, agrim-implement, agrim-plan, agrim-review,
-    agrim-verify)
-  - "A conditional-risk review/skill orthogonal to agrim-review; always Sigma's own (no companion
-    equivalent)." (agrim-contract-check, agrim-migration-check, agrim-release-check,
-    agrim-security-review, agrim-debug)
+    equivalent for every other host." (sigma-brainstorm, sigma-implement, sigma-plan, sigma-review,
+    sigma-verify)
+  - "A conditional-risk review/skill orthogonal to sigma-review; always Sigma's own (no companion
+    equivalent)." (sigma-contract-check, sigma-migration-check, sigma-release-check,
+    sigma-security-review, sigma-debug)
 
 Both blocks address a maintainer, not the routing decision, and both already live in (or were moved
 into) each skill's BODY — the "Executor resolution (host-aware)" section for the first family, and an
@@ -28,11 +28,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
 
 #: the two boilerplate families from #1612, matched loosely enough to catch either wording variant
-#: actually shipped ("review" vs "skill", "when installed" vs "when it's installed", the agrim-review
+#: actually shipped ("review" vs "skill", "when installed" vs "when it's installed", the sigma-review
 #: one naming the code-review plugin instead of a bare superpowers:X).
 _BOILERPLATE_PATTERNS = (
     re.compile(r"Portable executor —"),
-    re.compile(r"conditional-risk (?:review|skill) orthogonal to agrim-review"),
+    re.compile(r"conditional-risk (?:review|skill) orthogonal to sigma-review"),
 )
 
 
@@ -62,12 +62,12 @@ def test_no_description_carries_maintainer_provenance_boilerplate():
 
 #: the 10 skills #1612 actually touched — scoped deliberately, not "every skill in the repo": a
 #: repo-wide heuristic here would also grade the 27+ untouched skills against a shape #1612 never
-#: promised them (agrim-wizard's real description, for instance, states its trigger as "triggered
+#: promised them (sigma-wizard's real description, for instance, states its trigger as "triggered
 #: automatically by session_start.sh", not a "Use ..." clause, and was never part of this fix).
 _TOUCHED_SKILLS = (
-    "agrim-brainstorm", "agrim-implement", "agrim-plan", "agrim-review", "agrim-verify",
-    "agrim-contract-check", "agrim-migration-check", "agrim-release-check",
-    "agrim-security-review", "agrim-debug",
+    "sigma-brainstorm", "sigma-implement", "sigma-plan", "sigma-review", "sigma-verify",
+    "sigma-contract-check", "sigma-migration-check", "sigma-release-check",
+    "sigma-security-review", "sigma-debug",
 )
 
 

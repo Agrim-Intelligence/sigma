@@ -12,7 +12,7 @@ places the `end .sdlc` gesture is documented (D5 of `.sdlc/plans/2667.md`): the 
 byte identical to the `.mdc` by `tests/test_sdlc_init.py`, which this file does not duplicate).
 
 `tests/test_phase_report.py`'s own `_run_documented`/`_documented` helpers parse ONLY the first of
-these five (the fenced block in `skills/agrim-loop/SKILL.md`) -- this file is what proves the other
+these five (the fenced block in `skills/sigma-loop/SKILL.md`) -- this file is what proves the other
 four never drop the flag either.
 """
 import pathlib
@@ -21,11 +21,11 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 DOCS = {
-    "loop SKILL": ROOT / "skills" / "agrim-loop" / "SKILL.md",
-    "progress": ROOT / "skills" / "agrim-loop" / "references" / "progress.md",
-    "goal SKILL": ROOT / "skills" / "agrim-goal" / "SKILL.md",
+    "loop SKILL": ROOT / "skills" / "sigma-loop" / "SKILL.md",
+    "progress": ROOT / "skills" / "sigma-loop" / "references" / "progress.md",
+    "goal SKILL": ROOT / "skills" / "sigma-goal" / "SKILL.md",
     "mdc": ROOT / ".cursor" / "rules" / "output-contract.mdc",
-    "sdlc_init": ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py",
+    "sdlc_init": ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py",
 }
 
 #: Anchored on `.sdlc` immediately after the verb -- `end --agent-id` and `codex-agent-id`

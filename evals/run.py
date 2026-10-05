@@ -18,11 +18,11 @@ import os, sys, json, pathlib, subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
-HOOK = ROOT / "hooks" / "agrim_gate.sh"
+HOOK = ROOT / "hooks" / "sigma_gate.sh"
 FIXTURES = HERE / "fixtures.json"
 BASELINE = HERE / "baseline.json"
 
-# The marker the hook injects for each intent class (see hooks/agrim_gate.sh).
+# The marker the hook injects for each intent class (see hooks/sigma_gate.sh).
 _MARKER = {"code": "CODE CHANGE", "ask": "READ-ONLY", "standard": "GOAL-BASED SDLC"}
 
 

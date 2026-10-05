@@ -2,7 +2,7 @@
   "schema": "sigma.public-tree-dispositions/v1",
   "entries": [
     {
-      "path": "skills/agrim-loop/scripts/scrub.py",
+      "path": "skills/sigma-loop/scripts/scrub.py",
       "rule": "private-key-header",
       "reason": "fixture or regex source: the secret scrubber names the private-key header in its own redaction pattern and docstring; it is the rule source, not a key",
       "lines": [

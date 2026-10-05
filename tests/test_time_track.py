@@ -24,22 +24,22 @@ def _mod():
 
 
 def test_a_skill_switch_mid_turn_splits_the_segment():
-    """S2's acceptance criterion. `/agrim-plan` invoked partway through a turn must not hand the
+    """S2's acceptance criterion. `/sigma-plan` invoked partway through a turn must not hand the
     whole turn to either skill: the seconds before the switch belong to what was active, the rest
     to the new skill. Attributing a whole turn to one skill is what would make "time in plan"
     false every time a skill is invoked after the first sentence."""
     tt = _mod()
-    state = {"skill": "agrim-dossier", "started": 1000}
-    state, closed = tt.apply(state, "skill", 5000, skill="agrim-plan")
-    assert closed == {"name": "agrim-dossier", "started": 1000, "ms": 4000}
-    assert state == {"skill": "agrim-plan", "started": 5000}
+    state = {"skill": "sigma-dossier", "started": 1000}
+    state, closed = tt.apply(state, "skill", 5000, skill="sigma-plan")
+    assert closed == {"name": "sigma-dossier", "started": 1000, "ms": 4000}
+    assert state == {"skill": "sigma-plan", "started": 5000}
 
 
 def test_a_prompt_opens_a_segment_for_the_active_skill():
     tt = _mod()
-    state, closed = tt.apply({"skill": "agrim-plan", "started": None}, "prompt", 100)
+    state, closed = tt.apply({"skill": "sigma-plan", "started": None}, "prompt", 100)
     assert closed is None
-    assert state == {"skill": "agrim-plan", "started": 100}
+    assert state == {"skill": "sigma-plan", "started": 100}
 
 
 def test_no_skill_is_active_before_any_invocation():
@@ -60,15 +60,15 @@ def test_a_real_prompt_and_stop_keep_the_no_skill_bucket(tmp_path):
 
 
 def test_a_typed_slash_command_is_a_switch():
-    """The plan-review finding this exists for: a user-typed `/agrim-plan` arrives as PROMPT TEXT,
+    """The plan-review finding this exists for: a user-typed `/sigma-plan` arrives as PROMPT TEXT,
     never as a `Skill` tool call, and every Sigma skill is keyed "use when the user runs
     /sdlc-…". Without this, a human-driven session is attributed entirely to `(none)` under a
     `precise` label."""
     tt = _mod()
-    state, closed = tt.apply({"skill": "agrim-dossier", "started": None}, "prompt", 100,
-                             prompt="/agrim-plan make it retry on 503")
+    state, closed = tt.apply({"skill": "sigma-dossier", "started": None}, "prompt", 100,
+                             prompt="/sigma-plan make it retry on 503")
     assert closed is None
-    assert state == {"skill": "agrim-plan", "started": 100}
+    assert state == {"skill": "sigma-plan", "started": 100}
 
 
 def test_only_the_token_is_taken_from_a_slash_prompt():
@@ -76,8 +76,8 @@ def test_only_the_token_is_taken_from_a_slash_prompt():
     thing that may leave it, and the rest must be unrecoverable from anything the hook returns."""
     tt = _mod()
     state, _ = tt.apply(tt.fresh_state(), "prompt", 100,
-                        prompt="/agrim-plan the password is hunter2-MARKER")
-    assert state["skill"] == "agrim-plan"
+                        prompt="/sigma-plan the password is hunter2-MARKER")
+    assert state["skill"] == "sigma-plan"
     assert "MARKER" not in json.dumps(state) and "hunter2" not in json.dumps(state)
 
 
@@ -85,10 +85,10 @@ def test_a_leading_path_or_number_is_not_a_skill_switch():
     """Code review C8: `/e/sigma is the repo` switched to a skill named `e`, and `/123` to
     `123`. A skill token starts with a letter and is the whole first word."""
     tt = _mod()
-    for prompt in ("/e/sigma/sigma is the repo", "/123 things", "/", "/agrim-plan/extra x",
+    for prompt in ("/e/sigma/sigma is the repo", "/123 things", "/", "/sigma-plan/extra x",
                    "/-dash"):
-        state, _ = tt.apply({"skill": "agrim-plan", "started": None}, "prompt", 100, prompt=prompt)
-        assert state["skill"] == "agrim-plan", prompt
+        state, _ = tt.apply({"skill": "sigma-plan", "started": None}, "prompt", 100, prompt=prompt)
+        assert state["skill"] == "sigma-plan", prompt
 
 
 def test_a_slash_token_is_bounded():
@@ -99,9 +99,9 @@ def test_a_slash_token_is_bounded():
 
 def test_a_prompt_that_is_not_a_slash_command_keeps_the_active_skill():
     tt = _mod()
-    state, _ = tt.apply({"skill": "agrim-plan", "started": None}, "prompt", 100,
-                        prompt="ok, and /agrim-review is not at the start")
-    assert state["skill"] == "agrim-plan"
+    state, _ = tt.apply({"skill": "sigma-plan", "started": None}, "prompt", 100,
+                        prompt="ok, and /sigma-review is not at the start")
+    assert state["skill"] == "sigma-plan"
 
 
 def test_stop_closes_and_opens_a_provisional_segment():
@@ -109,24 +109,24 @@ def test_stop_closes_and_opens_a_provisional_segment():
     and Stop fires again. Closing and re-opening means the continuation is measured; a genuine
     end leaves the provisional segment dangling, and the next prompt drops it (S4)."""
     tt = _mod()
-    state, closed = tt.apply({"skill": "agrim-implement", "started": 1000}, "stop", 4000)
-    assert closed == {"name": "agrim-implement", "started": 1000, "ms": 3000}
-    assert state == {"skill": "agrim-implement", "started": 4000}
+    state, closed = tt.apply({"skill": "sigma-implement", "started": 1000}, "stop", 4000)
+    assert closed == {"name": "sigma-implement", "started": 1000, "ms": 3000}
+    assert state == {"skill": "sigma-implement", "started": 4000}
 
 
 def test_a_switch_with_no_open_segment_closes_nothing():
     """A `Skill` event can be the first thing the hook sees (a missed prompt event, a fresh
     marker). Nothing is open, so nothing is closed — and certainly nothing is invented."""
     tt = _mod()
-    state, closed = tt.apply({"skill": "(none)", "started": None}, "skill", 500, skill="agrim-plan")
+    state, closed = tt.apply({"skill": "(none)", "started": None}, "skill", 500, skill="sigma-plan")
     assert closed is None
-    assert state == {"skill": "agrim-plan", "started": 500}
+    assert state == {"skill": "sigma-plan", "started": 500}
 
 
 def test_a_backwards_clock_records_nothing():
     """A negative interval is unmeasurable. Omitted, never a zero, never a negative."""
     tt = _mod()
-    state, closed = tt.apply({"skill": "agrim-plan", "started": 5000}, "stop", 4000)
+    state, closed = tt.apply({"skill": "sigma-plan", "started": 5000}, "stop", 4000)
     assert closed is None
     assert state["started"] == 4000
 
@@ -163,7 +163,7 @@ def _every_file_under(root):
 
 def test_the_hook_never_writes_prompt_text_to_disk():
     """S3's acceptance criterion, and the one security boundary the feature adds. The prompt is
-    on stdin; a marker string inside it must reach no file — while the `/agrim-plan` prefix on the
+    on stdin; a marker string inside it must reach no file — while the `/sigma-plan` prefix on the
     same prompt still registers as a switch. Both halves in one test, so the switch cannot be
     satisfied by the cheap route of writing the prompt."""
     def leaked(tmp):
@@ -174,7 +174,7 @@ def test_the_hook_never_writes_prompt_text_to_disk():
     with tempfile.TemporaryDirectory() as tmp:
         _adopted(tmp)
         r = _run(tmp, "prompt", {"session_id": "s1",
-                                 "prompt": "/agrim-plan the token is hunter2-MARKER-9f1"})
+                                 "prompt": "/sigma-plan the token is hunter2-MARKER-9f1"})
         assert r.returncode == 0, r.stderr
         # Scanned IMMEDIATELY after the prompt event, not only at the end: a later event rewrites
         # the marker, and a control that leaked the prompt into it was erased by the following
@@ -188,14 +188,14 @@ def test_the_hook_never_writes_prompt_text_to_disk():
         hit, blobs = leaked(tmp)
         assert blobs, "nothing was written at all"
         assert not hit, "prompt text reached disk by the stop event"
-        assert any("agrim-plan" in b for b in blobs)                  # the switch registered
+        assert any("sigma-plan" in b for b in blobs)                  # the switch registered
 
 
 def test_no_sdlc_directory_means_no_write_and_exit_zero():
     """The hook fires in every repository on the machine. It records only where Sigma is
-    adopted — not a config key, the same rule `agrim_gate.sh` follows."""
+    adopted — not a config key, the same rule `sigma_gate.sh` follows."""
     with tempfile.TemporaryDirectory() as tmp:
-        r = _run(tmp, "prompt", {"session_id": "s1", "prompt": "/agrim-plan"})
+        r = _run(tmp, "prompt", {"session_id": "s1", "prompt": "/sigma-plan"})
         assert r.returncode == 0, r.stderr
         assert not (pathlib.Path(tmp) / ".sdlc").exists()
 
@@ -283,9 +283,9 @@ def test_a_prompt_on_a_crashed_turn_records_nothing_for_the_old_segment():
     """A turn that never reached `Stop` (an interrupt, a crash) leaves a segment open with no end.
     The interval is unmeasurable, so it is dropped — never estimated to the next prompt."""
     tt = _mod()
-    state, closed = tt.apply({"skill": "agrim-implement", "started": 1000}, "prompt", 9000)
+    state, closed = tt.apply({"skill": "sigma-implement", "started": 1000}, "prompt", 9000)
     assert closed is None
-    assert state == {"skill": "agrim-implement", "started": 9000}
+    assert state == {"skill": "sigma-implement", "started": 9000}
 
 
 def test_end_to_end_a_double_stop_writes_exactly_two_lines_and_idle_writes_none(tmp_path):
@@ -295,16 +295,16 @@ def test_end_to_end_a_double_stop_writes_exactly_two_lines_and_idle_writes_none(
     tt = _mod()
     (tmp_path / ".sdlc" / "state").mkdir(parents=True)
     p = str(tmp_path)
-    tt.handle(p, "prompt", {"session_id": "s1", "prompt": "/agrim-implement go"}, now_ms=0)
+    tt.handle(p, "prompt", {"session_id": "s1", "prompt": "/sigma-implement go"}, now_ms=0)
     tt.handle(p, "stop", {"session_id": "s1"}, now_ms=3000)
     tt.handle(p, "stop", {"session_id": "s1"}, now_ms=5000)
     tt.handle(p, "prompt", {"session_id": "s1", "prompt": "next"}, now_ms=60000)
 
     lines = tt.timing_store.read_session(tmp_path / ".sdlc", "s1")
-    assert [(e["name"], e["ms"]) for e in lines] == [("agrim-implement", 3000),
-                                                     ("agrim-implement", 2000)]
+    assert [(e["name"], e["ms"]) for e in lines] == [("sigma-implement", 3000),
+                                                     ("sigma-implement", 2000)]
     marker = json.loads((tmp_path / ".sdlc/state/time/_sessions/s1/open.json").read_text())
-    assert marker == {"skill": "agrim-implement", "started": 60000}
+    assert marker == {"skill": "sigma-implement", "started": 60000}
 
 
 # --------------------------------------------------------------------- security review (2026-09-11)
@@ -349,7 +349,7 @@ def test_a_hostile_marker_is_sanitised_not_propagated(tmp_path):
     assert all(isinstance(e["name"], str) and "\n" not in e["name"] for e in lines)
     ROOT_ = pathlib.Path(__file__).resolve().parent.parent
     spec = importlib.util.spec_from_file_location(
-        "time_report", ROOT_ / "skills" / "agrim-time" / "scripts" / "time_report.py")
+        "time_report", ROOT_ / "skills" / "sigma-time" / "scripts" / "time_report.py")
     tr = importlib.util.module_from_spec(spec); spec.loader.exec_module(tr)
     assert isinstance(tr.render_session(str(tmp_path / ".sdlc"), "s1"), str)
 

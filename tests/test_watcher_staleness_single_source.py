@@ -55,7 +55,7 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 #: Both plugin directories. `hooks/` is scanned even though it has no hits today — see the module
 #: docstring — so a future copy cannot hide there.
@@ -63,7 +63,7 @@ SCAN_DIRS = ("skills", "hooks")
 
 
 def _mod(name):
-    """`tests/test_watch.py:17`'s loader, for the two agrim-loop scripts."""
+    """`tests/test_watch.py:17`'s loader, for the two sigma-loop scripts."""
     spec = importlib.util.spec_from_file_location(name, S / f"{name}.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
@@ -76,7 +76,7 @@ def _doctor():
     one `_dr()._ledger_watcher_state(...)` then reads, and the patch silently does nothing. Every
     test below binds ONE module object to a local and uses that for both the patch and the call."""
     spec = importlib.util.spec_from_file_location(
-        "doctor_2490", ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor_2490", ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
@@ -182,10 +182,10 @@ def test_the_rule_has_exactly_one_home():
         rules += [f"{name}/{h}" for h in _rederivations(root)]
         files += [f"{name}/{h}" for h in _heartbeat_literals(root)]
 
-    assert len(rules) == 1 and rules[0].startswith("skills/agrim-loop/scripts/sync.py:"), (
+    assert len(rules) == 1 and rules[0].startswith("skills/sigma-loop/scripts/sync.py:"), (
         "the watcher's staleness rule must be written in exactly one place, "
         "sync.stale_after_seconds (#2490). Found:\n  " + "\n  ".join(rules or ["nothing at all"]))
-    assert len(files) == 1 and files[0].startswith("skills/agrim-loop/scripts/sync.py:"), (
+    assert len(files) == 1 and files[0].startswith("skills/sigma-loop/scripts/sync.py:"), (
         "the heartbeat filename must be written in exactly one place, sync.heartbeat_path "
         "(#2488/#2490). Found:\n  " + "\n  ".join(files or ["nothing at all"]))
 

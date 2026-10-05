@@ -89,8 +89,8 @@ def test_cli_github_uses_read_only_rest_and_reports_only_linked_board(tmp_path):
 
 
 def test_copied_markers_match_init_sources():
-    setup = ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
-    init = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+    setup = ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"
+    init = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
     assert _mod().IGNORE_MARKER in setup.read_text(encoding="utf-8")
     text = init.read_text(encoding="utf-8")
     assert all(marker in text for marker in _mod().AGENTS_MARKERS)

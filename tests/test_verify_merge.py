@@ -1,4 +1,4 @@
-"""verify_merge.py -- agrim-rebase slice 3 (#2306, epic #2303, design `.sdlc/design/2288.md` §6-§7).
+"""verify_merge.py -- sigma-rebase slice 3 (#2306, epic #2303, design `.sdlc/design/2288.md` §6-§7).
 
 WHY THESE TESTS RUN REAL `git` AND REAL SHELL COMMANDS for the verify half, mirroring
 `test_rebase_brief.py`/`test_conflict_walk.py`'s own rationale: `run_verify_command` shells out via
@@ -20,7 +20,7 @@ import pytest
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-rebase" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-rebase" / "scripts"
 
 
 def _load(name, directory=SCRIPTS):
@@ -440,7 +440,7 @@ def test_record_merge_writes_the_ledgers_reserved_merged_kind(tmp_path):
     assert len(merged) == 1
     assert merged[0]["goal"] == "feature/x"
     assert merged[0]["pr"] == "55"
-    receipt = _load("merge_observation", ROOT / "skills" / "agrim-loop" / "scripts")
+    receipt = _load("merge_observation", ROOT / "skills" / "sigma-loop" / "scripts")
     facts = {"canonical_repository_id": "R_1", "owner_kind": "unit", "owner_id": "feature/x",
              "goal": None, "head_ref": "feature/x", "base_ref": BASE, "pr_number": 55,
              "pr_node_id": "PR_55", "creating_writer": "verify_merge.ensure_landing_pr",

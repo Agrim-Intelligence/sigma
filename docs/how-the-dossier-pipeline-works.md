@@ -55,7 +55,7 @@ exists; the gate only decides what happens to work that never took that path
 
 ## Stage 0 — the idea becomes a Dossier
 
-You run `/agrim-dossier` and answer eight questions. They are the same eight for every idea, in the
+You run `/sigma-dossier` and answer eight questions. They are the same eight for every idea, in the
 same order, and they come out of the engine rather than out of the agent's imagination — the list
 and the reason it is flat rather than keyed are in
 [§4a](dossier-pipeline.md#4a-the-bank--eight-questions-fixed-and-ordered).
@@ -72,7 +72,7 @@ run answered it `continue to Product`.
 
 **Nothing reads your code during this.** That is the one constraint of the stage, and no host
 enforces it for you —
-[§4](dossier-pipeline.md#4-stage-0--the-dossier-agrim-dossier) says why the rule lives in prose
+[§4](dossier-pipeline.md#4-stage-0--the-dossier-sigma-dossier) says why the rule lives in prose
 everywhere, and what the frontmatter's omission does and does not buy.
 
 ### The three extra questions the bank could not have asked
@@ -267,7 +267,7 @@ Which of the two you get is a property of the work, not of the door.
 
 The door has a cheaper neighbour, too. Where the intent is not in doubt and there is nothing to map
 — a flag, a stale docstring — an ordinary `sdlc:goal` issue does the job and skips all of this;
-`agrim-dossier`'s own "what this skill does not do" says so. None of that is enforced by anything,
+`sigma-dossier`'s own "what this skill does not do" says so. None of that is enforced by anything,
 and [§12](dossier-pipeline.md#12-honest-limitations-and-the-gaps-that-are-deliberate) is where that
 is admitted.
 
@@ -405,7 +405,7 @@ The map, so you know where to go rather than which page to search.
 | what the whole thing is for, in a paragraph | [§1](dossier-pipeline.md#1-the-one-paragraph-version) |
 | why it exists at all — the thing the loop could not see | [§2](dossier-pipeline.md#2-the-gap-this-closes) |
 | the three tiers, and which of them may not exist | [§3](dossier-pipeline.md#3-the-three-tiers) |
-| the intake stage, and how hard "no code exploration" actually is | [§4](dossier-pipeline.md#4-stage-0--the-dossier-agrim-dossier) |
+| the intake stage, and how hard "no code exploration" actually is | [§4](dossier-pipeline.md#4-stage-0--the-dossier-sigma-dossier) |
 | the eight questions, and why the bank is flat | [§4a](dossier-pipeline.md#4a-the-bank--eight-questions-fixed-and-ordered) |
 | the two kinds of extra question, and why only one is capped | [§4b](dossier-pipeline.md#4b-the-bounded-tail--followup_-and-open_) |
 | the persisted record, and where it is written twice | [§4c](dossier-pipeline.md#4c-the-record-and-where-it-is-written) |

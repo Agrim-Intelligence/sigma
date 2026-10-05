@@ -2,13 +2,13 @@
 """Knowledge-graph analysis notes reach every machine's rebuild over an ops branch (#2698).
 
 THE TIMING FACT. The one production writer of `.sdlc/knowledge/analysis/issue-<n>.md` is
-`agrim-retro` §4, which runs AFTER the goal's PR has merged and shortly before `record done` releases
+`sigma-retro` §4, which runs AFTER the goal's PR has merged and shortly before `record done` releases
 the worktree. So the note has no PR to ride and a `work.py pr` guard cannot see a file that does not
 exist yet. The ledger already solves this exact shape for `.sdlc/ledger/`: a linked git worktree on
 an ops branch that is never merged, gitignored on every code branch, published with a bounded
 fetch-rebase-retry. `sync.py` grows that as a second CHANNEL.
 
-THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE. Both `/agrim-loop` and `/agrim-goal` end a goal with
+THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE. Both `/sigma-loop` and `/sigma-goal` end a goal with
 `loop.py record <goal> done --retro-grade <grade>`, so these tests call the real `_record()`, which
 shells out to the real `sync.py` and the real `kg.py`, against REAL git clones of a REAL bare origin.
 Nothing about git is stubbed: every claim here is a claim about what git holds on the remote.
@@ -33,7 +33,7 @@ import pytest
 
 from journal_events import journal_events
 
-_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):

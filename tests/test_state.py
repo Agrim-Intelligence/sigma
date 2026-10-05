@@ -2,7 +2,7 @@ import json, pathlib, importlib.util, tempfile, subprocess, sys
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _state():
@@ -199,20 +199,20 @@ def test_load_config_raises_a_clear_error_when_config_json_is_missing(tmp_path):
     `.sdlc/state/` is gitignored runtime state, safe to invent on demand (see `_state_file`'s own
     docstring); `.sdlc/config.json` is NOT — it carries the actual project choices (discovery
     source, ledger, verify command...), so silently defaulting it would run the loop in a mode
-    nobody chose. A directory that was never `/agrim-init`'d must say so clearly instead — not
+    nobody chose. A directory that was never `/sigma-init`'d must say so clearly instead — not
     crash with a raw FileNotFoundError traceback, and not silently invent a config either."""
     s = _state()
     d = tmp_path / ".sdlc"
     d.mkdir()                                             # no config.json at all
     with pytest.raises(s.ConfigMissing) as exc:
         s.load_config(str(d))
-    assert "config.json" in str(exc.value) and "/agrim-init" in str(exc.value)
+    assert "config.json" in str(exc.value) and "/sigma-init" in str(exc.value)
 
 
 def test_load_config_still_raises_normally_on_malformed_json(tmp_path):
     """Contrast case: a config.json that EXISTS but fails to parse is a real corruption bug, not a
     setup problem — ConfigMissing must stay scoped to "the file is absent" and not also swallow a
-    parse failure into the same (wrong, in this case) "run /agrim-init" advice."""
+    parse failure into the same (wrong, in this case) "run /sigma-init" advice."""
     s = _state()
     d = tmp_path / ".sdlc"
     d.mkdir()
@@ -225,7 +225,7 @@ def test_load_config_raises_clear_error_when_config_json_contains_literal_null(t
     """Regression (#453): config.json containing the valid JSON value `null` parses successfully
     but produces a NoneType object. Calling .get() on it crashes with a raw AttributeError. This
     must be caught and reported as ConfigMissing (same as an absent file) — a config.json that
-    parses to non-dict is as unusable as one that doesn't exist, and needs the same /agrim-init
+    parses to non-dict is as unusable as one that doesn't exist, and needs the same /sigma-init
     advice."""
     s = _state()
     d = tmp_path / ".sdlc"
@@ -233,12 +233,12 @@ def test_load_config_raises_clear_error_when_config_json_contains_literal_null(t
     (d / "config.json").write_text("null")
     with pytest.raises(s.ConfigMissing) as exc:
         s.load_config(str(d))
-    assert "config.json" in str(exc.value) and "/agrim-init" in str(exc.value)
+    assert "config.json" in str(exc.value) and "/sigma-init" in str(exc.value)
 
 
 def test_load_config_raises_clear_error_when_config_json_is_valid_json_but_not_dict(tmp_path):
     """Extended regression (#453): not just `null`, but ANY valid JSON that isn't a dict (a list,
-    string, number) should trigger ConfigMissing with the same /agrim-init advice."""
+    string, number) should trigger ConfigMissing with the same /sigma-init advice."""
     s = _state()
     d = tmp_path / ".sdlc"
     d.mkdir()
@@ -285,7 +285,7 @@ def test_load_config_passes_unknown_top_level_keys_through_unchanged(tmp_path):
 # actionlog.py's log_path() had a real, reproduced path-traversal bug (a goal with no `.md` suffix
 # skipped work.stem()'s own directory-stripping reduction and was embedded raw). Independent review
 # found the SAME unguarded pattern repeated at five more chokepoints across loop.py/work.py/
-# slices.py/agrim-log's own independent copy -- one of them (loop.py's agent_end()) an unconditional,
+# slices.py/sigma-log's own independent copy -- one of them (loop.py's agent_end()) an unconditional,
 # ungated shutil.rmtree() reachable from the everyday `record` verb. unsafe_goal_reason lives here,
 # not duplicated per-caller, so a single implementation protects all of them.
 
@@ -517,7 +517,7 @@ def test_done_refusal_run_id_check_is_after_exit_and_freshness(monkeypatch):
 # budget-stop-then-relaunch cycle (supervise_daemon.py's own documented behaviour) -- a bare-id key would
 # record only the FIRST terminal event under that id and silently drop every later, genuinely
 # different one (e.g. the eventual real backlog-empty after two budget stops). Keying on the PAIR
-# instead -- run_started_at is written fresh by `start_run` at the top of every `/agrim-loop`
+# instead -- run_started_at is written fresh by `start_run` at the top of every `/sigma-loop`
 # invocation, including every relaunch -- makes a relaunch's own terminal event claim independently
 # while still deduping repeated polling WITHIN one unchanged drain.
 
@@ -842,7 +842,7 @@ def test_cursor_lock_fails_open_when_flock_itself_fails(tmp_path, monkeypatch):
 # --- #889: derive a stable run id for bare (non-supervise_daemon.py) sessions -------------------------
 # a budget-exhaustion rate reads kind='run_stop', which `_emit_run_stop_once` only ever
 # writes when `run_identity()` is not None. Before #889 that meant supervise_daemon.py ONLY -- it is the
-# sole exporter of SIGMA_RUN_ID -- so every interactive `/agrim-loop` drain terminated
+# sole exporter of SIGMA_RUN_ID -- so every interactive `/sigma-loop` drain terminated
 # unrecorded and that rate stayed empty (0 run_stop rows across 1,081 real ledger event files).
 
 def test_derive_run_id_builds_a_marker_safe_id_from_a_session_pid():

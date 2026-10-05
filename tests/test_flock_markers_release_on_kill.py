@@ -21,7 +21,7 @@ import sys
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 _PRE = "import sys, os, time; sys.path.insert(0, %r); sd = sys.argv[1]\n" % str(S)
 

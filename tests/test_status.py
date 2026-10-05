@@ -1,6 +1,6 @@
 import pathlib, importlib.util, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-status" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-status" / "scripts"
 
 
 def _status():
@@ -220,7 +220,7 @@ def test_summary_github_mode_subtracts_needs_triage_from_pending():
 def test_summary_github_mode_counts_proposed_but_not_promoted():
     """#233/#1348: retro/hand-off follow-ups filed with immediately_actionable=False carry the
     distinct, config-overridable `handoff.proposed_label(config)` label (default renamed to
-    sdlc:needs-confirmation by #1348; and NO sdlc:goal). /agrim-status must surface how many are
+    sdlc:needs-confirmation by #1348; and NO sdlc:goal). /sigma-status must surface how many are
     pending promotion, so the set can't grow unnoticed. A proposal a human PROMOTED (added
     sdlc:goal) is no longer pending, so it drops out: proposed = open needs-confirmation MINUS
     those that also carry sdlc:goal — the exact mirror of pending = goal - active-in-progress.
@@ -278,10 +278,10 @@ def test_github_counts_never_uses_the_graphql_search_field():
 
 def test_github_counts_falls_back_to_gh_issue_list_when_sources_cannot_be_loaded(monkeypatch):
     """RESILIENCY: `_load_sources` is a cross-skill import (`sources.py` lives one skill directory
-    over, under `agrim-loop/scripts/`) and fails open like every other cross-load in this file
+    over, under `sigma-loop/scripts/`) and fails open like every other cross-load in this file
     (`_load_merge_queue`, `_load_handoff`) — but the counts it feeds are core to this dashboard,
     unlike those two purely-advisory ones. A broken/partial install missing that sibling file must
-    NOT zero out every count on `/agrim-status`; it must fall back to the pre-#1833 `gh issue list`
+    NOT zero out every count on `/sigma-status`; it must fall back to the pre-#1833 `gh issue list`
     construction instead, so the dashboard degrades to "costs more graphql quota" rather than
     "reports nothing"."""
     import json
@@ -496,7 +496,7 @@ def test_align_counter_takes_the_larger_signal_not_the_sum():
 
 
 def test_align_counter_still_sees_interactive_local_runs():
-    """/agrim-goal records `done` without touching the loop cursor — the file tally carries it."""
+    """/sigma-goal records `done` without touching the loop cursor — the file tally carries it."""
     with tempfile.TemporaryDirectory() as d:
         base = _with_north_star(pathlib.Path(d) / ".sdlc")
         _goals(base, done=8)
@@ -524,14 +524,14 @@ def test_audit_due_surfaces_only_after_enough_goals(tmp_path, capsys):
     for n in range(st.AUDIT_EVERY - 1):
         (base / "goals" / f"{n:04d}.md").write_text(f"---\nid: {n:04d}\nstatus: done\n---\nx\n")
     st.main(["status.py", str(base)])
-    assert "/agrim-audit" not in capsys.readouterr().out
+    assert "/sigma-audit" not in capsys.readouterr().out
 
     # at the threshold: it surfaces
     n = st.AUDIT_EVERY - 1
     (base / "goals" / f"{n:04d}.md").write_text(f"---\nid: {n:04d}\nstatus: done\n---\nx\n")
     assert st.summary(str(base))["goals_since_audit"] >= st.AUDIT_EVERY
     st.main(["status.py", str(base)])
-    assert "/agrim-audit" in capsys.readouterr().out
+    assert "/sigma-audit" in capsys.readouterr().out
 
 
 def test_summary_never_reports_a_blocked_goal_as_pending():

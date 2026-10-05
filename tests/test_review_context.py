@@ -2,7 +2,7 @@ import hashlib, pathlib, importlib.util, tempfile, os, subprocess, sys, json, re
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _rc():
@@ -188,7 +188,7 @@ def test_dossier_found_under_the_bare_slug_too():
 def test_dossier_found_for_a_github_mode_goal_with_a_descriptive_slug_suffix():
     """#1808: in github mode `$goal` is a BARE issue number with no slug of its own, but Research
     routinely appends a descriptive one when it files the dossier
-    (`.sdlc/research/1756-repo-identity-declared-override.md`, agrim-research/SKILL.md's own
+    (`.sdlc/research/1756-repo-identity-declared-override.md`, sigma-research/SKILL.md's own
     `<goal-slug>` instruction) -- confirmed live on goal #1756/PR #1806, where this produced a false
     "No Research dossier: blast radius was never measured" claim against a dossier that was
     genuinely on disk. `phase_doc_file`'s stem/slug matching only ever checked the EXACT numeric
@@ -268,7 +268,7 @@ def test_a_drop_in_repo_is_told_what_it_cannot_judge():
 def test_plan_phase_persists_the_plan_the_reviewer_is_pointed_at():
     """review_context points plan-review at `.sdlc/plans/`; the Plan phase must actually write there
     or the independent reviewer arrives with nothing, and hard_plan_gate denies every edit."""
-    t = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-plan" / "SKILL.md").read_text()
+    t = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-plan" / "SKILL.md").read_text()
     assert ".sdlc/plans/" in t
     assert "hard_plan_gate" in t and "review.independent" in t
 
@@ -643,7 +643,7 @@ def test_missing_dossier_and_no_research_comment_keeps_the_strong_original_gap()
         base, root = _repo(d)
         src = _FakeSourceWithComments(
             {"title": "Fix the thing", "body": "AC: it is fixed."},
-            [{"body": "Promoted to sdlc:goal via /agrim-promote."}])
+            [{"body": "Promoted to sdlc:goal via /sigma-promote."}])
         out = _rc().brief(base, "1762", "code-review", repo_root=root, source=src)
         assert "blast radius was never measured for this goal" in out
 
@@ -761,7 +761,7 @@ def test_goal_review_artifact_is_fetched_and_inlined():
 
 def test_goal_review_states_no_branch_or_code_exists_on_the_success_path():
     """#1853: SKILL.md's own claim ("states plainly that no branch or code exists yet") must hold
-    on the ONE call shape agrim-goal-review/SKILL.md ever actually makes -- artifact == goal, fetch
+    on the ONE call shape sigma-goal-review/SKILL.md ever actually makes -- artifact == goal, fetch
     succeeds. That sentence used to live only in the no-artifact-passed dict fallback, a branch
     this real call shape never reaches. Live-confirmed missing before this fix (2026-08-28
     validation run)."""
@@ -787,7 +787,7 @@ def test_goal_review_states_no_branch_or_code_exists_when_the_fetch_fails_too():
 
 
 def test_goal_review_does_not_fetch_the_same_issue_twice():
-    """`agrim-goal-review/SKILL.md` always invokes this phase with `artifact` equal to `goal` itself
+    """`sigma-goal-review/SKILL.md` always invokes this phase with `artifact` equal to `goal` itself
     -- there is no separate Epic issue yet at this stage, so the story/epic issue under review and
     the goal the change serves are the SAME ticket (by design, per the skill's own step 2). The
     brief already fetches that issue once to fill '## The goal this change serves'; a second,
@@ -920,7 +920,7 @@ def _committed_repo(root):
 
 
 def test_brief_from_a_goal_worktree_still_carries_the_north_star():
-    """#1778. `agrim-plan-review/SKILL.md` prescribes `review_context.py brief .sdlc "<goal>"`, and
+    """#1778. `sigma-plan-review/SKILL.md` prescribes `review_context.py brief .sdlc "<goal>"`, and
     the loop runs that phase from inside the goal's WORKTREE — where `.sdlc/context/` does not
     exist, because `.sdlc/` is gitignored. Measured on this repo before the fix, the identical
     command produced 14,686 bytes from the main checkout and 1,816 from the worktree, silently
@@ -1175,7 +1175,7 @@ def test_pr_review_generations_are_distinct_for_two_heads_with_the_same_brief(tm
 
 # --- #2647: a phase artifact that lives only on the goal BRANCH still reaches the brief ---
 #
-# The documented gesture (agrim-review/SKILL.md, landing.md, running.md) runs the brief from the
+# The documented gesture (sigma-review/SKILL.md, landing.md, running.md) runs the brief from the
 # MAIN CHECKOUT with `<sdlc_dir>` = `.sdlc`, while `.sdlc/plans/<goal>.md` and
 # `.sdlc/research/<goal>.md` are tracked files on `sdlc/<goal>`. Every test below therefore uses
 # that exact gesture — one passing the WORKTREE's `.sdlc` would be testing the path that already

@@ -27,7 +27,7 @@ import sys
 import time
 
 _HOOKS = pathlib.Path(__file__).resolve().parent
-_LOOP_SCRIPTS = _HOOKS.parent / "skills" / "agrim-loop" / "scripts"
+_LOOP_SCRIPTS = _HOOKS.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
@@ -94,7 +94,7 @@ def apply(state, event, now_ms, skill=None, prompt=None):
       skill   Closes the open segment to the PREVIOUS skill (the seconds before a switch belong to
               what was active) and opens one for the new skill. Splitting here, rather than
               attributing a whole turn to one skill, is what makes "time in plan" true when
-              `/agrim-plan` is invoked partway through a turn.
+              `/sigma-plan` is invoked partway through a turn.
       stop    Closes the open segment and opens a PROVISIONAL one for the same skill. `Stop` is not
               once per turn: with the stop gate on, a blocked Stop makes the agent continue and
               Stop fires again, and the continuation must be measured. A genuine end leaves the
@@ -172,7 +172,7 @@ def handle(project_dir, event, payload, now_ms=None):
     """One event, end to end. -> the closed segment that was recorded, or None.
 
     Gated on `.sdlc/` existing: this hook fires in every repository on the machine and records
-    only where Sigma is adopted — not a config key, the same rule `agrim_gate.sh` follows.
+    only where Sigma is adopted — not a config key, the same rule `sigma_gate.sh` follows.
 
     ORDER IS LOAD-BEARING: the closed segment is appended BEFORE the marker is rewritten. If the
     append raises, the marker still holds the old state, so the next event re-closes the same

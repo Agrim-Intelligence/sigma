@@ -30,8 +30,8 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
-INIT = ROOT / "skills" / "agrim-init" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
+INIT = ROOT / "skills" / "sigma-init" / "scripts"
 AUDIT_DOC = ROOT / "docs" / "launch" / "growth-audit.md"
 EVIDENCE_DOC = ROOT / "docs" / "launch" / "b6-singletons-and-home.md"
 FILE = ROOT / "docs" / "launch" / "dispositions" / "466.json"
@@ -215,7 +215,7 @@ SINGLETON_CEILING_B = {"drift.meta.json": 128, "reconcile.meta.json": 128, "kg-r
 def test_singleton_writers_rewrite_one_small_record_in_place(tmp_path):
     """Each fixed-name singleton is one record rewritten in place: fifty rewrites leave one file of
     the same size under its ceiling and no temp files beside it."""
-    drift, loop, kg = _mod("drift_watch"), _mod("loop"), _mod("kg", ROOT / "skills" / "agrim-kg" / "scripts")
+    drift, loop, kg = _mod("drift_watch"), _mod("loop"), _mod("kg", ROOT / "skills" / "sigma-kg" / "scripts")
     wizard, coexist = _mod("setup_wizard", INIT), _mod("coexist")
     d = tmp_path / ".sdlc"
     (d / "state").mkdir(parents=True)

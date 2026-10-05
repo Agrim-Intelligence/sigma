@@ -19,7 +19,7 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-PHASE_REPORT = ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
+PHASE_REPORT = ROOT / "skills" / "sigma-loop" / "scripts" / "phase_report.py"
 
 
 def _load_phase_report():

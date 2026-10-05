@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 
-SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 spec = importlib.util.spec_from_file_location("merge_observation", SCRIPTS / "merge_observation.py")
 merge_observation = importlib.util.module_from_spec(spec)
 if spec.loader:
@@ -91,7 +91,7 @@ def test_receipt_publish_does_not_push_when_the_signer_authority_is_unconfigured
 
 
 def test_template_makes_receipt_authority_an_explicit_opt_in():
-    template = json.loads((SCRIPTS.parent.parent / "agrim-init" / "templates" / "config.json.tmpl").read_text())
+    template = json.loads((SCRIPTS.parent.parent / "sigma-init" / "templates" / "config.json.tmpl").read_text())
     ledger = template["ledger"]
     assert ledger["receipt_sharing"] is False
     assert ledger["receipt_authority"]["trusted_signers"] == []

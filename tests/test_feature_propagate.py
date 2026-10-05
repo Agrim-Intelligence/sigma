@@ -33,7 +33,7 @@ import types
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 P = SCRIPTS / "feature_propagate.py"
 
 
@@ -1093,7 +1093,7 @@ def test_a_case_mismatched_destination_key_is_not_duplicated_either(tmp_path):
 
 def test_the_gate_note_is_not_repeated_on_a_re_pick(tmp_path):
     """F5. Measured before the fix: 1/2/3 ledger notes over three refused picks, while the comment
-    was correctly idempotent. Re-picks are ordinary -- a human running `/agrim-promote` before
+    was correctly idempotent. Re-picks are ordinary -- a human running `/sigma-promote` before
     editing `repos` is exactly the order the flag comment invites."""
     sdlc = _unlisted(tmp_path, ledger_on=True)
     seen = []

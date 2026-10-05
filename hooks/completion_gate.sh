@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Interactive Stop gate — OPT-IN. Refuses to let the agent STOP when SOURCE changed in the working tree
 # but no fresh plan exists under .sdlc/plans/ — the Stop-time counterpart to plan_gate.sh's PreToolUse
-# gate. It catches a human /agrim-goal session that edited source and is about to end without having
+# gate. It catches a human /sigma-goal session that edited source and is about to end without having
 # planned (the loop's own record step is guarded by state.done_refusal(); an interactive session is not).
 # Off by default — absent/omitted config = allow, so installing it changes nothing until a repo turns it on:
 #   .sdlc/config.json → {"gates": {"stop_gate": {"enabled": true, "plan_freshness_hours": 24}}}

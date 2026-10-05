@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/mutation.py (issue #1935).
+"""Tests for skills/sigma-loop/scripts/mutation.py (issue #1935).
 
 The two judged_when controls are here: the worked example from the issue is seen to FAIL the gate
 and its strengthened version to pass it, and the "not measured" path is exercised by deliberately
@@ -9,7 +9,7 @@ import pathlib
 import subprocess
 import tempfile
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _m():

@@ -12,7 +12,7 @@ import pytest
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 _MESSAGE_IDS = itertools.count(1)
 
 
@@ -154,7 +154,7 @@ def test_rate_card_shape_of_the_real_csv():
 #: #2735 (Q1-G6; carries #2669's acceptance): the tier->concrete-id map the rate-card coverage
 #: tests below read. Loaded the way tests/test_model_predict.py loads it, NOT imported -- skills do
 #: not import each other's Python, and neither does a test pretend they do.
-_PREDICT_PY = ROOT / "skills" / "agrim-model" / "scripts" / "predict.py"
+_PREDICT_PY = ROOT / "skills" / "sigma-model" / "scripts" / "predict.py"
 _predict_spec = importlib.util.spec_from_file_location("predict", _PREDICT_PY)
 predict = importlib.util.module_from_spec(_predict_spec)
 _predict_spec.loader.exec_module(predict)
@@ -1473,7 +1473,7 @@ def test_cli_end_with_unpriceable_transcript_writes_no_spend_event(tmp_path):
                     and e.get("state") == "end"]
     assert len(phase_events) == 1
     # No spend event exists for an unpriced model, so the rate-card coverage fact must survive on
-    # the durable phase boundary that `/agrim-doctor` reads later.
+    # the durable phase boundary that `/sigma-doctor` reads later.
     assert phase_events[0]["model"] == "claude-nonexistent-9"
     assert phase_events[0]["unpriced_turns"] == "1"
     assert "budget: 1 of 1 turns in this phase are unpriced" in result.stderr
@@ -1678,7 +1678,7 @@ def test_cli_end_accumulates_across_multiple_real_calls(tmp_path):
 #
 # Every guard below was RUN RED before it was trusted (AGENTS.md, "Run the control, or the check is
 # decoration"). The mutation each one catches is named in its own docstring/comment, and the
-# controls were driven through the CLI gesture `skills/agrim-loop/SKILL.md` actually prescribes --
+# controls were driven through the CLI gesture `skills/sigma-loop/SKILL.md` actually prescribes --
 # `phase_report.py start/end .sdlc "$goal" <phase>` -- not a stronger, flag-laden one.
 
 import ast
@@ -2044,7 +2044,7 @@ def test_goal_ref_only_hashes_a_real_issue_number():
 
 
 def test_cli_start_and_end_print_the_title_from_the_local_mirror(tmp_path):
-    """The documented gesture, verbatim from `skills/agrim-loop/SKILL.md`: `start`, then `end
+    """The documented gesture, verbatim from `skills/sigma-loop/SKILL.md`: `start`, then `end
     --agent-id <id>`. No `--title` is passed -- the title has to come from what is already on
     disk, or this whole change is decoration."""
     sdlc = _sdlc(tmp_path)
@@ -2160,7 +2160,7 @@ _VERDICT_BEARING_MARKERS = ("✅", "🟢", "🟣", "🔴", "⏸️", "⏳", "�
 def test_phase_end_never_claims_an_outcome_it_cannot_know():
     """BLOCKING finding on PR #2102, and the reason it blocked rather than being a nitpick.
 
-    `cmd_end` takes NO verdict argument: `skills/agrim-loop/SKILL.md` calls it whenever the phase's
+    `cmd_end` takes NO verdict argument: `skills/sigma-loop/SKILL.md` calls it whenever the phase's
     subagent returns -- pass or block -- and the console print is unconditional. So a `✅` on that
     line (an earlier draft had one, as a module constant) is a success claim the module is
     structurally unable to back. Measured against ~1,564 live gate facts, a green check on
@@ -2898,7 +2898,7 @@ def test_cmd_start_never_reaches_the_renderer_at_all(tmp_path):
 
 def _block(verb, tmp_path, *extra, title="Resolve reviewer independence per host", goal="1983",
            phase="research"):
-    """The DOCUMENTED GESTURE, copied out of `skills/agrim-loop/SKILL.md` -- `phase_report.py
+    """The DOCUMENTED GESTURE, copied out of `skills/sigma-loop/SKILL.md` -- `phase_report.py
     start|end .sdlc <goal> <phase> ...` -- with the title on the local mirror where #2100 put it,
     never through a stronger in-process call."""
     sdlc = _sdlc(tmp_path)
@@ -3188,12 +3188,12 @@ _LIVE_PID = os.getpid()
 _OTHER_LIVE_PID = os.getppid()
 _DEAD_PID = 2 ** 30
 
-_LOOP_SKILL = (ROOT / "skills" / "agrim-loop" / "SKILL.md").read_text(encoding="utf-8")
+_LOOP_SKILL = (ROOT / "skills" / "sigma-loop" / "SKILL.md").read_text(encoding="utf-8")
 
 
 def _documented(verb):
     """The literal `<verb> .sdlc "$goal" <phase> ...` line parsed VERBATIM out of the fenced
-    block in skills/agrim-loop/SKILL.md -- never hand-typed, so a doc edit that drops `--pid
+    block in skills/sigma-loop/SKILL.md -- never hand-typed, so a doc edit that drops `--pid
     "$PPID"` reddens these tests too, not only tests/test_phase_report_pid_gesture.py (which
     covers the other four docs this helper never reads). Asserts exactly one match so a doc
     restructure fails loudly here rather than silently matching nothing."""
@@ -3202,7 +3202,7 @@ def _documented(verb):
         _LOOP_SKILL)]
     assert len(hits) == 1, (
         f"expected exactly one documented `{verb} .sdlc \"$goal\" <phase>` line in the fenced "
-        f"block of skills/agrim-loop/SKILL.md, found {len(hits)}: {hits}")
+        f"block of skills/sigma-loop/SKILL.md, found {len(hits)}: {hits}")
     return hits[0]
 
 

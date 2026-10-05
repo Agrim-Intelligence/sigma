@@ -23,7 +23,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BENCH_PATH = ROOT / "evals" / "bench" / "bench.py"
-PHASE_REPORT_PATH = ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
+PHASE_REPORT_PATH = ROOT / "skills" / "sigma-loop" / "scripts" / "phase_report.py"
 SENTINEL = "HIDDEN-SENTINEL-9f2c"
 
 FAKE_CLAUDE = r'''#!__PY__

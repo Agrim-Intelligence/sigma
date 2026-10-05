@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agrim_gate.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/sigma_gate.sh\"",
             "statusMessage": "Applying goal-based SDLC policy"
           }
         ]

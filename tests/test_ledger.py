@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -1283,7 +1283,7 @@ def test_vocabulary_constants_match_spec_table():
     itself the way EVENT_KINDS/PHASE_KINDS/etc. already did. This is also the engine half of the
     sibling pin `contract/vocabulary.json`'s `"entries_kinds"` key names by hand.
 
-    `model_choice` added (issue #1030): written by `skills/agrim-model/scripts/predict.py`'s own
+    `model_choice` added (issue #1030): written by `skills/sigma-model/scripts/predict.py`'s own
     `resolve`/`resolve_step` shelling out to `loop.py emit`, not by a SKILL.md instruction -- see
     `loop.py`'s own `_EMIT_KINDS` for why it stays reliability class 2 downstream despite being code-driven."""
     assert ledger.KINDS == (
@@ -1315,7 +1315,7 @@ def test_vocabulary_constants_match_spec_table():
 
 
 def test_retro_grades_matches_sdlc_retro_skill_prose():
-    """#140: spec §A.3's `retro.grade` vocabulary (mirrors `agrim-retro/SKILL.md` §3's
+    """#140: spec §A.3's `retro.grade` vocabulary (mirrors `sigma-retro/SKILL.md` §3's
     achieved/partial/diverged bullets) had no Python home until now — `emit` validates
     against this tuple even though `append()` itself still leaves the value open
     (same deliberately-deferred-enforcement pattern as PHASE_KINDS/GATE_KINDS above)."""
@@ -2312,7 +2312,7 @@ def _sync_mod():
     import importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
         "sync", _pl.Path(__file__).resolve().parent.parent
-        / "skills" / "agrim-loop" / "scripts" / "sync.py")
+        / "skills" / "sigma-loop" / "scripts" / "sync.py")
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 

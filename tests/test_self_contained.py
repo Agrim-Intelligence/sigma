@@ -43,7 +43,7 @@ def test_example_loop_mechanics_run():
         shutil.copytree(ex / ".sdlc", pathlib.Path(d) / ".sdlc")
         code = (
             "import importlib.util;"
-            f"spec=importlib.util.spec_from_file_location('loop', r'{ROOT}/skills/agrim-loop/scripts/loop.py');"
+            f"spec=importlib.util.spec_from_file_location('loop', r'{ROOT}/skills/sigma-loop/scripts/loop.py');"
             "lp=importlib.util.module_from_spec(spec);spec.loader.exec_module(lp);"
             f"r=lp.run_loop(r'{d}/.sdlc', lambda g:('done',''));"
             "print(r);assert r['done']==1 and r['stopped']=='backlog-empty'"   # consumes the goal, not vacuous
@@ -121,7 +121,7 @@ def test_leak_under_a_build_dir_is_still_caught(tmp_path):
     to ROOT.
     """
     banned = ("media-orch", "OnShot", "Temporal", "RunPod", "/services/", "onshot")
-    leak = tmp_path / "skills" / "agrim-loop" / "build" / "leak.md"
+    leak = tmp_path / "skills" / "sigma-loop" / "build" / "leak.md"
     leak.parent.mkdir(parents=True)
     leak.write_text("see OnShot media-orch\n", encoding="utf-8")
 
@@ -208,14 +208,14 @@ def test_a_planted_stray_is_caught_and_a_real_marker_is_not(tmp_path):
         narrowing passes untouched, because `err` happens to satisfy it too.
     Reads `_is_stray_zero_byte` rather than restating the rule, so neither narrowing can be made
     without this test going red."""
-    stray = tmp_path / "skills" / "agrim-loop" / "err"          # the #530 shape, one level down
+    stray = tmp_path / "skills" / "sigma-loop" / "err"          # the #530 shape, one level down
     stray.parent.mkdir(parents=True)
     stray.touch()
-    redirect = tmp_path / "skills" / "agrim-loop" / "out.log"    # the same accident, with a suffix
+    redirect = tmp_path / "skills" / "sigma-loop" / "out.log"    # the same accident, with a suffix
     redirect.touch()
-    marker = tmp_path / "skills" / "agrim-loop" / "__init__.py"  # legitimately empty
+    marker = tmp_path / "skills" / "sigma-loop" / "__init__.py"  # legitimately empty
     marker.touch()
-    real = tmp_path / "skills" / "agrim-loop" / "loop.py"
+    real = tmp_path / "skills" / "sigma-loop" / "loop.py"
     real.write_text("x = 1\n", encoding="utf-8")
 
     assert _is_stray_zero_byte(stray), "the planted zero-byte stray was not caught"

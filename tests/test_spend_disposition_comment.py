@@ -11,7 +11,7 @@ and is not later deleted or reworded away -- it proves nothing about whether any
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP_PY = (ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
+LOOP_PY = (ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
 
 
 def test_the_spend_dispatch_idiom_still_matches_loop_pys_actual_verb():

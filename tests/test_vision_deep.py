@@ -1,11 +1,11 @@
-"""agrim-vision deep pass: the thin one-pass stays default; optional per-tier deep-elicitation guides
+"""sigma-vision deep pass: the thin one-pass stays default; optional per-tier deep-elicitation guides
 load on demand from references/. Pins that all four guides exist, the SKILL wires the on-demand load,
 the architecture guide drafts FROM the codebase (not a blank page), and nothing leaks the source repo
 these were genericized from."""
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-VIS = ROOT / "skills" / "agrim-vision"
+VIS = ROOT / "skills" / "sigma-vision"
 REFS = VIS / "references"
 TIERS = ("vision", "strategy", "design", "architecture")
 

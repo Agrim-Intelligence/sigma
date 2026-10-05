@@ -13,7 +13,7 @@ without scrolling up and without asking.
 
 Status output is **not** free-form prose, and it is **not written by hand**. Every time you report
 state, you emit one of exactly **three blocks** below, in the exact shape given — and that shape is
-CONSTRUCTED by `skills/agrim-loop/scripts/render.py` from facts you pass it. This document is the
+CONSTRUCTED by `skills/sigma-loop/scripts/render.py` from facts you pass it. This document is the
 renderer's specification: §3's Block A sample and §7's Block A reference output are its output,
 and a block it did not build does not exist. Nothing else.
 
@@ -23,7 +23,7 @@ valid output. Do not fill turns with progress narration.
 ### The renderer and its commands
 
 `render.py` builds a block from a JSON object of facts, read from stdin or passed inline with
-`--json`. Its usage lines, verbatim from the module (`skills/agrim-loop/scripts/render.py`):
+`--json`. Its usage lines, verbatim from the module (`skills/sigma-loop/scripts/render.py`):
 
 ```
 render.py status   < facts.json      # Block A
@@ -33,7 +33,7 @@ render.py status --json '{"headline": ..., "slots": [...], "tail": ...}'
 ```
 
 Two callers already exist, and where they apply you run them rather than assembling facts yourself.
-`python3 skills/agrim-log/scripts/log.py slots .sdlc` (the `agrim-log` skill) is the live Block A —
+`python3 skills/sigma-log/scripts/log.py slots .sdlc` (the `sigma-log` skill) is the live Block A —
 one two-line slot per active goal, derived from the action log and built by `render.py`; relay its
 output verbatim. `phase_report.py end` prints Block B at every phase boundary — the machine half of
 that boundary, described under Block B in §3; read it, do not imitate it.

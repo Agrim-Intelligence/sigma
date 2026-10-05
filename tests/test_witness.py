@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/witness.py (issue #1934).
+"""Tests for skills/sigma-loop/scripts/witness.py (issue #1934).
 
 The three controls #1934's judged_when names are here, each a deliberately-broken case that must be
 REJECTED: (a) a collection-error-only red is not credited as strongly verified, (b) a test edited
@@ -8,7 +8,7 @@ import importlib.util
 import pathlib
 import tempfile
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _w():

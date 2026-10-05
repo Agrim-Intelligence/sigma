@@ -42,7 +42,7 @@ documented gesture and produces 45 of them today.
 - **Dropped: `.sdlc/design/2289.md`.** The scan no longer produces it (an example the prose stopped
   naming), and a pattern the scan does not produce is refused, so it has no row.
 - **Kept as a waiver: `.sdlc/evidence/<goal>/`.** The scan no longer produces it either (the prose in
-  `skills/agrim-init/references/board.md` that named it was reworded), but it is the largest real store
+  `skills/sigma-init/references/board.md` that named it was reworded), but it is the largest real store
   on the measured machine and the issue lists it, so it is covered with `unscanned: true`. The justification
   is the one `review-copy.json` already uses for `rv*/wt`: its writers are reviewers placing files by hand,
   outside Sigma's Python and skill prose, so the scan cannot see them. It is a different pattern from
@@ -58,7 +58,7 @@ documented gesture and produces 45 of them today.
 `acceptance/` re-included. So in this repository every path in this goal is untracked except `.sdlc/design/`
 (re-included, with nothing tracked today: `git ls-files .sdlc` lists plans, research and acceptance only).
 
-An adopter is different. `/agrim-setup` ignores only `RUNTIME_IGNORES`: `.sdlc/state/`, `.sdlc/ledger/`,
+An adopter is different. `/sigma-setup` ignores only `RUNTIME_IGNORES`: `.sdlc/state/`, `.sdlc/ledger/`,
 `.sdlc/work/`, `.sdlc/knowledge/`, `.sdlc/events/` and `graphify-out/`. So `goals`, `journey`, `reviews`,
 `evidence`, `design`, `features`, `context`, `decisions.json`, `pipeline.json` and `project.md` are not
 ignored there: whoever runs `git add` takes them. Sigma's own commit (`work.py commit`, `git add -A`) runs
@@ -67,15 +67,15 @@ in a goal worktree that carries only tracked files, so it never stages the main 
 
 | Store | Writer | Owner |
 | --- | --- | --- |
-| `context/north-star.md`, `project.md` | `agrim-vision`; `agrim-retro` only proposes (an unattended run never edits a standing document) | operator |
-| `decisions.json` | hand-authored per `agrim-decide`; read by `hooks/decision_gate.py` | operator |
+| `context/north-star.md`, `project.md` | `sigma-vision`; `sigma-retro` only proposes (an unattended run never edits a standing document) | operator |
+| `decisions.json` | hand-authored per `sigma-decide`; read by `hooks/decision_gate.py` | operator |
 | `pipeline.json` | operator-declared; read by `pipeline.py card` | operator |
-| `features/units/<unit>.json`, `features/index.json` | `feature_registry.write_unit` and `write_index`, via `agrim-define` | the project |
-| `design/<n>.md`, `<n>-in-brief.md` | `agrim-goal-design` prose, committed in the design PR | the project |
+| `features/units/<unit>.json`, `features/index.json` | `feature_registry.write_unit` and `write_index`, via `sigma-define` | the project |
+| `design/<n>.md`, `<n>-in-brief.md` | `sigma-goal-design` prose, committed in the design PR | the project |
 | `goals/<id>.md` | `sources.LocalSource.create_*` (local mode); `pipeline.propose_goals` (`auto-<hash>`); `pipeline.propose_from_discovery` (`disc-<hash>`) | operator |
 | `journey/<goal>.md` | `sources.LocalSource.note` (append); GitHub mode posts an issue comment instead | Sigma, for the goal |
 | `reviews/<kind>-<slug>.md` | the five review skills, "persist it if you want it retained" | operator |
-| `knowledge/align`, `audit`, `radar/<date>.md` | `agrim-align`, `agrim-audit`, `agrim-radar` prose | operator |
+| `knowledge/align`, `audit`, `radar/<date>.md` | `sigma-align`, `sigma-audit`, `sigma-radar` prose | operator |
 | `knowledge/analysis/<id>.md` | `kg.write_note` from Retrospective | the project |
 | `knowledge/gaps.md`, `radar/ledger.md` | `kg.gap_log`, `radar.record` | Sigma, for the operator |
 | `knowledge/research/web/*.md` | `hooks/research_capture.py`, only when `knowledge_graph.enabled` | Sigma |
@@ -267,7 +267,7 @@ duplicate analysis note (`git rm` plus a commit in the ops worktree, `mv` otherw
 
 Whether the public snapshot carries `.sdlc/` is not decidable from this repository (the file selection and
 the builder are private and absent), so the tracked-or-not statements above describe the source repository
-and `/agrim-setup`'s defaults only.
+and `/sigma-setup`'s defaults only.
 
 ## Disposition and the audit gesture
 

@@ -5,7 +5,7 @@ test as the [output contract](output-contract.md): from one glance, which goal, 
 happening now. One Status column and one default table (what board #17 had) cannot do that. This
 page is the design, the runbook that builds it, and the acceptance checks.
 
-The design lives in code, in one place: `skills/agrim-init/scripts/board_spec.py`. It is built from
+The design lives in code, in one place: `skills/sigma-init/scripts/board_spec.py`. It is built from
 the kit's own vocabulary at run time: the configured Status columns, `discovery.PRIORITIES`,
 `phase_report.PHASE_TOKENS`, and the configured parked / blocked / needs-confirmation labels. If you
 rename a column in `project.columns`, the filters follow it. `board_layout.py spec <.sdlc>` prints
@@ -44,7 +44,7 @@ every P4 goal blank on the board. #235 made the same ruling.
    most recently touched first.
 4. **Needs a human**. A table filtered to
    `is:open label:sdlc:parked,sdlc:blocked,sdlc:needs-confirmation`, with Title, Priority, Status,
-   Labels and Updated. It is the inbox for `/agrim-promote` and `/agrim-unpark`. **This differs from
+   Labels and Updated. It is the inbox for `/sigma-promote` and `/sigma-unpark`. **This differs from
    the issue on purpose.** The issue asked for "Status in (Parked, Blocked) OR label
    sdlc:needs-confirmation". A project filter ANDs its qualifiers and ORs only the values inside one
    qualifier, so an OR across two fields cannot be written. The labels are the source of truth that
@@ -98,7 +98,7 @@ board_layout.py verify <.sdlc> [--number N] [--owner O]           # read-only ac
 board_layout.py spec   <.sdlc>                                    # the spec as JSON, no gh call
 ```
 
-(`python3 <installed-sigma>/skills/agrim-init/scripts/board_layout.py ...`; on Windows use `py -3` or `python`.)
+(`python3 <installed-sigma>/skills/sigma-init/scripts/board_layout.py ...`; on Windows use `py -3` or `python`.)
 
 - **A dry run by default.** Without `--yes`, nothing is written: the run reads the board and prints
   `[plan]` lines.
@@ -128,7 +128,7 @@ yourself, in order. Each step says what to record.
 ```bash
 cd <your sigma checkout>
 gh auth status                    # must list the 'project' scope; else: gh auth refresh -s project
-S=skills/agrim-init/scripts
+S=skills/sigma-init/scripts
 python3 $S/board_layout.py verify .sdlc --number 17          # before: expect 1 of 12 checks
 python3 $S/board_layout.py fields .sdlc --number 17          # dry run: 4 [plan] lines
 python3 $S/board_layout.py fields .sdlc --number 17 --yes
@@ -207,7 +207,7 @@ gh api graphql -f query='query { <organization|user>(login: "<target owner>") { 
 **Record on #234:** the full `verify` output (it lists each field and view, and whether filter,
 columns, group, sort, column-by and the default survived), the workflow list (name + enabled) set
 beside #17's, and whether Priority and Phase kept their options. Then delete the scratch board
-(its Settings → Delete project) and `/tmp/copy-probe`. If the copy keeps everything, `/agrim-init`
+(its Settings → Delete project) and `/tmp/copy-probe`. If the copy keeps everything, `/sigma-init`
 can offer `board_setup.py create --template Agrim-Intelligence/17`. If it keeps less, the fallback
 is the `fields` + `views` + manual-steps path, which works on any board.
 
@@ -227,9 +227,9 @@ the one who did (a).
    every point where they hesitated or had to ask. Anything over 15 minutes, or any question they
    had to ask, is a defect in this page. Fix the page and time it again.
 
-## `/agrim-init`
+## `/sigma-init`
 
-`/agrim-init --board yes` still makes exactly one board call, `board_setup.py create`. After it
+`/sigma-init --board yes` still makes exactly one board call, `board_setup.py create`. After it
 succeeds, the flow **prints** the `fields`, `views` and `verify` commands (as dry runs) and runs
 none of them. The board offer also prints the template alternative (`board_setup.py create
 --template OWNER/N --yes`), with a note that what a copy keeps is not yet measured. See (c).

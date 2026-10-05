@@ -18,8 +18,8 @@ import pytest
 import boardfake
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-init" / "scripts"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-init" / "scripts"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(path, name):
@@ -330,7 +330,7 @@ def test_bad_usage_exits_2(argv):
     assert bs.main(argv, runner=lambda a: (1, "", ""), out=lines.append) == 2
 
 
-# ---------------------------------------------------------------- /agrim-init offers it
+# ---------------------------------------------------------------- /sigma-init offers it
 
 import subprocess  # noqa: E402
 

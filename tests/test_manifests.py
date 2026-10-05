@@ -25,7 +25,7 @@ def test_marketplace_lists_plugin_from_root():
 def test_the_two_manifests_agree_on_the_version():
     """A release bumps the version in BOTH files by hand, and nothing enforced that they match — so
     a bump that touched one would ship a plugin advertising one version and installing another, and
-    `/agrim-doctor`'s update check (installed vs marketplace `latest`) would compare across the drift.
+    `/sigma-doctor`'s update check (installed vs marketplace `latest`) would compare across the drift.
     Neither file is the obvious source of truth, so pin them to each other rather than to a literal:
     this must not need editing at every release, only when they disagree."""
     plugin = _load(".claude-plugin/plugin.json")["version"]

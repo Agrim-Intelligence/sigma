@@ -1,15 +1,15 @@
 """Skill prompt hygiene regression guard (#1613).
 
 Filed from a static prompt review of all 35 (now 39) skills that found three things: a dead file
-reference, an ungated `agrim-velocity` (fixed alongside this test — see its SKILL.md), and the need
+reference, an ungated `sigma-velocity` (fixed alongside this test — see its SKILL.md), and the need
 for a guard so neither class of defect, nor #1612's listing-budget overflow, recurs unnoticed.
 
 **The SKILL.md 5,000-token / 500-line limit is deliberately NOT re-asserted here.** #1613 asked
 for it, but by the time this landed, #1616 (closed) had already built a calibrated, waiver-backed
 gate for exactly that budget — `evals/skill_structure.py` + `tests/test_skill_structure.py`,
 whose `test_the_shipped_skills_pass_the_structural_gate` already runs `ss.findings() == []`
-against the real corpus, ratchets two currently-waived skills (`agrim-goal-design`,
-`agrim-goal-review` — both grew past the cap AFTER #1611 shipped, tracked by #1616's own waiver
+against the real corpus, ratchets two currently-waived skills (`sigma-goal-design`,
+`sigma-goal-review` — both grew past the cap AFTER #1611 shipped, tracked by #1616's own waiver
 file) and is calibrated against a real tokenizer rather than this file's cruder chars/4 guess.
 A second, uncalibrated copy of that measurement here would be pure duplication with a real chance
 of disagreeing with the one that is actually trusted — worse than no second check at all.
@@ -21,7 +21,7 @@ What IS new here, none of it covered elsewhere:
    whole-listing budget. The stale expected-failure marker was removed with the trim.
 3. `test_backticked_repo_paths_resolve` — the dead-reference class of bug itself. Run red before
    #1613's fix (see the commit that added this file): the one real defect,
-   `.github/CRITICAL_INSIGHT_TEMPLATE.md` cited from `skills/agrim-loop/references/progress.md`,
+   `.github/CRITICAL_INSIGHT_TEMPLATE.md` cited from `skills/sigma-loop/references/progress.md`,
    was the ONLY finding out of 133 backticked spans that looked like a same-repo path — the other
    132 were exactly the false-positive shapes #1613 named (a `.sdlc/*` runtime path, a target
    project's own `CLAUDE.md`/`config.json`, a bare script resolved under a sibling skill's
@@ -44,7 +44,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
 
 
-def _mod(name, subdir="agrim-loop"):
+def _mod(name, subdir="sigma-loop"):
     spec = importlib.util.spec_from_file_location(name, SKILLS_DIR / subdir / "scripts" / f"{name}.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
@@ -214,7 +214,7 @@ def _dead_references():
 def test_backticked_repo_paths_resolve():
     """A SKILL.md that tells the agent to follow a specific file's format/content must itself be
     able to find that file. `.github/CRITICAL_INSIGHT_TEMPLATE.md`, cited from
-    `skills/agrim-loop/references/progress.md` for the exact shape of a 🔒 Critical Insight, named
+    `skills/sigma-loop/references/progress.md` for the exact shape of a 🔒 Critical Insight, named
     nothing that exists in the shipped tree on two separate static-prompt-review scans
     (2026-08-11, 2026-08-24) — this is what would have caught it before a third."""
     problems = _dead_references()

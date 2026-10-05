@@ -74,7 +74,7 @@ The measuring commands, run from a checkout of `46940d9`:
 ```sh
 python3 - <<'PY'
 import sys, tempfile, pathlib
-sys.path.insert(0, "skills/agrim-loop/scripts")
+sys.path.insert(0, "skills/sigma-loop/scripts")
 import ledger, timing_store
 d = pathlib.Path(tempfile.mkdtemp()) / ".sdlc"
 cfg = {"journal": {"enabled": True}, "ledger": {"enabled": True}}

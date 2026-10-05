@@ -57,7 +57,7 @@
     ]
   },
   {
-    "path": "skills/agrim-doctor/scripts/migrate.py",
+    "path": "skills/sigma-doctor/scripts/migrate.py",
     "rule": "auth",
     "reason": "user-facing message text using the common word digest, not a credential",
     "lines": [
@@ -65,7 +65,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_classify.py",
+    "path": "skills/sigma-loop/scripts/feature_classify.py",
     "rule": "credential-assignment",
     "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
     "lines": [
@@ -75,7 +75,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_doc.py",
+    "path": "skills/sigma-loop/scripts/feature_doc.py",
     "rule": "auth",
     "reason": "comments using the common word digest for a marker field, not a credential",
     "lines": [
@@ -84,7 +84,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_labels.py",
+    "path": "skills/sigma-loop/scripts/feature_labels.py",
     "rule": "credential-assignment",
     "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
     "lines": [
@@ -97,7 +97,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/merge_observation.py",
+    "path": "skills/sigma-loop/scripts/merge_observation.py",
     "rule": "email-address",
     "reason": "comment quoting the shape of a git ssh URL; no owner",
     "lines": [
@@ -105,7 +105,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/north_star.py",
+    "path": "skills/sigma-loop/scripts/north_star.py",
     "rule": "absolute-home-path",
     "reason": "documentation literal using an elided placeholder path to describe a git layout; reviewed host-agnostic",
     "lines": [
@@ -114,7 +114,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/scrub.py",
+    "path": "skills/sigma-loop/scripts/scrub.py",
     "rule": "aws-key",
     "reason": "AWS's published documentation example key, listed as a public test fixture",
     "lines": [
@@ -122,7 +122,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/upstream.py",
+    "path": "skills/sigma-loop/scripts/upstream.py",
     "rule": "email-address",
     "reason": "comment naming an invented example address on a reserved example domain",
     "lines": [
@@ -130,7 +130,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/work.py",
+    "path": "skills/sigma-loop/scripts/work.py",
     "rule": "auth",
     "reason": "error messages using the common word digest, not a credential",
     "lines": [
@@ -139,7 +139,7 @@
     ]
   },
   {
-    "path": "skills/agrim-setup/scripts/setup.py",
+    "path": "skills/sigma-setup/scripts/setup.py",
     "rule": "email-address",
     "reason": "comment quoting the shape of a git ssh URL on a public host",
     "lines": [

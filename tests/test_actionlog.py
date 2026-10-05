@@ -1,4 +1,4 @@
-"""Local-only action log — write side (skills/agrim-loop/scripts/actionlog.py). Mirrors
+"""Local-only action log — write side (skills/sigma-loop/scripts/actionlog.py). Mirrors
 tests/test_ledger.py's own shape: schema/vocabulary enforcement, the fail-open contract, scrubbing,
 and — the acceptance criteria's own required proofs (plan section 5, #463) — a forgery-prevention
 test (the agent-facing CLI path can never write an INTERNAL-only kind) and a REAL two-process
@@ -18,7 +18,7 @@ import tempfile
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

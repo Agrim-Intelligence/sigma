@@ -47,7 +47,7 @@ loop, which is the bug this file exists to close. None of them is silent: each p
 """
 import importlib.util, json, pathlib, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

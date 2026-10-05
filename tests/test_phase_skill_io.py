@@ -8,11 +8,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 PHASE_FILES = [
     *(ROOT / "skills" / name / "SKILL.md" for name in (
-        "agrim-brainstorm", "agrim-research", "agrim-plan", "agrim-plan-review",
-        "agrim-implement", "agrim-review", "agrim-verify", "agrim-retro",
+        "sigma-brainstorm", "sigma-research", "sigma-plan", "sigma-plan-review",
+        "sigma-implement", "sigma-review", "sigma-verify", "sigma-retro",
     )),
-    ROOT / "skills/agrim-loop/references/running.md",
-    ROOT / "skills/agrim-loop/references/landing.md",
+    ROOT / "skills/sigma-loop/references/running.md",
+    ROOT / "skills/sigma-loop/references/landing.md",
 ]
 
 

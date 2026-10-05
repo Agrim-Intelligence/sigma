@@ -37,7 +37,7 @@ TOOL = REPO / "tools" / "readiness" / "shared_paths.py"
 FIXTURE = REPO / "tests" / "fixtures" / "predecessor_written_paths.json"
 DOC = REPO / "docs" / "launch" / "shared-sdlc-paths.md"
 WIZARD_PATH = ".sdlc/state/setup-wizard-dismissed.json"
-WIZARD_SITE = "skills/agrim-init/scripts/setup_wizard.py::write_dismissed"
+WIZARD_SITE = "skills/sigma-init/scripts/setup_wizard.py::write_dismissed"
 
 
 @functools.lru_cache(maxsize=None)
@@ -370,7 +370,7 @@ def test_control_a_new_writer_on_the_wizard_path_turns_the_documented_gesture_re
     scratch = _scratch_copy(tmp_path)
     clean = _doc_gesture(scratch)
     assert clean.returncode == 0, clean.stderr
-    wizard = scratch / "skills" / "agrim-init" / "scripts" / "setup_wizard.py"
+    wizard = scratch / "skills" / "sigma-init" / "scripts" / "setup_wizard.py"
     wizard.write_text(wizard.read_text(encoding="utf-8") + (
         "\n\ndef _control_extra_writer(sdlc_dir):\n"
         "    (sdlc_dir / 'state' / 'setup-wizard-dismissed.json').write_text('[]', encoding='utf-8')\n"),
@@ -392,7 +392,7 @@ VARIANTS = {
 def test_control_write_methods_the_destination_resolver_misses_are_caught_by_the_literal_backstop(tmp_path):
     tool, data = _tool(), _fixture()
     scratch = _scratch_copy(tmp_path)
-    wizard = scratch / "skills" / "agrim-init" / "scripts" / "setup_wizard.py"
+    wizard = scratch / "skills" / "sigma-init" / "scripts" / "setup_wizard.py"
     original = wizard.read_text(encoding="utf-8")
     base = tool.literal_sites(scratch, tool.literal_basenames(data["predecessor_written"]))
     assert tool.check(scratch, data, writers=_real_writers(), literals=base) == []

@@ -8,7 +8,7 @@ import pathlib, importlib.util, tempfile
 from skill_corpus import skill_corpus
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-D = ROOT / "skills" / "agrim-loop" / "scripts" / "discovery.py"
+D = ROOT / "skills" / "sigma-loop" / "scripts" / "discovery.py"
 
 
 def _disc():
@@ -64,7 +64,7 @@ def test_cli_prints_the_lane():
 
 def test_both_orchestrators_consume_the_lane():
     """The actual regression guard: Research writing a lane is only half the feature."""
-    for orch in ("agrim-goal", "agrim-loop"):
+    for orch in ("sigma-goal", "sigma-loop"):
         t = skill_corpus(orch)   # #1611: SKILL.md + references/*.md
         assert "discovery.py" in t and "lane" in t, f"{orch} never resolves the lane"
         for lane in ("small", "large"):
@@ -74,14 +74,14 @@ def test_both_orchestrators_consume_the_lane():
 def test_plan_review_is_never_skipped_by_a_lane():
     """Small goals are exactly where an unreviewed plan ships. If a lane could skip the gate, the
     routing would have removed the one thing this kit exists to enforce."""
-    for orch in ("agrim-goal", "agrim-loop"):
+    for orch in ("sigma-goal", "sigma-loop"):
         t = (ROOT / "skills" / orch / "SKILL.md").read_text()
         assert "every lane" in t.lower(), f"{orch} does not pin Plan-Review across lanes"
 
 
 def test_research_points_at_its_consumer():
     """The producer should name who reads it, so the next editor cannot quietly orphan the field."""
-    t = (ROOT / "skills" / "agrim-research" / "SKILL.md").read_text()
+    t = (ROOT / "skills" / "sigma-research" / "SKILL.md").read_text()
     assert "discovery.py lane" in t
     assert "not a label" in t
 
@@ -92,7 +92,7 @@ def test_an_issue_number_is_not_a_lane_lookup():
     the orchestrators must say where the lane really comes from in that mode."""
     m = _disc()
     assert m.lane_of("42") == m.DEFAULT_LANE
-    for orch in ("agrim-goal", "agrim-loop"):
+    for orch in ("sigma-goal", "sigma-loop"):
         t = (ROOT / "skills" / orch / "SKILL.md").read_text()
         assert "github mode" in t and "timeline" in t, \
             f"{orch} does not say where the lane comes from in github mode"

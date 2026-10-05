@@ -20,16 +20,16 @@ import sys
 # .parent = /path/to/sigma/tools
 # .parent.parent = /path/to/sigma (repo root)
 repo_root = pathlib.Path(__file__).parent.parent
-ledger_path = repo_root / "skills" / "agrim-loop" / "scripts" / "ledger.py"
+ledger_path = repo_root / "skills" / "sigma-loop" / "scripts" / "ledger.py"
 
 if not ledger_path.exists():
     print(f"Error: ledger.py not found at {ledger_path}", file=sys.stderr)
     sys.exit(1)
 
 # severity_order is not one of ledger.py's own record kinds: it is the report card's own
-# `_ORDER` in skills/agrim-loop/scripts/pipeline.py, loaded by path like ledger.py below. The
+# `_ORDER` in skills/sigma-loop/scripts/pipeline.py, loaded by path like ledger.py below. The
 # generator reads only core sources, so it runs unchanged in the public core (#2584).
-pipeline_path = repo_root / "skills" / "agrim-loop" / "scripts" / "pipeline.py"
+pipeline_path = repo_root / "skills" / "sigma-loop" / "scripts" / "pipeline.py"
 pipeline_spec = importlib.util.spec_from_file_location("pipeline", pipeline_path)
 pipeline_module = importlib.util.module_from_spec(pipeline_spec)
 try:

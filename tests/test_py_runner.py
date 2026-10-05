@@ -1,7 +1,7 @@
 """The python-hook interpreter guard. Sigma's hooks shell out to a bare `python3` from PATH, which
 on a multi-python machine can be a BROKEN shim (a pyenv version that isn't installed, a half-broken conda
 base) — and since the hooks run on every edit/search, that failed the session on first use for a real
-adopter. `hooks/_py.sh` (for the .py hooks) and `agrim_gate.sh`'s preflight (for the prompt hook) must
+adopter. `hooks/_py.sh` (for the .py hooks) and `sigma_gate.sh`'s preflight (for the prompt hook) must
 degrade to a no-op instead of erroring. These tests drive both with a controlled PATH."""
 import os
 import pathlib
@@ -11,7 +11,7 @@ import subprocess
 
 HOOKS = pathlib.Path(__file__).resolve().parent.parent / "hooks"
 PY_SH = HOOKS / "_py.sh"
-GATE = HOOKS / "agrim_gate.sh"
+GATE = HOOKS / "sigma_gate.sh"
 import sys
 
 REAL_PY = sys.executable
@@ -63,7 +63,7 @@ def test_py_runner_fails_open_when_python_is_absent(tmp_path):
     assert r.returncode == 0
 
 
-# ------------------------------------------------------------------ agrim_gate.sh preflight
+# ------------------------------------------------------------------ sigma_gate.sh preflight
 
 
 def test_prompt_gate_survives_a_broken_interpreter(tmp_path):

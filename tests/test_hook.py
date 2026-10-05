@@ -2,7 +2,7 @@ import hashlib
 import importlib.util
 import json, os, subprocess, pathlib, pytest
 
-HOOK = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "agrim_gate.sh"
+HOOK = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "sigma_gate.sh"
 
 # The classifier tests below exercise the gate's INTENT behavior, which only fires
 # in an adopted repo (or under the global escape hatch). Pinning the escape hatch

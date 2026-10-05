@@ -20,9 +20,9 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-KG = ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py"
-DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+KG = ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py"
+DOCTOR = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 BUILDER = "sigma-kg-control-builder"
 
 

@@ -358,7 +358,7 @@ def test_public_evidence_redacts_absolute_temporary_paths_in_all_receipt_fields(
     doctor = next(item for item in result["invariants"]
                   if item["name"] == "doctor_explicit_stop_file_reporting")
     doctor["observed"].update({
-        "argv": [scratch + "/skills/agrim-loop/scripts/work.py", "merge"],
+        "argv": [scratch + "/skills/sigma-loop/scripts/work.py", "merge"],
         "stderr": "removed " + scratch + "/runs/d4-seed-1/fixture",
         "path": scratch + "/d4-repo/.sdlc/state/watch.stop",
     })

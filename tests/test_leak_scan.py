@@ -86,12 +86,12 @@ def _scratch(tmp_path, plant=None, where="docs.md"):
     doctor.py documents `acme-co/demo-public` as the public slug."""
     repo = tmp_path / "repo"
     (repo / "tools").mkdir(parents=True)
-    (repo / "skills" / "agrim-loop" / "scripts").mkdir(parents=True)
-    (repo / "skills" / "agrim-doctor" / "scripts").mkdir(parents=True)
+    (repo / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
+    (repo / "skills" / "sigma-doctor" / "scripts").mkdir(parents=True)
     shutil.copy(ROOT / "tools" / "leak_scan.py", repo / "tools" / "leak_scan.py")
-    shutil.copy(ROOT / "skills" / "agrim-loop" / "scripts" / "scrub.py",
-                repo / "skills" / "agrim-loop" / "scripts" / "scrub.py")
-    (repo / "skills" / "agrim-doctor" / "scripts" / "doctor.py").write_text(
+    shutil.copy(ROOT / "skills" / "sigma-loop" / "scripts" / "scrub.py",
+                repo / "skills" / "sigma-loop" / "scripts" / "scrub.py")
+    (repo / "skills" / "sigma-doctor" / "scripts" / "doctor.py").write_text(
         '_MARKETPLACE_REPO = "' + OWNER + '/demo-public"\n', encoding="utf-8")
     (repo / "README.md").write_text(
         "# demo\n[CI](https://github.com/" + OWNER + "/demo/actions)\n", encoding="utf-8")
@@ -209,7 +209,7 @@ def test_a_malformed_allow_marker_is_itself_a_finding(tmp_path, marker):
 
 def test_missing_rules_refuse_rather_than_report_zero(tmp_path):
     repo = _scratch(tmp_path)
-    scrub = repo / "skills" / "agrim-loop" / "scripts" / "scrub.py"
+    scrub = repo / "skills" / "sigma-loop" / "scripts" / "scrub.py"
     scrub.write_text("SHAPE_RULES = ()\n_SECRET_PATTERNS = ()\n", encoding="utf-8")
     proc = _run(repo)
     assert proc.returncode == 2 and "REFUSED" in proc.stderr, proc.stdout + proc.stderr
@@ -220,7 +220,7 @@ def test_a_missing_redactor_table_refuses_too(tmp_path):
     """The redactor-only shapes (PEM, AWS, classic gh tokens, JWT) come from `_SECRET_PATTERNS`: a
     scrub.py without it must refuse, not silently drop those classes."""
     repo = _scratch(tmp_path)
-    scrub = repo / "skills" / "agrim-loop" / "scripts" / "scrub.py"
+    scrub = repo / "skills" / "sigma-loop" / "scripts" / "scrub.py"
     scrub.write_text(scrub.read_text(encoding="utf-8").replace("_SECRET_PATTERNS", "_RENAMED"),
                      encoding="utf-8")
     proc = _run(repo)
@@ -452,7 +452,7 @@ def gate_only_claims_missing(scrub_text, gate_text):
 
 
 def test_scrub_names_only_gate_rules_that_exist():
-    scrub = (ROOT / "skills/agrim-loop/scripts/scrub.py").read_text(encoding="utf-8")
+    scrub = (ROOT / "skills/sigma-loop/scripts/scrub.py").read_text(encoding="utf-8")
     gate = (ROOT / "tools/leak_scan.py").read_text(encoding="utf-8")
     assert gate_only_claims_missing(scrub, gate) == []
     planted = scrub.replace("GATE-ONLY, deliberately not here", "GATE-ONLY, `SECRET_FIXTURE_VALUES`")

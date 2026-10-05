@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-status/scripts/merge_queue_enable.py -- the opt-in, admin-consented
+"""Tests for skills/sigma-status/scripts/merge_queue_enable.py -- the opt-in, admin-consented
 merge-queue ENABLE tool (#977, split (c) of #408; the mutating counterpart to #976's read-only
 `merge_queue.py` advisor). Every test here mocks `run` -- NONE of these tests, nor the module under
 test when invoked this way, ever shells out to the real `gh` CLI or touches a live repo. That is a
@@ -21,7 +21,7 @@ import importlib.util
 import json
 import pathlib
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-status" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-status" / "scripts"
 
 
 def _mqe():

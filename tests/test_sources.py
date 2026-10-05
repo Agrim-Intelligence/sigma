@@ -5,7 +5,7 @@ import json, pathlib, importlib.util, re, tempfile
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -131,7 +131,7 @@ def test_github_next_pending_excludes_a_half_promoted_needs_confirmation_issue()
 
     Excluding is the only reading consistent with what the label MEANS: it is the human approval
     gate (#233), the approval gesture is REMOVING it, so while it is present approval has not
-    happened -- whatever else was added alongside. `/agrim-promote` performs that removal atomically.
+    happened -- whatever else was added alongside. `/sigma-promote` performs that removal atomically.
     """
     src = _mod("sources")
     issues = [
@@ -1320,7 +1320,7 @@ def test_github_note_comments_on_the_issue():
 
 def test_github_note_retries_a_transient_failure_until_the_comment_lands():
     """#1986: the fix's `note` half -- a transient `gh` blip (this environment's own documented
-    account-drift hazard among them) must not be free to erase `agrim-goal-review`'s REJECT verdict,
+    account-drift hazard among them) must not be free to erase `sigma-goal-review`'s REJECT verdict,
     which writes nothing else at all. Mirrors `test_transient_project_error_retried_until_card_set`'s
     shape for the identical reason."""
     src = _mod("sources")
@@ -1393,7 +1393,7 @@ def test_github_note_with_no_resolvable_repo_still_falls_back_to_rest():
     """POST-MERGE REVIEW FIX (#1657 follow-up): the ORIGINAL REST fallback resolved owner/repo via
     `self._owner_name()`, whose own unset-`repo` fallback shells out to `gh repo view --json
     owner,name` -- which is ITSELF graphql-billed. `discovery.github.repo` ships EMPTY in the
-    agrim-init template and `/agrim-setup` explicitly supports leaving it unset, so on the SHIPPED
+    sigma-init template and `/sigma-setup` explicitly supports leaving it unset, so on the SHIPPED
     DEFAULT CONFIG the REST fallback still touched the exhausted GraphQL quota and the original
     #1657 bug reproduced exactly. Reproduced here: with `repo` unset and `gh repo view` wired to
     raise if it is ever called, the pre-fix code called it anyway (caught internally by
@@ -1606,7 +1606,7 @@ def test_local_append_to_body_missing_file_raises():
 
 
 def test_local_append_to_body_resolves_a_bare_numeric_id_from_create_dependency(tmp_path):
-    """#921 (agrim-scope epic #902's own integration validation surfaced this): `create_dependency`
+    """#921 (sigma-scope epic #902's own integration validation surfaced this): `create_dependency`
     returns a bare int id (`gid`), matching `GitHubSource.create_dependency`'s bare-issue-number
     return by design -- but until this fix, chaining that return straight into `append_to_body`
     (exactly what `compile_plan.py`'s own `_patch_epic_with_subs` does for the epic's "Tracks #N"
@@ -2049,7 +2049,7 @@ def test_mark_designed_creates_the_label_if_missing():
 
 def test_mark_designed_is_a_pure_add_never_touches_other_labels_or_the_board():
     """Deliberately unlike mark_blocked/mark_needs_label: sdlc:designed never has a board column of
-    its own, and restoring sdlc:goal on a parked retrofit target is /agrim-unpark's own, separate
+    its own, and restoring sdlc:goal on a parked retrofit target is /sigma-unpark's own, separate
     gesture -- never bundled into this write."""
     src = _mod("sources")
     run = _recording_runner()
@@ -2583,7 +2583,7 @@ def test_complete_falls_back_to_rest_when_the_already_closed_comment_hits_exhaus
 def test_park_falls_back_to_rest_when_the_comment_hits_exhausted_graphql():
     """#1657 follow-up (scope decision), park()/fail() half: `_offboard()`'s comment is the ONLY
     durable record of WHY a goal was parked -- a park is a human's deliberate checkpoint that only
-    /agrim-unpark reopens, so losing this comment to an exhausted GraphQL quota is exactly as bad as
+    /sigma-unpark reopens, so losing this comment to an exhausted GraphQL quota is exactly as bad as
     losing a REJECT verdict's comment. Now routed through `note()`, so it gets the identical
     retry-then-REST treatment."""
     src = _mod("sources")
@@ -4075,7 +4075,7 @@ def test_swap_labels_raises_on_a_label_this_repo_does_not_have():
 
 
 def test_swap_labels_works_with_repo_unset_the_shipped_default():
-    """PLAN-REVIEW FIX (blocking): discovery.github.repo ships EMPTY and /agrim-setup supports
+    """PLAN-REVIEW FIX (blocking): discovery.github.repo ships EMPTY and /sigma-setup supports
     leaving it unset -- gh then infers the repo from the working directory. The first version of
     the primitive raised outright, which would have hard-failed every transition on the shipped
     default config once step 2 routed them through it."""
@@ -4136,7 +4136,7 @@ def test_every_lifecycle_transition_routes_through_the_swap():
     transitions must go through the ONE primitive -- if a new `gh issue edit --add-label` sneaks
     back into any of them, the 2^n partial-write lattice comes back with it."""
     import pathlib as _pl, re as _re
-    src_text = (_pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+    src_text = (_pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
                 / "sources.py").read_text()
     body = src_text[src_text.index("class GitHubSource"):]
     for name in ("mark_in_progress", "complete", "mark_blocked", "_offboard"):
@@ -4415,7 +4415,7 @@ def test_config_template_ships_the_ready_column_key():
     the Ready lane IS the pick queue. It was missing from the shipped template entirely, so an
     adopter whose board names that lane differently had no key to say so."""
     import pathlib as _pl, re as _re
-    tmpl = (_pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" / "templates"
+    tmpl = (_pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" / "templates"
             / "config.json.tmpl").read_text()
     cols = _re.search(r'"columns"\s*:\s*\{[^}]*\}', tmpl)
     assert cols, "columns block not found in the template"
@@ -4456,7 +4456,7 @@ def test_the_shipped_template_states_both_defaults_explicitly():
     """A default nobody can see is a default nobody can turn off. The template ships the keys with
     their real values so the opt-out is discoverable without reading the source."""
     import json as _json
-    tmpl = _json.loads((pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init"
+    tmpl = _json.loads((pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init"
                         / "templates" / "config.json.tmpl").read_text())
     disc = tmpl["discovery"]
     assert disc["auto_unpark"]["mode"] == "on"

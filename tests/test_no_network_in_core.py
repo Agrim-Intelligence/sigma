@@ -65,27 +65,27 @@ _OS_CALLS = frozenset({"system", "popen"})
 
 #: The only network the core may use: exact (file, module) pairs, each a reviewed claim.
 _ALLOWLIST = {
-    ("skills/agrim-loop/scripts/agent_watch.py", "smtplib"):
+    ("skills/sigma-loop/scripts/agent_watch.py", "smtplib"):
         "SMTP to the server the user configured",
-    ("skills/agrim-loop/scripts/agent_watch.py", "socket"):
+    ("skills/sigma-loop/scripts/agent_watch.py", "socket"):
         "socket.gethostname() for the default From address; opens no connection "
         "(platform.node() would remove this pair: a follow-up)",
-    ("skills/agrim-loop/scripts/channel_notify.py", "urllib.request"):
+    ("skills/sigma-loop/scripts/channel_notify.py", "urllib.request"):
         "POSTs only to an http(s) loopback webhook by default; remote delivery needs the exact "
         "allow_remote_webhook boolean opt-in",
-    ("skills/agrim-loop/scripts/slack_client.py", "urllib.request"):
+    ("skills/sigma-loop/scripts/slack_client.py", "urllib.request"):
         "the Slack Web API, with the user's token",
-    ("skills/agrim-loop/scripts/slack_commands_listen.py", "slack_sdk"):
+    ("skills/sigma-loop/scripts/slack_commands_listen.py", "slack_sdk"):
         "Slack Socket Mode, with the user's app",
 }
 
 _RECHECK = "Recheck: python3 tests/test_no_network_in_core.py"
 
-_SLACK_CLIENT = "skills/agrim-loop/scripts/slack_client.py"
+_SLACK_CLIENT = "skills/sigma-loop/scripts/slack_client.py"
 
 #: The one file #2575 (S1-G8) took a remote row-count call out of; the call now lives on the private
 #: side, and `test_the_core_doctor_holds_no_network_entry` asserts its absence positively.
-_CORE_DOCTOR = "skills/agrim-doctor/scripts/doctor.py"
+_CORE_DOCTOR = "skills/sigma-doctor/scripts/doctor.py"
 
 
 def _imported_modules(tree):
@@ -245,7 +245,7 @@ def test_the_guard_takes_no_arguments_and_writes_nothing():
 
 def test_the_real_core_is_scanned():
     scanned = _scanned()
-    assert "skills/agrim-loop/scripts/loop.py" in scanned and _SLACK_CLIENT in scanned
+    assert "skills/sigma-loop/scripts/loop.py" in scanned and _SLACK_CLIENT in scanned
     print("network guard scans %d file(s)" % len(scanned))
 
 

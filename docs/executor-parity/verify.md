@@ -1,10 +1,10 @@
-# Executor parity — verification (`agrim-verify` vs `superpowers:verification-before-completion`)
+# Executor parity — verification (`sigma-verify` vs `superpowers:verification-before-completion`)
 
-`agrim-verify` is Sigma's **portable fallback**, used when `superpowers` isn't present (non-Claude
+`sigma-verify` is Sigma's **portable fallback**, used when `superpowers` isn't present (non-Claude
 hosts, or the companion uninstalled). superpowers stays **preferred on Claude**. This point-by-point
 comparison exists so the fallback is **at par or better** — no quality lost when superpowers is absent.
 
-| Dimension | superpowers:verification-before-completion | agrim-verify | Verdict |
+| Dimension | superpowers:verification-before-completion | sigma-verify | Verdict |
 |---|---|---|---|
 | Core principle — evidence before claims | ✓ "The Iron Law" | ✓ stated up front, same rule | **par** |
 | The gate (identify → run → read → verify → claim) | ✓ 5-step gate | ✓ same 5 steps | **par** |

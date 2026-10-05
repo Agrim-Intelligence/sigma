@@ -13,7 +13,7 @@ rebase rather than refusing it. An edit made by anything else still refuses, whi
 """
 import importlib.util, json, pathlib, subprocess
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):

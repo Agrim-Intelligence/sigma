@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs" / "launch" / "review-plan.md"
 CARD = ROOT / "docs" / "launch" / "scorecard.json"
 RULE = ROOT / "docs" / "launch" / "decision-rule.md"
-BLOCKER_SCAN = ROOT / "skills" / "agrim-loop" / "scripts" / "blocker_scan.py"
+BLOCKER_SCAN = ROOT / "skills" / "sigma-loop" / "scripts" / "blocker_scan.py"
 
 HEADINGS = ["## Status", "## Scope", "## Dimensions", "## Reviewer rules",
             "## Execution order and ceilings", "## What changed from #307 and why"]

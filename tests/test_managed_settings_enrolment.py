@@ -18,7 +18,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 CLI = SCRIPTS / "managed_settings.py"
 
 
@@ -267,7 +267,7 @@ def test_the_documented_lever_unenroll_clears_the_refusal(tmp_path):
                 if l.startswith("python3 ") and "managed_settings.py unenroll" in l)
     argv = line.split()                                 # copied out of the docs, then run
     argv[0] = sys.executable
-    assert argv[1].startswith("<installed-sigma>/skills/agrim-loop/scripts/"), argv
+    assert argv[1].startswith("<installed-sigma>/skills/sigma-loop/scripts/"), argv
     argv[1] = str(CLI)                                  # only the install prefix differs
     r = subprocess.run(argv, cwd=root, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
@@ -296,7 +296,7 @@ def test_the_refusal_text_and_the_docs_name_the_same_gesture(tmp_path):
 
 def _doctor():
     spec = importlib.util.spec_from_file_location(
-        "doctor_423", ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor_423", ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m

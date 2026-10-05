@@ -1,6 +1,6 @@
 """#240/#314: Sigma and the plugin under its previous name on one repository.
 
-`skills/agrim-loop/scripts/coexist.py` is the one detector. Since #314 (owner direction: Sigma
+`skills/sigma-loop/scripts/coexist.py` is the one detector. Since #314 (owner direction: Sigma
 replaces that plugin in place) the other plugin's presence is a NOTICE, never a refusal: every
 surface proceeds and says ONE line naming the uninstall command, once per run; `SIGMA_ALLOW_COEXIST=1`
 silences it. What stays impossible is enforced elsewhere and tested here: the shared watcher lock
@@ -28,12 +28,12 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
-INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
-INIT_FLOW = ROOT / "skills" / "agrim-init" / "scripts" / "init_flow.py"
-MIGRATE = ROOT / "skills" / "agrim-doctor" / "scripts" / "migrate.py"
-DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
-STATUS = ROOT / "skills" / "agrim-status" / "scripts" / "status.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
+INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
+INIT_FLOW = ROOT / "skills" / "sigma-init" / "scripts" / "init_flow.py"
+MIGRATE = ROOT / "skills" / "sigma-doctor" / "scripts" / "migrate.py"
+DOCTOR = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
+STATUS = ROOT / "skills" / "sigma-status" / "scripts" / "status.py"
 HOOK = ROOT / "hooks" / "session_start.sh"
 OLD = "loop" + "smith"
 OLD_ID = OLD + "@" + OLD
@@ -452,7 +452,7 @@ def _argv(*parts):
     return ("\0".join(parts) + "\0").encode()
 
 
-SIGMA_SCRIPT = "/home/u/.claude/plugins/cache/sigma/sigma/1.0.0/skills/agrim-loop/scripts/watch_daemon.py"
+SIGMA_SCRIPT = "/home/u/.claude/plugins/cache/sigma/sigma/1.0.0/skills/sigma-loop/scripts/watch_daemon.py"
 #: The old plugin's real install layout: `<cache>/<marketplace>/<plugin>/<version>/skills/...`.
 OLD_SKILL = "sdlc" + "-loop"
 OLD_SCRIPT = ("/home/u/.claude/plugins/cache/%s/%s/1.4.24/skills/%s/scripts/watch_daemon.py"
@@ -746,7 +746,7 @@ def _claimable(repo):
 
 
 def test_claim_and_record_proceed_with_one_notice_per_run(tmp_path):
-    """#251: the /agrim-goal admission path (claim, record) says the same single notice -- not a
+    """#251: the /sigma-goal admission path (claim, record) says the same single notice -- not a
     refusal, and not once per verb."""
     repo = _scaffolded(tmp_path)
     goal = _claimable(repo)
@@ -958,7 +958,7 @@ PREDECESSOR_REV = os.environ.get("SIGMA_TEST_PREDECESSOR_REV") or "9d2f40fd"   #
 def _predecessor_tree(tmp_path, kind):
     """-> the `skills/` root of a runnable copy of the previous plugin's registry code.
 
-    `stand-in`: Sigma's own `agrim-loop` + `agrim-define` scripts, copied, with that plugin's
+    `stand-in`: Sigma's own `sigma-loop` + `sigma-define` scripts, copied, with that plugin's
     schema id and its STRICT schema check (it never learned to read Sigma's id) -- the two lines in
     which its 1.4.x `feature_registry.py` differs for this purpose. Its pick, owner claim and
     `set-priority` are Sigma's ports of the same code, so they run unchanged. Sigma's coexist
@@ -978,9 +978,9 @@ def _predecessor_tree(tmp_path, kind):
                              capture_output=True, check=True).stdout
         subprocess.run(["tar", "-x", "-C", str(root.parent)], input=tar, check=True)
         return root, OLD_SKILL % "loop", OLD_SKILL % "define"
-    loop = root / "agrim-loop" / "scripts"
+    loop = root / "sigma-loop" / "scripts"
     shutil.copytree(LOOP, loop, ignore=shutil.ignore_patterns("__pycache__", "coexist.py"))
-    shutil.copytree(ROOT / "skills" / "agrim-define" / "scripts", root / "agrim-define" / "scripts",
+    shutil.copytree(ROOT / "skills" / "sigma-define" / "scripts", root / "sigma-define" / "scripts",
                     ignore=shutil.ignore_patterns("__pycache__"))
     reg = loop / "feature_registry.py"
     text = reg.read_text(encoding="utf-8")
@@ -992,7 +992,7 @@ def _predecessor_tree(tmp_path, kind):
     reg.write_text(text.replace(schema, 'SCHEMA = "%s/features@1"' % OLD)
                    .replace(check, 'if doc.get("schema") != SCHEMA:')
                    .replace(delta, "    return None\n"), encoding="utf-8")
-    return root, "agrim-loop", "agrim-define"
+    return root, "sigma-loop", "sigma-define"
 
 
 class _Predecessor:
@@ -2134,7 +2134,7 @@ def test_session_start_notice_still_reaches_the_watcher_staleness_check(tmp_path
     _stale_ledger(repo)
     ctx = _hook(repo, _env(**_host(tmp_path, claude=ENABLED)))
     assert len(_notices(ctx)) == 1
-    assert "looks stale" in ctx and "/agrim-doctor" in ctx
+    assert "looks stale" in ctx and "/sigma-doctor" in ctx
 
 
 @BASH_HOOK

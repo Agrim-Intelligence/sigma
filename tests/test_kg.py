@@ -1,9 +1,9 @@
 """The knowledge-graph helper is the deterministic side of the optional KG feature: read config,
 locate the corpus, compute the build plan per scope. Disabled by default; the builder (graphify) is
-a soft dep driven by the /agrim-kg skill, not by this helper."""
+a soft dep driven by the /sigma-kg skill, not by this helper."""
 import json, pathlib, importlib.util, tempfile
 
-KG = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-kg" / "scripts" / "kg.py"
+KG = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-kg" / "scripts" / "kg.py"
 
 
 def _kg():
@@ -398,7 +398,7 @@ def test_refresh_invokes_the_builder_when_auto_refresh_is_on():
 def test_refresh_points_the_builder_output_at_the_repo_root_where_status_looks():
     """The second half of #1562. `graphify extract <corpus>` writes `<corpus>/graphify-out/`, but
     `status()` reads `<repo-root>/<builder>-out/graph.json` -- so a fully SUCCESSFUL build used to
-    land where `status`, `/agrim-context`'s gate and `graphify query`'s default path all structurally
+    land where `status`, `/sigma-context`'s gate and `graphify query`'s default path all structurally
     could not see it. This repo still carries the evidence: an empty `.sdlc/knowledge/graphify-out/`
     from a hand-run on 2026-08-24, with `status` reporting `graph: not built` ever since."""
     kg = _kg()
@@ -426,7 +426,7 @@ def test_refresh_does_not_invoke_the_builder_when_auto_refresh_is_false():
 
 def test_refresh_does_not_invoke_the_builder_when_auto_refresh_is_absent():
     """NEGATIVE CONTROL, absent-key form -- the shape every repo scaffolded from
-    skills/agrim-init/templates/config.json.tmpl that never touched the key actually has."""
+    skills/sigma-init/templates/config.json.tmpl that never touched the key actually has."""
     kg = _kg()
     with tempfile.TemporaryDirectory() as d:
         base = _corpus(_sdlc(d, {"enabled": True, "scope": "research"}))
@@ -518,7 +518,7 @@ def test_refresh_cli_verb_exits_nonzero_on_a_real_failure():
 # On the maintainer's machine `graphify-out/` had been an empty directory for three weeks with
 # `auto_refresh: true`: the builder's own error was printed once per completed goal into the loop's
 # stream and then lost, session start said nothing, and the only standing signal lived in
-# `/agrim-doctor`. Two root causes, two fixes: `refresh()` now RECORDS its last result, and `warn()`
+# `/sigma-doctor`. Two root causes, two fixes: `refresh()` now RECORDS its last result, and `warn()`
 # composes one once-a-day line from that record plus what the filesystem shows.
 import os as _os
 import time as _time
@@ -638,7 +638,7 @@ def test_warn_fires_when_auto_refresh_is_on_and_the_graph_was_never_built():
         assert "never been built" in text
         assert "1 documents" in text                          # measured corpus size
         assert "not measured" in text                         # first-build cost, honestly
-        assert "/agrim-kg" in text and "/agrim-doctor" in text
+        assert "/sigma-kg" in text and "/sigma-doctor" in text
 
 
 def test_warn_fires_when_the_graph_is_older_than_the_newest_corpus_document():

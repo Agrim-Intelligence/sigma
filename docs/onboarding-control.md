@@ -2,7 +2,7 @@
 
 `tools/onboarding_control.py` answers one question with a run, not a reading: does the README
 Quickstart, followed literally on a fresh repository, get one goal to `done`? It is the control for
-epic #227 (plugin install -> `/agrim-init` -> one goal to done), built in #237.
+epic #227 (plugin install -> `/sigma-init` -> one goal to done), built in #237.
 
 It runs in CI on every push (`tests/test_onboarding_control.py`, Linux, Python 3.10, 3.11, 3.12 and 3.13), with
 no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
@@ -40,13 +40,13 @@ scripts turns the control red:
 | `claude plugin marketplace add <SIGMA_REPO>` / `claude plugin install sigma@sigma` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile, `<SIGMA_REPO>` = the checkout |
 | `codex plugin marketplace add <SIGMA_REPO>` / `codex plugin add sigma@sigma` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
 | `/plugin marketplace add <SIGMA_REPO>` / `/plugin install sigma@sigma` (in-session) | checked the same way (a model turn; not run) |
-| every init flag the Quickstart shows (`/agrim-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/agrim-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
-| `/agrim-init --demo` (the `### Claude Code` block) | its flags |
-| `python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . ...` | the script `/agrim-init` runs |
-| every `python3 <installed-sigma>/...` gesture under "What `/agrim-init` will ask you" and "If `/agrim-init` says you lack access" (fenced lines and the access table's inline code; #277) | github mode, confirm variant, after the goal is done: each run from the repository root, `<file>` = a file holding `make test`, `<remote>` = `origin`; `preflight.py check` may exit 1 (its report), every other gesture must exit 0 -- and the exit code is not trusted alone: `GESTURE_EFFECTS` asserts each one's effect (`set` wrote `make test` with enforce ON, `decline` left enforce OFF, `check` printed exactly one preflight report header consistent with its exit code, `use-remote` wrote `work.remote`, `local-only` wrote `work.enabled: false`) |
+| every init flag the Quickstart shows (`/sigma-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/sigma-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
+| `/sigma-init --demo` (the `### Claude Code` block) | its flags |
+| `python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . ...` | the script `/sigma-init` runs |
+| every `python3 <installed-sigma>/...` gesture under "What `/sigma-init` will ask you" and "If `/sigma-init` says you lack access" (fenced lines and the access table's inline code; #277) | github mode, confirm variant, after the goal is done: each run from the repository root, `<file>` = a file holding `make test`, `<remote>` = `origin`; `preflight.py check` may exit 1 (its report), every other gesture must exit 0 -- and the exit code is not trusted alone: `GESTURE_EFFECTS` asserts each one's effect (`set` wrote `make test` with enforce ON, `decline` left enforce OFF, `check` printed exactly one preflight report header consistent with its exit code, `use-remote` wrote `work.remote`, `local-only` wrote `work.enabled: false`) |
 | every OTHER `python3 <script>.py ...` gesture anywhere in the README (fenced, inline, a table cell, inside `$(...)`; the path spelled any way -- `<installed-sigma>/`, `"${VAR}/"`, `~/dir/`, absolute, repository-relative, a bare name; #277 review) | mode `readme-usage`, every run: a path that is not `<installed-sigma>/<shipped script>` is red (it exits 2 when copied from the user's repository); the rest are not executed (most need a live board or loop) but checked against the script's own usage -- `<script> --help` must exit 0 with a usage, the gesture's verb must be one it lists, its positional count must fit that alternative (`<x>` required, `[x]` optional, `...`/`(...)`/`[options]` open), and every `--flag` must appear in the usage. Limit: a gesture that parses but does something other than its prose claims is not caught; that stays a prose review |
-| `/agrim-loop` (the `### Claude Code` block) | must be present; the loop is then driven by the scripts the agrim-loop skill names |
-| `python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate (confirm variant) |
+| `/sigma-loop` (the `### Claude Code` block) | must be present; the loop is then driven by the scripts the sigma-loop skill names |
+| `python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py confirm .sdlc <n> <id>` | run with `<n>` and `<id>` copied from init's printed candidate (confirm variant) |
 
 A README or printed command runs only in one pinned shape: first token `python3` (or the `python` /
 `py` that init itself prints), run as the control's own interpreter; second token a `.py` script
@@ -56,7 +56,7 @@ the repository, so a path relative to the plugin directory is refused, #277); no
 (`` ` `` `$` `;` `&` `|` `<` `>` parentheses, braces, globs, control characters). Anything else is
 refused before it runs. Nothing goes through a shell.
 
-Everything else comes from what `/agrim-init` prints. Every `[ask]` line ends in one
+Everything else comes from what `/sigma-init` prints. Every `[ask]` line ends in one
 machine-readable shape, `[ask] <id>: <prose> -> <answer> ; <answer>`, each answer `--flag`,
 `--flag VALUE|VALUE` or `--flag PLACEHOLDER` (`init_flow.ask_line`). The control parses it and
 answers from a small policy keyed by question id and flag NAME: mode `--mode local-goals|github`,
@@ -239,9 +239,9 @@ Each was run through the CLI gesture above, not only through pytest, and each is
 | `--readme` pointing at a missing file | CLI | exit 2, `precondition missing: cannot read the README`, no traceback |
 | README drift: `verify_detect.py confirm` renamed `accept` | `--mode local --readme <copy>` | exit 1, RED at `verify confirm (README gesture)` |
 | README drift: `init_flow.py` renamed `init.py` | `--mode local --readme <copy>` | exit 1, RED at `readme` (the README names a script that does not ship) |
-| README drift: `/agrim-loop`, `/agrim-init` or `claude plugin install` renamed | pytest (parse) | RED at `readme` |
-| #277: an init gesture written relative to the plugin directory (the pre-#277 README's `python3 skills/agrim-init/scripts/preflight.py use-remote ...`), a renamed verb (`decline` -> `refuse`), or a placeholder nothing fills | `--mode github --variant confirm --readme <copy>` | exit 1, RED at `README gesture: ...`; the same drift in the confirm gesture is RED at `verify confirm (README gesture)`, "read from the repository root" |
-| #277 review: the pre-fix README line `python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py   # see KEEP_PARKED_MARKER ...` (exit 2, usage) | `--mode local --variant confirm --readme <copy>` | exit 1, RED at `README usage`: "positionals [] fit no usage alternative"; also red in pytest: a missing `<ref>` on `dismiss-text`, an unknown verb, an unknown `--flag`, an extra positional, a script that does not ship |
+| README drift: `/sigma-loop`, `/sigma-init` or `claude plugin install` renamed | pytest (parse) | RED at `readme` |
+| #277: an init gesture written relative to the plugin directory (the pre-#277 README's `python3 skills/sigma-init/scripts/preflight.py use-remote ...`), a renamed verb (`decline` -> `refuse`), or a placeholder nothing fills | `--mode github --variant confirm --readme <copy>` | exit 1, RED at `README gesture: ...`; the same drift in the confirm gesture is RED at `verify confirm (README gesture)`, "read from the repository root" |
+| #277 review: the pre-fix README line `python3 <installed-sigma>/skills/sigma-loop/scripts/auto_unpark.py   # see KEEP_PARKED_MARKER ...` (exit 2, usage) | `--mode local --variant confirm --readme <copy>` | exit 1, RED at `README usage`: "positionals [] fit no usage alternative"; also red in pytest: a missing `<ref>` on `dismiss-text`, an unknown verb, an unknown `--flag`, an extra positional, a script that does not ship |
 | #277 review: each `GESTURE_EFFECTS` predicate fed a wrong effect (enforce left ON after `decline`, a usage line or an rc/report mismatch from `preflight.py check`) | pytest | each one false |
 | Every assertion in `check_local` (5), `check_github` (11), `check_no_command` (5) and `check_github_no_command` (13) broken once, alone, against a real green run's observations | pytest | each one false, all others true |
 
@@ -250,7 +250,7 @@ check skipped, an unknown question tolerated, the shell-syntax / interpreter / s
 the README-flag and install checks skipped, the README read unguarded, a no-command assertion
 forced true) and the matching test was seen red, on Python 3.10 and 3.12.
 
-The `/agrim-init` drift case caught the control's own first draft: it took the first `/agrim-init`
+The `/sigma-init` drift case caught the control's own first draft: it took the first `/sigma-init`
 line anywhere in the Quickstart, so with the first-run line renamed it silently used the "Adopting
 into an existing repo" line instead. It now reads the first-run pair from the `### Claude Code`
 block only.
@@ -261,7 +261,7 @@ Each gap is an issue, not a silent skip:
 
 | Not covered | Why | Issue |
 |---|---|---|
-| A live-model `/agrim-loop` turn in Claude Code | spends tokens; the control drives the scripts the skill names instead | #300 |
+| A live-model `/sigma-loop` turn in Claude Code | spends tokens; the control drives the scripts the skill names instead | #300 |
 | Real GitHub (labels, `@me`, protection, mergeability, the board offer, token scopes) | the control never creates external state; github mode uses the fake gh | #301, runbook below |
 | A live Codex session (the `[ask]` relay, the loop driven from `AGENTS.md`) | install measured working; a session spends tokens | #302 |
 | A live Cursor session (`.cursor/rules/sdlc.mdc` driving a goal) | no plugin system to install; a session spends tokens | #303 |
@@ -280,12 +280,12 @@ gh repo create "$R" --private --clone --add-readme --description "sigma onboardi
 printf 'test:\n\ttest -s hello.txt\n' > Makefile && git add Makefile && git commit -m "verify target" && git push
 # 2. the README Quickstart, literally (Claude Code session in this directory)
 #    /plugin marketplace add <SIGMA_REPO>   /plugin install sigma@sigma   (restart)
-#    /agrim-init --demo      -> answer: github mode, board no, ledger no; confirm `make test`
+#    /sigma-init --demo      -> answer: github mode, board no, ledger no; confirm `make test`
 # 3. one goal
 gh issue create --label sdlc:goal --assignee @me --title "Add hello.txt" --body "Create hello.txt with one line."
-# 4. /agrim-loop -> it opens a PR, runs the review gate, records `review` and leaves the PR for you
+# 4. /sigma-loop -> it opens a PR, runs the review gate, records `review` and leaves the PR for you
 gh pr merge <pr> --squash         # you merge it
-python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py reconcile-merges .sdlc
+python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py reconcile-merges .sdlc
 # 5. check: issue closed, PR merged, hello.txt on main, .sdlc/state/verify/<n>.json passed
 gh issue view 1 --json state && gh pr view <pr> --json state && git pull && cat hello.txt
 # 6. record durations + phase_report cost lines under "Recorded runs" in this file, then TEAR DOWN BY HAND

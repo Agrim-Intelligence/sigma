@@ -56,7 +56,7 @@ it is missing, and keeps the #719 rule: a recognised field value wins and the la
 
 To add the column to your own board, either set `project.mirror_priority: true` (the next phase
 start creates it), or run `board_setup.py create <sdlc> --number <N> --yes`, which adds the fields
-the board lacks (see `skills/agrim-init/references/board.md`).
+the board lacks (see `skills/sigma-init/references/board.md`).
 
 ## Missing fields, and names that differ in case
 
@@ -123,7 +123,7 @@ boards carry `In Progress`. Both spellings are live, so neither one is assumed. 
 brand-new board today was not measured, because doing so would mean creating a board on real
 GitHub.
 
-`/agrim-doctor` has a row, **board Status options match the loop's columns**. It lists every loop
+`/sigma-doctor` has a row, **board Status options match the loop's columns**. It lists every loop
 column that has no matching option on the pinned board. `ready` is never listed. `parked` is not
 listed while `blocked` matches. The row uses the loop's own matching function, so the two never
 disagree. It shares one read-only `gh project field-list` with the **board custom fields mapped**
@@ -260,7 +260,7 @@ try:
 finally:
     pathlib.Path(name).unlink(missing_ok=True)
 PY
-python3 "$SIGMA_PLUGIN_ROOT/skills/agrim-init/scripts/board_setup.py" create .sdlc --title "Sigma recovery board" --yes
+python3 "$SIGMA_PLUGIN_ROOT/skills/sigma-init/scripts/board_setup.py" create .sdlc --title "Sigma recovery board" --yes
 ```
 
 Successful creation pins the new board and writes `setup_created` with its number and owner.
@@ -279,7 +279,7 @@ board #17 has not been executed.** To run it yourself, on a throwaway goal:
    Confirm `gh auth status` lists the `project` scope.
 2. Pick a goal labelled `sdlc:goal` + `priority:P1` whose card is on board #17. For each phase in
    turn, run
-   `python3 skills/agrim-loop/scripts/phase_report.py start .sdlc <N> <phase> --model sonnet`,
+   `python3 skills/sigma-loop/scripts/phase_report.py start .sdlc <N> <phase> --model sonnet`,
    using `research`, `plan`, `plan_review`, `implement`, `review`, `retro`. After each one, check
    that the card's Phase reads `P2 RESEARCH` .. `P7 RETRO`. The first run creates the Phase field.
    Priority reads `P1` if the board has a Priority column (it is created only on Sigma's board or

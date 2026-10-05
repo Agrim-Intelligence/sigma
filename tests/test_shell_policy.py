@@ -9,7 +9,7 @@ import sys
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

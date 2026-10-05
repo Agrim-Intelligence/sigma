@@ -5,7 +5,7 @@ import subprocess
 import shutil
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
-                       / "skills" / "agrim-init" / "scripts"))
+                       / "skills" / "sigma-init" / "scripts"))
 import wizard_actions  # noqa: E402
 
 
@@ -27,7 +27,7 @@ def test_run_scaffold_is_idempotent_on_an_already_scaffolded_directory(tmp_path)
 
 def _load_setup():
     import importlib.util
-    path = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-setup" / "scripts" / "setup.py"
+    path = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-setup" / "scripts" / "setup.py"
     spec = importlib.util.spec_from_file_location("setup", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -36,7 +36,7 @@ def _load_setup():
 
 def test_run_scaffold_also_gitignores_the_runtime_dirs(tmp_path):
     """run_scaffold() calls sdlc_init.scaffold() directly, bypassing main() -- the wizard's
-    hook-driven bootstrap must get the same ignore-write the manual /agrim-init command does.
+    hook-driven bootstrap must get the same ignore-write the manual /sigma-init command does.
     Tuple-derived, same reasoning as the sdlc_init.py tests: a selective fix wired only for
     events/ must not pass."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
@@ -62,9 +62,9 @@ def test_run_scaffold_reports_ok_false_when_the_sibling_setup_script_is_missing(
     wizard_actions` would return the real module already cached in sys.modules, masking the
     isolation entirely)."""
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    isolated = tmp_path / "isolated_skills" / "skills" / "agrim-init"
-    shutil.copytree(repo_root / "skills" / "agrim-init", isolated)
-    assert not (isolated.parent / "agrim-setup").exists()
+    isolated = tmp_path / "isolated_skills" / "skills" / "sigma-init"
+    shutil.copytree(repo_root / "skills" / "sigma-init", isolated)
+    assert not (isolated.parent / "sigma-setup").exists()
 
     import importlib.util
     spec = importlib.util.spec_from_file_location(

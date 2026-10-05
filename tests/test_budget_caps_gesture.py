@@ -9,9 +9,9 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
-DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py"
+SCRIPT = ROOT / "skills" / "sigma-loop" / "scripts" / "phase_report.py"
+DOCTOR = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py"
 
 
 def _phase_report():

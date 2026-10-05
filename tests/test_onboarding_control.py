@@ -1,7 +1,7 @@
 """#237: the end-to-end onboarding control runs in CI, in both modes and both variants, and is seen red.
 
 `tools/onboarding_control.py` follows the README Quickstart TEXT (parsed, not restated) through
-`/agrim-init` to one goal `done`: local-goals mode against a fresh repository with no remote, and
+`/sigma-init` to one goal `done`: local-goals mode against a fresh repository with no remote, and
 github mode against the stateful fake `gh` from tests/test_public_bootstrap_control.py and a local
 bare origin; each in the `confirm` variant (a Makefile target, confirmed by the README gesture) and
 the `no-command` variant (nothing to confirm, the verify question left open -- so the default init
@@ -26,7 +26,7 @@ THE CONTROLS (AGENTS.md: a test never seen red proves nothing), each run here on
     [ask]"); an unknown question id, a line without the machine-readable part, and a renamed flag
     are each red in the pure parser too.
   * README drift turns it red: a renamed verb in the confirm gesture fails the run at that gesture;
-    a renamed init script, a dropped `/agrim-loop` line, a drifted install line (claude, codex,
+    a renamed init script, a dropped `/sigma-loop` line, a drifted install line (claude, codex,
     in-session `/plugin`), or an init flag the README shows that init_flow.py does not accept,
     fails the README parse.
   * a README command that is not `python3 <sigma script> ...`, or carries shell syntax, is refused
@@ -66,7 +66,7 @@ def _tool():
 
 oc = _tool()
 README_TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
-INIT_FLOW = pathlib.Path("skills") / "agrim-init" / "scripts" / "init_flow.py"
+INIT_FLOW = pathlib.Path("skills") / "sigma-init" / "scripts" / "init_flow.py"
 
 
 def _scratch_copy(dest):
@@ -118,7 +118,7 @@ def github_run(cli_run):
 
 def test_readme_quickstart_parses_into_the_gestures_the_control_runs():
     qs = oc.parse_quickstart(README_TEXT)
-    assert qs["init_script"] == "skills/agrim-init/scripts/init_flow.py"
+    assert qs["init_script"] == "skills/sigma-init/scripts/init_flow.py"
     assert "--demo" in qs["init_flags"]
     assert "confirm .sdlc <n> <id>" in qs["verify_confirm"]
     assert qs["claude_install"] == ["claude plugin marketplace add <SIGMA_REPO>",
@@ -171,12 +171,12 @@ def test_every_readme_init_gesture_ran_from_the_repository_root(github_run):
 @pytest.mark.parametrize("old,new", [
     # the pre-#277 README: a path relative to the PLUGIN directory, which a user in their own
     # repository cannot copy -- the control used to resolve it against the plugin dir and pass
-    ("python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py use-remote",
-     "python3 skills/agrim-init/scripts/preflight.py use-remote"),
-    ("python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py decline",
-     "python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py refuse"),
-    ("python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc",
-     "python3 <installed-sigma>/skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc <token>"),
+    ("python3 <installed-sigma>/skills/sigma-init/scripts/preflight.py use-remote",
+     "python3 skills/sigma-init/scripts/preflight.py use-remote"),
+    ("python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py decline",
+     "python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py refuse"),
+    ("python3 <installed-sigma>/skills/sigma-init/scripts/preflight.py check . --sdlc .sdlc",
+     "python3 <installed-sigma>/skills/sigma-init/scripts/preflight.py check . --sdlc .sdlc <token>"),
 ])
 def test_control_an_uncopyable_or_drifted_init_gesture_goes_red(old, new, tmp_path):
     """Through the documented gesture (github mode drives the fake gh by path, so as a subprocess)."""
@@ -189,7 +189,7 @@ def test_control_an_uncopyable_or_drifted_init_gesture_goes_red(old, new, tmp_pa
 
 
 def test_control_a_plugin_relative_confirm_gesture_goes_red_at_that_gesture(tmp_path):
-    old = "python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py confirm"
+    old = "python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py confirm"
     run = oc.run_local(ROOT, README_TEXT.replace(old, old.replace("<installed-sigma>/", "")), tmp_path)
     assert run["ok"] is False and run["failed_step"] == "verify confirm (README gesture)"
     assert "read from the repository root" in run["steps"][-1]["detail"], run["steps"][-1]
@@ -218,8 +218,8 @@ def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
 
 @pytest.mark.parametrize("old,new,why", [
     # the #277 review's own find: a bare script with a comment where its verb should be (exit 2)
-    ('python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
-     'python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py  # see KEEP_PARKED_MARKER\nx "',
+    ('python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
+     'python3 <installed-sigma>/skills/sigma-loop/scripts/auto_unpark.py  # see KEEP_PARKED_MARKER\nx "',
      "positionals [] fit no usage alternative"),
     ('dismiss-text blocked-by 40 "sequencing note, not a dependency"', "dismiss-text 40",
      "fit no usage alternative"),                                                # a missing <ref>
@@ -230,14 +230,14 @@ def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
     ("loop.py session-end .sdlc", "loop.py session-over .sdlc", "fit no usage alternative"),
     ("scripts/reconcile.py census", "scripts/reconcile_gone.py census", "is not shipped"),
     # #277 review block 2: every spelling of a script path is matched, and only one is copyable
-    ("python3 <installed-sigma>/skills/agrim-loop/scripts/ledger.py summary",
-     'python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-loop/scripts/ledger.py" summary', "not copyable"),
-    ("python3 <installed-sigma>/skills/agrim-log/scripts/log.py status",
-     "python3 $CLAUDE_PLUGIN_ROOT/skills/agrim-log/scripts/log.py status", "not copyable"),
-    ("python3 <installed-sigma>/skills/agrim-loop/scripts/watch_daemon.py .sdlc",
+    ("python3 <installed-sigma>/skills/sigma-loop/scripts/ledger.py summary",
+     'python3 "${CLAUDE_PLUGIN_ROOT}/skills/sigma-loop/scripts/ledger.py" summary', "not copyable"),
+    ("python3 <installed-sigma>/skills/sigma-log/scripts/log.py status",
+     "python3 $CLAUDE_PLUGIN_ROOT/skills/sigma-log/scripts/log.py status", "not copyable"),
+    ("python3 <installed-sigma>/skills/sigma-loop/scripts/watch_daemon.py .sdlc",
      "python3 watch_daemon.py .sdlc", "not copyable"),
-    ("python3 <installed-sigma>/skills/agrim-init/scripts/init_flow.py . --cursor",
-     "python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor", "not copyable"),
+    ("python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --cursor",
+     "python3 ~/sigma/skills/sigma-init/scripts/init_flow.py . --cursor", "not copyable"),
     ("python3 <installed-sigma>/evals/run.py", "python3 evals/run.py", "not copyable"),
 ])
 def test_control_a_readme_gesture_its_script_would_refuse_is_red(old, new, why, tmp_path):
@@ -262,8 +262,8 @@ def test_control_the_usage_mode_goes_red_through_the_cli(tmp_path):
     usage`, and the run exits 1 even though the local mode itself is green."""
     drifted = tmp_path / "README.md"
     drifted.write_text(README_TEXT.replace(
-        'python3 <installed-sigma>/skills/agrim-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
-        "python3 <installed-sigma>/skills/agrim-loop/scripts/auto_unpark.py   # see KEEP\nx \"", 1),
+        'python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
+        "python3 <installed-sigma>/skills/sigma-loop/scripts/auto_unpark.py   # see KEEP\nx \"", 1),
         encoding="utf-8")
     rc, lines, blob, proc = _cli("--mode", "local", "--variant", "confirm", "--readme", str(drifted),
                                  workdir=tmp_path)
@@ -318,7 +318,7 @@ def test_no_command_variants_reach_done_with_enforce_off(cli_run):
 def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
     """The PR #306 reviewer's exact repro: template default back, both scaffold rewrites gone."""
     sigma = _scratch_copy(tmp_path / "sigma")
-    init_dir = sigma / "skills" / "agrim-init"
+    init_dir = sigma / "skills" / "sigma-init"
     _mutate(init_dir / "templates" / "config.json.tmpl",
             '"verify": { "command": "", "enforce": false }', '"verify": { "command": "", "enforce": true }')
     _mutate(init_dir / "scripts" / "init_flow.py",
@@ -344,7 +344,7 @@ def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
     unconditionally and the github no-command variant -- the real work-ON path -- goes red, its
     approved merge parked on "no fresh verify evidence"; the confirm variant is unaffected."""
     sigma = _scratch_copy(tmp_path / "sigma")
-    _mutate(sigma / "skills" / "agrim-loop" / "scripts" / "work.py",
+    _mutate(sigma / "skills" / "sigma-loop" / "scripts" / "work.py",
             "refusal = state.done_refusal(sdlc_dir, goal) if required else None",
             "refusal = state.done_refusal(sdlc_dir, goal)")
     rc, lines, blob, proc = _cli("--mode", "github", "--sigma", str(sigma), workdir=tmp_path)
@@ -360,7 +360,7 @@ def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
 
 def test_control_write_verify_regression_goes_red_at_record_done(tmp_path):
     sigma = _scratch_copy(tmp_path / "sigma")
-    vd = sigma / "skills" / "agrim-init" / "scripts" / "verify_detect.py"
+    vd = sigma / "skills" / "sigma-init" / "scripts" / "verify_detect.py"
     _mutate(vd, '    verify["command"] = command\n    verify["enforce"] = bool(command)\n',
             '    verify["command"] = ""\n    verify["enforce"] = True\n')
     _mutate(vd, '    if verify["enforce"] and not verify["command"]:', '    if False:')
@@ -431,9 +431,9 @@ def test_control_readme_drift_in_the_confirm_verb_goes_red_at_that_gesture(tmp_p
 
 
 @pytest.mark.parametrize("old,new,why", [
-    ("skills/agrim-init/scripts/init_flow.py", "skills/agrim-init/scripts/init.py", "does not ship"),
-    ("/agrim-loop            #", "/agrim-run             #", "no `/agrim-loop` line"),
-    ("/agrim-init --demo     #", "/agrim-start --demo    #", "no `/agrim-init` line"),
+    ("skills/sigma-init/scripts/init_flow.py", "skills/sigma-init/scripts/init.py", "does not ship"),
+    ("/sigma-loop            #", "/sigma-run             #", "no `/sigma-loop` line"),
+    ("/sigma-init --demo     #", "/sigma-start --demo    #", "no `/sigma-init` line"),
     ("claude plugin install sigma@sigma", "claude plugin add sigma@sigma", "`claude plugin` lines"),
     ("codex plugin add sigma@sigma", "codex plugin install sigma@sigma", "`codex plugin` lines"),
     ("codex plugin marketplace add <SIGMA_REPO>", "codex marketplace add <SIGMA_REPO>",
@@ -459,14 +459,14 @@ def test_control_an_init_flag_init_flow_dropped_fails_the_parse(tmp_path):
 
 @pytest.mark.parametrize("line", [
     "sh -c 'touch {m}'",
-    "bash skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x",
-    "node skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x",
+    "bash skills/sigma-init/scripts/verify_detect.py confirm .sdlc 1 x",
+    "node skills/sigma-init/scripts/verify_detect.py confirm .sdlc 1 x",
     "python3 -c 'open(\"{m}\", \"w\")'",
-    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc $(touch {m}) 1",
-    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x; touch {m}",
-    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc `touch {m}` 1",
-    "python3 skills/agrim-init/scripts/verify_detect.py confirm .sdlc 1 x | tee {m}",
-    "python3 skills/agrim-init/scripts/nope.py confirm .sdlc 1 x",
+    "python3 skills/sigma-init/scripts/verify_detect.py confirm .sdlc $(touch {m}) 1",
+    "python3 skills/sigma-init/scripts/verify_detect.py confirm .sdlc 1 x; touch {m}",
+    "python3 skills/sigma-init/scripts/verify_detect.py confirm .sdlc `touch {m}` 1",
+    "python3 skills/sigma-init/scripts/verify_detect.py confirm .sdlc 1 x | tee {m}",
+    "python3 skills/sigma-init/scripts/nope.py confirm .sdlc 1 x",
     "python3 /usr/bin/env.py x",
     "python3 skills/../../../../tmp/x.py",
 ])
@@ -480,9 +480,9 @@ def test_control_a_readme_command_off_the_pinned_shape_is_refused(line, tmp_path
 
 def test_control_a_shell_readme_gesture_is_refused_before_it_runs(tmp_path):
     marker = tmp_path / "EXECUTED"
-    drifted = README_TEXT.replace("python3 <installed-sigma>/skills/agrim-init/scripts/verify_detect.py "
+    drifted = README_TEXT.replace("python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py "
                                   "confirm .sdlc <n> <id>",
-                                  f"sh -c 'touch {marker}' skills/agrim-init/scripts/verify_detect.py "
+                                  f"sh -c 'touch {marker}' skills/sigma-init/scripts/verify_detect.py "
                                   "confirm .sdlc <n> <id>")
     assert drifted != README_TEXT
     run = oc.run_local(ROOT, drifted, tmp_path / "w")
@@ -576,7 +576,7 @@ def test_main_exit_codes_for_red_and_a_missing_readme(tmp_path):
     assert rc == 2 and "Traceback" not in proc.stderr, proc.stderr
     assert "precondition missing" in proc.stderr and "missing.md" in proc.stderr
     drifted = tmp_path / "README.md"
-    drifted.write_text(README_TEXT.replace("/agrim-loop            #", "/agrim-run             #"),
+    drifted.write_text(README_TEXT.replace("/sigma-loop            #", "/sigma-run             #"),
                        encoding="utf-8")
     rc, lines, blob, proc = _cli("--mode", "local", "--readme", str(drifted), workdir=tmp_path)
     assert rc == 1 and lines == {"readme": "RED at readme", "readme-usage": "GREEN"}, proc.stdout[-2000:]

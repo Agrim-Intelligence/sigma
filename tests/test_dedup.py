@@ -1,4 +1,4 @@
-"""agrim-scope's board-dedup check (dedup.py, #917): "does ANYTHING on the board already cover
+"""sigma-scope's board-dedup check (dedup.py, #917): "does ANYTHING on the board already cover
 this rough idea" search, run at BRAINSTORM time (before any issue exists for the idea yet) -- as
 opposed to backlog_check.cross_check(), which asks "is THIS SPECIFIC, already-filed goal a
 duplicate of another specific goal" at PICK time. Reuses backlog_check's TF-IDF/cosine primitives
@@ -7,7 +7,7 @@ rationale. Hermetic, deterministic, $0 -- same discipline as test_backlog_check.
 `_rec` board-mirror fixture helpers this file reuses rather than duplicating."""
 import importlib.util, json, pathlib, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-scope" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-scope" / "scripts"
 
 
 def _mod(name):

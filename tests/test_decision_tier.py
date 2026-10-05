@@ -1,4 +1,4 @@
-"""Decision-tier categorizer (agrim-loop/scripts/decision_tier.py): a deterministic detail-text ->
+"""Decision-tier categorizer (sigma-loop/scripts/decision_tier.py): a deterministic detail-text ->
 tier heuristic for #818's L0/L1/L2 decision-escalation pyramid. Pins each tier, the upward
 conflict-resolution rule, and the default, so a wording change can't silently under-escalate a
 strategic call or silently escalate the whole backlog to the wrong level."""
@@ -6,7 +6,7 @@ import json
 import pathlib
 import importlib.util
 
-P = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+P = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
      / "decision_tier.py")
 
 
@@ -131,8 +131,8 @@ def test_config_key_ships_in_the_template_with_the_documented_off_default():
     except by reading source or the changelog. It must now ship as a real, documented key, and its
     shipped value must be the safe, off-by-default value `resolve()`'s own gate treats as inert
     (anything other than the literal string "auto"; see `test_resolve_gates_on_config`), so a fresh
-    `/agrim-init` behaves identically to before this key existed."""
-    tmpl = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" / "templates"
+    `/sigma-init` behaves identically to before this key existed."""
+    tmpl = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" / "templates"
             / "config.json.tmpl")
     cfg = json.loads(tmpl.read_text())
     assert cfg["decision_tier"] == "off"

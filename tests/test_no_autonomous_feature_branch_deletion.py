@@ -70,8 +70,8 @@ import types
 import importlib.util
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
-DEFINE_SCRIPTS = ROOT / "skills" / "agrim-define" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
+DEFINE_SCRIPTS = ROOT / "skills" / "sigma-define" / "scripts"
 
 
 def _load(name, directory=SCRIPTS):
@@ -316,11 +316,11 @@ def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_o
     found = {(str(path.relative_to(ROOT)), _enclosing_function(path, lineno), kind)
              for path, lineno, kind, _line in hits}
     assert found == {
-        ("skills/agrim-loop/scripts/work.py", "finish", "branch_dD"),
-        ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "rest_delete_ref"),
-        ("skills/agrim-define/scripts/define.py", "_step_branch", "colon_refspec"),
-        ("skills/agrim-loop/scripts/feature_rebase.py", "_pushed", "colon_refspec"),
-        ("skills/agrim-loop/scripts/release_manifest.py", "publish_to_ledger_branch", "colon_refspec"),
+        ("skills/sigma-loop/scripts/work.py", "finish", "branch_dD"),
+        ("skills/sigma-loop/scripts/work.py", "_delete_remote_branch", "rest_delete_ref"),
+        ("skills/sigma-define/scripts/define.py", "_step_branch", "colon_refspec"),
+        ("skills/sigma-loop/scripts/feature_rebase.py", "_pushed", "colon_refspec"),
+        ("skills/sigma-loop/scripts/release_manifest.py", "publish_to_ledger_branch", "colon_refspec"),
     }, found
 
 

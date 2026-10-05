@@ -1,12 +1,12 @@
 """A feature nobody can find is a feature that doesn't ship.
 
-`/agrim-init` scaffolds `.sdlc/config.json` from a template, and that file is where an adopter looks
+`/sigma-init` scaffolds `.sdlc/config.json` from a template, and that file is where an adopter looks
 to learn what this kit can do — before the README, before any skill. So a knob the CODE reads must
 appear there. When it doesn't, the feature is real, tested, documented in its skill, and invisible:
 the user has to already know it exists to go looking.
 
-That is how `gates.decision_gate` shipped — enforced by a hook, reported by /agrim-doctor, described
-in /agrim-decide, and absent from the one file every adopter opens.
+That is how `gates.decision_gate` shipped — enforced by a hook, reported by /sigma-doctor, described
+in /sigma-decide, and absent from the one file every adopter opens.
 
 This is the same bug family as `lane: auto` (scaffolded, nothing read it) and the plan file
 (`hard_plan_gate` gated on a path the Plan phase was never told to write). The halves are built by
@@ -14,7 +14,7 @@ different changes at different times and nothing checks they meet."""
 import pathlib, re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TMPL = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
+TMPL = (ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
 
 #: Every `.py` under skills/ + hooks/ that could read config. Widened deliberately: the point is to
 #: catch a knob added anywhere, including in a script nobody thought of as config-reading.
@@ -53,7 +53,7 @@ def test_a_gate_with_no_enabled_flag_says_how_it_is_actually_turned_on():
     assert "_decision_gate" in TMPL
     section = TMPL.split("_decision_gate")[1][:1200]
     assert "decisions.json" in section                 # what to author
-    assert "/agrim-decide" in section                   # the skill that authors it
+    assert "/sigma-decide" in section                   # the skill that authors it
     assert "AUTHORING" in section or "authoring" in section
 
 
@@ -95,7 +95,7 @@ def _generated_board_title():
     pin would drift the same way the prose did."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "sources", ROOT / "skills" / "agrim-loop" / "scripts" / "sources.py")
+        "sources", ROOT / "skills" / "sigma-loop" / "scripts" / "sources.py")
     sources = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sources)
     src = sources.GitHubSource.__new__(sources.GitHubSource)
@@ -126,7 +126,7 @@ def test_the_scaffolded_config_documents_the_title_the_code_generates():
 # side's left to document. A
 # discoverability test for a block that is deliberately absent cannot be made to say anything true.
 #
-# THE RESIDUE, NAMED RATHER THAN ASSUMED AWAY: a fresh `/agrim-init` now scaffolds no place to turn
+# THE RESIDUE, NAMED RATHER THAN ASSUMED AWAY: a fresh `/sigma-init` now scaffolds no place to turn
 # emit on, and no place to declare that project id. A home for both exists in the private
 # package's own README, but `doctor.py` still reported those rows from a block nothing scaffolds --
 # S1-G8 (#2575) reconciles that, and this test is not the thing to keep alive in the meantime.
@@ -145,7 +145,7 @@ def test_no_shipped_prose_renders_the_board_title_with_an_ascii_hyphen():
     Pinned across the surfaces that document it so a future edit cannot reintroduce it in a corner
     this test does not watch. Enumerates EVERY occurrence, not the first per file — the fourth site
     sat one line below the third, and a first-match-only scan called that file clean."""
-    surfaces = ([ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl",
+    surfaces = ([ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl",
                  ROOT / "README.md"]
                 + sorted(ROOT.glob("skills/*/scripts/*.py"))
                 + sorted(ROOT.glob("tests/*.py")))

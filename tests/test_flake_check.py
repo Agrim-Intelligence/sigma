@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/flake_check.py (issue #1933).
+"""Tests for skills/sigma-loop/scripts/flake_check.py (issue #1933).
 
 The three controls the issue names are here, and the ORDER-DEPENDENCE one is the load-bearing one:
 it proves the design choice (varied ordering) rather than the feature, because a naive 3x-same-order
@@ -7,7 +7,7 @@ loop agrees three times and credits a broken test.
 import importlib.util
 import pathlib
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _fc():

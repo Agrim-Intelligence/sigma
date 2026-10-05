@@ -108,7 +108,7 @@ separate verification. In SHELL files specifically (`shell=True`), a `#` starts 
 the start of a line or when preceded by whitespace -- code-review finding: the earlier "any
 unquoted #" rule silently swallowed `kill -STOP` on a line like `[ $# -gt 0 ] && kill -STOP $pid` or
 `${#pids[@]}`, both real shapes already used elsewhere in this repo's own `.sh` files
-(`skills/agrim-align/scripts/alignment-collect.sh`, `skills/agrim-audit/scripts/audit-collect.sh`),
+(`skills/sigma-align/scripts/alignment-collect.sh`, `skills/sigma-audit/scripts/audit-collect.sh`),
 and exactly the one-liner shape an ad hoc script takes.
 `test_shell_comment_after_dollar_hash_is_not_swallowed` and
 `test_shell_comment_after_brace_hash_is_not_swallowed` below pin both real shapes as still FLAGGED;
@@ -423,7 +423,7 @@ def _python_scannable_lines(text):
     exactly (verified against CPython's tokenizer, not assumed), so both this function's `lines`
     and `_violations`'s own `raw_lines` MUST use `split("\\n")`, never `splitlines()` -- moving one
     without the other reintroduces the misalignment. Proven live, not just theoretical:
-    `skills/agrim-loop/scripts/feature_doc.py:242` already carries a literal U+2028 character (inside
+    `skills/sigma-loop/scripts/feature_doc.py:242` already carries a literal U+2028 character (inside
     a comment that, unrelated to this issue, itself warns about this exact character class);
     `test_a_line_separator_character_does_not_desync_row_indexing` below pins the fix with a
     minimal repro of the same shape.
@@ -700,7 +700,7 @@ def test_a_line_separator_character_does_not_desync_row_indexing(tmp_path):
     the per-line character array `_blank_span` mutates made every `(row, col)` `tokenize` reports
     AFTER a U+2028 land on the WRONG row (an off-by-one that grows with every such character),
     silently blanking real code on an earlier, unrelated line instead of the intended docstring
-    span -- proven live against `skills/agrim-loop/scripts/feature_doc.py:242`, which already
+    span -- proven live against `skills/sigma-loop/scripts/feature_doc.py:242`, which already
     contains one. This fixture reproduces the same shape minimally: a real docstring boundary AFTER
     a U+2028, with a genuine violation on the line right after the docstring closes -- that
     violation must still be caught, not silently swallowed by a misaligned blank span landing on it

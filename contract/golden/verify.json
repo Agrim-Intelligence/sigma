@@ -13,10 +13,10 @@
     "files": {
       "tests/test_no_network_in_core.py": "f3a0af91162a2b4a641afc0747d53657757fe9fd725e8e2d96b0d013986670f47",
       "tests/test_no_private_names.py": "fd65038e9295735719b1aaa4e1d86f0a807659d53dc52a1c7b8a9b07eb6cc8636",
-      "skills/agrim-doctor/scripts/doctor.py": "f4ddb99c200d3c52b16353314a63b666cac8a6bf70e59b6ea9ff553493ac62948",
+      "skills/sigma-doctor/scripts/doctor.py": "f4ddb99c200d3c52b16353314a63b666cac8a6bf70e59b6ea9ff553493ac62948",
       "tests/boundary_baselines/cross_boundary_paths.json": "fb8364cd74445140b76c318815457100ad0dbd3d3689948f8cbc4d0b03692460a",
       "tests/boundary_baselines/network_modules.json": "f33ef5ac3072c18c09f06bc30b59a664d22cda4b03e0c7353739fb9b080dec2d7",
-      "skills/agrim-loop/scripts/ledger.py": "f9b2a6e4c08334e1922da4152c0f5bb5baf758999fd9a35b106f0435107c0c555",
+      "skills/sigma-loop/scripts/ledger.py": "f9b2a6e4c08334e1922da4152c0f5bb5baf758999fd9a35b106f0435107c0c555",
       "tests/boundary_baselines/private_names.json": "f525304789240eb4dd90d40a3c263a758b2f9cc0dbfecc7f070cfe23c06c288f4",
       "tests/test_no_cross_boundary_paths.py": "f762d4fea46f1aa3da97cb46ff0d4d99b892eaeb2b787334c9f627b0601af52b9"
     },

@@ -2,7 +2,7 @@
 
 Part of B6 #419. Covers `.sdlc/state/log/<goal>.jsonl` (action log) and
 `.sdlc/state/witness/<goal>.jsonl` (witness stream). Decision: **bounded pruner added**
-(`skills/agrim-loop/scripts/retention.py`), with named ceilings below.
+(`skills/sigma-loop/scripts/retention.py`), with named ceilings below.
 
 ## Measured
 
@@ -30,9 +30,9 @@ PY
 Linear extrapolation of the byte totals (a calculation, not a measurement): 10x is about 2 MB log and
 6.4 MB witness; 100x is about 20.7 MB log and 64 MB witness. Disk is not the ceiling.
 
-**The ceiling is the reader.** `agrim-log slots` reads every goal file on each call. Measured by
+**The ceiling is the reader.** `sigma-log slots` reads every goal file on each call. Measured by
 copying the 85 real log files 100 times into a scratch `.sdlc` (8,500 files, 20.7 MB) and running
-`python3 skills/agrim-log/scripts/log.py slots <scratch>/.sdlc`: 0.06 s at 85 files, 0.68 s at 8,500
+`python3 skills/sigma-log/scripts/log.py slots <scratch>/.sdlc`: 0.06 s at 85 files, 0.68 s at 8,500
 (one run each, one machine). Pruning closed goals is what bounds that.
 
 Sweep cost, measured with `loop.py prune-state <scratch>/.sdlc --dry-run` on the same 8,500-file
@@ -82,7 +82,7 @@ the pruned files is needed to start it again, because a fresh cut resolves its b
 - Bound: at most 200 goals REMOVED per sweep, oldest first. This bounds deletions, not work: every
   past-window goal that stays (parked, failed, never closed) is stat'ed and tail-read again on each sweep.
 - Triggers, both Sigma Python, host-agnostic: `loop.py record <goal> done` sweeps; the lever is
-  `python3 skills/agrim-loop/scripts/loop.py prune-state .sdlc [--dry-run] [--keep-days N] [--limit N]`.
+  `python3 skills/sigma-loop/scripts/loop.py prune-state .sdlc [--dry-run] [--keep-days N] [--limit N]`.
   Run `--dry-run` first to see what would go.
 - Markers are staleness-checked, not presence-checked, because `.claimed` is never removed and an agent
   marker survives a crashed goal; the cost is that a marker touched inside the window defers a prune.

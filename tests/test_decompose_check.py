@@ -15,7 +15,7 @@ import pytest
 from skill_corpus import skill_corpus
 from journal_events import journal_events
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -1188,7 +1188,7 @@ def test_goal_decompose_key_is_discoverable_in_the_scaffolded_config():
     own framing) — but that file's `_GATE_READ` regex is scoped to `gates.*` sub-keys and will not
     catch a top-level key like `goal_decompose`, so this is a focused, standalone pin instead of an
     extension of that file."""
-    tmpl_path = ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl"
+    tmpl_path = ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl"
     tmpl = tmpl_path.read_text(encoding="utf-8")
     cfg = json.loads(tmpl)          # also proves the template is still valid JSON with the new key
     assert cfg.get("goal_decompose") == {"enabled": False, "mode": "log", "max_children": 8}
@@ -1205,7 +1205,7 @@ def test_scaffolded_default_config_is_off_end_to_end(tmp_path):
     """Feature invisible unless enabled; zero behavior change with default config — proven against
     the REAL shipped template, not a hand-written stand-in."""
     lp = _mod("loop")
-    tmpl_path = ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl"
+    tmpl_path = ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl"
     tmpl_cfg = json.loads(tmpl_path.read_text(encoding="utf-8"))
     base = _sdlc(tmp_path, {"goal_decompose": tmpl_cfg["goal_decompose"]})
     cfg = json.loads((pathlib.Path(base) / "config.json").read_text())
@@ -1225,5 +1225,5 @@ def test_readme_goal_decompose_row_documents_file_mode_and_drops_the_stale_provi
 
 
 def test_skill_documents_file_mode_files_a_meta_issue():
-    skill = skill_corpus("agrim-loop")   # #1611: SKILL.md + references/*.md
+    skill = skill_corpus("sigma-loop")   # #1611: SKILL.md + references/*.md
     assert "Decompose #" in skill or "meta-issue" in skill.lower()

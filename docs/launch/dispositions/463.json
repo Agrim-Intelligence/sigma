@@ -17,21 +17,21 @@
     "pattern": ".sdlc/design/",
     "issue": "#463",
     "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
-    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "pruner_or_cap": "none by decision: written by a model following sigma-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
     "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
   },
   {
     "pattern": ".sdlc/design/<n>-in-brief.md",
     "issue": "#463",
     "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
-    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "pruner_or_cap": "none by decision: written by a model following sigma-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
     "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
   },
   {
     "pattern": ".sdlc/design/<n>.md",
     "issue": "#463",
     "decision": "intentionally unbounded (design record, two files per design goal, committed in the design PR)",
-    "pruner_or_cap": "none by decision: written by a model following agrim-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
+    "pruner_or_cap": "none by decision: written by a model following sigma-goal-design prose and committed with the design PR, so it is project history that a gate (goal-review) and later readers look up by goal number; none exist on the measured checkout and none are tracked here, so nothing was measured and no ceiling is enforced; owner the project maintainers; reclaim is a reviewed git commit by a human",
     "evidence": "docs/launch/b6-knowledge-and-records.md (design); tests/test_b6_463.py (test_ignore_split, test_decisions)"
   },
   {
@@ -109,28 +109,28 @@
     "pattern": ".sdlc/knowledge",
     "issue": "#463",
     "decision": "intentionally unbounded (parent of the local knowledge corpus; each store under it has its own row)",
-    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /agrim-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
+    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /sigma-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
     "evidence": "docs/launch/b6-knowledge-and-records.md (knowledge corpus); tests/test_b6_463.py (test_doc_constants, test_decisions)"
   },
   {
     "pattern": ".sdlc/knowledge/",
     "issue": "#463",
     "decision": "intentionally unbounded (parent of the local knowledge corpus; each store under it has its own row)",
-    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /agrim-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
+    "pruner_or_cap": "none by decision at the directory level: the corpus exists only when knowledge_graph.enabled is true (default false), is gitignored by /sigma-setup, and `kg.py maintain` reports it over a 200-document threshold without deleting anything; the children are decided in their own rows (web captures bounded, the rest unbounded by decision); owner the operator; reclaim is the operator running the archive commands `kg.py maintain` prints",
     "evidence": "docs/launch/b6-knowledge-and-records.md (knowledge corpus); tests/test_b6_463.py (test_doc_constants, test_decisions)"
   },
   {
     "pattern": ".sdlc/knowledge/align/",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {
     "pattern": ".sdlc/knowledge/align/<UTC-date>.md",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {
@@ -214,7 +214,7 @@
     "pattern": ".sdlc/knowledge/audit/<UTC-date>.md",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {
@@ -228,21 +228,21 @@
     "pattern": ".sdlc/knowledge/radar",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {
     "pattern": ".sdlc/knowledge/radar/",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {
     "pattern": ".sdlc/knowledge/radar/<UTC-date>.md",
     "issue": "#463",
     "decision": "intentionally unbounded (local report digest, one file per run, gitignored)",
-    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /agrim-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
+    "pruner_or_cap": "none by decision: one file per align, audit or radar run (an audit has at most 12 findings), written by a model following prose, gitignored by /sigma-setup so it stays on the machine; sizes not measurable by code and none exist here; owner the operator; reclaim is deleting old dated files by hand",
     "evidence": "docs/launch/b6-knowledge-and-records.md (report digests); tests/test_b6_463.py (test_ignore_split, test_no_other_pruner)"
   },
   {

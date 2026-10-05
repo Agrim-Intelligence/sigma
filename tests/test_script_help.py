@@ -203,8 +203,8 @@ def test_shell_scripts_have_a_help_handler():
 
 
 def test_loop_usage_names_precheck():
-    """`loop.py precheck <dir> <goal>` is prescribed by agrim-loop/SKILL.md; its usage must
+    """`loop.py precheck <dir> <goal>` is prescribed by sigma-loop/SKILL.md; its usage must
     name it."""
-    result = _run(ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py", "--help", "bare")
+    result = _run(ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py", "--help", "bare")
     assert not _is_failure(result), _describe(result)
     assert "precheck <dir> <goal>" in result[4], result[4]

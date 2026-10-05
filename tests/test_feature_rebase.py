@@ -43,7 +43,7 @@ import types
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 P = SCRIPTS / "feature_rebase.py"
 
 
@@ -1818,7 +1818,7 @@ def test_144_a_comparison_that_cannot_be_made_pushes_nothing(tmp_path):
 
 def _doctor():
     spec = importlib.util.spec_from_file_location(
-        "doctor", ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(d)
     return d
@@ -1826,7 +1826,7 @@ def _doctor():
 
 def test_144_the_doctor_shows_a_blocked_upkeep_and_stops_showing_it_once_cleared(tmp_path):
     """LIVENESS: a refusal repeated on every pick must also be visible between picks, where a person
-    runs `/agrim-doctor` -- both on the capability dashboard and as a failing setup check."""
+    runs `/sigma-doctor` -- both on the capability dashboard and as a failing setup check."""
     m = _mod()
     d = _doctor()
     world, _x1 = _revert_world(tmp_path)

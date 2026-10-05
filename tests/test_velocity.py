@@ -2,7 +2,7 @@
 band. Git-only; the git runner is injectable so these tests are hermetic (no real git, no dates)."""
 import pathlib, importlib.util
 
-V = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-velocity" / "scripts" / "velocity.py"
+V = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-velocity" / "scripts" / "velocity.py"
 
 
 def _v():

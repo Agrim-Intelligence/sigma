@@ -18,7 +18,7 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 _spec = importlib.util.spec_from_file_location("slack_commands_listen", S / "slack_commands_listen.py")
 sc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sc)

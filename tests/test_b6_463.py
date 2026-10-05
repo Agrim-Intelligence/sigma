@@ -32,14 +32,14 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 FILE = ROOT / "docs" / "launch" / "dispositions" / "463.json"
 DOC = ROOT / "docs" / "launch" / "growth-audit.md"
 RECORDS_DOC = ROOT / "docs" / "launch" / "b6-knowledge-and-records.md"
 
 #: The 45 patterns the scan produces today for this family.  The issue listed 47 from an older snapshot:
 #: `.sdlc/design/2289.md` is no longer produced (an example the prose stopped naming) and
-#: `.sdlc/evidence/<goal>/` is no longer produced (the prose in `skills/agrim-init/references/board.md`
+#: `.sdlc/evidence/<goal>/` is no longer produced (the prose in `skills/sigma-init/references/board.md`
 #: that named it was reworded), so the second is covered as an `unscanned` row and the first dropped.
 SCANNED = [
     ".sdlc/context/north-star.md", ".sdlc/decisions.json", ".sdlc/design/", ".sdlc/design/<n>-in-brief.md",
@@ -166,12 +166,12 @@ def test_evidence_waiver():
 
 
 def test_ignore_split():
-    """Tracked or not, from `.gitignore` here and from `/agrim-setup` for an adopter."""
+    """Tracked or not, from `.gitignore` here and from `/sigma-setup` for an adopter."""
     for path in IGNORED_HERE:
         assert _git(ROOT, "check-ignore", "-q", path).returncode == 0, path
     for path in (".sdlc/design/1.md", ".sdlc/design/1-in-brief.md", ".sdlc/plans/1.md"):
         assert _git(ROOT, "check-ignore", "-q", path).returncode == 1, path
-    setup = _load("setup_b6_463", ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py")
+    setup = _load("setup_b6_463", ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py")
     ignores = set(setup.RUNTIME_IGNORES)
     assert ".sdlc/knowledge/" in ignores
     for directory in ("context", "decisions.json", "design", "evidence", "features", "goals", "journey",
@@ -350,7 +350,7 @@ def _big_disk(monkeypatch, kg, total=10 ** 12):
 def test_web_retention(tmp_path, monkeypatch):
     """Old captures are archived (same name, bytes intact), none is deleted, a second pass moves
     nothing, a file already in the archive is never touched, and nothing moves while retention is off."""
-    kg = _load("kg_b6_463", ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py")
+    kg = _load("kg_b6_463", ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py")
     _big_disk(monkeypatch, kg)
     base = _sdlc(tmp_path, {"knowledge_graph": {"enabled": True}})
     web = pathlib.Path(base) / "knowledge" / "research" / "web"
@@ -389,7 +389,7 @@ def test_web_capture_size():
 # --- writers that dedup or overwrite: a repeat adds nothing -----------------------------------------
 
 def test_dedup_gaps(tmp_path):
-    kg = _load("kg_gaps_b6_463", ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py")
+    kg = _load("kg_gaps_b6_463", ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py")
     base = _sdlc(tmp_path)
     assert kg.gap_log(base, "how does the retention pass work?") is True
     size = (pathlib.Path(base) / "knowledge" / "gaps.md").stat().st_size
@@ -399,7 +399,7 @@ def test_dedup_gaps(tmp_path):
 
 
 def test_dedup_radar(tmp_path):
-    radar = _load("radar_b6_463", ROOT / "skills" / "agrim-radar" / "scripts" / "radar.py")
+    radar = _load("radar_b6_463", ROOT / "skills" / "sigma-radar" / "scripts" / "radar.py")
     base = _sdlc(tmp_path)
     assert radar.record(base, "issue-1:topic") is True
     path = pathlib.Path(base) / "knowledge" / "radar" / "ledger.md"
@@ -422,7 +422,7 @@ def test_dedup_proposals(tmp_path):
 
 
 def test_note_overwrite(tmp_path):
-    kg = _load("kg_note_b6_463", ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py")
+    kg = _load("kg_note_b6_463", ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py")
     base = _sdlc(tmp_path, {"knowledge_graph": {"enabled": True}})
     assert kg.write_note(base, "issue-0463", "first") is True
     assert kg.write_note(base, "issue-0463", "second") is True
@@ -481,16 +481,16 @@ def test_no_other_pruner():
                                 named.add(family)
                 if deletes and named:
                     hits.add((path.relative_to(ROOT).as_posix(), node.name))
-    assert ("skills/agrim-loop/scripts/work.py", "prune_terminal_review_copies") in hits   # non-vacuity
-    assert hits == {("skills/agrim-loop/scripts/work.py", "prune_terminal_review_copies"),
-                    ("skills/agrim-loop/scripts/coexist.py", "backup_features")}
+    assert ("skills/sigma-loop/scripts/work.py", "prune_terminal_review_copies") in hits   # non-vacuity
+    assert hits == {("skills/sigma-loop/scripts/work.py", "prune_terminal_review_copies"),
+                    ("skills/sigma-loop/scripts/coexist.py", "backup_features")}
 
 
 # --- the doc and the audit gesture ------------------------------------------------------------------
 
 def test_doc_constants():
     """The doc states the constants the claims lean on, so a change to one of them is a reviewed edit."""
-    kg = _load("kg_const_b6_463", ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py")
+    kg = _load("kg_const_b6_463", ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py")
     hook = _load("rc_const_b6_463", ROOT / "hooks" / "research_capture.py")
     text = _doc()
     assert kg._WEB_RETENTION_DAYS == 90 and "90 days" in text

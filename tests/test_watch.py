@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -2348,7 +2348,7 @@ def test_a_failing_tick_logs_its_exception_class_only_and_never_a_sub_script_pat
     def _explode(*a, **kw):
         # ONE argument: OSError(2, ...) auto-subclasses to FileNotFoundError, which would
         # test a different class name than the one the plan names.
-        raise OSError("[Errno 2] /x/skills/agrim-loop/scripts/drift_tick.py: exploded")
+        raise OSError("[Errno 2] /x/skills/sigma-loop/scripts/drift_tick.py: exploded")
 
     monkeypatch.setattr(wd, "run_call", _explode)
     wd.tick(p, str(d), "120", 1)          # returns normally: the tick is absorbed (B-1/B-36)

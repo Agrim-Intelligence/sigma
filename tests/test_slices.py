@@ -5,7 +5,7 @@ import pathlib
 import pytest
 from journal_events import journal_events
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -409,7 +409,7 @@ def test_codex_model_resolution_uses_the_sibling_cli_not_a_python_import(monkeyp
         "model": "gpt-5.6-terra", "effort": "medium"}
     argv, kwargs = calls[0]
     assert argv[0] == slices.sys.executable
-    assert argv[1].endswith("agrim-model/scripts/predict.py")
+    assert argv[1].endswith("sigma-model/scripts/predict.py")
     assert argv[2:5] == ["host-model", "codex", "sonnet"]
     assert kwargs["timeout"] == 15 and kwargs["capture_output"] is True
     source = (S / "slices.py").read_text()
@@ -440,7 +440,7 @@ def test_codex_model_resolution_refuses_an_unknown_model_from_the_cli(monkeypatc
 
 
 def test_codex_model_resolution_has_the_exact_approved_model_catalog():
-    """A catalog edit must be intentional and paired with an agrim-model resolver change."""
+    """A catalog edit must be intentional and paired with an sigma-model resolver change."""
     assert slices._CODEX_MODELS == {
         "gpt-5.5",
         "gpt-5.6-luna",
@@ -776,7 +776,7 @@ def test_flags_drops_a_whitespace_bearing_key_in_the_eq_form_too():
 
 
 def test_config_template_ships_the_flag_off():
-    tmpl = json.loads((pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init"
+    tmpl = json.loads((pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init"
                        / "templates" / "config.json.tmpl").read_text())
     assert tmpl["parallel"]["enabled"] is False
     assert tmpl["parallel"]["max_concurrent"] == 3
@@ -790,7 +790,7 @@ def test_config_template_ships_the_flag_off():
 def _doctor():
     """doctor lives in another skill's scripts dir, so it needs its own loader."""
     spec = importlib.util.spec_from_file_location(
-        "doctor", pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor"
+        "doctor", pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor"
         / "scripts" / "doctor.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
@@ -810,7 +810,7 @@ def test_doctor_reports_the_flag(tmp_path):
 
 
 def test_loop_skill_documents_the_dispatch_rules():
-    text = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop"
+    text = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop"
             / "SKILL.md").read_text()
     assert "slices.py" in text and "isolation: worktree" in text
     assert "claude --worktree" in text and "claude -p" in text

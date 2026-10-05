@@ -50,7 +50,7 @@ miss the general one while advertising coverage it doesn't have. The literal cas
 likely form of accidental coupling — nobody reaches for `importlib.import_module` by accident when
 a plain `import` already does the job and IS caught here. Staying scoped to
 `ast.Import`/`ast.ImportFrom` also keeps this checker structurally clear of
-skills/agrim-loop/scripts/*.py's legitimate, unrelated `importlib.util.spec_from_file_location(name,
+skills/sigma-loop/scripts/*.py's legitimate, unrelated `importlib.util.spec_from_file_location(name,
 path)` calls, used to load SIBLING scripts by file path rather than by package name (discovery.py,
 handoff.py, loop.py, sources.py, state.py, sync.py, watch.py, work.py all do this today) — that
 call produces no Import/ImportFrom node at all, so it is never a special case this guard has to
@@ -117,9 +117,9 @@ was a one-file one.
 
 A further residue specific to this checker: `importlib.util.spec_from_file_location` (see DYNAMIC
 IMPORTS above) is out of scope everywhere, including ACROSS the plugin/product boundary itself. That
-paragraph credits the call as legitimate sibling-loading inside skills/agrim-loop/scripts/ — true
+paragraph credits the call as legitimate sibling-loading inside skills/sigma-loop/scripts/ — true
 there — but a future private-side ingest module could use the identical call to load, say,
-skills/agrim-loop/scripts/frontmatter.py by file path, and this guard would not flag it: the call
+skills/sigma-loop/scripts/frontmatter.py by file path, and this guard would not flag it: the call
 produces no Import/ImportFrom node regardless of which side of the boundary its target file sits on.
 That IS the code coupling spec §1.1 rule 1 forbids. This guard does not attempt to detect it.
 
@@ -332,7 +332,7 @@ def test_does_not_flag_a_module_whose_name_merely_starts_with_the_banned_name(tm
 
 
 def test_ignores_the_spec_from_file_location_sibling_loading_pattern(tmp_path):
-    """skills/agrim-loop/scripts/*.py load sibling scripts via
+    """skills/sigma-loop/scripts/*.py load sibling scripts via
     importlib.util.spec_from_file_location(name, path) — a runtime call, not an import statement —
     specifically to share code without a package import. This plants the real pattern (see e.g.
     discovery.py) rather than only trusting a read of the real files; the real tree is checked

@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parents[1] / 'skills/agrim-loop/scripts'
+S = pathlib.Path(__file__).resolve().parents[1] / 'skills/sigma-loop/scripts'
 NODE = 'tests/test_x.py::test_a'
 OTHER = 'tests/test_x.py::test_b'
 

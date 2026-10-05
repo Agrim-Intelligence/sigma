@@ -278,7 +278,7 @@ failure costs nothing public. Each step is the owner's, and none runs in a loop.
 7. In an initialised scratch repository, run the doctor from the INSTALLED copy:
 
    ```sh
-   python3 skills/agrim-doctor/scripts/doctor.py check .sdlc
+   python3 skills/sigma-doctor/scripts/doctor.py check .sdlc
    ```
 
 The evidence lands as `docs/launch/evidence/rehearsal-<commit12>.md` in a later pull request of the

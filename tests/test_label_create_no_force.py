@@ -7,20 +7,20 @@ the four sites passed `--description`, so the flag's only effect on an existing 
 repaint — it bought nothing and cost an adopter their board.
 
 MEASURED, on a live board (a throwaway board) rather than argued: `priority:P1`
-was created `#d93f0b` and `priority:P2` `#fbca04`, one `/agrim-scope` plan was filed, and both came
+was created `#d93f0b` and `priority:P2` `#fbca04`, one `/sigma-scope` plan was filed, and both came
 back `#d4c5f9`. `priority:P0` and `priority:P3` survived only because that plan happened not to
 name them. Nothing in the flow reports it; without a colour snapshot taken beforehand there is no
 way to notice.
 
 WHY A DEDICATED FILE. The defect is one property held at four sites in three different skills
-(`agrim-loop`'s `sources.py` and `triage.py`, and `agrim-init`'s adopter-facing label template), and
+(`sigma-loop`'s `sources.py` and `triage.py`, and `sigma-init`'s adopter-facing label template), and
 it recurs by someone reaching for the obvious flag at a fifth. Split across `test_sources.py` and
 `test_triage.py` the property is invisible; here the behavioural proof and the structural guard that
 stops the next site sit next to each other.
 
 THE FAKE MODELS `gh`, NOT THE FIX. `_LabelStore.run` reproduces the real CLI's semantics from both
 sides — an existing name without `--force` FAILS (`gh`'s own message, pinned verbatim in
-`skills/agrim-define/scripts/define.py`'s docstring and `tests/test_define.py`), and with `--force`
+`skills/sigma-define/scripts/define.py`'s docstring and `tests/test_define.py`), and with `--force`
 the colour is overwritten. So these tests are red against the pre-fix tree for the RIGHT reason: the
 production code asked GitHub to repaint, and a fake that only recorded argv could never show that.
 All four behavioural tests were run against the unfixed tree and each failed on the colour
@@ -32,7 +32,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 import gqlfake
 
@@ -48,7 +48,7 @@ def _mod(name, path=None):
 # --------------------------------------------------------------------- a fake that behaves like gh
 
 
-#: `gh`'s own refusal, verbatim — the text `skills/agrim-define/scripts/define.py` already pins and
+#: `gh`'s own refusal, verbatim — the text `skills/sigma-define/scripts/define.py` already pins and
 #: `tests/test_define.py` already reproduces, so the two fakes in this repo cannot drift on what the
 #: real CLI does.
 _EXISTS = 'label with name "%s" already exists; use `--force` to update its color and description'
@@ -59,7 +59,7 @@ class _LabelStore(object):
 
     `label create <name> [--color C] [--force]`
       - name absent  -> created at C (or `?random?`, standing in for the colour `gh` invents when
-        `--color` is omitted — the shape `skills/agrim-init`'s template hands an adopter);
+        `--color` is omitted — the shape `skills/sigma-init`'s template hands an adopter);
       - name present, no `--force` -> RAISES, exactly as `gh` does;
       - name present, `--force`    -> colour OVERWRITTEN. This is the defect, and it must not happen.
 
@@ -212,7 +212,7 @@ def test_no_shipped_code_creates_a_label_with_force():
 
 
 def test_no_shipped_snippet_tells_an_adopter_to_create_a_label_with_force():
-    """The same rule for the blocks we hand people to RUN. `skills/agrim-init/github-templates/
+    """The same rule for the blocks we hand people to RUN. `skills/sigma-init/github-templates/
     LABELS.md.tmpl` shipped `for t in epic task bug feature chore; do gh label create "$t" --force;
     done` — and with no `--color` at all, so `gh` invents one: an adopter who already had `bug` and
     `feature` ran the kit's own onboarding snippet and got them repainted to arbitrary colours.

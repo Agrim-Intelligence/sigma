@@ -6,9 +6,9 @@ rules while the original examples and caveats remain available on demand.
 ## Before you run the loop: check the plugin version
 
 **If the installed Sigma plugin is older than 1.0.0, do not start the loop.** That floor is the
-one `AGENTS.md` states (the only statement `/agrim-doctor` parses), and it never sits above the
+one `AGENTS.md` states (the only statement `/sigma-doctor` parses), and it never sits above the
 version `.claude-plugin/plugin.json` ships. Mixed versions writing `sdlc:*` labels on one board is
-the configuration to avoid. Run `/agrim-doctor` first — it reports the installed version against
+the configuration to avoid. Run `/sigma-doctor` first — it reports the installed version against
 the marketplace's current one — and if it is below the floor, update with
 `claude plugin update sigma@sigma` (then restart the session) before picking any goal. Use the full
 `plugin@marketplace` id: older Claude Code releases failed the bare `claude plugin update sigma`
@@ -27,7 +27,7 @@ before writing any label by hand.** The short version:
   that ride alongside it. `sdlc:parked` and `sdlc:needs-confirmation` stand ALONE.
 - Anything waiting to be **picked** carries `sdlc:goal`; anything waiting for a **human** carries
   only its own label.
-- Prefer `/agrim-promote` and `/agrim-unpark` over editing labels directly — they perform the whole
+- Prefer `/sigma-promote` and `/sigma-unpark` over editing labels directly — they perform the whole
   transition atomically, which a two-step hand edit does not.
 
 ## The Dossier pipeline — where work comes from
@@ -39,8 +39,8 @@ decides nothing, so never cite it as the rule.
 
 `docs/dossier-pipeline.md` is the contract for the two ticket tiers **above** an ordinary goal —
 what a Dossier is, what a design pass must produce, what confirms it, and what that confirmation is
-allowed to write. **Read it before running `/agrim-dossier`, `/agrim-goal-design` or
-`/agrim-goal-review`, before hand-writing a `story` or `epic` ticket body, and before turning
+allowed to write. **Read it before running `/sigma-dossier`, `/sigma-goal-design` or
+`/sigma-goal-review`, before hand-writing a `story` or `epic` ticket body, and before turning
 `goal_design` on.** The short version:
 
 - **Three tiers, one direction.** A **Dossier** (`story`) holds business intent and is never
@@ -97,7 +97,7 @@ issue declares one, how a goal's base is resolved from it, and what `.sdlc/featu
   below the end marker.
 - **Unit attachment is not a manual convention to remember — with `discovery.no_dangling_goal.
   enabled: true`, Sigma itself attaches one, every time, whether or not the person filing the
-  issue ever ran `/agrim-define`.** This is deliberate: `/agrim-define`/`declare()` is the human path
+  issue ever ran `/sigma-define`.** This is deliberate: `/sigma-define`/`declare()` is the human path
   for *opening a brand-new* unit and self-declaring it up front; the no-dangling-goal machinery is
   the *safety net* underneath it, catching anything that reaches pick time or filing time with no
   declaration at all. Two DIFFERENT mechanisms cover two
@@ -147,7 +147,7 @@ at all. `docs/branching-model.md` §3 is what the rule buys and §15 is where it
 this section is the rule.
 
 **Part of it is enforced, and knowing which part is the point.** Rebase upkeep
-(`skills/agrim-loop/scripts/feature_rebase.py`) does not trust the rule — before it force-pushes
+(`skills/sigma-loop/scripts/feature_rebase.py`) does not trust the rule — before it force-pushes
 `feature/<name>` it walks that branch's own `--first-parent` line (`landed_commits`) and asks of
 every commit whether GitHub left a trace of the pull request that landed it: `(#N)` from a squash,
 `Merge pull request #N` from a merge (`arrived_through_a_pull_request`). One commit with no trace and
@@ -192,8 +192,8 @@ stopped, and it tells you nothing before you commit.
 All status reporting in this repo follows `docs/output-contract.md`.
 
 Read that file before your first status emission. A status block is constructed, never
-hand-written: pass facts to `skills/agrim-loop/scripts/render.py status|event|decision` and relay
-its stdout verbatim — `python3 skills/agrim-log/scripts/log.py slots .sdlc` is the live Block A,
+hand-written: pass facts to `skills/sigma-loop/scripts/render.py status|event|decision` and relay
+its stdout verbatim — `python3 skills/sigma-log/scripts/log.py slots .sdlc` is the live Block A,
 and `phase_report.py end` prints Block B at every phase boundary. A refusal (stderr, exit 2, empty
 stdout) means the facts were malformed: fix the facts and run it again; never patch the prose by
 hand. What stays yours is the facts — both axes on every slot line (colour marker + `P<n> NAME`

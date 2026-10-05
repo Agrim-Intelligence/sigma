@@ -1,7 +1,7 @@
 """Releasing a completed goal's checkout is CODE, not a sentence in a prompt.
 
 `work.finish()` has always done the right thing; nothing called it. Its only trigger was one line
-of prose in `skills/agrim-loop/SKILL.md` ("After a `done`, release the checkout"), mid-paragraph in
+of prose in `skills/sigma-loop/SKILL.md` ("After a `done`, release the checkout"), mid-paragraph in
 a block otherwise about `auto_merge` modes. So the cleanup ran only when the agent read that line,
 was still alive after `record done`, and chose to act -- and every turn that ended, crashed,
 compacted or was interrupted in between leaked a checkout permanently, because nothing ever looked
@@ -30,7 +30,7 @@ import json
 import pathlib
 import subprocess
 
-_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):

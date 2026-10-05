@@ -1,4 +1,4 @@
-"""Controls for `skills/agrim-loop/scripts/render.py` (#2111).
+"""Controls for `skills/sigma-loop/scripts/render.py` (#2111).
 
 The strongest tests in this file are the ones that RECONSTRUCT `docs/output-contract.md`'s own
 worked examples. §7 is titled "Worked example (the reference output)", so a renderer that claims to
@@ -27,7 +27,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 CONTRACT = ROOT / "docs" / "output-contract.md"
 
 

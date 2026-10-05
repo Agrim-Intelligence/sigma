@@ -654,7 +654,7 @@ def test_exposure_entries_under_an_excluded_prefix_are_moot(tmp_path, capsys):
 
 def test_doctor_slug_mismatch_rejects(tmp_path, capsys):
     mod = _tool()
-    doctor = {"skills/agrim-doctor/scripts/doctor.py": '_MARKETPLACE_REPO = "acme/demo"\n'}
+    doctor = {"skills/sigma-doctor/scripts/doctor.py": '_MARKETPLACE_REPO = "acme/demo"\n'}
     cases = (
         ("mismatch", dict(doctor, **{"docs/launch/definition.json": json.dumps({"public_repo": "acme/other"})}), 1),
         ("equal", dict(doctor, **{"docs/launch/definition.json": json.dumps({"public_repo": "acme/demo"})}), 0),

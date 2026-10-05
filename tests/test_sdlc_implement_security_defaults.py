@@ -1,10 +1,10 @@
-"""#1894: `skills/agrim-implement/SKILL.md` said nothing about this repo's own fail-closed /
+"""#1894: `skills/sigma-implement/SKILL.md` said nothing about this repo's own fail-closed /
 untrusted-input security defaults, and three real, security-relevant bugs (#1761, #1765, #1767 --
 PRs #1861, #1877, #1887) shipped past Implement, each caught only by an independent reviewer --
 Plan-Review before the code existed (#1767) or Review after it did (#1761, #1765) -- never by the
 implementer's own diff-time check. SKILL.md is the operational contract an implementer actually
 reads (the same convention `test_sdlc_loop_skill_merge_doc.py` and siblings already rely on for
-`agrim-loop`'s own SKILL.md) -- so pinning the anchors below is a real regression guard, not
+`sigma-loop`'s own SKILL.md) -- so pinning the anchors below is a real regression guard, not
 decoration: a future edit that quietly drops this section, or nests it back inside the
 superpowers-preferred branch where a Claude-Code+superpowers reader would never see it, fails one
 of these for a concrete, named reason.
@@ -15,7 +15,7 @@ for the real fix code these citations are grounded in (an auth gate's live passw
 metrics project filter, and an accounts-store migration step)."""
 import pathlib
 
-SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-implement" / "SKILL.md").read_text(
+SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-implement" / "SKILL.md").read_text(
     encoding="utf-8"
 )
 

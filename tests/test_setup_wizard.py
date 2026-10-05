@@ -4,7 +4,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
-                       / "skills" / "agrim-init" / "scripts"))
+                       / "skills" / "sigma-init" / "scripts"))
 import setup_wizard  # noqa: E402
 import pytest  # noqa: E402
 
@@ -43,13 +43,13 @@ def test_missing_sdlc_classifies_as_auto_fixable(monkeypatch, tmp_path):
     (tmp_path / ".sdlc").mkdir()
     (tmp_path / ".sdlc" / "config.json").write_text("{}")
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check([
-        {"name": "project layer", "ok": False, "fix": "run /agrim-init to scaffold .sdlc/"},
+        {"name": "project layer", "ok": False, "fix": "run /sigma-init to scaffold .sdlc/"},
     ]))
     status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"), allow_cache=False)
     assert status["needs_wizard"] is True
     assert status["steps"] == [{
         "name": "project layer",
-        "fix": "run /agrim-init to scaffold .sdlc/",
+        "fix": "run /sigma-init to scaffold .sdlc/",
         "mode": "auto_fixable",
         "degraded": "Without this, nothing in Sigma works at all -- no loop, no board, "
                     "no journal. Nothing runs until this exists.",
@@ -118,7 +118,7 @@ def test_an_unclassified_check_does_not_suppress_a_real_one(monkeypatch, tmp_pat
     """The allow-list filters, it does not short-circuit: a genuine setup gap listed alongside
     noise must still surface, with only the noise dropped."""
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check([
-        {"name": "team ledger initialized", "ok": False, "fix": "run /agrim-ledger"},
+        {"name": "team ledger initialized", "ok": False, "fix": "run /sigma-ledger"},
         {"name": "gh auth", "ok": False, "fix": "run: gh auth login"},
         {"name": "dependency markers: comments checked against body (3/12 open goal(s))",
          "ok": False, "fix": "re-file the dependency"},
@@ -142,7 +142,7 @@ def test_classify_still_falls_back_safely_when_called_directly(tmp_path):
 
 def test_north_star_filled_is_excluded_from_the_wizard_entirely(monkeypatch, tmp_path):
     """north-star completeness is a content/strategic-quality concern already owned by the
-    plan-review gate's own alignment axis and /agrim-align (both already treat an incomplete
+    plan-review gate's own alignment axis and /sigma-align (both already treat an incomplete
     north-star as a soft no-op, never a hard blocker) -- not a functional "nothing works" setup
     gap the way every check in _MODES is. It must never surface as a step and must never set
     needs_wizard, even when it is the ONLY failing check.
@@ -153,7 +153,7 @@ def test_north_star_filled_is_excluded_from_the_wizard_entirely(monkeypatch, tmp
     stay proven by a test, not merely implied by a table's contents."""
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check([
         {"name": "north-star filled", "ok": False,
-         "fix": "Vision tier has no section at all — run /agrim-vision to fill the tiers."},
+         "fix": "Vision tier has no section at all — run /sigma-vision to fill the tiers."},
     ]))
     assert "north-star filled" not in setup_wizard._MODES
     status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"))
@@ -241,7 +241,7 @@ def test_a_dirty_cache_never_suppresses_a_real_failure(monkeypatch, tmp_path):
 
 
 def test_allow_cache_false_always_forces_a_real_check(monkeypatch, tmp_path):
-    """The wizard's own in-conversation recheck-after-action step (skills/agrim-wizard/SKILL.md)
+    """The wizard's own in-conversation recheck-after-action step (skills/sigma-wizard/SKILL.md)
     must verify an action's effect LIVE, never against a cache that predates the action."""
     sdlc = tmp_path / ".sdlc"
     sdlc.mkdir()
@@ -304,7 +304,7 @@ def test_a_well_formed_cache_still_reads_back(tmp_path):
 
 def test_no_cache_is_written_into_a_repo_with_no_sdlc_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(setup_wizard, "_doctor_check", _fake_doctor_check(
-        [{"name": "project layer", "ok": False, "fix": "run /agrim-init to scaffold .sdlc/"}]))
+        [{"name": "project layer", "ok": False, "fix": "run /sigma-init to scaffold .sdlc/"}]))
     status = setup_wizard.wizard_status(str(tmp_path / ".sdlc"))
     assert status["needs_wizard"] is True                  # it still REPORTS, it just writes nothing
     assert list(tmp_path.iterdir()) == [], "the wizard created state in an unadopted repo"
@@ -338,7 +338,7 @@ def test_both_writers_still_work_once_the_repo_has_adopted(tmp_path):
 
 
 def test_verify_trap_is_a_first_run_wizard_step_against_the_real_doctor(tmp_path):
-    """#228: enforce ON + empty command refuses every `done`, and an older /agrim-init shipped it as
+    """#228: enforce ON + empty command refuses every `done`, and an older /sigma-init shipped it as
     the default -- a first-run gap, so the wizard raises it. Run against the REAL doctor.check (no
     fake), so a rename on either side of the name coupling turns this red."""
     sdlc = tmp_path / ".sdlc"
@@ -387,7 +387,7 @@ def test_236_adoption_is_config_json_and_no_other_owner(tmp_path):
 
 def test_236_an_interrupted_sigma_scaffold_still_nudges_init(monkeypatch, tmp_path):
     """Review of PR #286: `.sdlc/` that Sigma owns (state/owner.json, written by init BEFORE the
-    scaffold) but with no config.json is an interrupted `/agrim-init`: say so. Another plugin's, or
+    scaffold) but with no config.json is an interrupted `/sigma-init`: say so. Another plugin's, or
     an ownerless bare `.sdlc/`, stays silent (the tests above)."""
     monkeypatch.setattr(setup_wizard, "adopted_by_sigma", REAL_ADOPTED)
     monkeypatch.setattr(setup_wizard, "_doctor_check", lambda **kw: [])
@@ -398,7 +398,7 @@ def test_236_an_interrupted_sigma_scaffold_still_nudges_init(monkeypatch, tmp_pa
     status = setup_wizard.wizard_status(str(sdlc), allow_cache=False)
     assert status["needs_wizard"] is True
     assert [s["name"] for s in status["steps"]] == ["project layer"]
-    assert "/agrim-init" in status["steps"][0]["fix"] and status["steps"][0]["degraded"]
+    assert "/sigma-init" in status["steps"][0]["fix"] and status["steps"][0]["degraded"]
     (sdlc / "state" / "owner.json").write_text('{"schema": 1, "plugin": "another-plugin"}')
     assert setup_wizard.wizard_status(str(sdlc), allow_cache=False)["needs_wizard"] is False
 

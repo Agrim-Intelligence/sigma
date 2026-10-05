@@ -8,18 +8,18 @@ alwaysApply: true
 
 All status reporting in this repo follows `<sigma>/docs/output-contract.md`, and that document is
 the SPECIFICATION of a renderer, not prose to imitate. A status block is CONSTRUCTED by
-`<sigma>/skills/agrim-loop/scripts/render.py` from facts you pass it, and never written by hand.
+`<sigma>/skills/sigma-loop/scripts/render.py` from facts you pass it, and never written by hand.
 (`<sigma>` is your Sigma checkout; inside the Sigma repository itself it is `.`.)
 
 Three commands, run from Cursor's terminal:
 
-- `python3 <sigma>/skills/agrim-loop/scripts/render.py status|event|decision` -- the facts are one
+- `python3 <sigma>/skills/sigma-loop/scripts/render.py status|event|decision` -- the facts are one
   JSON object on stdin, or inline as `--json '<facts>'`. `status` builds Block A (STATUS), `event`
   Block B (EVENT), `decision` Block C (DECISION). Relay its stdout exactly as printed.
-- `python3 <sigma>/skills/agrim-log/scripts/log.py slots .sdlc` -- the live Block A: one two-line
+- `python3 <sigma>/skills/sigma-log/scripts/log.py slots .sdlc` -- the live Block A: one two-line
   slot per active goal, read from the action log and built by render.py. Relay it verbatim; do not
   reword it, re-order it, or add a slot. When it says the log is off or unknown, relay that too.
-- `python3 <sigma>/skills/agrim-loop/scripts/phase_report.py end .sdlc <goal> <phase> --pid "$PPID"` -- prints
+- `python3 <sigma>/skills/sigma-loop/scripts/phase_report.py end .sdlc <goal> <phase> --pid "$PPID"` -- prints
   Block B at a phase boundary, carrying that phase's measured cost or an honest "unavailable" line.
   Read it; do not restate its numbers or imitate its shape.
 

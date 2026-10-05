@@ -46,7 +46,7 @@ import importlib.util
 import pathlib
 import re
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "fixtures" / "goal_size"
 
 

@@ -24,22 +24,22 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text()
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 BRANCHING = (ROOT / "docs" / "branching-model.md").read_text(encoding="utf-8")
-#: #2107 moved `agrim-goal-design`'s whole step 5 ("Write the artifact" -- the schema, the copyable
+#: #2107 moved `sigma-goal-design`'s whole step 5 ("Write the artifact" -- the schema, the copyable
 #: skeleton, every field's rules) wholesale, verbatim, into this reference file. Several CROSS-FILE
 #: pins below compare that content against `docs/dossier-pipeline.md` and need the real thing, not
 #: the short pointer paragraph SKILL.md's own body now carries in its place.
-GOAL_DESIGN_ARTIFACT = (ROOT / "skills" / "agrim-goal-design" / "references" /
+GOAL_DESIGN_ARTIFACT = (ROOT / "skills" / "sigma-goal-design" / "references" /
                         "writing-the-artifact.md").read_text(encoding="utf-8")
 
 #: The module §15 now describes. Read here rather than imported: these tests are about whether the
 #: PROSE still matches the source, so the source is a text to be measured, not a dependency to be
 #: executed.
-PROPAGATE = (ROOT / "skills" / "agrim-loop" / "scripts" /
+PROPAGATE = (ROOT / "skills" / "sigma-loop" / "scripts" /
              "feature_propagate.py").read_text(encoding="utf-8")
 
 #: The contract wording, verbatim, as issue #1481 states it — and the ONE wording, everywhere. The
 #: same bytes appear in `AGENTS.md`, in `docs/branching-model.md` §3 (quoted, not restated), in
-#: `feature_rebase.py`'s module docstring, and in both files `/agrim-init` generates.
+#: `feature_rebase.py`'s module docstring, and in both files `/sigma-init` generates.
 #: `tests/test_sdlc_init.py::_RULE` is deliberately the same constant: paraphrases are how a
 #: cross-reference becomes false, which is what review caught on this very PR.
 RULE = "Nobody commits directly to a feature branch. All work reaches it through `sdlc/*` goal"
@@ -51,7 +51,7 @@ def test_documents_all_seven_phases():
 
 
 def test_distinguishes_shipped_plan_review_from_companions():
-    assert "agrim-plan-review" in README                      # the gate this kit ships
+    assert "sigma-plan-review" in README                      # the gate this kit ships
     assert "superpowers" in README and "code-review" in README  # the optional companions
 
 
@@ -71,7 +71,7 @@ def test_documents_optional_knowledge_graph():
 def test_documents_companions_as_optional_with_portable_fallback():
     assert "optional" in README.lower()                       # companions are not required
     assert "claude-plugins-official" in README                # where to get them if you want them
-    assert "portable" in README.lower()                       # the agrim-* executors that run without them
+    assert "portable" in README.lower()                       # the sigma-* executors that run without them
 
 
 def test_agent_instructions_state_the_no_direct_commits_rule():
@@ -124,7 +124,7 @@ def test_the_branching_model_no_longer_claims_nothing_enforces_the_rule():
 # --------------------------------------------------------------------------- #1483: the rollout
 #
 # #1481 put the rule where an agent working THIS repo reads it, and into the two files
-# `/agrim-init` generates. Neither reaches a repository that already has its own agent-instruction
+# `/sigma-init` generates. Neither reaches a repository that already has its own agent-instruction
 # file and never runs the scaffolder — which is every repository that adopts the branching model
 # after the fact. §14 now carries the block such a repository pastes, and the check that says
 # whether it did.
@@ -142,7 +142,7 @@ def test_the_branching_model_no_longer_claims_nothing_enforces_the_rule():
 #: naming the heading that IMMEDIATELY follows, or the slice quietly swallows the new subsection
 #: and every content assertion below becomes satisfiable from the wrong prose.
 _ROLLOUT_HEADING = "### Step 0, once per repository: put the rule where your agents read it"
-_NEXT_HEADING = "### Defining a unit — the three kinds, and `/agrim-define`"
+_NEXT_HEADING = "### Defining a unit — the three kinds, and `/sigma-define`"
 
 #: The needle the rollout tells a human to grep for — the rule's FIRST SENTENCE, not the whole
 #: rule. Measured, not chosen: of the five files that carry the sentence, four wrap it after
@@ -716,7 +716,7 @@ def test_the_completion_ruling_cites_the_section_that_actually_holds_it():
 # and `gh` call on the start path goes through one injected runner, which is what makes this cheap:
 # no git, no network, no fixture repository.
 
-_LOOP_SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+_LOOP_SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _loop_script(name):
@@ -873,7 +873,7 @@ def test_the_adoption_condition_is_still_the_one_in_the_code():
     """§6 names `work._declaration_moves_the_base` and §14 names the `is_dir()` test. The prose is
     true only while the predicate is a CONJUNCTION — relax it to `_reads_a_declaration` alone and
     every sentence added for #1633 is silently false again, in the permitting direction."""
-    work_src = (ROOT / "skills" / "agrim-loop" / "scripts" / "work.py").read_text(encoding="utf-8")
+    work_src = (ROOT / "skills" / "sigma-loop" / "scripts" / "work.py").read_text(encoding="utf-8")
     predicate = _function(work_src, "_declaration_moves_the_base")
     assert "return _reads_a_declaration(config, goal) and _adopted(sdlc_dir)" in predicate
     assert "return _feature_registry().registry_dir(sdlc_dir).is_dir()" in _function(work_src,
@@ -906,7 +906,7 @@ def test_section_14_gating_inventory_names_base_resolution_first():
 # NOT that set — it is missing `SHARD_UNREADABLE` and nothing reads it, which is how it went stale
 # unnoticed — so the kinds are read off the `_div(...)` call sites instead.
 
-FEATURE_SYNC = (ROOT / "skills" / "agrim-loop" / "scripts" /
+FEATURE_SYNC = (ROOT / "skills" / "sigma-loop" / "scripts" /
                 "feature_sync.py").read_text(encoding="utf-8")
 
 #: A divergence as this module raises one: `_div(<CONSTANT>, ...)`. The constant, not the string —
@@ -984,7 +984,7 @@ def test_the_wording_table_no_longer_claims_a_totality_nothing_enforces():
 # two modules answer the same question about the same input, and while they agree there is no
 # divergence for a paragraph to describe.
 
-PROMOTE = (ROOT / "skills" / "agrim-loop" / "scripts" / "promote.py").read_text(encoding="utf-8")
+PROMOTE = (ROOT / "skills" / "sigma-loop" / "scripts" / "promote.py").read_text(encoding="utf-8")
 
 
 def _adopted_registry_with_no_entry(tmp_path):
@@ -1004,7 +1004,7 @@ def _adopted_registry_with_no_entry(tmp_path):
 def test_the_pick_gate_and_the_promotion_agree_on_a_unit_with_no_local_entry(tmp_path):
     """The invariant `promote._feature_hold`'s prose rests on, driven on both sides.
 
-    `/agrim-promote` exists to refuse promotions the next pick would undo, so it must not hold what
+    `/sigma-promote` exists to refuse promotions the next pick would undo, so it must not hold what
     the gate proceeds on, and must not proceed on what the gate holds. While the #1568 arm existed
     they genuinely disagreed and the paragraph naming the divergence was correct; the withdrawal
     made them agree and left the paragraph behind."""
@@ -1058,7 +1058,7 @@ def test_the_gate_records_why_the_obvious_repair_was_tried_and_reverted():
 # `_pr_body` on the two bases, because "what a PR body says" is exactly the kind of claim that was
 # wrong for a whole release while four surfaces described it three ways.
 
-WORK = (ROOT / "skills" / "agrim-loop" / "scripts" / "work.py").read_text(encoding="utf-8")
+WORK = (ROOT / "skills" / "sigma-loop" / "scripts" / "work.py").read_text(encoding="utf-8")
 
 _PR_CONFIG = {"discovery": {"source": "github", "github": {"repo": "acme/app"}},
               "work": {"remote": "origin"}}
@@ -1112,7 +1112,7 @@ def test_section_13a_explains_why_the_close_is_what_releases_a_dependent():
     section = _section_13a()
     assert "Blocked by: #N" in section
     assert "re-reads" in section and "TTL" in section
-    loop = (ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
+    loop = (ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
     assert 'if holding and not cache["live"] and not cache.get("hold_refresh"):' in loop, (
         "the hold no longer forces a refresh before reporting (#1650), so §13a's 'on the very next "
         "pick' is false again")
@@ -1225,7 +1225,7 @@ def test_section_8c_still_names_the_one_thing_the_write_side_raises_on(tmp_path)
 # The contract described, at length, what a unit IS and what the loop does with one. It never said
 # how one comes into existence — the whole of that was §14's *Opening a unit*, four raw commands
 # under a heading, written for someone pasting them by hand because pasting them by hand was the
-# only way. `/agrim-define` makes it not the only way, for three kinds of unit, so §14 now leads with
+# only way. `/sigma-define` makes it not the only way, for three kinds of unit, so §14 now leads with
 # the flow and keeps the commands as what the flow runs.
 #
 # Four claims in the new subsection are falsifiable, and each is held against the thing that decides
@@ -1237,7 +1237,7 @@ def test_section_8c_still_names_the_one_thing_the_write_side_raises_on(tmp_path)
 #   * the three kinds and the scope flag      -> the skill's own text and the flag in the code,
 #                                                the moment either lands (see the two guards).
 
-_DEFINE_HEADING = "### Defining a unit — the three kinds, and `/agrim-define`"
+_DEFINE_HEADING = "### Defining a unit — the three kinds, and `/sigma-define`"
 
 #: §2's list of what a unit may BE. Copied into §14 to say the three kinds are not a rival to it,
 #: so the two copies are compared with whitespace normalised — §2's wraps mid-list.
@@ -1245,8 +1245,8 @@ _WHAT_A_UNIT_MAY_BE = "a feature, a shared bug, a refactor, a contract change"
 
 #: The skill, and the two entry points the `--feature` scope flag lands in. All three are other
 #: lanes' files: these tests read them, never write them.
-_DEFINE_SKILL = ROOT / "skills" / "agrim-define" / "SKILL.md"
-_SCOPED_ENTRYPOINTS = (_LOOP_SCRIPTS / "loop.py", ROOT / "skills" / "agrim-goal" / "SKILL.md")
+_DEFINE_SKILL = ROOT / "skills" / "sigma-define" / "SKILL.md"
+_SCOPED_ENTRYPOINTS = (_LOOP_SCRIPTS / "loop.py", ROOT / "skills" / "sigma-goal" / "SKILL.md")
 
 #: The exclusivity guarantee, in ONE wording. #1663 settled that the contract states it and the two
 #: entry points quote it rather than each writing their own, so this constant is the agreement:
@@ -1285,8 +1285,8 @@ def test_the_raw_gesture_no_longer_reads_as_the_normal_path():
     that runs them BEFORE the first of them, so the anchor `how-branching-works.md` links straight
     into does not land a reader in the middle of the fallback believing it is the route."""
     opening = _opening()
-    assert "/agrim-define" in opening
-    assert opening.index("/agrim-define") < opening.index("git push"), (
+    assert "/sigma-define" in opening
+    assert opening.index("/sigma-define") < opening.index("git push"), (
         "*Opening a unit* reaches its first command before it says what performs them")
 
 
@@ -1353,7 +1353,7 @@ def test_the_never_create_rule_is_cited_from_the_new_subsection_and_not_restated
 
 
 def test_the_boundary_the_new_subsection_draws_is_still_the_boundary_in_the_code():
-    """`/agrim-define` creating a label does not contradict §7, and the reason is that §7's refusal
+    """`/sigma-define` creating a label does not contradict §7, and the reason is that §7's refusal
     is scoped to the GitHub source's own runner. Executed on both arms, because the claim is about
     what that predicate answers — and a doc sentence about a predicate is exactly the kind of thing
     that stays on the page after the predicate stops agreeing with it."""
@@ -1365,7 +1365,7 @@ def test_the_boundary_the_new_subsection_draws_is_still_the_boundary_in_the_code
     runner = _function(
         (_LOOP_SCRIPTS / "sources.py").read_text(encoding="utf-8"), "_run")
     assert "feature_labels.creates_a_feature_label(args)" in runner, (
-        "the refusal has left the GitHub source's runner; §14's claim that `/agrim-define` is "
+        "the refusal has left the GitHub source's runner; §14's claim that `/sigma-define` is "
         "outside the scope of §7's rule no longer follows from anything")
 
 
@@ -1379,7 +1379,7 @@ def test_the_scope_flag_is_documented_as_a_selection_filter_and_nothing_more():
     flat = _defining_flat()
     assert "`--feature <name>`" in defining
     assert _SCOPE_GUARANTEE in flat, "§14 no longer states the guarantee in the settled wording"
-    assert "/agrim-loop" in defining and "/agrim-goal" in defining
+    assert "/sigma-loop" in defining and "/sigma-goal" in defining
     assert "Exclusive, not preferential" in flat
     assert "never the label alone" in flat, (
         "§14 does not say membership is the declaration pair; scoping by label alone skips every "
@@ -1402,7 +1402,7 @@ def test_the_scope_flag_the_contract_documents_is_the_flag_that_shipped():
                if p.exists() and "--feature" in p.read_text(encoding="utf-8")]
     if not shipped:
         import pytest
-        pytest.skip("--feature has not landed in loop.py or agrim-goal yet (sibling lanes of #1660)")
+        pytest.skip("--feature has not landed in loop.py or sigma-goal yet (sibling lanes of #1660)")
     assert "`--feature <name>`" in _defining()
     for path in shipped:
         text = " ".join(path.read_text(encoding="utf-8").split())
@@ -1412,17 +1412,17 @@ def test_the_scope_flag_the_contract_documents_is_the_flag_that_shipped():
 
 
 def test_the_contract_and_the_skill_agree_on_the_three_kinds():
-    """The other cross-lane pin. `skills/agrim-define/` is another lane's file and is read, never
+    """The other cross-lane pin. `skills/sigma-define/` is another lane's file and is read, never
     written — but the day it lands, its kinds and the contract's have to be the same three, and it
     must not have invented a per-kind branch prefix that §14 says does not exist."""
     if not _DEFINE_SKILL.exists():
         import pytest
-        pytest.skip("skills/agrim-define/SKILL.md has not landed yet (sibling lane of #1660)")
+        pytest.skip("skills/sigma-define/SKILL.md has not landed yet (sibling lane of #1660)")
     skill = _DEFINE_SKILL.read_text(encoding="utf-8")
     for kind in ("feature", "bug", "refactor"):
         assert kind in skill, f"the skill does not offer the `{kind}` kind §14 documents"
     assert not re.search(r"\b(?:bug|refactor)/", skill), (
-        "skills/agrim-define mints a per-kind branch prefix; §14 says the prefix does not vary")
+        "skills/sigma-define mints a per-kind branch prefix; §14 says the prefix does not vary")
 
 
 def test_the_walkthrough_routes_to_the_creation_flow():
@@ -1431,7 +1431,7 @@ def test_the_walkthrough_routes_to_the_creation_flow():
     `test_every_section_the_walkthrough_cites_actually_exists`; this is that the route is there at
     all, and that the walkthrough still carries none of the rules it routes to."""
     stage0 = WALKTHROUGH[WALKTHROUGH.index("## Stage 0"):WALKTHROUGH.index("## Stage 1")]
-    assert "/agrim-define" in stage0
+    assert "/sigma-define" in stage0
     assert _CITE.search(stage0)
     assert _slug(_DEFINE_HEADING) in _CITE.findall(WALKTHROUGH)
 
@@ -1672,7 +1672,7 @@ def test_the_contract_mirrors_the_null_epic_resolution_the_skill_resolved():
     `report["epic"]` still comes back `null` -- leaving the promotion question pointed at nothing.
     The skill was corrected to key off the report rather than off which branch ran; a contract that
     still keys off the branch is a second answer to a question that has one."""
-    skill = skill_corpus("agrim-goal-review")   # #2108: SKILL.md + references/*.md
+    skill = skill_corpus("sigma-goal-review")   # #2108: SKILL.md + references/*.md
     resolution = " ".join(skill.split("## 5. Feature-ification", 1)[-1][:800].split())
     assert "where a plan produced one" in resolution, \
         "the skill's own resolution moved -- re-check this pin"
@@ -1729,7 +1729,7 @@ def test_the_contract_says_which_path_resolves_goal_design_mode():
 
 
 def test_the_dossier_contract_pins_the_same_artifact_headings_the_skill_mandates():
-    """CROSS-FILE, and deliberately. `skills/agrim-goal-design/SKILL.md` step 5 pins the artifact's
+    """CROSS-FILE, and deliberately. `skills/sigma-goal-design/SKILL.md` step 5 pins the artifact's
     heading schema and `tests/test_sdlc_goal_design_skill.py` holds it there; the contract restating
     a DIFFERENT set would be a second schema with no test comparing them. This is that comparison."""
     goal_design = GOAL_DESIGN_ARTIFACT   # #2107: this content lives wholesale in the reference file
@@ -1926,13 +1926,13 @@ def test_the_shipped_skills_cite_the_contract_by_its_new_path():
     """The other direction of the same claim: it is not enough that nothing cites the dead path —
     the skills that used to have to cite it must still be citing SOMETHING, or the promotion
     silently dropped the pointer instead of moving it."""
-    for rel in ("skills/agrim-dossier/SKILL.md",
-                "skills/agrim-goal-design/SKILL.md",
-                "skills/agrim-goal-review/SKILL.md",
-                "skills/agrim-loop/SKILL.md",
-                "skills/agrim-loop/scripts/design_goal.py",
-                "skills/agrim-loop/scripts/loop.py"):
-        # #1611 moved agrim-loop's design-check paragraph, and the citation inside it, into
+    for rel in ("skills/sigma-dossier/SKILL.md",
+                "skills/sigma-goal-design/SKILL.md",
+                "skills/sigma-goal-review/SKILL.md",
+                "skills/sigma-loop/SKILL.md",
+                "skills/sigma-loop/scripts/design_goal.py",
+                "skills/sigma-loop/scripts/loop.py"):
+        # #1611 moved sigma-loop's design-check paragraph, and the citation inside it, into
         # references/picking.md. The claim here is that the pointer MOVED rather than being
         # dropped, so a SKILL.md entry is read as the whole skill. See tests/skill_corpus.py.
         text = (skill_corpus(rel.split("/")[1]) if rel.endswith("/SKILL.md")
@@ -2129,8 +2129,8 @@ def test_every_copyable_table_in_the_shipped_prose_renders_when_copied():
     A fenced table skeleton is an instruction to reproduce it. Without a `| --- |` delimiter row the
     copy renders on GitHub as a run of literal pipes, and the page that told you to write it looks
     correct the whole time — the fence renders fine as a fence. This has now been found twice in a
-    fortnight, in two sibling skills (#1927 finding 3 in `agrim-goal-design`, #1929 in
-    `agrim-research`), each time only by a human reading the rendered artifact. Pinning it per skill
+    fortnight, in two sibling skills (#1927 finding 3 in `sigma-goal-design`, #1929 in
+    `sigma-research`), each time only by a human reading the rendered artifact. Pinning it per skill
     is O(skills) and pins nothing about the skill that has not been written yet; this sweep costs
     one pass over the shipped prose and is what a third occurrence hits.
 
@@ -2213,8 +2213,8 @@ def _dossier_skill(name):
 
 def test_the_contract_and_both_skills_agree_the_depends_on_column_carries_slice_ids_only():
     for where, text in (("the contract §5d", DOSSIER),
-                        ("agrim-goal-design", _dossier_skill("agrim-goal-design")),
-                        ("agrim-goal-review", _dossier_skill("agrim-goal-review"))):
+                        ("sigma-goal-design", _dossier_skill("sigma-goal-design")),
+                        ("sigma-goal-review", _dossier_skill("sigma-goal-review"))):
         flat = re.sub(r"\s+", " ", text)
         # Singular so it matches both the schema's "carries slice ids" and the consumer's
         # "a token that is not a slice id" -- the same claim, stated from each end.
@@ -2244,7 +2244,7 @@ def test_the_contract_tells_stage_2_to_adjudicate_the_token_rather_than_drop_it(
 
 
 def test_7c_bounds_the_blocked_by_edge_to_an_item_another_slice_actually_carries():
-    """§7c is the contract's own mirror of `agrim-goal-review` §2c, and §2c unbounded — *express it
+    """§7c is the contract's own mirror of `sigma-goal-review` §2c, and §2c unbounded — *express it
     as a `blocked_by` edge*, full stop — is the instruction the real run followed into the seam. A
     `blocked_by` key names a SIBLING in the same plan, so an open item no slice carries has no edge
     that can be written at all. Bounding the skill and leaving the contract restating the hazard is
@@ -2309,7 +2309,7 @@ def test_in_progress_still_has_exactly_one_writer_in_the_shipped_scripts():
             if pattern.search(line):
                 adds.append((path.relative_to(ROOT).as_posix(), n, line.strip()))
     assert len(adds) == 1, f"expected exactly one writer of the in-progress label, found: {adds}"
-    assert adds[0][0] == "skills/agrim-loop/scripts/sources.py", adds[0]
+    assert adds[0][0] == "skills/sigma-loop/scripts/sources.py", adds[0]
 
 
 # ======================= #2027: §7f's priority rule is enforced, and the two invocations agree
@@ -2327,8 +2327,8 @@ def _compile_plan_invocations():
     written and silently wrong the day somebody adds a third."""
     found = []
     for where, text in (("docs/dossier-pipeline.md", DOSSIER),
-                        ("skills/agrim-goal-review/SKILL.md",
-                         skill_corpus("agrim-goal-review"))):   # #2108: SKILL.md + references/*.md
+                        ("skills/sigma-goal-review/SKILL.md",
+                         skill_corpus("sigma-goal-review"))):   # #2108: SKILL.md + references/*.md
         for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S):
             if "compile_plan.py" in block and "--plan" in block:
                 found.append((where, re.sub(r"\s*\\\s*\n\s*", " ", block)))
@@ -2339,7 +2339,7 @@ def test_both_documents_print_the_compile_plan_invocation_at_all():
     """The guard for the guard: if the fence shape ever changes, the assertions below would pass
     over an empty list and prove nothing."""
     wheres = {where for where, _ in _compile_plan_invocations()}
-    assert wheres == {"docs/dossier-pipeline.md", "skills/agrim-goal-review/SKILL.md"}, wheres
+    assert wheres == {"docs/dossier-pipeline.md", "skills/sigma-goal-review/SKILL.md"}, wheres
 
 
 def test_every_mandated_compile_plan_invocation_forbids_priority():
@@ -2422,7 +2422,7 @@ def test_the_contract_mirrors_the_budget_check_goal_review_performs():
     `Budget` field, reporting a mismatch as a schema violation rather than adjudicating it -- the
     fix for the hole the #2032 adversarial review found (a hand-typed `Budget` is indistinguishable
     from a fetched one). §7a is the contract's own copy of that check."""
-    goal_review = skill_corpus("agrim-goal-review")   # #2108: SKILL.md + references/*.md
+    goal_review = skill_corpus("sigma-goal-review")   # #2108: SKILL.md + references/*.md
     assert "sweep-budget" in goal_review, "the skill no longer re-runs the budget verb"
     section = DOSSIER[DOSSIER.index("### 7a."):DOSSIER.index("### 7b.")]
     assert "sweep-budget" in section, "§7a does not mirror the skill's own budget re-check"
@@ -2445,7 +2445,7 @@ def test_goal_design_py_exists_and_matches_the_contracts_own_numbers():
     and a drift between the two would mean the docs describe a script that no longer behaves as
     written."""
     import importlib.util
-    path = ROOT / "skills" / "agrim-goal-design" / "scripts" / "goal_design.py"
+    path = ROOT / "skills" / "sigma-goal-design" / "scripts" / "goal_design.py"
     assert path.is_file(), "the contract describes a script that does not exist"
     spec = importlib.util.spec_from_file_location("goal_design", path)
     goal_design = importlib.util.module_from_spec(spec)

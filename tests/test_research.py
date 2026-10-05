@@ -1,4 +1,4 @@
-"""agrim-research: the Research phase executor. Pins the things that make it worth having over the
+"""sigma-research: the Research phase executor. Pins the things that make it worth having over the
 prose line it replaced — a re-runnable blast-radius query, a lane sized from measured footprint, and
 an artifact that does NOT sit where the plan gate will mistake it for a plan — plus its wiring into
 both orchestrators and no leakage from the repo it was genericized from."""
@@ -7,7 +7,7 @@ import re
 from skill_corpus import skill_corpus
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-RESEARCH = ROOT / "skills" / "agrim-research" / "SKILL.md"
+RESEARCH = ROOT / "skills" / "sigma-research" / "SKILL.md"
 
 
 def _t():
@@ -17,7 +17,7 @@ def _t():
 def test_skill_exists_with_frontmatter():
     assert RESEARCH.exists()
     t = _t()
-    assert "name: agrim-research" in t
+    assert "name: sigma-research" in t
     assert "description:" in t and "allowed-tools:" in t
 
 
@@ -39,7 +39,7 @@ def test_lane_is_sized_from_footprint_not_calendar_time():
     t = _t()
     for lane in ("small", "medium", "large"):
         assert f"**{lane}**" in t
-    assert "lane: auto" in t                                   # closes agrim-init's dangling promise
+    assert "lane: auto" in t                                   # closes sigma-init's dangling promise
     assert "structural footprint" in t.lower()
     assert "fabricate" in t.lower() or "invented duration" in t.lower()
 
@@ -56,7 +56,7 @@ def test_defers_the_binding_alignment_verdict_to_plan_review():
     """Research warns early because it is cheap there; the gate that blocks is still plan-review's,
     and duplicating the verdict would give two authorities for one decision."""
     t = _t()
-    assert "agrim-plan-review" in t
+    assert "sigma-plan-review" in t
     assert "early warning" in t.lower()
 
 
@@ -75,15 +75,15 @@ def test_read_only_and_evidence_bound():
 
 
 def test_wired_into_both_orchestrators_research_phase():
-    for orch in ("agrim-goal", "agrim-loop"):
+    for orch in ("sigma-goal", "sigma-loop"):
         t = skill_corpus(orch)   # #1611: SKILL.md + references/*.md
-        assert "agrim-research" in t, f"{orch} does not run agrim-research"
+        assert "sigma-research" in t, f"{orch} does not run sigma-research"
 
 
 def test_readme_no_longer_calls_research_skill_less():
     t = (ROOT / "README.md").read_text()
     assert "agent practice; no dedicated skill" not in t
-    assert "`agrim-research`" in t
+    assert "`sigma-research`" in t
 
 
 def test_no_source_repo_leakage():
@@ -91,14 +91,14 @@ def test_no_source_repo_leakage():
               "episode", "lipsync", "screenplay", "media-orch", "Temporal", "RunPod")
     t = _t()
     for b in banned:
-        assert b not in t, f"agrim-research leaked '{b}'"
+        assert b not in t, f"sigma-research leaked '{b}'"
 
 
 # --- #1929: the copyable skeleton did not render when copied -------------------
 #
 # `## Output` presents the dossier as a skeleton to COPY, and none of its three tables carried a
 # `| --- |` delimiter row -- so a reader doing exactly what the skill says got runs of literal pipes
-# on GitHub. Identical to #1927 finding 3 in the sibling `agrim-goal-design`, fixed one skill over in
+# on GitHub. Identical to #1927 finding 3 in the sibling `sigma-goal-design`, fixed one skill over in
 # #1928. These pins are that skill's, ported: `test_sdlc_goal_design_skill.py` is the precedent, not
 # the source -- this module has no `_section` helper, no module-level SKILL constant and did not
 # import `re`, and this file's headings are named, not numbered.
@@ -177,7 +177,7 @@ def test_every_cited_location_in_the_schema_admits_a_range():
 
 def test_the_prose_says_why_the_delimiter_rows_are_there():
     """A skeleton is exactly the thing an editor tidies. The sibling states the reason next to it
-    (`skills/agrim-goal-design/SKILL.md`) so the rows are not read as noise and stripped back out;
+    (`skills/sigma-goal-design/SKILL.md`) so the rows are not read as noise and stripped back out;
     without the reason on the page, the only thing standing between the fix and its regression is
     this test file, which an editor of the prose is not reading."""
     # Sliced from the Output SECTION, not from the file's first ```markdown fence: that fence is

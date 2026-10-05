@@ -3,7 +3,7 @@ machine done_when (loop.py verify + verify.enforce). All deterministic, $0."""
 import json, pathlib, importlib.util, subprocess, sys, tempfile, os
 from journal_events import journal_events
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -450,7 +450,7 @@ def test_propose_cli_and_status_counts_proposed(capsys):
         pl = _mod("pipeline")
         assert pl.main(["pipeline.py", "propose", base]) == 0
         assert "proposed 1 goal(s)" in capsys.readouterr().out
-        st_path = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-status" / "scripts" / "status.py"
+        st_path = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-status" / "scripts" / "status.py"
         spec = importlib.util.spec_from_file_location("status", st_path)
         st = importlib.util.module_from_spec(spec); spec.loader.exec_module(st)
         assert st.summary(base)["proposed"] == 1

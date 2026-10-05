@@ -8,7 +8,7 @@ hand-written local mirror file (`.sdlc/state/board-mirror.ndjson`) -- no network
 and deterministic, same posture as `tests/test_mirror.py`/`tests/test_sources.py`."""
 import importlib.util, json, pathlib, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

@@ -4,7 +4,7 @@ import json, pathlib, importlib.util
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -1136,7 +1136,7 @@ def test_a_blocker_owned_by_someone_else_gets_membership_too():
 
 def test_a_parked_blocker_is_never_granted_membership():
     """A park is human domain. Sigma may note that other work waits on it, but must not put it
-    back in the queue -- only /agrim-unpark does that, and only with a human in the loop."""
+    back in the queue -- only /sigma-unpark does that, and only with a human in the loop."""
     au = _mod("auto_unpark")
     actions = _blocking_actions(au, ["sdlc:parked"])
     assert actions[0]["add"] == ["sdlc:blocking"]
@@ -1165,7 +1165,7 @@ def test_a_blocker_that_is_already_a_goal_gets_only_the_blocking_label():
 
 def test_an_unreadable_blocker_degrades_to_the_blocking_label_alone():
     """Fail open toward doing LESS. A read we cannot trust must never become a guessed membership
-    grant; /agrim-doctor's unreachable-blocker check is what surfaces it instead."""
+    grant; /sigma-doctor's unreachable-blocker check is what surfaces it instead."""
     au = _mod("auto_unpark")
     run = _label_aware_sweep_runner(
         by_label={"sdlc:blocked": json.dumps([_blocked_issue(42, body="Blocked by #7")]),

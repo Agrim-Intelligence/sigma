@@ -1,12 +1,12 @@
 """alignment-collect.sh (Slice 7): the read-only, jq-free, deterministic collector that gathers FACTS
 from git history + .sdlc/ artifacts over an N-day window into one evidence pack (schema
-alignment-collect/v1). It renders NO verdicts — agrim-align judges the pack. Guards its three
+alignment-collect/v1). It renders NO verdicts — sigma-align judges the pack. Guards its three
 principles: correct facts, FAIL-OPEN (missing dep/non-git → minimal JSON + degraded[] code, exit 0),
 and SECRET-SAFETY (the hard-stop scan reads diff bodies but emits ONLY {commit,file,line,pattern_id} —
 never the matched substring)."""
 import json, os, re, shutil, stat, subprocess, pathlib
 
-SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-align" / "scripts" / "alignment-collect.sh"
+SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-align" / "scripts" / "alignment-collect.sh"
 
 
 def _git(repo, *a, **kw):
@@ -264,7 +264,7 @@ def test_deterministic(tmp_path):
 def test_sdlc_align_skill_wires_the_collector():
     # the collector only helps if the skill runs it — guard the SKILL prose reference + allowed-tools
     skill = (SCRIPT.parent.parent / "SKILL.md").read_text(encoding="utf-8")
-    assert "alignment-collect.sh" in skill, "agrim-align must invoke the evidence collector"
+    assert "alignment-collect.sh" in skill, "sigma-align must invoke the evidence collector"
     assert "Bash(bash *)" in skill, "allowed-tools must permit the bash collector invocation"
     assert "renders no verdict" in skill.lower() or "no verdict" in skill.lower()
 

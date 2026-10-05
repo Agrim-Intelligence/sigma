@@ -59,15 +59,15 @@ them in the order that works, and the section above it says what going out of or
 them in the order that feels natural is the most common way to end up with a goal that will not
 start.
 
-**There is a flow for it.** `/agrim-define` opens the branch, the label and the registry, and files
+**There is a flow for it.** `/sigma-define` opens the branch, the label and the registry, and files
 the issues that declare the unit — for whichever of three kinds the work is, on one branch prefix
-for all three. [§14 › Defining a unit](branching-model.md#defining-a-unit--the-three-kinds-and-agrim-define)
+for all three. [§14 › Defining a unit](branching-model.md#defining-a-unit--the-three-kinds-and-sigma-define)
 is what it performs, which single step of it is the one no automated path in the kit will perform
 for you, and what `--feature <name>` narrows a run down to.
 
 **Once its issues exist, you're asked one more, optional question: does this unit get a
 priority?** Answer with a `P0`–`P4` tier and it is recorded as data on the unit itself, on the
-spot — never a write to any issue's own `priority:` label. `agrim-goal-review`'s own
+spot — never a write to any issue's own `priority:` label. `sigma-goal-review`'s own
 feature-ification step (promoting an Epic into a unit after a design is confirmed) asks the
 identical question at the identical point. Say nothing (or skip) and nothing changes — no code
 path records a priority unless this question was actually answered. [§16 › Feature-level
@@ -195,13 +195,13 @@ question people think they are getting an answer to.
 what it releases — is
 [§13a](branching-model.md#13a-what-closes-a-goals-issue-since-the-merge-cannot).
 
-**If your branch falls behind while you're on it**, `agrim-rebase` is what a human runs: it explains
+**If your branch falls behind while you're on it**, `sigma-rebase` is what a human runs: it explains
 what the base did while you were away — and why, from CHANGELOG.md, the landing PR, or a linked
 design doc — before it touches anything, then rebases. On a conflict it shows that file's own
 decision context and walks you through named resolution options one file at a time, rather than
 the bare `git` error the automatic upkeep pass above leaves behind. Once the tree is clean, the
 same skill runs this repo's own proving command and — only if it passes, and only if you say yes —
-lands the branch with a plain `gh pr merge`. [§3a](branching-model.md#3a-the-manually-triggered-companion--agrim-rebase)
+lands the branch with a plain `gh pr merge`. [§3a](branching-model.md#3a-the-manually-triggered-companion--sigma-rebase)
 has the detail.
 
 If your unit spans two repositories, the landing is not one merge and cannot be:
@@ -255,7 +255,7 @@ The map, so that you know where to go rather than which page to search.
 | ownership, and who may file work against a unit | [§12](branching-model.md#12-the-two-owners-and-the-per-unit-authorized-grant) |
 | finishing a unit, and branch protection | [§13](branching-model.md#13-completion-and-branch-protection) |
 | adopting the model, and the gestures that are correct | [§14](branching-model.md#14-adopting-it-and-the-gestures-that-are-correct) |
-| how a unit is created, the three kinds, and running one unit only | [§14 › Defining a unit](branching-model.md#defining-a-unit--the-three-kinds-and-agrim-define) |
+| how a unit is created, the three kinds, and running one unit only | [§14 › Defining a unit](branching-model.md#defining-a-unit--the-three-kinds-and-sigma-define) |
 | the quick-reference of do-this / not-that | [§14 › The one-line summary](branching-model.md#the-one-line-summary) |
 | **everything that does not work, stated by the model about itself** | [§15](branching-model.md#15-honest-limitations-and-the-gaps-that-are-deliberate) |
 | giving a unit a priority, and how it is used as a tie-break | [§16](branching-model.md#16-feature-level-priority--optional-opt-in-and-recorded-on-the-unit) |

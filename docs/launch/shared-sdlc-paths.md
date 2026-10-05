@@ -109,7 +109,7 @@ see: a second write inside an already vetted function; a writer the scan cannot 
 (above); a reason that is true in form and wrong in content (a reason is not verified). If a vetted function is renamed or
 moved the check refuses: vet the new site by hand and edit its entry, do not regenerate the whole list.
 
-Control, run on exactly that gesture: in a scratch copy, append to `skills/agrim-init/scripts/setup_wizard.py` a new
+Control, run on exactly that gesture: in a scratch copy, append to `skills/sigma-init/scripts/setup_wizard.py` a new
 function that writes `state/setup-wizard-dismissed.json`, then run the command above with `--sigma <scratch>`. It exits 2;
 on the unmodified copy it exits 0 (`tests/test_shared_sdlc_paths.py` runs both).
 

@@ -17,7 +17,7 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):

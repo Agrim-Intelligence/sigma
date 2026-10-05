@@ -36,12 +36,12 @@ def test_every_required_phase_has_a_visible_measurement_and_review_briefs_use_he
         "review-pre-pr", "review-post-pr", "retro",
     }
     assert all(row["words"] > 0 and row["est_tokens"] > 0 for row in measured.values())
-    assert "skills/agrim-loop/references/running.md" in measured["orchestrator"]["files"]
-    assert "skills/agrim-loop/references/selection.md" in measured["orchestrator"]["files"]
-    assert "skills/agrim-loop/references/running.md" in measured["goal-slot"]["files"]
-    assert "skills/agrim-goal/references/selection.md" in measured["goal-slot"]["files"]
-    assert "skills/agrim-review/references/axes.md" in measured["review-pre-pr"]["files"]
-    assert "skills/agrim-review/references/axes.md" in measured["review-post-pr"]["files"]
+    assert "skills/sigma-loop/references/running.md" in measured["orchestrator"]["files"]
+    assert "skills/sigma-loop/references/selection.md" in measured["orchestrator"]["files"]
+    assert "skills/sigma-loop/references/running.md" in measured["goal-slot"]["files"]
+    assert "skills/sigma-goal/references/selection.md" in measured["goal-slot"]["files"]
+    assert "skills/sigma-review/references/axes.md" in measured["review-pre-pr"]["files"]
+    assert "skills/sigma-review/references/axes.md" in measured["review-post-pr"]["files"]
     assert any(path.startswith("rendered:review_context.py --for plan-review")
                for path in measured["plan-review"]["files"])
     assert any(path.startswith("rendered:review_context.py --for code-review")
@@ -107,7 +107,7 @@ def test_a_measurement_above_the_committed_ceiling_fails(tmp_path):
 
 def test_documented_gate_turns_red_for_a_planted_500_word_running_reference():
     """The exact documented gesture catches a real added instruction, then restores the fixture."""
-    running = ROOT / "skills" / "agrim-loop" / "references" / "running.md"
+    running = ROOT / "skills" / "sigma-loop" / "references" / "running.md"
     original = running.read_text(encoding="utf-8")
     try:
         running.write_text(original + "\n\n" + ("planted-budget-word " * 500), encoding="utf-8")

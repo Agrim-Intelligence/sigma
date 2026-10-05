@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -2025,7 +2025,7 @@ def test_goal_slot_dispatch_ts_never_crashes_when_the_id_itself_is_unhashable(tm
 # BATCH dispatch -- one orchestrator turn emitting SEVERAL `Agent` tool_use blocks at once, all as
 # content blocks of one assistant message, so all of it shares ONE message.id even though each
 # block/line carries its OWN distinct timestamp and its OWN distinct tool_use id (naming a
-# DIFFERENT goal-slot per line). Exactly `/agrim-loop`'s own real batch-dispatch shape, and exactly
+# DIFFERENT goal-slot per line). Exactly `/sigma-loop`'s own real batch-dispatch shape, and exactly
 # what happened for #2531/#2543/#2544's own dispatch in the live session that found this bug.
 # dedup_calls (unchanged this round, see its own docstring) correctly collapses the group to ONE
 # call, never triple-counting the shared usage -- but the pre-fix _filter_calls compared that

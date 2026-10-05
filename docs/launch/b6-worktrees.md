@@ -9,14 +9,14 @@ or a human to keep running. The machine-readable claims are `docs/launch/disposi
 
 A goal worktree is a full checkout (about 18.5 MB tracked in 903 files for this repository) and
 nothing reclaimed one whose goal never reached `record done`. Now a **bounded, tested sweep**
-(`skills/agrim-loop/scripts/worktree_prune.py`) removes only the checkout directory of a worktree that is
+(`skills/sigma-loop/scripts/worktree_prune.py`) removes only the checkout directory of a worktree that is
 provably finished, and reports every other survivor, with the reason, for a human. It is **opt-in
 when automatic** (`work.reclaim_merged_worktrees`, default `false`, because its proof costs GitHub REST
 quota) and always available as an operator lever:
 
 ```sh
-python3 skills/agrim-loop/scripts/worktree_prune.py list-removable .sdlc      # what it would remove, bytes, and why each other tree is kept
-python3 skills/agrim-loop/scripts/worktree_prune.py sweep .sdlc [--dry-run] [--limit N] [--max-examine N] [--max-pr-reads N]
+python3 skills/sigma-loop/scripts/worktree_prune.py list-removable .sdlc      # what it would remove, bytes, and why each other tree is kept
+python3 skills/sigma-loop/scripts/worktree_prune.py sweep .sdlc [--dry-run] [--limit N] [--max-examine N] [--max-pr-reads N]
 ```
 
 A default install therefore keeps its survivors until the operator runs the lever or sets

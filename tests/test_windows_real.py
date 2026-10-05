@@ -28,7 +28,7 @@ import pytest
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="real Windows only")
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 _TEST_TIMEOUT = 60
 

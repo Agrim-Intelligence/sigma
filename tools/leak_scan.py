@@ -37,7 +37,7 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     form agent hosts use for per-project directories, where <name> is not a placeholder (`you`,
     `me`, `user`, `USER`, `<...>`, `$USER`, `alice`, `bob`, `nosuch*`, any one-letter name, ...;
     `dev` is NOT one -- it is a real account name on many machines).
-  * secret shapes: ONE source of truth, `skills/agrim-loop/scripts/scrub.py`, loaded by path and
+  * secret shapes: ONE source of truth, `skills/sigma-loop/scripts/scrub.py`, loaded by path and
     never copied: its `SHAPE_RULES` (named there) plus the redactor-only shapes in `_SECRET_PATTERNS`
     (PEM private keys, AWS `AKIA`/`ASIA`, classic GitHub `gh[pousr]_`, JWT, bearer/basic auth),
     named from their `[REDACTED:<name>]` label. Missing tables REFUSE (exit 2): a gate with no rules
@@ -141,7 +141,7 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     `ssh://git@ssh.github.com:443/<owner>/...`, `https://<anything>@github.com/<owner>/...`,
     `raw.githubusercontent.com/<owner>/<repo>/...` (any `*.githubusercontent.com`),
     `api.github.com/repos/<owner>/<repo>`. Allowed: this repository itself (the CI badge) and the
-    documented public slug `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py` (read by
+    documented public slug `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py` (read by
     `ast`, never imported). No origin, or a non-GitHub one: the rule is skipped and the summary says
     so.
 
@@ -318,7 +318,7 @@ def _scrub_rules():
     """-> `[(name, rx)]` from scrub.py's `SHAPE_RULES` + the labelled `_SECRET_PATTERNS`. scrub.py's
     unlabelled generic key:value redactor is skipped (see `config-credential` in the module
     docstring). Refuses (SystemExit 2) when either table is absent or empty."""
-    rel = "skills/agrim-loop/scripts/scrub.py"
+    rel = "skills/sigma-loop/scripts/scrub.py"
     try:
         mod = _load(rel, "sigma_scrub_for_leak_scan")
         shape = tuple(mod.SHAPE_RULES)
@@ -349,7 +349,7 @@ def _git(args):
 def _public_slug():
     """`_MARKETPLACE_REPO` from doctor.py, read by `ast` (never imported), or None."""
     try:
-        tree = ast.parse((ROOT / "skills/agrim-doctor/scripts/doctor.py").read_text("utf-8"))
+        tree = ast.parse((ROOT / "skills/sigma-doctor/scripts/doctor.py").read_text("utf-8"))
     except (OSError, SyntaxError, ValueError):
         return None
     for node in tree.body:

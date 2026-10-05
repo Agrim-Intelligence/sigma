@@ -1,4 +1,4 @@
-"""assign.py (#919, agrim-scope skill, wave 2 of epic #902): assignment resolution + the three
+"""assign.py (#919, sigma-scope skill, wave 2 of epic #902): assignment resolution + the three
 execution paths, acting on the SAME just-created plan/report pair #918's `compile_plan.compile_plan`
 already produced.
 
@@ -15,8 +15,8 @@ import pathlib
 import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCOPE_SCRIPTS = _ROOT / "skills" / "agrim-scope" / "scripts"
-LOOP = _ROOT / "skills" / "agrim-loop" / "scripts"
+SCOPE_SCRIPTS = _ROOT / "skills" / "sigma-scope" / "scripts"
+LOOP = _ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name, where):
@@ -444,7 +444,7 @@ def test_start_now_self_writes_the_plan_file_matching_the_naming_convention(tmp_
     assert content.startswith("# Plan — #199: Ship the thing")
     assert "#201" in content and "#202" in content
     assert "@amy" in content
-    assert "agrim-triage" in content or "loop.py next" in content
+    assert "sigma-triage" in content or "loop.py next" in content
 
 
 def test_start_now_self_plan_file_table_reflects_the_real_wave_schedule(tmp_path):

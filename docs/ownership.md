@@ -12,7 +12,7 @@ an area and no units, or a unit in someone else's area.
 
 ## 1. Two rosters, and which one wins
 
-Ownership resolves through `skills/agrim-loop/scripts/owners.py`, in this order:
+Ownership resolves through `skills/sigma-loop/scripts/owners.py`, in this order:
 
 1. **`ledger.owners` in `.sdlc/config.json`** — an explicit `area -> login` map. If the area is a
    key here, this wins outright and nothing else is consulted.
@@ -43,8 +43,8 @@ Add areas only when your repository genuinely has more than one owner. When you 
 a directory rule in CODEOWNERS where you can, and override only the area names that are not
 directories (§1).
 
-**A trap worth naming, because it is silent.** Onboarding — `agrim-wizard`, `agrim-setup`,
-`agrim-init`, `agrim-doctor` — reads like its own area and is **not** one. It is core: those are
+**A trap worth naming, because it is silent.** Onboarding — `sigma-wizard`, `sigma-setup`,
+`sigma-init`, `sigma-doctor` — reads like its own area and is **not** one. It is core: those are
 Sigma's own skills. Splitting them out would hand a core skill's review to another area's owner
 and nothing would report the mistake, because a wrong-but-valid owner looks exactly like a right
 one.
@@ -75,7 +75,7 @@ proves nothing:
 
 ```bash
 python3 - <<'PY'
-import sys, json; sys.path.insert(0, "skills/agrim-loop/scripts")
+import sys, json; sys.path.insert(0, "skills/sigma-loop/scripts")
 import owners
 config = json.load(open(".sdlc/config.json"))
 for area in ("doctor", "loop", "ledger", "web"):
@@ -93,7 +93,7 @@ none of the override half — which is one more reason to keep the override as s
   owner wins, because a hand-off needs one assignee and CODEOWNERS lists the primary first.
 - **Ownership holds** — a unit whose owner is someone else holds rather than proceeding, and names
   the remedy that clears it.
-- **`/agrim-doctor`** — reports "no CODEOWNERS and no `ledger.owners`", because with neither, every
+- **`/sigma-doctor`** — reports "no CODEOWNERS and no `ledger.owners`", because with neither, every
   hand-off resolves to `(unowned)` and the bus-factor metrics discard silently and stay empty
   forever.
-- **`/agrim-scope`** — offers the CODEOWNERS owner as one of the assignment options.
+- **`/sigma-scope`** — offers the CODEOWNERS owner as one of the assignment options.

@@ -19,7 +19,7 @@ It catches four things:
      be verifiable at all.
   3. INSTRUCTION TEXT LOST IN A RESTRUCTURE — `--preserved`, below. Not a standing assertion; see
      "WHY PRESERVATION IS A TOOL, NOT A BASELINE".
-  4. A GESTURE THAT ONLY RUNS FROM THE KIT'S OWN CHECKOUT (#2733). `python3 skills/agrim-loop/
+  4. A GESTURE THAT ONLY RUNS FROM THE KIT'S OWN CHECKOUT (#2733). `python3 skills/sigma-loop/
      scripts/x.py` is relative to this repository's root; in a buyer's repository the plugin lives
      in the plugin cache, `skills/` is not a directory, and the documented command dies with
      `can't open file`. Every SKILL.md and `references/**/*.md` must spell its gestures
@@ -42,7 +42,7 @@ shipped SKILL.md files (2026-09-03: 62,951 words, 400,524 chars, 102,080 real to
 
 That second row matters: `words x 1.33`, the estimator #1611 and #1616 both quote, UNDER-COUNTS this
 corpus by roughly a fifth, because markdown full of backticked paths and identifiers tokenizes much
-denser than plain English. `agrim-loop` is 17,221 real cl100k tokens; `words x 1.33` calls it 13,563.
+denser than plain English. `sigma-loop` is 17,221 real cl100k tokens; `words x 1.33` calls it 13,563.
 Every figure this module reports is therefore LARGER than the issue's, and the direction of that
 error is the safe one.
 
@@ -63,7 +63,7 @@ A snapshot would be legitimately red most days, and a gate that is red for good 
 somebody turns off. So preservation ships as `--preserved <git-ref>`: a comparison run AT restructure
 time, against the pre-restructure commit, answering exactly "concatenate + diff" with no standing
 tax. What is pinned in CI instead is the INSTRUMENT — including a dress rehearsal of #1611 on the
-real `agrim-loop` corpus (`tests/test_skill_structure.py`), so the tool is known to work before the
+real `sigma-loop` corpus (`tests/test_skill_structure.py`), so the tool is known to work before the
 restructure it exists for is written, not after.
 
 WAIVERS. `skill_budget_waivers.json` records the skills that breach TODAY, each with the measurement
@@ -116,7 +116,7 @@ STRUCTURE_ONLY_NOTICE = (
 #: for a hard rule, and it is the set #1611 measured, so these numbers are comparable to its.
 GATE_KEYWORDS = re.compile(r"(?<![A-Za-z])(MUST|NEVER|ALWAYS)(?![A-Za-z])")
 
-#: `{a,b,c}` shell-style alternation. `agrim-vision/SKILL.md` links its four reference files as
+#: `{a,b,c}` shell-style alternation. `sigma-vision/SKILL.md` links its four reference files as
 #: `${CLAUDE_SKILL_DIR}/references/{vision,strategy,design,architecture}.md`, and a reachability
 #: check that cannot read that form reports four orphans that are not orphans.
 _BRACES = re.compile(r"\{([^{}]*,[^{}]*)\}")
@@ -170,10 +170,10 @@ def skill_dirs(root: pathlib.Path | None = None):
     # plus a fresh read of the module global inside the body is what makes the override live.
     # Found live: with the real tree finally fully clean (#2107/#2108), `tests/test_skill_structure
     # .py::test_the_gate_exits_nonzero_on_a_finding`/`test_table_mode_never_fails` -- which believed
-    # they were scanning an isolated synthetic `agrim-huge` skill via exactly this monkeypatch -- were
+    # they were scanning an isolated synthetic `sigma-huge` skill via exactly this monkeypatch -- were
     # actually still scanning the real `skills/` tree the whole time, and had only ever passed
     # because that real tree happened to carry a real, unwaived-by-the-test's-OWN-second-monkeypatch
-    # finding of its own (the pre-fix oversized `agrim-goal-review`/`agrim-goal-design`).
+    # finding of its own (the pre-fix oversized `sigma-goal-review`/`sigma-goal-design`).
     if root is None:
         root = SKILLS_DIR
     return sorted(d for d in root.iterdir() if d.is_dir() and (d / "SKILL.md").is_file())
@@ -349,7 +349,7 @@ def _paragraphs(text: str):
     purpose. State was the first version and it was wrong: a split whose cut lands between a
     fence's two markers leaves each half with one unmatched marker, every following line is then
     parsed under the opposite rule, and the comparison reports ~96 phantom losses on a corpus that
-    lost nothing. Measured on the real `agrim-loop` corpus — see the dress rehearsal in
+    lost nothing. Measured on the real `sigma-loop` corpus — see the dress rehearsal in
     tests/test_skill_structure.py, whose split is deliberately naive so this case is exercised."""
     blocks, cur = [], []
     for line in text.splitlines():

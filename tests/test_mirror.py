@@ -3,7 +3,7 @@ backlog for the cross-check. Reaches GitHub only through an injectable runner, s
 hermetic — no network, no `gh`. Deterministic, $0."""
 import json, pathlib, importlib.util, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -333,7 +333,7 @@ def test_records_and_file_are_deterministic():
 def test_mirror_location_is_covered_by_runtime_ignores():
     m = _mod("mirror")
     setup_path = (pathlib.Path(__file__).resolve().parent.parent
-                  / "skills" / "agrim-setup" / "scripts" / "setup.py")
+                  / "skills" / "sigma-setup" / "scripts" / "setup.py")
     spec = importlib.util.spec_from_file_location("setup_mod", setup_path)
     setup = importlib.util.module_from_spec(spec); spec.loader.exec_module(setup)
     # RUNTIME_IGNORES entries are like ".sdlc/state/"; the mirror rel path (state/…) must fall under one
@@ -476,7 +476,7 @@ def test_normalize_issue_blocker_refs_drops_a_self_reference():
 
 
 def test_normalize_issue_blocker_refs_ignores_an_unpark_qa_span():
-    """#1392's phantom-blocker trap, at the new scan site. The Q&A span a human's `/agrim-unpark`
+    """#1392's phantom-blocker trap, at the new scan site. The Q&A span a human's `/sigma-unpark`
     answers land in is ordinary English; scanning the FULL body reaches spans the truncated excerpt
     never even contained, so the strip has to apply here too."""
     bs = _mod("blocker_scan")

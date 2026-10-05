@@ -127,7 +127,7 @@ The committed JSON records the date and source commit of the measurement.  A pha
 measurement may not exceed its ceiling, and a ceiling may be no more than five percent above the
 current measurement.  That makes prompt reductions easy to ratchet into the record while refusing
 to silently absorb later growth.  The test suite deliberately appends 500 words to
-`agrim-loop/references/running.md` and runs the documented command to prove that this gate fails.
+`sigma-loop/references/running.md` and runs the documented command to prove that this gate fails.
 
 It asserts three things:
 
@@ -166,18 +166,18 @@ instruction unit present in the first and missing from the second. It is deliber
 inside the restructuring PR, against the branch point:
 
 ```bash
-python3 evals/skill_structure.py --preserved origin/main agrim-loop
+python3 evals/skill_structure.py --preserved origin/main sigma-loop
 ```
 
 This is a tool rather than a committed snapshot on purpose: a snapshot of the 4,100-odd instruction
 units in this corpus would be legitimately red on most days in a repo this active, and a gate that is
 red for good reasons is a gate somebody turns off. What CI pins instead is the *instrument* —
-including a dress rehearsal that splits the real `agrim-loop` corpus and proves nothing is reported
+including a dress rehearsal that splits the real `sigma-loop` corpus and proves nothing is reported
 lost, and its control that drops a gate paragraph and proves it is.
 
 ## Tier 1 — deterministic behavioral gate (free, runs in CI)
 
-The intent hook (`hooks/agrim_gate.sh`) is a deterministic proxy for *"the agent got the right discipline
+The intent hook (`hooks/sigma_gate.sh`) is a deterministic proxy for *"the agent got the right discipline
 signal"*: a code request must trigger the full spine, a read-only question may be answered directly.
 `run.py` runs the hook over the behavioral corpus (`fixtures.json`), scores it, and **fails if the score
 drops below `baseline.json`** — that drop is the drift signal. No LLM, no cost, identical every run.

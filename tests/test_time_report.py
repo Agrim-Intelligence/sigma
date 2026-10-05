@@ -1,4 +1,4 @@
-"""Read side of the timing store — skills/agrim-time/scripts/time_report.py.
+"""Read side of the timing store — skills/sigma-time/scripts/time_report.py.
 
 Two things carry most of the weight here. The routing test (`share` explicitly false) exists
 because `ledger.read_all` covers only the SHARED events directory: a reader that called it alone
@@ -14,7 +14,7 @@ import pytest
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(path, name):
@@ -24,7 +24,7 @@ def _mod(path, name):
     return m
 
 
-tr = _mod(ROOT / "skills" / "agrim-time" / "scripts" / "time_report.py", "time_report")
+tr = _mod(ROOT / "skills" / "sigma-time" / "scripts" / "time_report.py", "time_report")
 timing_store = _mod(S / "timing_store.py", "timing_store")
 ledger = _mod(S / "ledger.py", "ledger")
 
@@ -284,7 +284,7 @@ def test_elapsed_is_omitted_when_the_ledger_has_nothing(tmp_path):
 
 def test_a_floor_only_session_says_total_is_not_measurable(tmp_path):
     """S6's acceptance criterion. On a host with no turn hooks only scripts are recorded, and the
-    floor cannot see `agrim-plan` or `agrim-implement` at all (they invoke no scripts). Printing the
+    floor cannot see `sigma-plan` or `sigma-implement` at all (they invoke no scripts). Printing the
     script sum as the total would be a confident undercount; the honest total is "not
     measurable", with the floor shown beside it and labelled."""
     d = _sdlc(tmp_path)
@@ -301,14 +301,14 @@ def test_a_precise_session_reports_turn_time_as_total_with_scripts_beside_it(tmp
     """Turn time IS the total; script time is reported beside it and their sum appears nowhere —
     scripts run inside turns."""
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "s1", "turn", "agrim-implement", 100_000, started=1)
+    timing_store.append_session(d, "s1", "turn", "sigma-implement", 100_000, started=1)
     timing_store.append_session(d, "s1", "script", "loop", 20_000)
     out = tr.render_session(d, "s1")
     assert "precise" in out
     assert tr.format_ms(100_000) in out                       # total = turn time
     assert tr.format_ms(20_000) in out                        # scripts, beside
     assert tr.format_ms(120_000) not in out                   # never summed
-    assert "agrim-implement" in out
+    assert "sigma-implement" in out
 
 
 def test_the_no_skill_bucket_is_shown_and_worded_honestly(tmp_path):
@@ -341,7 +341,7 @@ def test_the_session_verb_defaults_to_the_current_session(tmp_path, monkeypatch,
     monkeypatch.setenv("SIGMA_RUN_ID", "run-cli")
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "run-cli", "turn", "agrim-plan", 60_000, started=1)
+    timing_store.append_session(d, "run-cli", "turn", "sigma-plan", 60_000, started=1)
     assert tr.main(["time_report.py", "session", d]) == 0
     assert "run-cli" in capsys.readouterr().out
 

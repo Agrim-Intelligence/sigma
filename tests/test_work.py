@@ -7,7 +7,7 @@ import pytest
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 @pytest.fixture(autouse=True)
@@ -740,7 +740,7 @@ def test_start_resumes_its_own_just_registered_worker_marker(tmp_path, monkeypat
 # ----------------------------------------------------- #2521 claim ownership (goal-slot dispatch)
 # Plan-review round 1, finding 2 (blocking) -- root cause. The round-1 version of this test
 # monkeypatched os.getpid() to simulate "a different, fresh pid" for a dispatched subagent -- but
-# ledger.pid_alive() (skills/agrim-loop/scripts/ledger.py) probes LIVENESS with a real os.kill(pid,
+# ledger.pid_alive() (skills/sigma-loop/scripts/ledger.py) probes LIVENESS with a real os.kill(pid,
 # 0), independent of os.getpid(); the "crashed" pid in that test was really the live pytest process
 # the whole time, so work.start() correctly (if confusingly, given the test's own wrong comment)
 # refused it as a genuinely live foreign worker. The plan's own §2 records the actual fix: this
@@ -1140,7 +1140,7 @@ def test_a_malformed_allowlist_never_crashes_the_commit_path(tmp_path):
     """`allow_secret_paths` is hand-edited JSON, and `commit()` is the one verb every goal in every
     adopter repo goes through. A shape typo must degrade to "no allowlist" — still REFUSING, never
     crashing, and never silently allowing: a bare string would pass a substring test and turn the
-    typo into the bypass. The malformed WRAPPER is here too because `/agrim-doctor` cross-loads this
+    typo into the bypass. The malformed WRAPPER is here too because `/sigma-doctor` cross-loads this
     same reader, and its own malformed-config sweep caught exactly that (`"work": true`)."""
     d = _sdlc(tmp_path)
     goal = _started(d)
@@ -2083,7 +2083,7 @@ def test_pr_finds_the_plan_filed_under_the_bare_slug(tmp_path):
 
 # --- pr: the goal's research dossier has to be ON the branch it is meant to explain (#1801) -------
 #
-# #1801 measured the identical structural gap #1548 found for the plan: `agrim-research` files
+# #1801 measured the identical structural gap #1548 found for the plan: `sigma-research` files
 # `.sdlc/research/<stem>.md` in the MAIN checkout too (SKILL.md step 2 runs before 3a ever cuts a
 # worktree, so for research there is not even a worktree to write into), so `commit()`'s `git add -A`
 # inside the worktree can never see it either. `_research_missing_from_branch` is the same guard,
@@ -2100,7 +2100,7 @@ CHECK_IGNORE_RESEARCH = "git check-ignore -v --non-matching -- .sdlc/research/00
 
 
 def _research(sdlc_dir, name="0001-x"):
-    """The research phase's artifact, filed where `agrim-research` actually writes it: the MAIN
+    """The research phase's artifact, filed where `sigma-research` actually writes it: the MAIN
     checkout's `.sdlc/research/`, never the goal's worktree -- `_plan`'s counterpart, above."""
     p = pathlib.Path(sdlc_dir) / "research" / (name + ".md")
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -3719,7 +3719,7 @@ def test_a_conflict_touching_more_than_the_changelog_aborts(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     run = _runner(_rights() + [("pr view", _view(status="BEHIND"))]
-                  + _conflict(unmerged="CHANGELOG.md\nskills/agrim-loop/scripts/work.py"))
+                  + _conflict(unmerged="CHANGELOG.md\nskills/sigma-loop/scripts/work.py"))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred")
     assert "git rebase --abort" in run.calls
@@ -5382,7 +5382,7 @@ def test_config_template_comment_states_what_a_cap_below_one_does():
     code (`_ci_cap`, the same `cap < 1` rule `post_review` applies, pinned by the zero-cap test above),
     never copied: the comment must say a value below 1 falls back to that number, and must not call it
     'no cap' as a setting."""
-    tmpl = json.loads((ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8"))
+    tmpl = json.loads((ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8"))
     comment = tmpl["work"]["_max_review_cycles"]
     resolved = work._ci_cap({"work": {"max_review_cycles": 0}})
     assert resolved == work.DEFAULTS["max_review_cycles"] != 0
@@ -6245,7 +6245,7 @@ def _a_live_foreign_process():
 def _register_agent(sdlc_dir, goal, pid):
     import importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "loop", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "loop.py")
+        "loop", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "loop.py")
     lp = importlib.util.module_from_spec(spec); spec.loader.exec_module(lp)
     lp.agent_start(sdlc_dir, goal, pid, {})
     return lp
@@ -7062,7 +7062,7 @@ def test_the_issue_is_read_from_the_configured_discovery_repo(tmp_path):
 
 
 def test_an_unset_discovery_repo_falls_back_to_ghs_own_placeholders(tmp_path):
-    """`discovery.github.repo` ships EMPTY in the agrim-init template, so it genuinely is unset on
+    """`discovery.github.repo` ships EMPTY in the sigma-init template, so it genuinely is unset on
     real installs. Same fallback `sources._repo_args` already makes: let gh infer it from cwd."""
     config = {"work": {"enabled": True, "base": "main"}, "discovery": {"source": "github"}}
     d = _sdlc(tmp_path, config)
@@ -8264,7 +8264,7 @@ def test_a_bare_emit_token_file_is_refused_without_the_core_naming_any_product()
     test's own example to a generic `acme-emit-token`, so the core's tests name no private file.)
     """
     # `work` is already loaded at module scope against this file's own ROOT/SCRIPTS convention.
-    # An earlier draft re-loaded it from the cwd-relative "skills/agrim-loop/scripts/work.py", which
+    # An earlier draft re-loaded it from the cwd-relative "skills/sigma-loop/scripts/work.py", which
     # is cwd-AUTHORITATIVE: run from another directory it either raises FileNotFoundError or, worse,
     # validates whatever file happens to sit at that path rather than the one under review.
     w = work
@@ -8715,7 +8715,7 @@ def test_find_design_pr_refuses_a_pr_that_touches_files_outside_sdlc_design():
     (item 12) and the wrong-goal control (item 13)."""
     code_pr = json.dumps([_valid_design_row(
         paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-               "skills/agrim-loop/scripts/work.py"])])
+               "skills/sigma-loop/scripts/work.py"])])
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: code_pr)
     assert pr is None
     assert err and "touches file(s) outside its own design artifacts" in err
@@ -8733,7 +8733,7 @@ def test_find_design_pr_refuses_a_pr_that_never_touches_its_own_design_md():
 
 def test_find_design_pr_refuses_a_pr_that_touches_only_its_own_design_md():
     """The `<n>-in-brief.md` sibling is a REQUIRED part of the same commit
-    (skills/agrim-goal-design/references/writing-the-artifact.md ~:90), not an optional
+    (skills/sigma-goal-design/references/writing-the-artifact.md ~:90), not an optional
     extra. Own `.md` IS present (condition 4 holds) and there is no extra file riding along
     (condition 6 would hold too) -- isolating condition 5's own failure from both."""
     md_only = json.dumps([_valid_design_row(paths=[".sdlc/design/9.md"])])
@@ -8873,7 +8873,7 @@ def test_close_design_and_merge_design_cli_both_refuse_a_code_shaped_pr(tmp_path
     d = _sdlc(tmp_path, ON)
     code_pr = json.dumps([_valid_design_row(
         paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-               "skills/agrim-loop/scripts/work.py"])])
+               "skills/sigma-loop/scripts/work.py"])])
     calls = []
     def _spy(cwd, argv):
         calls.append((cwd, list(argv)))
@@ -9004,7 +9004,7 @@ def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_
                                         mergeStateStatus="CLEAN")])
     code_pr = json.dumps([_valid_design_row(
         number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/agrim-loop/scripts/work.py"])])
+                           "skills/sigma-loop/scripts/work.py"])])
     def _run(cwd, argv):
         if argv[:3] == ["gh", "pr", "list"]:
             calls["list"] += 1
@@ -9020,7 +9020,7 @@ def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_code_
     pr = json.dumps([_valid_design_row(number=7)])
     code_pr = json.dumps([_valid_design_row(
         number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/agrim-loop/scripts/work.py"])])
+                           "skills/sigma-loop/scripts/work.py"])])
     def _run(cwd, argv):
         if argv[:3] == ["gh", "pr", "list"]:
             calls["list"] += 1
@@ -9353,9 +9353,9 @@ def test_record_plan_review_refuses_an_unsafe_goal(tmp_path):
 
 @pytest.mark.parametrize("gate_on", [False, True])
 def test_record_plan_review_keeps_no_record_without_a_work_record(tmp_path, capsys, gate_on):
-    """R-c: with work on but no work record under this `.sdlc` -- `/agrim-goal` never runs
+    """R-c: with work on but no work record under this `.sdlc` -- `/sigma-goal` never runs
     `work.py start`, and a goal worktree's `.sdlc` has none -- the verb validates, still mirrors the
-    verdict, keeps NO file, and says so. It must not refuse (that would fail every `/agrim-goal`,
+    verdict, keeps NO file, and says so. It must not refuse (that would fail every `/sigma-goal`,
     gate off or on). The one reader, `pr`, needs the same work record, so it still fails closed."""
     cfg = {**ON, **JOURNAL_ON}
     if gate_on:

@@ -13,13 +13,13 @@ command."""
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP_PY = (ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
+LOOP_PY = (ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py").read_text(encoding="utf-8")
 
-SDLC_LOOP = (ROOT / "skills" / "agrim-loop" / "SKILL.md").read_text(encoding="utf-8")
-SDLC_GOAL = (ROOT / "skills" / "agrim-goal" / "SKILL.md").read_text(encoding="utf-8")
-SDLC_PLAN_REVIEW = (ROOT / "skills" / "agrim-plan-review" / "SKILL.md").read_text(encoding="utf-8")
-SDLC_ALIGN = (ROOT / "skills" / "agrim-align" / "SKILL.md").read_text(encoding="utf-8")
-SDLC_RETRO = (ROOT / "skills" / "agrim-retro" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_LOOP = (ROOT / "skills" / "sigma-loop" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_GOAL = (ROOT / "skills" / "sigma-goal" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_PLAN_REVIEW = (ROOT / "skills" / "sigma-plan-review" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_ALIGN = (ROOT / "skills" / "sigma-align" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_RETRO = (ROOT / "skills" / "sigma-retro" / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_the_idiom_still_matches_loop_pys_actual_emit_verb():
@@ -110,7 +110,7 @@ def test_sdlc_align_never_instructs_a_block_verdict():
 def test_sdlc_retro_no_longer_instructs_a_standalone_retro_emit():
     """issue #1013: the standalone `loop.py emit ... retro --grade ...` prose line is retired -- the
     grade is now captured structurally via `_record`'s own `retro_grade` parameter, reached through
-    the `record` verb's new `--retro-grade` flag (skills/agrim-loop/SKILL.md step 6, skills/agrim-goal/
+    the `record` verb's new `--retro-grade` flag (skills/sigma-loop/SKILL.md step 6, skills/sigma-goal/
     SKILL.md step 4). Leaving the old standalone command in place too would double-emit the grade as
     two separate retro events for one retrospective. INVERTED from the old
     test_sdlc_retro_instructs_retro_emit, mirroring test_sdlc_loop_no_longer_instructs_token_self_

@@ -4,7 +4,7 @@ categories the current change touches, so the loop's Research/Review phases can 
 scans diff bodies but must emit only {category,file,line,pattern_id} — never the matched value)."""
 import json, os, re, subprocess, pathlib
 
-SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "risk-detect.sh"
+SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "risk-detect.sh"
 
 
 # #2751 / sigma#145 / sigma#244: `test_detects_each_category` and the untracked header-leak test went
@@ -241,7 +241,7 @@ def test_excludes_sdlc_and_docs(tmp_path):
     assert out["matched"] == [], out.why   # SDLC machinery + docs are not the engineer's source
 
 
-ALIGN_SCRIPT = SCRIPT.parent.parent.parent / "agrim-align" / "scripts" / "alignment-collect.sh"
+ALIGN_SCRIPT = SCRIPT.parent.parent.parent / "sigma-align" / "scripts" / "alignment-collect.sh"
 
 
 def _secret_kv_pattern(text):
@@ -417,10 +417,10 @@ def test_classifier_header_shaped_content_never_becomes_file_without_git():
 def test_review_and_research_skills_wire_the_detector():
     # the collector is only useful if the phases invoke it — guard the SKILL prose reference
     skills = SCRIPT.parent.parent.parent
-    review = (skills / "agrim-review" / "SKILL.md").read_text(encoding="utf-8")
-    research = (skills / "agrim-research" / "SKILL.md").read_text(encoding="utf-8")
-    assert "risk-detect.sh" in review, "agrim-review must invoke the risk detector"
-    for skill_ref in ("/agrim-security-review", "/agrim-contract-check", "/agrim-migration-check"):
-        assert skill_ref in review, "agrim-review must surface %s" % skill_ref
+    review = (skills / "sigma-review" / "SKILL.md").read_text(encoding="utf-8")
+    research = (skills / "sigma-research" / "SKILL.md").read_text(encoding="utf-8")
+    assert "risk-detect.sh" in review, "sigma-review must invoke the risk detector"
+    for skill_ref in ("/sigma-security-review", "/sigma-contract-check", "/sigma-migration-check"):
+        assert skill_ref in review, "sigma-review must surface %s" % skill_ref
     # research anticipates the same risks so the plan budgets for them
-    assert "risk-detect" in research and "/agrim-security-review" in research
+    assert "risk-detect" in research and "/sigma-security-review" in research

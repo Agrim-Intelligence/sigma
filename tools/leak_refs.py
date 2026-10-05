@@ -76,7 +76,7 @@ from collections import Counter
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 #: The mirror module is loaded by path (it is not a package): it carries the blocker vocabulary
 #: (`blocker_scan`, with its `legacy`), `scrub` and the excerpt cap the rewrite invariants read.
-_MIRROR_PATH = ROOT / "skills" / "agrim-loop" / "scripts" / "mirror.py"
+_MIRROR_PATH = ROOT / "skills" / "sigma-loop" / "scripts" / "mirror.py"
 SCHEMA = "sigma.leak-refs/1"
 ENV_PATTERNS = "SIGMA_LEAK_PATTERNS"
 PER_PAGE = 100              # REST page size, and the GraphQL `nodes(ids)` batch size
@@ -782,7 +782,7 @@ def _consumers():
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except Exception:
-            raise Refused("blocker-scan-unavailable", "cannot load skills/agrim-loop/scripts/mirror.py")
+            raise Refused("blocker-scan-unavailable", "cannot load skills/sigma-loop/scripts/mirror.py")
         for owner, attr in _NEEDED:
             obj = module
             for part in [p for p in owner.split(".") if p]:

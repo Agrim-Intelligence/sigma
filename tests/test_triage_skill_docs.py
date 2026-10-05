@@ -1,12 +1,12 @@
-"""Lock agrim-triage's own shipped `/agrim-loop` hand-off: #1239 review round 2, finding 1 -- the
+"""Lock sigma-triage's own shipped `/sigma-loop` hand-off: #1239 review round 2, finding 1 -- the
 skill's "Start now" prose (step 5) and its "Internal flow" example both issued bare
 `loop.py start .sdlc` / `loop.py next .sdlc`, never `--session-pid`, even after #1199 required
-`--session-pid "$PPID"` on every such call in /agrim-loop's own SKILL.md/README. Reproduced directly
+`--session-pid "$PPID"` on every such call in /sigma-loop's own SKILL.md/README. Reproduced directly
 (see tests/test_loop.py::test_shipped_skill_start_then_next_via_real_separate_bash_dispatch_never_
 redispatches and its sibling test_os_getppid_is_unstable_across_genuinely_separate_forked_dispatch
 for the underlying mechanism): two bare, separately-dispatched `loop.py start`/`next .sdlc` calls
 followed by a third, correctly-`--session-pid`-flagged `loop.py next .sdlc --session-pid "$PPID"`
-call -- the shape a subsequent, doc-compliant `/agrim-loop` continuation would issue -- re-dispatches
+call -- the shape a subsequent, doc-compliant `/sigma-loop` continuation would issue -- re-dispatches
 the SAME goal, because the bare calls' own internal `os.getppid()` fallback registers the claim
 under a pid that is already dead by the time anything else checks the registry. Stable anchor only
 (the literal invocation text) -- not surrounding prose wording."""
@@ -14,12 +14,12 @@ import pathlib
 import re
 
 TRIAGE_SKILL = (
-    pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-triage" / "SKILL.md"
+    pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-triage" / "SKILL.md"
 ).read_text()
 
 # Whitespace-collapsed to one line before matching: this repo's own prose hand-wraps an
 # invocation like `loop.py start .sdlc --session-pid "$PPID"` across physical lines (see
-# /agrim-loop's own SKILL.md, which wraps `loop.py ... start .sdlc` / `--session-pid "$PPID"`
+# /sigma-loop's own SKILL.md, which wraps `loop.py ... start .sdlc` / `--session-pid "$PPID"`
 # the same way) -- a literal per-physical-line check would false-fail on correctly-wrapped,
 # correctly-fixed prose. Collapsing to single spaces reads it the way a reader actually does;
 # inside the fenced ```bash block each command is already its own single physical line, so
@@ -40,8 +40,8 @@ def test_start_and_next_invocations_exist_in_the_doc():
     # Guards the test itself against silently matching nothing if the doc is rewritten later.
     count = len(_INVOCATION.findall(_FLAT))
     assert count >= 2, (
-        "expected to find loop.py start/next .sdlc invocations in agrim-triage's SKILL.md -- if "
-        "the doc no longer hands off to /agrim-loop this way, this test is stale, not passing"
+        "expected to find loop.py start/next .sdlc invocations in sigma-triage's SKILL.md -- if "
+        "the doc no longer hands off to /sigma-loop this way, this test is stale, not passing"
     )
 
 
@@ -49,10 +49,10 @@ def test_every_start_and_next_invocation_passes_session_pid():
     total = len(_INVOCATION.findall(_FLAT))
     flagged = len(_FLAGGED_INVOCATION.findall(_FLAT))
     assert flagged == total, (
-        f"found {total} loop.py start/next .sdlc invocation(s) in agrim-triage's SKILL.md but "
+        f"found {total} loop.py start/next .sdlc invocation(s) in sigma-triage's SKILL.md but "
         f"only {flagged} pass --session-pid \"$PPID\" immediately after .sdlc -- a bare "
         f"invocation is the exact double-dispatch bug #1199 exists to close, still reachable "
-        f"through agrim-triage's own shipped /agrim-loop hand-off"
+        f"through sigma-triage's own shipped /sigma-loop hand-off"
     )
 
 
@@ -66,7 +66,7 @@ def test_every_start_and_next_invocation_passes_session_pid():
 _QUESTION_ROUND = re.search(
     r"2\. \*\*Question round\*\*.*?(?=\n3\. \*\*Compile\*\*)", TRIAGE_SKILL, re.DOTALL)
 assert _QUESTION_ROUND, (
-    "could not locate step 2's 'Question round' block in agrim-triage's SKILL.md by its own "
+    "could not locate step 2's 'Question round' block in sigma-triage's SKILL.md by its own "
     "numbered-step anchor -- if the step numbering or heading changed, this test is stale, not "
     "passing"
 )
@@ -115,7 +115,7 @@ def test_priority_fill_is_mechanical_not_a_blanket_ask():
     """#2296 (BR-19/BR-20/BR-25): the priority-fill sub-ask now names the mechanical rubric
     application (`_bucket_hygiene`/`priority_hint`) rather than describing an unconditional
     human fill, and still names the one residual ask -- genuine ambiguity between two adjacent
-    tiers, the same shape agrim-scope's own SKILL.md already treats as a real question."""
+    tiers, the same shape sigma-scope's own SKILL.md already treats as a real question."""
     assert "_bucket_hygiene" in _QUESTION_ROUND_TEXT
     assert "priority_hint" in _QUESTION_ROUND_TEXT
     assert "ambiguous" in _QUESTION_ROUND_TEXT.lower()

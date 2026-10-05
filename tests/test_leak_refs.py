@@ -34,7 +34,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOOL = ROOT / "tools" / "leak_refs.py"
 RUNBOOK = ROOT / "docs" / "publish-runbook.md"
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 SLUG = "acme-corp/secret-repo"
 REPO = "acme/demo"
 URL12 = "https://github.com/" + SLUG + "/issues/12"

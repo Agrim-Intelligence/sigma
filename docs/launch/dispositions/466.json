@@ -3,14 +3,14 @@
     "pattern": ".sdlc/*",
     "issue": "#466",
     "decision": "not a store (prose; whole-tree rollup)",
-    "pruner_or_cap": "none: the row is the .gitignore rule `.sdlc/*` quoted in agrim-goal-design's reference, which names no writer; the byte figure is the sum of every .sdlc child, each classified by its own row or slice (this checkout: 1,057,688 KiB, of which evidence/ 563,260, work/ 469,056, state/ 22,956 by du -sk of the direct children)",
+    "pruner_or_cap": "none: the row is the .gitignore rule `.sdlc/*` quoted in sigma-goal-design's reference, which names no writer; the byte figure is the sum of every .sdlc child, each classified by its own row or slice (this checkout: 1,057,688 KiB, of which evidence/ 563,260, work/ 469,056, state/ 22,956 by du -sk of the direct children)",
     "evidence": "du -sk of .sdlc's direct children (command in the doc); docs/launch/b6-singletons-and-home.md"
   },
   {
     "pattern": ".sdlc/.sdlc/",
     "issue": "#466",
     "decision": "not a store (prose warning); a mistaken scaffold is one-time and idempotent",
-    "pruner_or_cap": "none: agrim-wizard's skill warns that passing .sdlc as the repo root to run_scaffold would create it; measured: one mistaken scaffold writes 7 files, 83,798 B, and repeating it creates nothing (scaffold is skip-if-exists)",
+    "pruner_or_cap": "none: sigma-wizard's skill warns that passing .sdlc as the repo root to run_scaffold would create it; measured: one mistaken scaffold writes 7 files, 83,798 B, and repeating it creates nothing (scaffold is skip-if-exists)",
     "evidence": "sdlc_init.scaffold run twice into a scratch .sdlc (snippet in the doc); docs/launch/b6-singletons-and-home.md"
   },
   {
@@ -18,7 +18,7 @@
     "issue": "#466",
     "decision": "capped (operator-owned singleton rewritten in place; never pruned)",
     "pruner_or_cap": "one file the operator owns: verify_detect.write_verify and setup.write_cfg rewrite it in place keeping every other key (atomic replace in the first); the scaffolded template is 76,934 B and this checkout's own is 1,106 B; Sigma never deletes it, deleting it turns Sigma off; not under a host configuration root",
-    "evidence": "skills/agrim-init/scripts/verify_detect.py write_verify, skills/agrim-setup/scripts/setup.py write_cfg; docs/launch/b6-singletons-and-home.md"
+    "evidence": "skills/sigma-init/scripts/verify_detect.py write_verify, skills/sigma-setup/scripts/setup.py write_cfg; docs/launch/b6-singletons-and-home.md"
   },
   {
     "pattern": ".sdlc/state",
@@ -67,7 +67,7 @@
     "issue": "#466",
     "decision": "capped (zero-byte marker, touched in place)",
     "pruner_or_cap": "a zero-byte marker touched in place when the coexistence notice fires; one file, mtime is the only state; not under a host configuration root",
-    "evidence": "skills/agrim-loop/scripts/coexist.py _mark and _mark_fresh; tests/test_coexist.py::test_gate_admits_with_one_notice_naming_the_uninstall_command; docs/launch/b6-singletons-and-home.md"
+    "evidence": "skills/sigma-loop/scripts/coexist.py _mark and _mark_fresh; tests/test_coexist.py::test_gate_admits_with_one_notice_naming_the_uninstall_command; docs/launch/b6-singletons-and-home.md"
   },
   {
     "pattern": ".sdlc/state/comment-watch-cursor.json",
@@ -171,7 +171,7 @@
     "pattern": ".sdlc/state/slack-commands.stop",
     "issue": "#466",
     "decision": "capped (zero-byte marker the operator creates; the listener never writes it)",
-    "pruner_or_cap": "a zero-byte stop file the operator creates with touch (skills/agrim-loop/SLACK_COMMANDS.md); the listener only checks that it exists and never writes or deletes it, so it is one file at most and the operator removes it before the next start; prose-only writer, no Sigma code creates it",
+    "pruner_or_cap": "a zero-byte stop file the operator creates with touch (skills/sigma-loop/SLACK_COMMANDS.md); the listener only checks that it exists and never writes or deletes it, so it is one file at most and the operator removes it before the next start; prose-only writer, no Sigma code creates it",
     "evidence": "tests/test_slack_commands_listen.py::test_stop_requested_reflects_the_stop_file; docs/launch/b6-singletons-and-home.md"
   },
   {

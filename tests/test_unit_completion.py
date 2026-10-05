@@ -19,7 +19,7 @@ import pathlib
 
 from journal_events import journal_events
 
-_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
@@ -1365,7 +1365,7 @@ def _canonical_merged_pr(number=41, branch=BRANCH, sha="a" * 40):
 def test_an_already_merged_unit_landing_is_recorded_when_the_ledger_wants_it(tmp_path):
     """Plan-committed, flagged blocking in plan-review rounds R8/R9, shipped unwired: the branch
     that fires when `_draft` finds the unit's landing PR was already merged (a human ran
-    /agrim-rebase, or merged it by hand) built only a human-readable `why` string -- the ledger
+    /sigma-rebase, or merged it by hand) built only a human-readable `why` string -- the ledger
     `merged` entry and `merge_observed` journal event this whole goal exists to write were never
     recorded for a unit landing discovered this way. Now wired through the same
     ledger.enabled/journal_on gate every other merge-observation call site uses."""

@@ -15,7 +15,7 @@ import pytest
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -280,7 +280,7 @@ def test_a_goal_the_label_alone_declares_is_in_the_unit():
 def test_a_goal_the_body_alone_declares_is_in_the_unit():
     """THE OTHER LOAD-BEARING ONE, and the reason the scope is not a `--label` on the query. The
     label is attached AT PICK, so a member nobody has picked yet carries NONE -- which is the state
-    of every issue in a unit that has just been opened by `/agrim-define`. A label-scoped query
+    of every issue in a unit that has just been opened by `/sigma-define`. A label-scoped query
     would report a brand-new unit as drained, i.e. would fail in precisely the situation the flag
     exists for. `docs/branching-model.md` §14: membership is §4's declaration pair, never the label
     alone."""

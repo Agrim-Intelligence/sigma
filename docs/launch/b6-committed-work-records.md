@@ -22,12 +22,12 @@ outside the repository.
 
 | Store | Writer | Owner | In git |
 | --- | --- | --- | --- |
-| `.sdlc/plans/<goal-stem>.md` | the Plan phase (`agrim-plan`), committed by `work.py commit` | the project's maintainers | yes |
-| `.sdlc/research/<goal-slug>.md`, and `.sdlc/research/235.md` (a citation in `skills/agrim-init/references/board.md`, not a writer) | the Research phase (`agrim-research`, `agrim-goal-design`) | the project's maintainers | yes |
+| `.sdlc/plans/<goal-stem>.md` | the Plan phase (`sigma-plan`), committed by `work.py commit` | the project's maintainers | yes |
+| `.sdlc/research/<goal-slug>.md`, and `.sdlc/research/235.md` (a citation in `skills/sigma-init/references/board.md`, not a writer) | the Research phase (`sigma-research`, `sigma-goal-design`) | the project's maintainers | yes |
 | `.sdlc/acceptance/<goal-stem>.md` | `acceptance.py record` | the project's maintainers | yes |
-| `.sdlc/plans/<epic>-plan.md` | `agrim-scope`'s `assign.py` (one file per executed scope run) | the project's maintainers | yes |
+| `.sdlc/plans/<epic>-plan.md` | `sigma-scope`'s `assign.py` (one file per executed scope run) | the project's maintainers | yes |
 | `.sdlc/plans/<goal-stem>.slices.json` | the Plan phase, read by `slices.py` | the project's maintainers | yes |
-| `.sdlc/plans/scope/<slug>.plan.json` | the `agrim-scope` skill prose | the operator | no, gitignored |
+| `.sdlc/plans/scope/<slug>.plan.json` | the `sigma-scope` skill prose | the operator | no, gitignored |
 | `.sdlc/plans/triage/<UTC-date>-<slug>.json`, `.md` | `triage.py plan` | the operator | no, gitignored |
 
 `tests/test_b6_462.py` (`test_gitignored`) checks the two gitignored rows against `git check-ignore`

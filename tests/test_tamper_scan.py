@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/test_trust.py (issue #1937).
+"""Tests for skills/sigma-loop/scripts/test_trust.py (issue #1937).
 
 Every fixture here is a STRING, not a repo, because `scan()` deliberately takes unified-diff text
 rather than shelling out to git. That is what makes the issue's three named controls executable in
@@ -7,7 +7,7 @@ milliseconds instead of needing a scratch repo each.
 import pathlib
 import importlib.util
 
-S = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _tt():
@@ -177,7 +177,7 @@ def test_no_source_module_under_skills_is_named_like_a_test_file():
     Neither showed up in any unit test. Both appeared the moment the cost was actually measured on a
     real goal, which is why AGENTS.md requires the measurement rather than an estimate."""
     import pathlib
-    scripts = pathlib.Path(__file__).parent.parent / "skills" / "agrim-loop" / "scripts"
+    scripts = pathlib.Path(__file__).parent.parent / "skills" / "sigma-loop" / "scripts"
     offenders = sorted(p.name for p in scripts.glob("test_*.py"))
     assert offenders == [], (
         "source modules named like test files: %s -- pytest will try to collect them and "

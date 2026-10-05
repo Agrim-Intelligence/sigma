@@ -16,7 +16,8 @@ ALLOWLIST = ROOT / "tests/fixtures/documented_gestures_allowlist.json"
 GESTURE = re.compile(r"python3?\s+(?P<path>[^\s\"'`]*?(?P<script>[A-Za-z0-9_]+\.py))(?P<rest>(?:\s+[^\s|;&>]+)*)")
 FLAG = re.compile(r"--[a-z][a-z0-9-]*")
 VERB = re.compile(r"^[a-z][a-z0-9-]*$")
-SLASH = re.compile(r"(?<![\w/.-])/(agrim-[a-z0-9-]+)")
+# `>` is excluded too: `<org>/sigma-onboarding-...` is a repository name, not a command
+SLASH = re.compile(r"(?<![\w/.>-])/(sigma-[a-z0-9-]+)")
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ def scripts(root=ROOT):
 
 def resolve(gesture: Gesture, root=ROOT) -> Path:
     candidates = [p for p in scripts(root) if p.name == gesture.script]
-    skill_match = re.search(r"agrim-[a-z0-9-]+", gesture.path)
+    skill_match = re.search(r"sigma-[a-z0-9-]+", gesture.path)
     if skill_match:
         candidates = [p for p in candidates if len(p.parts) > 1 and p.parts[1] == skill_match.group()]
     elif "${CLAUDE_SKILL_DIR}" in gesture.path and gesture.source.parts[:1] == ("skills",):
@@ -134,7 +135,7 @@ def stale_entries(entries, used):
 
 
 def test_extract_is_pure_and_finds_verb_and_flags():
-    found = extract("`python3 skills/agrim-loop/scripts/loop.py start .sdlc --session-pid 7`", Path("skills/x/SKILL.md"))
+    found = extract("`python3 skills/sigma-loop/scripts/loop.py start .sdlc --session-pid 7`", Path("skills/x/SKILL.md"))
     assert len(found) == 1 and found[0].script == "loop.py" and verb(found[0].rest) == "start"
     assert FLAG.findall(" ".join(found[0].rest)) == ["--session-pid"]
 
@@ -145,11 +146,11 @@ def test_extract_ignores_prose_and_reads_fences_and_inline_spans():
 
 
 def test_bad_documented_flag_is_detected_with_its_source_location():
-    source = Path("skills/agrim-triage/SKILL.md")
-    copied = (ROOT / source).read_text(encoding="utf-8") + "\n```sh\npython3 skills/agrim-loop/scripts/triage.py survey .sdlc --no-such-flag\n```\n"
+    source = Path("skills/sigma-triage/SKILL.md")
+    copied = (ROOT / source).read_text(encoding="utf-8") + "\n```sh\npython3 skills/sigma-loop/scripts/triage.py survey .sdlc --no-such-flag\n```\n"
     gesture = next(item for item in extract(copied, source) if "--no-such-flag" in item.rest)
     failures = validate(gesture)
-    assert failures == [f"{source}:{gesture.line}: unknown flag --no-such-flag for skills/agrim-loop/scripts/triage.py"]
+    assert failures == [f"{source}:{gesture.line}: unknown flag --no-such-flag for skills/sigma-loop/scripts/triage.py"]
 
 
 def test_stale_allowlist_entry_is_detected():

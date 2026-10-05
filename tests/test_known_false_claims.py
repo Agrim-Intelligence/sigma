@@ -30,7 +30,7 @@ def test_branching_model_names_human_merge_exception():
 
 
 def test_channel_webhook_documents_its_enforced_remote_opt_in():
-    text = (ROOT / "skills/agrim-loop/scripts/channel_notify.py").read_text()
+    text = (ROOT / "skills/sigma-loop/scripts/channel_notify.py").read_text()
     assert "127.0.0.1-only" not in text
     assert "allow_remote_webhook" in text
 

@@ -62,7 +62,7 @@ _REASON = (
     "  * `--label sdlc:goal` if it should be queued for work; leave it off for a tracked "
     "follow-up a human will promote.\n"
     "\n"
-    "When Sigma is filing this itself, prefer `handoff.py track` (skills/agrim-loop/scripts/"
+    "When Sigma is filing this itself, prefer `handoff.py track` (skills/sigma-loop/scripts/"
     "handoff.py): it sets Status, Priority and assignee together and cannot produce a bare issue."
 )
 

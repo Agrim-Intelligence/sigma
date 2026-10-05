@@ -2,7 +2,7 @@ import json, pathlib, re, tempfile, time, importlib.util
 import gqlfake
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -367,7 +367,7 @@ def _actionlog_sdlc(tmp_path):
 def test_bucket_parked_also_surfaces_a_blocked_only_issue():
     """#1358 (against #1350's own gap): a goal `mark_blocked` transitioned to `sdlc:blocked`
     (never `sdlc:parked`) had no discovery path in triage's survey -- invisible to a human running
-    /agrim-triage even though it lost `sdlc:goal` exactly like a plain parked issue does. Must
+    /sigma-triage even though it lost `sdlc:goal` exactly like a plain parked issue does. Must
     surface here too, tagged by its own state so a human can tell the two apart."""
     triage = _mod("triage")
     issues = [_issue(3, labels=[_BLOCKED_L])]
@@ -388,7 +388,7 @@ def test_bucket_parked_tags_a_plain_parked_issue_state_too():
 def test_bucket_parked_surfaces_a_needs_triage_issue():
     """#2427, a real bug found live and fixed here: #2363's `sdlc:needs-triage` overlay (every tier
     of automatic unit classification tried and failed) had NO discovery path in triage's survey at
-    all -- `/agrim-triage`, the tool whose entire job is surfacing things needing a human decision,
+    all -- `/sigma-triage`, the tool whose entire job is surfacing things needing a human decision,
     was blind to the one label whose whole purpose is exactly that. Its reason names the absence
     of a self-healing sweep too, unlike its `needs-unit`/`needs-label` siblings."""
     triage = _mod("triage")
@@ -949,16 +949,16 @@ def test_bucket_hygiene_flags_missing_against_the_configured_prefix():
 
 # --- #2296: the priority rubric, mechanically applied ---------------------------------------
 #
-# BR-19/BR-20/BR-25: the "Priority criteria" rubric in agrim-triage's own SKILL.md was prose only
+# BR-19/BR-20/BR-25: the "Priority criteria" rubric in sigma-triage's own SKILL.md was prose only
 # before this -- read by a human at the question round but applied by nothing. `_priority_hint`
-# ports the pattern agrim-scope already uses for its own identical case (a P1 zero-signal default,
+# ports the pattern sigma-scope already uses for its own identical case (a P1 zero-signal default,
 # only asking when two adjacent tiers are genuinely ambiguous).
 
 
 def test_priority_hint_computes_a_clear_tier_from_the_issues_own_text():
     """An issue whose own text unambiguously matches one tier's rubric vocabulary -- the P4 test
     ("speculative, cosmetic, or pure hygiene") -- resolves to that tier with no ambiguity, the same
-    "would the answer change the plan's shape" resolution agrim-scope's SKILL.md already performs
+    "would the answer change the plan's shape" resolution sigma-scope's SKILL.md already performs
     silently once steps 2-3 answer it unambiguously."""
     triage = _mod("triage")
     hint = triage._priority_hint("Remove a stray zero-byte file",
@@ -967,7 +967,7 @@ def test_priority_hint_computes_a_clear_tier_from_the_issues_own_text():
 
 
 def test_priority_hint_defaults_to_p1_on_zero_signal_mirroring_sdlc_scope():
-    """No rubric vocabulary matched at all -- agrim-scope's own zero-signal default (`P1`, per its
+    """No rubric vocabulary matched at all -- sigma-scope's own zero-signal default (`P1`, per its
     SKILL.md step 6 and `compile_plan.DEFAULT_PRIORITY`) applies here too, silently, not as an
     ambiguous case."""
     triage = _mod("triage")
@@ -977,7 +977,7 @@ def test_priority_hint_defaults_to_p1_on_zero_signal_mirroring_sdlc_scope():
 
 def test_priority_hint_flags_genuine_ambiguity_between_two_adjacent_tiers():
     """Text that plausibly reads as EITHER of two adjacent tiers -- the same "soon -> P1 or P2"
-    shape agrim-scope's own SKILL.md names as a real, askable ambiguity -- still surfaces the ask;
+    shape sigma-scope's own SKILL.md names as a real, askable ambiguity -- still surfaces the ask;
     the residual exception is not silently removed by mechanizing the common case."""
     triage = _mod("triage")
     hint = triage._priority_hint(
@@ -1651,7 +1651,7 @@ def test_cli_usage_on_an_unknown_verb(capsys):
 
 
 # ===================================================================================================
-# #669: the `plan` compiler (agrim-triage 2/4) -- pure compile, zero network, zero ledger writes BY
+# #669: the `plan` compiler (sigma-triage 2/4) -- pure compile, zero network, zero ledger writes BY
 # DEFAULT. #713 added the one opt-in exception (--resolve-missing); its own tests, further down,
 # use a dedicated per-issue-number-keyed fake (_view_run/_issue_view_json), not _recording_runner
 # (whose per-VERB-only keying cannot distinguish different `gh issue view <N>` calls from each
@@ -2870,7 +2870,7 @@ def test_cli_usage_mentions_plan_verb(capsys):
 
 
 # ===================================================================================================
-# #670: `enact` (agrim-triage 3/4) -- compiles an already-written plan.json into native primitives.
+# #670: `enact` (sigma-triage 3/4) -- compiles an already-written plan.json into native primitives.
 # Fixture note: `_gh_sdlc` above is reused for a real discovery.github config; `_recording_runner`'s
 # per-VERB-only keying (args[1]) cannot express different `gh issue view` responses for different
 # issue numbers, which every enact test needs -- `_enact_runner` below is the per-issue-number-aware
@@ -3670,7 +3670,7 @@ def test_enqueued_bucket_still_lists_a_plain_goal_and_still_excludes_parked_and_
 def test_picking_a_proposal_promotes_it_instead_of_stacking_labels():
     """#1393: picking an issue that carries `sdlc:needs-confirmation` used to ADD `sdlc:goal` on top
     of it, producing exactly the half-promoted state `_fetch_pending`, `_card_is_eligible` and
-    `/agrim-promote`'s `drift` bucket all call drift -- so `enact` manufactured the corruption
+    `/sigma-promote`'s `drift` bucket all call drift -- so `enact` manufactured the corruption
     promote.py exists to repair, and the picked issue stayed unpickable afterwards. A human choosing
     an issue in a triage plan IS the approval, so picking is now the atomic promote transition."""
     triage = _mod("triage")

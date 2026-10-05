@@ -1,9 +1,9 @@
-"""Model auto-selection predictor (agrim-model/predict.py): a deterministic goal->tier heuristic.
+"""Model auto-selection predictor (sigma-model/predict.py): a deterministic goal->tier heuristic.
 Pins each tier, the upward conflict-resolution rule, and the default so a wording change that
 silently down-tiers hard work fails here."""
 import pathlib, importlib.util
 
-P = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-model" / "scripts" / "predict.py"
+P = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-model" / "scripts" / "predict.py"
 
 
 def _mod():
@@ -166,8 +166,8 @@ def test_orchestrators_wire_model_selection():
     """The loop must call the resolver + dispatch a subagent; goal must surface it — so a refactor
     can't silently drop the wiring."""
     sk = pathlib.Path(__file__).resolve().parent.parent / "skills"
-    loop = (sk / "agrim-loop" / "SKILL.md").read_text()
-    goal = (sk / "agrim-goal" / "SKILL.md").read_text()
+    loop = (sk / "sigma-loop" / "SKILL.md").read_text()
+    goal = (sk / "sigma-goal" / "SKILL.md").read_text()
     assert "predict.py" in loop and "resolve" in loop and "subagent" in loop
     assert "predict.py" in goal and "model_selection" in goal
 
@@ -679,7 +679,7 @@ def test_resolve_with_a_goal_emits_model_choice_with_the_signal(tmp_path, monkey
     assert len(calls) == 1
     argv, kwargs = calls[0]
     assert argv[0] == m.sys.executable
-    assert argv[1].endswith(str(m.pathlib.Path("agrim-loop") / "scripts" / "loop.py"))
+    assert argv[1].endswith(str(m.pathlib.Path("sigma-loop") / "scripts" / "loop.py"))
     assert m.pathlib.Path(argv[1]).name == "loop.py"
     assert argv[2:6] == ["emit", sdlc, "42", "model_choice"]
     assert "--model" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -743,7 +743,7 @@ def test_emit_helper_swallows_a_timeout(tmp_path, monkeypatch):
 def test_resolve_cli_verb_reuses_argv2_as_the_goal_identifier(tmp_path, monkeypatch):
     """main()'s own `resolve` dispatch must pass the ORIGINAL (pre-_read) argv[2] as the goal id --
     the one place both the raw identifier and its derived text are both still available. Zero
-    SKILL.md prose change is needed for the goal-level call (agrim-loop's and agrim-goal's own
+    SKILL.md prose change is needed for the goal-level call (sigma-loop's and sigma-goal's own
     `predict.py resolve "$goal" .sdlc` lines are unchanged) BECAUSE main() does this internally."""
     m = _mod()
     calls = []
@@ -797,7 +797,7 @@ def test_why_never_calls_subprocess_run_at_all():
 # --- #1601: per-repo signal excludes -------------------------------------------------------------
 # The fable pattern's terms are creative signals IN GENERAL but ordinary domain nouns on specific
 # repos: a storytelling pipeline has a "narrative stage" and a "prose renderer", and `vision`
-# collides with Sigma's OWN vision-first vocabulary (`/agrim-vision`, the north-star doc), so
+# collides with Sigma's OWN vision-first vocabulary (`/sigma-vision`, the north-star doc), so
 # "Align the retry logic with the north-star vision doc" routed to the creative tier. #350 fixed the
 # same class by NARROWING the global pattern (bare `story` dropped, `storytell` kept); that remedy
 # cannot generalize here, because `narrativ`/`prose`/`vision` are genuinely creative on most repos
@@ -1101,7 +1101,7 @@ def test_why_reports_what_the_loop_would_actually_choose(tmp_path, capsys):
 
 def test_the_bare_verb_agrees_with_why_and_with_resolve(tmp_path, capsys):
     """`predict.py '<goal>'` is the skill's headline command. If it ignored the excludes the loop
-    honors, /agrim-model would print a recommendation the loop then contradicts."""
+    honors, /sigma-model would print a recommendation the loop then contradicts."""
     m = _mod()
     goal = "regenerate the narrative stage"
     tuned = _sdlc_cfg(tmp_path, {"model_selection_max_tier": "fable",
@@ -1166,7 +1166,7 @@ def test_the_excludes_knob_is_discoverable_in_the_scaffolded_config():
     """Same rule test_config_discoverability.py enforces for gates: a knob nobody can find in the
     one file every adopter opens has not shipped. The `_<name>` comment must also say what to put
     in it — the values are the router's own signal literals, which `why` prints."""
-    tmpl = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" /
+    tmpl = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" /
             "templates" / "config.json.tmpl").read_text(encoding="utf-8")
     import json
     cfg = json.loads(tmpl)
@@ -1176,7 +1176,7 @@ def test_the_excludes_knob_is_discoverable_in_the_scaffolded_config():
 
 
 def test_the_skill_documents_the_excludes_knob():
-    sk = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-model" / "SKILL.md"
+    sk = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-model" / "SKILL.md"
           ).read_text(encoding="utf-8")
     assert "model_selection_signal_excludes" in sk
 
@@ -1405,34 +1405,34 @@ def test_codex_dispatch_docs_invoke_the_host_model_resolver():
     """The CLI is only a control if the gestures agents receive actually use it."""
     root = pathlib.Path(__file__).resolve().parent.parent / "skills"
     commands = {
-        root / "agrim-model" / "SKILL.md":
+        root / "sigma-model" / "SKILL.md":
             'scripts/predict.py" host-model codex',
-        root / "agrim-loop" / "references" / "running.md":
-            '../agrim-model/scripts/predict.py" host-model codex',
-        root / "agrim-loop" / "references" / "picking.md":
-            '../agrim-model/scripts/predict.py" host-model codex',
-        root / "agrim-goal" / "SKILL.md":
-            '../agrim-model/scripts/predict.py" host-model codex',
+        root / "sigma-loop" / "references" / "running.md":
+            '../sigma-model/scripts/predict.py" host-model codex',
+        root / "sigma-loop" / "references" / "picking.md":
+            '../sigma-model/scripts/predict.py" host-model codex',
+        root / "sigma-goal" / "SKILL.md":
+            '../sigma-model/scripts/predict.py" host-model codex',
     }
     for path, command in commands.items():
         assert command in path.read_text(encoding="utf-8"), path
-    running = (root / "agrim-loop" / "references" / "running.md").read_text(encoding="utf-8")
-    assert '../agrim-model/scripts/predict.py" host-model codex' in running[
+    running = (root / "sigma-loop" / "references" / "running.md").read_text(encoding="utf-8")
+    assert '../sigma-model/scripts/predict.py" host-model codex' in running[
         running.index("**Per-STEP downgrade:"):]
     slices = running[running.index("**3b. Independent slices?"):]
-    assert '../agrim-model/scripts/predict.py" host-model codex' in slices
+    assert '../sigma-model/scripts/predict.py" host-model codex' in slices
     assert "--tier <tier-or-off>" in slices
     assert "`work.py start`). Before every Codex" in slices
     assert "into its fresh interactive Codex process rather than inheriting" not in slices
-    loop = (root / "agrim-loop" / "SKILL.md").read_text(encoding="utf-8")
+    loop = (root / "sigma-loop" / "SKILL.md").read_text(encoding="utf-8")
     assert "--host codex --goal-worktree <path> --tier <tier-or-off>" in loop
-    assert ('../agrim-model/scripts/predict.py"\n   host-model codex "<tier-or-off>" .sdlc') in loop
-    model_skill = (root / "agrim-model" / "SKILL.md").read_text(encoding="utf-8")
+    assert ('../sigma-model/scripts/predict.py"\n   host-model codex "<tier-or-off>" .sdlc') in loop
+    model_skill = (root / "sigma-model" / "SKILL.md").read_text(encoding="utf-8")
     assert "portable tier prediction is disabled" in model_skill
     assert "before every dispatched Codex phase, pass `off` to `host-model`" in model_skill
     readme = (root.parent / "README.md").read_text(encoding="utf-8")
     assert "`predict.py host-model codex` resolves them, or the explicit `off` fallback" in readme
-    progress = (root / "agrim-loop" / "references" / "progress.md").read_text(encoding="utf-8")
+    progress = (root / "sigma-loop" / "references" / "progress.md").read_text(encoding="utf-8")
     assert "a Codex phase may still be\nbe dispatched" not in progress
     assert "a Codex phase may still be\ndispatched" in progress
     output_detail = (root.parent / "docs" / "output-contract-detail.md").read_text(encoding="utf-8")
@@ -1442,7 +1442,7 @@ def test_codex_dispatch_docs_invoke_the_host_model_resolver():
 def test_host_model_override_is_discoverable_in_the_scaffolded_config():
     """A future Codex catalog change must have a documented, non-source-edit recovery path."""
     import json
-    template = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" /
+    template = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" /
                 "templates" / "config.json.tmpl")
     config = json.loads(template.read_text(encoding="utf-8"))
     assert config["model_host_overrides"] == {}
@@ -1576,8 +1576,8 @@ def test_malformed_max_tier_falls_back_to_the_default_cap():
 
 def test_all_four_documented_cli_gestures_honour_the_cap(tmp_path, capsys, monkeypatch):
     """The control runs on the gesture the DOCS give. All four tier-producing invocations the
-    skills actually prescribe -- the bare verb (agrim-model/SKILL.md:30), `why` (:86), `resolve`
-    (:60, agrim-goal/SKILL.md:36) and `resolve-step` (agrim-loop/references/running.md:110) -- each
+    skills actually prescribe -- the bare verb (sigma-model/SKILL.md:30), `why` (:86), `resolve`
+    (:60, sigma-goal/SKILL.md:36) and `resolve-step` (sigma-loop/references/running.md:110) -- each
     asserted from real stdout. `resolve-step` dispatches a real subagent, so one that silently
     missed its `max_tier(cfg)` read would ship a plan step at fable with the whole suite green."""
     m = _mod()

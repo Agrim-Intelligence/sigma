@@ -6,7 +6,7 @@ import pathlib
 import pytest
 from skill_corpus import skill_corpus
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -342,7 +342,7 @@ def test_cross_area_actionable_follow_up_with_no_owner_self_assigns_and_stays_pi
     for an area with no CODEOWNERS/ledger.owners match.
 
     Before the fix: the issue still correctly carried sdlc:goal (goal_label was never actually
-    gated on ownership), but assignee stayed None. Given /agrim-setup's own default
+    gated on ownership), but assignee stayed None. Given /sigma-setup's own default
     (discovery.github.assignee: "@me"), that made it invisible to EVERY account's assignee-scoped
     pick query -- carrying sdlc:goal and reachable by nobody's loop. "Unowned" had silently become
     "unpickable" too, which is the actual bug: not a missing label, an empty assignee.
@@ -1748,7 +1748,7 @@ def test_readme_documents_track_body_file():
 
 
 def test_skill_documents_track_body_file():
-    skill = skill_corpus("agrim-loop")   # #1611: SKILL.md + references/*.md
+    skill = skill_corpus("sigma-loop")   # #1611: SKILL.md + references/*.md
     assert "--body-file" in skill
 
 
@@ -1761,12 +1761,12 @@ def test_readme_documents_ack_area():
 
 
 def test_loop_skill_documents_ack_area():
-    skill = skill_corpus("agrim-loop")   # #1611: SKILL.md + references/*.md
+    skill = skill_corpus("sigma-loop")   # #1611: SKILL.md + references/*.md
     assert "--goal <goal> --area <area>" in skill
 
 
 def test_ledger_skill_documents_ack_area():
-    skill = (ROOT / "skills" / "agrim-ledger" / "SKILL.md").read_text(encoding="utf-8")
+    skill = (ROOT / "skills" / "sigma-ledger" / "SKILL.md").read_text(encoding="utf-8")
     assert "--goal <goal> --area <area>" in skill
 
 
@@ -2191,7 +2191,7 @@ def test_cli_track_with_live_judge_enabled_fires_a_real_filing_time_classificati
 def test_create_tracked_issue_files_a_real_goal_in_local_mode(tmp_path):
     """The whole point of LocalSource.create_dependency: create_tracked_issue selects a backlog by
     `hasattr(source, "create_dependency")`. Before that method existed, a local backlog silently got
-    a ledger entry and NO work item — so decompose_check, follow-up findings and /agrim-audit could
+    a ledger entry and NO work item — so decompose_check, follow-up findings and /sigma-audit could
     only file on GitHub. This guards the integration, not just the method: flipping handoff's
     duck-typed guard would break local filing with every unit test still green."""
     base = tmp_path / ".sdlc"
@@ -2275,7 +2275,7 @@ def test_a_reused_blocker_nobody_can_pick_is_warned_about_not_silently_waited_on
 
     def fake_resolve(sdlc_dir, config, source, goal, refs, run=None, apply=True):
         return {"results": [{"ref": refs[0], "verdict": "needs_human", "acted": False,
-                             "detail": "a HUMAN filed it — run /agrim-promote on #77"}],
+                             "detail": "a HUMAN filed it — run /sigma-promote on #77"}],
                 "resolved": [], "surfaced": list(refs)}
     monkeypatch.setattr(handoff, "_load_sibling",
                         lambda n: type("M", (), {"resolve": staticmethod(fake_resolve)}))
@@ -2285,7 +2285,7 @@ def test_a_reused_blocker_nobody_can_pick_is_warned_about_not_silently_waited_on
     report = handoff.create_tracked_issue(
         str(tmp_path), {}, "42", "api", "needs the endpoint",
         same_area=True, immediately_actionable=True, blocks_goal=True, source=src, dedup=True)
-    assert any("nothing can pick" in w and "/agrim-promote" in w for w in report["warnings"])
+    assert any("nothing can pick" in w and "/sigma-promote" in w for w in report["warnings"])
 
 
 def test_a_non_blocking_duplicate_reuse_never_touches_the_reused_issue(tmp_path, monkeypatch):

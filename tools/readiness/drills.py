@@ -83,7 +83,7 @@ def _run(argv, *, cwd=None, env=None):
 
 
 def _load_dedup():
-    path = ROOT / "skills" / "agrim-scope" / "scripts" / "dedup.py"
+    path = ROOT / "skills" / "sigma-scope" / "scripts" / "dedup.py"
     spec = importlib.util.spec_from_file_location("readiness_dedup", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -313,7 +313,7 @@ def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     board.update({"enabled": True, "number": 1, "owner": "acme", "queue_source": "label",
                   "archive_done": False})
     config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
-    py, loop = sys.executable, sigma / "skills" / "agrim-loop" / "scripts"
+    py, loop = sys.executable, sigma / "skills" / "sigma-loop" / "scripts"
     def step(name, argv, ok=(0,)):
         return run.step(name, argv, repo, env, ok_rc=ok)
     step("file goal", [sys.executable, gh, "issue", "create", "--repo", control.FAKE_REPO, "--label", "sdlc:goal",
@@ -744,10 +744,10 @@ def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
     repo, state = _scratch_sdlc(workdir)
     stop = state / "watch.stop"
     stop.touch()
-    daemon = _run([sys.executable, str(sigma / "skills" / "agrim-loop" / "scripts" / "watch_daemon.py"),
+    daemon = _run([sys.executable, str(sigma / "skills" / "sigma-loop" / "scripts" / "watch_daemon.py"),
                    str(repo / ".sdlc")],
                   cwd=repo, env={**os.environ, "SIGMA_WATCH_SLEEP_SCALE": "0"})
-    doctor = _run([sys.executable, str(sigma / "skills" / "agrim-doctor" / "scripts" / "doctor.py"),
+    doctor = _run([sys.executable, str(sigma / "skills" / "sigma-doctor" / "scripts" / "doctor.py"),
                    "check", str(repo / ".sdlc")], cwd=repo)
     session = _run(["bash", str(sigma / "hooks" / "session_start.sh")],
                    cwd=repo, env={**{k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"},
@@ -770,7 +770,7 @@ def run_d4(workdir: Path, sigma: Path = ROOT, seed: int = 1):
         "started_at_ns": started,
         "finished_at_ns": time.monotonic_ns(),
         "recovery_commands": [
-            [sys.executable, str(sigma / "skills" / "agrim-doctor" / "scripts" / "doctor.py"),
+            [sys.executable, str(sigma / "skills" / "sigma-doctor" / "scripts" / "doctor.py"),
              "check", str(repo / ".sdlc")],
             ["bash", str(sigma / "hooks" / "session_start.sh")],
         ],

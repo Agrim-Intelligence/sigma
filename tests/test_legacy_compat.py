@@ -6,7 +6,7 @@ private name in this tree (`tests/test_no_private_names.py`, #2729): no shipped 
 included, carries it whole.
 
 What is pinned:
-  - the ONE helper (`skills/agrim-loop/scripts/legacy.py`): env precedence (Sigma wins; empty is
+  - the ONE helper (`skills/sigma-loop/scripts/legacy.py`): env precedence (Sigma wins; empty is
     unset; internal hand-off names never fall back), schema ids, marker spellings, the renamed
     `drift_watch.channels` key;
   - each reader that used to compare against the Sigma spelling only now reads the legacy one too;
@@ -21,8 +21,8 @@ import re
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
-INIT = ROOT / "skills" / "agrim-init" / "scripts"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
+INIT = ROOT / "skills" / "sigma-init" / "scripts"
 
 RETIRED = "loop" + "smith"
 RETIRED_ENV = RETIRED.upper() + "_"
@@ -362,7 +362,7 @@ def _gate(tmp_path, extra):
     import subprocess
     env = {k: v for k, v in os.environ.items() if not k.startswith(("SIGMA_", RETIRED_ENV))}
     env.update(extra, CLAUDE_PROJECT_DIR=str(tmp_path))        # no .sdlc/ here: scoped hook is silent
-    proc = subprocess.run(["bash", str(ROOT / "hooks" / "agrim_gate.sh")], env=env,
+    proc = subprocess.run(["bash", str(ROOT / "hooks" / "sigma_gate.sh")], env=env,
                           input=json.dumps({"prompt": "implement the parser in parser.py"}),
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
@@ -380,7 +380,10 @@ def test_the_gate_hook_reads_the_legacy_gate_variable(tmp_path):
 _MARKER_LITERAL = re.compile(r"""["'](?:<!-- )?sigma[:-][a-z][a-z0-9:-]*""")
 #: Brand-prefixed literals that are names, not markers: temp-file/ruleset prefixes, a doc name, and
 #: the git-dir directory #278's refused-push records live in (new with #278, so no legacy spelling).
-_NOT_MARKERS = ("sigma-managed-enrolled-", "sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
+_NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "sigma-kg", "sigma-log", "sigma-loop",
+                "sigma-model", "sigma-rebase", "sigma-scope", "sigma-scope-assign", "sigma-scope-plan",
+                "sigma-setup", "sigma-setup:", "sigma-velocity",    # skill names in printed output (#523)
+                "sigma-managed-enrolled-", "sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
                 "sigma-receipt-snapshot-")
 
 

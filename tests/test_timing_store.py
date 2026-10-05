@@ -1,4 +1,4 @@
-"""Always-on timing store — write side (skills/agrim-loop/scripts/timing_store.py).
+"""Always-on timing store — write side (skills/sigma-loop/scripts/timing_store.py).
 
 Mirrors tests/test_actionlog.py's shape. The load-bearing test here is the concurrency one, and
 it exists because the precedent this store was nearly built on does NOT hold on every host:
@@ -22,7 +22,7 @@ import time
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -404,10 +404,10 @@ def test_a_session_line_never_lands_under_a_goal_stem(tmp_path, monkeypatch):
     # process's first timing write (run alone, or first on an xdist worker) -- an order-dependent red
     # on origin/main too, seen in #239's verify. Shut the flag: the sweep is not what is under test.
     monkeypatch.setattr(timing_store, "_pruned_this_process", True)
-    timing_store.append_session(d, "4f2a91", "turn", "agrim-plan", 1238000, started=1789041912400)
+    timing_store.append_session(d, "4f2a91", "turn", "sigma-plan", 1238000, started=1789041912400)
 
     entries = timing_store.read_session(d, "4f2a91")
-    assert [e["name"] for e in entries] == ["agrim-plan"]
+    assert [e["name"] for e in entries] == ["sigma-plan"]
     assert entries[0]["started"] == 1789041912400          # milliseconds, kept exactly
     # The store's top level holds ONLY the reserved subtree — no goal dir was minted.
     assert sorted(p.name for p in timing_store.store_dir(d).iterdir()) == [timing_store.SESSIONS]
@@ -441,8 +441,8 @@ def test_hook_lines_share_one_file_and_script_lines_get_their_own(tmp_path):
     safe and avoids one file per segment; the script floor CAN run concurrently with a hook, so it
     keeps the per-process file the goal layer already proved. Two writers, never one file."""
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "s1", "turn", "agrim-plan", 100, started=1000)
-    timing_store.append_session(d, "s1", "turn", "agrim-implement", 200, started=2000)
+    timing_store.append_session(d, "s1", "turn", "sigma-plan", 100, started=1000)
+    timing_store.append_session(d, "s1", "turn", "sigma-implement", 200, started=2000)
     timing_store.append_session(d, "s1", "script", "loop", 300)
 
     names = sorted(p.name for p in timing_store.session_dir(d, "s1").glob("*.jsonl"))
@@ -455,8 +455,8 @@ def test_read_session_collapses_a_segment_recorded_twice(tmp_path):
     segment on the next event, with the same `started`. The existing de-duplication absorbs it,
     shortest wins — the same rule the goal layer already proved."""
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "s1", "turn", "agrim-plan", 1238000, started=1789041912400)
-    timing_store.append_session(d, "s1", "turn", "agrim-plan", 1240100, started=1789041912400)
+    timing_store.append_session(d, "s1", "turn", "sigma-plan", 1238000, started=1789041912400)
+    timing_store.append_session(d, "s1", "turn", "sigma-plan", 1240100, started=1789041912400)
     assert [e["ms"] for e in timing_store.read_session(d, "s1")] == [1238000]
 
 
@@ -492,12 +492,12 @@ def test_an_unsafe_session_id_from_the_environment_falls_through_the_chain(monke
 #: paths existed; a `${CLAUDE_SKILL_DIR}` reference resolves to the invoking skill, a sibling
 #: reference to another, and only `find` tells the truth.
 _FLOOR_SCRIPTS = (
-    "agrim-loop/scripts/loop.py", "agrim-loop/scripts/phase_report.py", "agrim-loop/scripts/work.py",
-    "agrim-loop/scripts/discovery.py", "agrim-loop/scripts/north_star.py",
-    "agrim-loop/scripts/review_context.py", "agrim-loop/scripts/reviewer.py",
-    "agrim-model/scripts/predict.py", "agrim-dossier/scripts/dossier.py",
-    "agrim-goal-design/scripts/goal_design.py", "agrim-define/scripts/define.py",
-    "agrim-scope/scripts/brainstorm.py", "agrim-scope/scripts/compile_plan.py",
+    "sigma-loop/scripts/loop.py", "sigma-loop/scripts/phase_report.py", "sigma-loop/scripts/work.py",
+    "sigma-loop/scripts/discovery.py", "sigma-loop/scripts/north_star.py",
+    "sigma-loop/scripts/review_context.py", "sigma-loop/scripts/reviewer.py",
+    "sigma-model/scripts/predict.py", "sigma-dossier/scripts/dossier.py",
+    "sigma-goal-design/scripts/goal_design.py", "sigma-define/scripts/define.py",
+    "sigma-scope/scripts/brainstorm.py", "sigma-scope/scripts/compile_plan.py",
 )
 
 _PROBE_SCRIPT = """
@@ -616,8 +616,8 @@ def _main_block_calls_timed_main(source):
 
 
 def test_the_enumerated_scripts_opt_in_to_the_floor():
-    """Structural: each floor script wraps its CLI entry in `timed_main`. `agrim-plan` and
-    `agrim-implement` invoke no scripts at all, so on a hookless host the floor is blind to them by
+    """Structural: each floor script wraps its CLI entry in `timed_main`. `sigma-plan` and
+    `sigma-implement` invoke no scripts at all, so on a hookless host the floor is blind to them by
     construction — that limit is stated in the output, not fixed here."""
     root = S.parent.parent
     missing = [rel for rel in _FLOOR_SCRIPTS
@@ -651,7 +651,7 @@ def test_a_future_dated_stamp_does_not_suppress_the_sweep(tmp_path):
     "recently swept" would suppress retention indefinitely (code review C3). A stamp not in the
     past is not fresh."""
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "old", "turn", "agrim-plan", 1000, started=1)
+    timing_store.append_session(d, "old", "turn", "sigma-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old"):
         _age(f, timing_store.RETENTION_DAYS + 5)
     stamp = timing_store.store_dir(d) / ".last-prune"
@@ -693,9 +693,9 @@ def test_session_totals_group_turns_by_skill_and_keep_scripts_separate(tmp_path)
     turns, so their sum would double-count exactly as `effort` does, and here nobody asked for
     that arithmetic."""
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "s1", "turn", "agrim-implement", 6_000_000, started=1)
-    timing_store.append_session(d, "s1", "turn", "agrim-plan", 1_200_000, started=2)
-    timing_store.append_session(d, "s1", "turn", "agrim-implement", 100_000, started=3)
+    timing_store.append_session(d, "s1", "turn", "sigma-implement", 6_000_000, started=1)
+    timing_store.append_session(d, "s1", "turn", "sigma-plan", 1_200_000, started=2)
+    timing_store.append_session(d, "s1", "turn", "sigma-implement", 100_000, started=3)
     timing_store.append_session(d, "s1", "turn", "(none)", 2_000, started=4)
     timing_store.append_session(d, "s1", "script", "loop", 252_000)
     timing_store.append_session(d, "s1", "script", "loop", 228_000)
@@ -703,7 +703,7 @@ def test_session_totals_group_turns_by_skill_and_keep_scripts_separate(tmp_path)
     t = timing_store.session_totals(d, "s1")
     assert t["recorded"] is True and t["precise"] is True
     assert t["turn_ms"] == 7_302_000 and t["segments"] == 4
-    assert list(t["by_skill"].items()) == [("agrim-implement", 6_100_000), ("agrim-plan", 1_200_000),
+    assert list(t["by_skill"].items()) == [("sigma-implement", 6_100_000), ("sigma-plan", 1_200_000),
                                            ("(none)", 2_000)]            # descending, stable
     assert t["script_ms"] == 480_000 and t["script_runs"] == 2
 
@@ -737,7 +737,7 @@ def test_a_stale_session_is_pruned_goal_dirs_are_untouched_and_the_sweep_is_thro
     monkeypatch.setattr(timing_store, "_pruned_this_process", True)   # see the session-line test
     d = _sdlc(tmp_path)
     now = time.time()      # real time, so the aged fixtures and the cutoff mean what they say
-    timing_store.append_session(d, "old-session", "turn", "agrim-plan", 1000, started=1)
+    timing_store.append_session(d, "old-session", "turn", "sigma-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old-session"):
         _age(f, timing_store.RETENTION_DAYS + 5)
     timing_store.append(d, "fresh-goal", "phase", "implement", 1000, started=1)
@@ -750,7 +750,7 @@ def test_a_stale_session_is_pruned_goal_dirs_are_untouched_and_the_sweep_is_thro
     # Throttle: the first maybe_prune sweeps and stamps; a second within the window does not
     # sweep even though a new stale session has appeared.
     assert timing_store.maybe_prune(d, now=now) is not None
-    timing_store.append_session(d, "old-2", "turn", "agrim-plan", 1000, started=1)
+    timing_store.append_session(d, "old-2", "turn", "sigma-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old-2"):
         _age(f, timing_store.RETENTION_DAYS + 5)
     assert timing_store.maybe_prune(d, now=now + 3600) is None
@@ -779,17 +779,17 @@ def test_the_hook_path_prunes_through_the_throttle_not_once_per_process(tmp_path
     instead: with a fresh stamp present, a session append does not sweep."""
     monkeypatch.setattr(timing_store, "_pruned_this_process", True)   # see the session-line test
     d = _sdlc(tmp_path)
-    timing_store.append_session(d, "old", "turn", "agrim-plan", 1000, started=1)
+    timing_store.append_session(d, "old", "turn", "sigma-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old"):
         _age(f, timing_store.RETENTION_DAYS + 5)
     timing_store.maybe_prune(d)                          # sweeps `old`, writes the stamp
     assert not timing_store.session_dir(d, "old").exists()
 
-    timing_store.append_session(d, "old-again", "turn", "agrim-plan", 1000, started=1)
+    timing_store.append_session(d, "old-again", "turn", "sigma-plan", 1000, started=1)
     for f in timing_store.session_files(d, "old-again"):
         _age(f, timing_store.RETENTION_DAYS + 5)
     monkeypatch.setattr(timing_store, "_pruned_this_process", False)
-    timing_store.append_session(d, "live", "turn", "agrim-plan", 5, started=2)   # a hook event
+    timing_store.append_session(d, "live", "turn", "sigma-plan", 5, started=2)   # a hook event
     assert timing_store.session_dir(d, "old-again").exists()     # stamp fresh → no sweep
 
 
@@ -811,7 +811,7 @@ def _body_without_docstring(fn):
 
 def test_the_local_validator_is_byte_identical_to_states():
     """S9's acceptance criterion. `state.py` sanctions exactly one local copy of
-    `unsafe_goal_reason` — `agrim-log`'s, kept byte-identical by discipline alone. This is the
+    `unsafe_goal_reason` — `sigma-log`'s, kept byte-identical by discipline alone. This is the
     second, with the same justification (the hook loads this module on every turn boundary, and
     `state.py`'s import is ~0.2 s of it) and a stronger guarantee: the two bodies are compared
     statement for statement, so a change to either without the other fails here."""
@@ -838,7 +838,7 @@ def test_loading_the_store_imports_neither_state_nor_subprocess():
         f"p = pathlib.Path({str(S / 'timing_store.py')!r})\n"
         "s = importlib.util.spec_from_file_location('timing_store', p)\n"
         "m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n"
-        "m.append_session(tempfile.mkdtemp(), 'probe', 'turn', 'agrim-plan', 5, started=1)\n"
+        "m.append_session(tempfile.mkdtemp(), 'probe', 'turn', 'sigma-plan', 5, started=1)\n"
         "print('state-attr', 'state' in vars(m))\n"
         "print('subprocess-imported', 'subprocess' in sys.modules)\n"
     )
@@ -949,7 +949,7 @@ def test_an_append_never_follows_a_linked_file(tmp_path):
     _link_file(victim / "notes.txt", sdir / timing_store.TURNS_FILE)
 
     with pytest.raises(ValueError):
-        timing_store.append_session(d, "s1", "turn", "agrim-plan", 5, started=1)
+        timing_store.append_session(d, "s1", "turn", "sigma-plan", 5, started=1)
     assert (victim / "notes.txt").read_text() == "precious\n"
 
 
@@ -992,7 +992,7 @@ def test_loading_the_store_does_not_load_work_until_a_goal_path_is_needed():
         "s = importlib.util.spec_from_file_location('timing_store', p)\n"
         "m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n"
         "print('after-load', m._work is None)\n"
-        "m.append_session(sys.argv[1], 'probe', 'turn', 'agrim-plan', 5, started=1)\n"
+        "m.append_session(sys.argv[1], 'probe', 'turn', 'sigma-plan', 5, started=1)\n"
         "print('after-session-write', m._work is None)\n"
         "m.goal_dir(sys.argv[1], '482')\n"
         "print('after-goal_dir', m._work is None)\n"
