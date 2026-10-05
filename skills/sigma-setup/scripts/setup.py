@@ -113,9 +113,13 @@ def stale_hook_path(repo_root):
     value (husky, an org scanner, the adopter's own directory under the same name) is never stale.
     Not a git repository at all: False (nothing for git to skip). Raises `HookPathRefused` when git
     cannot be read."""
-    if _hook_git(repo_root, "rev-parse", "--git-dir").returncode != 0:
-        return False
-    if _local_hook_path(repo_root) != HOOKS_PATH:
+    try:
+        current = _local_hook_path(repo_root)       # the common path: ONE git call
+    except HookPathRefused:
+        if _hook_git(repo_root, "rev-parse", "--git-dir").returncode != 0:
+            return False                            # not a repository: nothing to skip
+        raise
+    if current != HOOKS_PATH:
         return False
     return not any((root / HOOKS_PATH).is_dir() for root in _worktree_roots(repo_root))
 
