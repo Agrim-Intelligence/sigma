@@ -114,8 +114,9 @@ _SECRET_PATTERN_SPECS = (
     ("gh-token", re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"), "[REDACTED:gh-token]"),
     ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
     ("auth", re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),
-    #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
-    *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
+    #: The two #629 redactor-only rules run BEFORE the gate's shapes: the shape rule `credential-assignment`
+    #: (quoted, `{12,}`) stops at an escaped quote and would leave a tail the suffix rule could then no
+    #: longer repair, so the value must be consumed whole first.
     #: An HTTP-style `Authorization` header: the scheme word is open-ended (NTLM, Negotiate, AWS4-...), so
     #: everything after the separator up to the end of the line is the credential. Over-redacts a prose
     #: line that merely starts with the header name; accepted, fail toward redaction.
@@ -134,8 +135,10 @@ _SECRET_PATTERN_SPECS = (
                 r"access[_-]?(?:token|key)|auth|credentials?|token|secret|password|passwd|pwd|"
                 r"passphrase)(?:\\*[\"'])?\]?\s*(?::=|=>|[:=])\s*"
                 r"(?:(?:token|api[_-]?key|bearer|basic|digest)[ \t]+)?"
-                r"(?:\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|[\\\"']*[^\s\"']{4,})"),
+                r"(?:\"{3}[^\n]+|'{3}[^\n]+|\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|[\\\"']*[^\s\"']{4,})"),
      r"\1: [REDACTED]"),
+    #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
+    *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
     #: The original anchored rule stays, UNCHANGED, as the commit gate's rule: the gate shares this table
     #: (`COMMIT_SHAPE_RULES`) and a gate's false-positive budget differs from a redactor's -- the wider
     #: rules above roughly double the tracked-tree hits on ordinary code (a variable assigned from a call).

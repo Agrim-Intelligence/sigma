@@ -383,3 +383,15 @@ def test_scrub_triple_quotes_and_subscript_keys():
     for text in ('pass' 'word = """' + v + '"""', "pass" "word = \'\'\'" + v + "\'\'\'",
                  "os.environ['TO" "KEN'] = '" + v + "'", 'os.environ["TO' 'KEN"]="' + v + '"'):
         assert v not in scrub(text), text
+
+
+def test_scrub_escaped_quote_after_a_long_prefix_and_multiword_triple_quotes_leave_no_tail():
+    """The gate-shaped `credential-assignment` rule (quoted, 12+ chars) stops at an escaped quote; the
+    redactor-only rule must have consumed the value first. A 3-char prefix (as in the older escape test)
+    never reached that rule."""
+    scrub = _mod("scrub").scrub
+    head, tail = "abcdefghijkl", "TAILWORD" "ONE TAILWORDTWO"
+    for text in ("DB_PASS" "WORD=\"" + head + "\\\"" + tail + "\"", "DB_PASS" "WORD='" + head + "\\'" + tail + "'",
+                 "TO" "KEN=\"\"\"" + head + " " + tail + "\"\"\"", "TO" "KEN='''" + head + " " + tail + "'''"):
+        out = scrub(text)
+        assert "TAILWORD" not in out and head not in out, out
