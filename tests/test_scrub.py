@@ -278,3 +278,128 @@ def test_url_password_is_linear_on_hyphenated_text():
         t0 = time.perf_counter()
         assert scrub(text) == text
         assert time.perf_counter() - t0 < 2.0, "url-password scheme is quadratic again"
+
+
+# --- unquoted env-style secrets (#629) ----------------------------------------------------------
+# Every value is built at runtime, never spelled whole on one source line, so the leak gate stays quiet.
+def _fake():
+    return "Zq" + "9x" * 6 + "Lm"
+
+
+_ENV_KEYS = ["GITHUB_TOKEN", "DB_PASSWORD", "auth_token", "BOT_TOKEN", "app_secret", "DB_PASSWD", "OPENAI_API_KEY",
+             "x-api-key", "AWS_SECRET_ACCESS_KEY", "AUTH", "GCP_CREDENTIAL", "SERVICE_CREDENTIALS", "Github_Token",
+             "password"]
+
+
+def test_scrub_env_style_names_redact_value_and_keep_key():
+    """One node on purpose (the red/green protocol keys on node ids, and a parametrize id holding a space
+    breaks them): every key x separator x quote combination, each asserted with its own message."""
+    scrub = _mod("scrub").scrub
+    value = _fake()
+    for key in _ENV_KEYS:
+        for sep in ("=", ": ", " = ", " : ", ":"):
+            for quote in ("", '"', "'"):
+                out = scrub("env: " + key + sep + quote + value + quote + " done")
+                assert value not in out and key in out, (key, sep, quote, out)
+
+
+def test_scrub_quoted_value_with_spaces_and_escapes_leaves_no_tail():
+    scrub = _mod("scrub").scrub
+    for text in ('DB_PASS' 'WORD="hunt' 'er two words"', "DB_PASS" "WORD='hunt" "er two words'",
+                 'DB_PASS' 'WORD="hun' r'\"ter two words"', '{"auth_to' 'ken": "hunt' 'er two words"}'):
+        out = scrub(text)
+        assert "hunt" not in out and "words" not in out and "two" not in out, out
+
+
+def test_scrub_unterminated_quote_redacts_to_end_of_line_not_beyond():
+    scrub = _mod("scrub").scrub
+    out = scrub('DB_PASS' 'WORD="hunter two\nnext line stays')
+    assert "hunter" not in out and "two" not in out and "next line stays" in out, out
+
+
+def test_scrub_json_and_header_forms():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ('{"GITHUB_TO' 'KEN":"%s"}' % v, "Authoriz" "ation: " + v, "curl -H 'X-Api-" "Key: %s'" % v):
+        assert v not in scrub(text), text
+
+
+def test_scrub_still_leaves_ordinary_prose_and_metrics_alone():
+    scrub = _mod("scrub").scrub
+    for text in ("token budget is fine", "we author the docs", "max_tokens=4096 and tokens: 12000",
+                 "the authority of the secretary"):
+        assert scrub(text) == text
+
+
+def test_scrub_adversarial_long_inputs_run_in_linear_time():
+    scrub = _mod("scrub").scrub
+    n = 200_000
+    for text in ("token" * (n // 5), "auth " * (n // 5), "pass" "word" + " " * n, "pass" "word=" + "a" * n,
+                 'pass' 'word="' + "\\" * n, "TOKEN_" * (n // 6), "sec" "ret=" * (n // 7), "a" * n):
+        t = time.perf_counter()
+        scrub(text)
+        assert time.perf_counter() - t < 5, text[:12]
+
+
+def test_scrub_authorization_scheme_word_leaves_no_tail_and_empty_quotes_are_left_alone():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ("Authoriz" "ation: Tok" "en " + v, "Authoriz" "ation: Api" "Key " + v, "SECRET_KEY_" "BASE=" + v):
+        assert v not in scrub(text), text
+    assert scrub('gh_auth=""') == 'gh_auth=""'
+
+
+def test_scrub_values_with_url_chars_nested_json_other_separators_and_open_ended_auth_schemes():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    cases = ["PASS" "WORD=ab&cd<" + v + ">", "PASS" "WORD=<" + v + ">", "?to" "ken=ab&" + v,
+             '{"pass' 'word":\\"' + v + '\\"}', "PASS" "WORD => " + v, "PASS" "WORD := " + v,
+             '"pass' 'word" => "' + v + '"', "Authoriz" "ation: NTLM " + v, "Authoriz" "ation: Negotiate " + v]
+    for text in cases:
+        out = scrub(text)
+        assert v not in out and "cd<" not in out, text
+
+
+def test_scrub_backslash_run_after_a_key_is_linear():
+    scrub = _mod("scrub").scrub
+    for text in ("pass" "word=" + "\\" * 200_000, "pass" "word=\\" * 30_000):
+        t = time.perf_counter()
+        scrub(text)
+        assert time.perf_counter() - t < 5
+
+
+def test_the_commit_gate_does_not_widen_with_the_redactor():
+    """The wide #629 rules are redactor-only: ordinary code that assigns or sends a credential-named
+    variable must not become a commit-gate hit (a gate's false-positive budget differs)."""
+    module = _mod("scrub")
+    for line in ("my_to" "ken = fetch_it()", "GITHUB_TO" "KEN=" + _fake(), 'headers = {"Authoriz" "ation": "x " + y}'):
+        assert module.commit_secret_hits(line) == [], line
+    assert {n for n, _ in module.COMMIT_SHAPE_RULES}.isdisjoint({"authorization-header", "credential-assignment-suffix"})
+
+
+def test_scrub_triple_quotes_and_subscript_keys():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ('pass' 'word = """' + v + '"""', "pass" "word = \'\'\'" + v + "\'\'\'",
+                 "os.environ['TO" "KEN'] = '" + v + "'", 'os.environ["TO' 'KEN"]="' + v + '"'):
+        assert v not in scrub(text), text
+
+
+def test_scrub_escaped_quote_after_a_long_prefix_and_multiword_triple_quotes_leave_no_tail():
+    """The gate-shaped `credential-assignment` rule (quoted, 12+ chars) stops at an escaped quote; the
+    redactor-only rule must have consumed the value first. A 3-char prefix (as in the older escape test)
+    never reached that rule."""
+    scrub = _mod("scrub").scrub
+    head, tail = "abcdefghijkl", "TAILWORD" "ONE TAILWORDTWO"
+    for text in ("DB_PASS" "WORD=\"" + head + "\\\"" + tail + "\"", "DB_PASS" "WORD='" + head + "\\'" + tail + "'",
+                 "TO" "KEN=\"\"\"" + head + " " + tail + "\"\"\"", "TO" "KEN='''" + head + " " + tail + "'''"):
+        out = scrub(text)
+        assert "TAILWORD" not in out and head not in out, out
+
+
+def test_scrub_a_stray_quote_inside_an_unquoted_value_leaves_no_tail():
+    scrub = _mod("scrub").scrub
+    for value in ("ab'cdefghijkl", 'ab"cdefghijkl', "abcd'efghijkl", 'abcd"efghijkl'):
+        out = scrub("pass" "word=" + value)
+        assert "efghijkl" not in out and "cdefghijkl" not in out, (value, out)
+    assert scrub('gh_auth=""') == 'gh_auth=""'

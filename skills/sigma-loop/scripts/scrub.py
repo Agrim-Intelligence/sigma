@@ -114,8 +114,34 @@ _SECRET_PATTERN_SPECS = (
     ("gh-token", re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"), "[REDACTED:gh-token]"),
     ("jwt", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
     ("auth", re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),
+    #: The two #629 redactor-only rules run BEFORE the gate's shapes: the shape rule `credential-assignment`
+    #: (quoted, `{12,}`) stops at an escaped quote and would leave a tail the suffix rule could then no
+    #: longer repair, so the value must be consumed whole first.
+    #: An HTTP-style `Authorization` header: the scheme word is open-ended (NTLM, Negotiate, AWS4-...), so
+    #: everything after the separator up to the end of the line is the credential. Over-redacts a prose
+    #: line that merely starts with the header name; accepted, fail toward redaction.
+    ("authorization-header", re.compile(r"(?i)(authorization[\"']?[ \t]*(?::=|=>|[:=])[ \t]*)[^\n]+"),
+     r"\1[REDACTED]"),
+    #: Keyed on the key-name SUFFIX with no `\b`: `GITHUB_TOKEN=` / `DB_PASSWORD=` have no word boundary
+    #: before `TOKEN`/`PASSWORD` (`_` is a word character), so an anchored pattern let every env-style
+    #: name through (#629). The prefix is left in the text, so the key name survives the redaction.
+    #: Separators `=`, `:`, `:=`, `=>`. A quoted value runs to its closing quote (escape-aware) or,
+    #: unterminated, to end of line, so spaces inside it leave no tail; anything else (including a
+    #: serialised-twice `\"value\"`, values holding `&`, `<`, `>` and a stray quote) is a run of
+    #: non-space characters (min 4). Linear: no leading character class, no nested quantifier. A name
+    #: with a trailing suffix (`token_file=`, `max_tokens=`) is deliberately NOT matched, so counters
+    #: and paths survive.
+    ("credential-assignment-suffix", re.compile(r"(?i)(api[_-]?key|secret[_-]?key(?:[_-]?base)?|private[_-]?key|client[_-]?secret|"
+                r"access[_-]?(?:token|key)|auth|credentials?|token|secret|password|passwd|pwd|"
+                r"passphrase)(?:\\*[\"'])?\]?\s*(?::=|=>|[:=])\s*"
+                r"(?:(?:token|api[_-]?key|bearer|basic|digest)[ \t]+)?"
+                r"(?:\"{3}[^\n]+|'{3}[^\n]+|\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|\S{4,})"),
+     r"\1: [REDACTED]"),
     #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
     *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
+    #: The original anchored rule stays, UNCHANGED, as the commit gate's rule: the gate shares this table
+    #: (`COMMIT_SHAPE_RULES`) and a gate's false-positive budget differs from a redactor's -- the wider
+    #: rules above roughly double the tracked-tree hits on ordinary code (a variable assigned from a call).
     ("credential-assignment", re.compile(r"(?i)\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|"
                 r"access[_-]?token|authorization|token|secret|password|passwd|pwd)\b[\"']?\s*[:=]\s*"
                 r"[\"']?[^\s\"'<>&]{4,}"),
@@ -124,7 +150,11 @@ _SECRET_PATTERN_SPECS = (
 
 # Public only to the commit boundary: rule and regular expression, never a matching span/value.
 # `scrub()` below still owns the text-redaction behaviour.
-COMMIT_SHAPE_RULES = tuple((name, rx) for name, rx, _replacement_ in _SECRET_PATTERN_SPECS)
+# Redactor-only (#629): too wide for a commit gate, which would refuse ordinary code such as a line that
+# builds a header or assigns a variable from a call. The gate keeps the original anchored rules.
+_REDACTOR_ONLY = frozenset({"authorization-header", "credential-assignment-suffix"})
+COMMIT_SHAPE_RULES = tuple((name, rx) for name, rx, _replacement_ in _SECRET_PATTERN_SPECS
+                           if name not in _REDACTOR_ONLY)
 _SECRET_PATTERNS = tuple((rx, replacement) for _name, rx, replacement in _SECRET_PATTERN_SPECS)
 
 # These are public synthetic values deliberately used in Sigma's own redaction tests.  The list is
