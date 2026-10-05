@@ -113,7 +113,7 @@ def test_definition_points_at_the_snapshot_doc():
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("- ") or not lines[i].strip()),
                len(lines))
     bullet = "\n".join(lines[start:end])
-    assert "`Agrim-Intelligence/sigma`" in bullet
+    assert "`Agrim-Intelligence/sigmaloop`" in bullet
     assert "../public-snapshot.md" in bullet, bullet
     assert "name-handover" not in bullet, bullet
 

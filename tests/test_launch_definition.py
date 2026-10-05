@@ -217,3 +217,13 @@ def test_rename_hazard_names_the_loops_configured_repo():
     the git remote -- the hazard a rename list most easily drops (#384 review block 2)."""
     section = "\n".join(_section(_markdown(), "## What the rename changes"))
     assert "`discovery.github.repo`" in section, "the rename-hazard list omits discovery.github.repo"
+
+
+def test_definition_json_names_the_new_public_repository():
+    """#524: the public repository is a NEW repository named by the owner; the document and its
+    machine-readable twin carry the same slug (the doctor's fallback is bound to it by
+    `tests/test_release_consistency.py` once the definition is signed)."""
+    assert _definition().get("public_repo") == "Agrim-Intelligence/sigmaloop"
+    text = (ROOT / "docs" / "launch" / "definition.md").read_text(encoding="utf-8")
+    bullet = next(ln for ln in text.splitlines() if ln.startswith("- **Public repository:**"))
+    assert "`Agrim-Intelligence/sigmaloop`" in bullet, bullet

@@ -10,9 +10,9 @@ one `AGENTS.md` states (the only statement `/sigma-doctor` parses), and it never
 version `.claude-plugin/plugin.json` ships. Mixed versions writing `sdlc:*` labels on one board is
 the configuration to avoid. Run `/sigma-doctor` first — it reports the installed version against
 the marketplace's current one — and if it is below the floor, update with
-`claude plugin update sigma@sigma` (then restart the session) before picking any goal. Use the full
+`claude plugin update sigmaloop@sigmaloop` (then restart the session) before picking any goal. Use the full
 `plugin@marketplace` id: older Claude Code releases failed the bare `claude plugin update sigma`
-with "not found" (2.1.284 resolves it, measured), and the full id is unambiguous on every release. `claude plugin marketplace update sigma` is a DIFFERENT
+with "not found" (2.1.284 resolves it, measured), and the full id is unambiguous on every release. `claude plugin marketplace update sigmaloop` is a DIFFERENT
 command that only refreshes the marketplace's listing cache — it does not upgrade an
 already-installed plugin. `claude plugin install` on an already-installed plugin is also a no-op
 and will NOT upgrade it.

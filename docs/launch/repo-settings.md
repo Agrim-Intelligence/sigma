@@ -50,8 +50,9 @@ the next one. `work.py merge` already rebases a pull request that GitHub reports
 - You run these as an **administrator** of the new repository, with the GitHub CLI authenticated
   (`gh auth status`). Reading `security_and_analysis` and the private-vulnerability-reporting status needs
   admin rights; without them the verifier says so and FAILs, it does not guess.
-- `OWNER/NAME` below is the new public repository, for example the name `definition.md` gives. Replace it in
-  every command. The default branch is `main`; if it is not, replace `main` too. The verifier reads only branch names of letters, digits, `_`, `.` and `-`; a default branch with a `/` in its name is refused with exit `2`.
+- `OWNER/NAME` below is the new public repository, `Agrim-Intelligence/sigmaloop` (the name `definition.md` and
+  `definition.json` give; `OWNER` is `Agrim-Intelligence`). Replace it in every command; the placeholder is kept so the
+  commands stay checked against the verifier's own output. The default branch is `main`; if it is not, replace `main` too. The verifier reads only branch names of letters, digits, `_`, `.` and `-`; a default branch with a `/` in its name is refused with exit `2`.
 - The team commands need `OWNER` to be an **organisation**. A repository owned by a person has no teams, and the
   verifier's team check can never pass for it. If the organisation is not the one `.github/CODEOWNERS` names,
   create the team under the new organisation and pass `--team <slug>` to the verifier.

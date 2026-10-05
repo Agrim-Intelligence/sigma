@@ -124,12 +124,12 @@ def test_quickstart_covers_every_host_with_one_placeholder():
     quick = text.split("## Quickstart", 1)[1].split("\n## ", 1)[0]
     for host in ("Claude Code", "Codex", "Cursor"):
         assert f"### {host}" in quick, host
-    assert "claude plugin install sigma@sigma" in quick
-    assert "codex plugin add sigma@sigma" in quick
+    assert "claude plugin install sigmaloop@sigmaloop" in quick
+    assert "codex plugin add sigmaloop@sigmaloop" in quick
     assert "init_flow.py . --cursor" in quick      # #236: the one entry point, on every host
-    # the placeholder is defined exactly once, and nothing else stands in for the URL
-    assert quick.count("`<SIGMA_REPO>` is") == 1
-    assert "<git-url-or-local-path>" not in text
+    # the one placeholder left is defined exactly once; the install lines carry the real URL (#524)
+    assert quick.count("`<installed-sigma>` is") == 1
+    assert "<SIGMA_REPO>" not in text and "<git-url-or-local-path>" not in text
 
 
 # ---------------------------------------------------------------------------------- the controls
@@ -262,9 +262,9 @@ def test_every_plugin_cli_command_parses_and_names_the_shipped_id():
         assert plugin_cli_errors(doc.read_text(encoding="utf-8")) == [], doc
 
 
-@pytest.mark.parametrize("plant", ["`claude plugin instal sigma@sigma`",
-                                   "`codex plugin install sigma@sigma`",
-                                   "`claude plugin install sigma@other`",
+@pytest.mark.parametrize("plant", ["`claude plugin instal sigmaloop@sigmaloop`",
+                                   "`codex plugin install sigmaloop@sigmaloop`",
+                                   "`claude plugin install sigmaloop@other`",
                                    "`codex plugin marketplace refresh`",
                                    "`claude plugin marketplace update elsewhere`"])
 def test_control_a_bad_plugin_command_is_caught(plant):
@@ -490,6 +490,7 @@ VERSION_ALLOW = {
     ("docs/upgrading.md", "1.4.25"): "the previous name's release whose behaviour on a converted "
                                      "repository the upgrade guide describes (#326)",
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
+    ("docs/onboarding-control.md", "2.1.284"): "the measured Claude Code CLI version of the #524 plugin-id re-run",
     ("docs/launch/evidence/pin-rollback-2026-10-02.md", "2.1.284"): "the measured Claude Code CLI version for #359's isolated pin probe",
     ("contract/README.md", "1.3.0"): "the event contract's own semver (contract/VERSION)",
     ("contract/README.md", "1.1.0"): "the event contract's own semver history",

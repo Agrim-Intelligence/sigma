@@ -16,6 +16,7 @@ does not trip itself. The allowlist is deliberately narrow:
   * the organisation name and the owner's GitHub login, wherever they appear;
   * two private-name guard tests that must spell the retired names, for those exact tokens only;
   * CHANGELOG.md below the rename entry (history), never the lines above it;
+  * the retired plugin install id (#524) only in docs/upgrading.md and five pinned history records (see PATTERNS);
   * the recorded launch evidence files named in EVIDENCE: output captured at a named commit, which a
     rewrite would make claim output that commit never produced. A NEW evidence file is not exempt.
 """
@@ -42,8 +43,20 @@ EVIDENCE = frozenset("docs/launch/evidence/" + n for n in (
     "meter-sonnet-5-5-cf31b72c6967.json", "mutation-70c2c6e96136.json", "pin-rollback-2026-10-02.md",
     "review-units-a5c615062313.json", "shared-sdlc-paths-4c8562f.json", "shared-sdlc-paths-control.md",
     "status-a5c615062313.json", "tracked-8aee0c74c526.json", "tracked-8aee0c74c526.md"))
-#: Extend here (the plugin id is added by #524); each pattern is searched case-insensitively.
-PATTERNS = (re.compile(re.escape(OLD).encode(), re.I),)
+#: Each pattern is searched case-insensitively, with the paths that may carry it. The first is the retired
+#: skill prefix (#523). The second is the retired plugin install id (#524), the plugin name twice joined by an
+#: at sign: allowed only in the migration document and in five tracked history records of runs made on installs
+#: under that id (rewriting a record would claim a run that never happened; a NEW history file is not exempt).
+#: The id must stand alone: a longer id (`...-market`) or an address (`....example`) is a different thing,
+#: while a sentence-final full stop still ends it.
+_PLUGIN = "sig" + "ma"
+_OLD_ID = _PLUGIN + "@" + _PLUGIN
+PATTERNS = (
+    (re.compile(re.escape(OLD).encode(), re.I), frozenset()),
+    (re.compile(rb"(?<![\w.-])" + re.escape(_PLUGIN).encode() + rb"\\?@" + re.escape(_PLUGIN).encode() + rb"(?!\.?[\w-])", re.I), frozenset((
+        "docs/upgrading.md", ".sdlc/plans/231.md", ".sdlc/research/231.md", ".sdlc/research/237.md",
+        ".sdlc/research/277.md", ".sdlc/research/397.md"))),
+)
 
 
 def _strip(line, extra=()):
@@ -52,16 +65,16 @@ def _strip(line, extra=()):
     return line
 
 
-def _hit(line, extra=()):
+def _hit(line, extra=(), path=""):
     line = _strip(line, extra)
-    return any(p.search(line) for p in PATTERNS)
+    return any(p.search(line) for p, exempt in PATTERNS if path not in exempt)
 
 
 def scan(top, tracked):
     """Return the findings for the tracked paths under `top`, as printable strings."""
     out = []
     for rel in tracked:
-        if _hit(rel.encode("utf-8", "surrogateescape")):
+        if _hit(rel.encode("utf-8", "surrogateescape"), (), rel):
             out.append(rel)
         if rel in EVIDENCE:
             continue
@@ -75,7 +88,7 @@ def scan(top, tracked):
         for n, line in enumerate(data.split(b"\n"), 1):
             if history and line.startswith(CHANGELOG_MARK.encode()):
                 break
-            if _hit(line, extra):
+            if _hit(line, extra, rel):
                 out.append("%s:%d: %s" % (rel, n, line.decode("utf-8", "replace").strip()[:160]))
     return out
 
@@ -100,7 +113,7 @@ def main(argv):
     for line in found:
         print(line)
     if found:
-        sys.stderr.write("rename_check.py: %d occurrence(s) of the retired prefix outside the allowlist\n" % len(found))
+        sys.stderr.write("rename_check.py: %d occurrence(s) of the retired prefix or plugin install id outside the allowlist\n" % len(found))
         return 1
     return 0
 

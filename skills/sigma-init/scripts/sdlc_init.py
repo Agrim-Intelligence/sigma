@@ -263,12 +263,12 @@ def scaffold_vision(target_dir):
 
 
 _CURSOR_RULE = """---
-description: Goal-Based SDLC - standing discipline for every change (Sigma)
+description: Goal-Based SDLC - standing discipline for every change (Sigma Loop)
 globs:
 alwaysApply: true
 ---
 
-# Goal-Based SDLC (Sigma)
+# Goal-Based SDLC (Sigma Loop)
 
 Cursor has no UserPromptSubmit hook, so this always-applied rule is the standing policy. For any
 non-trivial or implementation task, do NOT jump straight to coding - follow the phases and state which
@@ -324,7 +324,7 @@ globs:
 alwaysApply: true
 ---
 
-# Output contract (Sigma)
+# Output contract (Sigma Loop)
 
 All status reporting in this repo follows `<sigma>/docs/output-contract.md`, and that document is
 the SPECIFICATION of a renderer, not prose to imitate. A status block is CONSTRUCTED by
@@ -397,7 +397,7 @@ def scaffold_cursor(target_dir):
 
 
 _CODEX_RULE = """<!-- sigma:codex:start -->
-## Sigma on Codex
+## Sigma Loop on Codex
 
 For a non-trivial implementation task, use the installed Sigma skills and run Goal -> Research
 -> Plan -> Plan-Review -> Implement -> Review -> Retrospective. Follow each skill's phase gates,

@@ -37,9 +37,9 @@ scripts turns the control red:
 
 | From the README | What the control does with it |
 |---|---|
-| `claude plugin marketplace add <SIGMA_REPO>` / `claude plugin install sigma@sigma` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile, `<SIGMA_REPO>` = the checkout |
-| `codex plugin marketplace add <SIGMA_REPO>` / `codex plugin add sigma@sigma` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
-| `/plugin marketplace add <SIGMA_REPO>` / `/plugin install sigma@sigma` (in-session) | checked the same way (a model turn; not run) |
+| `claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `claude plugin install sigmaloop@sigmaloop` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile with that URL replaced by the checkout path |
+| `codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `codex plugin add sigmaloop@sigmaloop` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
+| `/plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `/plugin install sigmaloop@sigmaloop` (in-session) | checked the same way (a model turn; not run) |
 | every init flag the Quickstart shows (`/sigma-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/sigma-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
 | `/sigma-init --demo` (the `### Claude Code` block) | its flags |
 | `python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . ...` | the script `/sigma-init` runs |
@@ -157,15 +157,23 @@ still the only measured `--install` run.
 (`--install all --from-install`; the marketplace install takes the checkout's committed HEAD, not
 its working tree). Whole run 15.4s. Durations are wall-clock per step, measured by the control.
 
-Host install (isolated profile):
+Host install (isolated profile). These rows were recorded on 2026-09-29, before the plugin was renamed (#524),
+under the previous plugin id and repository: they are history, not a measurement of `sigmaloop@sigmaloop`.
 
 | Step | Seconds | Result |
 |---|---|---|
-| `claude plugin marketplace add <SIGMA_REPO>` | 0.816 | ok |
-| `claude plugin install sigma@sigma` | 0.793 | ok, 1.0.0 |
-| `codex plugin marketplace add <SIGMA_REPO>` | 0.058 | ok |
-| `codex plugin add sigma@sigma` | 0.097 | ok, 1.0.0 |
+| `claude plugin marketplace add <the repository as it was then>` | 0.816 | ok |
+| `claude plugin install <plugin id as it was then>` | 0.793 | ok, 1.0.0 |
+| `codex plugin marketplace add <the repository as it was then>` | 0.058 | ok |
+| `codex plugin add <plugin id as it was then>` | 0.097 | ok, 1.0.0 |
 | real profile plugin-surface hash before / after | | `b4844e1dc784e0ab` / `b4844e1dc784e0ab`: untouched |
+
+**Re-run for the new plugin id (2026-10-05, #524), Claude Code only.** `python3 tools/onboarding_control.py --mode local
+--install claude --from-install` on macOS with Claude Code 2.1.284, from the committed renamed tree, whole run 21.0s:
+`claude plugin marketplace add` of the checkout (the README's URL swapped for the checkout path) 0.685s, ok, adding the
+marketplace `sigmaloop`; `claude plugin install sigmaloop@sigmaloop` 0.727s, ok, 1.0.0; local-goals GREEN in 8.9s; real
+profile untouched. `claude plugin details` of that install lists 42 skills and 5 hooks. This is one run, on one machine. The
+Codex rows above were NOT re-run (no Codex CLI on the machine that did this change).
 
 The Codex CLI is not on PATH on this machine; the control found it in the ChatGPT app bundle
 (`codex-cli 0.154.0-alpha.6.2`). Install works there; a live Codex session was not run (see below).
@@ -279,7 +287,7 @@ export T=$(mktemp -d) R=<org>/sigma-onboarding-$(date +%Y%m%d%H%M)
 gh repo create "$R" --private --clone --add-readme --description "sigma onboarding control (throwaway)" && cd "$(basename "$R")"
 printf 'test:\n\ttest -s hello.txt\n' > Makefile && git add Makefile && git commit -m "verify target" && git push
 # 2. the README Quickstart, literally (Claude Code session in this directory)
-#    /plugin marketplace add <SIGMA_REPO>   /plugin install sigma@sigma   (restart)
+#    /plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop   /plugin install sigmaloop@sigmaloop   (restart)
 #    /sigma-init --demo      -> answer: github mode, board no, ledger no; confirm `make test`
 # 3. one goal
 gh issue create --label sdlc:goal --assignee @me --title "Add hello.txt" --body "Create hello.txt with one line."

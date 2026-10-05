@@ -110,8 +110,7 @@ On Claude, the existing scope check below still applies.
 The other row worth naming: **`sigma install scopes`**. `~/.claude/plugins/installed_plugins.json`
 records one entry **per scope**. A `user` entry applies everywhere; a `project` (or `local`) entry
 carries a `projectPath` and **shadows user scope for that path alone**. So `claude plugin update
---scope user` can report success while one directory sits on an old version indefinitely — measured
-on a real machine as a main checkout pinned to an older release while twelve other paths were current.
+--scope user` can report success while one directory sits on an old version indefinitely.
 
 This row enumerates every scope sigma is installed under and judges each against the version
 floor `AGENTS.md` states (parsed from that file, never a second copy of the number). Two things it
@@ -124,7 +123,7 @@ deliberately keeps apart:
 
 When it fails it also says which entries **this run can fix** (`--scope user` works from anywhere; a
 per-project scope only from its own `projectPath`) and which you must go to. **For a redundant
-override the remedy is removal, not another update:** `claude plugin uninstall sigma@sigma
+override the remedy is removal, not another update:** `claude plugin uninstall sigmaloop@sigmaloop
 --scope project`, run from that directory, makes the path inherit user scope again. Never advise
 keeping N installs in step. Doctor only ever names these gestures — **never run an install, update
 or uninstall on the user's behalf.**
@@ -133,6 +132,8 @@ An entry whose `projectPath` no longer exists is counted, not flagged: it govern
 directory you would run the uninstall from is gone. And if `installed_plugins.json` is missing,
 unreadable or malformed, the row is **omitted entirely** rather than shown green — a row that means
 "we did not look" must never read as an all-clear.
+
+Old-plugin-id install row: [pre-launch id](references/pre-launch-id.md).
 
 ## What this check-up covers
 

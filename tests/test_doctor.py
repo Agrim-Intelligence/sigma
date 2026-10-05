@@ -363,16 +363,16 @@ def _codex_plugin_runner(installed, *, latest="1.4.13"):
         if args == ["codex", "plugin", "list", "--json"]:
             return json.dumps({"installed": installed, "available": []}) if installed is not None else "not json"
         if args[:2] == ["gh", "api"] and any("contents/.claude-plugin/marketplace.json" in a for a in args):
-            return base64.b64encode(json.dumps({"plugins": [{"name": "sigma", "version": latest}]}).encode()).decode()
+            return base64.b64encode(json.dumps({"plugins": [{"name": "sigmaloop", "version": latest}]}).encode()).decode()
         return _runner()(args)
 
     return run, calls
 
 
 def _codex_entry(name, version="1.4.13", *, installed=True, enabled=True):
-    return {"pluginId": f"{name}@sigma" if name == "sigma" else f"{name}@claude-plugins-official",
+    return {"pluginId": f"{name}@sigmaloop" if name == "sigmaloop" else f"{name}@claude-plugins-official",
             "name": name, "version": version, "installed": installed, "enabled": enabled,
-            "marketplaceName": "sigma" if name == "sigma" else "claude-plugins-official"}
+            "marketplaceName": "sigmaloop" if name == "sigmaloop" else "claude-plugins-official"}
 
 
 def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monkeypatch, tmp_path):
@@ -381,7 +381,7 @@ def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monk
     d = _doc()
     v = _one_above(d._agents_floor())
     base = _sdlc(tmp_path, {})
-    run, calls = _codex_plugin_runner([_codex_entry("sigma", v),
+    run, calls = _codex_plugin_runner([_codex_entry("sigmaloop", v),
                                        _codex_entry("superpowers"),
                                        _codex_entry("code-review", installed=False, enabled=False)],
                                       latest=v)
@@ -402,7 +402,7 @@ def test_codex_doctor_rejects_below_floor_install_even_with_healthy_claude_scope
     d = _doc()
     base = _sdlc(tmp_path / "repo", {})
     claude_plugins = _plugins_file(tmp_path, [_entry("user", _one_above(d._agents_floor()))])
-    run, _ = _codex_plugin_runner([_codex_entry("sigma", _one_below(d._agents_floor()))])
+    run, _ = _codex_plugin_runner([_codex_entry("sigmaloop", _one_below(d._agents_floor()))])
 
     checks = d.check(base, run=run, installed_plugins_path=claude_plugins)
     row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
@@ -424,8 +424,8 @@ def test_codex_doctor_does_not_show_healthy_when_plugin_list_is_unreadable(monke
     assert calls.count(["codex", "plugin", "list", "--json"]) == 1
 
 
-@pytest.mark.parametrize("entry", [None, _codex_entry("sigma", enabled=False),
-                                    _codex_entry("sigma", installed=False)])
+@pytest.mark.parametrize("entry", [None, _codex_entry("sigmaloop", enabled=False),
+                                    _codex_entry("sigmaloop", installed=False)])
 def test_codex_doctor_refuses_missing_or_disabled_loop_install(monkeypatch, tmp_path, entry):
     monkeypatch.setenv("CODEX_SESSION_ID", "session")
     d = _doc()
@@ -440,7 +440,7 @@ def test_codex_doctor_refuses_missing_or_disabled_loop_install(monkeypatch, tmp_
 def test_codex_cheap_check_does_not_spawn_plugin_cli_or_claim_floor(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_SESSION_ID", "session")
     d = _doc()
-    run, calls = _codex_plugin_runner([_codex_entry("sigma")])
+    run, calls = _codex_plugin_runner([_codex_entry("sigmaloop")])
     checks = d.check(_sdlc(tmp_path, {}), run=run, cheap_only=True)
     assert not any(a[:2] == ["codex", "plugin"] for a in calls)
     assert not any(c["name"].startswith("sigma Codex install:") for c in checks)
@@ -450,7 +450,7 @@ def test_codex_cheap_check_does_not_spawn_plugin_cli_or_claim_floor(monkeypatch,
 def test_codex_update_nudge_uses_codex_remediation(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_SESSION_ID", "session")
     d = _doc()
-    run, _ = _codex_plugin_runner([_codex_entry("sigma")], latest="1.4.14")
+    run, _ = _codex_plugin_runner([_codex_entry("sigmaloop")], latest="1.4.14")
     row = _by_name(d.check(_sdlc(tmp_path, {}), run=run))["sigma up to date (installed 1.4.13)"]
     assert row["ok"] is False
     assert "Codex" in row["fix"] and "claude plugin" not in row["fix"]
@@ -479,9 +479,9 @@ def test_claude_marker_takes_precedence_over_codex_marker(monkeypatch, tmp_path)
 # resolve -- an unreachable network or unrecognized output must never read as a false alarm OR a
 # false all-clear.
 
-_PLUGIN_LIST_JSON = json.dumps([{"id": "sigma@sigma", "version": "0.9.7"},
+_PLUGIN_LIST_JSON = json.dumps([{"id": "sigmaloop@sigmaloop", "version": "0.9.7"},
                                  {"id": "other-plugin@some-marketplace", "version": "1.2.3"}])
-_MARKETPLACE_JSON = json.dumps({"plugins": [{"name": "sigma", "version": "0.9.23"},
+_MARKETPLACE_JSON = json.dumps({"plugins": [{"name": "sigmaloop", "version": "0.9.23"},
                                              {"name": "other-plugin", "version": "1.2.3"}]})
 
 
@@ -564,19 +564,19 @@ def test_plugin_versions_falls_back_to_the_public_slug_without_a_marketplace_rec
     run, seen = _recording_runner()
     d._plugin_versions(run)
     assert _api_paths(seen) == [_contents_path(d._MARKETPLACE_REPO)], seen
-    assert d._MARKETPLACE_REPO == "Agrim-Intelligence/sigma"
+    assert d._MARKETPLACE_REPO == "Agrim-Intelligence/sigmaloop"
     assert " ".join(next(a for a in seen if a[:2] == ["gh", "api"])).startswith("gh api")
 
 
 def test_plugin_versions_reads_the_marketplace_the_plugin_was_installed_from():
-    """#2730: a fork installed as `sigma@acme-market` is compared against ITS marketplace, not the
+    """#2730: a fork installed as `sigmaloop@acme-market` is compared against ITS marketplace, not the
     public one -- otherwise a fork's version would be judged against upstream (a false alarm).
     The decoy `sigma` key sorts first and names the public repo; the match must be by the
     marketplace half of the installed id."""
     d = _doc()
-    _known_marketplaces({"sigma": {"source": {"source": "github", "repo": "Agrim-Intelligence/sigma"}},
+    _known_marketplaces({"sigmaloop": {"source": {"source": "github", "repo": "Agrim-Intelligence/sigmaloop"}},
                          "acme-market": {"source": {"source": "github", "repo": "Acme/sigma-fork"}}})
-    run, seen = _recording_runner(json.dumps([{"id": "sigma@acme-market", "version": "0.9.7"}]))
+    run, seen = _recording_runner(json.dumps([{"id": "sigmaloop@acme-market", "version": "0.9.7"}]))
     installed, latest = d._plugin_versions(run)
     assert _api_paths(seen) == [_contents_path("Acme/sigma-fork")], seen
     assert installed == (0, 9, 7) and latest == (0, 9, 23)
@@ -599,7 +599,7 @@ def test_plugin_versions_falls_back_on_an_unverified_or_malformed_record(registr
     plain `owner/repo` slug -- falls back to the public repository and never raises."""
     d = _doc()
     _known_marketplaces(registry)
-    run, seen = _recording_runner(json.dumps([{"id": "sigma@acme-market", "version": "0.9.7"}]))
+    run, seen = _recording_runner(json.dumps([{"id": "sigmaloop@acme-market", "version": "0.9.7"}]))
     installed, latest = d._plugin_versions(run)
     assert _api_paths(seen) == [_contents_path(d._MARKETPLACE_REPO)], (registry, seen)
     assert installed == (0, 9, 7) and latest == (0, 9, 23)
@@ -618,7 +618,7 @@ def test_plugin_versions_reads_the_codex_marketplace_source(source, expected):
     """#2730: Codex records the marketplace it installed from as `marketplaceSource` (shape verified
     live: `sourceType: git` with a GitHub URL, HTTPS or SSH). Anything else -> the public repo."""
     d = _doc()
-    entry = _codex_entry("sigma", "0.9.7")
+    entry = _codex_entry("sigmaloop", "0.9.7")
     if source is not None:
         entry["marketplaceSource"] = source
     run, seen = _recording_runner()
@@ -642,26 +642,26 @@ def test_version_nudge_via_a_stubbed_gh_reaches_the_public_repo_and_never_the_pr
     one escape hatch for a process named `gh` -- no network is reached: PATH is set so the stub
     shadows any real CLI, and the stub answers every other path with a 404): a `gh` that serves
     the public repository's marketplace.json and 404s every other path, and a `claude` that reports
-    `sigma@sigma 1.0.0`. (a) a record naming the public repo -> the nudge fires; (b) a record naming
+    `sigmaloop@sigmaloop 1.0.0`. (a) a record naming the public repo -> the nudge fires; (b) a record naming
     another (the private repository's stand-in, which the stub 404s) -> no row at all: can't-tell,
     never a false all-clear, never a false alarm from upstream's version."""
     d = _doc()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    payload = base64.b64encode(json.dumps({"plugins": [{"name": "sigma", "version": "9.9.9"}]}).encode()).decode()
+    payload = base64.b64encode(json.dumps({"plugins": [{"name": "sigmaloop", "version": "9.9.9"}]}).encode()).decode()
     _stub(bin_dir, "gh", 'for a in "$@"; do\n  if [ "$a" = "%s" ]; then echo "%s"; exit 0; fi\ndone\n'
                         'echo "gh: Not Found (HTTP 404)" >&2\nexit 1\n' % (_contents_path(d._MARKETPLACE_REPO), payload))
-    _stub(bin_dir, "claude", "echo '[{\"id\": \"sigma@sigma\", \"version\": \"1.0.0\"}]'\n")
+    _stub(bin_dir, "claude", "echo '[{\"id\": \"sigmaloop@sigmaloop\", \"version\": \"1.0.0\"}]'\n")
     monkeypatch.setenv("PATH", "%s%s%s" % (bin_dir, os.pathsep, os.defpath))
     run = lambda a: d._real_run(a) if a and a[0] in ("gh", "claude") else ""
     base = _sdlc(tmp_path / "repo", {"discovery": {"source": "local-goals"}})
 
-    _known_marketplaces({"sigma": {"source": {"source": "github", "repo": d._MARKETPLACE_REPO}}})
+    _known_marketplaces({"sigmaloop": {"source": {"source": "github", "repo": d._MARKETPLACE_REPO}}})
     c = _by_name(d.check(base, run=run))
     row = c["sigma up to date (installed 1.0.0)"]
     assert row["ok"] is False and "9.9.9 is available" in row["fix"], row
 
-    _known_marketplaces({"sigma": {"source": {"source": "github", "repo": "Example-Org/closed-core"}}})
+    _known_marketplaces({"sigmaloop": {"source": {"source": "github", "repo": "Example-Org/closed-core"}}})
     names = [x["name"] for x in d.check(base, run=run)]
     assert not any("sigma up to date" in n for n in names), names
 
@@ -704,14 +704,14 @@ def test_check_flags_an_out_of_date_install():
         assert "0.9.23 is available" in entry["fix"]
         # #1741: the bare plugin name fails live ("Plugin not found") -- pin the exact command,
         # not a loose substring a bare-name regression would still satisfy.
-        assert "claude plugin update sigma@sigma" in entry["fix"]
+        assert "claude plugin update sigmaloop@sigmaloop" in entry["fix"]
 
 
 def test_check_passes_when_already_current():
     d = _doc()
     with tempfile.TemporaryDirectory() as t:
         base = _sdlc(t, {"discovery": {"source": "local-goals"}})
-        same = json.dumps([{"id": "sigma@sigma", "version": "0.9.23"}])
+        same = json.dumps([{"id": "sigmaloop@sigmaloop", "version": "0.9.23"}])
         c = _by_name(d.check(base, run=_version_runner(plugin_list=same)))
         assert c["sigma up to date (installed 0.9.23)"]["ok"] is True
 
@@ -753,7 +753,7 @@ def _exploding_runner(*forbidden):
 # legitimate `gh api` call sites (branch protection, a GraphQL query) that a bare prefix would
 # wrongly also forbid if cheap_only ever reaches them; this names the marketplace-contents fetch
 # specifically.
-_MARKETPLACE_FETCH_PREFIX = ("gh", "api", "repos/Agrim-Intelligence/sigma/contents/.claude-plugin/marketplace.json")
+_MARKETPLACE_FETCH_PREFIX = ("gh", "api", "repos/Agrim-Intelligence/sigmaloop/contents/.claude-plugin/marketplace.json")
 
 
 def test_cheap_only_skips_the_plugin_version_subprocess_and_network_calls():
@@ -5254,7 +5254,7 @@ def test_real_git_the_doctor_row_flags_an_unignored_dotenv_then_the_ignore_clear
 # twelve other paths were at 1.3.7, in the one directory where AGENTS.md forbids starting the loop.
 
 _SCOPE_PREFIX = "sigma install scopes"
-_PID = "sigma@sigma"
+_PID = "sigmaloop@sigmaloop"
 
 
 def _scope_row(checks):
@@ -5543,7 +5543,7 @@ def test_install_scopes_says_none_not_empty_when_it_cannot_tell(tmp_path):
     assert d._install_scopes(_plugins_file(tmp_path, None, raw='{"plugins": {}}')) is None
     assert d._install_scopes(_plugins_file(tmp_path, [])) is None
     got = d._install_scopes(_plugins_file(tmp_path, [_entry("user", "1.4.1")]))
-    assert got == [("sigma@sigma", "user", (1, 4, 1), None)]
+    assert got == [("sigmaloop@sigmaloop", "user", (1, 4, 1), None)]
 
 
 def test_a_missing_installed_plugins_omits_the_row(tmp_path):
@@ -5570,11 +5570,11 @@ def test_unknown_future_fields_and_a_forked_marketplace_id_still_resolve(tmp_pat
     base = _sdlc(tmp_path / "repo", {})
     plugins = _plugins_file(tmp_path, [
         _entry("user", _one_below(d._agents_floor()), gitCommitSha="abc", futureField={"a": 1}),
-    ], pid="sigma@acme-fork")
+    ], pid="sigmaloop@acme-fork")
 
     row = _scope_row(d.check(base, run=_runner(), installed_plugins_path=plugins))
     assert row is not None and row["ok"] is False
-    assert "claude plugin update sigma@acme-fork --scope user" in row["fix"]
+    assert "claude plugin update sigmaloop@acme-fork --scope user" in row["fix"]
 
 
 def test_an_unreadable_version_is_flagged_rather_than_assumed_current(tmp_path):

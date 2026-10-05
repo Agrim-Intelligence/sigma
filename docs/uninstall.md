@@ -1,6 +1,6 @@
-# Uninstall Sigma
+# Uninstall Sigma Loop
 
-Run this guide from the repository you are removing Sigma from. The checker is read-only: it lists
+Run this guide from the repository you are removing Sigma Loop from. The checker is read-only: it lists
 residue and exits 1 until nothing remains.
 
 1. Stop local daemons, then wait and confirm no recorded PID is still alive:
@@ -11,8 +11,9 @@ residue and exits 1 until nothing remains.
      kill -0 "$pid" 2>/dev/null && printf 'still running: %s (%s)\n' "$f" "$pid"
    done
    ```
-2. Uninstall the plugin: `claude plugin uninstall sigma@sigma`; add `--scope project` for a
-   project installation. Codex's plugin removal command must be verified with `codex plugin --help`
+2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
+   project installation. An install made before the plugin was renamed sits under the previous id: follow
+   [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
    on the target host before use.
 3. Remove each Sigma worktree with `git worktree remove .sdlc/ledger` and
    `git worktree remove .sdlc/work/<goal>`.

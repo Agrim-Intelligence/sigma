@@ -14,6 +14,8 @@ AGENTS_MARKERS = ("<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->")
 # sdlc_init.py's `_CURSOR_RULES`, not every rule an adopter may have written themselves.
 CURSOR_RULES = ("sdlc.mdc", "output-contract.mdc")
 LEDGER_BRANCH = "sdlc" + "-ledger"
+#: Directory names an installed Sigma Loop plugin leaves under a host home: the current name and the pre-launch one.
+PLUGIN_DIRS = ("sigmaloop", "sigma")
 
 def _row(kind, path):
     return {"kind": kind, "path": str(path)}
@@ -107,9 +109,11 @@ def find_leftovers(repo, environ=None, github=None):
         if not home.is_dir():
             continue
         try:
-            for path in home.rglob("sigma"):
-                if path.is_dir() and path.name == "sigma":
-                    rows.append(_row("installed-plugin", path))
+            # The plugin is `sigmaloop` (#524); an install made before the rename sits under `sigma`. Both are residue.
+            for name in PLUGIN_DIRS:
+                for path in home.rglob(name):
+                    if path.is_dir() and path.name == name:
+                        rows.append(_row("installed-plugin", path))
         except OSError:
             continue
     if github:

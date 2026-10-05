@@ -4,7 +4,7 @@ globs:
 alwaysApply: true
 ---
 
-# Output contract (Sigma)
+# Output contract (Sigma Loop)
 
 All status reporting in this repo follows `<sigma>/docs/output-contract.md`, and that document is
 the SPECIFICATION of a renderer, not prose to imitate. A status block is CONSTRUCTED by
