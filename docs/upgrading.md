@@ -38,7 +38,7 @@ end to end.
 
 ```
 codex plugin remove sigma@sigma
-codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+codex plugin marketplace add <the repository your old install came from>
 codex plugin add sigmaloop@sigmaloop
 ```
 

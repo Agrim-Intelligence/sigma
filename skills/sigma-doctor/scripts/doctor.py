@@ -1795,6 +1795,28 @@ def _recorded_source(marketplace=None, codex_entry=None, known_marketplaces_path
     return None
 
 
+def _recorded_target(marketplace=None, codex_entry=None, known_marketplaces_path=None):
+    """What `marketplace add` must be given to re-add the marketplace an install came from, or None:
+    the github `owner/repo`, the git URL, or the local checkout path the record names. Printed, never run."""
+    try:
+        if codex_entry is not None:
+            source = codex_entry.get("marketplaceSource") if isinstance(codex_entry, dict) else None
+            value = source.get("source") if isinstance(source, dict) else None
+            return value if isinstance(value, str) and value.strip() else None
+        path = pathlib.Path(known_marketplaces_path or _default_known_marketplaces_path())
+        registry = json.loads(path.read_text(encoding="utf-8"))
+        record = registry.get(marketplace) if isinstance(registry, dict) else None
+        source = record.get("source") if isinstance(record, dict) else None
+        if not isinstance(source, dict):
+            return None
+        kind = source.get("source")
+        value = source.get("repo") if kind == "github" else source.get("url") if kind == "git" \
+            else source.get("path") if kind in ("directory", "file") else None
+        return value if isinstance(value, str) and value.strip() else None
+    except Exception:                        # noqa: BLE001 - an unreadable record is "cannot tell"
+        return None
+
+
 def _is_pre_launch_install(plugin_id, source):
     """An install recorded under the pre-launch plugin name AND from the pre-launch repository. A fork
     (any other recorded source) is not ours to migrate, even when it kept the manifest names; when the
@@ -1812,12 +1834,14 @@ def _old_install_row(host, ours, others_on_marketplace=()):
     if not ours:
         return None
     ids = sorted({o[0] for o in ours})
-    source = next((o[3] for o in ours if o[3]), None) or _MARKETPLACE_REPO
+    # What the install recorded; when it recorded nothing readable the row says so instead of naming the
+    # public repository (which may not exist yet, and is not where a private copy came from).
+    source = next((o[3] for o in ours if o[3]), None) or "<the repository or checkout your install came from>"
     steps = []
     if host == "codex":
         for pid in ids:
             steps.append("codex plugin remove %s" % pid)
-        steps += ["codex plugin marketplace add https://github.com/%s" % source,
+        steps += ["codex plugin marketplace add %s" % source,
                   "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
         note = ("the removal verb is the one codex-cli 0.154 lists; confirm with `codex plugin --help` on this "
                 "host before running it. These Codex steps were not run end to end on a real host")
@@ -1862,12 +1886,12 @@ def _claude_old_install_row(installed_plugins_path=None, known_marketplaces_path
                     pid, _recorded_source(market, known_marketplaces_path=known_marketplaces_path)):
                 continue
             ours_markets.add(market)
+            target = _recorded_target(market, known_marketplaces_path=known_marketplaces_path)
             for e in entries:
                 if isinstance(e, dict):
                     path = e.get("projectPath")
                     ours.append((pid, str(e.get("scope") or "user"),
-                                 str(path) if isinstance(path, str) and path.strip() else None,
-                                 _recorded_source(market, known_marketplaces_path=known_marketplaces_path)))
+                                 str(path) if isinstance(path, str) and path.strip() else None, target))
         others = {str(pid).split("@", 1)[1] for pid in plugins
                   if "@" in str(pid) and str(pid).split("@", 1)[1] in ours_markets
                   and not any(o[0] == str(pid) for o in ours)}
@@ -1879,7 +1903,7 @@ def _claude_old_install_row(installed_plugins_path=None, known_marketplaces_path
 def _codex_old_install_row(plugins):
     """The pre-launch row from Codex's already-fetched plugin list, or None."""
     try:
-        ours = [(str(e.get("pluginId", "")), "user", None, _recorded_source(codex_entry=e))
+        ours = [(str(e.get("pluginId", "")), "user", None, _recorded_target(codex_entry=e))
                 for e in (plugins or []) if isinstance(e, dict) and e.get("installed") is True
                 and _is_pre_launch_install(e.get("pluginId", ""), _recorded_source(codex_entry=e))]
         return _old_install_row("codex", ours)

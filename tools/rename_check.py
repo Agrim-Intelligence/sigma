@@ -53,7 +53,7 @@ _PLUGIN = "sig" + "ma"
 _OLD_ID = _PLUGIN + "@" + _PLUGIN
 PATTERNS = (
     (re.compile(re.escape(OLD).encode(), re.I), frozenset()),
-    (re.compile(rb"(?<![\w.-])" + re.escape(_OLD_ID).encode() + rb"(?!\.?[\w-])", re.I), frozenset((
+    (re.compile(rb"(?<![\w.-])" + re.escape(_PLUGIN).encode() + rb"\\?@" + re.escape(_PLUGIN).encode() + rb"(?!\.?[\w-])", re.I), frozenset((
         "docs/upgrading.md", ".sdlc/plans/231.md", ".sdlc/research/231.md", ".sdlc/research/237.md",
         ".sdlc/research/277.md", ".sdlc/research/397.md"))),
 )
