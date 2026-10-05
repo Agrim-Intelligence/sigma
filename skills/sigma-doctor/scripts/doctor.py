@@ -121,6 +121,29 @@ def _effective_window(gate):
     return hours if str(hours).isdigit() else 24
 
 
+def _verify_trusted(repo):
+    """#615: has THIS checkout granted the git-local `sigma.allowRepositoryShellCommands` that lets
+    `loop.py verify` run a repository-configured command? Duplicated from sigma-loop's `shell_policy`
+    (this script stays standalone, like `_enforce_enabled`; a parity test pins the two together).
+    Fail closed: any read failure is "not trusted"."""
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "config", "--local", "--type=bool",
+                            "sigma.allowRepositoryShellCommands"],
+                           capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and r.stdout.strip().lower() == "true"
+
+
+def _in_git_worktree(repo):
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+                           capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and r.stdout.strip() == "true"
+
+
 def _chk(name, ok, fix):
     return {"name": name, "ok": bool(ok), "fix": "" if ok else fix}
 
@@ -2676,6 +2699,23 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         "re-reads the repo and refuses if it changed; nothing "
                         "pasted reaches a shell), or put your command in verify.command; or "
                         "`... decline .sdlc` to turn enforce off."))
+
+    # #615: a configured verify command only runs once THIS checkout granted the git-local trust (#422);
+    # git config is not cloned, so every migrated repo and every teammate's new clone starts without it
+    # and its first `loop.py verify` is refused (with enforce on, every goal stalls). Command text is
+    # repository input: it is never put in the fix line.
+    if (verify.get("command") or "").strip():
+        project = pathlib.Path(os.path.abspath(sdlc_dir)).parent
+        trusted = _verify_trusted(project)
+        if _in_git_worktree(project):
+            gesture = ("inspect the verify command in .sdlc/config.json, then run once in this checkout: "
+                       "git -C <project> config --local sigma.allowRepositoryShellCommands true "
+                       "(git-local, so it is not committed or cloned; every checkout does this once). "
+                       "Until then `loop.py verify` refuses the command.")
+        else:
+            gesture = ("verify.command is set but this is not a Git worktree, so it can never be trusted "
+                       "and `loop.py verify` refuses it. Run Sigma inside the repository.")
+        out.append(_chk("verify command trusted in this checkout", trusted, gesture))
 
     # A backlog cross-check whose park_threshold sits BELOW its candidate threshold parks EVERYTHING it
     # finds — the opposite of "confident hits only". Flag it (only when the feature is actually on).

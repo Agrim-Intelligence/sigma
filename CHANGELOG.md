@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A repository that already has a verify command is told to trust it, once per checkout** (#615, epic #613). Sigma
+  runs a repository-configured verify command only after the checkout grants Git-local trust (#422), and that trust is
+  neither committed nor cloned, so a migrated repository or a teammate's fresh clone used to get `[ok] verify` from
+  `/sigma-init` and then a refusal at `loop.py verify` (with `verify.enforce` on, every goal stalled). `/sigma-init` now
+  prints a `[trust] verify` line with the command and the one gesture instead of `[ok]` (it does not grant the trust
+  and no flag answers it), `/sigma-doctor` has a `verify command trusted in this checkout` row, the `decline` message
+  no longer advises a hand edit that cannot run without trust, and `docs/upgrading.md` has a section on it and no longer
+  says no migration is needed. The trust policy is unchanged. The issue proposed an `[ask] verify-trust` line naming
+  `verify_detect.py confirm`; a `[trust]` line naming the Git gesture is used instead, because `[ask]` means "re-run
+  with a flag" to hosts and `confirm` cannot trust a committed command that is not a detected candidate.
+
 - **The solution is named Sigma Loop; the plugin and marketplace are `sigmaloop`** (#524, epic #522). Install with
   `claude plugin install sigmaloop@sigmaloop` (or the Codex and in-session forms) after adding the public repository,
   `https://github.com/Agrim-Intelligence/sigmaloop`; the README Quickstart, `docs/uninstall.md`, `SECURITY.md`,

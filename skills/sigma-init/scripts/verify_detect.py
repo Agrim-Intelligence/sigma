@@ -524,8 +524,9 @@ def main(argv):
                + (f" ({printable(', '.join(declined))})" if declined else " (none was detected)")
                + ", so `done` is not machine-checked. Turn it on with: "
                + gesture("confirm .sdlc <n> <id>", SCRIPT) + " (after `detect .`, which lists "
-               "each candidate's id), or put the command "
-               "in verify.command and set verify.enforce true")
+               "each candidate's id); it also records this checkout's one-time Git-local trust. A command "
+               "written into verify.command by hand is not enough: it only runs once `git -C <project> config "
+               "--local sigma.allowRepositoryShellCommands true` has been run in each checkout")
         write_verify(sdlc, None, why)
         print("verify: " + why)
         return 0

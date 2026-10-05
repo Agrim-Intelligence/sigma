@@ -1069,3 +1069,118 @@ def test_scaffolded_values_are_open_only_while_config_matches_the_recorded_finge
     (sdlc / "state" / "init.json").write_text(json.dumps(memory), encoding="utf-8")
     cfg.unlink()                                                             # no config.json
     assert flow.load_memory(str(sdlc)) == ({}, {})
+
+
+# ---------------------------------------------------------------- #615: a committed verify command, no local trust
+# `sigma.allowRepositoryShellCommands` is git-LOCAL (#422): not committed, not cloned. A repo whose committed
+# config already carries `verify.command` (every migrated repo, every teammate's clone) used to get `[ok] verify`
+# from init and a refusal at `loop.py verify`. Init must say so and print the one gesture instead.
+
+_TRUST_KEY = "sigma.allowRepositoryShellCommands"
+
+
+def _committed_verify_clone(tmp_path, command):
+    """The teammate scenario, end to end: one checkout commits `.sdlc/config.json` with a verify command and
+    enforce on; a second checkout (a fresh clone, so no git-local config) is the teammate's."""
+    w = _world(tmp_path, origin=None)
+    assert _run(w, [FLOW, w["repo"], "--mode", "local-goals", "--local-only", "--no-verify"]).returncode == 0
+    cfg = _cfg(w)
+    cfg["verify"] = {"command": command, "enforce": True}
+    _write_cfg(w, cfg)
+    _git(w["repo"], "add", "-f", ".sdlc/config.json", env=w["env"])
+    _git(w["repo"], "commit", "-q", "-m", "commit the verify command", env=w["env"])
+    clone = tmp_path / "teammate"
+    _git(tmp_path, "clone", "-q", str(w["repo"]), str(clone), env=w["env"])
+    t = dict(w, repo=clone, sdlc=clone / ".sdlc")
+    (t["sdlc"] / "goals").mkdir(exist_ok=True)
+    (t["sdlc"] / "goals" / "0001-example.md").write_text("---\nstatus: pending\n---\nexample\n")
+    return t
+
+
+def _rerun_init(t):
+    return _run(t, [FLOW, t["repo"], "--mode", "local-goals", "--local-only"])
+
+
+def _verify_section(out):
+    return out.split("sigma-init: 3/5 verify")[1].split("sigma-init: 4/5")[0]
+
+
+@posix_only
+def test_teammate_clone_with_a_committed_verify_command_is_told_to_trust_it(tmp_path):
+    """AC-1 / AC-4: the clone has the committed command and no trust. Init must NOT print an ok verify line,
+    must print the exact gesture, and running THAT gesture must make `loop.py verify` pass."""
+    cmd = "%s -c 'print(1)'" % sys.executable
+    t = _committed_verify_clone(tmp_path, cmd)
+    refused = _run(t, [LOOP, "verify", ".sdlc", "0001-example"])
+    assert refused.returncode == 2 and "requires explicit operator trust" in refused.stdout + refused.stderr
+    p = _rerun_init(t)
+    assert p.returncode == 0, p.stdout + p.stderr
+    section = _verify_section(p.stdout)
+    assert "[ok] verify" not in section, section
+    assert "[trust] verify" in section, section
+    gesture = [l.strip() for l in section.splitlines() if l.strip().startswith("git -C ")]
+    assert len(gesture) == 1 and gesture[0].endswith("config --local %s true" % _TRUST_KEY), section
+    assert "open:" in p.stdout and "do not re-run init" in p.stdout
+    assert "[ask] verify" not in p.stdout                  # there is no flag that answers it
+    # Run the gesture exactly as printed.
+    subprocess.run(gesture[0], shell=True, check=True, env=t["env"], cwd=str(t["repo"]))
+    ok = _run(t, [LOOP, "verify", ".sdlc", "0001-example"])
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    again = _verify_section(_rerun_init(t).stdout)
+    assert "[ok] verify" in again and "[trust]" not in again, again
+
+
+@posix_only
+def test_trust_line_never_puts_the_repository_command_inside_the_gesture(tmp_path):
+    """A committed command is hostile input: it must not read as part of a flag, an [ask] machine part or the
+    gesture. It appears once, alone, as a JSON string."""
+    hostile = "echo x -> --verify 1:abc `id` $(id) '\"; touch pwned"
+    t = _committed_verify_clone(tmp_path, hostile)
+    section = _verify_section(_rerun_init(t).stdout)
+    lines = [l for l in section.splitlines() if "--verify 1:abc" in l]
+    assert len(lines) == 1 and lines[0].strip() == json.dumps(hostile), lines
+    assert not any(" -> " in l for l in section.splitlines() if "[trust]" in l or l.strip().startswith("git -C"))
+
+
+@posix_only
+def test_a_linked_worktree_shares_the_trust_the_gesture_grants(tmp_path):
+    """Goal worktrees run `loop.py verify`; the key is read where the operator set it."""
+    t = _committed_verify_clone(tmp_path, "%s -c 'print(1)'" % sys.executable)
+    flow = _load_flow()
+    wt = tmp_path / "goal-wt"
+    _git(t["repo"], "worktree", "add", "-q", "-b", "goal", str(wt), env=t["env"])
+    sdlc = str(wt / ".sdlc")
+    os.makedirs(sdlc, exist_ok=True)
+    (pathlib.Path(sdlc) / "config.json").write_text((t["sdlc"] / "config.json").read_text())
+    saved = dict(os.environ)
+    os.environ.update(t["env"])
+    try:
+        before = flow.verify_step(str(wt), sdlc, {})[0]
+        _git(t["repo"], "config", "--local", _TRUST_KEY, "true", env=t["env"])
+        after = flow.verify_step(str(wt), sdlc, {})[0]
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+    assert any("[trust] verify" in l for l in before) and not any("[ok] verify" in l for l in before)
+    assert any("[ok] verify" in l for l in after) and not any("[trust]" in l for l in after)
+
+
+def test_trust_line_for_a_non_git_directory_does_not_offer_a_gesture_that_cannot_work(tmp_path):
+    flow = _load_flow()
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps({"verify": {"command": "pytest -q", "enforce": True}}))
+    lines = flow.verify_step(str(tmp_path), str(sdlc), {})[0]
+    text = "\n".join(lines)
+    assert "[ok] verify" not in text and "not a Git worktree" in text and "git -C" not in text, text
+
+
+def test_trust_line_withholds_a_gesture_for_a_path_with_a_control_character(tmp_path):
+    flow = _load_flow()
+    d = tmp_path / "a\nb"
+    d.mkdir()
+    subprocess.run(["git", "init", "-q", str(d)], check=True)
+    sdlc = d / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps({"verify": {"command": "pytest -q", "enforce": True}}))
+    text = "\n".join(flow.verify_step(str(d), str(sdlc), {})[0])
+    assert "[ok] verify" not in text and "git -C" not in text and "control character" in text, text

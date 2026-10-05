@@ -162,6 +162,17 @@ def test_cli_set_refuses_an_empty_command(tmp_path):
     assert json.loads((sdlc / "config.json").read_text())["verify"]["enforce"] is False
 
 
+def test_decline_message_does_not_advise_a_hand_edit_that_cannot_run_without_trust(tmp_path):
+    """#615: the old text said to put the command in verify.command and set enforce true. That alone is refused at
+    `loop.py verify` until this checkout grants the git-local trust, so the advice must name the trust."""
+    (tmp_path / "go.mod").write_text("module x\n")
+    sdlc = _cfg(tmp_path, {"command": "", "enforce": True})
+    assert _run(DETECT, "decline", sdlc, cwd=tmp_path).returncode == 0
+    why = json.loads((sdlc / "config.json").read_text())["verify"]["_why"]
+    assert "put the command in verify.command" not in why
+    assert "sigma.allowRepositoryShellCommands" in why and "confirm" in why
+
+
 def test_cli_decline_writes_enforce_off_with_the_reason(tmp_path):
     (tmp_path / "go.mod").write_text("module x\n")
     sdlc = _cfg(tmp_path, {"command": "", "enforce": True})
