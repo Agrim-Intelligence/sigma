@@ -132,9 +132,9 @@ _SECRET_PATTERN_SPECS = (
     #: and paths survive.
     ("credential-assignment-suffix", re.compile(r"(?i)(api[_-]?key|secret[_-]?key(?:[_-]?base)?|private[_-]?key|client[_-]?secret|"
                 r"access[_-]?(?:token|key)|auth|credentials?|token|secret|password|passwd|pwd|"
-                r"passphrase)(?:\\*[\"'])?\s*(?::=|=>|[:=])\s*"
+                r"passphrase)(?:\\*[\"'])?\]?\s*(?::=|=>|[:=])\s*"
                 r"(?:(?:token|api[_-]?key|bearer|basic|digest)[ \t]+)?"
-                r"(?:\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|(?:\\*[\"'])?[^\s\"']{4,})"),
+                r"(?:\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|[\\\"']*[^\s\"']{4,})"),
      r"\1: [REDACTED]"),
     #: The original anchored rule stays, UNCHANGED, as the commit gate's rule: the gate shares this table
     #: (`COMMIT_SHAPE_RULES`) and a gate's false-positive budget differs from a redactor's -- the wider

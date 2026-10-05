@@ -371,3 +371,11 @@ def test_the_commit_gate_does_not_widen_with_the_redactor():
     for line in ("my_to" "ken = fetch_it()", "GITHUB_TO" "KEN=" + _fake(), 'headers = {"Authoriz" "ation": "x " + y}'):
         assert module.commit_secret_hits(line) == [], line
     assert {n for n, _ in module.COMMIT_SHAPE_RULES}.isdisjoint({"authorization-header", "credential-assignment-suffix"})
+
+
+def test_scrub_triple_quotes_and_subscript_keys():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ('pass' 'word = """' + v + '"""', "pass" "word = \'\'\'" + v + "\'\'\'",
+                 "os.environ['TO" "KEN'] = '" + v + "'", 'os.environ["TO' 'KEN"]="' + v + '"'):
+        assert v not in scrub(text), text
