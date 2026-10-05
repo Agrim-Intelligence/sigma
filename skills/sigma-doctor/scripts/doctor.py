@@ -1868,21 +1868,26 @@ def _old_install_row(host, ours, others_on_marketplace=(), new_present=False):
                 steps.append("keep marketplace %s: other installed plugins use it" % market)
             else:
                 steps.append("claude plugin marketplace remove %s" % q(market))
-        if not new_present:
+        if not new_present and not others_on_marketplace:
             steps += ["claude plugin marketplace add %s" % source,
                       "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
         note = ("Each uninstall is per scope; the reinstall is at user scope" + (
                 "; with a marketplace shared by other plugins this exact sequence was not run end to end"
                 if others_on_marketplace else ""))
+    if others_on_marketplace and not new_present:
+        note += (". The marketplace is shared, so it was kept and no add or install step is printed: re-adding the "
+                 "same source would be a no-op under the old marketplace name, and %s@%s cannot install from it. "
+                 "Decide what to do with that marketplace, then add the new one from %s and install %s@%s"
+                 % (_PLUGIN, _PLUGIN, source, _PLUGIN, _PLUGIN))
     if new_present:
         note += (". %s is already installed here: do NOT add the old source again or install it again (the host "
                  "would repoint the working install at that source); remove the old install only" % _PLUGIN)
     return _chk("Sigma Loop plugin installed under the pre-launch id %s (it no longer receives updates)"
                 % ", ".join(ids), False,
                 "the plugin was renamed to %s, so an install under the old id silently stopped updating. "
-                "Run, in order, yourself (the doctor prints these and removes nothing): %s. %s. Your `.sdlc/` data is "
-                "kept as is. Details: docs/upgrading.md, 'From the pre-launch name'."
-                % (_PLUGIN, "; ".join(steps), note))
+                "Run, in order, yourself, one command at a time (the doctor prints these and removes nothing): %s. %s. "
+                "Your `.sdlc/` data is kept as is. Details: docs/upgrading.md, 'From the pre-launch name'."
+                % (_PLUGIN, "  ".join("(%d) %s" % (i, s) for i, s in enumerate(steps, 1)), note))
 
 
 def _claude_old_install_row(installed_plugins_path=None, known_marketplaces_path=None):

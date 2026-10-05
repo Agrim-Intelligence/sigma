@@ -37,7 +37,9 @@ def test_a_shared_marketplace_is_kept_not_removed(monkeypatch, tmp_path):
     assert row is not None
     assert "claude plugin marketplace remove" not in row["fix"], row["fix"]
     assert "keep marketplace " + OLD in row["fix"], row["fix"]
-    assert "claude plugin marketplace add Agrim-Intelligence/" + OLD in row["fix"]
+    # a shared marketplace is kept, so no add/install pair that would fail under the old marketplace name
+    assert "claude plugin marketplace add" not in row["fix"] and "claude plugin install" not in row["fix"], row["fix"]
+    assert "The marketplace is shared" in row["fix"]
 
 
 def test_a_codex_entry_that_is_not_installed_raises_no_row(monkeypatch, tmp_path):
