@@ -278,3 +278,68 @@ def test_url_password_is_linear_on_hyphenated_text():
         t0 = time.perf_counter()
         assert scrub(text) == text
         assert time.perf_counter() - t0 < 2.0, "url-password scheme is quadratic again"
+
+
+# --- unquoted env-style secrets (#629) ----------------------------------------------------------
+# Every value is built at runtime, never spelled whole on one source line, so the leak gate stays quiet.
+def _fake():
+    return "Zq" + "9x" * 6 + "Lm"
+
+
+@pytest.mark.parametrize("key", ["GITHUB_TOKEN", "DB_PASSWORD", "auth_token", "BOT_TOKEN", "app_secret",
+                                 "DB_PASSWD", "OPENAI_API_KEY", "x-api-key", "AWS_SECRET_ACCESS_KEY",
+                                 "AUTH", "GCP_CREDENTIAL", "SERVICE_CREDENTIALS", "Github_Token", "password"])
+@pytest.mark.parametrize("sep", ["=", ": ", " = ", " : ", ":"])
+@pytest.mark.parametrize("quote", ["", '"', "'"])
+def test_scrub_env_style_names_redact_value_and_keep_key(key, sep, quote):
+    scrub = _mod("scrub").scrub
+    value = _fake()
+    out = scrub("env: " + key + sep + quote + value + quote + " done")
+    assert value not in out, out
+    assert key in out, out
+
+
+def test_scrub_quoted_value_with_spaces_and_escapes_leaves_no_tail():
+    scrub = _mod("scrub").scrub
+    for text in ('DB_PASS' 'WORD="hunt' 'er two words"', "DB_PASS" "WORD='hunt" "er two words'",
+                 'DB_PASS' 'WORD="hun' r'\"ter two words"', '{"auth_to' 'ken": "hunt' 'er two words"}'):
+        out = scrub(text)
+        assert "hunt" not in out and "words" not in out and "two" not in out, out
+
+
+def test_scrub_unterminated_quote_redacts_to_end_of_line_not_beyond():
+    scrub = _mod("scrub").scrub
+    out = scrub('DB_PASS' 'WORD="hunter two\nnext line stays')
+    assert "hunter" not in out and "two" not in out and "next line stays" in out, out
+
+
+def test_scrub_json_and_header_forms():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ('{"GITHUB_TO' 'KEN":"%s"}' % v, "Authoriz" "ation: " + v, "curl -H 'X-Api-" "Key: %s'" % v):
+        assert v not in scrub(text), text
+
+
+def test_scrub_still_leaves_ordinary_prose_and_metrics_alone():
+    scrub = _mod("scrub").scrub
+    for text in ("token budget is fine", "we author the docs", "max_tokens=4096 and tokens: 12000",
+                 "the authority of the secretary"):
+        assert scrub(text) == text
+
+
+def test_scrub_adversarial_long_inputs_run_in_linear_time():
+    scrub = _mod("scrub").scrub
+    n = 200_000
+    for text in ("token" * (n // 5), "auth " * (n // 5), "pass" "word" + " " * n, "pass" "word=" + "a" * n,
+                 'pass' 'word="' + "\\" * n, "TOKEN_" * (n // 6), "sec" "ret=" * (n // 7), "a" * n):
+        t = time.perf_counter()
+        scrub(text)
+        assert time.perf_counter() - t < 5, text[:12]
+
+
+def test_scrub_authorization_scheme_word_leaves_no_tail_and_empty_quotes_are_left_alone():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    for text in ("Authoriz" "ation: Tok" "en " + v, "Authoriz" "ation: Api" "Key " + v, "SECRET_KEY_" "BASE=" + v):
+        assert v not in scrub(text), text
+    assert scrub('gh_auth=""') == 'gh_auth=""'

@@ -116,9 +116,18 @@ _SECRET_PATTERN_SPECS = (
     ("auth", re.compile(r"(?i)\b(?:bearer|basic|digest)\s+[A-Za-z0-9+/=._\-]{8,}"), "[REDACTED:auth]"),
     #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
     *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),
-    ("credential-assignment", re.compile(r"(?i)\b(api[_-]?key|secret[_-]?key|private[_-]?key|client[_-]?secret|"
-                r"access[_-]?token|authorization|token|secret|password|passwd|pwd)\b[\"']?\s*[:=]\s*"
-                r"[\"']?[^\s\"'<>&]{4,}"),
+    #: Keyed on the key-name SUFFIX with no `\b`: `GITHUB_TOKEN=` / `DB_PASSWORD=` have no word boundary
+    #: before `TOKEN`/`PASSWORD` (`_` is a word character), so an anchored pattern let every env-style
+    #: name through (#629). The prefix is left in the text, so the key name survives the redaction.
+    #: A quoted value runs to its closing quote (escape-aware) or, unterminated, to end of line, so
+    #: spaces inside it leave no tail; an unquoted one is a run of non-space characters (min 4). Linear:
+    #: no leading character class, no nested quantifier. A name with a trailing suffix (`token_file=`,
+    #: `max_tokens=`) is deliberately NOT matched, so counters and paths survive.
+    ("credential-assignment", re.compile(r"(?i)(api[_-]?key|secret[_-]?key(?:[_-]?base)?|private[_-]?key|client[_-]?secret|"
+                r"access[_-]?(?:token|key)|authorization|auth|credentials?|token|secret|password|passwd|pwd|"
+                r"passphrase)[\"']?\s*[:=]\s*"
+                r"(?:(?:token|api[_-]?key|bearer|basic|digest)[ \t]+)?"
+                r"(?:\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|[\"']?[^\s\"'<>&]{4,})"),
      r"\1: [REDACTED]"),
 )
 
