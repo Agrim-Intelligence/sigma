@@ -6,12 +6,12 @@ threshold points at this page. The same decisions, machine-readable, are in
 
 ## Status
 
-Proposed — not yet signed by the owner
+Signed by swapnil-agrim on 2026-10-04
 
-The owner accepted these defaults in chat on 2026-09-30. Merging the pull request that carries this
-page is the signature; until then the page stays `proposed`. On signing, this line becomes
-`Signed by <login> on <YYYY-MM-DD>` and the JSON's `status`, `signed_by` and `signed_on` change with
-it.
+The owner accepted these defaults in chat on 2026-09-30. Merging the pull request that set this line
+was the signature. A later change to the supported cells, the audience or the blocker classes is a
+new pull request and needs the owner's merge again; the JSON's `status`, `signed_by` and `signed_on`
+change with this line.
 
 ## What ships
 
