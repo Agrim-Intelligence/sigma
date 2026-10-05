@@ -37,6 +37,7 @@ def test_preregistration_fixes_the_arms_tasks_metrics_and_analysis_before_runs()
     assert "one repeat per arm and task" in text
     assert "three traps" in text
     assert "outside the Sigma team" in text
+    assert "agent-authored" in text and "weaker claim" in text
     assert "frozen task set" in text
     assert "~/.sigma-ops/bench/hidden/" in text
     assert "The predecessor is no longer an arm" in text

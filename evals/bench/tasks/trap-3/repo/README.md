@@ -1,5 +1,10 @@
-# trap-3 (placeholder)
+# config
 
-This directory is a skeleton. The trap author replaces everything under `repo/` with the starting repository for
-this trap (same shape as `examples/hello-sdlc`: a module, its tests and a README), then the task is sealed.
-See `docs/bench/trap-author-brief.md`.
+`parse_args(argv)` turns a command-line list into a config dict, starting from `DEFAULTS`.
+
+- `--name NAME` sets the name.
+- `--verbose` turns verbose on.
+- Unknown arguments raise `ValueError`.
+
+Guarantees: `DEFAULTS` is never modified, and every call to `parse_args` returns a config
+that is independent of all earlier calls.

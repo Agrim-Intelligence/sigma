@@ -80,7 +80,8 @@ sys.exit(subprocess.call([sys.executable, "-m", "pytest", "-q", "-p", "no:cachep
 TASK_FIELDS = ("id", "kind", "origin", "trap", "status", "prompt", "source", "visible_command",
                "visible_expected", "hidden_bundle", "hidden_sha256", "hidden_files", "tree_sha256")
 ROW_FIELDS = ("id", "prompt", "source", "visible_command", "hidden_bundle", "kind", "origin", "trap",
-              "status", "hidden_sha256", "tree_sha256")
+              "status", "authorship", "hidden_sha256", "tree_sha256")
+AUTHORSHIPS = ("independent-agent", "outside-human")
 
 
 def _load_json(path):
@@ -129,7 +130,7 @@ def derived_manifest(tasks_dir, previous):
     rows = []
     for task_id, task in load_tasks(tasks_dir).items():
         rows.append({key: task[key] for key in ROW_FIELDS if key in task})
-    out = {key: previous[key] for key in ("schema", "frozen", "model", "environment", "balance") if key in previous}
+    out = {key: previous[key] for key in ("schema", "frozen", "model", "environment", "balance", "trap_authorship") if key in previous}
     out["tasks"] = rows
     return out
 
@@ -249,11 +250,13 @@ def check(tasks_dir=TASKS_DIR, hidden_root=None, require_frozen=False):
         refusal = harness_validates(tasks_dir, hidden_root)
         if refusal:
             problems.append(refusal)
+    if any(t.get("authorship") == "independent-agent" for t in tasks.values()) and not manifest.get("trap_authorship"):
+        problems.append("manifest: trap_authorship must state that the traps are agent-authored, not outside-human")
     awaiting = [i for i, t in tasks.items() if t.get("status") == "awaiting-author"]
     if manifest.get("frozen") is True:
         if awaiting:
             problems.append(f"frozen manifest still has tasks awaiting an author: {awaiting}")
-        if not hidden_root:
+        if require_frozen and not hidden_root:
             problems.append("a frozen manifest is checked against the real hidden bundles: pass --hidden-root")
     elif require_frozen:
         problems.append("--frozen: manifest says frozen is false")
@@ -291,6 +294,8 @@ def _check_task(tasks_dir, task_id, task, model):
         problems.append(f"{where}: hidden_bundle must equal the id")
     if task["status"] == "ready" and not task["prompt"].rstrip().endswith(CLOSING_LINE):
         problems.append(f"{where}: a ready task's prompt must end with the line `{CLOSING_LINE}`")
+    if task["trap"] and task["status"] == "ready" and task.get("authorship") not in AUTHORSHIPS:
+        problems.append(f"{where}: a ready trap must declare authorship, one of {list(AUTHORSHIPS)}")
     if task["status"] == "ready" and not task["tree_sha256"]:
         problems.append(f"{where}: tree_sha256 is not recorded (run seal)")
     if task["status"] == "ready":
@@ -419,6 +424,13 @@ def _check_hidden_on_disk(hidden_root, tasks, tasks_dir=None):
             for name in ("expected_catch.txt", "author.json"):
                 if not (bundle / name).is_file() or not (bundle / name).read_text(encoding="utf-8").strip():
                     problems.append(f"{task_id}: a trap's hidden bundle must hold a non-empty {name}")
+            try:
+                said = json.loads((bundle / "author.json").read_text(encoding="utf-8")).get("authorship")
+            except (OSError, ValueError, AttributeError):
+                said = None
+            if said != task.get("authorship"):
+                problems.append(f"{task_id}: author.json authorship {said!r} differs from task.json "
+                                f"{task.get('authorship')!r}")
             if not task.get("author"):
                 problems.append(f"{task_id}: a trap must name its author (as the author consents to be credited)")
         if tasks_dir and task.get("origin") == "internal":

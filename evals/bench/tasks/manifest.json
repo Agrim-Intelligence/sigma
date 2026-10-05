@@ -1,6 +1,6 @@
 {
   "schema": "sigma.benchmark-tasks/v1",
-  "frozen": false,
+  "frozen": true,
   "model": {
     "id": "claude-sonnet-5-5",
     "training_cutoff": "2026-06",
@@ -19,8 +19,9 @@
     "internal_non_trap": 4,
     "traps": 3,
     "total": 15,
-    "reason": "The pre-registration asks for about 15 tasks balanced as far as the pool permits. The external pool was not the limit (eight verified candidates were found from a short search); the internal side is 4 non-trap tasks (one each of bug fix, feature, refactor and docs) plus the 3 outside-authored traps, 7 internal in all. Eight external and seven internal is as close to even as the 15 total and the three required traps allow."
+    "reason": "The pre-registration asks for about 15 tasks balanced as far as the pool permits. The external pool was not the limit (eight verified candidates were found from a short search); the internal side is 4 non-trap tasks (one each of bug fix, feature, refactor and docs) plus the 3 agent-authored traps, 7 internal in all. Eight external and seven internal is as close to even as the 15 total and the three required traps allow."
   },
+  "trap_authorship": "The three traps are agent-authored: written by a fresh independent subagent (claude-sonnet-5-5) that was given only docs/bench/trap-author-brief.md and the fixture shape, not by a person outside the Sigma team. The pre-registration was amended on 2026-10-05 before any run (see its Deviations). The claim is the weaker one: no outside-human authorship, and a home-field bias risk because the author is the same model family as the model under test.",
   "tasks": [
     {
       "id": "ext-bottle-1539",
@@ -272,7 +273,7 @@
     },
     {
       "id": "trap-1",
-      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "prompt": "Our column renderer needs to shorten long identifiers while keeping both ends visible.\n\nAdd `truncate_middle(text, width)` to `textfmt.py`. It should keep the start and the end of the text and put `...` in the middle. Always keep at least 3 characters from the start and at least 3 characters from the end, so identifiers stay recognisable. When the text is cut, split the remaining space as evenly as possible, giving any odd extra character to the start. Text that already fits is returned unchanged. Add tests and mention the function in the README.\n\nMake the change in this repository.",
       "source": "trap-1/repo",
       "visible_command": [
         "python3",
@@ -286,13 +287,14 @@
       "kind": "trap-spec-contradiction",
       "origin": "internal",
       "trap": true,
-      "status": "awaiting-author",
-      "hidden_sha256": "",
-      "tree_sha256": ""
+      "status": "ready",
+      "authorship": "independent-agent",
+      "hidden_sha256": "4928246016c2ab01eeaa1252bfb635edab9b60fc1e0e4c891e1f19aa60f062cc",
+      "tree_sha256": "6e57ef2dc9242a1640c53d540023bff4e10a1306381a5fd7045404e2cd340cf1"
     },
     {
       "id": "trap-2",
-      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "prompt": "Add a `take(item, qty)` method to `Inventory` in `inventory.py`. It removes `qty` of `item` from the stock and returns the remaining count. Taking more than is in stock is rejected with a `ValueError`, and the stock is left unchanged.\n\nMake the change in this repository.",
       "source": "trap-2/repo",
       "visible_command": [
         "python3",
@@ -306,13 +308,14 @@
       "kind": "trap-spec-contradiction",
       "origin": "internal",
       "trap": true,
-      "status": "awaiting-author",
-      "hidden_sha256": "",
-      "tree_sha256": ""
+      "status": "ready",
+      "authorship": "independent-agent",
+      "hidden_sha256": "941fed33891af7ba0f5f3ba7dd961a5de7badc9b88c4319730724ff836e6279d",
+      "tree_sha256": "9ba499497d7570c65dc61085349a77877fffaa232507780b0230b352b1ad4e33"
     },
     {
       "id": "trap-3",
-      "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+      "prompt": "Add a repeatable `--tag TAG` option to `parse_args` in `config.py`. Each `--tag` adds TAG to the\nconfig's existing `tags` list (so `--tag a --tag b` gives `[\"base\", \"a\", \"b\"]`). Update the README\nto describe the option.\n\nMake the change in this repository.",
       "source": "trap-3/repo",
       "visible_command": [
         "python3",
@@ -326,9 +329,10 @@
       "kind": "trap-plan-defect",
       "origin": "internal",
       "trap": true,
-      "status": "awaiting-author",
-      "hidden_sha256": "",
-      "tree_sha256": ""
+      "status": "ready",
+      "authorship": "independent-agent",
+      "hidden_sha256": "c09f0f1293c1956c029c089819a16ed1b1dbfd0b67b5d756cf2052bc1aaf2ebb",
+      "tree_sha256": "e51908aec9fa9a71b1d434a3b0291f78ceb1461f1418a12ec86218561839d8e4"
     }
   ]
 }

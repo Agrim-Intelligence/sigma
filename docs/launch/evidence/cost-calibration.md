@@ -14,7 +14,7 @@ nothing is estimated unless the row says so.
 | P-a (high-risk unit A01) | measured: one review pass and one verification pass; one extra high-risk unit (A06) reviewed |
 | P-b (sampled unit B01) | measured: one review pass and one verification pass |
 | P-c (one live goal) | not measured: no recorded phase costs exist (see its section) |
-| P-d (benchmark pilot) | not measured: no operator-supplied isolation launcher exists, and the trap slots of the task set are empty (see its section) |
+| P-d (benchmark pilot) | not measured: no operator-supplied isolation launcher exists, and the task set, though frozen on 2026-10-05, has agent-authored traps that no agent has yet run against (see its section) |
 
 ## Method and what a number means
 
@@ -78,7 +78,8 @@ profile, with the `phase_report.py end` cost lines recorded in `docs/onboarding-
   absolute executable path it only location-checks). No launcher is committed, none was invented here, and no
   `claude -p` was run outside the harness. This alone stops the pilot.
 - The task set (#355) is on main as a draft (`evals/bench/tasks/manifest.json`, `frozen` false): four internal
-  non-trap tasks exist, the three trap slots are empty (they await an outside author), so the pre-registered task set is
+  non-trap tasks exist, the three trap slots are empty (they awaited an outside author; since 2026-10-05 an independent agent authored them and the set is frozen, see
+  `docs/bench/preregistration.md` Deviations), so at that time the pre-registered task set was
   not complete. It landed while this goal ran: the first check, early on 2026-10-04, found it absent.
 
 To measure it the owner supplies the isolation launcher; then run the harness on two of the internal tasks, one run
