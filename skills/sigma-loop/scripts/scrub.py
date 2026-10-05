@@ -127,15 +127,15 @@ _SECRET_PATTERN_SPECS = (
     #: name through (#629). The prefix is left in the text, so the key name survives the redaction.
     #: Separators `=`, `:`, `:=`, `=>`. A quoted value runs to its closing quote (escape-aware) or,
     #: unterminated, to end of line, so spaces inside it leave no tail; anything else (including a
-    #: serialised-twice `\"value\"` and values holding `&`, `<`, `>`) is a run of non-space,
-    #: non-quote characters (min 4). Linear: no leading character class, no nested quantifier. A name
+    #: serialised-twice `\"value\"`, values holding `&`, `<`, `>` and a stray quote) is a run of
+    #: non-space characters (min 4). Linear: no leading character class, no nested quantifier. A name
     #: with a trailing suffix (`token_file=`, `max_tokens=`) is deliberately NOT matched, so counters
     #: and paths survive.
     ("credential-assignment-suffix", re.compile(r"(?i)(api[_-]?key|secret[_-]?key(?:[_-]?base)?|private[_-]?key|client[_-]?secret|"
                 r"access[_-]?(?:token|key)|auth|credentials?|token|secret|password|passwd|pwd|"
                 r"passphrase)(?:\\*[\"'])?\]?\s*(?::=|=>|[:=])\s*"
                 r"(?:(?:token|api[_-]?key|bearer|basic|digest)[ \t]+)?"
-                r"(?:\"{3}[^\n]+|'{3}[^\n]+|\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|[\\\"']*[^\s\"']{4,})"),
+                r"(?:\"{3}[^\n]+|'{3}[^\n]+|\"(?:\\.|[^\"\\\n])+\"?|'(?:\\.|[^'\\\n])+'?|\S{4,})"),
      r"\1: [REDACTED]"),
     #: The gate's shapes, before the generic key:value rule so each keeps its provider label.
     *((name, rx, _replacement(name, rx)) for name, rx in SHAPE_RULES),

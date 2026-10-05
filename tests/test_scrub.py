@@ -395,3 +395,11 @@ def test_scrub_escaped_quote_after_a_long_prefix_and_multiword_triple_quotes_lea
                  "TO" "KEN=\"\"\"" + head + " " + tail + "\"\"\"", "TO" "KEN='''" + head + " " + tail + "'''"):
         out = scrub(text)
         assert "TAILWORD" not in out and head not in out, out
+
+
+def test_scrub_a_stray_quote_inside_an_unquoted_value_leaves_no_tail():
+    scrub = _mod("scrub").scrub
+    for value in ("ab'cdefghijkl", 'ab"cdefghijkl', "abcd'efghijkl", 'abcd"efghijkl'):
+        out = scrub("pass" "word=" + value)
+        assert "efghijkl" not in out and "cdefghijkl" not in out, (value, out)
+    assert scrub('gh_auth=""') == 'gh_auth=""'
