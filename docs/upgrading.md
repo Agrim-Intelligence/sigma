@@ -1,9 +1,10 @@
 # Upgrading a repository adopted under the plugin's previous name
 
 Sigma was published under a different name before its 1.0.0 release. A repository adopted under
-that name (any 1.4.x release) carries the old name in its state. Sigma reads all of it, so you can
-install Sigma and carry on with no migration. When you want the files themselves to stop carrying
-the old name, run the one-shot migration.
+that name (any 1.4.x release) carries the old name in its state. Sigma reads that state as it is, so
+the files need no migration to be understood. One thing is not carried over, because it is deliberately
+kept out of the repository: [each checkout grants verify trust once](#verify-commands-need-a-one-time-per-checkout-trust).
+When you want the files themselves to stop carrying the old name, run the one-shot migration.
 
 The old name is not spelled out in this document. `migrate.py` prints it at the top of every run,
 and the table below uses `<old>` for the name and `<OLD>_` for its environment-variable prefix.
@@ -56,6 +57,39 @@ deleting the two Cursor rule files, as the changelog's migration notes say.
 named `sigma`, finds none after the rename, and shows no row at all. The row described above reaches only an install
 that already runs the new code (a checkout, or a fresh install). The owner announces the rename; this document and
 the changelog are where the steps live.
+
+## Verify commands need a one-time per-checkout trust
+
+This applies to **every repository whose committed `.sdlc/config.json` already has a `verify.command`** (a repository
+migrated from the previous plugin, or one adopted by a teammate) and to **every new clone of it**.
+
+`loop.py verify` runs the verify command through a shell, and that command comes from a file in the repository, so Sigma
+refuses it until the person at this checkout says it may run. That decision is stored in this checkout's Git-local
+configuration (`.git/config`), which is not committed and is not copied by `git clone`. It is therefore not inherited
+from the repository: **each checkout grants it once.** Without it the first `loop.py verify` exits 2 with `REFUSED:
+repository-configured shell command requires explicit operator trust`, and with `verify.enforce` on, `record done`
+needs a green verify, so every goal stops until trust is granted.
+
+Inspect the command in `.sdlc/config.json` (`verify.command`), and if you trust the project, run this once in the
+checkout:
+
+```
+git -C <project> config --local sigma.allowRepositoryShellCommands true
+```
+
+It covers the checkout's linked goal worktrees. Check it with `python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py
+verify .sdlc <goal>`: it runs the command instead of refusing.
+
+What tells you it is missing:
+
+- `/sigma-init`, re-run on the repository, prints a `[trust] verify` line with the command and this gesture instead
+  of `[ok] verify`. It does not set the trust for you, and no init flag answers it: run the gesture yourself.
+- `/sigma-doctor` shows a `verify command trusted in this checkout` row, with the same gesture, while a command is
+  configured and trust is absent.
+
+`/sigma-init`'s explicit `verify_detect.py confirm` and `set` gestures record the same trust for the command you confirm,
+which is why a fresh adoption never meets the refusal. The policy itself (Git-local, default no) is unchanged; see
+[the threat model](threat-model.md#repository-configured-shell-commands).
 
 ## What Sigma reads without any migration
 

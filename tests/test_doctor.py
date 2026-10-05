@@ -1613,6 +1613,86 @@ def test_verify_check_ok_with_a_command():
         assert _by_name(d.check(base, run=_runner()))["verify command present (enforce is on)"]["ok"]
 
 
+# --- #615: a configured verify command whose checkout never granted the git-local trust -----------
+
+_TRUST_ROW = "verify command trusted in this checkout"
+_TRUST_KEY = "sigma.allowRepositoryShellCommands"
+
+
+def _trust_row(d, base):
+    row = _by_name(d.check(base, run=_runner())).get(_TRUST_ROW)
+    assert row is not None, "no %r row" % _TRUST_ROW      # an assertion, so a missing row is a clean red
+    return row
+
+
+def _git_project(t, verify):
+    root = pathlib.Path(t)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    return _sdlc(t, {"verify": verify})
+
+
+def test_flags_a_configured_verify_command_without_local_trust():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"enforce": True, "command": "pytest -q"})
+        c = _trust_row(d, base)
+        assert c["ok"] is False
+        assert "config --local %s true" % _TRUST_KEY in c["fix"] and "loop.py verify" in c["fix"]
+
+
+def test_trust_row_is_green_once_the_checkout_granted_trust():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"enforce": True, "command": "pytest -q"})
+        subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, "true"], check=True)
+        assert _trust_row(d, base)["ok"] is True
+
+
+def test_trust_row_also_covers_a_configured_command_with_enforce_off():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"command": "pytest -q"})
+        assert _trust_row(d, base)["ok"] is False
+
+
+def test_no_trust_row_without_a_configured_command():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"enforce": False, "command": ""})
+        assert _TRUST_ROW not in _by_name(d.check(base, run=_runner()))
+
+
+def test_trust_row_treats_a_whitespace_only_command_as_configured_like_init():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"command": "   "})
+        assert _trust_row(d, base)["ok"] is False
+
+
+def test_trust_row_outside_a_git_worktree_is_red_and_says_so():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _sdlc(t, {"verify": {"command": "pytest -q"}})
+        c = _trust_row(d, base)
+        assert c["ok"] is False and "Git worktree" in c["fix"]
+
+
+def test_doctor_trust_read_agrees_with_the_loops_own_policy():
+    """doctor duplicates the read (standalone script); this keeps it in lockstep with shell_policy."""
+    d = _doc()
+    spec = importlib.util.spec_from_file_location(
+        "shell_policy", D.parent.parent.parent / "sigma-loop" / "scripts" / "shell_policy.py")
+    sp = importlib.util.module_from_spec(spec); spec.loader.exec_module(sp)
+    for value in (None, "true", "false", "yes", "1", "maybe", ""):
+        with tempfile.TemporaryDirectory() as t:
+            subprocess.run(["git", "init", "-q", t], check=True)
+            if value is not None:
+                subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, value], check=True)
+            assert d._verify_trusted(pathlib.Path(t)) == sp.repository_shell_commands_allowed(t), value
+    with tempfile.TemporaryDirectory() as t:                      # not a repository
+        assert d._verify_trusted(pathlib.Path(t)) == sp.repository_shell_commands_allowed(t) is False
+
+
 # --- ledger.autowatch: dashboard row + enabled-but-unwired warning (#1321) --------------------
 
 def test_features_autowatch_absent_block_is_off():

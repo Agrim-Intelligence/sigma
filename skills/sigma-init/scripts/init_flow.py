@@ -104,6 +104,8 @@ _BOOL = {"--local-only", "--no-verify", "--yes", "--demo", "--vision", "--codex"
 #: this flow's output when `--board yes` turns mirroring on right after it.
 BOARD_NOT_ENABLED_NOTE = "note: discovery.github.project.enabled is not true"
 
+_KEY = "sigma.allowRepositoryShellCommands"
+
 #: Test seam: `board_step`'s runner, `(argv) -> (rc, output)`. None = a real subprocess.
 BOARD_RUNNER = None
 
@@ -118,6 +120,7 @@ def _load(name, path=None):
 _si = _load("sdlc_init")
 _pf = _si._preflight()
 _vd = _si._verify_detect()
+_sp = _load("shell_policy", _HERE.parent.parent / "sigma-loop" / "scripts" / "shell_policy.py")
 
 
 def parse(argv):
@@ -460,6 +463,34 @@ def _capture(fn, *args):
     return rc, buf.getvalue()
 
 
+def _verify_trust_lines(sdlc, command):
+    """#615. A committed `verify.command` only runs once THIS checkout has the git-local
+    `sigma.allowRepositoryShellCommands` (#422: not committed, not cloned), so a migrated repo or a teammate's
+    fresh clone must not read `[ok]`. -> [] when trusted, else the `[trust]` lines. Not an `[ask]`: no init flag
+    answers it, and trust is the operator's own act after inspecting the command, so the line says to run the
+    gesture, not to re-run init. The key is read where `loop.py verify` and `verify_detect` read it: the
+    directory holding `.sdlc`. The repository-controlled command is printed alone, as JSON, never inside the gesture."""
+    repo = pathlib.Path(os.path.abspath(sdlc)).parent
+    if _sp.repository_shell_commands_allowed(repo):
+        return []
+    head = ("  [trust] verify: a verify command is configured but this checkout has not granted it trust, so "
+            "`loop.py verify` will refuse it (git-local, not committed or cloned; every checkout grants it once).")
+    shown = "  " + json.dumps(_vd.printable(command))
+    try:
+        inside = subprocess.run(["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+                                capture_output=True, text=True, timeout=5).stdout.strip() == "true"
+    except (OSError, subprocess.SubprocessError):
+        inside = False
+    if not inside:
+        return [head, shown, "  It cannot be trusted: this is not a Git worktree. Run init inside the repository."]
+    if any(_vd._unsafe_char(ch) for ch in str(repo)):
+        return [head, shown, "  No gesture is printed: the project path holds a control character. "
+                "Move the checkout, then re-run init."]
+    return [head, shown,
+            "  Inspect that command. If you trust this project, run this once yourself (an agent must not):",
+            f"  git -C {_vd._q(repo)} config --local {_KEY} true"]
+
+
 def verify_step(target, sdlc, opts):
     """#228. -> (lines, ok, asked)."""
     vd_argv = None
@@ -478,6 +509,9 @@ def verify_step(target, sdlc, opts):
         return lines + ["  [ok] verify: settled"], True, False
     verify = _read_json(pathlib.Path(sdlc) / "config.json").get("verify") or {}
     if verify.get("command"):
+        trust = _verify_trust_lines(sdlc, verify["command"])
+        if trust:
+            return trust, True, False
         return [f"  [ok] verify: `{_vd.printable(verify['command'])}` "
                 f"(enforce {'ON' if verify.get('enforce') else 'OFF'})"], True, False
     if str(verify.get("_why") or "").startswith("enforce OFF: the user declined"):
@@ -651,6 +685,7 @@ def main(argv):
                               f"{flag % said if '%s' in flag else flag})")
 
     failed, asked = [], []
+    trust_open = False
 
     # 1 preflight --------------------------------------------------------------------------------
     print("\nsigma-init: 1/5 preflight")
@@ -687,6 +722,8 @@ def main(argv):
     print("\nsigma-init: 3/5 verify")
     lines, ok, ask = verify_step(target, sdlc, opts)
     print("\n".join(lines))
+    if any(l.startswith("  [trust] verify") for l in lines):
+        trust_open = True
     if not ok:
         failed.append("verify")
     if ask:
@@ -750,6 +787,9 @@ def main(argv):
         return 1
     if asked:
         print(f"  open:   {', '.join(asked)} - answer the [ask] lines above (same command + the flag)")
+    if trust_open:
+        print("  open:   verify trust - run the [trust] gesture above yourself, once per checkout; "
+              "do not re-run init for it")
     loop = " ".join([_vd.python_command(), _vd._q(str(LOOP_SCRIPT)), "next", _vd._q(sdlc)])
     if (cfg.get("discovery") or {}).get("source") == "github":
         print("Next: label an issue `sdlc:goal` (assigned to you), then /sigma-loop "

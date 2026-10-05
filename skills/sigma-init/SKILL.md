@@ -67,6 +67,10 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    - **Codex / Cursor:** relay the `[ask]` lines verbatim; they carry the exact flags. Do not choose
      for the user.
 
+   A `[trust] verify` line is not a question: the repository already has a verify command and this checkout has not
+   granted it Git-local trust. Relay the line and its gesture to the user. Never run that gesture, and never pass a
+   flag for it: the operator grants it after inspecting the command, once per checkout.
+
    Exit 0: every attempted step passed (open questions are allowed). Exit 1: a step failed; the last
    line is `Resume: <command>` -- relay it. Exit 2: refused before anything was written (not a git
    repository, github mode with no repository).
