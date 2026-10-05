@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "readiness" / "leftovers.py"
 
 
+_CLEAN_GIT_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def _mod():
     spec = importlib.util.spec_from_file_location("leftovers", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
@@ -95,6 +98,11 @@ def test_copied_markers_match_init_sources():
     text = init.read_text(encoding="utf-8")
     assert all(marker in text for marker in _mod().AGENTS_MARKERS)
     assert all(name in text for name in _mod().CURSOR_RULES)
+    # #614 (plan-review R4): the assembled hook value cannot be found as a substring, so it is
+    # locked by VALUE against setup.py's own constant.
+    spec = importlib.util.spec_from_file_location("setup_for_leftovers", setup)
+    setup_mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(setup_mod)
+    assert _mod().HOOKS_PATH == setup_mod.HOOKS_PATH
 
 
 def test_documented_local_cleanup_is_green_after_onboarding_and_red_without_ignore_removal(tmp_path):
@@ -104,6 +112,10 @@ def test_documented_local_cleanup_is_green_after_onboarding_and_red_without_igno
                     "--workdir", str(tmp_path), "--keep"], cwd=ROOT, check=True, capture_output=True, text=True)
     repo = next(tmp_path.rglob("repo"))
     assert (repo / ".sdlc").exists()
+    # #614 (plan-review R5): a repository an earlier release adopted carries the stale hook key;
+    # seed it so the guide's hook step is exercised, not just the steps onboarding still needs.
+    subprocess.run(["git", "-C", str(repo), "config", "--local", "core.hooksPath",
+                    _mod().HOOKS_PATH], check=True, env=_CLEAN_GIT_ENV)
     # Guide step 4: remove worktrees before .sdlc. Local onboarding normally has none.
     for path in (repo / ".sdlc" / "work").glob("*") if (repo / ".sdlc" / "work").exists() else ():
         subprocess.run(["git", "worktree", "remove", "--force", str(path)], cwd=repo, check=True)
@@ -119,6 +131,12 @@ def test_documented_local_cleanup_is_green_after_onboarding_and_red_without_igno
     if agents.exists():
         agents.unlink()
     shutil.rmtree(repo / ".cursor", ignore_errors=True)
+    # Deliberate red control: everything else removed, the guide's hook step not yet followed.
+    red = subprocess.run([sys.executable, str(SCRIPT), str(repo)], text=True, capture_output=True)
+    assert red.returncode == 1 and red.stdout.startswith("hooks-path:"), red.stdout
+    # Guide step: `git config --local --get core.hooksPath` names a directory that does not exist.
+    subprocess.run(["git", "-C", str(repo), "config", "--local", "--unset", "core.hooksPath"],
+                   check=True, env=_CLEAN_GIT_ENV)
     green = subprocess.run([sys.executable, str(SCRIPT), str(repo)], text=True, capture_output=True)
     assert green.returncode == 0 and green.stdout == ""
 
@@ -131,3 +149,33 @@ def test_installed_plugin_residue_finds_the_new_plugin_directory(tmp_path):
     rows = mod.find_leftovers(tmp_path, environ={"CLAUDE_CONFIG_DIR": str(tmp_path / "profile"),
                                                  "CODEX_HOME": str(tmp_path / "empty")})
     assert any(row["kind"] == "installed-plugin" for row in rows), rows
+
+
+def test_stale_hook_path_is_residue_only_while_its_directory_is_missing(tmp_path):
+    """#614: the key an earlier /sigma-init wrote outlives `rm -rf .sdlc`; it is residue while the
+    directory it names is missing. The adopter's own directory under that name, or any other
+    value, is not Sigma's."""
+    mod, stale = _mod(), "." + "git" + "hooks"     # assembled: the guard rejects the raw name
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, env=_CLEAN_GIT_ENV)
+    def setv(value):
+        subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", value],
+                       check=True, env=_CLEAN_GIT_ENV)
+    setv(stale)
+    assert mod.find_leftovers(tmp_path) == [{"kind": "hooks-path", "path": "core.hooksPath"}]
+    (tmp_path / stale).mkdir()
+    assert mod.find_leftovers(tmp_path) == []
+    setv(".husky/_")
+    assert mod.find_leftovers(tmp_path) == []
+
+
+def test_hook_path_read_ignores_an_exported_git_dir(tmp_path, monkeypatch):
+    """Plan-review R3: an exported GIT_DIR must not point the hook read at another repository."""
+    mod = _mod()
+    target, other = tmp_path / "target", tmp_path / "other"
+    for repo in (target, other):
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True, env=_CLEAN_GIT_ENV)
+    subprocess.run(["git", "-C", str(other), "config", "--local", "core.hooksPath", mod.HOOKS_PATH],
+                   check=True, env=_CLEAN_GIT_ENV)
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    assert mod.find_leftovers(target) == []

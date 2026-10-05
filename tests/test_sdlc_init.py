@@ -98,34 +98,48 @@ def test_scaffold_gitignores_the_runtime_dirs_including_events(tmp_path):
         assert probe.exists(), f"the probe under {target} must still exist on disk"
 
 
-def test_documented_init_installs_the_repo_local_hook_path(tmp_path):
-    """The real CLI gesture must write the local Git setting, not merely print that it would.
-    The expected spelling is assembled because this public-surface test suite deliberately rejects
-    the private hook directory as raw shipped text."""
+def _local_hooks_path(repo):
+    got = subprocess.run(["git", "-C", str(repo), "config", "--local", "--get", "core.hooksPath"],
+                         capture_output=True, text=True)
+    return got.stdout.strip() if got.returncode == 0 else None
+
+
+def test_documented_init_never_writes_a_hook_path(tmp_path):
+    """#614 (inverts #218's pin): adoption never writes `core.hooksPath` -- the directory it named
+    ships nowhere, so git ran NO hooks in an adopted repository."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    got = subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "--get",
-                          "core.hooksPath"], capture_output=True, text=True, check=True)
-    assert got.stdout.strip() == "." + "git" + "hooks"
+    assert _local_hooks_path(tmp_path) is None
+    assert "core.hooksPath" not in result.stdout + result.stderr
 
 
-def test_documented_init_refuses_a_different_existing_hook_path_without_scaffolding(tmp_path):
-    """A user's hook directory is an explicit local decision, so adoption must leave it alone."""
+def test_documented_init_adopts_and_keeps_a_different_existing_hook_path(tmp_path):
+    """#614 (inverts #218's refusal): a user's hook directory (husky, an org scanner) is theirs --
+    adoption completes and leaves the value exactly as it was."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     existing = "my-hooks"
     subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", existing],
                    check=True)
     result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
                             capture_output=True, text=True)
-    assert result.returncode != 0
-    assert "REFUSED" in result.stderr and "core.hooksPath" in result.stderr
-    assert existing not in result.stderr + result.stdout
-    got = subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "--get",
-                          "core.hooksPath"], capture_output=True, text=True, check=True)
-    assert got.stdout.strip() == existing
-    assert not (tmp_path / ".sdlc").exists(), "a refusal must leave adoption unstarted"
+    assert result.returncode == 0, result.stderr
+    assert "REFUSED" not in result.stderr
+    assert _local_hooks_path(tmp_path) == existing
+    assert (tmp_path / ".sdlc" / "config.json").is_file()
+
+
+def test_documented_init_unsets_the_stale_hook_path_and_says_so(tmp_path):
+    """#614 AC-4 on the bare scaffolder: the key an earlier Sigma init wrote is removed, in one line."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath",
+                    "." + "git" + "hooks"], check=True)
+    result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert _local_hooks_path(tmp_path) is None
+    assert len([l for l in result.stdout.splitlines() if "core.hooksPath" in l]) == 1, result.stdout
 
 
 def test_scaffold_gitignore_fix_does_not_make_probe_files_stop_existing(tmp_path):

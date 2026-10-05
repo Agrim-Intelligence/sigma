@@ -627,14 +627,12 @@ def main(argv):
               "was written.", file=sys.stderr)
         return 2
 
-    # hook path + scaffold (skip-if-exists) -----------------------------------------------------
-    # This must precede both the owner marker and template writes: a differing local hook path is
-    # an explicit user decision, so refusal leaves adoption entirely untouched.
-    try:
-        _si.install_hook_path(target)
-    except _si.HookPathInstallFailed as exc:
-        print(f"sigma-init: REFUSED - hook path: {exc}", file=sys.stderr)
-        return 2
+    # stale hook path + scaffold (skip-if-exists) -----------------------------------------------
+    # #614: adoption NEVER writes `core.hooksPath` (owner decision D-1) -- an adopter's own hooks,
+    # local or global, keep running. This only undoes the key releases before #614 wrote, and says
+    # so in one line; it never refuses adoption.
+    for line in _si.repair_stale_hook_path(target):
+        print(line)
     if coexist is not None:
         # BEFORE the scaffold: a `.sdlc/` whose scaffold is interrupted is still recognisably
         # Sigma's, so the session wizard can say "re-run /sigma-init" there (and only there).

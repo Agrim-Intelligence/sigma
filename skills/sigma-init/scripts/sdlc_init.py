@@ -50,25 +50,24 @@ def _ignore_runtime_dirs(target_dir):
             f"are skipped, not overwritten)")
 
 
-class HookPathInstallFailed(Exception):
-    """Raised when setup refuses or cannot install the repository-local Git hook path."""
-
-
-def install_hook_path(target_dir):
-    """Use setup.py's CLI as the one owner of hook-path policy. This happens before scaffold so a
-    differing user setting refuses before any adoption files are written. A missing sibling is
-    deferred to `_ignore_runtime_dirs()`: its established failure contract deliberately leaves the
-    already-written templates available for a retry, and it is the same required setup dependency."""
+def repair_stale_hook_path(target_dir):
+    """#614: adoption NEVER writes `core.hooksPath` (owner decision D-1). Releases before #614 did --
+    naming a directory nothing creates, so git ran no hooks -- and this undoes that one stale key on
+    the next /sigma-init. setup.py owns the policy (`hooks-repair`); this relays its lines. Never
+    raises and never refuses adoption: a repair that cannot run says so in one line with the manual
+    command, and adoption carries on. Returns the lines to print (usually none)."""
     if not SETUP_SCRIPT.is_file():
-        return
+        return []
     try:
-        proc = subprocess.run([sys.executable, str(SETUP_SCRIPT), "hooks", str(target_dir)],
+        proc = subprocess.run([sys.executable, str(SETUP_SCRIPT), "hooks-repair", str(target_dir)],
                               capture_output=True, text=True)
-    except OSError as exc:
-        raise HookPathInstallFailed("could not start the hook-path installer") from exc
-    if proc.returncode != 0:
-        raise HookPathInstallFailed("repository-local core.hooksPath was not installed; "
-                                    "adoption was not started")
+    except OSError:
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        return [line for line in proc.stdout.splitlines() if line.strip()]
+    return ["  [warn] git hooks: could not check for a stale core.hooksPath an earlier Sigma init "
+            "set; if `git config --local --get core.hooksPath` prints that old value and no such "
+            "directory exists, run `git config --local --unset core.hooksPath`"]
 
 
 def scaffold(target_dir):
@@ -712,11 +711,8 @@ def main(argv):
         offer = coexist.takeover_line(str(pathlib.Path(target) / ".sdlc"))
         if offer:
             print(offer, file=sys.stderr)
-    try:
-        install_hook_path(target)
-    except HookPathInstallFailed as exc:
-        print(f"sigma-init: REFUSED - {exc}", file=sys.stderr)
-        return 2
+    for line in repair_stale_hook_path(target):     # #614: never writes the key, only undoes it
+        print(line)
     try:
         created, skipped = scaffold(target)
     except RuntimeIgnoreWriteFailed as exc:
