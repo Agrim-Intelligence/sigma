@@ -13,7 +13,8 @@ All notable changes to Sigma are recorded here, newest first.
   from the definition and substitutes the checkout for it when it installs. **Existing installs stop updating.** An
   install recorded under the previous plugin id keeps working but the update key changed, so it receives nothing
   until it is reinstalled; `/sigma-doctor` now has a row for such an install that prints the exact uninstall,
-  marketplace and install commands for the host and runs none of them (it never fires for a fork), and
+  marketplace and install commands for the host and runs none of them (a fork whose recorded source is not the
+  pre-launch repository does not fire; one added by path or git URL cannot be told apart and fires if it kept the old id), and
   `docs/upgrading.md` has a "From the pre-launch name" section with the same steps; `.sdlc/` data is kept as is. **An
   install under the old id runs the old doctor, which shows no row after the rename, so it cannot warn its owner:
   the rename has to be announced.** The Codex lines were last run before the rename and were not re-run for the new

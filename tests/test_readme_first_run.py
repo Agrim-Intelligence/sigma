@@ -490,6 +490,7 @@ VERSION_ALLOW = {
     ("docs/upgrading.md", "1.4.25"): "the previous name's release whose behaviour on a converted "
                                      "repository the upgrade guide describes (#326)",
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
+    ("docs/onboarding-control.md", "2.1.284"): "the measured Claude Code CLI version of the #524 plugin-id re-run",
     ("docs/launch/evidence/pin-rollback-2026-10-02.md", "2.1.284"): "the measured Claude Code CLI version for #359's isolated pin probe",
     ("contract/README.md", "1.3.0"): "the event contract's own semver (contract/VERSION)",
     ("contract/README.md", "1.1.0"): "the event contract's own semver history",

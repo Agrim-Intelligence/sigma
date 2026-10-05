@@ -113,7 +113,7 @@ def main(argv):
     for line in found:
         print(line)
     if found:
-        sys.stderr.write("rename_check.py: %d occurrence(s) of the retired prefix outside the allowlist\n" % len(found))
+        sys.stderr.write("rename_check.py: %d occurrence(s) of the retired prefix or plugin install id outside the allowlist\n" % len(found))
         return 1
     return 0
 

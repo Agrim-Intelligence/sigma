@@ -24,13 +24,15 @@ directory) for an install recorded under a project scope; `/sigma-doctor` lists 
 ```
 claude plugin uninstall sigma@sigma
 claude plugin marketplace remove sigma          # only if no other plugin you use comes from that marketplace
-claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+claude plugin marketplace add <the repository your old install came from>
 claude plugin install sigmaloop@sigmaloop
 ```
 
-Then restart the session, so the version in use is resolved afresh. If your install came from a private copy of
-the repository rather than the public one, add that repository instead of the URL above; the plugin it carries is
-named `sigmaloop` too.
+`/sigma-doctor` prints these lines for your install, with the repository your install recorded filled in (a private
+copy of the repository carries the plugin under its new name too). A fresh install from the public repository uses
+`claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` instead. Then restart the session, so
+the version in use is resolved afresh. With a marketplace shared by other plugins this exact sequence has not been run
+end to end.
 
 **Codex.**
 

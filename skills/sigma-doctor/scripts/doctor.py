@@ -1556,7 +1556,7 @@ def _installed_marketplace_repo(marketplace, codex_entry=None, known_marketplace
     """The `owner/repo` the sigma plugin was INSTALLED from (#2730), or `_MARKETPLACE_REPO` when
     that cannot be read -- never raises.
 
-    Claude: `marketplace` is the half after `@` in the installed id (`sigma@<marketplace>`), looked
+    Claude: `marketplace` is the half after `@` in the installed id (`sigmaloop@<marketplace>`), looked
     up in Claude Code's `known_marketplaces.json`; only the `github` source shape is verified
     (`{"source": {"source": "github", "repo": "owner/repo"}}`), so a marketplace added by `git` URL,
     local directory or any other source falls back -- correct for an unmodified install, and the
@@ -1820,7 +1820,7 @@ def _old_install_row(host, ours, others_on_marketplace=()):
         steps += ["codex plugin marketplace add https://github.com/%s" % source,
                   "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
         note = ("the removal verb is the one codex-cli 0.154 lists; confirm with `codex plugin --help` on this "
-                "host before running it")
+                "host before running it. These Codex steps were not run end to end on a real host")
     else:
         for pid, scope, path, _src in sorted(ours, key=lambda o: (o[0], o[1], o[2] or "")):
             cmd = "claude plugin uninstall %s" % pid
@@ -1836,7 +1836,8 @@ def _old_install_row(host, ours, others_on_marketplace=()):
                 steps.append("claude plugin marketplace remove %s" % market)
         steps += ["claude plugin marketplace add %s" % source,
                   "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
-        note = "Each uninstall is per scope"
+        note = ("Each uninstall is per scope" + ("; with a marketplace shared by other plugins this exact sequence "
+                "was not run end to end" if others_on_marketplace else ""))
     return _chk("Sigma Loop plugin installed under the pre-launch id %s (it no longer receives updates)"
                 % ", ".join(ids), False,
                 "the plugin was renamed to %s, so an install under the old id silently stopped updating. "
@@ -1879,7 +1880,7 @@ def _codex_old_install_row(plugins):
     """The pre-launch row from Codex's already-fetched plugin list, or None."""
     try:
         ours = [(str(e.get("pluginId", "")), "user", None, _recorded_source(codex_entry=e))
-                for e in (plugins or []) if isinstance(e, dict)
+                for e in (plugins or []) if isinstance(e, dict) and e.get("installed") is True
                 and _is_pre_launch_install(e.get("pluginId", ""), _recorded_source(codex_entry=e))]
         return _old_install_row("codex", ours)
     except Exception:                        # noqa: BLE001

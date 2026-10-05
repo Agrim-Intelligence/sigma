@@ -1976,7 +1976,7 @@ history stays a query away. The full closed loop: **record** (issues / journey) 
 ## Companions (optional enhancement)
 
 Sigma ships the *spine* **and** a portable executor for every phase, so it has **zero hard plugin
-dependencies** — `/plugin install sigma` is seamless whether or not anything else is present, and
+dependencies** — `/plugin install sigmaloop` is seamless whether or not anything else is present, and
 the kit is **never disabled** waiting on another plugin. The *execution muscle* for Phases 1, 3, 5,
 and 6 runs *best on Claude* through two companion plugins:
 
@@ -2256,7 +2256,7 @@ The Sigma plugin — skills, hooks, commands and docs — is **MIT**: see [`LICE
 If this checkout carries a `NOTICE` file, it lists any path under a different licence and what each
 install path puts on your disk.
 
-A marketplace install (`/plugin install sigma`) clones the whole repository, so every *tracked*
+A marketplace install (`/plugin install sigmaloop`) clones the whole repository, so every *tracked*
 file is shipped surface: CI fails on any
 tracked zero-byte file that isn't a known empty marker — a stray had shipped unnoticed for over a
 month before anyone looked.
