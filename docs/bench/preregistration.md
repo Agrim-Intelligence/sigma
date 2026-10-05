@@ -75,8 +75,8 @@ and then exactly one of the following sentences, according to the outcome define
 - INCONCLUSIVE: **"The pre-registered release check was inconclusive: this benchmark does not show whether Sigma is better or worse than the other arms."**
 - NO-GO: **"The pre-registered release check was not passed: Sigma was significantly worse than ARM on this frozen benchmark."**
 
-Where the owner changes alpha (see [Owner decisions](#owner-decisions)) the number in the GO sentence
-changes with it and nothing else does. The result is not
+Alpha is decided (see [Owner decisions](#owner-decisions)); changing it needs a new pull request, and the
+number in the GO sentence changes with it and nothing else does. The result is not
 evidence of superiority or non-inferiority beyond these tasks, and it is forbidden to describe it as one
 or as a general performance estimate. An INCONCLUSIVE result is never a win and is never reported as one.
 
@@ -93,7 +93,7 @@ direction and are ignored. Let D = W + L be the number of discordant tasks.
   probability at most 1/2. H1: A1 is better.
 - Conditional on D, and under H0, W is Binomial(D, 1/2). The test is an exact one-sided binomial
   test: the p-value is P(Binomial(D, 1/2) >= W), compared with alpha as an exact fraction.
-  alpha = 0.05 (recommended; an owner decision, see below).
+  alpha = 0.05 (decided by the owner on 2026-10-05, see below).
 - **The margin is a margin of 0 tasks (0 points): this is a superiority test, not a non-inferiority
   test.** There is no non-inferiority margin because none is attainable at this size (see
   [Operating characteristics](#operating-characteristics)).
@@ -132,7 +132,7 @@ python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md
 
 ## Owner decisions
 
-The owner accepted the first three recommendations below on 2026-10-05, before any benchmark task
+The owner accepted all four recommendations below on 2026-10-05, before any benchmark task
 ran. They are decided: changing one now needs a new pull request and a re-run of
 `python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md`. The statistics
 behind each choice, and what the alternatives cost, stay in the tables that follow.
@@ -155,8 +155,8 @@ behind each choice, and what the alternatives cost, stay in the tables that foll
    as the rule. Whether the launch proceeds without a performance claim, or more tasks are added, is not
    decided here and stays a business choice made after a result exists.
 
-Still open and owner-gated, not decided by the above: the freeze of the task set, the three traps
-written by someone outside the Sigma team, and the S9 spend ceiling.
+Still open and owner-gated, not decided by the above: the freeze of the task set, naming the trap author
+and the three traps they write, whether to pin the model ID (`task-sourcing.md`), and the S9 spend ceiling.
 
 **Post-launch flow (#410): deferred.** The owner decided on 2026-10-01 to decide at launch time and to
 ship the first public snapshot first (#410 stays open and held; the export is the same under either
@@ -291,7 +291,7 @@ The superseded bootstrap rule on the same counts (n = 15, one comparison, exact 
 | 7 | 1 | 7 | 6.7 | yes | GO |
 | 8 | 2 | 5 | 0.0 | yes | INCONCLUSIVE |
 
-Owner decision, alpha alternatives at n = 15 (one comparison):
+Alpha alternatives considered at n = 15 (decided: 0.05; one comparison):
 
 | One-sided alpha | fewest net wins that can pass (W - L) | worst-case P(GO) at a true tie | P(GO) at +20 points, d=40 | P(GO) at +30 points, d=40 | P(GO) at +40 points, d=40 |
 |---|---|---|---|---|---|
@@ -332,7 +332,7 @@ Record every change to this pre-registration here with its date and reason.
   points, so a 5-point margin sits below the smallest possible difference. What it replaces: the Analysis
   paragraph (mean difference and 95% paired-bootstrap interval) and the Go threshold section, both kept
   below, marked SUPERSEDED. What replaces them: an exact one-sided binomial test on discordant tasks per
-  comparison, alpha 0.05 and margin 0 tasks recommended (owner decisions), outcomes GO, NO-GO and
+  comparison, alpha 0.05 and margin 0 tasks (decided by the owner, 2026-10-05), outcomes GO, NO-GO and
   INCONCLUSIVE, corrected claim wording (the duplicated clause in the old claim sentence is stated once), and
   the statement that the predecessor is no longer an arm. No benchmark task has run and no money was spent.
 

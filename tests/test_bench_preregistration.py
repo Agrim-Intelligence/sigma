@@ -56,9 +56,9 @@ def test_go_threshold_is_an_exact_paired_test_with_owner_decisions():
         assert needle in go, needle
     assert "python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md" in text
     owner = _section(text, "## Owner decisions")
-    for needle in ("alpha", "margin", "recommended", "not settled by statistics alone"):
+    for needle in ("alpha", "margin", "2026-10-05", "DECIDED"):
         assert needle in owner, needle
-    assert owner.count("(owner decision)") >= 4
+    assert owner.count("DECIDED") >= 4
     oc = _section(text, "## Operating characteristics")
     assert "<!-- operating-characteristics:begin -->" in oc and "<!-- operating-characteristics:end -->" in oc
     assert "no non-inferiority claim" in oc
