@@ -26,7 +26,7 @@ NOT_PROVED = (
     "does not observe who called the host's task tool",
     "a maker can record its own approving verdict",
     "session environment variables",
-    "from any commenter, not the evidence",
+    "COLLABORATOR commenter, not the evidence",
     "does not require an approval at all",
 )
 PROVED = (

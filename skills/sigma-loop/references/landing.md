@@ -212,7 +212,7 @@ want to see exactly where GitHub's own read stood before deciding.
 The gate is clean **and** safe: it needs THIS run's passing verify evidence *and* GitHub's
 `mergeable` + `mergeStateStatus CLEAN`, **plus — with `require_review` on — the review verdict you
 just posted** (it will not merge a PR that isn't `sigma:approve`d, or that has a `sigma:block` / an
-unresolved thread). **A `sigma:` comment counts only from an OWNER, MEMBER or COLLABORATOR commenter** (#635; others are ignored with a stderr note, and unreadable comments park the merge). **The review gate runs on every `auto_merge` policy, `off` included** (#232):
+unresolved thread). **The review gate runs on every `auto_merge` policy, `off` included** (#232):
 under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge
 instead of being invisible, and a clean PR's line says `review gate passed (require_review: …)`
 before it is left for a human. It rebases once if the PR is `BEHIND`. It then **lands the PR
