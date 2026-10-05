@@ -16,14 +16,6 @@
     ]
   },
   {
-    "path": ".sdlc/research/258.md",
-    "rule": "auth",
-    "reason": "plan or research prose using the common word digest, not a credential",
-    "lines": [
-      "b924c6c976f7d7395357ba132da1cd8d75901c7146362d472ec49fff6e67012a"
-    ]
-  },
-  {
     "path": ".sdlc/research/277.md",
     "rule": "absolute-home-path",
     "reason": "research prose quoting an elided placeholder path that the detector allows",
@@ -217,7 +209,7 @@
     "reason": "hermetic coexistence-control literals under an invented one-letter user home; no real host path",
     "lines": [
       "4ed322b21254986dce458294c7e7171e733a4baa6c7fc3bd1bb56495ba79bfd6",
-      "7cf0362330ceaa2a9bb5ce915d2f8b543479d9f82cca98fdbdc7cf77c46ca863",
+      "5124273c0a92fa0274430c4ca5c060e56d6f515aeaab4088491725aaaa4106c8",
       "c19e57699d05a8b8c5ef8645af5e7ea329acdb2744b958067d4028fc0ef6ef4a",
       "fa8d637eebcfccf67809b3ce8db61e1360ded88f8a63dd545b79eb537acb9fd5"
     ]
