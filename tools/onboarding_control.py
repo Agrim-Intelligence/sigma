@@ -225,6 +225,16 @@ def init_flow_flags(sigma):
     return found
 
 
+def public_url(sigma=ROOT):
+    """The public repository's git URL, from the launch definition (#524): the README's install lines
+    carry it, and `--install` swaps in the local checkout so the run does not need the network."""
+    try:
+        repo = json.loads((pathlib.Path(sigma) / "docs" / "launch" / "definition.json").read_text())["public_repo"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise Red("readme", f"cannot read public_repo from docs/launch/definition.json: {exc}")
+    return "https://github.com/" + repo
+
+
 def parse_quickstart(text, sigma=ROOT):
     """-> dict of the gestures the control runs, or raises Red("readme", ...) naming what is
     missing. Pure over README text (plus existence checks against `sigma`), so a drift control can
@@ -258,7 +268,7 @@ def parse_quickstart(text, sigma=ROOT):
     for key, prefix, verb in (("claude_install", "claude plugin", "install"),
                               ("session_install", "/plugin", "install"),
                               ("codex_install", "codex plugin", "add")):
-        want = [f"{prefix} marketplace add <SIGMA_REPO>", f"{prefix} {verb} {plugin_id}"]
+        want = [f"{prefix} marketplace add {public_url(sigma)}", f"{prefix} {verb} {plugin_id}"]
         if [" ".join(l.split()) for l in out[key]] != want:
             raise Red("readme", f"the Quickstart's `{prefix}` lines are {out[key]}, not {want} "
                       "(the id must be what .claude-plugin/marketplace.json declares)")
@@ -1169,7 +1179,7 @@ def host_install(qs, sigma, root, which):
         env = dict(os.environ, HOME=str(home), CLAUDE_CONFIG_DIR=str(cfg), CODEX_HOME=str(cfg))
         rec = {"binary": binary, "steps": []}
         for line in lines:
-            argv = [binary] + [t.replace("<SIGMA_REPO>", str(sigma)) for t in shlex.split(line)[1:]]
+            argv = [binary] + [t.replace(public_url(sigma), str(sigma)) for t in shlex.split(line)[1:]]
             t = time.monotonic()
             proc = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=300)
             rec["steps"].append({"line": line, "rc": proc.returncode,

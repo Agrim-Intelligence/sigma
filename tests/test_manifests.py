@@ -9,7 +9,7 @@ def _load(rel):
 
 def test_plugin_manifest_valid():
     m = _load(".claude-plugin/plugin.json")
-    assert m["name"] == "sigma"
+    assert m["name"] == "sigmaloop"
     assert re.fullmatch(r"\d+\.\d+\.\d+", m["version"])   # semver shape, not a frozen value
     assert m["license"] == "MIT"
     assert m["description"]
@@ -18,7 +18,7 @@ def test_plugin_manifest_valid():
 def test_marketplace_lists_plugin_from_root():
     m = _load(".claude-plugin/marketplace.json")
     names = [p["name"] for p in m["plugins"]]
-    assert "sigma" in names
+    assert "sigmaloop" in names
     assert m["plugins"][0]["source"] == "./"
 
 
@@ -30,7 +30,7 @@ def test_the_two_manifests_agree_on_the_version():
     this must not need editing at every release, only when they disagree."""
     plugin = _load(".claude-plugin/plugin.json")["version"]
     entry = next(p for p in _load(".claude-plugin/marketplace.json")["plugins"]
-                 if p["name"] == "sigma")
+                 if p["name"] == "sigmaloop")
     assert entry["version"] == plugin, (
         "marketplace.json says %s, plugin.json says %s" % (entry["version"], plugin))
 

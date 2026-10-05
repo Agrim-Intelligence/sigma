@@ -121,3 +121,13 @@ def test_documented_local_cleanup_is_green_after_onboarding_and_red_without_igno
     shutil.rmtree(repo / ".cursor", ignore_errors=True)
     green = subprocess.run([sys.executable, str(SCRIPT), str(repo)], text=True, capture_output=True)
     assert green.returncode == 0 and green.stdout == ""
+
+
+def test_installed_plugin_residue_finds_the_new_plugin_directory(tmp_path):
+    """#524: the plugin is `sigmaloop` now. A checker that only looked for the old directory name
+    would exit clean while the plugin is still installed (a false all-clear on the uninstall guide)."""
+    mod = _mod()
+    (tmp_path / "profile" / "plugins" / "cache" / "sigmaloop" / "sigmaloop").mkdir(parents=True)
+    rows = mod.find_leftovers(tmp_path, environ={"CLAUDE_CONFIG_DIR": str(tmp_path / "profile"),
+                                                 "CODEX_HOME": str(tmp_path / "empty")})
+    assert any(row["kind"] == "installed-plugin" for row in rows), rows

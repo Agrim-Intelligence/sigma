@@ -1,13 +1,13 @@
 {
-  "name": "sigma",
-  "description": "Guardrails + an overnight autopilot for AI coding agents",
+  "name": "sigmaloop",
+  "description": "Sigma Loop: guardrails + an overnight autopilot for AI coding agents",
   "owner": {
     "name": "Swapnil Dubey"
   },
   "plugins": [
     {
-      "name": "sigma",
-      "description": "Guardrails + an overnight autopilot for your AI coding agent \u2014 a plan-gated 7-phase SDLC on a GitHub Projects board.",
+      "name": "sigmaloop",
+      "description": "Sigma Loop: guardrails + an overnight autopilot for your AI coding agent, a plan-gated 7-phase SDLC on a GitHub Projects board.",
       "version": "1.0.0",
       "source": "./"
     }

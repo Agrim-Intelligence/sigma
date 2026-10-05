@@ -8,6 +8,51 @@ the old name, run the one-shot migration.
 The old name is not spelled out in this document. `migrate.py` prints it at the top of every run,
 and the table below uses `<old>` for the name and `<OLD>_` for its environment-variable prefix.
 
+## From the pre-launch name
+
+Before launch the plugin and its marketplace were both named `sigma`, so the install id was `sigma@sigma`.
+Sigma Loop's plugin and marketplace are named `sigmaloop` (install id `sigmaloop@sigmaloop`). Claude Code and
+Codex key updates on that id, so **an install recorded under the old id keeps working and silently stops
+receiving updates**. Nothing removes it for you: `/sigma-doctor` prints the commands and runs none of them.
+
+**What is kept.** `.sdlc/` data is kept as is: goals, plans, state, the action log, labels and the board are not
+touched by any of these steps. Only the plugin install changes.
+
+**Claude Code.** Run each line yourself, in this order. Add `--scope project` (and run it from that project's
+directory) for an install recorded under a project scope; `/sigma-doctor` lists every recorded scope.
+
+```
+claude plugin uninstall sigma@sigma
+claude plugin marketplace remove sigma          # only if no other plugin you use comes from that marketplace
+claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+claude plugin install sigmaloop@sigmaloop
+```
+
+Then restart the session, so the version in use is resolved afresh. If your install came from a private copy of
+the repository rather than the public one, add that repository instead of the URL above; the plugin it carries is
+named `sigmaloop` too.
+
+**Codex.**
+
+```
+codex plugin remove sigma@sigma
+codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+codex plugin add sigmaloop@sigmaloop
+```
+
+The `codex plugin remove` verb is the one codex-cli 0.154 lists; confirm it with `codex plugin --help` on your host
+before running it (the install lines were last run before the rename, not for `sigmaloop`). The other way to remove
+a Codex plugin is to delete its table from `config.toml` and restart Codex.
+
+**Rule files and the Codex block.** Cursor's `.cursor/rules/*.mdc` files and the Codex block in `AGENTS.md` carry
+the skill names as they were when they were scaffolded: re-run `/sigma-init` (with `--cursor` or `--codex`) after
+deleting the two Cursor rule files, as the changelog's migration notes say.
+
+**An install under the old id cannot warn you.** It runs the OLD doctor, which asks the marketplace for a plugin
+named `sigma`, finds none after the rename, and shows no row at all. The row described above reaches only an install
+that already runs the new code (a checkout, or a fresh install). The owner announces the rename; this document and
+the changelog are where the steps live.
+
 ## What Sigma reads without any migration
 
 | State the old release wrote | Where | What Sigma does |

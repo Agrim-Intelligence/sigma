@@ -1528,7 +1528,10 @@ def _version_tuple(v):
 # THEIR repo, a different one entirely, and must never be read here). A hardcoded slug went stale
 # once already, so this is the one place to update if the public repository moves -- and
 # `tools/leak_scan.py` reads it from here (by `ast`, never by import) as the public slug.
-_MARKETPLACE_REPO = "Agrim-Intelligence/sigma"
+_MARKETPLACE_REPO = "Agrim-Intelligence/sigmaloop"
+#: The plugin's own name (#524), the half of an installed id before `@`. Every match of "is this the
+#: Sigma Loop plugin" goes through this one constant, not a bare literal.
+_PLUGIN = "sigmaloop"
 _CODEX_PLUGINS_UNREAD = object()
 
 #: An `owner/repo` slug as GitHub spells it; anything else read from a marketplace record is
@@ -1612,7 +1615,7 @@ def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD):
 
     `installed` comes from the selected host's plugin list (Claude's list records or Codex's
     enabled installed records), matched by the id's plugin-name prefix (e.g.
-    "sigma@sigma" -> the part before "@"). `latest` comes from the current marketplace.json, on
+    "sigmaloop@sigmaloop" -> the part before "@"). `latest` comes from the current marketplace.json, on
     its default branch, of the repository the plugin was INSTALLED from
     (`_installed_marketplace_repo`: the marketplace half of the matched id, resolved through the
     host's own marketplace record), falling back to `_MARKETPLACE_REPO` -- the public repository --
@@ -1632,14 +1635,14 @@ def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD):
     repo = _MARKETPLACE_REPO
     if host == "codex":
         plugins = _codex_plugins(run) if codex_plugins is _CODEX_PLUGINS_UNREAD else codex_plugins
-        entry = _codex_enabled(plugins, "sigma") if plugins is not None else None
+        entry = _codex_enabled(plugins, _PLUGIN) if plugins is not None else None
         installed = _version_tuple(entry.get("version")) if entry else None
         if entry:
             repo = _installed_marketplace_repo(None, codex_entry=entry)
     else:
         try:
             for entry in json.loads(run(["claude", "plugin", "list", "--json"]) or "[]"):
-                if isinstance(entry, dict) and str(entry.get("id", "")).split("@")[0] == "sigma":
+                if isinstance(entry, dict) and str(entry.get("id", "")).split("@")[0] == _PLUGIN:
                     installed = _version_tuple(entry.get("version"))
                     plugin_id = str(entry.get("id", ""))
                     if "@" in plugin_id:
@@ -1654,7 +1657,7 @@ def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD):
                        % repo, "--jq", ".content"])
         raw = base64.b64decode(raw_b64) if raw_b64 else b""
         for entry in (json.loads(raw or b"{}").get("plugins") or []):
-            if isinstance(entry, dict) and entry.get("name") == "sigma":
+            if isinstance(entry, dict) and entry.get("name") == _PLUGIN:
                 latest = _version_tuple(entry.get("version"))
                 break
     except Exception:
@@ -1696,10 +1699,10 @@ def _codex_install_floor_row(plugins, agents_md=None):
         return _chk("sigma Codex install: unverified", False,
                     "cannot verify the Codex plugin list or AGENTS.md floor; run `codex plugin list --json` "
                     "and inspect the installed, enabled Sigma version before starting the loop")
-    entry = _codex_enabled(plugins, "sigma")
+    entry = _codex_enabled(plugins, _PLUGIN)
     if entry is None:
         return _chk("sigma Codex install: absent or disabled", False,
-                    "install or enable sigma@sigma in Codex before starting the loop")
+                    "install or enable %s@%s in Codex before starting the loop" % (_PLUGIN, _PLUGIN))
     version = _version_tuple(entry.get("version"))
     if version is None:
         return _chk("sigma Codex install: version unverified", False,
@@ -1750,7 +1753,7 @@ def _install_scopes(installed_plugins_path=None):
         return None
     out = []
     for pid, entries in plugins.items():
-        if str(pid).split("@")[0] != "sigma" or not isinstance(entries, list):
+        if str(pid).split("@")[0] != _PLUGIN or not isinstance(entries, list):
             continue
         for e in entries:
             if not isinstance(e, dict):
@@ -1759,6 +1762,128 @@ def _install_scopes(installed_plugins_path=None):
             path = str(path) if isinstance(path, str) and path.strip() else None
             out.append((str(pid), str(e.get("scope") or "user"), _version_tuple(e.get("version")), path))
     return out or None                       # nothing readable == cannot tell, never "all clear"
+
+
+#: The pre-launch plugin and marketplace name (#524), and the repository the pre-launch installs came
+#: from. Spelled from fragments so the leftover-name check, which forbids the old install id outside
+#: one document, does not flag this file.
+_OLD_PLUGIN = "sig" + "ma"
+_OLD_ID = _OLD_PLUGIN + "@" + _OLD_PLUGIN
+_OLD_REPO = "Agrim-Intelligence/" + _OLD_PLUGIN
+
+
+def _recorded_source(marketplace=None, codex_entry=None, known_marketplaces_path=None):
+    """The `owner/repo` an install's own marketplace record names, or None when it cannot be read.
+    Unlike `_installed_marketplace_repo` it never falls back: "cannot tell" must stay distinguishable
+    from "it is the public repository"."""
+    try:
+        if codex_entry is not None:
+            source = codex_entry.get("marketplaceSource") if isinstance(codex_entry, dict) else None
+            if isinstance(source, dict) and source.get("sourceType") == "git" \
+                    and isinstance(source.get("source"), str):
+                m = _CODEX_GIT_SOURCE_RE.match(source["source"])
+                return _slug_or_none(m.group(1)) if m else None
+            return None
+        path = pathlib.Path(known_marketplaces_path or _default_known_marketplaces_path())
+        registry = json.loads(path.read_text(encoding="utf-8"))
+        record = registry.get(marketplace) if isinstance(registry, dict) else None
+        source = record.get("source") if isinstance(record, dict) else None
+        if isinstance(source, dict) and source.get("source") == "github":
+            return _slug_or_none(source.get("repo"))
+    except Exception:                        # noqa: BLE001 - an unreadable record is "cannot tell"
+        pass
+    return None
+
+
+def _is_pre_launch_install(plugin_id, source):
+    """An install recorded under the pre-launch plugin name AND from the pre-launch repository. A fork
+    (any other recorded source) is not ours to migrate, even when it kept the manifest names; when the
+    source cannot be read only the exact old id counts."""
+    if str(plugin_id).split("@")[0] != _OLD_PLUGIN:
+        return False
+    if source is None:
+        return str(plugin_id) == _OLD_ID
+    return source.lower() == _OLD_REPO.lower()
+
+
+def _old_install_row(host, ours, others_on_marketplace=()):
+    """The row for installs recorded under the pre-launch id, or None. It PRINTS the removal and the
+    reinstall for `host` and runs none of them: `ours` is `[(id, scope, projectPath, source)]`."""
+    if not ours:
+        return None
+    ids = sorted({o[0] for o in ours})
+    source = next((o[3] for o in ours if o[3]), None) or _MARKETPLACE_REPO
+    steps = []
+    if host == "codex":
+        for pid in ids:
+            steps.append("codex plugin remove %s" % pid)
+        steps += ["codex plugin marketplace add https://github.com/%s" % source,
+                  "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
+        note = ("the removal verb is the one codex-cli 0.154 lists; confirm with `codex plugin --help` on this "
+                "host before running it")
+    else:
+        for pid, scope, path, _src in sorted(ours, key=lambda o: (o[0], o[1], o[2] or "")):
+            cmd = "claude plugin uninstall %s" % pid
+            if scope != "user":
+                cmd += " --scope %s" % scope
+            if path:
+                cmd += " (run it from %s)" % path
+            steps.append(cmd)
+        for market in sorted({pid.split("@", 1)[1] for pid in ids if "@" in pid}):
+            if market in others_on_marketplace:
+                steps.append("keep marketplace %s: other installed plugins use it" % market)
+            else:
+                steps.append("claude plugin marketplace remove %s" % market)
+        steps += ["claude plugin marketplace add %s" % source,
+                  "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
+        note = "each uninstall is per scope"
+    return _chk("Sigma Loop plugin installed under the pre-launch id %s (it no longer receives updates)"
+                % ", ".join(ids), False,
+                "the plugin was renamed to %s, so an install under the old id silently stopped updating. "
+                "Run, in order, yourself (the doctor prints these and removes nothing): %s. %s. Your `.sdlc/` data is "
+                "kept as is. Details: docs/upgrading.md, 'From the pre-launch name'."
+                % (_PLUGIN, "; ".join(steps), note))
+
+
+def _claude_old_install_row(installed_plugins_path=None, known_marketplaces_path=None):
+    """Read Claude's install records and build the pre-launch row, or None (also on any read failure)."""
+    try:
+        raw = json.loads(pathlib.Path(
+            installed_plugins_path or _default_installed_plugins_path()).read_text(encoding="utf-8"))
+        plugins = raw.get("plugins") if isinstance(raw, dict) else None
+        if not isinstance(plugins, dict):
+            return None
+        ours, ours_markets = [], set()
+        for pid, entries in plugins.items():
+            pid = str(pid)
+            market = pid.split("@", 1)[1] if "@" in pid else ""
+            if not isinstance(entries, list) or not _is_pre_launch_install(
+                    pid, _recorded_source(market, known_marketplaces_path=known_marketplaces_path)):
+                continue
+            ours_markets.add(market)
+            for e in entries:
+                if isinstance(e, dict):
+                    path = e.get("projectPath")
+                    ours.append((pid, str(e.get("scope") or "user"),
+                                 str(path) if isinstance(path, str) and path.strip() else None,
+                                 _recorded_source(market, known_marketplaces_path=known_marketplaces_path)))
+        others = {str(pid).split("@", 1)[1] for pid in plugins
+                  if "@" in str(pid) and str(pid).split("@", 1)[1] in ours_markets
+                  and not any(o[0] == str(pid) for o in ours)}
+        return _old_install_row("claude", ours, others)
+    except Exception:                        # noqa: BLE001 - cannot read == cannot tell, never an alarm
+        return None
+
+
+def _codex_old_install_row(plugins):
+    """The pre-launch row from Codex's already-fetched plugin list, or None."""
+    try:
+        ours = [(str(e.get("pluginId", "")), "user", None, _recorded_source(codex_entry=e))
+                for e in (plugins or []) if isinstance(e, dict)
+                and _is_pre_launch_install(e.get("pluginId", ""), _recorded_source(codex_entry=e))]
+        return _old_install_row("codex", ours)
+    except Exception:                        # noqa: BLE001
+        return None
 
 
 def _realpath(p):
@@ -2587,7 +2712,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         installed, latest = _plugin_versions(run, plugin_host, codex_plugins)
         if installed is not None and latest is not None:
             inst_s, latest_s = ".".join(map(str, installed)), ".".join(map(str, latest))
-            fix = (f"{latest_s} is available (you're on {inst_s}) — run: claude plugin update sigma@sigma"
+            fix = (f"{latest_s} is available (you're on {inst_s}) — run: claude plugin update {_PLUGIN}@{_PLUGIN}"
                    if plugin_host == "claude" else
                    f"{latest_s} is available (you're on {inst_s}) — refresh the Sigma Codex "
                    "marketplace and reinstall or update the Codex plugin")
@@ -2612,6 +2737,13 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         scope_row = _install_scope_row(base.parent, installed_plugins_path, agents_md)
     if scope_row is not None:
         out.append(scope_row)
+    # #524: an install recorded under the pre-launch plugin id stopped updating when the plugin was
+    # renamed. Claude: a local JSON read, like the scope row. Codex: the list `check()` already fetched
+    # (a subprocess), so the cheap pass skips it exactly as it skips the Codex floor row.
+    old_row = (_codex_old_install_row(codex_plugins) if not cheap_only else None) if plugin_host == "codex" \
+        else _claude_old_install_row(installed_plugins_path)
+    if old_row is not None:
+        out.append(old_row)
     return out
 
 

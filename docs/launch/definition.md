@@ -18,10 +18,10 @@ it.
 - **Artifact:** `public-snapshot` — a fresh public snapshot repository, built from a reviewed tree.
   The snapshot does not carry this repository's issue and pull-request history or its other
   branches.
-- **Public repository:** `Agrim-Intelligence/sigma` is the value `definition.json` records today.
+- **Public repository:** `Agrim-Intelligence/sigmaloop` is the value `definition.json` records (#524).
   The owner decided on 2026-10-05 that the public repository is a NEW repository, created fresh
-  with a clean one-commit snapshot of this one; this repository is not renamed. Its name replaces
-  `public_repo` in `definition.json` in a separate later change. Creating and pushing it is the owner's
+  with a clean one-commit snapshot of this one; this repository is not renamed. The plugin and
+  marketplace are named `sigmaloop` (install id `sigmaloop@sigmaloop`). Creating and pushing it is the owner's
   action, done by hand (no Sigma tool, goal or agent creates or changes a repository); the export
   builder and the steps are in [the public snapshot](../public-snapshot.md).
 - **Install channel:** the Claude Code plugin marketplace, pointing at the public repository. It is
@@ -63,12 +63,13 @@ places below, and a clone of it that is not repointed addresses THIS repository.
   `:183`), which PATCH the milestone on issues in the named repository;
 - `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
 - the README's CI badge (`README.md:7`);
-- `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py:1515`. `/sigma-doctor`'s version
+- `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py` (now the new public slug, #524). `/sigma-doctor`'s version
   check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
   only as a fallback when that record cannot be read.
-- existing plugin installs: each recorded `Agrim-Intelligence/sigma` as its marketplace source and keep
-  updating from this repository until reinstalled from the new one. Whether that is intended is
-  the owner's decision, in #359.
+- existing plugin installs: each recorded `Agrim-Intelligence/sigma` as its marketplace source under the
+  previous plugin id. Since the plugin was renamed (#524) they no longer receive updates under that id:
+  the old install runs its OLD doctor, which shows nothing after the rename, so the owner must announce
+  it; the NEW doctor's row and `docs/upgrading.md` ("From the pre-launch name") give the reinstall steps.
 
 This list is from a grep of the whole tree for the slug and for every configuration key that
 holds one (`skills/sigma-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,

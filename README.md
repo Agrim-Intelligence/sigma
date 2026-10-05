@@ -1,12 +1,12 @@
-# Sigma
+# Sigma Loop
 
 ## Privacy
 
-Sigma does not report usage data. Its measured egress behavior, opt-in integrations, local data, and capture limits are documented in [docs/privacy.md](docs/privacy.md).
+Sigma Loop does not report usage data. Its measured egress behavior, opt-in integrations, local data, and capture limits are documented in [docs/privacy.md](docs/privacy.md).
 
 [![CI](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml)
 
-To remove Sigma from a repository, follow the read-only verified [uninstall guide](docs/uninstall.md).
+To remove Sigma Loop from a repository, follow the read-only verified [uninstall guide](docs/uninstall.md).
 
 CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. Windows verification remains an on-demand experimental workflow.
 
@@ -16,7 +16,7 @@ Drop it into any repo and every non-trivial prompt is held to a disciplined **7-
 Research → Plan → Plan-Review → Implement → Review → Retrospective — so the agent stops jumping
 straight to code. Then queue a backlog and let it **run autonomously**: each goal is driven to a
 *verified* finish, moved across a **GitHub Projects board**, and recorded with a full audit trail.
-Start from an existing repo **or** a product vision; Sigma grounds the work in your strategy and
+Start from an existing repo **or** a product vision; Sigma Loop grounds the work in your strategy and
 remembers what it learns in a **self-improving knowledge graph**.
 
 > ### ⚠️ Running an older plugin? Update before you start the loop
@@ -27,12 +27,12 @@ remembers what it learns in a **self-improving knowledge graph**.
 > the one configuration to avoid.
 >
 > ```bash
-> claude plugin update sigma@sigma   # upgrades an installed plugin (the full plugin@marketplace id)
+> claude plugin update sigmaloop@sigmaloop   # upgrades an installed plugin (the full plugin@marketplace id)
 > # then RESTART the session — the version in use is resolved at session start
 > /sigma-doctor                      # reports your installed version vs the marketplace's
 > ```
 >
-> `claude plugin marketplace update sigma` only refreshes the marketplace listing, and
+> `claude plugin marketplace update sigmaloop` only refreshes the marketplace listing, and
 > `claude plugin install` on an installed plugin is a no-op; neither upgrades it.
 
 > **One promise: best-quality output, minimum effort.** Zero runtime deps (bash + python3 stdlib) and
@@ -148,31 +148,31 @@ Sigma's own; no companion ships it.
 
 ## Quickstart
 
-Two placeholders stand in for paths on this page. `<SIGMA_REPO>` is the git URL of the public Sigma
-repository once it is published, or the path to a local Sigma checkout until then; every install line
-below uses it. `<installed-sigma>` is the directory Sigma's scripts live in on your machine: the
-plugin directory your host shows for the installed `sigma-init` skill (Claude Code, Codex), or your
-Sigma checkout (Cursor). Every `python3 <installed-sigma>/...` command on this page is run from the
-root of your repository, where `.sdlc/` lives.
+One placeholder stands in for a path on this page. `<installed-sigma>` is the directory Sigma Loop's scripts
+live in on your machine: the plugin directory your host shows for the installed `sigma-init` skill (Claude Code,
+Codex), or your Sigma Loop checkout (Cursor). Every `python3 <installed-sigma>/...` command on this page is run
+from the root of your repository, where `.sdlc/` lives. Every install line below uses the public repository,
+`https://github.com/Agrim-Intelligence/sigmaloop`.
 
-The marketplace `<SIGMA_REPO>` adds is named `sigma`, so the plugin id is `sigma@sigma` on Claude Code
-and on Codex (measured: [docs/onboarding-control.md](docs/onboarding-control.md), which installs both
-into an isolated profile).
+The marketplace that repository adds is named `sigmaloop`, so the plugin id is `sigmaloop@sigmaloop` on Claude
+Code and on Codex (the Claude Code install was measured in an isolated profile for this name, see
+[docs/onboarding-control.md](docs/onboarding-control.md); Codex was last measured under the previous plugin id and
+has not been re-run for this one).
 
 ### Claude Code
 
 Inside a Claude Code / Claude Desktop session:
 
 ```
-/plugin marketplace add <SIGMA_REPO>
-/plugin install sigma@sigma
+/plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+/plugin install sigmaloop@sigmaloop
 ```
 
 Or from a terminal (the same two commands in CLI form, useful for a setup script):
 
 ```
-claude plugin marketplace add <SIGMA_REPO>
-claude plugin install sigma@sigma
+claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+claude plugin install sigmaloop@sigmaloop
 ```
 
 Restart the session, then, from the root of the repository you want Sigma to work on:
@@ -185,13 +185,14 @@ Restart the session, then, from the root of the repository you want Sigma to wor
 ### Codex
 
 ```
-codex plugin marketplace add <SIGMA_REPO>
-codex plugin add sigma@sigma
+codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+codex plugin add sigmaloop@sigmaloop
 ```
 
-Codex reads the same `.claude-plugin/marketplace.json`: Sigma ships no other manifest, and these
-two lines, run into an isolated `CODEX_HOME` with codex-cli 0.154.0-alpha.6.2, added the marketplace
-`sigma` and installed `sigma@sigma` from it. A live Codex session was not part of that run. Then run
+Codex reads the same `.claude-plugin/marketplace.json`: Sigma Loop ships no other manifest. These two
+lines were last run into an isolated `CODEX_HOME` with codex-cli 0.154.0-alpha.6.2 BEFORE the plugin was
+renamed, and added and installed it under the previous id; they have not been re-run for `sigmaloop`, and a
+live Codex session was never part of a run. Then run
 the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
 ([details](#codex-partial-live-validation)):
 
@@ -206,7 +207,7 @@ is that checkout (whether Cursor's own plugin support could install Sigma is unv
 ([details](#cursor-experimental)):
 
 ```
-git clone <SIGMA_REPO> <installed-sigma>
+git clone https://github.com/Agrim-Intelligence/sigmaloop <installed-sigma>
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --cursor --demo
 ```
 

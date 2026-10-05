@@ -152,3 +152,31 @@ def test_repo_tree_has_no_old_prefix():
     """The documented gesture, from the repository root, no flags (AC-1, AC-2, AC-6)."""
     r = subprocess.run([sys.executable, "tools/rename_check.py"], cwd=ROOT, text=True, capture_output=True)
     assert r.returncode == 0, "\n".join(r.stdout.splitlines()[:20])
+
+
+# ---- the old plugin install id (#524) ------------------------------------------------------------
+PLUGIN = "sig" + "ma"
+OLD_ID = PLUGIN + "@" + PLUGIN       # the pre-launch install id, never written whole
+
+
+def test_check_flags_the_old_install_id_outside_the_allowlist(tmp_path):
+    _repo(tmp_path, {
+        "docs/a.md": "run `claude plugin install %s` now\n" % OLD_ID,
+        "docs/b.md": "the old id was %s.\n" % OLD_ID,                 # sentence-final full stop
+        "docs/c.md": "a fork id %s-market is not it\n" % OLD_ID,      # longer id: a different thing
+        "docs/d.md": "a mail address like %s.example is not it either\n" % OLD_ID,
+    })
+    r = _run(CHECK, tmp_path)
+    assert r.returncode == 1, (r.returncode, r.stdout)
+    assert "docs/a.md:1:" in r.stdout and "docs/b.md:1:" in r.stdout, r.stdout
+    assert "docs/c.md" not in r.stdout and "docs/d.md" not in r.stdout, r.stdout
+    # allowed: the migration document, a pinned history record; NOT a new history file
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    _repo(clean, {"docs/upgrading.md": "## From the pre-launch name\n%s\n" % OLD_ID,
+                  ".sdlc/plans/231.md": "recorded run on %s\n" % OLD_ID})
+    assert _run(CHECK, clean).returncode == 0
+    (clean / ".sdlc/plans/999.md").write_text("new plan names %s\n" % OLD_ID)
+    _git(clean, "add", "-A")
+    r = _run(CHECK, clean)
+    assert r.returncode == 1 and ".sdlc/plans/999.md:1:" in r.stdout, (r.returncode, r.stdout)

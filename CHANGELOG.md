@@ -4,6 +4,22 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The solution is named Sigma Loop; the plugin and marketplace are `sigmaloop`** (#524, epic #522). Install with
+  `claude plugin install sigmaloop@sigmaloop` (or the Codex and in-session forms) after adding the public repository,
+  `https://github.com/Agrim-Intelligence/sigmaloop`; the README Quickstart, `docs/uninstall.md`, `SECURITY.md`,
+  `SUPPORT.md` and `CONTRIBUTING.md` carry the new name and install id, `docs/launch/definition.json` records the new
+  `public_repo`, and the doctor's fallback marketplace repository, its tests and the leftovers checker follow. The
+  README's `<SIGMA_REPO>` placeholder is gone: the install lines carry the real URL, and the onboarding control reads it
+  from the definition and substitutes the checkout for it when it installs. **Existing installs stop updating.** An
+  install recorded under the previous plugin id keeps working but the update key changed, so it receives nothing
+  until it is reinstalled; `/sigma-doctor` now has a row for such an install that prints the exact uninstall,
+  marketplace and install commands for the host and runs none of them (it never fires for a fork), and
+  `docs/upgrading.md` has a "From the pre-launch name" section with the same steps; `.sdlc/` data is kept as is. **An
+  install under the old id runs the old doctor, which shows no row after the rename, so it cannot warn its owner:
+  the rename has to be announced.** The Codex lines were last run before the rename and were not re-run for the new
+  id. The displayed name is "Sigma Loop"; the one-word spelling is an open owner decision. The leftover-name check also
+  fails on the old install id outside `docs/upgrading.md` and five recorded history files.
+
 - **Every skill and command now starts with `sigma-`** (#523, epic #522). The 42 skills `agrim-*` are
   `sigma-*` (`/agrim-loop` is `/sigma-loop`, `skills/agrim-doctor/` is `skills/sigma-doctor/`), the hook
   `hooks/agrim_gate.sh` is `hooks/sigma_gate.sh`, and every doc, test, generated table and script path that

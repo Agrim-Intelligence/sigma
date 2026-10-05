@@ -1,11 +1,11 @@
-# Contributing to Sigma
+# Contributing to Sigma Loop
 
-Thank you for improving Sigma. Please open an issue before substantial work so maintainers can
+Thank you for improving Sigma Loop. Please open an issue before substantial work so maintainers can
 confirm the scope.
 
 ## Development setup
 
-Sigma needs Python 3.10 or newer. CI runs the full suite on Linux with Python 3.10, 3.11, 3.12 and 3.13, and on
+Sigma Loop needs Python 3.10 or newer. CI runs the full suite on Linux with Python 3.10, 3.11, 3.12 and 3.13, and on
 macOS with Python 3.12 only; macOS on other Python versions is untested. Install the test dependencies:
 
 ```sh
