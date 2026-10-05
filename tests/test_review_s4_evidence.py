@@ -35,9 +35,9 @@ def test_every_unit_is_reviewed_or_not_reached_with_a_reason_and_totals_add_up()
     assert t["reviewer_and_verifier_tokens"] == sum(u["tokens"] for u in rev)
     c = ev["counters"]
     assert c["cumulative"] == c["at_release"] + c["this_goal_measured"]
-    assert c["over_checkpoint"] == c["cumulative"] - c["checkpoint"] == 7369450
+    assert c["over_checkpoint"] == c["cumulative"] - c["checkpoint"]
     assert c["headroom_cap"] == c["cap"] - c["cumulative"]
-    assert c["cumulative"] == c["at_release"] + ev["this_goal_first_wave_total"]
+    assert c["after_wave1"] == c["at_release"] + ev["this_goal_first_wave_total"]
 
 
 def test_per_unit_lines_and_totals_tie_to_the_units_file_and_the_md():

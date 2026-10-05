@@ -420,20 +420,20 @@
     "tokens_per_line": 680.3
   },
   "slot_overhead": {
-    "tokens": 11658953,
-    "dollars": 7.01,
+    "tokens": 15711360,
+    "dollars": 8.355,
     "turns": 81,
-    "note": "the previous goal slot own transcript, metered after it stopped; it includes the re-reading overhead that made the earlier figure far too low"
+    "note": "wave 1 slot (11,658,953 tokens, 81 turns, metered after it stopped) plus the wave 2 slot as metered when this was written; later turns of the wave 2 slot and the wave 2 evidence PR governance reviewers are not included"
   },
   "counters": {
     "at_release": 28062829,
     "after_wave1": 47369450,
-    "this_wave2_measured": 22063895,
     "cumulative": 69433345,
     "checkpoint": 40000000,
     "cap": 75000000,
     "over_checkpoint": 29433345,
-    "headroom_cap": 5566655
+    "headroom_cap": 5566655,
+    "this_goal_measured": 41370516
   },
   "stop_reason": "all 16 Tier A units reviewed (owner released the run past the 40M checkpoint to the 75M cap on 2026-10-05)",
   "filed": [
@@ -548,7 +548,6 @@
     "note": "processed tokens of the three governance reviewers"
   },
   "this_goal_first_wave_total": 19306621,
-  "amendment_note": "Earlier committed figures (cumulative 38,435,581; headroom 1,564,419) were wrong: they excluded the governance reviewers and the slot's later overhead. This amendment and the new reviewer's cost are not included in 47,369,450.",
   "wave2": {
     "units": [
       "A02",
@@ -569,5 +568,7 @@
     "slot_overhead_tokens": 4052407,
     "slot_overhead_dollars": 1.345,
     "slot_overhead_note": "this slot own transcript metered when evidence was written; its later turns, and the evidence PR governance reviewers, are not in this figure"
-  }
+  },
+  "this_goal_wave2_measured": 22063895,
+  "amendment_note": "The wave 1 figures were corrected once (see git history). Wave 2 added the other 12 units; its totals above include wave 1."
 }
