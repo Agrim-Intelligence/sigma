@@ -28,7 +28,18 @@ residue and exits 1 until nothing remains.
    ```sh
    rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
    ```
-6. Optionally delete the remote `sdlc-ledger` branch, `sdlc:*` labels, and linked board. These
+6. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
+   at `/sigma-init` that named a directory nothing creates, so git ran none of the repository's hooks:
+   ```sh
+   git config --local --get core.hooksPath
+   ```
+   If it prints Sigma's old value (`.git` followed directly by `hooks`, as one name) and no directory
+   of that name exists in this repository, remove the setting:
+   ```sh
+   git config --local --unset core.hooksPath
+   ```
+   Leave any other value alone; it is yours (husky and similar tools set one).
+7. Optionally delete the remote `sdlc-ledger` branch, `sdlc:*` labels, and linked board. These
    GitHub actions are irreversible.
 
 Finally run:

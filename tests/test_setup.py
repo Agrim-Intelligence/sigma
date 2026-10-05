@@ -42,12 +42,40 @@ def test_detect_repo_empty_without_a_remote():
 
 # ------------------------------------------------------------------ hook path
 
-def test_hook_path_command_uses_the_named_repo_despite_an_exported_git_dir(tmp_path):
-    """A real external GIT_DIR must not redirect a supposedly local adoption write."""
+#: The value earlier Sigma releases wrote (#218, removed by #614). Assembled: the public-surface
+#: guard rejects the raw directory name.
+_STALE = "." + "git" + "hooks"
+
+
+def _hooks_path(repo):
+    got = subprocess.run(["git", "-C", str(repo), "config", "--local", "--get", "core.hooksPath"],
+                         capture_output=True, text=True, env=setup._hook_git_env())
+    return got.stdout.strip() if got.returncode == 0 else None
+
+
+def _two_repos(tmp_path):
     target, other = tmp_path / "target", tmp_path / "other"
-    target.mkdir(); other.mkdir()
     for repo in (target, other):
+        repo.mkdir()
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    return target, other
+
+
+def test_hooks_verb_refuses_a_missing_hook_directory_and_writes_nothing(tmp_path):
+    """#614: pointing git at a directory that does not exist makes git run NO hooks at all, so the
+    verb refuses rather than switch an adopter's hooks off."""
+    target, _ = _two_repos(tmp_path)
+    result = subprocess.run([sys.executable, str(S), "hooks", str(target)],
+                            capture_output=True, text=True)
+    assert result.returncode == 2 and "REFUSED" in result.stderr, result.stdout + result.stderr
+    assert _hooks_path(target) is None
+
+
+def test_hooks_verb_uses_the_named_repo_despite_an_exported_git_dir(tmp_path):
+    """#218's redirect protection survives #614: with the directory present, a real external
+    GIT_DIR must not redirect the local write."""
+    target, other = _two_repos(tmp_path)
+    (target / _STALE).mkdir()
     env = dict(os.environ, GIT_DIR=str(other / ".git"))
     result = subprocess.run([sys.executable, str(S), "hooks", str(target)],
                             capture_output=True, text=True, env=env)
@@ -55,13 +83,70 @@ def test_hook_path_command_uses_the_named_repo_despite_an_exported_git_dir(tmp_p
     repeat = subprocess.run([sys.executable, str(S), "hooks", str(target)],
                             capture_output=True, text=True, env=env)
     assert repeat.returncode == 0 and "already configured" in repeat.stdout, repeat.stderr
-    expected = "." + "git" + "hooks"
-    target_value = subprocess.run(["git", "-C", str(target), "config", "--local", "--get",
-                                   "core.hooksPath"], capture_output=True, text=True, check=True)
-    other_value = subprocess.run(["git", "-C", str(other), "config", "--local", "--get",
-                                  "core.hooksPath"], capture_output=True, text=True)
-    assert target_value.stdout.strip() == expected
-    assert other_value.returncode != 0
+    assert _hooks_path(target) == _STALE and _hooks_path(other) is None
+
+
+def test_hooks_repair_clears_only_the_named_repos_stale_key_and_says_so_once(tmp_path):
+    """#614 repair: the stale key Sigma wrote (its directory missing) is unset in the NAMED repo
+    only -- an exported GIT_DIR cannot redirect it -- with one line saying so; a second run is
+    silent."""
+    target, other = _two_repos(tmp_path)
+    for repo in (target, other):
+        subprocess.run(["git", "-C", str(repo), "config", "--local", "core.hooksPath", _STALE],
+                       check=True, env=setup._hook_git_env())
+    env = dict(os.environ, GIT_DIR=str(other / ".git"))
+    first = subprocess.run([sys.executable, str(S), "hooks-repair", str(target)],
+                           capture_output=True, text=True, env=env)
+    assert first.returncode == 0, first.stderr
+    lines = [l for l in first.stdout.splitlines() if "core.hooksPath" in l]
+    assert len(lines) == 1, first.stdout
+    assert _hooks_path(target) is None and _hooks_path(other) == _STALE
+    again = subprocess.run([sys.executable, str(S), "hooks-repair", str(target)],
+                           capture_output=True, text=True, env=env)
+    assert again.returncode == 0 and again.stdout == "", again.stdout + again.stderr
+
+
+def test_stale_hook_path_leaves_every_other_value_alone(tmp_path):
+    """Only the exact value Sigma wrote, with its directory missing, is stale. A user's own hook
+    directory (present), another value (husky), or no value is never touched."""
+    repo, _ = _two_repos(tmp_path)
+    assert setup.stale_hook_path(repo) is False
+    for value in (".husky/_", "missing-hooks"):
+        subprocess.run(["git", "-C", str(repo), "config", "--local", "core.hooksPath", value],
+                       check=True, env=setup._hook_git_env())
+        assert setup.stale_hook_path(repo) is False
+        assert setup.clear_stale_hook_path(repo) == "absent" and _hooks_path(repo) == value
+    subprocess.run(["git", "-C", str(repo), "config", "--local", "core.hooksPath", _STALE],
+                   check=True, env=setup._hook_git_env())
+    (repo / _STALE).mkdir()
+    assert setup.stale_hook_path(repo) is False
+    assert setup.clear_stale_hook_path(repo) == "absent" and _hooks_path(repo) == _STALE
+    (repo / _STALE).rmdir()
+    assert setup.stale_hook_path(repo) is True
+
+
+def test_stale_hook_path_is_not_stale_while_any_worktree_has_the_directory(tmp_path):
+    """Plan-review R2: `--local` config is shared by every worktree, but git resolves a relative
+    hooksPath against EACH worktree's own top level. A linked worktree on a branch without the
+    directory must not unset hooks the main checkout really runs."""
+    env = setup._hook_git_env()
+    repo = tmp_path / "main"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True, env=env)
+    for k, v in (("user.email", "t@example.com"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(repo), "config", k, v], check=True, env=env)
+    (repo / "f").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "add", "f"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "i"], check=True, env=env)
+    linked = tmp_path / "linked"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "other", str(linked)],
+                   check=True, env=env)
+    (repo / _STALE).mkdir()                                  # untracked: only the main checkout has it
+    subprocess.run(["git", "-C", str(repo), "config", "--local", "core.hooksPath", _STALE],
+                   check=True, env=env)
+    assert setup.stale_hook_path(linked) is False
+    assert setup.clear_stale_hook_path(linked) == "absent" and _hooks_path(repo) == _STALE
+    (repo / _STALE).rmdir()
+    assert setup.stale_hook_path(linked) is True
 
 
 # ------------------------------------------------------------------ configure

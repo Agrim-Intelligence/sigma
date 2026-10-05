@@ -53,14 +53,20 @@ def _load_loop_script(name):
 RUNTIME_IGNORES = (".sdlc/state/", ".sdlc/ledger/", ".sdlc/work/", ".sdlc/knowledge/",
                    ".sdlc/events/", "graphify-out/")
 
-# This directory is deliberately not part of the public source tree. Keep the spelling assembled:
-# the public-surface guard rejects a raw private-path reference while Git still needs its established
-# relative configuration value for the installed revival layer.
+# The value Sigma releases before #614 wrote into every adopted repository's local config. Nothing
+# ships or creates this directory, so git resolved it to "no hooks" and silently stopped running the
+# adopter's own pre-commit/commit-msg hooks (and shadowed a global hooksPath). Adoption no longer
+# writes it (#614, owner decision D-1); the constant survives so the repair below, `/sigma-doctor`
+# and the uninstall checker can recognise the stale key. Keep the spelling assembled: the
+# public-surface guard rejects the raw directory name.
 HOOKS_PATH = "." + "git" + "hooks"
+
+#: The one command that undoes the stale key, printed by every surface that reports it.
+UNSET_HOOKS_PATH = "git config --local --unset core.hooksPath"
 
 
 class HookPathRefused(Exception):
-    """A repository's existing hook directory is a user decision that adoption must not replace."""
+    """A hook-path read or write that could not be made safely; nothing was changed."""
 
 
 def _hook_git_env():
@@ -70,27 +76,78 @@ def _hook_git_env():
     return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
 
-def ensure_hook_path(repo_root):
-    """Install the established local hook path, preserving an equal value and refusing a different
-    user value. Returns `installed` or `already configured`; errors never reveal the existing value."""
-    argv = ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"]
+def _hook_git(repo_root, *args):
     try:
-        current = subprocess.run(argv, capture_output=True, text=True, env=_hook_git_env())
+        return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True,
+                              env=_hook_git_env())
     except OSError as exc:
-        raise HookPathRefused("could not start git while checking core.hooksPath") from exc
-    if current.returncode == 0:
-        if current.stdout.strip() == HOOKS_PATH:
-            return "already configured"
-        raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it")
-    if current.returncode != 1:
+        raise HookPathRefused("could not start git") from exc
+
+
+def _local_hook_path(repo_root):
+    """The repository-local `core.hooksPath`, or None when unset."""
+    current = _hook_git(repo_root, "config", "--local", "--get", "core.hooksPath")
+    if current.returncode == 1:
+        return None
+    if current.returncode != 0:
         raise HookPathRefused("could not read the repository-local core.hooksPath")
+    return current.stdout.strip()
+
+
+def _worktree_roots(repo_root):
+    """Every worktree's top level. `--local` config is SHARED by all of a repository's worktrees,
+    while git resolves a relative hooksPath against EACH worktree's own top level -- so a value is
+    only dead when no worktree has the directory (#614 plan-review R2)."""
+    listed = _hook_git(repo_root, "worktree", "list", "--porcelain")
+    roots = [pathlib.Path(line[len("worktree "):]) for line in listed.stdout.splitlines()
+             if listed.returncode == 0 and line.startswith("worktree ")]
+    top = _hook_git(repo_root, "rev-parse", "--show-toplevel")
+    if top.returncode == 0 and top.stdout.strip():
+        roots.append(pathlib.Path(top.stdout.strip()))
+    return roots or [pathlib.Path(repo_root)]
+
+
+def stale_hook_path(repo_root):
+    """True only when the local `core.hooksPath` is exactly the value earlier Sigma releases wrote
+    AND no worktree of the repository has that directory -- git then runs no hooks at all. Any other
+    value (husky, an org scanner, the adopter's own directory under the same name) is never stale.
+    Not a git repository at all: False (nothing for git to skip). Raises `HookPathRefused` when git
+    cannot be read."""
     try:
-        written = subprocess.run(
-            ["git", "-C", str(repo_root), "config", "--local", "core.hooksPath", HOOKS_PATH],
-            capture_output=True, text=True, env=_hook_git_env())
-    except OSError as exc:
-        raise HookPathRefused("could not start git while installing core.hooksPath") from exc
-    if written.returncode != 0:
+        current = _local_hook_path(repo_root)       # the common path: ONE git call
+    except HookPathRefused:
+        if _hook_git(repo_root, "rev-parse", "--git-dir").returncode != 0:
+            return False                            # not a repository: nothing to skip
+        raise
+    if current != HOOKS_PATH:
+        return False
+    return not any((root / HOOKS_PATH).is_dir() for root in _worktree_roots(repo_root))
+
+
+def clear_stale_hook_path(repo_root):
+    """Unset the stale key (and only it). Returns `cleared` or `absent`; raises `HookPathRefused`
+    when the read or the unset fails, having changed nothing it could not undo."""
+    if not stale_hook_path(repo_root):
+        return "absent"
+    if _hook_git(repo_root, "config", "--local", "--unset", "core.hooksPath").returncode != 0:
+        raise HookPathRefused("could not unset the repository-local core.hooksPath")
+    return "cleared"
+
+
+def ensure_hook_path(repo_root):
+    """The `hooks` verb: point the local hook path at the repository's own hook directory, which
+    must EXIST -- a missing one makes git run no hooks, so that refuses and writes nothing (#614).
+    Adoption never calls this. Preserves an equal value and refuses a different user value. Returns
+    `installed` or `already configured`; errors never reveal the existing value."""
+    if not any((root / HOOKS_PATH).is_dir() for root in _worktree_roots(repo_root)):
+        raise HookPathRefused("the hook directory does not exist in this repository; pointing "
+                              "core.hooksPath at it would make git run no hooks")
+    current = _local_hook_path(repo_root)
+    if current == HOOKS_PATH:
+        return "already configured"
+    if current is not None:
+        raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it")
+    if _hook_git(repo_root, "config", "--local", "core.hooksPath", HOOKS_PATH).returncode != 0:
         raise HookPathRefused("could not install the repository-local core.hooksPath")
     return "installed"
 
@@ -360,7 +417,7 @@ def _flags(argv):
     return out
 
 
-USAGE = ("usage: setup.py init [init_flow.py options] | detect [repo_root] | hooks <repo_root> | configure <sdlc_dir> [--repo O/N --source github|local-goals "
+USAGE = ("usage: setup.py init [init_flow.py options] | detect [repo_root] | hooks <repo_root> | hooks-repair <repo_root> | configure <sdlc_dir> [--repo O/N --source github|local-goals "
          "--verify CMD --auto-merge off|protected|always] | ignore <repo_root> [--scope tracked|local] | "
          "ignore-status <repo_root> | labels <sdlc_dir> [--repo O/N]")
 
@@ -383,6 +440,20 @@ def main(argv):
             print(f"setup.py hooks: REFUSED - {exc}. Nothing written.", file=sys.stderr)
             return 2
         print("  core.hooksPath: " + status)
+        return 0
+    if len(argv) >= 3 and argv[1] == "hooks-repair":
+        # #614: the one repair of the key earlier releases wrote. Prints ONE line when it acted and
+        # nothing otherwise, so init can relay its stdout verbatim.
+        try:
+            status = clear_stale_hook_path(argv[2])
+        except HookPathRefused as exc:
+            print(f"setup.py hooks-repair: REFUSED - {exc}; git may be running no hooks here. "
+                  f"If `git config --local --get core.hooksPath` prints `{HOOKS_PATH}` and no such "
+                  f"directory exists, run `{UNSET_HOOKS_PATH}`.", file=sys.stderr)
+            return 2
+        if status == "cleared":
+            print(f"  [ok] git hooks: removed the core.hooksPath an earlier Sigma init set (it named "
+                  f"a directory that does not exist, so git was running no hooks here)")
         return 0
     if len(argv) >= 3 and argv[1] == "configure":
         f = _flags(argv[3:])

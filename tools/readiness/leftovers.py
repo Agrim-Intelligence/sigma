@@ -14,6 +14,10 @@ AGENTS_MARKERS = ("<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->")
 # sdlc_init.py's `_CURSOR_RULES`, not every rule an adopter may have written themselves.
 CURSOR_RULES = ("sdlc.mdc", "output-contract.mdc")
 LEDGER_BRANCH = "sdlc" + "-ledger"
+#: The `core.hooksPath` value Sigma releases before #614 wrote (a directory nothing creates, so git ran
+#: no hooks). Assembled: the public-surface guard rejects the raw name. Locked by value against
+#: setup.py's `HOOKS_PATH` by test_copied_markers_match_init_sources.
+HOOKS_PATH = "." + "git" + "hooks"
 #: Directory names an installed Sigma Loop plugin leaves under a host home: the current name and the pre-launch one.
 PLUGIN_DIRS = ("sigmaloop", "sigma")
 
@@ -42,6 +46,20 @@ def _git(repo, *args):
                               stderr=subprocess.DEVNULL, check=False, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
+
+def _stale_hook_path(repo):
+    """#614: the local `core.hooksPath` an earlier /sigma-init wrote, while its directory is missing.
+    Read with every inherited `GIT_*` variable dropped, so an exported GIT_DIR cannot point this
+    read at another repository. A linked worktree's copy of the directory is not consulted here:
+    this checker runs from the repository being removed."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    try:
+        value = subprocess.run(["git", "-C", str(repo), "config", "--local", "--get", "core.hooksPath"],
+                               text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               check=False, timeout=10, env=env).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return value == HOOKS_PATH and not (repo / HOOKS_PATH).is_dir()
 
 def _github(owner_repo):
     """Read repository-owned REST resources only when explicitly requested.
@@ -82,6 +100,8 @@ def find_leftovers(repo, environ=None, github=None):
         path = repo / ".cursor" / "rules" / name
         if path.is_file():
             rows.append(_row("cursor-rule", path.relative_to(repo)))
+    if _stale_hook_path(repo):
+        rows.append(_row("hooks-path", "core.hooksPath"))
     state = repo / ".sdlc" / "state"
     if state.is_dir():
         for pid_file in sorted(state.rglob("*.pid")):

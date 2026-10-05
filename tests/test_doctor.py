@@ -7008,3 +7008,41 @@ def test_decision_gate_state_is_not_on_when_the_repo_is_not_adopted(tmp_path):
     assert not state.startswith("ON") and "not adopted" in state.lower() and "/sigma-init" in state
     (base / "config.json").write_text("{}")
     assert d._decision_gate_state(str(base), {}).startswith("ON")
+
+
+# ---------------------------------------------------------- #614: stale core.hooksPath (AC-3)
+
+#: The value earlier Sigma releases wrote (#218). Assembled: the public-surface guard rejects the
+#: raw directory name.
+_STALE_HOOKS = "." + "git" + "hooks"
+_HOOKS_ROW = "git hooks are not switched off by a stale core.hooksPath"
+
+
+def _hooks_repo(tmp_path, value=None, make_dir=False):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, env=env)
+    if value:
+        subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", value],
+                       check=True, env=env)
+    if make_dir:
+        (tmp_path / value).mkdir(parents=True)
+    return _sdlc(tmp_path, {})
+
+
+def test_a_stale_hook_path_is_a_failing_row_carrying_the_unset_command(tmp_path):
+    """#614 AC-3: the key an earlier /sigma-init wrote, naming a directory that does not exist,
+    makes git run no hooks -- doctor fails the row and prints the one command that undoes it."""
+    base = _hooks_repo(tmp_path, _STALE_HOOKS)
+    rows = _by_name(_doc().check(base, run=_runner()))
+    assert _HOOKS_ROW in rows, sorted(rows)
+    row = rows[_HOOKS_ROW]
+    assert row["ok"] is False
+    assert "git config --local --unset core.hooksPath" in row["fix"]
+
+
+@pytest.mark.parametrize("value, make_dir", [(None, False), (_STALE_HOOKS, True),
+                                             (".husky/_", False)])
+def test_no_hook_path_row_unless_the_key_is_stale(tmp_path, value, make_dir):
+    """No key, the adopter's own directory under that name, or any other value: no row at all."""
+    base = _hooks_repo(tmp_path, value, make_dir)
+    assert _HOOKS_ROW not in _by_name(_doc().check(base, run=_runner()))

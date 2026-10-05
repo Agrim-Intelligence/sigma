@@ -1086,6 +1086,40 @@ def _load_init_script(name):
     return m
 
 
+def _load_setup_script():
+    """Cross-load the sibling sigma-setup skill's `setup.py` (#614), the same by-path idiom as
+    `_load_init_script`: setup.py owns hook-path policy, so the doctor row and /sigma-init's repair
+    read ONE definition of a stale `core.hooksPath` and cannot drift apart."""
+    path = _HERE.parent.parent / "sigma-setup" / "scripts" / "setup.py"
+    spec = importlib.util.spec_from_file_location("doctor_setup", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+#: The #614 row's name, one spelling shared with its tests.
+_STALE_HOOKS_ROW = "git hooks are not switched off by a stale core.hooksPath"
+
+
+def _stale_hook_path_row(repo_root):
+    """#614 AC-3: releases before #614 wrote a `core.hooksPath` naming a directory nothing creates,
+    so git runs NO hooks in that repository -- a secret scanner or linter silently off. A row only
+    when the key is stale (a healthy check list is unchanged); a detector that cannot run says so
+    as an ok row, never a false alarm. Local git reads only, so it runs under `cheap_only` too."""
+    try:
+        setup = _load_setup_script()
+        stale = setup.stale_hook_path(repo_root)
+    except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
+        return {"name": f"stale core.hooksPath: could not check ({type(exc).__name__})", "ok": True,
+                "fix": "git config --local --get core.hooksPath"}
+    if not stale:
+        return None
+    return _chk(_STALE_HOOKS_ROW, False,
+                f"core.hooksPath is `{setup.HOOKS_PATH}`, a directory that does not exist in this "
+                f"repository (an earlier /sigma-init set it), so git runs none of this repository's "
+                f"hooks. Fix: `{setup.UNSET_HOOKS_PATH}` (or re-run /sigma-init, which removes it).")
+
+
 def _preflight_fix(check):
     """A failing preflight check as doctor's one-line fix: the command(s) THAT check prints (so a
     missing `gh` says install it, never `gh auth login`), then what Sigma does meanwhile."""
@@ -2284,6 +2318,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                     "ok": True, "fix": "python3 skills/sigma-loop/scripts/feature_sync.py show "
                                        "<sdlc_dir>"})
     # ---- end #240
+    hooks_row = _stale_hook_path_row(base.parent)            # #614
+    if hooks_row:
+        out.append(hooks_row)
     # #144: a feature branch whose rebase upkeep is REFUSING a replay that would delete its content.
     # Emitted only when such a refusal is on record, so a healthy project's check list is unchanged.
     for branch, count, names, at in _rebase_blocks(base, _block(cfg, "work")):

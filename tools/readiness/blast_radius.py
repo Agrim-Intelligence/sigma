@@ -62,8 +62,8 @@ API_TAIL = [("POST", re.compile(r"issues(/\d+/comments)?|pulls|labels")),
 GIT_VERBS = {"add", "branch", "checkout", "clone", "commit", "config", "diff", "fetch", "init", "log", "ls-files",
              "ls-remote", "merge-base", "push", "remote", "rev-list", "rev-parse", "show", "status", "switch",
              "symbolic-ref", "worktree", "stash", "restore", "cat-file", "for-each-ref", "describe", "reflog"}
-#: git config keys that can redirect a remote, alias a verb, or run something else. Sigma's own repo-local
-#: `core.hooksPath` install and its `-c core.hooksPath=<empty dir>` hardening are not among them.
+#: git config keys that can redirect a remote, alias a verb, or run something else. Init's one-time unset of a
+#: stale `core.hooksPath` (#614) and the `-c core.hooksPath=<empty dir>` hardening are not among them.
 #: Programs that can exec gh or git without the hook recording a second launch, and that the flow has no use for.
 WRAPPERS = {"env", "xargs", "nohup", "sudo", "doas", "su", "ssh", "timeout", "nice", "time", "command", "exec",
             "busybox", "stdbuf", "setsid", "script", "osascript", "open", "node", "perl", "ruby", "curl", "wget",

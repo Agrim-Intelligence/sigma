@@ -15,6 +15,14 @@ All notable changes to Sigma are recorded here, newest first.
   `verify_detect.py confirm`; a `[trust]` line naming the Git gesture is used instead, because `[ask]` means "re-run
   with a flag" to hosts and `confirm` cannot trust a committed command that is not a detected candidate.
 
+- **Adoption no longer switches off your git hooks** (#614, epic #613). `/sigma-init` (and `/sigma-setup`, the
+  same flow, on every host) used to set a repository-local `core.hooksPath` naming a directory that nothing creates,
+  so git ran none of the repository's hooks and a global `core.hooksPath` (an org secret scanner) was shadowed too,
+  even when adoption then failed; a repository that already set its own value (husky) was refused. Adoption now never
+  writes the key. Re-running `/sigma-init` in a repository an earlier release adopted removes the stale key and says
+  so in one line; `/sigma-doctor` fails a row with `git config --local --unset core.hooksPath` while it is there;
+  `docs/uninstall.md` and `tools/readiness/leftovers.py` cover it. `setup.py hooks` now refuses when the directory
+  does not exist. Acceptance record 218 is amended.
 - **The solution is named Sigma Loop; the plugin and marketplace are `sigmaloop`** (#524, epic #522). Install with
   `claude plugin install sigmaloop@sigmaloop` (or the Codex and in-session forms) after adding the public repository,
   `https://github.com/Agrim-Intelligence/sigmaloop`; the README Quickstart, `docs/uninstall.md`, `SECURITY.md`,
