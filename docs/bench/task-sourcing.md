@@ -1,6 +1,6 @@
 # Benchmark task set: sourcing, selection and freeze
 
-Status: **frozen** (`"frozen": true` in `evals/bench/tasks/manifest.json`; the freeze commit is recorded in the pre-registration's Deviations). 15 tasks: 8 external and 4 internal
+Status: **frozen** (`"frozen": true` in `evals/bench/tasks/manifest.json`; the freeze commit will be recorded in the pre-registration's Deviations once this change has merged). 15 tasks: 8 external and 4 internal
 non-trap tasks, plus 3 traps that are **agent-authored** (see "Trap authorship" below), all verified.
 The method is fixed in [`preregistration.md`](preregistration.md); this page records how the tasks were found and what was
 measured about them. Nothing here ran an arm, called a model or spent money.
@@ -75,7 +75,7 @@ Command: `python3 tools/readiness/bench_tasks.py verify --hidden-root ~/.sigma-o
 2026-10-04 on one macOS arm64 machine, in the one environment built from `evals/bench/tasks/environment.lock` (CPython 3.12). Scoring goes through
 `bench._command_passed` and `bench._hidden_passed` behind a pass-through launcher with the harness's `isolated_env` (so the working directory, the `.sigma-hidden/` copy and
 the `verify.json` argv are the harness's), and a second plain run of the same command must agree. A hidden run on the starting tree must exit with pytest status 1 (tests ran and failed), not a collection error.
-Result: **12 verified, 0 failed, 3 skipped (the trap slots)**, every hidden run under 4 seconds (the longest, 3.21 s, `ext-more-itertools-1304`) and every visible suite under 9 seconds (the longest, 8.76 s, `ext-more-itertools-1252`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
+Result: **15 verified, 0 failed** (8 external, 4 internal, 3 agent-authored traps; the traps' hidden tests also fail on their trap-falling implementation), every hidden run under 4 seconds (the longest, 3.2 s, `ext-more-itertools-1304`) and every visible suite under 11 seconds (the longest, 10.8 s, `ext-more-itertools-1304`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
 `docs/launch/evidence/355-bench-task-verification.json`, which names the base commit and the sha256 of the tool, manifest and lock it measured.
 
 | Task | Visible tests on the starting tree | Hidden on the starting tree | Hidden on the reference fix |
@@ -158,7 +158,7 @@ The pre-registration originally required traps authored by a person outside the 
 [`preregistration.md`](preregistration.md)): each trap was written by a fresh independent subagent (`claude-sonnet-5-5`) that was given only
 [`trap-author-brief.md`](trap-author-brief.md) and the fixture shape, never the loop, skills or repository. This is **agent authorship, not outside-human authorship**, and the weaker claim is the one made:
 the author agent shares a model family with the model under test (home-field bias risk, unmeasured), and both contradiction traps use the same device (a README precedence rule).
-`task.json` carries `authorship: independent-agent`, the manifest carries `trap_authorship`, and `check` refuses a ready trap without that label. Each trap was then checked by a separate fresh reviewer agent.
+`task.json` carries `authorship: independent-agent`, the manifest carries `trap_authorship`, and `check` refuses a ready trap without that label. Each trap was then reviewed by a separate fresh reviewer agent during the goal (its findings were applied: a hidden file renamed, a prompt hint removed, a hidden README check added to trap-2); that review is not committed.
 
 ## Freeze (done 2026-10-05; the steps are kept as the record and for a future re-freeze)
 

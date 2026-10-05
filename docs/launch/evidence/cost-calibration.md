@@ -14,7 +14,7 @@ nothing is estimated unless the row says so.
 | P-a (high-risk unit A01) | measured: one review pass and one verification pass; one extra high-risk unit (A06) reviewed |
 | P-b (sampled unit B01) | measured: one review pass and one verification pass |
 | P-c (one live goal) | not measured: no recorded phase costs exist (see its section) |
-| P-d (benchmark pilot) | not measured: no operator-supplied isolation launcher exists, and the trap slots of the task set are empty (see its section) |
+| P-d (benchmark pilot) | not measured: no operator-supplied isolation launcher exists, and the task set, though frozen on 2026-10-05, has agent-authored traps that no agent has yet run against (see its section) |
 
 ## Method and what a number means
 
