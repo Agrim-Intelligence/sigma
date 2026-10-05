@@ -286,17 +286,21 @@ def _fake():
     return "Zq" + "9x" * 6 + "Lm"
 
 
-@pytest.mark.parametrize("key", ["GITHUB_TOKEN", "DB_PASSWORD", "auth_token", "BOT_TOKEN", "app_secret",
-                                 "DB_PASSWD", "OPENAI_API_KEY", "x-api-key", "AWS_SECRET_ACCESS_KEY",
-                                 "AUTH", "GCP_CREDENTIAL", "SERVICE_CREDENTIALS", "Github_Token", "password"])
-@pytest.mark.parametrize("sep", ["=", ": ", " = ", " : ", ":"])
-@pytest.mark.parametrize("quote", ["", '"', "'"])
-def test_scrub_env_style_names_redact_value_and_keep_key(key, sep, quote):
+_ENV_KEYS = ["GITHUB_TOKEN", "DB_PASSWORD", "auth_token", "BOT_TOKEN", "app_secret", "DB_PASSWD", "OPENAI_API_KEY",
+             "x-api-key", "AWS_SECRET_ACCESS_KEY", "AUTH", "GCP_CREDENTIAL", "SERVICE_CREDENTIALS", "Github_Token",
+             "password"]
+
+
+def test_scrub_env_style_names_redact_value_and_keep_key():
+    """One node on purpose (the red/green protocol keys on node ids, and a parametrize id holding a space
+    breaks them): every key x separator x quote combination, each asserted with its own message."""
     scrub = _mod("scrub").scrub
     value = _fake()
-    out = scrub("env: " + key + sep + quote + value + quote + " done")
-    assert value not in out, out
-    assert key in out, out
+    for key in _ENV_KEYS:
+        for sep in ("=", ": ", " = ", " : ", ":"):
+            for quote in ("", '"', "'"):
+                out = scrub("env: " + key + sep + quote + value + quote + " done")
+                assert value not in out and key in out, (key, sep, quote, out)
 
 
 def test_scrub_quoted_value_with_spaces_and_escapes_leaves_no_tail():
