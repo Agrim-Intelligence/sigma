@@ -32,52 +32,52 @@ HELLO = ROOT / "examples" / "hello-sdlc"
 MAX_HEADROOM = 0.05
 
 # Each entry lists the skill and reference files its own procedure directs this agent to load.  The
-# review phases additionally render the pack that `agrim-review` directs a fresh reviewer to read.
+# review phases additionally render the pack that `sigma-review` directs a fresh reviewer to read.
 PHASES = {
     "orchestrator": {
         "files": (
-            "skills/agrim-loop/SKILL.md",
-            "skills/agrim-loop/references/selection.md",
-            "skills/agrim-loop/references/picking.md",
-            "skills/agrim-loop/references/running.md",
-            "skills/agrim-loop/references/filing.md",
-            "skills/agrim-loop/references/progress.md",
-            "skills/agrim-loop/references/landing.md",
-            "skills/agrim-loop/references/stopping.md",
+            "skills/sigma-loop/SKILL.md",
+            "skills/sigma-loop/references/selection.md",
+            "skills/sigma-loop/references/picking.md",
+            "skills/sigma-loop/references/running.md",
+            "skills/sigma-loop/references/filing.md",
+            "skills/sigma-loop/references/progress.md",
+            "skills/sigma-loop/references/landing.md",
+            "skills/sigma-loop/references/stopping.md",
         ),
     },
     "goal-slot": {
         "files": (
-            "skills/agrim-goal/SKILL.md",
-            "skills/agrim-goal/references/selection.md",
-            "skills/agrim-loop/references/running.md",
+            "skills/sigma-goal/SKILL.md",
+            "skills/sigma-goal/references/selection.md",
+            "skills/sigma-loop/references/running.md",
         ),
     },
-    "research": {"files": ("skills/agrim-research/SKILL.md", "skills/agrim-research/references/selection.md")},
-    "plan": {"files": ("skills/agrim-plan/SKILL.md", "skills/agrim-plan/references/selection.md")},
+    "research": {"files": ("skills/sigma-research/SKILL.md", "skills/sigma-research/references/selection.md")},
+    "plan": {"files": ("skills/sigma-plan/SKILL.md", "skills/sigma-plan/references/selection.md")},
     "plan-review": {
-        "files": ("skills/agrim-plan-review/SKILL.md", "skills/agrim-plan-review/references/selection.md"),
+        "files": ("skills/sigma-plan-review/SKILL.md", "skills/sigma-plan-review/references/selection.md"),
         "brief": "plan-review",
     },
-    "implement": {"files": ("skills/agrim-implement/SKILL.md", "skills/agrim-implement/references/selection.md")},
+    "implement": {"files": ("skills/sigma-implement/SKILL.md", "skills/sigma-implement/references/selection.md")},
     "review-pre-pr": {
         "files": (
-            "skills/agrim-review/SKILL.md",
-            "skills/agrim-review/references/selection.md",
-            "skills/agrim-review/references/axes.md",
+            "skills/sigma-review/SKILL.md",
+            "skills/sigma-review/references/selection.md",
+            "skills/sigma-review/references/axes.md",
         ),
         "brief": "code-review",
     },
     "review-post-pr": {
         "files": (
-            "skills/agrim-review/SKILL.md",
-            "skills/agrim-review/references/selection.md",
-            "skills/agrim-review/references/axes.md",
+            "skills/sigma-review/SKILL.md",
+            "skills/sigma-review/references/selection.md",
+            "skills/sigma-review/references/axes.md",
         ),
         "brief": "pr-review",
     },
     "retro": {
-        "files": ("skills/agrim-retro/SKILL.md", "skills/agrim-retro/references/selection.md"),
+        "files": ("skills/sigma-retro/SKILL.md", "skills/sigma-retro/references/selection.md"),
         "brief": "retro",
     },
 }
@@ -108,7 +108,7 @@ def _commit(root: pathlib.Path) -> str:
 def _review_brief(root: pathlib.Path, phase: str) -> str:
     """Render the real pack locally; never fetch an issue or depend on a live project."""
     review_context = _load_module("phase_context_review_context",
-                                  root / "skills/agrim-loop/scripts/review_context.py")
+                                  root / "skills/sigma-loop/scripts/review_context.py")
     # Pass stable, repository-relative prose/pointers to the rendered payload.  Absolute checkout
     # paths would make a ceiling vary merely because a user cloned Sigma under a longer directory.
     goal = root / "examples/hello-sdlc/.sdlc/goals/0001-add-exclaim.md"

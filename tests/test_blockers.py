@@ -7,7 +7,7 @@ import json, pathlib, importlib.util
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -189,8 +189,8 @@ def test_an_unmanaged_third_party_issue_is_never_adopted():
 def test_every_refusal_names_the_route_out():
     """A refusal inside the machinery built to remove dead ends must not itself be one."""
     b = _mod("blockers")
-    for labels, needle in ((("sdlc:parked",), "/agrim-unpark"),
-                           (("sdlc:needs-confirmation",), "/agrim-promote")):
+    for labels, needle in ((("sdlc:parked",), "/sigma-unpark"),
+                           (("sdlc:needs-confirmation",), "/sigma-promote")):
         run = _runner(views={"7": _view(*labels)})
         result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
         assert needle in result["results"][0]["detail"], labels
@@ -219,7 +219,7 @@ def test_park_reason_names_what_actually_survived():
     run = _runner(views={"7": _view("sdlc:parked")})
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
     reason = b.park_reason(result)
-    assert reason and "#7" in reason and "/agrim-unpark" in reason
+    assert reason and "#7" in reason and "/sigma-unpark" in reason
 
 
 def test_dry_run_writes_nothing():
@@ -351,7 +351,7 @@ def test_the_drift_shape_is_repaired_not_declared_workable():
 
 def test_repairing_the_drift_shape_only_removes_the_gate():
     """Membership is already present, so the atomic swap is remove-only -- byte-identical to the
-    repair `/agrim-promote` performs on its own `drift` bucket."""
+    repair `/sigma-promote` performs on its own `drift` bucket."""
     b = _mod("blockers")
     run = _runner(views={"7": _view("sdlc:goal", "sdlc:needs-confirmation", "sdlc:followup")})
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)

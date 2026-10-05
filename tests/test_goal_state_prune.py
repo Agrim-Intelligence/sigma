@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 OLD = time.time() - 10 * 86400       # comfortably past the 7-day window
 
 

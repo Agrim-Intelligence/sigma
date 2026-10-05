@@ -20,7 +20,7 @@ private deploy docs and configs) -- a hostname list is an internal-address scan,
 (#2586) owns; this guard does not claim it.
 
 RETIRED NAMES (#2729, PRD Q1-G0, D11): the brand and skill prefix this core shipped under before
-`sigma`/`agrim-*` are private names now -- the old brand token, its `_`-suffixed env-var prefix,
+`sigma`/`sigma-*` are private names now -- the old brand token, its `_`-suffixed env-var prefix,
 the 42 old skill names, the old skill-namespace glob (the old prefix followed by `*`: always the
 namespace, never a branch -- a branch glob is `sdlc/*`), the old `<...-dir>` usage placeholder, the
 old repository name and (D12, post-PR review) the old personal-account owner slug in front of the new
@@ -138,7 +138,7 @@ _PATTERNS = [
     (r"Loop" "Smith Insight", "Loop" "Smith Insight"),
     (r"Agrim Pi", "Agrim Pi"),
     (r"\btelemetry\b", "telemetry"),
-    # Retired names (#2729, D11): the brand and skill prefix before `sigma`/`agrim-*`, from
+    # Retired names (#2729, D11): the brand and skill prefix before `sigma`/`sigma-*`, from
     # fragments (the module docstring says why). The ledger skill's stem is carried by the ops-token
     # entry, whose branch-context matches `_scan_file` exempts through `_sdlc_ledger_disposition`.
     (r"\b" "loop" "smith" r"\b", "retired brand token"),
@@ -492,14 +492,14 @@ def test_a_private_name_as_a_config_key_switches_nothing():
     """#2706: the core reads no private-side config key. The one-release aliases are gone, and a
     config that still holds one reads exactly as if it did not: nothing is migrated, and nothing is
     said about the old key, with ONE exception: #2738 (Q1-G9) says the journal's own pre-rename
-    block out loud -- a suffix on the `/agrim-doctor features` journal row telling the operator to
+    block out loud -- a suffix on the `/sigma-doctor features` journal row telling the operator to
     move the value -- while still migrating and aliasing nothing. Its source spells that key from
     fragments (`doctor._LEGACY_JOURNAL_BLOCK`), so no shipped line carries it whole.
 
     Each key alone carries a block that the old aliases would have honoured (`enabled: true` AND a
     `project_id`). The journal switch, an actual journal write through `ledger.append` (the path
     every emitter takes, so a read re-added at its own gate is caught too), adoption, every
-    `/agrim-doctor features` row and the `managed settings` check row must read byte-for-byte as
+    `/sigma-doctor features` row and the `managed settings` check row must read byte-for-byte as
     they do for `{}`, except that one key's journal row, which must read as the `{}` row plus the
     exact note and nothing else. Non-vacuous both ways: the key set is non-empty and every key is
     one the scan forbids, and the SAME block under the core's own keys does change what is seen --
@@ -511,9 +511,9 @@ def test_a_private_name_as_a_config_key_switches_nothing():
     timeout under load cannot make one call differ from its baseline. The `append` call pins
     `ledger.actor`: without it the positive control resolves the writer through a live `gh api
     user` call, which pytest's `_no_live_gh` guard would block but the script gesture would make."""
-    ledger = _load("_k_ledger", "skills/agrim-loop/scripts/ledger.py")
-    managed = _load("_k_managed_settings", "skills/agrim-loop/scripts/managed_settings.py")
-    doctor = _load("_k_doctor", "skills/agrim-doctor/scripts/doctor.py")
+    ledger = _load("_k_ledger", "skills/sigma-loop/scripts/ledger.py")
+    managed = _load("_k_managed_settings", "skills/sigma-loop/scripts/managed_settings.py")
+    doctor = _load("_k_doctor", "skills/sigma-doctor/scripts/doctor.py")
     doctor._resolved_mechanism = lambda sdlc_dir: ""
     block = {"enabled": True, "project_id": "p1"}
 
@@ -825,36 +825,36 @@ RAW_RESIDUAL_SHIPPED = {
     # core role noun: the read-only evidence scripts (`*-collect.sh`, risk-detect, discovery-scan)
     "hooks/completion_gate.sh": {"collector": 1},
     "hooks/research_capture.py": {"collectors": 1},
-    "skills/agrim-align/SKILL.md": {"collector": 1},
-    "skills/agrim-align/scripts/alignment-collect.sh": {"collector": 2, "collectors": 1},
-    "skills/agrim-audit/SKILL.md": {"collector": 1},
-    "skills/agrim-audit/scripts/audit-collect.sh": {"collector": 3, "collectors": 1},
+    "skills/sigma-align/SKILL.md": {"collector": 1},
+    "skills/sigma-align/scripts/alignment-collect.sh": {"collector": 2, "collectors": 1},
+    "skills/sigma-audit/SKILL.md": {"collector": 1},
+    "skills/sigma-audit/scripts/audit-collect.sh": {"collector": 3, "collectors": 1},
     # core label: the critical / research issue labels
-    "skills/agrim-init/github-templates/CRITICAL_INSIGHT_TEMPLATE.md.tmpl": {"research-insight": 1},
-    "skills/agrim-init/scripts/sdlc_init.py": {"critical-insight": 1},
-    "skills/agrim-loop/references/progress.md": {"research-insight": 1},
+    "skills/sigma-init/github-templates/CRITICAL_INSIGHT_TEMPLATE.md.tmpl": {"research-insight": 1},
+    "skills/sigma-init/scripts/sdlc_init.py": {"critical-insight": 1},
+    "skills/sigma-loop/references/progress.md": {"research-insight": 1},
     # core role noun: pytest's own node collection (its `found no ... for` error)
-    "skills/agrim-loop/scripts/diff_revert.py": {"_collector_failed_ids": 8, "collector_failed": 5,
+    "skills/sigma-loop/scripts/diff_revert.py": {"_collector_failed_ids": 8, "collector_failed": 5,
                                                 "collectors": 4},
     # core role noun: the read-only evidence scripts
-    "skills/agrim-loop/scripts/discovery-scan.sh": {"collector": 1, "collectors": 2},
+    "skills/sigma-loop/scripts/discovery-scan.sh": {"collector": 1, "collectors": 2},
     # core role noun: #1933's pytest node collection; core label
-    "skills/agrim-loop/scripts/loop.py": {"collector": 1, "critical-insight": 1},
+    "skills/sigma-loop/scripts/loop.py": {"collector": 1, "critical-insight": 1},
     # core role noun: the discovery-scan evidence script
-    "skills/agrim-loop/scripts/pipeline.py": {"collector": 1},
-    "skills/agrim-loop/scripts/risk-detect.sh": {"collector": 2},
-    "skills/agrim-loop/scripts/scrub.py": {"collectors": 1},
+    "skills/sigma-loop/scripts/pipeline.py": {"collector": 1},
+    "skills/sigma-loop/scripts/risk-detect.sh": {"collector": 2},
+    "skills/sigma-loop/scripts/scrub.py": {"collectors": 1},
     # core label
-    "skills/agrim-loop/scripts/sources.py": {"critical-insight": 1},
+    "skills/sigma-loop/scripts/sources.py": {"critical-insight": 1},
     # English: the ordinary word ("that ...")
-    "skills/agrim-loop/scripts/triage.py": {"insight": 1},
+    "skills/sigma-loop/scripts/triage.py": {"insight": 1},
     # core role noun: routing the discovery-scan evidence script
-    "skills/agrim-loop/scripts/work.py": {"collector": 1},
+    "skills/sigma-loop/scripts/work.py": {"collector": 1},
     # core role noun: the read-only evidence scripts
-    "skills/agrim-radar/SKILL.md": {"collector": 1},
-    "skills/agrim-research/SKILL.md": {"collector": 1},
+    "skills/sigma-radar/SKILL.md": {"collector": 1},
+    "skills/sigma-research/SKILL.md": {"collector": 1},
     # English: the ordinary word ("key ...")
-    "skills/agrim-retro/SKILL.md": {"insight": 2},
+    "skills/sigma-retro/SKILL.md": {"insight": 2},
 }
 
 
@@ -1019,14 +1019,15 @@ def test_a_suffixed_ops_token_in_branch_context_is_not_exempt():
 
 
 def test_the_retired_skill_pattern_names_exactly_the_shipped_skills():
-    """D11's `^agrim-[a-z-]+$` filter, defence in depth: every shipped skill directory carries the
+    """D11's `^sigma-[a-z-]+$` filter, defence in depth: every shipped skill directory carries the
     new prefix, and the retired-skill alternation lists exactly those stems (the ledger skill's stem
     rides the ops-token pattern instead, so branch context can exempt it there)."""
     rx = next(rx for rx, d in _PATTERNS if d == "retired skill name")
     stems = set(re.search(r"\((.*)\)", rx).group(1).split("|"))
-    dirs = sorted(p.name for p in (_REAL_ROOT / "skills").iterdir() if p.is_dir())
-    assert dirs and all(re.fullmatch(r"agrim-[a-z-]+", d) for d in dirs), dirs
-    assert stems | {"ledger"} == {d[len("agrim-"):] for d in dirs}, sorted(stems ^ {d[6:] for d in dirs})
+    # a skill is a folder with a SKILL.md: a leftover untracked folder (only __pycache__) is not one
+    dirs = sorted(p.name for p in (_REAL_ROOT / "skills").iterdir() if (p / "SKILL.md").is_file())
+    assert dirs and all(re.fullmatch(r"sigma-[a-z-]+", d) for d in dirs), dirs
+    assert stems | {"ledger"} == {d[len("sigma-"):] for d in dirs}, sorted(stems ^ {d[6:] for d in dirs})
 
 
 def _tests_the_script_cannot_run():

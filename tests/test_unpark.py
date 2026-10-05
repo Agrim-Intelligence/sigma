@@ -8,7 +8,7 @@ import json, pathlib, importlib.util
 import gqlfake
 from test_auto_unpark import _label_aware_sweep_runner
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -444,7 +444,7 @@ def test_a_local_source_degrades_instead_of_raising():
 def test_unpark_also_settles_the_approval_gate():
     """#1393: an issue can be BOTH awaiting approval and parked (a proposal a human parked rather
     than ruled on). An unpark that only dropped `sdlc:parked` would leave `sdlc:goal` +
-    `sdlc:needs-confirmation` -- picked by nothing, and /agrim-promote's job to repair. Unparking IS
+    `sdlc:needs-confirmation` -- picked by nothing, and /sigma-promote's job to repair. Unparking IS
     the human decision; it settles the approval question in the same gesture."""
     u = _mod("unpark")
     run = _runner(views={"5": _view(labels=("sdlc:parked", "sdlc:needs-confirmation"),

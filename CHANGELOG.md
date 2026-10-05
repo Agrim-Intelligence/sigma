@@ -4,6 +4,27 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Every skill and command now starts with `sigma-`** (#523, epic #522). The 42 skills `agrim-*` are
+  `sigma-*` (`/agrim-loop` is `/sigma-loop`, `skills/agrim-doctor/` is `skills/sigma-doctor/`), the hook
+  `hooks/agrim_gate.sh` is `hooks/sigma_gate.sh`, and every doc, test, generated table and script path that
+  named them follows. There are no aliases: an old command name does nothing. `.sdlc/` data, the `sdlc:*`
+  labels and the organisation name are unchanged, and nothing on GitHub (labels, issues, repository names)
+  was renamed. `tools/rename_prefix.py` did the rename mechanically (whole-directory `git mv`, then a
+  token-aware replacement; idempotent; also rewrites untracked files git would commit, such as plan drafts),
+  and `tools/rename_check.py` is the guard: it exits 1 and names each file and line while any tracked path
+  or file outside a narrow allowlist still carries the old prefix. CI runs it after the test suite. The
+  allowlist is the organisation name and the owner's login, two private-name guard tests, the older
+  entries of this changelog, and the recorded launch evidence files (captured at a named commit, so a
+  rewrite would claim output that commit never produced). **Moving over.** (1) Rebase any open branch
+  onto this change: every renamed path conflicts, so take the new path and re-run
+  `python3 tools/rename_prefix.py` on your branch. (2) Delete the leftover folders git cannot
+  remove from a checkout that already ran code (`rm -rf skills/agrim-*`; they hold only `__pycache__`).
+  (3) Cursor: `scaffold_cursor_rules` never overwrites an existing rule file, so delete
+  `.cursor/rules/sdlc.mdc` and `.cursor/rules/output-contract.mdc` and run `/sigma-init --cursor`; Codex:
+  run `/sigma-init --codex` (it refreshes its block). (4) A host or script that calls
+  `hooks/agrim_gate.sh` or `/agrim-*` by name must be pointed at the new name by its owner.
+  The plugin and marketplace id (`sigma@sigma`) are renamed separately in #524.
+
 - **The review-units tool cuts units at current main again, and the signal-seam test no longer depends on how it was launched**
   (#581, readiness dimension D1, `launch:next`). `tools/readiness/review_units.py` refused every commit after #408 deleted
   `install.sh`, a path it names for Tier A. The refusal stays the intended re-cut lever (a missing named path is never dropped
@@ -388,8 +409,8 @@ All notable changes to Sigma are recorded here, newest first.
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
   fresh public snapshot repository named `Agrim-Intelligence/sigma` (this private repository
-  is renamed first, by the owner, before the public one is created, and stays private; the rename
-  sequence is prepared in #397), version `1.0.0`; supported = Claude Code on
+  is not renamed and stays private; the public repository is created new, by the owner, under its
+  own name; the sequence is prepared in #397), version `1.0.0`; supported = Claude Code on
   macOS and Linux, Python 3.10-3.13, `local-goals` and `github` modes (launch-blocking
   requirements, not verified today: CI gates Ubuntu on 3.10-3.13 and macOS on 3.12 only, #338);
   experimental = Codex, Cursor, Windows (no recorded end-to-end run; Codex and Windows have the

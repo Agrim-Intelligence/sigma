@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 FILE = ROOT / "docs" / "launch" / "dispositions" / "460.json"
 DOC = ROOT / "docs" / "launch" / "growth-audit.md"
 

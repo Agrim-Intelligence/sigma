@@ -87,7 +87,7 @@ _RESOLVES = re.compile(r"resolv|unblock|releas|lift|clear|resum|drops? `?sdlc:bl
 def test_unmerged_pr_blocker():
     """#434: a PR closed WITHOUT merging does not resolve a blocker (blocker_scan.closed_state)."""
     import sys
-    sys.path.insert(0, str(ROOT / "skills/agrim-loop/scripts"))
+    sys.path.insert(0, str(ROOT / "skills/sigma-loop/scripts"))
     import blocker_scan
     assert blocker_scan.closed_state("CLOSED", "") is False
     assert blocker_scan.closed_state("MERGED", "") is True

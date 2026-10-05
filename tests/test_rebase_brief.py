@@ -1,4 +1,4 @@
-"""rebase_brief.py -- agrim-rebase slice 1 (#2304, epic #2303, design `.sdlc/design/2288.md`).
+"""rebase_brief.py -- sigma-rebase slice 1 (#2304, epic #2303, design `.sdlc/design/2288.md`).
 
 WHY THESE TESTS RUN REAL `git`, mirroring `tests/test_feature_rebase.py`'s own rationale: this
 module force-pushes a branch and rebases a real working tree, and the three properties that make
@@ -20,7 +20,7 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-rebase" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-rebase" / "scripts"
 
 
 def _load(name, directory=SCRIPTS):

@@ -106,14 +106,14 @@
    "reason": "Key sets differ; each side's setup.py configure, run over a config the other side wrote, lost no top-level key in either order (probe).",
    "verdict": "different-format",
    "vetted_writers": [
-    "skills/agrim-define/scripts/define.py::main",
-    "skills/agrim-doctor/scripts/migrate.py::_plan_config",
-    "skills/agrim-doctor/scripts/migrate.py::_plan_schemas",
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-    "skills/agrim-init/scripts/verify_detect.py::write_verify",
-    "skills/agrim-setup/scripts/setup.py::write_cfg"
+    "skills/sigma-define/scripts/define.py::main",
+    "skills/sigma-doctor/scripts/migrate.py::_plan_config",
+    "skills/sigma-doctor/scripts/migrate.py::_plan_schemas",
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/sigma-init/scripts/verify_detect.py::write_verify",
+    "skills/sigma-setup/scripts/setup.py::write_cfg"
    ]
   },
   {
@@ -122,9 +122,9 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_vision"
    ]
   },
   {
@@ -134,9 +134,9 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_vision"
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_vision"
    ]
   },
   {
@@ -145,21 +145,21 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/ledger.py::append",
-    "skills/agrim-loop/scripts/ledger.py::main",
-    "skills/agrim-loop/scripts/ledger.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/sync.py::bootstrap",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/ledger.py::append",
+    "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/sync.py::bootstrap",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -169,21 +169,21 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/ledger.py::append",
-    "skills/agrim-loop/scripts/ledger.py::main",
-    "skills/agrim-loop/scripts/ledger.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/sync.py::bootstrap",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/ledger.py::append",
+    "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/sync.py::bootstrap",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -192,7 +192,7 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_registry.py::write_index"
+    "skills/sigma-loop/scripts/feature_registry.py::write_index"
    ]
   },
   {
@@ -202,7 +202,7 @@
    "reason": "Different format (schema id spelling); the predecessor's own fold empties a registry Sigma wrote (probe); filed as a B1 candidate.",
    "verdict": "different-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_registry.py::write_index"
+    "skills/sigma-loop/scripts/feature_registry.py::write_index"
    ]
   },
   {
@@ -212,7 +212,7 @@
    "reason": "Different format (schema id spelling); the predecessor's own fold empties a registry Sigma wrote (probe); filed as a B1 candidate.",
    "verdict": "different-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_registry.py::write_unit"
+    "skills/sigma-loop/scripts/feature_registry.py::write_unit"
    ]
   },
   {
@@ -221,14 +221,14 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-    "skills/agrim-loop/scripts/pipeline.py::discover",
-    "skills/agrim-loop/scripts/pipeline.py::main",
-    "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
-    "skills/agrim-loop/scripts/pipeline.py::propose_goals",
-    "skills/agrim-loop/scripts/sources.py::create_dependency"
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_demo",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/sigma-loop/scripts/pipeline.py::discover",
+    "skills/sigma-loop/scripts/pipeline.py::main",
+    "skills/sigma-loop/scripts/pipeline.py::propose_from_discovery",
+    "skills/sigma-loop/scripts/pipeline.py::propose_goals",
+    "skills/sigma-loop/scripts/sources.py::create_dependency"
    ]
   },
   {
@@ -237,13 +237,13 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_demo",
-    "skills/agrim-init/scripts/sdlc_init.py::scaffold_extras",
-    "skills/agrim-loop/scripts/pipeline.py::discover",
-    "skills/agrim-loop/scripts/pipeline.py::main",
-    "skills/agrim-loop/scripts/pipeline.py::propose_from_discovery",
-    "skills/agrim-loop/scripts/pipeline.py::propose_goals"
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_demo",
+    "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
+    "skills/sigma-loop/scripts/pipeline.py::discover",
+    "skills/sigma-loop/scripts/pipeline.py::main",
+    "skills/sigma-loop/scripts/pipeline.py::propose_from_discovery",
+    "skills/sigma-loop/scripts/pipeline.py::propose_goals"
    ]
   },
   {
@@ -252,7 +252,7 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/sources.py::note"
+    "skills/sigma-loop/scripts/sources.py::note"
    ]
   },
   {
@@ -261,7 +261,7 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/sources.py::note"
+    "skills/sigma-loop/scripts/sources.py::note"
    ]
   },
   {
@@ -270,8 +270,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::gap_log",
-    "skills/agrim-kg/scripts/kg.py::main"
+    "skills/sigma-kg/scripts/kg.py::gap_log",
+    "skills/sigma-kg/scripts/kg.py::main"
    ]
   },
   {
@@ -280,8 +280,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::main",
-    "skills/agrim-kg/scripts/kg.py::write_note"
+    "skills/sigma-kg/scripts/kg.py::main",
+    "skills/sigma-kg/scripts/kg.py::write_note"
    ]
   },
   {
@@ -291,8 +291,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::main",
-    "skills/agrim-kg/scripts/kg.py::write_note"
+    "skills/sigma-kg/scripts/kg.py::main",
+    "skills/sigma-kg/scripts/kg.py::write_note"
    ]
   },
   {
@@ -302,8 +302,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::main",
-    "skills/agrim-kg/scripts/kg.py::write_note"
+    "skills/sigma-kg/scripts/kg.py::main",
+    "skills/sigma-kg/scripts/kg.py::write_note"
    ]
   },
   {
@@ -313,8 +313,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::main",
-    "skills/agrim-kg/scripts/kg.py::write_note"
+    "skills/sigma-kg/scripts/kg.py::main",
+    "skills/sigma-kg/scripts/kg.py::write_note"
    ]
   },
   {
@@ -324,9 +324,9 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-kg/scripts/kg.py::gap_log",
-    "skills/agrim-kg/scripts/kg.py::gap_resolve",
-    "skills/agrim-kg/scripts/kg.py::main"
+    "skills/sigma-kg/scripts/kg.py::gap_log",
+    "skills/sigma-kg/scripts/kg.py::gap_resolve",
+    "skills/sigma-kg/scripts/kg.py::main"
    ]
   },
   {
@@ -335,8 +335,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-radar/scripts/radar.py::main",
-    "skills/agrim-radar/scripts/radar.py::record"
+    "skills/sigma-radar/scripts/radar.py::main",
+    "skills/sigma-radar/scripts/radar.py::record"
    ]
   },
   {
@@ -346,8 +346,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-radar/scripts/radar.py::main",
-    "skills/agrim-radar/scripts/radar.py::record"
+    "skills/sigma-radar/scripts/radar.py::main",
+    "skills/sigma-radar/scripts/radar.py::record"
    ]
   },
   {
@@ -356,7 +356,7 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/ledger.py::main"
+    "skills/sigma-loop/scripts/ledger.py::main"
    ]
   },
   {
@@ -365,21 +365,21 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/ledger.py::append",
-    "skills/agrim-loop/scripts/ledger.py::main",
-    "skills/agrim-loop/scripts/ledger.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/sync.py::bootstrap",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/ledger.py::append",
+    "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/sync.py::bootstrap",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -389,21 +389,21 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/ledger.py::append",
-    "skills/agrim-loop/scripts/ledger.py::main",
-    "skills/agrim-loop/scripts/ledger.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/sync.py::bootstrap",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/ledger.py::append",
+    "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/sync.py::bootstrap",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -413,22 +413,22 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/ledger.py::append",
-    "skills/agrim-loop/scripts/ledger.py::main",
-    "skills/agrim-loop/scripts/ledger.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/sync.py::_write_team",
-    "skills/agrim-loop/scripts/sync.py::bootstrap",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/ledger.py::append",
+    "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/sync.py::_write_team",
+    "skills/sigma-loop/scripts/sync.py::bootstrap",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -437,8 +437,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-scope/scripts/assign.py::execute",
-    "skills/agrim-scope/scripts/assign.py::main"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-scope/scripts/assign.py::main"
    ]
   },
   {
@@ -448,8 +448,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-scope/scripts/assign.py::execute",
-    "skills/agrim-scope/scripts/assign.py::main"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-scope/scripts/assign.py::main"
    ]
   },
   {
@@ -458,67 +458,67 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-init/scripts/init_flow.py::main",
-    "skills/agrim-init/scripts/sdlc_init.py::main",
-    "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
-    "skills/agrim-init/scripts/setup_wizard.py::wizard_status",
-    "skills/agrim-init/scripts/setup_wizard.py::write_dismissed",
-    "skills/agrim-kg/scripts/kg.py::_write_refresh_record",
-    "skills/agrim-kg/scripts/kg.py::main",
-    "skills/agrim-kg/scripts/kg.py::refresh",
-    "skills/agrim-kg/scripts/kg.py::warn",
-    "skills/agrim-loop/scripts/agent_watch.py::tick",
-    "skills/agrim-loop/scripts/autowatch.py::_record_spend",
-    "skills/agrim-loop/scripts/autowatch.py::_tick_inner",
-    "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
-    "skills/agrim-loop/scripts/backlog_check.py::cross_check",
-    "skills/agrim-loop/scripts/channel_notify.py::tick",
-    "skills/agrim-loop/scripts/coexist.py::write_owner",
-    "skills/agrim-loop/scripts/comment_watch.py::tick",
-    "skills/agrim-loop/scripts/drift_watch.py::_stamp",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep",
-    "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
-    "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
-    "skills/agrim-loop/scripts/feature_judge.py::live_judge",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
-    "skills/agrim-loop/scripts/loop.py::_merge_reconcile_lock",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_reconcile_awaiting_merges",
-    "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
-    "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::run",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat",
-    "skills/agrim-loop/scripts/state.py::_cursor_lock",
-    "skills/agrim-loop/scripts/state.py::_patch_cursor",
-    "skills/agrim-loop/scripts/state.py::_queue",
-    "skills/agrim-loop/scripts/state.py::_state_file",
-    "skills/agrim-loop/scripts/state.py::add_tokens",
-    "skills/agrim-loop/scripts/state.py::advance_cursor",
-    "skills/agrim-loop/scripts/state.py::fail",
-    "skills/agrim-loop/scripts/state.py::park",
-    "skills/agrim-loop/scripts/state.py::phase_end_lock",
-    "skills/agrim-loop/scripts/state.py::record_phase_end",
-    "skills/agrim-loop/scripts/state.py::start_run",
-    "skills/agrim-loop/scripts/supervise_daemon.py::main",
-    "skills/agrim-loop/scripts/sync.py::_knowledge_lock",
-    "skills/agrim-loop/scripts/sync.py::_publish_knowledge",
-    "skills/agrim-loop/scripts/sync.py::_pull_knowledge",
-    "skills/agrim-loop/scripts/sync.py::publish",
-    "skills/agrim-loop/scripts/watch.py::main",
-    "skills/agrim-loop/scripts/watch.py::tick",
-    "skills/agrim-loop/scripts/worktree_prune.py::after_start_or_done",
-    "skills/agrim-loop/scripts/worktree_prune.py::main",
-    "skills/agrim-loop/scripts/worktree_prune.py::sweep",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-init/scripts/init_flow.py::main",
+    "skills/sigma-init/scripts/sdlc_init.py::main",
+    "skills/sigma-init/scripts/setup_wizard.py::_write_cache",
+    "skills/sigma-init/scripts/setup_wizard.py::wizard_status",
+    "skills/sigma-init/scripts/setup_wizard.py::write_dismissed",
+    "skills/sigma-kg/scripts/kg.py::_write_refresh_record",
+    "skills/sigma-kg/scripts/kg.py::main",
+    "skills/sigma-kg/scripts/kg.py::refresh",
+    "skills/sigma-kg/scripts/kg.py::warn",
+    "skills/sigma-loop/scripts/agent_watch.py::tick",
+    "skills/sigma-loop/scripts/autowatch.py::_record_spend",
+    "skills/sigma-loop/scripts/autowatch.py::_tick_inner",
+    "skills/sigma-loop/scripts/backlog_check.py::_dense_channel",
+    "skills/sigma-loop/scripts/backlog_check.py::cross_check",
+    "skills/sigma-loop/scripts/channel_notify.py::tick",
+    "skills/sigma-loop/scripts/coexist.py::write_owner",
+    "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/drift_watch.py::_stamp",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep",
+    "skills/sigma-loop/scripts/feature_judge.py::_acquire_spend_lock",
+    "skills/sigma-loop/scripts/feature_judge.py::_record_spend",
+    "skills/sigma-loop/scripts/feature_judge.py::live_judge",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::_ensure_ledger_delivery",
+    "skills/sigma-loop/scripts/loop.py::_merge_reconcile_lock",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_reconcile_awaiting_merges",
+    "skills/sigma-loop/scripts/loop.py::_reconcile_stamp",
+    "skills/sigma-loop/scripts/loop.py::_reconcile_sweep",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_dispatch",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_log",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::run",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::write_heartbeat",
+    "skills/sigma-loop/scripts/state.py::_cursor_lock",
+    "skills/sigma-loop/scripts/state.py::_patch_cursor",
+    "skills/sigma-loop/scripts/state.py::_queue",
+    "skills/sigma-loop/scripts/state.py::_state_file",
+    "skills/sigma-loop/scripts/state.py::add_tokens",
+    "skills/sigma-loop/scripts/state.py::advance_cursor",
+    "skills/sigma-loop/scripts/state.py::fail",
+    "skills/sigma-loop/scripts/state.py::park",
+    "skills/sigma-loop/scripts/state.py::phase_end_lock",
+    "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::start_run",
+    "skills/sigma-loop/scripts/supervise_daemon.py::main",
+    "skills/sigma-loop/scripts/sync.py::_knowledge_lock",
+    "skills/sigma-loop/scripts/sync.py::_publish_knowledge",
+    "skills/sigma-loop/scripts/sync.py::_pull_knowledge",
+    "skills/sigma-loop/scripts/sync.py::publish",
+    "skills/sigma-loop/scripts/watch.py::main",
+    "skills/sigma-loop/scripts/watch.py::tick",
+    "skills/sigma-loop/scripts/worktree_prune.py::after_start_or_done",
+    "skills/sigma-loop/scripts/worktree_prune.py::main",
+    "skills/sigma-loop/scripts/worktree_prune.py::sweep",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -527,15 +527,15 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/state.py::_patch_cursor",
-    "skills/agrim-loop/scripts/state.py::_state_file",
-    "skills/agrim-loop/scripts/state.py::add_tokens",
-    "skills/agrim-loop/scripts/state.py::advance_cursor",
-    "skills/agrim-loop/scripts/state.py::record_phase_end",
-    "skills/agrim-loop/scripts/state.py::start_run",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/state.py::_patch_cursor",
+    "skills/sigma-loop/scripts/state.py::_state_file",
+    "skills/sigma-loop/scripts/state.py::add_tokens",
+    "skills/sigma-loop/scripts/state.py::advance_cursor",
+    "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::start_run",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -544,15 +544,15 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/state.py::_cursor_lock",
-    "skills/agrim-loop/scripts/state.py::_patch_cursor",
-    "skills/agrim-loop/scripts/state.py::add_tokens",
-    "skills/agrim-loop/scripts/state.py::advance_cursor",
-    "skills/agrim-loop/scripts/state.py::record_phase_end",
-    "skills/agrim-loop/scripts/state.py::start_run",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/state.py::_cursor_lock",
+    "skills/sigma-loop/scripts/state.py::_patch_cursor",
+    "skills/sigma-loop/scripts/state.py::add_tokens",
+    "skills/sigma-loop/scripts/state.py::advance_cursor",
+    "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::start_run",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -561,7 +561,7 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/agent_watch.py::tick"
+    "skills/sigma-loop/scripts/agent_watch.py::tick"
    ]
   },
   {
@@ -570,9 +570,9 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_write",
-    "skills/agrim-loop/scripts/loop.py::agent_start",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+    "skills/sigma-loop/scripts/loop.py::_write",
+    "skills/sigma-loop/scripts/loop.py::agent_start",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_dispatch"
    ]
   },
   {
@@ -581,9 +581,9 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_write",
-    "skills/agrim-loop/scripts/loop.py::agent_start",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch"
+    "skills/sigma-loop/scripts/loop.py::_write",
+    "skills/sigma-loop/scripts/loop.py::agent_start",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_dispatch"
    ]
   },
   {
@@ -593,8 +593,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/autowatch.py::_record_spend",
-    "skills/agrim-loop/scripts/autowatch.py::_tick_inner"
+    "skills/sigma-loop/scripts/autowatch.py::_record_spend",
+    "skills/sigma-loop/scripts/autowatch.py::_tick_inner"
    ]
   },
   {
@@ -604,7 +604,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/channel_notify.py::tick"
+    "skills/sigma-loop/scripts/channel_notify.py::tick"
    ]
   },
   {
@@ -613,14 +613,14 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -629,7 +629,7 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed"
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed"
    ]
   },
   {
@@ -639,13 +639,13 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -655,13 +655,13 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_try_acquire_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::reclaim_stale_claim_lock",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
   },
   {
@@ -670,7 +670,7 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/comment_watch.py::tick"
+    "skills/sigma-loop/scripts/comment_watch.py::tick"
    ]
   },
   {
@@ -679,8 +679,8 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/drift_watch.py::_stamp",
-    "skills/agrim-loop/scripts/drift_watch.py::sweep"
+    "skills/sigma-loop/scripts/drift_watch.py::_stamp",
+    "skills/sigma-loop/scripts/drift_watch.py::sweep"
    ]
   },
   {
@@ -690,8 +690,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/backlog_check.py::_dense_channel",
-    "skills/agrim-loop/scripts/backlog_check.py::cross_check"
+    "skills/sigma-loop/scripts/backlog_check.py::_dense_channel",
+    "skills/sigma-loop/scripts/backlog_check.py::cross_check"
    ]
   },
   {
@@ -700,8 +700,8 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_judge.py::_record_spend",
-    "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+    "skills/sigma-loop/scripts/feature_judge.py::_record_spend",
+    "skills/sigma-loop/scripts/feature_judge.py::live_judge"
    ]
   },
   {
@@ -710,8 +710,8 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_judge.py::_acquire_spend_lock",
-    "skills/agrim-loop/scripts/feature_judge.py::live_judge"
+    "skills/sigma-loop/scripts/feature_judge.py::_acquire_spend_lock",
+    "skills/sigma-loop/scripts/feature_judge.py::live_judge"
    ]
   },
   {
@@ -721,10 +721,10 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_surface_inbox",
-    "skills/agrim-loop/scripts/watch.py::clear_inbox",
-    "skills/agrim-loop/scripts/watch.py::main",
-    "skills/agrim-loop/scripts/watch.py::tick"
+    "skills/sigma-loop/scripts/loop.py::_surface_inbox",
+    "skills/sigma-loop/scripts/watch.py::clear_inbox",
+    "skills/sigma-loop/scripts/watch.py::main",
+    "skills/sigma-loop/scripts/watch.py::tick"
    ]
   },
   {
@@ -733,9 +733,9 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
-    "skills/agrim-loop/scripts/cross_repo.py::_record",
-    "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+    "skills/sigma-loop/scripts/cross_repo.py::_check_at_pick",
+    "skills/sigma-loop/scripts/cross_repo.py::_record",
+    "skills/sigma-loop/scripts/cross_repo.py::check_at_pick"
    ]
   },
   {
@@ -744,9 +744,9 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/cross_repo.py::_check_at_pick",
-    "skills/agrim-loop/scripts/cross_repo.py::_record",
-    "skills/agrim-loop/scripts/cross_repo.py::check_at_pick"
+    "skills/sigma-loop/scripts/cross_repo.py::_check_at_pick",
+    "skills/sigma-loop/scripts/cross_repo.py::_record",
+    "skills/sigma-loop/scripts/cross_repo.py::check_at_pick"
    ]
   },
   {
@@ -756,8 +756,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_ensure_ledger_delivery",
-    "skills/agrim-loop/scripts/loop.py::run_loop"
+    "skills/sigma-loop/scripts/loop.py::_ensure_ledger_delivery",
+    "skills/sigma-loop/scripts/loop.py::run_loop"
    ]
   },
   {
@@ -766,12 +766,12 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/actionlog.py::append",
-    "skills/agrim-loop/scripts/actionlog.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal"
+    "skills/sigma-loop/scripts/actionlog.py::append",
+    "skills/sigma-loop/scripts/actionlog.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal"
    ]
   },
   {
@@ -780,12 +780,12 @@
    "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
    "verdict": "additive",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/actionlog.py::append",
-    "skills/agrim-loop/scripts/actionlog.py::safe_append",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_dispatch",
-    "skills/agrim-loop/scripts/loop.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal"
+    "skills/sigma-loop/scripts/actionlog.py::append",
+    "skills/sigma-loop/scripts/actionlog.py::safe_append",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::main",
+    "skills/sigma-loop/scripts/loop.py::verify_goal"
    ]
   },
   {
@@ -794,8 +794,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/phase_report.py::write_marker"
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/phase_report.py::write_marker"
    ]
   },
   {
@@ -804,8 +804,8 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/phase_report.py::_record_end_usage",
-    "skills/agrim-loop/scripts/state.py::phase_end_lock"
+    "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/state.py::phase_end_lock"
    ]
   },
   {
@@ -814,8 +814,8 @@
    "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
    "verdict": "additive",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/phase_report.py::cmd_start",
-    "skills/agrim-loop/scripts/phase_report.py::write_marker"
+    "skills/sigma-loop/scripts/phase_report.py::cmd_start",
+    "skills/sigma-loop/scripts/phase_report.py::write_marker"
    ]
   },
   {
@@ -824,8 +824,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
-    "skills/agrim-loop/scripts/feature_propagate.py::_store"
+    "skills/sigma-loop/scripts/feature_propagate.py::_propagate_at_pick",
+    "skills/sigma-loop/scripts/feature_propagate.py::_store"
    ]
   },
   {
@@ -834,8 +834,8 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/feature_propagate.py::_propagate_at_pick",
-    "skills/agrim-loop/scripts/feature_propagate.py::_store"
+    "skills/sigma-loop/scripts/feature_propagate.py::_propagate_at_pick",
+    "skills/sigma-loop/scripts/feature_propagate.py::_store"
    ]
   },
   {
@@ -845,10 +845,10 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_reconcile_stamp",
-    "skills/agrim-loop/scripts/loop.py::_reconcile_sweep",
-    "skills/agrim-loop/scripts/loop.py::next_batch"
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_reconcile_stamp",
+    "skills/sigma-loop/scripts/loop.py::_reconcile_sweep",
+    "skills/sigma-loop/scripts/loop.py::next_batch"
    ]
   },
   {
@@ -857,9 +857,9 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/state.py::_queue",
-    "skills/agrim-loop/scripts/state.py::fail",
-    "skills/agrim-loop/scripts/state.py::park"
+    "skills/sigma-loop/scripts/state.py::_queue",
+    "skills/sigma-loop/scripts/state.py::fail",
+    "skills/sigma-loop/scripts/state.py::park"
    ]
   },
   {
@@ -868,9 +868,9 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/state.py::claim_run_stop"
+    "skills/sigma-loop/scripts/loop.py::_emit_run_stop_once",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/state.py::claim_run_stop"
    ]
   },
   {
@@ -880,9 +880,9 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_emit_run_stop_once",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/state.py::claim_run_stop"
+    "skills/sigma-loop/scripts/loop.py::_emit_run_stop_once",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/state.py::claim_run_stop"
    ]
   },
   {
@@ -891,17 +891,17 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
-    "skills/agrim-loop/scripts/loop.py::_session_claim",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/loop.py::session_start",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/sigma-loop/scripts/loop.py::_session_claim",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/loop.py::session_start",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -911,17 +911,17 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_cancel",
-    "skills/agrim-loop/scripts/loop.py::_check_and_write",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_write",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/loop.py::_cancel",
+    "skills/sigma-loop/scripts/loop.py::_check_and_write",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_write",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -930,17 +930,17 @@
    "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
    "verdict": "additive",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_cancel",
-    "skills/agrim-loop/scripts/loop.py::_check_and_write",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_write",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/loop.py::_cancel",
+    "skills/sigma-loop/scripts/loop.py::_check_and_write",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_write",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -949,23 +949,23 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
-    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
-    "skills/agrim-loop/scripts/loop.py::_session_claim",
-    "skills/agrim-loop/scripts/loop.py::_session_locked",
-    "skills/agrim-loop/scripts/loop.py::_session_release",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/loop.py::session_end",
-    "skills/agrim-loop/scripts/loop.py::session_start",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/loop.py::_cancel_goal_slot",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_prune_dead_session_entries",
+    "skills/sigma-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/sigma-loop/scripts/loop.py::_session_claim",
+    "skills/sigma-loop/scripts/loop.py::_session_locked",
+    "skills/sigma-loop/scripts/loop.py::_session_release",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/loop.py::session_end",
+    "skills/sigma-loop/scripts/loop.py::session_start",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -974,23 +974,23 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_cancel_goal_slot",
-    "skills/agrim-loop/scripts/loop.py::_claim",
-    "skills/agrim-loop/scripts/loop.py::_ensure_claimed",
-    "skills/agrim-loop/scripts/loop.py::_next",
-    "skills/agrim-loop/scripts/loop.py::_prune_dead_session_entries",
-    "skills/agrim-loop/scripts/loop.py::_reserve_goal_slot",
-    "skills/agrim-loop/scripts/loop.py::_session_claim",
-    "skills/agrim-loop/scripts/loop.py::_session_locked",
-    "skills/agrim-loop/scripts/loop.py::_session_release",
-    "skills/agrim-loop/scripts/loop.py::next_batch",
-    "skills/agrim-loop/scripts/loop.py::refresh_registered_session_heartbeat",
-    "skills/agrim-loop/scripts/loop.py::run_loop",
-    "skills/agrim-loop/scripts/loop.py::session_end",
-    "skills/agrim-loop/scripts/loop.py::session_start",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::try_claim",
-    "skills/agrim-scope/scripts/assign.py::_start_drain",
-    "skills/agrim-scope/scripts/assign.py::execute"
+    "skills/sigma-loop/scripts/loop.py::_cancel_goal_slot",
+    "skills/sigma-loop/scripts/loop.py::_claim",
+    "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
+    "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_prune_dead_session_entries",
+    "skills/sigma-loop/scripts/loop.py::_reserve_goal_slot",
+    "skills/sigma-loop/scripts/loop.py::_session_claim",
+    "skills/sigma-loop/scripts/loop.py::_session_locked",
+    "skills/sigma-loop/scripts/loop.py::_session_release",
+    "skills/sigma-loop/scripts/loop.py::next_batch",
+    "skills/sigma-loop/scripts/loop.py::refresh_registered_session_heartbeat",
+    "skills/sigma-loop/scripts/loop.py::run_loop",
+    "skills/sigma-loop/scripts/loop.py::session_end",
+    "skills/sigma-loop/scripts/loop.py::session_start",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::try_claim",
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-scope/scripts/assign.py::execute"
    ]
   },
   {
@@ -999,8 +999,8 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-init/scripts/setup_wizard.py::_write_cache",
-    "skills/agrim-init/scripts/setup_wizard.py::wizard_status"
+    "skills/sigma-init/scripts/setup_wizard.py::_write_cache",
+    "skills/sigma-init/scripts/setup_wizard.py::wizard_status"
    ]
   },
   {
@@ -1009,7 +1009,7 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-init/scripts/setup_wizard.py::write_dismissed"
+    "skills/sigma-init/scripts/setup_wizard.py::write_dismissed"
    ]
   },
   {
@@ -1019,10 +1019,10 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::run",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::write_heartbeat"
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::run",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::write_heartbeat"
    ]
   },
   {
@@ -1032,10 +1032,10 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_dispatch",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_log",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::_on_request",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_dispatch",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_log",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::_on_request",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::run"
    ]
   },
   {
@@ -1045,8 +1045,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/slack_commands_listen.py::acquire_single_instance",
-    "skills/agrim-loop/scripts/slack_commands_listen.py::run"
+    "skills/sigma-loop/scripts/slack_commands_listen.py::acquire_single_instance",
+    "skills/sigma-loop/scripts/slack_commands_listen.py::run"
    ]
   },
   {
@@ -1056,7 +1056,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    "skills/sigma-loop/scripts/supervise_daemon.py::main"
    ]
   },
   {
@@ -1066,7 +1066,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    "skills/sigma-loop/scripts/supervise_daemon.py::main"
    ]
   },
   {
@@ -1076,7 +1076,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/supervise_daemon.py::main"
+    "skills/sigma-loop/scripts/supervise_daemon.py::main"
    ]
   },
   {
@@ -1085,10 +1085,10 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::maybe_prune"
+    "skills/sigma-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::maybe_prune"
    ]
   },
   {
@@ -1099,13 +1099,13 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::maybe_prune",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1116,11 +1116,11 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1129,13 +1129,13 @@
    "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
    "verdict": "same-format",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/ledger.py::_maybe_prune_journal",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_prune_if_due",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::maybe_prune",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/ledger.py::_maybe_prune_journal",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_prune_if_due",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::maybe_prune",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1146,11 +1146,11 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1161,11 +1161,11 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1177,11 +1177,11 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1193,11 +1193,11 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/timing_store.py::_record_script",
-    "skills/agrim-loop/scripts/timing_store.py::append",
-    "skills/agrim-loop/scripts/timing_store.py::append_session",
-    "skills/agrim-loop/scripts/timing_store.py::safe_append"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/timing_store.py::_record_script",
+    "skills/sigma-loop/scripts/timing_store.py::append",
+    "skills/sigma-loop/scripts/timing_store.py::append_session",
+    "skills/sigma-loop/scripts/timing_store.py::safe_append"
    ]
   },
   {
@@ -1206,7 +1206,7 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+    "skills/sigma-loop/scripts/loop.py::_ensure_unit_tracking"
    ]
   },
   {
@@ -1215,7 +1215,7 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_ensure_unit_tracking"
+    "skills/sigma-loop/scripts/loop.py::_ensure_unit_tracking"
    ]
   },
   {
@@ -1225,8 +1225,8 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/state.py::reanchor_content",
-    "skills/agrim-loop/scripts/work.py::_reconcile_behind"
+    "skills/sigma-loop/scripts/state.py::reanchor_content",
+    "skills/sigma-loop/scripts/work.py::_reconcile_behind"
    ]
   },
   {
@@ -1235,8 +1235,8 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/upstream.py::_route",
-    "skills/agrim-loop/scripts/upstream.py::_spill"
+    "skills/sigma-loop/scripts/upstream.py::_route",
+    "skills/sigma-loop/scripts/upstream.py::_spill"
    ]
   },
   {
@@ -1245,8 +1245,8 @@
    "reason": "No sample reached this path; every writer function is the same code on both sides apart from brand spellings (a weaker evidence than a sample: helpers are not compared).",
    "verdict": "identical-writer",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/upstream.py::_route",
-    "skills/agrim-loop/scripts/upstream.py::_spill"
+    "skills/sigma-loop/scripts/upstream.py::_route",
+    "skills/sigma-loop/scripts/upstream.py::_spill"
    ]
   },
   {
@@ -1255,10 +1255,10 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
-    "skills/agrim-loop/scripts/loop.py::_witness_verdict",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/witness.py::record"
+    "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
+    "skills/sigma-loop/scripts/loop.py::_witness_verdict",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/witness.py::record"
    ]
   },
   {
@@ -1268,10 +1268,10 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/loop.py::_diff_revert_verdict",
-    "skills/agrim-loop/scripts/loop.py::_witness_verdict",
-    "skills/agrim-loop/scripts/loop.py::verify_goal",
-    "skills/agrim-loop/scripts/witness.py::record"
+    "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
+    "skills/sigma-loop/scripts/loop.py::_witness_verdict",
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/witness.py::record"
    ]
   },
   {
@@ -1280,19 +1280,19 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::_save",
-    "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
-    "skills/agrim-loop/scripts/work.py::ci_repair",
-    "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
-    "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
-    "skills/agrim-loop/scripts/work.py::note_close_failure",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-loop/scripts/work.py::pr",
-    "skills/agrim-loop/scripts/work.py::reconcile_review_post",
-    "skills/agrim-loop/scripts/work.py::stamp_merge_check",
-    "skills/agrim-loop/scripts/work.py::start"
+    "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::_save",
+    "skills/sigma-loop/scripts/work.py::_stale_resume_refusal",
+    "skills/sigma-loop/scripts/work.py::ci_repair",
+    "skills/sigma-loop/scripts/work.py::clear_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::mark_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::note_close_failure",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-loop/scripts/work.py::pr",
+    "skills/sigma-loop/scripts/work.py::reconcile_review_post",
+    "skills/sigma-loop/scripts/work.py::stamp_merge_check",
+    "skills/sigma-loop/scripts/work.py::start"
    ]
   },
   {
@@ -1302,19 +1302,19 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
-    "skills/agrim-loop/scripts/work.py::_hard_plan_gate_refusal",
-    "skills/agrim-loop/scripts/work.py::_repair_review_post_effects",
-    "skills/agrim-loop/scripts/work.py::_save",
-    "skills/agrim-loop/scripts/work.py::_stale_resume_refusal",
-    "skills/agrim-loop/scripts/work.py::ci_repair",
-    "skills/agrim-loop/scripts/work.py::clear_awaiting_merge",
-    "skills/agrim-loop/scripts/work.py::mark_awaiting_merge",
-    "skills/agrim-loop/scripts/work.py::note_close_failure",
-    "skills/agrim-loop/scripts/work.py::post_review",
-    "skills/agrim-loop/scripts/work.py::pr",
-    "skills/agrim-loop/scripts/work.py::reconcile_review_post",
-    "skills/agrim-loop/scripts/work.py::stamp_merge_check",
-    "skills/agrim-loop/scripts/work.py::start"
+    "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
+    "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::_save",
+    "skills/sigma-loop/scripts/work.py::_stale_resume_refusal",
+    "skills/sigma-loop/scripts/work.py::ci_repair",
+    "skills/sigma-loop/scripts/work.py::clear_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::mark_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::note_close_failure",
+    "skills/sigma-loop/scripts/work.py::post_review",
+    "skills/sigma-loop/scripts/work.py::pr",
+    "skills/sigma-loop/scripts/work.py::reconcile_review_post",
+    "skills/sigma-loop/scripts/work.py::stamp_merge_check",
+    "skills/sigma-loop/scripts/work.py::start"
    ]
   }
  ]

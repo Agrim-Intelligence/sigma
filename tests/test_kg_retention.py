@@ -9,7 +9,7 @@ import collections, importlib.util, json, math, os, pathlib, shlex, subprocess, 
 
 import pytest
 
-KG = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-kg" / "scripts" / "kg.py"
+KG = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-kg" / "scripts" / "kg.py"
 _DU = collections.namedtuple("usage", "total used free")
 DAY = 86400
 

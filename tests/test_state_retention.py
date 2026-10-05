@@ -13,7 +13,7 @@ import sys
 import time
 
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 LOOP = S / "loop.py"
 DAY = 86400
 OLD = time.time() - 200 * DAY          # past the 90-day default window

@@ -1,14 +1,14 @@
-"""The conditional-risk review skills (Slice 2): agrim-security-review / -contract-check /
+"""The conditional-risk review skills (Slice 2): sigma-security-review / -contract-check /
 -migration-check / -release-check / -debug. These are Sigma's OWN skills (no platform companion) —
-orthogonal to agrim-review's code-quality pass, invoked only when a change trips the matching risk. This
+orthogonal to sigma-review's code-quality pass, invoked only when a change trips the matching risk. This
 guards their port: each ships a valid SKILL.md, and none persists its artifact into the gitignored
 `.sdlc/knowledge/` tree (Slice 1), which would make a review invisible to its PR."""
 import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-RISK_SKILLS = ("agrim-security-review", "agrim-contract-check", "agrim-migration-check",
-               "agrim-release-check", "agrim-debug")
+RISK_SKILLS = ("sigma-security-review", "sigma-contract-check", "sigma-migration-check",
+               "sigma-release-check", "sigma-debug")
 
 
 def test_risk_skills_present_with_valid_frontmatter():
@@ -33,11 +33,11 @@ def test_risk_skills_persist_to_reviews_not_the_gitignored_knowledge_dir():
 
 def test_security_review_accounts_for_every_owasp_category():
     """Every OWASP Top 10:2021 category must be accounted for — covered here, or explicitly
-    delegated. A09 belongs to agrim-review axis 5 (Observability) by the MECE partition; it must be
+    delegated. A09 belongs to sigma-review axis 5 (Observability) by the MECE partition; it must be
     named as delegated rather than silently missing, so a reader can tell a decision from a gap."""
-    t = (ROOT / "skills" / "agrim-security-review" / "SKILL.md").read_text()
+    t = (ROOT / "skills" / "sigma-security-review" / "SKILL.md").read_text()
     for code in ("A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10"):
-        assert code in t, f"OWASP {code} is not accounted for in agrim-security-review"
+        assert code in t, f"OWASP {code} is not accounted for in sigma-security-review"
     low = t.lower()
     # the four that were absent before this change, by their real surfaces
     assert "deserial" in low          # A08 — unsafe deserialization / supply-chain integrity
@@ -50,7 +50,7 @@ def test_security_review_accounts_for_every_owasp_category():
 
 def test_security_checklist_and_report_template_agree():
     """A checklist the report cannot carry is doc drift — the axis-7 failure, in the skill's own file."""
-    t = (ROOT / "skills" / "agrim-security-review" / "SKILL.md").read_text()
+    t = (ROOT / "skills" / "sigma-security-review" / "SKILL.md").read_text()
     checklist = re.findall(r"^(\d+)\. \*\*", t, re.M)
     trace = re.findall(r"^(\d+)\. \w+.*— <one line>", t, re.M)
     assert checklist, "no numbered checklist found"

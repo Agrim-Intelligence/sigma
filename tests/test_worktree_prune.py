@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 sys.path.insert(0, str(S))
 GENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.test",
             GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.test",
@@ -168,7 +168,7 @@ def p(tmp_path, monkeypatch):
 
 
 def _wp():
-    assert (S / "worktree_prune.py").is_file(), "skills/agrim-loop/scripts/worktree_prune.py does not exist"
+    assert (S / "worktree_prune.py").is_file(), "skills/sigma-loop/scripts/worktree_prune.py does not exist"
     import worktree_prune
     return worktree_prune
 

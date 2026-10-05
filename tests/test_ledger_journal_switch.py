@@ -33,7 +33,7 @@ import time
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -217,7 +217,7 @@ def test_the_lock_is_per_key_so_config_still_decides_when_journal_is_unlocked(tm
     d = _sdlc(tmp_path)
     _managed(d, locked={"work.require_review": "changes"})
     assert ledger.journal_on(d, {"journal": {"enabled": True}}) is True
-    e = _sdlc(tmp_path, name=".agrim-b")
+    e = _sdlc(tmp_path, name=".sigma-b")
     _managed(e, locked={"work.require_review": "changes"})
     assert ledger.journal_on(e, {}) is False
 

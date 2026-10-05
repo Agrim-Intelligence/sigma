@@ -83,7 +83,7 @@ Snippets, from the repository root (scratch directories, nothing committed):
 
 ```python
 # A. embeddings cache through the real writer, fake embedder of dimension DIM
-import sys, json, random, pathlib, tempfile; sys.path.insert(0, "skills/agrim-loop/scripts")
+import sys, json, random, pathlib, tempfile; sys.path.insert(0, "skills/sigma-loop/scripts")
 import backlog_check as b
 d = pathlib.Path(tempfile.mkdtemp()) / ".sdlc"; (d / "state").mkdir(parents=True)
 cfg = {"backlog_check": {"embed": {"enabled": True, "command": "x"}}}

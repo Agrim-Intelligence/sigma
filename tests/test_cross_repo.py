@@ -39,7 +39,7 @@ import types
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 P = S / "cross_repo.py"
 
 
@@ -832,7 +832,7 @@ def test_the_raise_reaches_the_feature_owner_when_the_repo_records_none():
 
 def test_an_unaddressable_raise_is_still_written_and_says_so():
     """A request nobody owns must not evaporate. It is recorded, and the decision reports that it
-    reached no inbox -- which is the ONLY signal there is: `agrim-doctor`'s unaddressable-hand-off
+    reached no inbox -- which is the ONLY signal there is: `sigma-doctor`'s unaddressable-hand-off
     check inspects a CODEOWNERS/`ledger.owners` roster, never the registry entry's own `owner`, so
     it reports green on exactly this case."""
     c = _mod()
@@ -1203,7 +1203,7 @@ def test_the_at_me_sentinel_must_be_exact_and_a_prefix_test_changes_behaviour():
 # --- N2: no pin AND no filter is not the same as `@me` ------------------------------------------
 
 def test_an_empty_assignee_is_neither_a_pin_nor_a_filter_and_is_not_confirmed():
-    """`agrim-init` ships `assignee: ""`, and `mirror.py`/`sources.py` both drop the filter entirely
+    """`sigma-init` ships `assignee: ""`, and `mirror.py`/`sources.py` both drop the filter entirely
     for it -- so the backlog is byte-identical under every account and the drift this module exists
     to catch is invisible at the top of the funnel AND at the bottom. `@me` earns its trust because
     the picker filters BY the authenticated account; an empty value earns nothing."""

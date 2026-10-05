@@ -32,7 +32,7 @@ def test_vocabulary_generated_from_ledger():
     vocab = json.loads(result.stdout)
 
     # Import ledger to get the real constants
-    sys.path.insert(0, str(repo_root / "skills" / "agrim-loop" / "scripts"))
+    sys.path.insert(0, str(repo_root / "skills" / "sigma-loop" / "scripts"))
     import ledger
 
     # Verify all KINDS are present (including "merge-armed")
@@ -174,7 +174,7 @@ def test_the_generator_needs_only_core_sources(tmp_path):
 def test_severity_order_is_the_pipelines_own():
     """`severity_order` is generated from the report card's own `_ORDER` -- the one source."""
     repo_root = pathlib.Path(__file__).parent.parent
-    pipeline = _load_by_path("_pipeline_2584", repo_root / "skills" / "agrim-loop" / "scripts" / "pipeline.py")
+    pipeline = _load_by_path("_pipeline_2584", repo_root / "skills" / "sigma-loop" / "scripts" / "pipeline.py")
     result = subprocess.run([sys.executable, str(repo_root / "tools" / "generate_vocabulary.py")],
                             capture_output=True, text=True, cwd=str(repo_root))
     assert result.returncode == 0, result.stderr

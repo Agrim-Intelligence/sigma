@@ -16,7 +16,7 @@ would add ceremony without changing what is under test.
 import importlib.util, json, os, pathlib, shutil, subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
@@ -307,7 +307,7 @@ def test_a_conflicting_stale_resume_parks_the_goal(tmp_path):
 
 def test_the_first_transient_failure_releases_rather_than_parking(tmp_path):
     """`sdlc:parked` is NEVER auto-resumed, so parking on a network blip removes the goal from the
-    backlog until a human runs `/agrim-unpark`. A release drops the claim, keeps the goal pending,
+    backlog until a human runs `/sigma-unpark`. A release drops the claim, keeps the goal pending,
     and -- per `_release`'s own docstring -- never advances the cursor, so it burns no budget slot."""
     sdlc_dir, goal, _, _ = _resume(tmp_path, "9104",
                                    lambda o: (o / "unrelated.txt").write_text("x"))
@@ -498,7 +498,7 @@ def test_a_transient_park_is_not_handed_a_fabricated_decision_tier(tmp_path):
 def test_a_failure_AFTER_the_transition_does_not_claim_the_goal_is_still_claimed(tmp_path):
     """The refusal tells a human what to do next, so it must not tell them to park a goal that was
     correctly RELEASED. Following that instruction turns a recoverable blip into an `sdlc:parked`
-    only `/agrim-unpark` clears -- the opposite of what the wrapper exists for."""
+    only `/sigma-unpark` clears -- the opposite of what the wrapper exists for."""
     sdlc_dir, goal, _, _ = _resume(tmp_path, "9112",
                                    lambda o: (o / "unrelated.txt").write_text("x"))
     real_save = work._save
@@ -667,7 +667,7 @@ def test_a_clean_rebase_onto_a_moved_base_does_not_change_the_fingerprint(tmp_pa
 
 def test_the_plan_copy_skill_md_mandates_does_not_change_the_fingerprint(tmp_path):
     """#1897 plan-review, BLOCKING finding 1. SKILL.md step 6 copies `<sdlc>/plans/<stem>.md` INTO
-    the worktree after verify and before `commit` -- and `agrim-setup`'s RUNTIME_IGNORES pointedly
+    the worktree after verify and before `commit` -- and `sigma-setup`'s RUNTIME_IGNORES pointedly
     does NOT ignore `.sdlc/plans/`. On an adopter repo that file is untracked-and-not-ignored, so
     counting it refused EVERY goal, on the documented path. This repo's own `.gitignore` (`.sdlc/*`)
     hid it, which is why the control has to be run against an adopter-shaped ignore set -- as here:

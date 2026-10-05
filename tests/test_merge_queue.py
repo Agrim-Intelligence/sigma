@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-status/scripts/merge_queue.py — the read-only merge-queue detect +
+"""Tests for skills/sigma-status/scripts/merge_queue.py — the read-only merge-queue detect +
 recommend advisor (#976, split (b) of #408). Every check here must fail OPEN (return None / no
 recommendation), never raise, on any unreadable/malformed/absent `gh api` response — a false
 positive is a much worse outcome than a missed one for an advisory-only feature."""
@@ -6,7 +6,7 @@ import importlib.util
 import json
 import pathlib
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-status" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-status" / "scripts"
 
 
 def _mq():

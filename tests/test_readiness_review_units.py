@@ -79,18 +79,18 @@ def _cli(*args):
 # The 21 named paths (the issue's 22 less install.sh, retired by #408 and removed from the tool's list in
 # #581), written out again here so a typo in the tool's constant is a failure.
 ISSUE_TIER_A = {
-    "skills/agrim-loop/scripts/work.py", "skills/agrim-loop/scripts/sources.py",
-    "skills/agrim-loop/scripts/feature_rebase.py", "skills/agrim-loop/scripts/ledger.py",
-    "skills/agrim-loop/scripts/sync.py", "skills/agrim-loop/scripts/scrub.py",
-    "skills/agrim-loop/scripts/watch_daemon.py", "skills/agrim-loop/scripts/supervise_daemon.py",
-    "skills/agrim-loop/scripts/run_with_timeout.py",
-    "skills/agrim-loop/scripts/slack_commands_listen.py",
-    "skills/agrim-loop/scripts/slack_client.py", "skills/agrim-loop/scripts/channel_notify.py",
-    "skills/agrim-loop/scripts/upstream.py", "skills/agrim-loop/scripts/reconcile.py",
-    "skills/agrim-loop/scripts/blockers.py", "skills/agrim-loop/scripts/state.py",
-    "skills/agrim-loop/scripts/gh_session.py", "skills/agrim-loop/scripts/loop.py",
-    "skills/agrim-init/scripts/board_setup.py", "skills/agrim-init/scripts/init_flow.py",
-    "skills/agrim-init/scripts/setup_wizard.py",
+    "skills/sigma-loop/scripts/work.py", "skills/sigma-loop/scripts/sources.py",
+    "skills/sigma-loop/scripts/feature_rebase.py", "skills/sigma-loop/scripts/ledger.py",
+    "skills/sigma-loop/scripts/sync.py", "skills/sigma-loop/scripts/scrub.py",
+    "skills/sigma-loop/scripts/watch_daemon.py", "skills/sigma-loop/scripts/supervise_daemon.py",
+    "skills/sigma-loop/scripts/run_with_timeout.py",
+    "skills/sigma-loop/scripts/slack_commands_listen.py",
+    "skills/sigma-loop/scripts/slack_client.py", "skills/sigma-loop/scripts/channel_notify.py",
+    "skills/sigma-loop/scripts/upstream.py", "skills/sigma-loop/scripts/reconcile.py",
+    "skills/sigma-loop/scripts/blockers.py", "skills/sigma-loop/scripts/state.py",
+    "skills/sigma-loop/scripts/gh_session.py", "skills/sigma-loop/scripts/loop.py",
+    "skills/sigma-init/scripts/board_setup.py", "skills/sigma-init/scripts/init_flow.py",
+    "skills/sigma-init/scripts/setup_wizard.py",
 }
 
 
@@ -120,11 +120,11 @@ def test_tier_a_files_is_21_unique():
 def test_tier_b_population_excludes_tier_a_tests_and_other_suffixes():
     ru = _tool()
     tier_b = [
-        "skills/agrim-loop/scripts/other.py", "tools/readiness/baseline.py", "evals/run.sh",
-        "skills/agrim-doctor/scripts/doctor.py",
+        "skills/sigma-loop/scripts/other.py", "tools/readiness/baseline.py", "evals/run.sh",
+        "skills/sigma-doctor/scripts/doctor.py",
     ]
     outside = [
-        "skills/agrim-loop/tests/test_x.py", "skills/y/tests/helpers/z.py", "tests/test_top.py",
+        "skills/sigma-loop/tests/test_x.py", "skills/y/tests/helpers/z.py", "tests/test_top.py",
         "tools/readme.md", "tools/data.json", "contract/validate.py", "examples/hello/a.py",
         "docs/x.py", "setup.py", "tools/tests.sh.txt",
     ]
@@ -138,7 +138,7 @@ def test_tier_b_population_excludes_tier_a_tests_and_other_suffixes():
 
 def test_missing_tier_a_path_raises_usage_error_naming_it():
     ru = _tool()
-    missing = "skills/agrim-loop/scripts/state.py"
+    missing = "skills/sigma-loop/scripts/state.py"
     paths = [p for p in ISSUE_TIER_A if p != missing] + ["tools/a.py"]
 
     with pytest.raises(ru.UsageError) as caught:
@@ -455,7 +455,7 @@ def test_empty_population_raises_usage_error():
 # ---- T5: build, validator, CLI ---------------------------------------------------------------
 
 FIRST_KEYS = ["schema", "sha", "seed", "tier_a", "tier_b_population_lines", "tier_b_sample"]
-WORK = "skills/agrim-loop/scripts/work.py"
+WORK = "skills/sigma-loop/scripts/work.py"
 
 
 def _units_repo(tmp_path, name="repo", skip=(), tier_b_files=20, tier_b_lines=100):
@@ -815,3 +815,18 @@ def test_doc_quotes_the_numbers_of_the_pinned_units():
               "%.2f%%" % (sampled * 100.0 / population)]
     missing = [item for item in wanted if item not in text]
     assert not missing, "the page does not quote the committed numbers: %s" % ", ".join(missing)
+
+
+def test_a_commit_older_than_the_skill_rename_reads_under_the_current_names(tmp_path):
+    """#523: the frozen commit tracks the retired spelling. Paths come back under the `sigma-` name
+    (so the Tier A list and the committed JSON read the same at every sha) while the blob is still
+    read from the path the commit has. The retired name is spelled from fragments."""
+    old = "agr" + "im"
+    repo = _repo(tmp_path)
+    _write(repo, "skills/%s-loop/scripts/work.py" % old, "one\ntwo\n")
+    _write(repo, "hooks/%s_gate.sh" % old, "#!/bin/sh\n")
+    sha = _commit(repo)
+    ru = _tool()
+    paths = ru.tracked_files(repo, sha)
+    assert paths == ["hooks/sigma_gate.sh", "skills/sigma-loop/scripts/work.py"], paths
+    assert ru.read_blob(repo, sha, "skills/sigma-loop/scripts/work.py") == b"one\ntwo\n"

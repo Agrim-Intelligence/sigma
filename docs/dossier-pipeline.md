@@ -42,7 +42,7 @@ through it can be made to stop and get mapped first.
 
 ## 2. The gap this closes
 
-`goal_decompose`'s classifier (`skills/agrim-loop/scripts/goal_size.py`) measures **depth** — word
+`goal_decompose`'s classifier (`skills/sigma-loop/scripts/goal_size.py`) measures **depth** — word
 count, section count, checkbox count, `Phase N` markers. It has no concept of **blast radius**. A
 goal that reads as "update these two lines, P3" sails through decompose-check with `PROCEED` even if
 those two lines fan out across the whole codebase.
@@ -53,7 +53,7 @@ front door** — once the gate is on. It is off by default (§6a), and that is a
 detail (§12).
 
 The second thing this closes is an entry-point ambiguity: there was no answer to *"I have a very
-high-level idea, where do I even start."* Now there is one gesture, `/agrim-dossier`, and it produces
+high-level idea, where do I even start."* Now there is one gesture, `/sigma-dossier`, and it produces
 a ticket rather than a conversation.
 
 ---
@@ -63,7 +63,7 @@ a ticket rather than a conversation.
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  DOSSIER / STORY   — one ticket. High-level intent. No code exploration.      │
-│    Produced by:  agrim-dossier            (engine: agrim-dossier/scripts/       │
+│    Produced by:  sigma-dossier            (engine: sigma-dossier/scripts/       │
 │                                           dossier.py)                        │
 │    Label:        story                    (minted at attach, not bootstrapped)│
 │    Assignee:     @me, always, no prompt                                       │
@@ -89,7 +89,7 @@ a ticket rather than a conversation.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  SLICES / TECH GOALS   — the real, workable children. Carry sdlc:goal,        │
 │    priority:P1 (§7f), sdlc:designed, `Part of epic #N.` and `Story #<n>.`     │
-│    Flow into agrim-goal / agrim-loop completely unchanged.                      │
+│    Flow into sigma-goal / sigma-loop completely unchanged.                      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -100,10 +100,10 @@ content.
 
 ---
 
-## 4. Stage 0 — the Dossier (`agrim-dossier`)
+## 4. Stage 0 — the Dossier (`sigma-dossier`)
 
 **In:** a very high-level idea, nothing more. **Out:** one `story`-labelled ticket.
-**Engine:** `skills/agrim-dossier/scripts/dossier.py`. **Skill:** `skills/agrim-dossier/SKILL.md`.
+**Engine:** `skills/sigma-dossier/scripts/dossier.py`. **Skill:** `skills/sigma-dossier/SKILL.md`.
 
 **Hard constraint: no code exploration at this stage.** This is intent-gathering, not analysis. The
 skill's `allowed-tools` omits `Read`/`Grep`/`Glob` against the repository — with one exception,
@@ -129,7 +129,7 @@ host**, and the SKILL.md paragraph is what carries it. That is a limitation, not
 | 7 | `non_goals` | what is explicitly out of scope — `"none"` is a complete answer |
 | 8 | `next_step` | **always last.** `"file and stop"` \| `"continue to Product"` |
 
-The bank is **flat, not keyed.** `agrim-unpark`'s bank is keyed by park `reason_class` because
+The bank is **flat, not keyed.** `sigma-unpark`'s bank is keyed by park `reason_class` because
 different parks need different questions; a Dossier has no equivalent axis — Stage 0 asks the
 identical set of every idea, which is what "strict predefined structure" means here. `QUESTIONS` is
 an ordered list with no per-slot `when` condition, and that absence is deliberate rather than a
@@ -177,7 +177,7 @@ guessing.
 
 ### 4c. The record, and where it is written
 
-The skill writes a `{answers, questions}` JSON file — **the same shape `agrim-unpark` already uses**,
+The skill writes a `{answers, questions}` JSON file — **the same shape `sigma-unpark` already uses**,
 so the two tools' answer files are interchangeable for a reader — and hands it to `file`:
 
 ```bash
@@ -271,17 +271,17 @@ the way `unpark.py` does.
 
 ---
 
-## 5. Stage 1 — the design pass (`agrim-goal-design`)
+## 5. Stage 1 — the design pass (`sigma-goal-design`)
 
 **In:** an approved Dossier, or a goal the retrofit gate flagged. **Out:** `.sdlc/design/<n>.md`,
-and a comment on the source issue. **Skill:** `skills/agrim-goal-design/SKILL.md`.
+and a comment on the source issue. **Skill:** `skills/sigma-goal-design/SKILL.md`.
 
 This stage produces a **design artifact only**. It never implements the target's own work, never
 creates the Epic or its children, and **never writes `sdlc:designed`**.
 
 ### 5a. The two paths
 
-1. **Product path** — a `story`-labelled Dossier, run directly (`/agrim-goal-design`). Its Q&A block's
+1. **Product path** — a `story`-labelled Dossier, run directly (`/sigma-goal-design`). Its Q&A block's
    **Open questions** tail is inherited verbatim as Doubts (§5d): resolve each against the real code
    and say how, or hand it on still open. **Never let one disappear by being quietly answered in
    passing.**
@@ -298,7 +298,7 @@ how the code behaves, where a boundary sits, what a component does. A **falsifie
 neither a Doubt (open) nor a Blocker (unresolved) — it is **settled and different**, which is why it
 needs a heading of its own: `## Intent` is then written against the corrected premise, and every
 slice below is derived from that rather than from the source's. The measured case: a Dossier claimed
-`/agrim-doctor` stops at the repo boundary, the sweep found six places where it crosses, and with no
+`/sigma-doctor` stops at the repo boundary, the sweep found six places where it crosses, and with no
 slot for the correction it went into `Intent` as prose — invisible to §7b, which adjudicates by id.
 
 ### 5b. Depth — `full` and `lane`
@@ -318,7 +318,7 @@ goal, records the answer in the artifact's `Lane` field (§5d), and runs the pas
   off and has to report `capped`.
 
 `mode` picks **depth only**. It never decides whether the gate acts (§6a). And it is a bound, not an
-instruction to spend: ceremony proportional to the work is `agrim-goal`'s own Lane routing, applied
+instruction to spend: ceremony proportional to the work is `sigma-goal`'s own Lane routing, applied
 one stage up, and without it a one-file change on a `full`-configured repo buys the treatment a
 six-component change gets.
 
@@ -535,7 +535,7 @@ comment on the Dossier path. Three rules, in order:
 - **Measure whether the file can reach the remote at all — do not assume it.** ("The file" means
   both siblings — `<n>.md` and `<n>-in-brief.md`, one directory, one commit.) `.sdlc/design/` is
   trackable by Sigma's defaults — `setup.RUNTIME_IGNORES` omits it deliberately — so every repo
-  `/agrim-setup` touched tracks it, and **Sigma's own now does too** (#1953: the blanket `.sdlc/`
+  `/sigma-setup` touched tracks it, and **Sigma's own now does too** (#1953: the blanket `.sdlc/`
   rule became `.sdlc/*` plus an explicit `!.sdlc/design/`, since a negation under an excluded
   directory is inert). The case this measurement exists for is a repo that set a blanket rule of its
   own, and it is the one place an adopter's experience can differ from what these documents
@@ -562,10 +562,10 @@ What is never an option on any of them is a direct commit to the base branch.
 
 It does not create the Epic or its children, and it does not write `sdlc:designed` — both belong to
 Stage 2, so an interruption between the two **re-runs design rather than silently skipping review**.
-Because `agrim-goal-review` may not be installed, the artifact's `## Handoff` heading and the handoff
+Because `sigma-goal-review` may not be installed, the artifact's `## Handoff` heading and the handoff
 comment must both **state which you found** rather than assume. Where it is absent, a human reviews
 `.sdlc/design/<n>.md`, applies `sdlc:designed` by hand once satisfied, and then restores `sdlc:goal`
-with `/agrim-unpark` if the retrofit gate had parked the target — never a raw label edit
+with `/sigma-unpark` if the retrofit gate had parked the target — never a raw label edit
 (`docs/label-model.md` §7). `design_goal.py`'s meta-issue template renders the identical hedge, and
 the two must not drift apart again.
 
@@ -664,11 +664,11 @@ Filed **once**, idempotency-guarded by a comment marker on the flagged goal:
 
 ---
 
-## 7. Stage 2 — the confirmation gate (`agrim-goal-review`)
+## 7. Stage 2 — the confirmation gate (`sigma-goal-review`)
 
 **In:** `.sdlc/design/<n>.md` plus issue `#<n>`. **Out:** the `sdlc:designed` overlay, and — when
 the design calls for it — the Spec/Epic ticket and its children.
-**Skill:** `skills/agrim-goal-review/SKILL.md`. It never writes the design write-up and never edits
+**Skill:** `skills/sigma-goal-review/SKILL.md`. It never writes the design write-up and never edits
 the target's own source code.
 
 ### 7a. The independent brief — the maker is never the checker
@@ -782,7 +782,7 @@ which one it means depends on the path** (#1954).
 
 - **Retrofit path** — `sdlc:designed` alone is the whole output; skip iii entirely. `#<n>` already
   IS the tech goal the slice would have been, so there is nothing to create, and `<n>` is "the Epic"
-  for §9's purposes. A human's `/agrim-unpark` is what restores `sdlc:goal`; this stage never
+  for §9's purposes. A human's `/sigma-unpark` is what restores `sdlc:goal`; this stage never
   performs that swap.
 - **Dossier path** — run iii with a **one-row plan and no `epic` object**. `#<n>` is `story`-labelled
   and never `sdlc:goal` (§3), so skipping iii here would leave a confirmed design on a ticket
@@ -900,7 +900,7 @@ Two properties of the guard are deliberate. It refuses rather than **strips**, f
 harder to see, and it would discard a real `P0` as silently as an invented `P2`. And it checks
 **presence, not value** — an explicit `"P1"` is refused too, because it is still a number a pass
 chose, and it is precisely the case a strip could never tell apart from an omission. The guard is
-**opt-in** at the library level, because `compile_plan.py` is shared with `/agrim-scope`, whose own
+**opt-in** at the library level, because `compile_plan.py` is shared with `/sigma-scope`, whose own
 skill mandates a real `P0`–`P4` per issue; what makes it structural rather than one more
 honour-system rule is that a plan file living in `.sdlc/state/goal-review/` — the directory §7d-iii
 mandates — turns the refusal on **without** the flag.
@@ -912,7 +912,7 @@ mandates — turns the refusal on **without** the flag.
 observable outcome — **zero tickets** — is the one an adopter is most likely to meet first and most
 likely to read as the tool failing.
 
-**i. What it writes.** One comment, through `agrim-goal-review` §3:
+**i. What it writes.** One comment, through `sigma-goal-review` §3:
 
 ```
 loop.py note .sdlc <n> "goal-review: REJECTED -- <findings>"
@@ -1010,7 +1010,7 @@ why the comment is written on all three paths, and is the entire output of this 
 
 **Nothing guesses a name unattended.** Creating a `feature:*` label is a gesture
 `docs/branching-model.md` §14 documents as having **no deletion path**, so guessing is worse than
-asking again later. On every path, `/agrim-define` remains available against `<epic>` by hand
+asking again later. On every path, `/sigma-define` remains available against `<epic>` by hand
 afterwards, and the comment says so — that is the whole recovery path.
 
 **On accept, the order is load-bearing:**
@@ -1071,7 +1071,7 @@ sweep that clears it and no gesture that removes it.
 | Path | Written by | Tracked? | Why |
 |---|---|---|---|
 | the `story` issue body + one comment | Stage 0 | n/a (remote) | identical bytes, so the two can never disagree |
-| `.sdlc/design/<n>.md` | Stage 1 | **yes** — on every `/agrim-setup` repo and on Sigma's own (#1953); **no** on a repo that set its own blanket `.sdlc/` rule, which §5e measures rather than assumes | the durable, reviewable record. Deliberately **not** in `setup.RUNTIME_IGNORES` |
+| `.sdlc/design/<n>.md` | Stage 1 | **yes** — on every `/sigma-setup` repo and on Sigma's own (#1953); **no** on a repo that set its own blanket `.sdlc/` rule, which §5e measures rather than assumes | the durable, reviewable record. Deliberately **not** in `setup.RUNTIME_IGNORES` |
 | a comment on `#<n>` carrying the design's substance | Stage 1 | n/a (remote) | on a shared backlog it may be the only half anyone can read |
 | the "Design #N" meta-issue | the retrofit gate | n/a (remote) | a tracked home for the deferred pass |
 | `.sdlc/state/goal-review/<n>.plan.json` | Stage 2 | **no** — `.sdlc/state/` is in `RUNTIME_IGNORES` | a one-shot compile input |
@@ -1128,7 +1128,7 @@ sweep that clears it and no gesture that removes it.
   label did not land. On a source with no story/epic tickets it prints `UNSUPPORTED` and Stage 2
   stops there entirely: no Epic, no children, no overlay.
 - **Stage 2 never restores `sdlc:goal`.** A retrofit target the gate parked stays parked until a
-  human runs `/agrim-unpark`. That separation is deliberate (`docs/label-model.md` §7), and it means a
+  human runs `/sigma-unpark`. That separation is deliberate (`docs/label-model.md` §7), and it means a
   CONFIRMED design does not by itself put the goal back in the queue.
 - **A REJECT is terminal for this pass, and its whole record is one comment — now retried, and now
   loud on final failure (#1986).** Nothing re-runs Stage 1 automatically; the findings sit on the
@@ -1141,7 +1141,7 @@ sweep that clears it and no gesture that removes it.
   always exited 0 — now prints `OK`/`FAILED` on stdout (mirroring `mark_designed`'s own convention)
   and returns a non-zero exit on `FAILED`, so a REJECT whose comment still did not land after a
   retry is at least mechanically distinguishable from one that succeeded, not merely logged where
-  nothing is instructed to look. `agrim-goal-review` §3 tells the driving agent to check for
+  nothing is instructed to look. `sigma-goal-review` §3 tells the driving agent to check for
   `FAILED` and not stop as though it had succeeded. This does not make the write durable — nothing
   sweeps for a REJECT whose comment never lands even after that — it makes the failure loud instead
   of silent, which is the fix #1986 chose over inventing a second recording channel nothing reads.
@@ -1166,7 +1166,7 @@ sweep that clears it and no gesture that removes it.
   instead of 7, but only where the pass genuinely concluded one slice; nothing detects a small idea
   at intake, because Stage 0 may not read code and sizing without the code is guessing. The front
   door's honest answer for work that needs no mapping at all is an ordinary `sdlc:goal` issue, which
-  `agrim-dossier` now says out loud and no mechanism enforces.
+  `sigma-dossier` now says out loud and no mechanism enforces.
 
 - **Slices carry `priority:P1` and nothing derives otherwise** (§7f). **#1922** settled only the
   half that was a defect — goal-review demanding a priority the artifact never carried — by

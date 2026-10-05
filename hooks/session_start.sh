@@ -38,7 +38,7 @@ command -v python3 >/dev/null 2>&1 || allow
 # --- The plugin under the previous name also active here (issues #240, #314) -----------------
 # An ACCELERATOR only: it tells the session up front. The behaviour lives in Sigma's own Python on
 # every write surface (init, loop start, claim/record, the watcher and its spawn, migrate) via
-# skills/agrim-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
+# skills/sigma-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
 # Since #314 that is a NOTICE, never a refusal: Sigma is handling this repository. So this is ONE
 # line (coexist.notice_line), READ-ONLY (it writes no mark: running it twice says the same thing,
 # idempotent), and silent under SIGMA_ALLOW_COEXIST=1. Both plugins' session hooks may fire; this
@@ -55,7 +55,7 @@ import importlib.util, os, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
 try:
     spec = importlib.util.spec_from_file_location(
-        "coexist", os.path.join(plugin_root, "skills", "agrim-loop", "scripts", "coexist.py"))
+        "coexist", os.path.join(plugin_root, "skills", "sigma-loop", "scripts", "coexist.py"))
     coexist = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(coexist)
     line = coexist.warn_line(os.path.join(project, ".sdlc"))
@@ -71,8 +71,8 @@ export HOOK_COEXIST_NOTICE
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
 # #236 / #186: ADOPTED REPOS ONLY. `setup_wizard.wizard_status()` returns "nothing needed" unless
 # `.sdlc/config.json` exists and no other plugin owns the directory -- the gate lives in Python, so
-# every caller (this hook, the agrim-wizard skill) gets it; a stranger's repo hears nothing, and a
-# new repository's entry point is /agrim-init, not this hook.
+# every caller (this hook, the sigma-wizard skill) gets it; a stranger's repo hears nothing, and a
+# new repository's entry point is /sigma-init, not this hook.
 # Only ONE additionalContext can be emitted per hook invocation, so this block's own exit status
 # gates whether the policy-brief block below ever runs at all: exit 0 means "already printed,
 # stop here" (caught by the `if`, which `exit 0`s the whole hook immediately, before the
@@ -83,9 +83,9 @@ export HOOK_COEXIST_NOTICE
 # is load-bearing and not just style.
 #
 # HEADLESS SESSIONS SKIP THE WIZARD ENTIRELY. The wizard's whole flow is "ask a real yes/no
-# question and act only on yes" -- there is nobody to answer it in a `claude -p /agrim-loop`
+# question and act only on yes" -- there is nobody to answer it in a `claude -p /sigma-loop`
 # worker, so injecting it there just spends context telling an autonomous run to hold a
-# conversation. `SIGMA_RUN_ID` is the signal: skills/agrim-loop/scripts/supervise_daemon.py hands
+# conversation. `SIGMA_RUN_ID` is the signal: skills/sigma-loop/scripts/supervise_daemon.py hands
 # it to that subprocess's own `env=` before launching it (its run-id resolution step), and every
 # child inherits it. Set -> fall
 # through to today's behaviour (silent, or the policy brief if separately enabled).
@@ -95,12 +95,12 @@ export HOOK_COEXIST_NOTICE
 # launched from a shell that happens to carry the variable is skipped too. A proper signal
 # (something the launcher sets to mean non-interactive specifically) is real follow-up work, not
 # built in this plan. The direction of the error is the safe one: a skipped wizard leaves the user
-# in exactly today's status quo, and `/agrim-doctor` still reports everything it would have said.
+# in exactly today's status quo, and `/sigma-doctor` still reports everything it would have said.
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
 _notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
-sys.path.insert(0, os.path.join(plugin_root, "skills", "agrim-init", "scripts"))
+sys.path.insert(0, os.path.join(plugin_root, "skills", "sigma-init", "scripts"))
 try:
     import setup_wizard
     status = setup_wizard.wizard_status(os.path.join(project, ".sdlc"))
@@ -109,7 +109,7 @@ except Exception:
 if not status["needs_wizard"]:
     sys.exit(1)
 
-lines = ["Sigma setup is incomplete. Run the agrim-wizard skill now, conversationally, before "
+lines = ["Sigma setup is incomplete. Run the sigma-wizard skill now, conversationally, before "
          "doing anything else the user asked for. For each item below: explain it in plain "
          "language (including the 'what breaks if skipped' text given), ask a real yes/no "
          "question, act only on yes, RECHECK by calling setup_wizard.wizard_status() again "
@@ -129,18 +129,18 @@ then
     exit 0
 fi
 # --- Daemon stop-file present (issue #416) -------------------------------------------------------
-# ACCELERATOR only: the facts and wording live in skills/agrim-loop/scripts/stopfiles.py (Python, any
-# host), which /agrim-doctor reads too. A forgotten stop-file looks like a dead daemon that says
+# ACCELERATOR only: the facts and wording live in skills/sigma-loop/scripts/stopfiles.py (Python, any
+# host), which /sigma-doctor reads too. A forgotten stop-file looks like a dead daemon that says
 # nothing; its AGE is the tell. Same one-additionalContext idiom as the tiers around it. Placed
 # BEFORE the watcher-staleness tier so the cause is named rather than a bare "looks stale".
 # LIMIT: only one additionalContext per invocation, so when the setup wizard tier (earlier) fires
-# this line is not shown (the coexist notice is prepended, not a competitor); /agrim-doctor's "daemon stop-files" row (Python) always covers it.
+# this line is not shown (the coexist notice is prepended, not a competitor); /sigma-doctor's "daemon stop-files" row (Python) always covers it.
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, subprocess, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
 _notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
 try:
-    r = subprocess.run([sys.executable, os.path.join(plugin_root, "skills", "agrim-loop", "scripts", "stopfiles.py"),
+    r = subprocess.run([sys.executable, os.path.join(plugin_root, "skills", "sigma-loop", "scripts", "stopfiles.py"),
                         "line", os.path.join(project, ".sdlc")], capture_output=True, text=True, timeout=30)
     text = (r.stdout or "").strip()
 except Exception:
@@ -148,7 +148,7 @@ except Exception:
 if r.returncode != 0 or not text:
     sys.exit(1)
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
-                                         "additionalContext": _notice + "Sigma: " + text + " Run /agrim-doctor for detail."}}))
+                                         "additionalContext": _notice + "Sigma: " + text + " Run /sigma-doctor for detail."}}))
 sys.exit(0)
 PY
 then
@@ -156,11 +156,11 @@ then
 fi
 # --- Proactive ledger-watcher staleness check (issue #2444) --------------------------------------
 # An ACCELERATOR on top of the existing, unchanged multi-trigger watcher-restart mechanism
-# (_ensure_watcher in skills/agrim-loop/scripts/loop.py, untouched by this change) -- it narrows the
-# DETECTION gap (nobody has to remember to run /agrim-doctor), it never replaces the restart
+# (_ensure_watcher in skills/sigma-loop/scripts/loop.py, untouched by this change) -- it narrows the
+# DETECTION gap (nobody has to remember to run /sigma-doctor), it never replaces the restart
 # mechanism itself (AGENTS.md: "revival is layered and host-agnostic -- no single trigger is
 # trusted"). Duplicates (never imports) _ledger_watcher_state's exact math from
-# skills/agrim-doctor/scripts/doctor.py::_ledger_watcher_state -- name the function, never the line
+# skills/sigma-doctor/scripts/doctor.py::_ledger_watcher_state -- name the function, never the line
 # (both line references in this block had already rotted) -- only the ledger watcher is checked
 # here, the other five per-watcher doctor.py state functions are out of scope for this tier. Same
 # one-additionalContext-per-invocation idiom as the wizard block above: `if ... then exit 0; fi` so
@@ -209,7 +209,7 @@ print(json.dumps({"hookSpecificOutput": {
     "hookEventName": "SessionStart",
     "additionalContext": _notice + (
         "Sigma's team ledger watcher %s. The shared ledger may not be staying pushed "
-        "-- run /agrim-doctor for detail." % reason
+        "-- run /sigma-doctor for detail." % reason
     ),
 }}))
 sys.exit(0)
@@ -253,7 +253,7 @@ if newest is not None and (newest[1] is None or newest[1] >= stale_after):
     age = newest[1]
     ago = "unknown" if age is None else (f"{int(age // 3600)}h ago" if age >= 3600 else f"{int(age // 60)}m ago")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
-        "Sigma loop died (last heartbeat %s) while a managing session was recorded; run /agrim-doctor for detail." % ago)}}))
+        "Sigma loop died (last heartbeat %s) while a managing session was recorded; run /sigma-doctor for detail." % ago)}}))
     sys.exit(0)
 sys.exit(1)
 PY
@@ -264,7 +264,7 @@ fi
 # Same tier idiom as the two above, and the same ACCELERATOR status: the load-bearing surface is
 # `kg.py warn` itself, which `loop.py next`/`next-batch` print on every host (Cursor has no hooks).
 # Unlike the watcher tier this one does not duplicate the math: it runs the sibling skill's own CLI
-# (skills/agrim-kg/scripts/kg.py, resolved from PLUGIN_ROOT like setup_wizard.py above), which owns
+# (skills/sigma-kg/scripts/kg.py, resolved from PLUGIN_ROOT like setup_wizard.py above), which owns
 # the once-a-day stamp too, so the hook and the loop share ONE daily budget per repo. `warn` prints
 # "" and exits 0 when nothing is due (graph off, auto_refresh off, graph fresh, warned today), so
 # the python wrapper below exits 1 to fall through in exactly that case. Headless skip as above.
@@ -272,7 +272,7 @@ if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/d
 import json, os, subprocess, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
 _notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
-kg_py = os.path.join(plugin_root, "skills", "agrim-kg", "scripts", "kg.py")
+kg_py = os.path.join(plugin_root, "skills", "sigma-kg", "scripts", "kg.py")
 try:
     r = subprocess.run([sys.executable, kg_py, "warn", os.path.join(project, ".sdlc")],
                        capture_output=True, text=True, timeout=30)
@@ -308,12 +308,12 @@ if not isinstance(cfg, dict) or (cfg.get("session_start") or {}).get("enabled") 
 # doctor-lite install self-check: warn (never block) on a half-set-up adoption.
 warnings = []
 if not os.path.exists(os.path.join(project, ".sdlc", "context", "north-star.md")):
-    warnings.append("no north-star yet - run /agrim-vision to set the direction the plan-review gate checks.")
+    warnings.append("no north-star yet - run /sigma-vision to set the direction the plan-review gate checks.")
 
 policy = (
     "Sigma SDLC is active in this repo. Work rides the loop: "
     "Goal -> Research -> Plan -> Plan-Review -> Implement -> Review -> Retrospective. "
-    "Run /agrim-loop to drain the backlog autonomously, or /agrim-goal for a single goal. "
+    "Run /sigma-loop to drain the backlog autonomously, or /sigma-goal for a single goal. "
     "Ground every change in .sdlc/context/north-star.md and the repo's CLAUDE.md. "
     "Plan before editing source; every changed behavior carries a test; the reviewer should not be the author."
 )

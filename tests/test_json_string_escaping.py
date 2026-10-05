@@ -24,15 +24,15 @@ import json, os, re, subprocess, pathlib, textwrap
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 JSON_STRING_SITES = {
-    "discovery-scan.sh":    ROOT / "skills" / "agrim-loop" / "scripts" / "discovery-scan.sh",
-    "risk-detect.sh":       ROOT / "skills" / "agrim-loop" / "scripts" / "risk-detect.sh",
-    "alignment-collect.sh": ROOT / "skills" / "agrim-align" / "scripts" / "alignment-collect.sh",
+    "discovery-scan.sh":    ROOT / "skills" / "sigma-loop" / "scripts" / "discovery-scan.sh",
+    "risk-detect.sh":       ROOT / "skills" / "sigma-loop" / "scripts" / "risk-detect.sh",
+    "alignment-collect.sh": ROOT / "skills" / "sigma-align" / "scripts" / "alignment-collect.sh",
     "completion_gate.sh":   ROOT / "hooks" / "completion_gate.sh",
-    "audit-collect.sh":     ROOT / "skills" / "agrim-audit" / "scripts" / "audit-collect.sh",
+    "audit-collect.sh":     ROOT / "skills" / "sigma-audit" / "scripts" / "audit-collect.sh",
 }
 JESC_SITES = {
-    "risk-detect.sh":       ROOT / "skills" / "agrim-loop" / "scripts" / "risk-detect.sh",
-    "alignment-collect.sh": ROOT / "skills" / "agrim-align" / "scripts" / "alignment-collect.sh",
+    "risk-detect.sh":       ROOT / "skills" / "sigma-loop" / "scripts" / "risk-detect.sh",
+    "alignment-collect.sh": ROOT / "skills" / "sigma-align" / "scripts" / "alignment-collect.sh",
 }
 
 # Exercises everything in one string: CR/backspace/form-feed (new short-form escapes), a generic C0

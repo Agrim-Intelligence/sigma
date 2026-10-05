@@ -37,7 +37,7 @@ weaker "matches something" bar (tests/test_config_discoverability.py:32-35) is n
 AST, NOT REGEX, FOR THE PYTHON SIDE. tests/test_import_boundary.py's own docstring makes this
 argument for a different guard ("Grepping for the substring \"import <private package>\" would
 false-positive on prose like this docstring's..."); the identical failure mode is real here, verified directly against
-this tree, not assumed: `skills/agrim-loop/scripts/slices.py:119` carries a COMMENT containing the
+this tree, not assumed: `skills/sigma-loop/scripts/slices.py:119` carries a COMMENT containing the
 literal text "ledger.append()", and an unbounded regex over that file's raw text walks forward
 across ~8 lines to the next bare-quoted word, `"title"` (a dict key, not a kind) -- harmless only
 by luck, since `gate`/`verify`/`scan`/`spend`/`slice`/`park`/`retro` are all plausible dict-key
@@ -92,7 +92,7 @@ zero literal Python call sites, prose-only coverage -- until issue #1013 gave `_
 literal `ledger.safe_append(sdlc_dir, "retro", goal, stream=ledger.EVENTS, grade=retro_grade)`
 call site: `retro` now passes on Python coverage alone, the same as `gate`/`verify`/`spend`/`scan`/
 `slice` already do, and the standalone SKILL.md prose line it used to depend on
-(skills/agrim-retro/SKILL.md) was deliberately removed by that same issue to close the
+(skills/sigma-retro/SKILL.md) was deliberately removed by that same issue to close the
 double-emission risk a surviving prose-plus-code pair would create. See the new, stricter
 test_every_event_kind_has_a_real_python_caller_except_the_reviewed_allowlist below -- `phase`
 (#1626) and `model_choice` (#1627) have SINCE graduated off its allowlist too, each the identical
@@ -116,7 +116,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -442,20 +442,20 @@ def test_the_idiom_still_finds_the_prose_only_kinds():
     prose = _prose_kinds_at(ROOT)
     # `retro` dropped from this pin (issue #1013): `_record()` now carries its own literal
     # ledger.safe_append(..., "retro", ...) call site, and the standalone SKILL.md prose line this
-    # pin used to depend on was deliberately removed (skills/agrim-retro/SKILL.md) to close the
+    # pin used to depend on was deliberately removed (skills/sigma-retro/SKILL.md) to close the
     # double-emission risk a surviving prose-plus-code pair would create. `retro` is still covered --
     # now by Direction A's Python-call-site half instead of its prose half; see
     # test_every_event_kind_has_an_emitting_site above, and the new, stricter
     # test_every_event_kind_has_a_real_python_caller_except_the_reviewed_allowlist below.
     #
-    # `phase` dropped from this pin the same way (#1626): `skills/agrim-loop/SKILL.md` and
-    # `skills/agrim-goal/SKILL.md` used to instruct the bare idiom this file matches --
+    # `phase` dropped from this pin the same way (#1626): `skills/sigma-loop/SKILL.md` and
+    # `skills/sigma-goal/SKILL.md` used to instruct the bare idiom this file matches --
     # `loop.py" emit .sdlc "$goal" phase --phase ... --state start/end` -- with no real
     # measurement behind it (SKILL.md's own prose warned "do not invent ms/tokens_in/tokens_out
     # for a phase event -- the loop cannot measure per-phase timing or spend from prose"). Both
     # files now instruct `phase_report.py start`/`end` instead, which prices a phase's real
     # transcript and carries its OWN literal `ledger.safe_append(..., "phase", ...)` call sites
-    # (`skills/agrim-loop/scripts/phase_report.py`, `cmd_start`/`cmd_end`) -- so, like `retro`,
+    # (`skills/sigma-loop/scripts/phase_report.py`, `cmd_start`/`cmd_end`) -- so, like `retro`,
     # `phase` is still covered, now by Direction A's Python-call-site half instead of its prose
     # half. A surviving prose-plus-code pair would have re-created the same double-emission risk
     # #1013 already closed for `retro` (a `start`/`end` call from SKILL.md prose AND a redundant
@@ -463,7 +463,7 @@ def test_the_idiom_still_finds_the_prose_only_kinds():
 
 
 # NON-BLOCKING NOTE (PR review finding 3): unlike phase/retro above, `gate`'s two real prose sites
-# (agrim-align's and agrim-plan-review's SKILL.md) are NOT pinned the same way -- breaking both would
+# (sigma-align's and sigma-plan-review's SKILL.md) are NOT pinned the same way -- breaking both would
 # pass this guard silently, because `gate` also has Python call-site coverage elsewhere, so
 # Direction A's union stays satisfied. Deliberately not fixed with a per-kind prose-coverage pin;
 # see amendment C above for why that specific fix is the attrition trap this file already rejected.
@@ -476,12 +476,12 @@ def test_direction_a_fails_when_the_only_prose_site_is_removed(tmp_path):
     """Mutation 1 (done_when: 'a kind with no emitting call site fails'), the retro/phase
     prose-only shape specifically: retro has ZERO Python call sites in the real tree, so removing
     its one SKILL.md prose line removes its only detection path."""
-    _plant_skill_md(tmp_path, "agrim-retro",
+    _plant_skill_md(tmp_path, "sigma-retro",
                      'python3 "${X}/loop.py" emit .sdlc "$goal" retro --grade achieved')
     covered_before = _python_event_kinds_at(tmp_path) | _prose_kinds_at(tmp_path)
     assert "retro" in covered_before
 
-    _plant_skill_md(tmp_path, "agrim-retro", "no emit instruction here at all")
+    _plant_skill_md(tmp_path, "sigma-retro", "no emit instruction here at all")
     covered_after = _python_event_kinds_at(tmp_path) | _prose_kinds_at(tmp_path)
     assert _uncovered_kinds(("retro",), covered_after) == ["retro"]
 
@@ -501,11 +501,11 @@ def test_staleness_fails_when_prose_is_reworded(tmp_path):
     reordered before `.sdlc`) -- proves the staleness test's OWN logic fires on a planted reword,
     the idiom-robustness half amendment C keeps out of the real-tree assertion above."""
     good = 'python3 "${X}/loop.py" emit .sdlc "$goal" phase --phase goal --state start'
-    _plant_skill_md(tmp_path, "agrim-loop", good)
+    _plant_skill_md(tmp_path, "sigma-loop", good)
     assert "phase" in _prose_kinds_at(tmp_path)
 
     reworded = 'python3 "${X}/loop.py" emit phase .sdlc "$goal" --phase goal --state start'
-    _plant_skill_md(tmp_path, "agrim-loop", reworded)
+    _plant_skill_md(tmp_path, "sigma-loop", reworded)
     assert "phase" not in _prose_kinds_at(tmp_path)
 
 
@@ -513,7 +513,7 @@ def test_direction_b_fails_on_a_typo_d_kind_at_an_events_stream_site(tmp_path):
     """Mutation 4: a typo'd kind string at a real EVENTS-stream call. Proven on a planted fixture
     per tests/test_import_boundary.py's own precedent -- the checker's logic is proven correct
     against fixtures, not only trusted against whatever the real tree happens to contain today."""
-    _plant_py(tmp_path, "agrim-loop", "site.py",
+    _plant_py(tmp_path, "sigma-loop", "site.py",
               'ledger.safe_append(d, "gaet", g, stream=ledger.EVENTS, verdict="pass")\n')
     python_kinds = _python_event_kinds_at(tmp_path)
     assert python_kinds == {"gaet"}
@@ -528,7 +528,7 @@ def test_aliased_ledger_calls_are_detected(tmp_path):
     idiom applied to a different module). All four alias forms must resolve to a real EVENTS-stream
     site, exactly as if written out directly, so neither direction goes blind on this codebase's
     own idiom."""
-    _plant_py(tmp_path, "agrim-loop", "aliased.py",
+    _plant_py(tmp_path, "sigma-loop", "aliased.py",
               'from ledger import safe_append as _sa\n'
               'from ledger import EVENTS as _EV\n'
               '_emit = ledger.safe_append\n'
@@ -550,7 +550,7 @@ def test_direction_b_fails_on_a_typo_d_kind_behind_an_aliased_call(tmp_path):
     (test_direction_b_fails_on_a_typo_d_kind_at_an_events_stream_site above). Before the fix, this
     site was invisible to Direction B: `_is_ledger_append_call` never matched `_sa(...)` at all, so
     no Call node reached the kind check."""
-    _plant_py(tmp_path, "agrim-loop", "site.py",
+    _plant_py(tmp_path, "sigma-loop", "site.py",
               'from ledger import safe_append as _sa\n'
               '_sa(sdlc_dir, "gaet", goal, stream=ledger.EVENTS, verdict="pass")\n')
     python_kinds = _python_event_kinds_at(tmp_path)
@@ -563,11 +563,11 @@ def test_direction_b_fails_on_a_typo_d_kind_behind_an_aliased_call(tmp_path):
 
 def test_ignores_a_comment_that_merely_mentions_ledger_append(tmp_path):
     """The exact false positive an unbounded regex hits in the real tree
-    (skills/agrim-loop/scripts/slices.py:119): a COMMENT containing the literal text
+    (skills/sigma-loop/scripts/slices.py:119): a COMMENT containing the literal text
     "ledger.append()" must produce zero extracted kinds, even when a bare-quoted word that IS a
     plausible kind spelling ("title" here stands in for the real file's own dict key) follows a
     few lines later. AST only inspects real ast.Call nodes; a comment produces none."""
-    _plant_py(tmp_path, "agrim-loop", "slices.py",
+    _plant_py(tmp_path, "sigma-loop", "slices.py",
               '# `id` lands in the `slice` journal event via ledger.append() eventually, once it\n'
               '# reaches the one chokepoint every write path already funnels through.\n'
               'def _normalise(item):\n'
@@ -581,7 +581,7 @@ def test_ignores_a_comment_that_merely_mentions_ledger_append(tmp_path):
 def test_ignores_a_variable_kind_dispatch(tmp_path):
     """loop.py's real `emit` dispatcher (loop.py:482) passes `kind` as a variable (`argv[4]`) --
     it is not a literal site for any ONE kind, and must not be misread as one."""
-    _plant_py(tmp_path, "agrim-loop", "loop.py",
+    _plant_py(tmp_path, "sigma-loop", "loop.py",
               'def main(argv):\n'
               '    kind = argv[4]\n'
               '    ledger.append(sdlc_dir, config, kind, goal, stream=ledger.EVENTS)\n')
@@ -592,7 +592,7 @@ def test_entries_stream_calls_are_excluded(tmp_path):
     """A `claimed`-style ENTRIES-stream call (no `stream=` kwarg -> defaults to ENTRIES) must never
     count as EVENTS-stream coverage -- ENTRIES kinds are a legitimately separate vocabulary
     (ledger.py's own KINDS), not a source of EVENT_KINDS false positives."""
-    _plant_py(tmp_path, "agrim-loop", "loop.py",
+    _plant_py(tmp_path, "sigma-loop", "loop.py",
               'ledger.safe_append(sdlc_dir, "claimed", goal, config=config)\n')
     assert _python_event_kinds_at(tmp_path) == set()
 
@@ -603,7 +603,7 @@ def test_span_aware_stream_kwarg_on_a_continuation_line(tmp_path):
     nested-paren kwarg (`config=state.load_config(sdlc_dir)`). Reading `stream=` off the SAME
     ast.Call node's keywords makes this trivially correct regardless of line layout -- a
     same-line/regex check would silently drop this real site."""
-    _plant_py(tmp_path, "agrim-loop", "loop.py",
+    _plant_py(tmp_path, "sigma-loop", "loop.py",
               'ledger.safe_append(sdlc_dir, "spend", goal, config=state.load_config(sdlc_dir),\n'
               '                   stream=ledger.EVENTS, tokens_in=flags.get("tokens_in"))\n')
     assert _python_event_kinds_at(tmp_path) == {"spend"}
@@ -612,7 +612,7 @@ def test_span_aware_stream_kwarg_on_a_continuation_line(tmp_path):
 def test_an_unparseable_python_file_does_not_crash_the_scan(tmp_path):
     """This guard is not chartered to validate Python syntax -- an unparseable file contributes no
     kinds rather than aborting the whole scan with an uncaught SyntaxError."""
-    _plant_py(tmp_path, "agrim-loop", "broken.py", "def broken(:\n")
+    _plant_py(tmp_path, "sigma-loop", "broken.py", "def broken(:\n")
     assert _python_event_kinds_at(tmp_path) == set()
 
 
@@ -637,7 +637,7 @@ _PROSE_ONLY_ALLOWLIST = {
     # agent-compliance-dependent today, no code guarantee at all -- loop.py's `emit` dispatcher
     # passes `kind` as a variable (argv[4]), never a literal, for every kind it handles, `phase`
     # included." That was true of the bare `loop.py emit ... phase` idiom SKILL.md used to
-    # instruct, which is exactly why #1626 replaced it: `skills/agrim-loop/scripts/phase_report.py`
+    # instruct, which is exactly why #1626 replaced it: `skills/sigma-loop/scripts/phase_report.py`
     # now carries its own dedicated `cmd_start`/`cmd_end` functions with a LITERAL
     # `ledger.safe_append(sdlc_dir, "phase", goal, stream=ledger.EVENTS, ...)` call site (`"phase"`
     # as a string constant, not a passed-through variable) -- so `phase` now passes on Python

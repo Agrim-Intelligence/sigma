@@ -4,9 +4,9 @@ SessionStart line and stopfiles.py -- every gesture a user is given. Run through
 import json, os, pathlib, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+DOCTOR = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 HOOK = ROOT / "hooks" / "session_start.sh"
-STOPFILES = ROOT / "skills" / "agrim-loop" / "scripts" / "stopfiles.py"
+STOPFILES = ROOT / "skills" / "sigma-loop" / "scripts" / "stopfiles.py"
 ENV = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
 
 

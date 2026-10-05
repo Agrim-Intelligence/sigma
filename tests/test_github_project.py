@@ -3,7 +3,7 @@ tiny in-memory simulator of the `gh project` surface stands in for the network, 
 real board behavior (find-or-create, status mapping, no-duplicate-add, fail-open) without `gh`."""
 import json, re, pathlib, importlib.util, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -1543,7 +1543,7 @@ def test_card_rank_resolves_configured_aliases():
     """Second-round independent-review finding on #854: `_card_rank` is the BOARD-QUEUE pick path
     (`_board_queue()` is checked FIRST by `next_pending`, before `_pick_key`'s label-queue path ever
     runs) -- it never threaded `self.priority_aliases` through its own `discovery.priority_rank`
-    call, so on any Ready-lane board (the agrim-init DEFAULT for new repos, queue_source="status")
+    call, so on any Ready-lane board (the sigma-init DEFAULT for new repos, queue_source="status")
     an alias-labelled card's REAL priority was silently ignored by the actual picking decision, even
     though `_pick_key`/`_mirror_priority` had already been made alias-aware. The single most
     consequential of the paths this feature touches, since it is live work-picking, not a display
@@ -2594,7 +2594,7 @@ def test_smart_mode_eligibility_uses_a_dependents_promoted_rank_not_its_raw_one(
     """Round-2 review finding: sources.py's has_other_unblocked_work compared a dependent against
     its RAW priority, while triage.py's already-reasoned fix (#900) uses the dependent's EFFECTIVE
     (promoted) rank for the identical question -- a genuine, empirically-reproduced divergence
-    between what the live picker does and what /agrim-triage plan shows, on the same graph.
+    between what the live picker does and what /sigma-triage plan shows, on the same graph.
 
     Chain: C(#3, P4) blocks B(#5, P3) blocks A(#9, P0). B legitimately promotes to P0 (nothing
     else competes at A's tier). C should ALSO promote to P0, via B's PROMOTED rank -- but a sibling

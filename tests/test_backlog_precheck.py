@@ -2,7 +2,7 @@
 advance on a confident finding, annotate on a weak one, fail-open, off by default. Hermetic, $0."""
 import json, pathlib, importlib.util, tempfile
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

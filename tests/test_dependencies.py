@@ -1,5 +1,5 @@
 """Companions (superpowers + code-review) are an OPTIONAL enhancement, not hard dependencies.
-Every phase they power has a portable agrim-* executor fallback (see test_packaging_slice4), so the
+Every phase they power has a portable sigma-* executor fallback (see test_packaging_slice4), so the
 kit must NOT declare them in plugin.json's `dependencies` array — a declared dependency is hard
 (unsatisfied → Claude Code disables the whole plugin with `dependency-unsatisfied`), which is exactly
 the install friction the portable executors exist to avoid. This test is the anti-regression guard:
@@ -26,7 +26,7 @@ def test_companions_are_not_hard_dependencies():
     leaked = COMPANIONS & declared
     assert not leaked, (
         f"{leaked} declared as hard plugin dependencies — this disables Sigma when the companion "
-        f"can't be resolved. They're optional; the portable agrim-* executors run the phases instead.")
+        f"can't be resolved. They're optional; the portable sigma-* executors run the phases instead.")
 
 
 def test_root_marketplace_needs_no_cross_marketplace_allowlist():

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""The end-to-end onboarding control (#237): fresh repository -> /agrim-init -> one goal `done`,
+"""The end-to-end onboarding control (#237): fresh repository -> /sigma-init -> one goal `done`,
 in local-goals mode and in github mode, following the README Quickstart TEXT.
 
 WHY. AGENTS.md: "Run the control, or the check is decoration." The Quickstart once shipped in a
@@ -8,18 +8,18 @@ state that could not reach `done` (verify.enforce on, verify.command empty) and 
 because nothing ran the documented gesture end to end. This script runs it.
 
 WHAT IT READS FROM THE README, AND WHY THAT MATTERS. The commands are PARSED from the README's
-`## Quickstart` section and the verify gestures under "What /agrim-init will ask you" -- the init
-script path (the Codex/Cursor script-form line), the `/agrim-init` flags (the Claude Code line),
+`## Quickstart` section and the verify gestures under "What /sigma-init will ask you" -- the init
+script path (the Codex/Cursor script-form line), the `/sigma-init` flags (the Claude Code line),
 the `verify_detect.py confirm .sdlc <n> <id>` gesture, and the `claude plugin ...` / `codex plugin
 ...` install lines. A README that drifts from the shipped scripts (a renamed script, a renamed
 verb, a dropped line) therefore turns this control red; a README the control does not read could
-drift silently. Since #277 every `python3` gesture under "What /agrim-init will ask you" and "If
-/agrim-init says you lack access" is also EXECUTED (github mode, confirm variant, after the goal is
+drift silently. Since #277 every `python3` gesture under "What /sigma-init will ask you" and "If
+/sigma-init says you lack access" is also EXECUTED (github mode, confirm variant, after the goal is
 done), from the repository root, `<installed-sigma>` standing for the Sigma directory -- so a
 gesture a user could not copy from their repository (a path relative to the plugin directory), a
 renamed verb, or a placeholder nothing fills is red. The install lines (claude, codex, in-session `/plugin`) must match the plugin id
 `.claude-plugin/marketplace.json` declares, and every init flag the Quickstart shows must be one
-init_flow.py's parser accepts. Everything else comes from what /agrim-init PRINTS: the `[ask]`
+init_flow.py's parser accepts. Everything else comes from what /sigma-init PRINTS: the `[ask]`
 lines (parsed in init_flow.ask_line's shape, `[ask] <id>: <prose> -> --flag VALUE|VALUE ; ...`,
 and answered through ASK_POLICY, keyed by the flag NAME the line offers -- a renamed or new flag
 is "unanswerable [ask]", red), the verify candidate number and id, and the `Next:` line's
@@ -51,8 +51,8 @@ on "no fresh verify evidence", and an earlier version of this control hid that b
 is a local path.
 
 WHAT IT DOES NOT DO (see docs/onboarding-control.md for the owner runbook of each):
-  * no model session. `/agrim-loop` is a model turn; this control drives the SAME scripts the
-    agrim-loop skill tells the agent to run (`loop.py start/next/agent-start`, `work.py`,
+  * no model session. `/sigma-loop` is a model turn; this control drives the SAME scripts the
+    sigma-loop skill tells the agent to run (`loop.py start/next/agent-start`, `work.py`,
     `phase_report.py`, `loop.py verify`, `loop.py record`), with the "work" itself scripted. Token
     cost is therefore N/A: `phase_report.py end` runs and prints its honest `cost: unavailable`
     line, which is recorded as-is.
@@ -113,7 +113,7 @@ VARIANTS = ("confirm", "no-command")
 #: Quickstart, and every `python3` gesture a user copies starts with it.
 INSTALLED_SIGMA = "<installed-sigma>"
 #: The README subsections whose `python3` gestures the control EXECUTES from the repository root.
-GESTURE_SECTIONS = ("### What `/agrim-init` will ask you", "### If `/agrim-init` says you lack access")
+GESTURE_SECTIONS = ("### What `/sigma-init` will ask you", "### If `/sigma-init` says you lack access")
 #: Exit codes a README gesture may return: `preflight.py check` exits 1 on a blocking failure (the
 #: fake world has no real token), which is its documented report, not a broken gesture. Everything
 #: else must exit 0; a usage error is 2. The exit code alone is not trusted: GESTURE_EFFECTS below
@@ -191,18 +191,18 @@ def _plugin_id(sigma):
 
 
 def readme_init_flags(quickstart):
-    """Every `--flag` the Quickstart shows for init: on a fenced `/agrim-init ...` or
+    """Every `--flag` the Quickstart shows for init: on a fenced `/sigma-init ...` or
     `python3 .../init_flow.py ...` line, and in inline code in the prose of the `###` subsections
-    about `/agrim-init` (e.g. the `[ask]` flag list). Sorted, de-duplicated."""
+    about `/sigma-init` (e.g. the `[ask]` flag list). Sorted, de-duplicated."""
     flags = set()
     for block in _FENCE.findall(quickstart):
         for line in _lines(block):
             toks = line.split()
-            if toks[0] in ("/agrim-init", "/agrim-setup") or \
+            if toks[0] in ("/sigma-init", "/sigma-setup") or \
                     (len(toks) > 1 and toks[1].endswith("init_flow.py")):
                 flags.update(t for t in toks if re.fullmatch(r"--[a-z][a-z-]*", t))
     for sub in re.split(r"(?m)^### ", _FENCE.sub("", quickstart)):
-        if "/agrim-init" in sub.split("\n", 1)[0]:
+        if "/sigma-init" in sub.split("\n", 1)[0]:
             flags.update(re.findall(r"`(--[a-z][a-z-]*)(?:[ =][^`]*)?`", sub))
     return sorted(flags)
 
@@ -210,7 +210,7 @@ def readme_init_flags(quickstart):
 def init_flow_flags(sigma):
     """The flags init_flow.py's own `parse()` accepts: its `_VALUE | _BOOL` sets, read by `ast`
     (never imported: importing it loads siblings and is not what a reader of the README runs)."""
-    path = pathlib.Path(sigma) / "skills" / "agrim-init" / "scripts" / "init_flow.py"
+    path = pathlib.Path(sigma) / "skills" / "sigma-init" / "scripts" / "init_flow.py"
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError) as exc:
@@ -235,21 +235,21 @@ def parse_quickstart(text, sigma=ROOT):
     lines = [l for block in _FENCE.findall(qs) for l in _lines(block)]
     out = {"claude_install": [l for l in lines if l.startswith("claude plugin ")],
            "codex_install": [l for l in lines if l.startswith("codex plugin ")]}
-    # The first-run pair lives in the `### Claude Code` subsection; a later `/agrim-init` (the
+    # The first-run pair lives in the `### Claude Code` subsection; a later `/sigma-init` (the
     # "Adopting into an existing repo" line) must not stand in for it if it drifts.
     m = re.search(r"(?ms)^### Claude Code\s*$(.*?)(?=^### |\Z)", qs)
     first = [l for block in _FENCE.findall(m.group(1) if m else "") for l in _lines(block)]
-    init = [l for l in first if l.startswith("/agrim-init")]
+    init = [l for l in first if l.startswith("/sigma-init")]
     if not init:
-        raise Red("readme", "the Quickstart's `### Claude Code` block has no `/agrim-init` line")
+        raise Red("readme", "the Quickstart's `### Claude Code` block has no `/sigma-init` line")
     out["init_flags"] = init[0].split()[1:]
-    if not any(l.split()[0] == "/agrim-loop" for l in first):
-        raise Red("readme", "the Quickstart's `### Claude Code` block has no `/agrim-loop` line")
-    scripts = [re.search(r"(skills/agrim-init/scripts/[\w.-]+\.py)", l) for l in lines
-               if "init_flow" in l or "agrim-init/scripts/" in l]
+    if not any(l.split()[0] == "/sigma-loop" for l in first):
+        raise Red("readme", "the Quickstart's `### Claude Code` block has no `/sigma-loop` line")
+    scripts = [re.search(r"(skills/sigma-init/scripts/[\w.-]+\.py)", l) for l in lines
+               if "init_flow" in l or "sigma-init/scripts/" in l]
     scripts = [m.group(1) for m in scripts if m]
     if not scripts:
-        raise Red("readme", "the Quickstart names no skills/agrim-init/scripts/*.py init script")
+        raise Red("readme", "the Quickstart names no skills/sigma-init/scripts/*.py init script")
     out["init_script"] = scripts[0]
     out["session_install"] = [l for l in first if l.startswith("/plugin ")]
     plugin_id = _plugin_id(sigma)
@@ -268,13 +268,13 @@ def parse_quickstart(text, sigma=ROOT):
     if unknown:
         raise Red("readme", f"the README shows init flag(s) {unknown}, which "
                   f"{out['init_script']} does not accept")
-    asks = text[text.find("### What `/agrim-init` will ask you"):] if \
-        "### What `/agrim-init` will ask you" in text else ""
+    asks = text[text.find("### What `/sigma-init` will ask you"):] if \
+        "### What `/sigma-init` will ask you" in text else ""
     confirm = [l for block in _FENCE.findall(asks) for l in _lines(block)
                if "verify_detect.py" in l and "<n>" in l and "<id>" in l]
     if not confirm:
         raise Red("readme", "no `verify_detect.py ... <n> <id>` confirm gesture under "
-                  "\"What /agrim-init will ask you\"")
+                  "\"What /sigma-init will ask you\"")
     out["verify_confirm"] = confirm[0]
     for rel in [out["init_script"]] + [t for t in shlex.split(confirm[0]) if t.endswith(".py")]:
         if not (pathlib.Path(sigma) / rel.replace(INSTALLED_SIGMA + "/", "")).is_file():
@@ -915,7 +915,7 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
         run.steps.append({"step": "file goal (.sdlc/goals/0002-onboarding-hello.md)", "seconds": 0})
         init_gh = len(_gh_calls(gh_log))       # init's own preflight may ask gh; the loop may not
         pid = str(os.getpid())
-        loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
+        loop = pathlib.Path(sigma) / "skills" / "sigma-loop" / "scripts"
         run.step("loop start", [sys.executable, loop / "loop.py", "start", ".sdlc", "--session-pid", pid],
                  repo, env)
         nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
@@ -949,7 +949,7 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
 
 
 def _drive_local_goal(run, loop, repo, env, goal, pid):
-    """The agrim-loop skill's per-goal gestures with work.enabled off (--local-only). `goal` is a
+    """The sigma-loop skill's per-goal gestures with work.enabled off (--local-only). `goal` is a
     goal file (local-goals mode)."""
     is_file = (repo / goal).is_file()
     py = sys.executable
@@ -1050,7 +1050,7 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
              "- [ ] The goal can be recorded done after its PR merges.\n"],
             "file goal (gh issue create, labelled sdlc:goal, assigned @me)")
         pid = str(os.getpid())
-        loop = pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
+        loop = pathlib.Path(sigma) / "skills" / "sigma-loop" / "scripts"
         py = sys.executable
         run.step("loop start", [py, loop / "loop.py", "start", ".sdlc", "--session-pid", pid], repo, env)
         nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
@@ -1175,7 +1175,7 @@ def host_install(qs, sigma, root, which):
             rec["steps"].append({"line": line, "rc": proc.returncode,
                                  "seconds": round(time.monotonic() - t, 3),
                                  "tail": (proc.stdout + proc.stderr).strip()[-300:]})
-        # <plugin root>/skills/agrim-init/scripts/init_flow.py, in the host's plugin cache
+        # <plugin root>/skills/sigma-init/scripts/init_flow.py, in the host's plugin cache
         installed = sorted(str(p.parents[3]) for p in cfg.rglob("init_flow.py")
                            if "cache" in p.parts)
         rec["installed_path"] = installed[0] if installed else None

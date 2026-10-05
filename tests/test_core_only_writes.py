@@ -27,11 +27,11 @@ TWO WAYS THIS TEST COULD PASS WHILE PROVING NOTHING, both guarded below:
      so a future reader meets it deliberately rather than as a surprise off-by-one.
 
 THE GATE LEG IS A CONSTRUCTED PRECONDITION, AND SAYS SO HERE RATHER THAN HIDING IT.
-`.sdlc/decisions.json` is NOT something `/agrim-init` writes -- `/agrim-decide` authors it
+`.sdlc/decisions.json` is NOT something `/sigma-init` writes -- `/sigma-decide` authors it
 interactively, out of a conversation with a human. So this one leg of the sequence departs from
 "the gesture a new user makes", and the fixture seeds a minimal registry by hand. It is kept rather
 than dropped because `hooks/decision_gate.py` is the ONLY EVENTS writer outside
-`skills/agrim-loop/scripts/`: a separate process that cross-loads `ledger.py` from `hooks/` by
+`skills/sigma-loop/scripts/`: a separate process that cross-loads `ledger.py` from `hooks/` by
 relative path. That makes it the write path most likely to break under a change to the journal and
 the least likely to be noticed. Naming the departure is the honest form of keeping it; building the
 registry and still calling the whole sequence "what a new user does" would not be.
@@ -45,9 +45,9 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
-PHASE_REPORT = ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts" / "loop.py"
+INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
+PHASE_REPORT = ROOT / "skills" / "sigma-loop" / "scripts" / "phase_report.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py"
 DECISION_GATE = ROOT / "hooks" / "decision_gate.py"
 
 #: `gh` stubbed by exclusion -- the idiom `tests/test_decision_gate.py` already uses for this hook:
@@ -61,13 +61,13 @@ def _host_inventory():
     is built from scratch, so without these the scan would fall back to the real home directory."""
     return {k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME") if k in os.environ}
 
-#: The example goal `/agrim-init` scaffolds. Using it rather than authoring one keeps the sequence
+#: The example goal `/sigma-init` scaffolds. Using it rather than authoring one keeps the sequence
 #: inside what a fresh install actually contains.
 GOAL = "0001-example.md"
 
 #: The smallest registry `decision_gate.py` will DENY on -- `tests/test_decision_gate.py`'s own
 #: `_inv()`, inlined rather than imported so this file stands alone. See the module docstring for
-#: why authoring it at all is a named departure from the pure `/agrim-init` gesture.
+#: why authoring it at all is a named departure from the pure `/sigma-init` gesture.
 DECISIONS = {"version": 1, "decisions": [{
     "id": "INV-001", "title": "Bounded timeouts", "class": "invariant", "status": "active",
     "statement": "No call may set a timeout above 30s.", "rationale": "one slow dep = outage",
@@ -78,7 +78,7 @@ DECISIONS = {"version": 1, "decisions": [{
 GATE_PAYLOAD = {"tool_name": "Edit",
                 "tool_input": {"file_path": "src/a.py", "new_string": "timeout = 120"}}
 
-#: Exactly what the five gestures record, measured against a real `/agrim-init` temp repo on
+#: Exactly what the five gestures record, measured against a real `/sigma-init` temp repo on
 #: 2026-09-21 (and independently by the P4 round-2 reviewer). `phase` appears twice, as `start` and
 #: `end`, which is why the signature carries the state rather than collapsing to a bare kind set --
 #: a phase pair that lost its `end` would otherwise still satisfy `{"phase", ...}`.
@@ -108,7 +108,7 @@ def _run(argv, cwd=None, stdin=""):
 
 
 def _scaffold(tmp_path):
-    """A real `/agrim-init`, plus the one constructed precondition the gate leg needs. (#229: init
+    """A real `/sigma-init`, plus the one constructed precondition the gate leg needs. (#229: init
     refuses a non-git directory, so the fixture is a fresh `git init` -- the normal first run.)"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _run([INIT, tmp_path])
@@ -171,7 +171,7 @@ def _signature(event):
 
 
 def _turn_the_journal_on(sdlc):
-    """THE DOCUMENTED OPT-IN, applied to the config `/agrim-init` itself wrote -- never a hand-built
+    """THE DOCUMENTED OPT-IN, applied to the config `/sigma-init` itself wrote -- never a hand-built
     config file. Flipping the template's own key is what makes the on-case evidence about the
     shipped default rather than about a fixture."""
     path = sdlc / "config.json"
@@ -185,12 +185,12 @@ def _turn_the_journal_on(sdlc):
 
 
 def test_off_case_a_fresh_install_writes_zero_journal_bytes(tmp_path):
-    """Acceptance bullet 1. Five real gestures against an untouched `/agrim-init` scaffold, and
+    """Acceptance bullet 1. Five real gestures against an untouched `/sigma-init` scaffold, and
     afterwards there is no journal at all -- neither directory is so much as created.
 
     THE ASSERTION IS NOT THE ISSUE'S LITERAL TEXT, DELIBERATELY (plan D-2). The issue says assert
     `.sdlc/ledger/` does not exist; that is FALSE on the shipped default today, before any change,
-    because `/agrim-init` scaffolds `.sdlc/ledger/README.md`. Asserting it would give a permanently
+    because `/sigma-init` scaffolds `.sdlc/ledger/README.md`. Asserting it would give a permanently
     red census whose first "fix" is to weaken it. The clause below keeps the intent -- nothing
     ACCUMULATES under `ledger/` -- and is strictly stronger than "the directory is absent" would
     have been, because it also catches a stray file appearing beside the README."""

@@ -1,15 +1,15 @@
-"""/agrim-audit — the periodic whole-repo audit. Guards the contracts that keep it from becoming
+"""/sigma-audit — the periodic whole-repo audit. Guards the contracts that keep it from becoming
 either a second per-diff reviewer or an unasked backlog spammer."""
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKILL = ROOT / "skills" / "agrim-audit" / "SKILL.md"
+SKILL = ROOT / "skills" / "sigma-audit" / "SKILL.md"
 
 
 def test_frontmatter_is_valid():
     t = SKILL.read_text(encoding="utf-8")
     assert t.startswith("---\n")
-    assert "name: agrim-audit\n" in t
+    assert "name: sigma-audit\n" in t
     assert "description:" in t and "allowed-tools:" in t
 
 
@@ -24,10 +24,10 @@ def test_shares_sdlc_review_vocabulary():
     """Three skills, one set of words. A repo-scale finding named differently from the diff-scale
     one is a finding nobody can act on."""
     audit = SKILL.read_text(encoding="utf-8")
-    review = (ROOT / "skills" / "agrim-review" / "SKILL.md").read_text(encoding="utf-8")
+    review = (ROOT / "skills" / "sigma-review" / "SKILL.md").read_text(encoding="utf-8")
     for smell in ("Feature Envy", "Duplicate Code", "Speculative Generality"):
-        assert smell in audit, f"agrim-audit does not name {smell}"
-        assert smell in review, f"agrim-review no longer names {smell} — the two have drifted"
+        assert smell in audit, f"sigma-audit does not name {smell}"
+        assert smell in review, f"sigma-review no longer names {smell} — the two have drifted"
 
 
 def test_filing_is_opt_in_and_deduped_with_evidence():
@@ -48,7 +48,7 @@ def test_refuses_to_re_run_per_diff_review():
     structural."""
     t = SKILL.read_text(encoding="utf-8")
     assert "What this check is not" in t
-    assert "agrim-review" in t and "agrim-align" in t
+    assert "sigma-review" in t and "sigma-align" in t
 
 
 def test_caps_and_states_what_it_dropped():
@@ -62,19 +62,19 @@ def test_caps_and_states_what_it_dropped():
 
 def test_review_health_scan_mode_is_retired_and_points_here():
     """One home per concern. Health-scan was 'a thorough audit of files/dirs for issues that
-    accumulate over time' — /agrim-audit's entire job, in one unspecified line."""
-    review = (ROOT / "skills" / "agrim-review" / "SKILL.md").read_text(encoding="utf-8")
+    accumulate over time' — /sigma-audit's entire job, in one unspecified line."""
+    review = (ROOT / "skills" / "sigma-review" / "SKILL.md").read_text(encoding="utf-8")
     assert "Health scan" not in review, "health-scan mode must be retired, not left as a rival"
-    assert "/agrim-audit" in review, "agrim-review must point whole-repo work at the audit"
+    assert "/sigma-audit" in review, "sigma-review must point whole-repo work at the audit"
 
 
 def test_audit_is_discoverable_in_the_readme():
-    """A skill nobody can find is a skill nobody runs — /agrim-audit shipped with zero README mentions
+    """A skill nobody can find is a skill nobody runs — /sigma-audit shipped with zero README mentions
     and was invisible until someone went looking in skills/.
 
     Deliberately targeted rather than "every skill must appear in the README": six skills legitimately
-    do not (agrim-brainstorm/implement/plan/plan-review/review/verify are portable phase executors the
+    do not (sigma-brainstorm/implement/plan/plan-review/review/verify are portable phase executors the
     loop invokes, not user-facing commands), so the general rule would encode something untrue."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "/agrim-audit" in readme, "the audit skill must be listed in the README"
-    assert "/agrim-align" in readme  # its sibling, so the pair stays discoverable together
+    assert "/sigma-audit" in readme, "the audit skill must be listed in the README"
+    assert "/sigma-align" in readme  # its sibling, so the pair stays discoverable together

@@ -53,7 +53,7 @@ _NO_GOAL = "(decision-gate)"
 #: is deliberately NOT matched — the gate only judges values it can actually read.
 _LITERAL = re.compile(r"(-?\d+\.\d+|-?\d+|True|False|true|false|\"[^\"]*\"|'[^']*')")
 
-#: #272: the id-format contract `agrim-decide` documents and `validate()` enforces at authoring
+#: #272: the id-format contract `sigma-decide` documents and `validate()` enforces at authoring
 #: time — no internal whitespace, no colons. Both characters break the structured `decision_id`
 #: event field's own downstream contract (a single bounded token, safe to `" | ".join()` across
 #: multiple violating decisions and unambiguous to split back apart) even though the field itself
@@ -282,7 +282,7 @@ def evaluate(tool_name, ti, registry, root):
     `allow` are not); every other return path carries `None`. When more than one active invariant
     is violated by the same edit, the ids are joined with the same ` | ` separator `reason` already
     uses for its own multi-violation messages, de-duplicated, in violation order — the documented id
-    format (`agrim-decide`: no internal whitespace, no colons) is exactly what keeps that join
+    format (`sigma-decide`: no internal whitespace, no colons) is exactly what keeps that join
     unambiguous to a reader who wants to split it back apart."""
     if tool_name not in EDIT_TOOLS:
         return "allow", None, None
@@ -466,7 +466,7 @@ def _emit_decision_event(data, root, reason, decision_id):
     instrumenting those would flood the events stream with near-zero-value noise.
 
     Lazily imports ledger.py (a sibling of loop.py/work.py/slices.py/pipeline.py in
-    skills/agrim-loop/scripts/ — a DIFFERENT directory from this hook, not shipped as a package) so
+    skills/sigma-loop/scripts/ — a DIFFERENT directory from this hook, not shipped as a package) so
     a checkout where those scripts are absent or broken can never break this otherwise
     self-contained module — `project_dir()`/`load_registry()`/`enabled()` all already swallow their
     own errors for exactly this reason. The caller (main()'s hook branch) wraps this ENTIRE call in
@@ -495,7 +495,7 @@ def _emit_decision_event(data, root, reason, decision_id):
     fp = ti.get("file_path") or ti.get("filePath") or ti.get("notebook_path")
     rel = _rel(fp, root) if fp else "?"
     spec = importlib.util.spec_from_file_location(
-        "ledger", Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "ledger.py")
+        "ledger", Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "ledger.py")
     ledger = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ledger)
     ledger.safe_append(str(Path(root) / ".sdlc"), "gate", _NO_GOAL, stream=ledger.EVENTS,
@@ -531,7 +531,7 @@ def main(argv):
     if len(argv) >= 2 and argv[1] in ("check", "validate"):
         root = argv[2] if len(argv) > 2 else "."
         if not (Path(root) / REGISTRY_REL).exists():
-            print(f"no registry at {REGISTRY_REL} — the gate is off (see /agrim-decide)")
+            print(f"no registry at {REGISTRY_REL} — the gate is off (see /sigma-decide)")
             return 0
         if argv[1] == "validate":
             problems = validate(load_registry(root), root)

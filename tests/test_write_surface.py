@@ -169,14 +169,14 @@ def test_call_site_metadata_escalates_merge_risk_without_escalating_comments(tmp
     source.write_text('import subprocess\n\ndef merge():\n    subprocess.run(["gh", "pr", "merge", "1"])\n')
     row = _module().scan_paths(tmp_path, [source])[0]
     assert row["gate"] == "ungated" and row["risk"] == "medium"
-    assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr")[1] == "high"
+    assert _module()._metadata("skills/sigma-loop/scripts/work.py", "merge", "gh-pr")[1] == "high"
 
 
 def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path):
     source = tmp_path / "work.py"
     source.write_text('def merge_design(run, cwd):\n    _retry_gh(run, cwd, ["gh", "pr", "merge", "1"])\n')
     assert _module().scan_paths(tmp_path, [source])[0]["rule"] == "gh-pr"
-    assert _module()._metadata("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr") == (
+    assert _module()._metadata("skills/sigma-loop/scripts/work.py", "merge_design", "gh-pr") == (
         "work.enabled; work.auto_merge != off", "high")
 
 
@@ -198,23 +198,23 @@ def push(root, remote):
 
 def test_live_git_runner_force_sites_are_in_the_inventory():
     mod = _module()
-    paths = [ROOT / "skills/agrim-loop/scripts/diff_revert.py",
-             ROOT / "skills/agrim-loop/scripts/work.py",
-             ROOT / "skills/agrim-loop/scripts/sync.py"]
+    paths = [ROOT / "skills/sigma-loop/scripts/diff_revert.py",
+             ROOT / "skills/sigma-loop/scripts/work.py",
+             ROOT / "skills/sigma-loop/scripts/sync.py"]
     got = {(row["path"], row["function"], row["rule"])
            for row in mod.scan_paths(ROOT, paths)}
-    assert ("skills/agrim-loop/scripts/diff_revert.py", "cleanup", "git-destructive") in got
-    assert ("skills/agrim-loop/scripts/work.py", "finish", "git-destructive") in got
-    assert ("skills/agrim-loop/scripts/sync.py", "init", "git-destructive") in got
+    assert ("skills/sigma-loop/scripts/diff_revert.py", "cleanup", "git-destructive") in got
+    assert ("skills/sigma-loop/scripts/work.py", "finish", "git-destructive") in got
+    assert ("skills/sigma-loop/scripts/sync.py", "init", "git-destructive") in got
 
 
 def test_issue_decided_write_gates_and_delete_risks_are_exact():
     mod = _module()
-    assert mod._metadata("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write") == ("granted verdict", "high")
-    assert mod._metadata("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr") == ("ungated", "high")
-    assert mod._metadata("skills/agrim-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high")
+    assert mod._metadata("skills/sigma-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write") == ("granted verdict", "high")
+    assert mod._metadata("skills/sigma-loop/scripts/work.py", "close_design", "gh-pr") == ("ungated", "high")
+    assert mod._metadata("skills/sigma-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high")
     for function, rule in (("_delete_remote_branch", "gh-api-write"), ("_close_issue_the_base_cannot", "gh-api-write")):
-        assert mod._metadata("skills/agrim-loop/scripts/work.py", function, rule)[1] == "high"
+        assert mod._metadata("skills/sigma-loop/scripts/work.py", function, rule)[1] == "high"
 
 
 def test_readiness_tool_write_metadata_is_specific():

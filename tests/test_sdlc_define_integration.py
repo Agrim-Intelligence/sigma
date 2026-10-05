@@ -1,4 +1,4 @@
-"""`agrim-define` end to end (#1662): open a unit, then fill it with work that BELONGS to it.
+"""`sigma-define` end to end (#1662): open a unit, then fill it with work that BELONGS to it.
 
 The unit suite (`tests/test_define.py`) proves each half against fakes. This file's job is the
 composition those cannot cover, and it is the whole point of the skill: **does the real output of
@@ -32,9 +32,9 @@ import json
 import pathlib
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFINE_SCRIPTS = _ROOT / "skills" / "agrim-define" / "scripts"
-SCOPE_SCRIPTS = _ROOT / "skills" / "agrim-scope" / "scripts"
-LOOP = _ROOT / "skills" / "agrim-loop" / "scripts"
+DEFINE_SCRIPTS = _ROOT / "skills" / "sigma-define" / "scripts"
+SCOPE_SCRIPTS = _ROOT / "skills" / "sigma-scope" / "scripts"
+LOOP = _ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name, where):

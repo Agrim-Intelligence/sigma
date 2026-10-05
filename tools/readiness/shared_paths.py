@@ -589,7 +589,7 @@ def _function_fingerprint(root, site, brand_names):
             text = ast.dump(node, annotate_fields=False)
             for word in brand_names:
                 text = re.sub(re.escape(word), "<brand>", text, flags=re.I)
-            return re.sub(r"(?:sdlc|agrim)-", "<skill>-", text)
+            return re.sub(r"(?:sdlc|sigma)-", "<skill>-", text)
     return None
 
 

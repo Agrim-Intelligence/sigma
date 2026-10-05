@@ -55,7 +55,7 @@ PRIVATE_RULES = (
 
 
 def _load_scrub():
-    path = pathlib.Path(__file__).resolve().parents[2] / "skills" / "agrim-loop" / "scripts" / "scrub.py"
+    path = pathlib.Path(__file__).resolve().parents[2] / "skills" / "sigma-loop" / "scripts" / "scrub.py"
     spec = importlib.util.spec_from_file_location("sigma_exposure_scrub", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

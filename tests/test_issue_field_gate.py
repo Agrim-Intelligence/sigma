@@ -92,7 +92,7 @@ def test_denial_names_the_assignee_decision():
 
 def test_deny_text_names_the_documented_handoff_gesture():
     """#2737: the deny text points at the documented user gesture (`handoff.py track`, README and
-    the agrim-loop SKILL.md), never at the internal `handoff.create_tracked_issue` API."""
+    the sigma-loop SKILL.md), never at the internal `handoff.create_tracked_issue` API."""
     _, reason = _gate().evaluate("Bash", {"command": "gh issue create --title x"})
     assert "handoff.py track" in reason
     assert "create_tracked_issue" not in reason

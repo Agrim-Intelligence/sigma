@@ -102,7 +102,7 @@ def _ledger_and_broken_gh_auth(root, *, heartbeat_age=3600):
     (a config with a `ledger` block) are mutually exclusive by construction.
 
     `discovery: {"source": "github"}` turns on doctor.py's `gh auth` check (see
-    skills/agrim-doctor/scripts/doctor.py:1335: "the `gh` calls under discovery.source == 'github'
+    skills/sigma-doctor/scripts/doctor.py:1335: "the `gh` calls under discovery.source == 'github'
     are NOT gated by [cheap_only]... they only fire because that repo's own config asked for
     github discovery"). Paired with `_path_without_gh()` at the caller's `_run(..., PATH=...)`,
     `gh auth status` cannot resolve `gh` at all, so `_real_run` catches the resulting
@@ -111,7 +111,7 @@ def _ledger_and_broken_gh_auth(root, *, heartbeat_age=3600):
     "gh auth" is in setup_wizard._MODES (mode "human_command"), so this alone makes
     wizard_status().needs_wizard True regardless of the ledger state; "project layer" stays ok
     (config.json exists), so the wizard's ONLY failing step is "gh auth" -- nothing in its
-    prescribed text mentions the ledger or /agrim-doctor (verified by reading _MODES directly),
+    prescribed text mentions the ledger or /sigma-doctor (verified by reading _MODES directly),
     so it cannot accidentally satisfy this test's own negative assertions."""
     _ledger(root, heartbeat_age=heartbeat_age)
     cfg_path = pathlib.Path(root) / ".sdlc" / "config.json"
@@ -142,20 +142,20 @@ def _adopted_with_a_wizard_step(tmp_path):
 
 def test_no_config_is_silent_the_wizard_needs_an_adopted_repo(tmp_path):
     """#236 / #186 reversed #1560's "no .sdlc/ triggers the wizard": that fired in every repository
-    the user opened, and a decline could not be remembered there. `/agrim-init` is the entry point
+    the user opened, and a decline could not be remembered there. `/sigma-init` is the entry point
     for a new repository; the control below shows the wizard itself still fires once adopted."""
     assert _run(tmp_path) == ""
     path = _adopted_with_a_wizard_step(tmp_path)
-    assert "agrim-wizard" in _context(_run(tmp_path, PATH=path))
+    assert "sigma-wizard" in _context(_run(tmp_path, PATH=path))
 
 
 def test_a_headless_supervised_session_is_silent_again(tmp_path):
-    """Issue #1560 final review, finding I4: a `claude -p /agrim-loop` worker (supervise_daemon.py exports
+    """Issue #1560 final review, finding I4: a `claude -p /sigma-loop` worker (supervise_daemon.py exports
     SIGMA_RUN_ID before launching it) has nobody to answer the wizard's yes/no questions, so
     the wizard must not fire there at all. The line above is the control -- the identical fixture
     with the variable absent DOES produce wizard context."""
     path = _adopted_with_a_wizard_step(tmp_path)
-    assert "agrim-wizard" in _context(_run(tmp_path, PATH=path))
+    assert "sigma-wizard" in _context(_run(tmp_path, PATH=path))
     assert _run(tmp_path, PATH=path, SIGMA_RUN_ID="supervise-1-2-3") == ""
 
 
@@ -178,12 +178,12 @@ def test_enabled_injects_session_start_context(tmp_path):
     d = json.loads(out)                                  # must be valid JSON
     assert d["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     ctx = d["hookSpecificOutput"]["additionalContext"]
-    assert "/agrim-loop" in ctx and "north-star" in ctx and "reviewer should not be the author" in ctx
+    assert "/sigma-loop" in ctx and "north-star" in ctx and "reviewer should not be the author" in ctx
 
 
 def test_missing_north_star_adds_a_warning(tmp_path):
     ctx = _context(_run(_enabled(tmp_path, north_star=False)))
-    assert "setup notes" in ctx and "/agrim-vision" in ctx   # doctor-lite self-check warns, never blocks
+    assert "setup notes" in ctx and "/sigma-vision" in ctx   # doctor-lite self-check warns, never blocks
 
 
 def test_present_north_star_no_warning(tmp_path):
@@ -217,19 +217,19 @@ def test_stale_watcher_warns(tmp_path):
     # RED today: today's hook has no tier-3 code path, so output for this fixture is "" and
     # _context()'s json.loads("") raises -- this fixture asserts real new content.
     ctx = _context(_run(_ledger(tmp_path, heartbeat_age=3600)))  # 1h old; stale_after=2700s @ interval=900
-    assert "looks stale" in ctx and "/agrim-doctor" in ctx
+    assert "looks stale" in ctx and "/sigma-doctor" in ctx
 
 
 def test_dead_watcher_warns(tmp_path):
     # RED today, same reason as above.
     ctx = _context(_run(_ledger(tmp_path, pid=True)))            # pid file, no heartbeat at all
-    assert "looks dead" in ctx and "/agrim-doctor" in ctx
+    assert "looks dead" in ctx and "/sigma-doctor" in ctx
 
 
 def test_dead_loop_warns_with_its_age_using_the_real_session_start_gesture(tmp_path):
     """A stale heartbeat plus the recorded session is the polite, deterministic dead-loop control."""
     ctx = _context(_run(_dead_loop(tmp_path, heartbeat_age=3600)))
-    assert "loop died" in ctx and "1h ago" in ctx and "/agrim-doctor" in ctx
+    assert "loop died" in ctx and "1h ago" in ctx and "/sigma-doctor" in ctx
 
 
 def test_fresh_newer_loop_heartbeat_suppresses_an_old_stale_session(tmp_path):
@@ -243,7 +243,7 @@ def test_fresh_newer_loop_heartbeat_suppresses_an_old_stale_session(tmp_path):
 def test_never_run_watcher_warns(tmp_path):
     # RED today, same reason as above. This is the state Q1 resolved to also warn on.
     ctx = _context(_run(_ledger(tmp_path)))                      # neither heartbeat nor pid file
-    assert "has never started" in ctx and "/agrim-doctor" in ctx
+    assert "has never started" in ctx and "/sigma-doctor" in ctx
 
 
 def test_output_is_valid_json_on_watcher_warning_path(tmp_path):
@@ -307,8 +307,8 @@ def test_watcher_tier_does_not_double_fire_with_wizard(tmp_path):
     teeth instead of decoration."""
     project = _ledger_and_broken_gh_auth(tmp_path)
     ctx = _context(_run(project, PATH=_path_without_gh(tmp_path)))
-    assert "agrim-wizard" in ctx
-    assert "ledger watcher" not in ctx.lower() and "/agrim-doctor" not in ctx
+    assert "sigma-wizard" in ctx
+    assert "ledger watcher" not in ctx.lower() and "/sigma-doctor" not in ctx
 
 
 # --- Tier 4: knowledge-graph auto-refresh has never built a graph (issue #2704) -----------------
@@ -342,13 +342,13 @@ def _stub_builder_path(tmp_path):
 
 def test_never_built_graph_warns_at_session_start(tmp_path):
     ctx = _context(_run(_kg_repo(tmp_path / "p"), PATH=_stub_builder_path(tmp_path)))
-    assert "never been built" in ctx and "/agrim-kg" in ctx
+    assert "never been built" in ctx and "/sigma-kg" in ctx
     assert "not measured" in ctx                    # the first-build cost, honestly
 
 
 def test_stale_graph_warns_at_session_start(tmp_path):
     ctx = _context(_run(_kg_repo(tmp_path / "p", graph_age=3600), PATH=_stub_builder_path(tmp_path)))
-    assert "stale" in ctx and "/agrim-kg" in ctx
+    assert "stale" in ctx and "/sigma-kg" in ctx
 
 
 def test_fresh_graph_is_silent(tmp_path):

@@ -18,7 +18,7 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -37,7 +37,7 @@ sources = _mod("sources")
 #: A real path under the installed plugin that exists in no adopter's tree. Asserted to exist below
 #: (`test_the_fixture_path_is_real`) so this file can never silently stop testing anything by
 #: naming a file that was renamed.
-KIT_PATH = "skills/agrim-loop/scripts/loop.py"
+KIT_PATH = "skills/sigma-loop/scripts/loop.py"
 
 ON = {"ledger": {"enabled": True, "actor": "amy"}}
 
@@ -199,7 +199,7 @@ def test_only_the_plugins_signature_subtrees_are_eligible_evidence(tmp_path):
     sdlc = _project(tmp_path)
     for name in upstream.SIGNATURE_DIRS:
         assert (upstream.plugin_root() / name).is_dir(), name
-    for eligible in ("skills/agrim-loop/scripts/loop.py", "hooks/decision_gate.py",
+    for eligible in ("skills/sigma-loop/scripts/loop.py", "hooks/decision_gate.py",
                      ".claude-plugin/plugin.json"):
         assert (upstream.plugin_root() / eligible).is_file(), eligible
         assert upstream.classify(sdlc, eligible)["origin"] == upstream.KIT, eligible
@@ -304,11 +304,11 @@ def test_the_real_installed_layout_still_files_this_repos_own_findings_locally(t
     project owns `skills/`), not through the short-circuit. Neither self-hosting test pinned this,
     and the docstring credited the wrong cover for it."""
     installed = tmp_path / "home" / ".claude" / "plugins" / "cache" / "sigma"
-    (installed / "skills" / "agrim-loop" / "scripts").mkdir(parents=True)
-    (installed / "skills" / "agrim-loop" / "scripts" / "loop.py").write_text("the installed copy")
+    (installed / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
+    (installed / "skills" / "sigma-loop" / "scripts" / "loop.py").write_text("the installed copy")
     checkout = tmp_path / "work" / "sigma"
-    (checkout / "skills" / "agrim-loop" / "scripts").mkdir(parents=True)
-    (checkout / "skills" / "agrim-loop" / "scripts" / "loop.py").write_text("the checkout")
+    (checkout / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
+    (checkout / "skills" / "sigma-loop" / "scripts" / "loop.py").write_text("the checkout")
     sdlc = _project(checkout)
     monkeypatch.setattr(upstream, "plugin_root", lambda: installed)
 
@@ -343,9 +343,9 @@ def test_a_project_answer_never_carries_evidence(tmp_path):
 
 
 def test_a_trailing_slash_is_not_part_of_the_directory(tmp_path):
-    """`skills/agrim-loop/` is how a directory is written in prose."""
-    verdict = upstream.classify(_project(tmp_path), "everything under skills/agrim-loop/ is stale")
-    assert verdict["origin"] == upstream.KIT and verdict["evidence"] == ["skills/agrim-loop"]
+    """`skills/sigma-loop/` is how a directory is written in prose."""
+    verdict = upstream.classify(_project(tmp_path), "everything under skills/sigma-loop/ is stale")
+    assert verdict["origin"] == upstream.KIT and verdict["evidence"] == ["skills/sigma-loop"]
 
 
 def test_a_tilde_path_is_expanded_before_it_is_measured(tmp_path, monkeypatch):
@@ -625,7 +625,7 @@ def test_no_surviving_text_promises_more_than_the_masks_deliver():
     banned = ("CARRIES NOTHING THAT IDENTIFIES", "carries NOTHING that identifies",
               "nothing that identifies you")
     module = (S / "upstream.py").read_text(encoding="utf-8")
-    template = (ROOT / "skills" / "agrim-init" / "templates"
+    template = (ROOT / "skills" / "sigma-init" / "templates"
                 / "config.json.tmpl").read_text(encoding="utf-8")
     for text, where in ((module, "upstream.py"), (template, "config.json.tmpl"),
                         (upstream.FORWARDING_NOTICE, "the issue body")):
@@ -831,7 +831,7 @@ def test_the_ledger_line_leads_with_where_the_finding_went(tmp_path):
     deep.mkdir(parents=True)
     cfg = _upstream_cfg()
     sdlc = _project(deep, cfg)
-    evidence = " ".join("skills/agrim-loop/scripts/%s" % f for f in
+    evidence = " ".join("skills/sigma-loop/scripts/%s" % f for f in
                         ("loop.py", "work.py", "ledger.py", "handoff.py", "sources.py",
                          "triage.py", "mirror.py", "state.py"))
     upstream.route(sdlc, cfg, "12", "Label handling", evidence, None, run=_granted().triple)
@@ -849,7 +849,7 @@ def test_the_full_evidence_list_is_always_in_the_spill_file(tmp_path):
     """What the ledger line cannot afford to name must exist somewhere retrievable, or the cap is
     a silent drop after all."""
     sdlc = _project(tmp_path, _config())
-    paths = ["skills/agrim-loop/scripts/%s" % f for f in
+    paths = ["skills/sigma-loop/scripts/%s" % f for f in
              ("loop.py", "work.py", "ledger.py", "handoff.py")]
     report = upstream.route(sdlc, _config(), "12", "t", " ".join(paths), None, run=Gh().triple)
     spilled = pathlib.Path(report["spilled"]).read_text(encoding="utf-8")

@@ -229,7 +229,7 @@ def validate_file(file_path, vocab):
         elif file_path.suffix == ".md" and file_path.parent.name == "acceptance":
             # Use the same bounded parser as the producer/PR gate, never a looser golden check.
             import importlib.util
-            script = pathlib.Path(__file__).resolve().parents[1] / "skills/agrim-loop/scripts/acceptance.py"
+            script = pathlib.Path(__file__).resolve().parents[1] / "skills/sigma-loop/scripts/acceptance.py"
             spec = importlib.util.spec_from_file_location("acceptance", script)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)

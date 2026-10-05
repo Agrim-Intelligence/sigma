@@ -15,7 +15,7 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-P = ROOT / "skills" / "agrim-model" / "scripts" / "predict.py"
+P = ROOT / "skills" / "sigma-model" / "scripts" / "predict.py"
 
 
 def _mod():

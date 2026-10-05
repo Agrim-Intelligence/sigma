@@ -19,7 +19,7 @@ DATE_HEADING = re.compile(r"^## (?!Unreleased$).+ — \d{4}-\d{2}-\d{2}(?:$| —
 
 
 def _doctor():
-    path = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+    path = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
     spec = importlib.util.spec_from_file_location("doctor_359", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

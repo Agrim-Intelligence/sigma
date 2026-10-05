@@ -1,5 +1,5 @@
-"""#236: `/agrim-init` is the ONE entry point -- `skills/agrim-init/scripts/init_flow.py` -- and
-`/agrim-setup` is its alias.
+"""#236: `/sigma-init` is the ONE entry point -- `skills/sigma-init/scripts/init_flow.py` -- and
+`/sigma-setup` is its alias.
 
 The flow integrates the sibling goals, it does not re-implement them: preflight (#229), mode, the
 verify command (#228), and in github mode the labels (#230), the board OFFER (#235), `assignee: @me`
@@ -27,11 +27,11 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-init" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-init" / "scripts"
 FLOW = SCRIPTS / "init_flow.py"
 SDLC_INIT = SCRIPTS / "sdlc_init.py"
-SETUP = ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
-LOOP_DIR = ROOT / "skills" / "agrim-loop" / "scripts"
+SETUP = ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"
+LOOP_DIR = ROOT / "skills" / "sigma-loop" / "scripts"
 LOOP = LOOP_DIR / "loop.py"
 PREFLIGHT = SCRIPTS / "preflight.py"
 REPO = "acme/app"
@@ -293,7 +293,7 @@ def test_local_goals_flow_reaches_done(tmp_path):
     assert p.returncode == 0, out
     for section in ("1/5 preflight", "2/5 mode", "3/5 verify", "4/5 github", "5/5 summary"):
         assert section in p.stdout, p.stdout
-    assert "local-goals" in p.stdout and "/agrim-loop" in p.stdout
+    assert "local-goals" in p.stdout and "/sigma-loop" in p.stdout
     cfg = _cfg(w)
     assert cfg["discovery"]["source"] == "local-goals"
     assert cfg["work"]["enabled"] is False and cfg["work"].get("_enabled_why")
@@ -326,8 +326,8 @@ def test_local_only_choice_stops_the_work_enabled_nag(tmp_path):
     del cfg["work"]["_enabled_why"]
     (w["sdlc"] / "config.json").write_text(json.dumps(cfg))
     s = _run(w, [LOOP, "start", ".sdlc", "--session-pid", str(os.getpid())])
-    assert "work.enabled is off" in s.stderr and "/agrim-init" in s.stderr, s.stderr
-    assert "/agrim-setup" not in s.stderr
+    assert "work.enabled is off" in s.stderr and "/sigma-init" in s.stderr, s.stderr
+    assert "/sigma-setup" not in s.stderr
 
 
 # ---------------------------------------------------------------- github end to end
@@ -587,7 +587,7 @@ def test_configure_without_an_sdlc_dir_refuses_instead_of_crashing(tmp_path):
     p = subprocess.run([sys.executable, str(SETUP), "configure", str(tmp_path / ".sdlc"),
                         "--repo", REPO], capture_output=True, text=True)
     assert p.returncode == 2, p.stdout + p.stderr
-    assert "Traceback" not in p.stderr and "/agrim-init" in p.stderr
+    assert "Traceback" not in p.stderr and "/sigma-init" in p.stderr
     assert not (tmp_path / ".sdlc").exists()
 
 
@@ -599,7 +599,7 @@ def test_setup_init_is_an_alias_of_the_flow():
 
 @posix_only
 def test_setup_init_alias_installs_the_same_local_hook_path(tmp_path):
-    """`/agrim-setup` is an init-flow alias, so this is an end-to-end pin of that promise."""
+    """`/sigma-setup` is an init-flow alias, so this is an end-to-end pin of that promise."""
     w = _world(tmp_path, origin=None)
     p = _run(w, [SETUP, "init", ".", "--mode", "local-goals", "--local-only", "--no-verify"])
     assert p.returncode == 0, p.stdout + p.stderr
@@ -611,13 +611,13 @@ def test_setup_init_alias_installs_the_same_local_hook_path(tmp_path):
 
 
 def test_doctor_work_row_points_at_init():
-    text = (ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py").read_text(encoding="utf-8")
-    assert "(or run /agrim-setup)" not in text
-    assert '"work": {"enabled": true}  (or run /agrim-init)' in text
+    text = (ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py").read_text(encoding="utf-8")
+    assert "(or run /sigma-setup)" not in text
+    assert '"work": {"enabled": true}  (or run /sigma-init)' in text
 
 
 def test_the_pre_236_github_flag_means_github_mode():
-    """`/agrim-init --github` (README, muscle memory) now SAYS github mode too -- the old scaffolder
+    """`/sigma-init --github` (README, muscle memory) now SAYS github mode too -- the old scaffolder
     flag created labels but left the backlog local, which is the bug this goal closes."""
     flow = _load_flow()
     opts, target, err = flow.parse(["--github"])
@@ -925,7 +925,7 @@ def test_the_demo_hint_does_not_promise_a_board_that_is_off(tmp_path):
 @posix_only
 def test_an_interrupted_scaffold_leaves_sigma_s_owner_marker(tmp_path, monkeypatch):
     """The owner marker is written BEFORE the scaffold, so the session wizard can tell an interrupted
-    `/agrim-init` (Sigma's `.sdlc/`, no config.json) from another tool's bare `.sdlc/`."""
+    `/sigma-init` (Sigma's `.sdlc/`, no config.json) from another tool's bare `.sdlc/`."""
     w = _world(tmp_path, origin=None)
     flow = _load_flow()
 
@@ -966,7 +966,7 @@ def test_the_next_line_demo_rerun_keeps_answers_and_queues_the_demo(tmp_path):
 
 
 def _fresh_scaffold(tmp_path):
-    """A bare `/agrim-init` on a GitHub-origin repo: config.json scaffolded, mode/ledger still open."""
+    """A bare `/sigma-init` on a GitHub-origin repo: config.json scaffolded, mode/ledger still open."""
     w = _world(tmp_path)
     p = _run(w, [FLOW, "."])
     assert p.returncode == 0 and "[ask] mode" in p.stdout, p.stdout + p.stderr

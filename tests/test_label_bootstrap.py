@@ -4,7 +4,7 @@ fails is reported -- never printed as "ensured".
 Two halves, deliberately:
 
 * SUBPROCESS tests drive the documented gestures exactly as a human types them
-  (`python3 "$SETUP" labels .sdlc` from `skills/agrim-setup/references/public-repo.md`,
+  (`python3 "$SETUP" labels .sdlc` from `skills/sigma-setup/references/public-repo.md`,
   `loop.py start <sdlc>`, `sdlc_init.py <target> --github`) against a stateful fake `gh` put first
   on PATH -- the same PATH-installed-fake pattern `test_public_bootstrap_control.py` uses. The fake
   models only what these gestures call: `label create`, and REST `api repos/<o>/<r>/labels|issues`
@@ -32,10 +32,10 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SETUP = ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
-LOOP_DIR = ROOT / "skills" / "agrim-loop" / "scripts"
+SETUP = ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"
+LOOP_DIR = ROOT / "skills" / "sigma-loop" / "scripts"
 LOOP = LOOP_DIR / "loop.py"
-SDLC_INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+SDLC_INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
 REPO = "acme/app"
 
 #: Spelled out so this file stands alone (never imports sources.py to learn its own vocabulary).
@@ -134,7 +134,7 @@ if argv and argv[0] == "api":
         unhandled(argv, "unmodeled endpoint")
     print(json.dumps(items[(page - 1) * per_page: page * per_page])); sys.exit(0)
 if argv[:2] == ["auth", "status"]:
-    # #229: /agrim-init's preflight reads `gh auth status`; a logged-in classic token.
+    # #229: /sigma-init's preflight reads `gh auth status`; a logged-in classic token.
     print("github.com\n  Logged in to github.com account fake (keyring)\n  - Active account: true\n"
           "  - Token: gho_****\n  - Token scopes: 'read:org', 'repo', 'workflow'")
     sys.exit(0)
@@ -161,7 +161,7 @@ def _world(tmp_path, cfg=None, labels=None, issues=None, refuse=False, git_remot
            "HOME": str(tmp_path), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
            "PYTHONDONTWRITEBYTECODE": "1", "FAKE_GH_STATE": str(state), "FAKE_GH_LOG": str(log),
            "FAKE_GH_UNHANDLED": str(unh)}
-    # #229: /agrim-init refuses a directory that is not a git repository, so every world is one.
+    # #229: /sigma-init refuses a directory that is not a git repository, so every world is one.
     subprocess.run(["git", "init", "-q", str(repo_dir)], env=env, check=True)
     if git_remote:
         subprocess.run(["git", "-C", str(repo_dir), "remote", "add", "origin", git_remote], env=env,

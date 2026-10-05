@@ -14,7 +14,7 @@ import pathlib
 import boardfake
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name, alias):

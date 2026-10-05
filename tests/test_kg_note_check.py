@@ -1,14 +1,14 @@
 """A Retrospective that wrote no knowledge note is SAID SO at record time — on stderr, never refused.
 
-Issue #2701. `agrim-retro` §4 writes the KG analysis note; `loop.py record --retro-grade` then
+Issue #2701. `sigma-retro` §4 writes the KG analysis note; `loop.py record --retro-grade` then
 refreshes the graph. Nothing checked the note existed, so a retro that skipped §4 left the corpus
 (and every peer machine, once notes sync) silently missing that goal. Plans and research have a
 pre-push guard; the note is written after merge, so its guard belongs at record.
 
-THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE. `/agrim-loop` and `/agrim-goal` both end a goal with
+THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE. `/sigma-loop` and `/sigma-goal` both end a goal with
 `loop.py record <goal> <result> --retro-grade <grade>`, so these tests go through the real
 `_record()` and the real subprocess hop into the sibling `kg.py`. The "present" case is produced by
-the §4 gesture itself, copied VERBATIM from `skills/agrim-retro/SKILL.md` and run through bash — so
+the §4 gesture itself, copied VERBATIM from `skills/sigma-retro/SKILL.md` and run through bash — so
 the path the guard expects is, by construction, the path the documented writer writes. A companion
 assertion checks the copied string is still literally in the doc.
 
@@ -29,13 +29,13 @@ import sys
 from journal_events import journal_events
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_SCRIPTS = _ROOT / "skills" / "agrim-loop" / "scripts"
-_KG = _ROOT / "skills" / "agrim-kg" / "scripts" / "kg.py"
-_RETRO_SKILL = _ROOT / "skills" / "agrim-retro"
+_SCRIPTS = _ROOT / "skills" / "sigma-loop" / "scripts"
+_KG = _ROOT / "skills" / "sigma-kg" / "scripts" / "kg.py"
+_RETRO_SKILL = _ROOT / "skills" / "sigma-retro"
 
-# skills/agrim-retro/SKILL.md §4, verbatim. `test_the_copied_gesture_is_still_the_documented_one`
+# skills/sigma-retro/SKILL.md §4, verbatim. `test_the_copied_gesture_is_still_the_documented_one`
 # fails if the doc moves away from this text, so the copy cannot drift silently.
-GESTURE = 'echo "$note_text" | python3 "${CLAUDE_SKILL_DIR}/../agrim-kg/scripts/kg.py" note .sdlc "$goal"'
+GESTURE = 'echo "$note_text" | python3 "${CLAUDE_SKILL_DIR}/../sigma-kg/scripts/kg.py" note .sdlc "$goal"'
 
 MISSING = "knowledge note missing"
 

@@ -3,7 +3,7 @@ import pathlib
 
 
 SKILLS = pathlib.Path(__file__).resolve().parent.parent / "skills"
-WAIVED_OVERSIZE = {"agrim-goal-design", "agrim-goal-review"}
+WAIVED_OVERSIZE = {"sigma-goal-design", "sigma-goal-review"}
 
 
 def test_every_skill_using_claude_skill_dir_explains_codex_resolution():
@@ -17,7 +17,7 @@ def test_every_skill_using_claude_skill_dir_explains_codex_resolution():
 
 
 def test_real_loop_command_resolves_to_its_installed_script():
-    path = SKILLS / "agrim-loop" / "SKILL.md"
+    path = SKILLS / "sigma-loop" / "SKILL.md"
     text = path.read_text(encoding="utf-8")
     assert "## Codex path resolution" in text
     installed_dir = path.parent.resolve()

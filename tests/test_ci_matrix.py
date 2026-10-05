@@ -31,6 +31,7 @@ def validate_supported_matrix(text):
     for gate in (
         "python -m pytest tests/ -rs -q",
         "python3 evals/run.py",
+        "python3 tools/rename_check.py",
         "python3 hooks/decision_gate.py validate .",
         "python3 hooks/decision_gate.py check .",
         "tests/test_skill_frontmatter_yaml.py -q",

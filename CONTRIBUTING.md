@@ -16,7 +16,20 @@ Run the suite before opening a pull request:
 
 ```sh
 python -m pytest tests -q -n 4 -p no:cacheprovider
+python3 tools/rename_check.py
 ```
+
+The second command exits 1 and prints each file and line while any tracked path or file still carries
+the retired skill prefix (every skill and command starts with `sigma-`); CI runs it on every pull
+request. A branch cut before the rename lands fixes itself by taking the new paths and running the
+rename tool once more, from the repository root:
+
+```sh
+python3 tools/rename_prefix.py
+```
+
+It refuses (exit 2, nothing moved) if the new folder already exists; `git mv` the files your branch
+added under the old folder name into it by hand, then run it again.
 
 ## Working rules
 

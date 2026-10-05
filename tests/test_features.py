@@ -22,7 +22,7 @@ import types
 
 import pytest
 
-P = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+P = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
      / "features.py")
 
 

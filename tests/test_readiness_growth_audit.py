@@ -296,13 +296,13 @@ def _cli_rows(repository, timeout):
 
 def _has_sources_journey_writer(rows):
     return any(row["source"] == "code" and row["writer"].startswith(
-        "skills/agrim-loop/scripts/sources.py:")
+        "skills/sigma-loop/scripts/sources.py:")
         and row["pattern"] == ".sdlc/journey/<goal>.md" for row in rows)
 
 
 def test_cli_scan_over_a_fixture_tree_keeps_sources_writer_coverage_and_ends_on_a_helper_cycle(tmp_path):
     """The real CLI, over a tree the test builds, so neither repo size nor runner speed decides it."""
-    source = tmp_path / "skills" / "agrim-loop" / "scripts" / "sources.py"
+    source = tmp_path / "skills" / "sigma-loop" / "scripts" / "sources.py"
     source.parent.mkdir(parents=True)
     source.write_text(
         "from pathlib import Path\n"
@@ -328,10 +328,10 @@ def test_repository_scan_includes_localsource_journey_and_goal_file_writers():
     rows = _mod().scan(ROOT)
 
     assert any(row["source"] == "code" and row["writer"].startswith(
-        "skills/agrim-loop/scripts/sources.py:")
+        "skills/sigma-loop/scripts/sources.py:")
         and row["pattern"] == ".sdlc/journey/<goal>.md" for row in rows)
     assert any(row["source"] == "code" and row["writer"].startswith(
-        "skills/agrim-loop/scripts/sources.py:")
+        "skills/sigma-loop/scripts/sources.py:")
         and row["pattern"].startswith(".sdlc/goals/") for row in rows)
 
 

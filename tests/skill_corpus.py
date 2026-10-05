@@ -1,6 +1,6 @@
 """One skill as an agent actually reads it: its `SKILL.md` plus every reference file beside it.
 
-#1611 split `skills/agrim-loop/SKILL.md` into a body plus `references/*.md`, because Claude Code
+#1611 split `skills/sigma-loop/SKILL.md` into a body plus `references/*.md`, because Claude Code
 re-attaches only the FIRST 5,000 TOKENS of a skill after a conversation is summarised, and that body
 was 3.4x the cap with all three of its uppercase gates past the cliff. The documentation-drift
 guards in this suite — "the skill says X, so it cannot silently stop matching the code that does X"

@@ -1,4 +1,4 @@
-"""compile_plan.py (#918, agrim-scope skill, wave 1 of epic #902): the mechanical "given a
+"""compile_plan.py (#918, sigma-scope skill, wave 1 of epic #902): the mechanical "given a
 DECIDED plan, create it for real" layer -- real issues, real priority:P<n> label+field, a real
 epic when warranted, real "Blocked by #N" markers between the newly-created siblings.
 
@@ -12,8 +12,8 @@ import pathlib
 import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCOPE_SCRIPTS = _ROOT / "skills" / "agrim-scope" / "scripts"
-LOOP = _ROOT / "skills" / "agrim-loop" / "scripts"
+SCOPE_SCRIPTS = _ROOT / "skills" / "sigma-scope" / "scripts"
+LOOP = _ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name, where):
@@ -585,7 +585,7 @@ def test_main_reports_failed_and_skipped_issues_with_exit_code_1(tmp_path, capsy
 
 
 # ------------------------------------------------------------------------------------- main --json
-# #1919: `agrim-goal-review` steps 4b/4e are written against `report["epic"]` / `report["issues"]`,
+# #1919: `sigma-goal-review` steps 4b/4e are written against `report["epic"]` / `report["issues"]`,
 # but the only invocation the skill mandates is this CLI -- which printed prose, in TOPOLOGICAL
 # rather than plan order, with the warnings on a different stream. `--json` is the machine channel
 # that makes those steps followable exactly as written: stdout becomes EXACTLY one JSON object, and
@@ -690,7 +690,7 @@ def test_main_json_stringifies_non_string_plan_keys(tmp_path, capsys, monkeypatc
 
 def test_main_json_end_to_end_through_the_real_local_source(tmp_path, capsys):
     """No monkeypatch anywhere -- the real default (local-goals) source, the real report. This is
-    the invocation `agrim-goal-review` step 4b actually mandates.
+    the invocation `sigma-goal-review` step 4b actually mandates.
 
     Note the issue NUMBER type is the source's, not this flag's: `LocalSource.create_dependency`
     returns an int and `GitHubSource`'s returns a str, and `--json` deliberately passes both through
@@ -826,8 +826,8 @@ def test_a_key_that_merely_looks_like_a_design_id_still_compiles_when_it_is_a_re
 # where it is harder to see"). A strip produces a board that looks right while the model never
 # learns, and silently discards a real `P0`.
 #
-# OPT-IN, because `compile_plan.py` is shared: `skills/agrim-scope/SKILL.md` mandates "a real
-# `P0`-`P4` priority" per issue on the agrim-scope path, and `scope.py` calls the same function. The
+# OPT-IN, because `compile_plan.py` is shared: `skills/sigma-scope/SKILL.md` mandates "a real
+# `P0`-`P4` priority" per issue on the sigma-scope path, and `scope.py` calls the same function. The
 # Dossier path opts in -- and because a flag alone is one more honour-system rule, the CLI also
 # turns the guard on from the plan's own contractual directory.
 
@@ -892,7 +892,7 @@ def test_omitting_priority_compiles_and_gets_the_live_default_on_epic_and_childr
 
 
 def test_the_guard_is_off_by_default_so_a_scope_plan_still_sets_its_own_priority():
-    """THE discriminating half, and the only one that catches a blanket guard. `agrim-scope`'s own
+    """THE discriminating half, and the only one that catches a blanket guard. `sigma-scope`'s own
     SKILL.md mandates a real P0-P4 per issue and `scope.py` calls this same function without the
     flag -- a guard that fired unconditionally would break that path outright. Seen red by dropping
     the `if forbid_priority:` condition."""
@@ -994,7 +994,7 @@ def test_main_refuses_a_priority_bearing_plan_with_exit_code_2_and_creates_nothi
 def test_main_turns_the_guard_on_from_the_plan_path_without_the_flag(tmp_path, capsys):
     """The backstop that makes this structural rather than a second honour-system rule: a model that
     skipped a paragraph of SKILL.md prose can skip a flag too. `.sdlc/state/goal-review/` is where
-    the contract puts the plan (`skills/agrim-goal-review/SKILL.md` mandates the `mkdir -p`,
+    the contract puts the plan (`skills/sigma-goal-review/SKILL.md` mandates the `mkdir -p`,
     `docs/dossier-pipeline.md` §7d-iii repeats the path), so the path itself says which pipeline
     this plan came out of."""
     import json
@@ -1011,7 +1011,7 @@ def test_main_turns_the_guard_on_from_the_plan_path_without_the_flag(tmp_path, c
 
 
 def test_a_plan_outside_the_goal_review_dir_is_unaffected_by_the_backstop(tmp_path, capsys):
-    """The discriminating half of the backstop: an agrim-scope plan sitting anywhere else compiles
+    """The discriminating half of the backstop: an sigma-scope plan sitting anywhere else compiles
     with its own priority intact. Seen red by pointing `_DOSSIER_PLAN_DIR` at a wrong directory."""
     import json
     sdlc = _init_sdlc(tmp_path)

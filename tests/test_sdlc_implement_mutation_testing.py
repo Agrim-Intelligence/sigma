@@ -1,4 +1,4 @@
-"""#1895: `skills/agrim-implement/SKILL.md` never named mutation testing as a standing practice,
+"""#1895: `skills/sigma-implement/SKILL.md` never named mutation testing as a standing practice,
 never guarded against a vacuous test (one whose own fixture trivially satisfies its assertion
 without exercising the real code path), and stated its rules (red-green-refactor, the refactor-smell
 names) with no citation to their real source. This mirrors `test_sdlc_implement_security_defaults.py`'s
@@ -21,7 +21,7 @@ docstring on `tests/test_feature_scope.py`), and issue #1762's own "PRE-PR CODE-
 """
 import pathlib
 
-SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-implement" / "SKILL.md").read_text(
+SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-implement" / "SKILL.md").read_text(
     encoding="utf-8"
 )
 

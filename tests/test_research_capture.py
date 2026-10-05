@@ -205,7 +205,7 @@ def test_noop_when_disabled():
 
 
 def test_noop_when_no_sdlc_project():
-    # a project that never ran /agrim-init must be completely untouched
+    # a project that never ran /sigma-init must be completely untouched
     with tempfile.TemporaryDirectory() as tmp:
         proc = _run(tmp, _web_payload())
         assert proc.returncode == 0

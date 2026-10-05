@@ -4,7 +4,7 @@
     "issue": "#419",
     "decision": "source-proven prune",
     "pruner_or_cap": "terminal review-copy lifecycle prune",
-    "evidence": "writer is a host review checkout outside Sigma's Python and skill prose; pruned by prune_terminal_review_copies in skills/agrim-loop/scripts/work.py",
+    "evidence": "writer is a host review checkout outside Sigma's Python and skill prose; pruned by prune_terminal_review_copies in skills/sigma-loop/scripts/work.py",
     "unscanned": true
   }
 ]

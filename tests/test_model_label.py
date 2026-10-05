@@ -2,7 +2,7 @@
 """`model:*` is an adopter's own annotation, not a kit vocabulary — pinned as such (#1602).
 
 Triage's hygiene bucket used to flag every in-scope goal that carried no `model:*` label, and the
-`agrim-triage` SKILL presented that as a gap to close before picking. Nothing answered the only
+`sigma-triage` SKILL presented that as a gap to close before picking. Nothing answered the only
 question that raises: *which values are legal?* The kit creates nine labels, all `sdlc:*`
 lifecycle (`test_the_kit_creates_only_the_nine_lifecycle_labels`); `docs/label-model.md` did not
 mention the prefix; and the kit's own two hardcoded values contradicted each other and everything
@@ -37,7 +37,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(path, name):
@@ -49,7 +49,7 @@ def _mod(path, name):
 
 triage = _mod(SCRIPTS / "triage.py", "triage")
 sources = _mod(SCRIPTS / "sources.py", "sources")
-predict = _mod(ROOT / "skills" / "agrim-model" / "scripts" / "predict.py", "predict")
+predict = _mod(ROOT / "skills" / "sigma-model" / "scripts" / "predict.py", "predict")
 
 _GOAL, _PARKED = "sdlc:goal", "sdlc:parked"
 _CFG = {"goal_label": _GOAL, "parked_label": _PARKED}
@@ -132,7 +132,7 @@ def test_the_model_selection_path_never_reads_a_label():
     """The same claim one level up: the module that picks the tier contains no reference to the
     label prefix at all. Cheap, blunt, and exactly the assertion that would have caught someone
     wiring the label in without updating the contract doc."""
-    assert "model:" not in (ROOT / "skills" / "agrim-model" / "scripts" / "predict.py").read_text(
+    assert "model:" not in (ROOT / "skills" / "sigma-model" / "scripts" / "predict.py").read_text(
         encoding="utf-8")
 
 
@@ -225,7 +225,7 @@ def test_the_contract_names_the_mechanism_that_actually_picks_the_tier():
     or the doc has replaced a wrong answer with no answer."""
     doc = _label_model()
     assert "model_selection" in doc
-    assert "/agrim-model" in doc or "predict.py" in doc
+    assert "/sigma-model" in doc or "predict.py" in doc
 
 
 def test_the_contract_states_that_no_value_set_is_defined_or_read():
@@ -239,7 +239,7 @@ def test_the_contract_states_that_no_value_set_is_defined_or_read():
 def test_the_triage_skill_no_longer_presents_a_missing_model_label_as_a_gap():
     """The SKILL is what an agent running triage reads; leaving it demanding the label would keep
     the pressure on regardless of what the bucket now reports."""
-    skill = (ROOT / "skills" / "agrim-triage" / "SKILL.md").read_text(encoding="utf-8")
+    skill = (ROOT / "skills" / "sigma-triage" / "SKILL.md").read_text(encoding="utf-8")
     assert "missing `priority:*` / `model:*`" not in skill
     assert "missing `priority:*` and `model:*` labels" not in skill
 

@@ -1,5 +1,5 @@
 """blocker_scan.py -- direct tests for `strip_unpark_qa`: a pin over every currently-handled shape
-of the `/agrim-unpark` Q&A span, plus the #1498 performance-cliff guard.
+of the `/sigma-unpark` Q&A span, plus the #1498 performance-cliff guard.
 
 `_UNPARK_QA_RE` used to be one backtracking `START.*?END` regex (DOTALL, non-greedy) run through
 `.sub`. Against a body containing many UNTERMINATED start markers -- START repeated with no END
@@ -13,7 +13,7 @@ linear scan to discover, not one attempt per occurrence.
 """
 import importlib.util, pathlib, time
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

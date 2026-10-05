@@ -1,5 +1,5 @@
 """End-to-end: spawn the real hook script as a subprocess, exactly like tests/test_hook.py
-already does for agrim_gate.sh -- proving the SHIPPED file behaves correctly, not a copy of its
+already does for sigma_gate.sh -- proving the SHIPPED file behaves correctly, not a copy of its
 logic re-implemented in the test."""
 import json
 import os
@@ -83,11 +83,11 @@ def test_hook_uses_pytest_interpreter_when_fallback_python_is_broken(tmp_path, m
 def test_a_repo_with_no_sdlc_at_all_gets_no_wizard_context(tmp_path):
     """#236 / #186 REVERSED this test's old assertion ("a repo with no .sdlc gets the wizard"): that
     was the nag -- the hook speaks in every repository the user opens, and a decline could never be
-    remembered there. `/agrim-init` is the entry point for a new repository; see the adopted-repo
+    remembered there. `/sigma-init` is the entry point for a new repository; see the adopted-repo
     controls at the end of this file, which prove the wizard itself still fires."""
     p = _run_hook(tmp_path)
     assert p.returncode == 0
-    assert "agrim-wizard" not in _ctx(p)
+    assert "sigma-wizard" not in _ctx(p)
 
 
 def test_a_fully_healthy_repo_produces_no_wizard_output(tmp_path):
@@ -104,7 +104,7 @@ def test_a_fully_healthy_repo_produces_no_wizard_output(tmp_path):
     # shape test_session_start.py's own test_sdlc_present_but_not_enabled_is_silent already pins to
     # "" from that half. `_ctx` parses only when there IS output; empty output already satisfies
     # "no wizard output" trivially, and json.loads("") would raise instead of asserting anything.
-    assert "agrim-wizard" not in _ctx(p)
+    assert "sigma-wizard" not in _ctx(p)
 
 
 def test_a_dismissed_check_stays_dismissed_across_hook_runs(tmp_path):
@@ -123,7 +123,7 @@ def test_a_dismissed_check_stays_dismissed_across_hook_runs(tmp_path):
 
     # CONTROL: with nothing dismissed, the step IS reported.
     before = _ctx(_run_hook(tmp_path, path_prefix=shim))
-    assert "agrim-wizard" in before
+    assert "sigma-wizard" in before
     assert "graphify installed" in before
 
     # ...and once dismissed, the very same fixture reports nothing.
@@ -131,7 +131,7 @@ def test_a_dismissed_check_stays_dismissed_across_hook_runs(tmp_path):
     (sdlc / "state" / "setup-wizard-dismissed.json").write_text('["graphify installed"]')
     after = _ctx(_run_hook(tmp_path, path_prefix=shim))
     assert "graphify installed" not in after
-    assert "agrim-wizard" not in after
+    assert "sigma-wizard" not in after
 
 
 def test_an_ongoing_hygiene_failure_never_triggers_the_wizard(tmp_path):
@@ -145,7 +145,7 @@ def test_an_ongoing_hygiene_failure_never_triggers_the_wizard(tmp_path):
     (sdlc / "config.json").write_text('{"ledger": {"enabled": true}}')
     p = _run_hook(tmp_path)
     assert p.returncode == 0
-    assert "agrim-wizard" not in _ctx(p)
+    assert "sigma-wizard" not in _ctx(p)
 
 
 def test_the_hook_writes_nothing_into_a_repo_that_has_no_sdlc(tmp_path):
@@ -155,12 +155,12 @@ def test_the_hook_writes_nothing_into_a_repo_that_has_no_sdlc(tmp_path):
     against a real fresh `git init` repo as well; this pins it."""
     p = _run_hook(tmp_path)
     assert p.returncode == 0
-    assert "agrim-wizard" not in _ctx(p)                # #236: it no longer even reports here...
+    assert "sigma-wizard" not in _ctx(p)                # #236: it no longer even reports here...
     assert list(tmp_path.iterdir()) == []              # ...and it leaves nothing behind
 
 
 def test_a_headless_supervised_session_gets_no_wizard(tmp_path):
-    """FINAL-REVIEW FINDING I4. A `claude -p /agrim-loop` worker (launched by supervise_daemon.py, which
+    """FINAL-REVIEW FINDING I4. A `claude -p /sigma-loop` worker (launched by supervise_daemon.py, which
     exports SIGMA_RUN_ID before spawning it) has nobody to answer the wizard's yes/no
     questions. An ADOPTED repo with a failing classified check (#236: an unadopted one never fires
     at all), which DOES fire the wizard -- the only difference below is the environment variable,
@@ -169,11 +169,11 @@ def test_a_headless_supervised_session_gets_no_wizard(tmp_path):
     sdlc.mkdir()
     (sdlc / "config.json").write_text('{"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
     shim = _shimmed_graphify(tmp_path)
-    assert "agrim-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))   # control: it would fire
+    assert "sigma-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))   # control: it would fire
     p = _run_hook(tmp_path, path_prefix=shim, SIGMA_RUN_ID="supervise-123-456-789")
     assert p.returncode == 0
     assert p.stdout.strip() == ""
-    assert "agrim-wizard" not in _ctx(p)
+    assert "sigma-wizard" not in _ctx(p)
 
 
 def test_a_headless_session_still_gets_the_opt_in_policy_brief(tmp_path):
@@ -186,7 +186,7 @@ def test_a_headless_session_still_gets_the_opt_in_policy_brief(tmp_path):
         '"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
     ctx = _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path),
                          SIGMA_RUN_ID="supervise-123-456-789"))
-    assert "agrim-wizard" not in ctx
+    assert "sigma-wizard" not in ctx
     assert "reviewer should not be the author" in ctx       # the policy brief, unchanged
 
 
@@ -223,11 +223,11 @@ def test_dual_fire_condition_still_emits_exactly_one_json_object(tmp_path):
     # precisely what a broken (non-gating) precedence would produce for this fixture.
     payload = json.loads(p.stdout)
     ctx = payload["hookSpecificOutput"]["additionalContext"]
-    assert "agrim-wizard" in ctx                  # the wizard's block won, not the policy brief's
+    assert "sigma-wizard" in ctx                  # the wizard's block won, not the policy brief's
 
 
 def test_missing_python3_still_exits_zero_with_valid_json(tmp_path, monkeypatch):
-    """Fail-open, matching every other hook in this repo (agrim_gate.sh's own preflight, #1536's
+    """Fail-open, matching every other hook in this repo (sigma_gate.sh's own preflight, #1536's
     git hook): a hook that cannot run its own logic must never break the user's session."""
     # PATH keeps a directory bash itself still resolves from -- subprocess.run looks up "bash" using
     # THIS env's PATH, not the calling process's real one, so an unqualified PATH (e.g.
@@ -245,10 +245,10 @@ def test_missing_python3_still_exits_zero_with_valid_json(tmp_path, monkeypatch)
 
 def test_236_no_wizard_in_a_directory_that_never_adopted_sigma(tmp_path):
     """#186: a stranger's repo -- no `.sdlc/` -- gets nothing from the session hook, and nothing is
-    written there. `/agrim-init` is the entry point; the wizard is for an adopted repo only."""
+    written there. `/sigma-init` is the entry point; the wizard is for an adopted repo only."""
     p = _run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path))
     assert p.returncode == 0
-    assert "agrim-wizard" not in _ctx(p)
+    assert "sigma-wizard" not in _ctx(p)
     assert sorted(x.name for x in tmp_path.iterdir()) == ["shim"]
 
 
@@ -256,7 +256,7 @@ def test_236_no_wizard_for_an_sdlc_without_config(tmp_path):
     """A bare `.sdlc/` directory (another tool's, or an interrupted scaffold) is not adoption:
     `.sdlc/config.json` is the one marker (`hooks/gate_state.py:adopted_root`)."""
     (tmp_path / ".sdlc").mkdir()
-    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path))
+    assert "sigma-wizard" not in _ctx(_run_hook(tmp_path))
 
 
 def test_236_no_wizard_in_an_sdlc_another_plugin_owns(tmp_path):
@@ -264,20 +264,20 @@ def test_236_no_wizard_in_an_sdlc_another_plugin_owns(tmp_path):
     (sdlc / "state").mkdir(parents=True)
     (sdlc / "config.json").write_text('{"knowledge_graph": {"enabled": true, "builder": "graphify"}}')
     shim = _shimmed_graphify(tmp_path)
-    assert "agrim-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))     # control: adopted
+    assert "sigma-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))     # control: adopted
     (sdlc / "state" / "owner.json").write_text('{"schema": "x", "plugin": "another-plugin"}')
-    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path, path_prefix=shim))
+    assert "sigma-wizard" not in _ctx(_run_hook(tmp_path, path_prefix=shim))
 
 
 def test_236_an_interrupted_sigma_scaffold_gets_the_init_nudge(tmp_path):
     """Review of PR #286: Sigma's own `.sdlc/` (state/owner.json) without config.json -- an
-    interrupted `/agrim-init` -- is the one config-less state the hook speaks in, and it writes
+    interrupted `/sigma-init` -- is the one config-less state the hook speaks in, and it writes
     nothing there. Control: the same directory without the owner marker stays silent."""
     sdlc = tmp_path / ".sdlc"
     (sdlc / "state").mkdir(parents=True)
-    assert "agrim-wizard" not in _ctx(_run_hook(tmp_path))
+    assert "sigma-wizard" not in _ctx(_run_hook(tmp_path))
     (sdlc / "state" / "owner.json").write_text('{"schema": "sigma/owner@1", "plugin": "sigma"}')
     before = sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*"))
     ctx = _ctx(_run_hook(tmp_path))
-    assert "agrim-wizard" in ctx and "agrim-init" in ctx, ctx
+    assert "sigma-wizard" in ctx and "sigma-init" in ctx, ctx
     assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*")) == before

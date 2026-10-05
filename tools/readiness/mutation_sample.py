@@ -55,7 +55,7 @@ HOW_TO_READ = (
 
 
 def _mutation():
-    here = Path(__file__).resolve().parent.parent.parent / "skills" / "agrim-loop" / "scripts"
+    here = Path(__file__).resolve().parent.parent.parent / "skills" / "sigma-loop" / "scripts"
     spec = importlib.util.spec_from_file_location("sigma_mutation", here / "mutation.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

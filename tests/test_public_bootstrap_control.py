@@ -2,9 +2,9 @@
 `.sdlc/config.json`, and the routing rule) proven end to end against a scratch repository that
 carries none of this project's own vocabulary.
 
-WHAT THIS DRIVES. A real `/agrim-init`, the public-repository adoption block from
-`skills/agrim-setup/references/public-repo.md` (Task 2) run EXACTLY as the doc prints it, and then
-the documented `agrim-loop` cycle (`loop.py start` -> `next` -> `agent-start` -> `work.py start` ->
+WHAT THIS DRIVES. A real `/sigma-init`, the public-repository adoption block from
+`skills/sigma-setup/references/public-repo.md` (Task 2) run EXACTLY as the doc prints it, and then
+the documented `sigma-loop` cycle (`loop.py start` -> `next` -> `agent-start` -> `work.py start` ->
 `phase_report.py` -> `work.py commit/pr/merge` -> `loop.py record done` (REFUSED while the PR is
 open, #232) -> `loop.py record review` -> the human's `pr merge` -> `loop.py reconcile-merges`,
 which records `done`, closes the issue and releases the checkout) against a stateful, PATH-installed fake `gh` and a real bare git remote. Every gh
@@ -22,7 +22,7 @@ check depends on an empty string, not the four characters `null`, to detect "no 
 MEASURED FACTS (recorded once at implementation time, this repo's own Mac, in the fashion §4 of the
 plan already established):
 
-  M-impl-1 (test 1, red before Task 2): before `skills/agrim-setup/references/public-repo.md`
+  M-impl-1 (test 1, red before Task 2): before `skills/sigma-setup/references/public-repo.md`
     existed, this test's own `read_text()` raised `FileNotFoundError`. Green once the doc was
     written.
   M-impl-2 (test 3, the self-heal mutation -- §4 M3/M16's own corrected order): with `_ensure_labels`
@@ -78,17 +78,17 @@ import textwrap
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SDLC_INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
-SETUP = ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
-LOOP_DIR = ROOT / "skills" / "agrim-loop" / "scripts"
+SDLC_INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
+SETUP = ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"
+LOOP_DIR = ROOT / "skills" / "sigma-loop" / "scripts"
 LOOP = LOOP_DIR / "loop.py"
 WORK = LOOP_DIR / "work.py"
 PHASE_REPORT = LOOP_DIR / "phase_report.py"
-PUBLIC_REPO_DOC = ROOT / "skills" / "agrim-setup" / "references" / "public-repo.md"
+PUBLIC_REPO_DOC = ROOT / "skills" / "sigma-setup" / "references" / "public-repo.md"
 
 #: The doc's own marker line (D7/Task 2) -- the fence this test extracts is the one whose FIRST
 #: line inside it is exactly this text.
-MARKER_LINE = "# public-repository adoption: run from the repository root, after /agrim-init"
+MARKER_LINE = "# public-repository adoption: run from the repository root, after /sigma-init"
 
 #: The generic repo name and verify command substituted for the doc's two placeholders (D7: "Each
 #: placeholder appears exactly once").
@@ -113,9 +113,9 @@ _FORBIDDEN_PATTERNS = (
     re.compile(r"superpowers", re.IGNORECASE),
     re.compile(r"/Users/", re.IGNORECASE),
     re.compile(r"swapnil", re.IGNORECASE),
-    # The org slug and personal handles stay forbidden; the `agrim-<skill>` prefix is the public
-    # brand's own (#2729, D1/D11) and the doc names `/agrim-triage` and `skills/agrim-loop/...`.
-    re.compile(r"Agrim(?!-(?-i:[a-z]))", re.IGNORECASE),
+    # The org slug, personal handles and the retired skill prefix all stay forbidden: the public
+    # brand is `sigma-` (#523), so the company name in any spelling is forbidden in the shipped doc.
+    re.compile(r"Agrim", re.IGNORECASE),
 )
 
 
@@ -643,7 +643,7 @@ def main():
     elif verb == "api":
         cmd_api(state, [verb, *argv[1:]], pos, flags, multi)
     elif verb == "auth" and pos[:1] == ["status"]:
-        # #229: /agrim-init's preflight reads `gh auth status`; a logged-in classic token.
+        # #229: /sigma-init's preflight reads `gh auth status`; a logged-in classic token.
         print("github.com\n  Logged in to github.com account fake (keyring)\n"
               "  - Active account: true\n  - Token: gho_****\n"
               "  - Token scopes: 'read:org', 'repo', 'workflow'")
@@ -857,7 +857,7 @@ def _remote_show(world, ref):
 
 
 # --------------------------------------------------------------------------------------------------
-# The sequence, copied from `agrim-loop` SKILL.md, no stronger (see the module docstring).
+# The sequence, copied from `sigma-loop` SKILL.md, no stronger (see the module docstring).
 # --------------------------------------------------------------------------------------------------
 
 

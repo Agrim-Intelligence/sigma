@@ -30,27 +30,27 @@ def _metadata(path, function, rule):
     """Return the gate and risk for this specific call site, never just its file."""
     site = (path, function, rule)
     known = {
-        ("skills/agrim-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write"):
+        ("skills/sigma-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write"):
             ("granted verdict", "high"),
-        ("skills/agrim-status/scripts/merge_queue_enable.py", "patch_auto_merge", "gh-api-write"):
+        ("skills/sigma-status/scripts/merge_queue_enable.py", "patch_auto_merge", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
-        ("skills/agrim-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
+        ("skills/sigma-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
-        ("skills/agrim-loop/scripts/work.py", "merge_design", "gh-pr"):
+        ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-pr"):
             ("work.enabled; work.auto_merge != off", "high"),
-        ("skills/agrim-loop/scripts/work.py", "close_design", "gh-pr"):
+        ("skills/sigma-loop/scripts/work.py", "close_design", "gh-pr"):
             ("ungated", "high"),
-        ("skills/agrim-loop/scripts/work.py", "merge", "gh-pr"):
+        ("skills/sigma-loop/scripts/work.py", "merge", "gh-pr"):
             ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high"),
-        ("skills/agrim-loop/scripts/work.py", "finish", "gh-pr"):
+        ("skills/sigma-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
-        ("skills/agrim-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
+        ("skills/sigma-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
             ("work.enabled; merged PR cleanup; non-empty goal prefix; never base/default branch", "high"),
-        ("skills/agrim-loop/scripts/channel_notify.py", "_real_post", "network-post"):
+        ("skills/sigma-loop/scripts/channel_notify.py", "_real_post", "network-post"):
             ("http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery", "high"),
-        ("skills/agrim-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
+        ("skills/sigma-loop/scripts/work.py", "_close_issue_the_base_cannot", "gh-api-write"):
             ("work.enabled; base branch cannot close the issue", "high"),
-        ("skills/agrim-loop/scripts/feature_sync.py", "recover", "fs-remove"):
+        ("skills/sigma-loop/scripts/feature_sync.py", "recover", "fs-remove"):
             ("explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the "
              "registry sheet aside, never deletes it", "medium"),
         ("tools/readiness/baseline.py", "snapshot", "fs-write"):
@@ -145,19 +145,19 @@ def _metadata(path, function, rule):
     }
     if site in known:
         return known[site]
-    if path == "skills/agrim-loop/scripts/feature_rebase.py":
+    if path == "skills/sigma-loop/scripts/feature_rebase.py":
         gate = "work.rebase_upkeep"
-    elif path == "skills/agrim-loop/scripts/sources.py":
+    elif path == "skills/sigma-loop/scripts/sources.py":
         gate = "discovery.source == github; board writes require project.enabled"
-    elif path == "skills/agrim-rebase/scripts/verify_merge.py":
+    elif path == "skills/sigma-rebase/scripts/verify_merge.py":
         gate = "human input() confirmation"
     else:
         gate = "ungated"
     risk = RISK[rule]
     if site in {
-        ("skills/agrim-rebase/scripts/verify_merge.py", "merge_pr", "gh-pr"),
-        ("skills/agrim-loop/scripts/sources.py", "complete", "gh-issue"),
-        ("skills/agrim-loop/scripts/sources.py", "release", "gh-issue"),
+        ("skills/sigma-rebase/scripts/verify_merge.py", "merge_pr", "gh-pr"),
+        ("skills/sigma-loop/scripts/sources.py", "complete", "gh-issue"),
+        ("skills/sigma-loop/scripts/sources.py", "release", "gh-issue"),
     }:
         risk = "high"
     return gate, risk
@@ -305,7 +305,7 @@ def scan_paths(root, paths):
                 matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
                 function = max(matching, default=(0, "<module>"))[1]
                 rules = _rules_for_call(node, values)
-                if (path.relative_to(root).as_posix() == "skills/agrim-loop/scripts/channel_notify.py"
+                if (path.relative_to(root).as_posix() == "skills/sigma-loop/scripts/channel_notify.py"
                         and function == "_real_post" and _call_name(node.func) == "urllib.request.urlopen"):
                     rules.add("network-post")
                 for rule in rules:

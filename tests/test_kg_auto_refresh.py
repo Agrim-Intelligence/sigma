@@ -1,19 +1,19 @@
 """Refreshing the knowledge graph is CODE, not a sentence in someone else's prompt.
 
 Issue #1562. `knowledge_graph.auto_refresh` was documented in three places as rebuilding the graph
-at the end of every Retrospective — `skills/agrim-kg/SKILL.md`, `README.md`, and
-`skills/agrim-retro/SKILL.md`, whose §4 pointed at "this skill's own step 3 above" for a call that
+at the end of every Retrospective — `skills/sigma-kg/SKILL.md`, `README.md`, and
+`skills/sigma-retro/SKILL.md`, whose §4 pointed at "this skill's own step 3 above" for a call that
 step 3 never made. No code path anywhere invoked a builder: `build_plan()["auto_refresh"]` had zero
 consumers. Measured on this repo 2026-09-02: `auto_refresh=True`, a 526-document corpus, and
 `graph: not built` — with no error, no warning and no doctor row anywhere to say so.
 
-THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE, not a stronger one. `/agrim-loop` SKILL.md step 6
-and `/agrim-goal` SKILL.md step 4 both end a goal with `loop.py record <goal> done --retro-grade
+THE GESTURE UNDER TEST IS THE ONE THE DOCS GIVE, not a stronger one. `/sigma-loop` SKILL.md step 6
+and `/sigma-goal` SKILL.md step 4 both end a goal with `loop.py record <goal> done --retro-grade
 <grade>`, so that is what these tests call — through the real `_record()`, the real `subprocess`
 hop into the sibling `kg.py` CLI, and a real builder executable on PATH. Nothing is monkeypatched.
 
 WHAT THEY ASSERT ON. `<builder>-out/graph.json` ON DISK — the exact file `kg.py::status()` reads to
-decide `graph_built`, and the exact path `/agrim-context`'s gate and `graphify query` both depend on.
+decide `graph_built`, and the exact path `/sigma-context`'s gate and `graphify query` both depend on.
 Never `_record`'s return value or a captured log line: those are the code's own account of itself
 and would read correctly for a version that invoked nothing, which is precisely the bug being fixed.
 
@@ -32,7 +32,7 @@ import stat
 
 from journal_events import journal_events
 
-_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
@@ -112,7 +112,7 @@ def _on(**over):
 
 def test_recording_a_goal_with_a_retro_grade_refreshes_the_graph(tmp_path, monkeypatch):
     """THE REGRESSION. This is the issue's own done_when: a completed goal with auto_refresh: true
-    produces the builder's graph.json with no manual /agrim-kg invocation anywhere."""
+    produces the builder's graph.json with no manual /sigma-kg invocation anywhere."""
     d, root = _repo(tmp_path, _on())
     monkeypatch.setenv("PATH", f"{_stub_builder(tmp_path)}{os.pathsep}{os.environ['PATH']}")
 
@@ -134,7 +134,7 @@ def test_the_refreshed_graph_lands_where_status_actually_looks(tmp_path, monkeyp
 
     kg_spec = importlib.util.spec_from_file_location(
         "kg", pathlib.Path(__file__).resolve().parent.parent
-        / "skills" / "agrim-kg" / "scripts" / "kg.py")
+        / "skills" / "sigma-kg" / "scripts" / "kg.py")
     kg = importlib.util.module_from_spec(kg_spec); kg_spec.loader.exec_module(kg)
     assert kg.status(d)["graph_built"] is True
     assert not (pathlib.Path(d) / "knowledge" / f"{BUILDER}-out").exists(), \
@@ -155,7 +155,7 @@ def test_auto_refresh_false_does_not_refresh(tmp_path, monkeypatch):
 
 def test_auto_refresh_absent_does_not_refresh(tmp_path, monkeypatch):
     """NEGATIVE CONTROL, absent-key form — the shape every repo scaffolded from
-    skills/agrim-init/templates/config.json.tmpl actually ships with."""
+    skills/sigma-init/templates/config.json.tmpl actually ships with."""
     d, root = _repo(tmp_path, {"enabled": True, "scope": "research", "builder": BUILDER})
     monkeypatch.setenv("PATH", f"{_stub_builder(tmp_path)}{os.pathsep}{os.environ['PATH']}")
 

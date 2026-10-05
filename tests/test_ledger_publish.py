@@ -4,7 +4,7 @@
 THE DEFECT. Publish was automatic on exactly ONE path: `watch.sh` runs `sync.py publish` every
 tick, and `loop.py` starts that watcher on every loop trigger. Every write path OUTSIDE the loop --
 `ledger.py append`, `handoff.py open`/`track`/`ack`, which are precisely the commands
-`/agrim-ledger` tells a person to run by hand -- wrote to disk and stopped there. No publish, no
+`/sigma-ledger` tells a person to run by hand -- wrote to disk and stopped there. No publish, no
 watcher, and not one word saying so. On a machine that was not concurrently looping, a note, a
 hand-off or an ack was invisible to the team indefinitely; one adopter machine held 67% of its
 ledger history locally for two and a half weeks while every surface read as healthy.
@@ -13,8 +13,8 @@ WHY THIS PUBLISHES RATHER THAN STARTING A WATCHER. Two precedents decide it, and
 "interactive commands must not touch the network" -- `handoff.py open` already creates a GitHub
 issue, so the kit plainly does not hold that rule. `cheap_only` (setup_wizard.py) draws the line at
 CONSENT, not at cost: the wizard's unconditional SessionStart hook takes the cheap subset while
-`/agrim-doctor`, "which the user typed on purpose", keeps the full sweep including the network. A
-`/agrim-ledger` write is the typed-on-purpose half, and being seen is the entire point of it.
+`/sigma-doctor`, "which the user typed on purpose", keeps the full sweep including the network. A
+`/sigma-ledger` write is the typed-on-purpose half, and being seen is the entire point of it.
 `discovery.reconcile.mode` draws the other line at UNATTENDED writes -- default off, because "a
 typo must never switch on a mechanism that WRITES" while nobody is watching. A person typing a note
 is attended by construction. Starting the watcher instead would fail both tests at once: it enrols
@@ -38,7 +38,7 @@ import subprocess
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -393,7 +393,7 @@ def test_a_ledger_that_was_never_bootstrapped_is_told_so_rather_than_pushed(tmp_
     base = _sdlc(tmp_path)
     (base / "ledger" / "entries").mkdir(parents=True)
     said = sync.publish_after_write(base, ON)
-    assert "LOCALLY ONLY" in said and "/agrim-ledger" in said, said
+    assert "LOCALLY ONLY" in said and "/sigma-ledger" in said, said
 
 
 def test_a_failed_publish_says_so_instead_of_failing_silently(clone):
@@ -533,7 +533,7 @@ def _is_entry_id(stdout):
 
 
 def test_ledger_append_reports_the_publish_state_on_stderr(clone):
-    """The command `/agrim-ledger` actually tells a person to type. stdout stays the bare entry id
+    """The command `/sigma-ledger` actually tells a person to type. stdout stays the bare entry id
     because callers parse it; the delivery state is a human's business, so it goes to stderr."""
     _repo, base = clone
     _bootstrap(base)

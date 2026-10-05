@@ -1,5 +1,5 @@
 """#2163 (epic #2161, slice 2 of `.sdlc/design/2154.md`) wired the feature-priority ask into
-`/agrim-define`'s own `declare` step as pure SKILL.md prose -- no new Python of this skill's own.
+`/sigma-define`'s own `declare` step as pure SKILL.md prose -- no new Python of this skill's own.
 #2266 (epic #2260, slice 6 of `.sdlc/design/2253.md`) changed WHAT that ask does: once priority is
 data on the unit, stamping every member's own `priority:` label is actively harmful (it erases the
 per-issue tiers the comparator reads), so the ask now records one value on the unit's OWN registry
@@ -9,8 +9,8 @@ The verb it calls (`define.py set-priority`, wired in the same commit) has its o
 where it is implemented (`tests/test_define.py`); this file's job, exactly like
 `tests/test_sdlc_goal_review_skill.py`'s for that skill's own feature-ification step, is pinning the
 OPERATIONAL CONTRACT this prose states -- that the question exists, is asked at the right point
-(after `declare`, consistent with `agrim-goal-review`'s own placement), uses the one
-AskUserQuestion/plain-conversation convention this pipeline already settled on (`agrim-dossier`'s own
+(after `declare`, consistent with `sigma-goal-review`'s own placement), uses the one
+AskUserQuestion/plain-conversation convention this pipeline already settled on (`sigma-dossier`'s own
 terminal question), and that skipping it is byte-identical to this skill's behavior before the
 question existed, by construction: no other sentence in this file may call `set-priority`. Stable
 anchors only (structural claims, the exact CLI shape, ordering) -- not prose wording that could
@@ -19,7 +19,7 @@ reasonably be rephrased.
 import pathlib
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKILL = (_ROOT / "skills" / "agrim-define" / "SKILL.md").read_text(encoding="utf-8")
+SKILL = (_ROOT / "skills" / "sigma-define" / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_documents_the_priority_question():
@@ -29,14 +29,14 @@ def test_documents_the_priority_question():
 
 def test_priority_question_follows_the_ask_user_question_convention():
     # The pipeline's one settled convention for an optional ask, named explicitly rather than
-    # re-described -- exactly how `agrim-goal-review`'s own feature-ification step cites it.
+    # re-described -- exactly how `sigma-goal-review`'s own feature-ification step cites it.
     assert "AskUserQuestion" in SKILL
-    assert "agrim-dossier" in SKILL
+    assert "sigma-dossier" in SKILL
     assert "terminal question" in SKILL
 
 
 def test_priority_question_sits_after_declare_and_before_assignment():
-    # Ordering matches `agrim-goal-review`'s own placement of the identical question, so a user sees
+    # Ordering matches `sigma-goal-review`'s own placement of the identical question, so a user sees
     # one consistent ask regardless of which path created the feature -- not because `set-priority`
     # itself needs the member issues `declare` just filed (it records data on the unit, and reads
     # none of them), so the ask must not be reachable before that call, and must not bleed into

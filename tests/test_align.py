@@ -1,11 +1,11 @@
-"""agrim-align: the cumulative-drift audit. Its whole reason to exist is that it reads a WINDOW of
-shipped goals — the per-plan gate (agrim-plan-review §4) and the per-goal one (agrim-retro) structurally
+"""sigma-align: the cumulative-drift audit. Its whole reason to exist is that it reads a WINDOW of
+shipped goals — the per-plan gate (sigma-plan-review §4) and the per-goal one (sigma-retro) structurally
 cannot see a trajectory. These pin that it stays a window check, stays advisory, no-ops without a
 north-star, and keeps a trigger that can actually fire."""
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ALIGN = ROOT / "skills" / "agrim-align" / "SKILL.md"
+ALIGN = ROOT / "skills" / "sigma-align" / "SKILL.md"
 
 
 def _t():
@@ -15,7 +15,7 @@ def _t():
 def test_skill_exists_with_frontmatter():
     assert ALIGN.exists()
     t = _t()
-    assert "name: agrim-align" in t
+    assert "name: sigma-align" in t
     assert "description:" in t and "allowed-tools:" in t
 
 
@@ -23,7 +23,7 @@ def test_is_a_window_check_not_a_per_unit_one():
     """If it re-did the per-unit gates it would be redundant with both of them."""
     t = _t()
     assert "window" in t.lower()
-    assert "agrim-plan-review" in t and "agrim-retro" in t
+    assert "sigma-plan-review" in t and "sigma-retro" in t
     assert "What this check is not" in t
 
 
@@ -67,9 +67,9 @@ def test_report_carries_the_count_that_drives_the_trigger():
 
 
 def test_status_offers_it_when_due():
-    status = (ROOT / "skills" / "agrim-status" / "SKILL.md").read_text()
-    assert "/agrim-align" in status
-    src = (ROOT / "skills" / "agrim-status" / "scripts" / "status.py").read_text()
+    status = (ROOT / "skills" / "sigma-status" / "SKILL.md").read_text()
+    assert "/sigma-align" in status
+    src = (ROOT / "skills" / "sigma-status" / "scripts" / "status.py").read_text()
     assert "goals_reviewed" in src and "ALIGN_EVERY" in src
 
 
@@ -78,4 +78,4 @@ def test_no_source_repo_leakage():
               "episode", "lipsync", "screenplay", "media-orch", "Temporal", "RunPod")
     t = _t()
     for b in banned:
-        assert b not in t, f"agrim-align leaked '{b}'"
+        assert b not in t, f"sigma-align leaked '{b}'"

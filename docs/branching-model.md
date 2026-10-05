@@ -124,7 +124,7 @@ and the difference decides what you may rely on:
   stops: the branch is left exactly as it was, and the finding is filed as a tracked issue naming
   each unaccounted-for commit. `--first-parent` is what keeps a merge landing's second-parent
   commits from reading as direct ones — and it holds only because the replay itself runs
-  `git rebase --rebase-merges` (as does `/agrim-rebase`), which recreates a merge landing instead of
+  `git rebase --rebase-merges` (as does `/sigma-rebase`), which recreates a merge landing instead of
   flattening its commits onto the first-parent line (#2756; a plain rebase did exactly that on a
   real host repo and locked the unit on every later pick).
 - **the sanctioned exit is an ack** (#2756). Commits a human has confirmed arrived through a pull
@@ -148,10 +148,10 @@ does not run, it says NOTHING, because `current` is not in `IN_CLAUSE` and `clau
 empty string. It cannot run at all under `merge_method: rebase`, and it takes a commit subject at
 its word.
 
-### 3a. The manually-triggered companion — `agrim-rebase`
+### 3a. The manually-triggered companion — `sigma-rebase`
 
-Detection is the rebase upkeep pass above; **explanation and resolution are `agrim-rebase`**
-(`skills/agrim-rebase/SKILL.md`), a separate, human-attended trigger layered alongside it, never a
+Detection is the rebase upkeep pass above; **explanation and resolution are `sigma-rebase`**
+(`skills/sigma-rebase/SKILL.md`), a separate, human-attended trigger layered alongside it, never a
 replacement for it. Where upkeep runs unattended, once per pick, and on a conflict does nothing
 more than abandon its throwaway worktree and file a tracked issue with a raw `git` error, this
 skill runs whenever a person asks, assembles a decision-context brief BEFORE touching anything —
@@ -222,7 +222,7 @@ content being lost. If any path loses content, the outcome is `would-drop`
   would remove or roll back N tracked path(s) it has (a, b, c and N-3 more) …` — a blocked pass, never shaped
   like `rebased`;
 - the finding is filed as a tracked issue (up to 20 paths listed, the count always exact);
-- `/agrim-doctor` shows it too: `.sdlc/state/features/<name>.rebase-blocked.json` records the
+- `/sigma-doctor` shows it too: `.sdlc/state/features/<name>.rebase-blocked.json` records the
   refusal, `doctor.py features` reports the unit as BLOCKED and `doctor.py check` adds a failing
   row. The next clean pass (`current` or `rebased`) removes the record;
 - `feature_rebase.py upkeep <sdlc_dir> <unit> [goal]` exits 1 on it, as on `failed`.
@@ -231,7 +231,7 @@ The check runs where the replayed head is computed, before the push and before a
 acts on the replay, so it is the outer guard on that result. It fails closed: a comparison that
 cannot be made (either read, or a timeout) reports `failed` and pushes nothing.
 
-The human-attended `agrim-rebase` skill is behind the same check at its **single push chokepoint**,
+The human-attended `sigma-rebase` skill is behind the same check at its **single push chokepoint**,
 `rebase_brief.push_branch`, so every caller of it is covered — `attempt_rebase` (`rebase_brief.py
 rebase`, and Slack's `--rebase`), `conflict_walk.walk_conflicts`'s push once every conflict is
 resolved, and its manual-recovery push after a rebase a human finished with raw git. Before pushing
@@ -337,7 +337,7 @@ request **as a merge commit, not a squash**: the feature branch then contains it
 reports `current`. A squash landing flattens the merge away, the branch is still behind, and the
 next replay re-applies the revert and is refused again. To accept the
 loss, land a goal that removes (or rolls back) those paths on the branch itself. Meanwhile
-`work.rebase_upkeep: "off"` stops the retries (and `/agrim-doctor` stops reporting the block). If an older
+`work.rebase_upkeep: "off"` stops the retries (and `/sigma-doctor` stops reporting the block). If an older
 Sigma already pushed such a replay, restore the old tip with
 `git push --force-with-lease=refs/heads/feature/<name>:<bad-sha> origin <good-sha>:refs/heads/feature/<name>`
 and check a few of the removed paths with `git cat-file -e <sha>:<path>`.
@@ -688,7 +688,7 @@ Why not one of the labels that already exist:
 | Alternative | Why not |
 |---|---|
 | `sdlc:parked` | gives up membership, and only a human undoes a park — two human gestures where one suffices, for a condition that is often momentary |
-| silence (skip it, say nothing) | the goal stays in the pickable queue, so `/agrim-triage` reports a permanently-refused goal as READY TO PICK, and every later slot re-reads it |
+| silence (skip it, say nothing) | the goal stays in the pickable queue, so `/sigma-triage` reports a permanently-refused goal as READY TO PICK, and every later slot re-reads it |
 | `sdlc:blocked` | the auto-unpark sweep believes it owns every instance of that label and strips it whenever the body names an already-closed dependency — so the two sweeps flap against each other forever, at two label swaps, two board moves and one false "blocker closed" comment per cycle |
 
 **It self-heals, and the human's gesture is exactly one.** A sweep runs before every pick and removes
@@ -977,7 +977,7 @@ worktree, and a resume adding it again would be the duplicate that idempotence e
   unit.
 
 **Folding the shards into `index.json` is a separate, explicit act** — run
-`python3 <plugin>/skills/agrim-loop/scripts/feature_sync.py fold .sdlc`, where `<plugin>` is the
+`python3 <plugin>/skills/sigma-loop/scripts/feature_sync.py fold .sdlc`, where `<plugin>` is the
 installed Sigma directory. It never happens on a pick: `index.json` is the one file every unit
 would share, and folding it back in on every pick would restore exactly the merge conflicts on
 exactly the file that exists to be a backup.
@@ -1191,7 +1191,7 @@ outcome worth more than a lost marker.
    from the create call and attached afterwards instead — for the create-abort reason above.)
 3. **It never fails a filing.** Every path degrades to "filed without a unit", which is exactly the
    behaviour that predates the feature, and says so through the existing warnings channel.
-4. **It does not cover `/agrim-scope`'s plan compilation.** That opens issues directly and
+4. **It does not cover `/sigma-scope`'s plan compilation.** That opens issues directly and
    deliberately: there is no "calling goal" to inherit from — it is a human turning an idea into a
    plan, not Sigma filing from work in flight.
 
@@ -1475,7 +1475,7 @@ on by itself.
 autonomously: the GOAL's own short-lived `sdlc/<goal>` branch (`work.branch_prefix` +
 the goal's stem, built once in `work.start()`), and only once its pull request is independently
 confirmed `MERGED` — never before, never speculatively. That happens in exactly two places, both in
-`skills/agrim-loop/scripts/work.py`: `merge()`'s eager remote delete right after a direct landing,
+`skills/sigma-loop/scripts/work.py`: `merge()`'s eager remote delete right after a direct landing,
 and `finish()`'s backstop (local `git branch -D` + a redundant remote delete) for a PR that armed
 and landed asynchronously instead. Both operate on the goal's own branch (`rec["branch"]`)
 exclusively — neither reads, nor could structurally reach, `rec["base"]`, which is the field that
@@ -1484,7 +1484,7 @@ a `feature/<name>` branch is touched at all) only ever **force-pushes** it — r
 replay goal branches forward — which is never a delete.
 
 Three further sites *build* a two-sided git push refspec (`<src>:<dst-ref>`) — the syntax git itself reads as a delete
-of that ref whenever `<src>` is empty, independent of any `-d`/`-D` flag or `--delete` verb: `skills/agrim-define/scripts/define.py`'s `_step_branch` (which is how a
+of that ref whenever `<src>` is empty, independent of any `-d`/`-D` flag or `--delete` verb: `skills/sigma-define/scripts/define.py`'s `_step_branch` (which is how a
 `feature/<name>` branch is *created* — `resolved_base()` refuses loudly rather than ever handing
 it an empty source) and `feature_rebase.py`'s own `_pushed` (whose source side is the fixed literal
 `HEAD`, never a runtime variable). The third is `release_manifest.py`'s
@@ -1561,7 +1561,7 @@ likely to break it: asked to "commit this" on a checkout that happens to be sitt
 unit forward at all, or — if the subject it wrote happens to read as a landing (§15) — rebases that
 commit out from under whoever was holding it.
 
-`/agrim-init` writes the rule into `.sdlc/project.md` on every scaffold, and into
+`/sigma-init` writes the rule into `.sdlc/project.md` on every scaffold, and into
 `.cursor/rules/sdlc.mdc` with `--cursor`. A repository that already had its own agent-instruction
 file before it adopted any of this gets nothing automatically. Paste this into that file, verbatim
 — the wording is identical everywhere the kit states the rule, on purpose, so that two readers of
@@ -1621,14 +1621,14 @@ stop because `## Nobody commits directly to a feature branch` is a heading — i
 in Sigma's own `AGENTS.md` — and a check that a heading satisfies proves only that someone
 pasted a title.
 
-### Defining a unit — the three kinds, and `/agrim-define`
+### Defining a unit — the three kinds, and `/sigma-define`
 
 A unit does not begin with a command. It begins with a **human deciding that one exists** — that
-some body of work is large enough that several goals will share a branch for it. `/agrim-define` is
+some body of work is large enough that several goals will share a branch for it. `/sigma-define` is
 where that decision is carried out. It asks which of three kinds the work is, what the unit is
 called, what the work actually is, and who it belongs to; from the first two it performs the three
 creation steps of *Opening a unit* below, in the order given there; and it hands the rest to
-`/agrim-scope`, so that the issues filed against the unit carry the bare two-line marker (§4) from
+`/sigma-scope`, so that the issues filed against the unit carry the bare two-line marker (§4) from
 the moment they exist. **That is the normal path.** The commands below are what it runs, written
 out because a gesture nobody can read is a gesture nobody can check — and because a repository
 opening a unit without the skill still has to get them right.
@@ -1651,10 +1651,10 @@ with the kind (§2), and so **there is no `bug/` branch and no `refactor/` branc
 what keeps every branch belonging to a unit greppable, forever, including after the unit finishes.
 §5's rule on what a unit may be called applies to all three kinds unchanged.
 
-**Creating the label is a human's act, so `/agrim-define` is the one place in the kit that may
+**Creating the label is a human's act, so `/sigma-define` is the one place in the kit that may
 create one.** §7 is where that rule and its reason live, and nothing here weakens it: no automated
 path mints a `feature:*` label from a marker it merely read, and the loop still attaches and still
-refuses exactly as §7 and §7a describe. `/agrim-define` is not such a path — it runs because a
+refuses exactly as §7 and §7a describe. `/sigma-define` is not such a path — it runs because a
 person invoked it, once, with a name that person has just chosen — so it is less an exception to §7
 than the gesture §7 leaves to a human, finally given somewhere to live. **The distinction is who
 chose the name**, never which process typed the command. Being the single exception is also why the
@@ -1667,7 +1667,7 @@ chances to drift. What the skill adds is that the order stops being something a 
 wrong by hand: the issues carrying the body marker are filed last, by the same flow that created
 the label those issues will need.
 
-**Running one unit and nothing else: `--feature <name>`.** `/agrim-loop` and `/agrim-goal` both take
+**Running one unit and nothing else: `--feature <name>`.** `/sigma-loop` and `/sigma-goal` both take
 it, and both make the same guarantee, in these words:
 
 > **While a `--feature` run is active, no goal outside that unit may be picked.**
@@ -1687,7 +1687,7 @@ unlabelled and uncommented-on.
 
 ### Opening a unit
 
-The four steps, in the order that works. `/agrim-define` above performs the first three and
+The four steps, in the order that works. `/sigma-define` above performs the first three and
 files the issues that carry the fourth; by hand, they are these.
 
 ```bash
@@ -1705,7 +1705,7 @@ mkdir -p .sdlc/features
 #      Branch: feature/<name>
 ```
 
-Steps 1 and 2 are a human's, once per unit — whether performed by `/agrim-define` or typed out;
+Steps 1 and 2 are a human's, once per unit — whether performed by `/sigma-define` or typed out;
 step 3 is a human's too, once per repository; and
 **step 4 comes last for the reason above**. After that, every goal that declares the unit is cut
 from its branch, recorded against it, and passes it down to whatever it files.
@@ -1737,15 +1737,15 @@ Two things about it that are easy to get wrong:
 |---|---|---|
 | a goal to belong to a unit | write the two-line marker in its body, bare | indent it, fence it, or bury it in a sentence |
 | a goal to use the old behaviour | declare nothing — that is the default | invent a "none" unit name |
-| a new unit | `/agrim-define` — it creates the branch **and** the label **before** any issue declares it, and files the issues that do | declare it in a body first — that refuses the pick until the label exists (§14) |
+| a new unit | `/sigma-define` — it creates the branch **and** the label **before** any issue declares it, and files the issues that do | declare it in a body first — that refuses the pick until the label exists (§14) |
 | a new unit, by hand | the four steps of *Opening a unit*, in that order | reorder them because the order looks arbitrary |
 | a unit for a shared bug or a refactor | the same `feature/` branch, with the kind recorded rather than spelled into the name | a `bug/` or `refactor/` branch — neither exists |
-| a run confined to one unit | `--feature <name>` on `/agrim-loop` or `/agrim-goal` | assume a scoped run still sweeps the rest of the backlog |
+| a run confined to one unit | `--feature <name>` on `/sigma-loop` or `/sigma-goal` | assume a scoped run still sweeps the rest of the backlog |
 | to fix a typo'd unit | correct the `Feature:` line in the body | add a second `Feature:` line |
 | to move a goal between units | change the body marker **and** the label | change one of them — that is the conflict state |
 | to record a finished unit | set `open: false` in its entry | delete the branch and expect the record to follow |
 | to know whether this repository adopted the registry at all | `ls .sdlc/features` — the directory's existence *is* the adoption, and `mkdir -p .sdlc/features` is all of it | read an empty `show` as "this repository has no units" |
-| to see the whole registry | `python3 <plugin>/skills/agrim-loop/scripts/feature_sync.py show .sdlc` — `{}` means **not adopted** just as often as it means **no units yet**, and the row above tells them apart | read `index.json` alone — it is derived and may be stale |
+| to see the whole registry | `python3 <plugin>/skills/sigma-loop/scripts/feature_sync.py show .sdlc` — `{}` means **not adopted** just as often as it means **no units yet**, and the row above tells them apart | read `index.json` alone — it is derived and may be stale |
 | to refresh `index.json` | the same script's `fold` verb | expect a pick to do it |
 | to add a note to a unit's page | write it **below** the end marker | edit inside the managed block |
 
@@ -1788,7 +1788,7 @@ Two things about it that are easy to get wrong:
     branch. `test_144_r2_known_limit_a_revert_masked_by_the_branchs_later_edit` pins this as a
     strict expected failure, so fixing it turns a test red and this entry gets rewritten.
   What IS caught around it: the same revert when the branch did not edit that file again, a revert
-  to a version created by a merge or in the root commit, and every push the `agrim-rebase` skill
+  to a version created by a merge or in the root commit, and every push the `sigma-rebase` skill
   makes (all behind `push_branch`, §3b). It errs the other way on purpose: a plain upstream
   deletion, a move-and-rewrite past rename similarity, and a base reverting its own older change to
   a file the branch carries are all refused like a revert, because as trees they are the same. Its
@@ -1798,16 +1798,16 @@ Two things about it that are easy to get wrong:
   one base change the guard reads as a revert blocks upkeep on EVERY feature branch that carries
   the affected paths: a reverted dependency bump (a lock file and a manifest rolled back to a
   version each branch's history held) refuses upkeep on every feature branch cut in the window
-  between the bump and its revert, and each stays blocked — a failing `/agrim-doctor` row and an
+  between the bump and its revert, and each stays blocked — a failing `/sigma-doctor` row and an
   issue per branch — until a person resolves that branch (§3b), or sets `work.rebase_upkeep:
   "off"` while it stands. Nothing is lost and nothing is pushed while it waits; the cost is N
   human decisions and N branches drifting further behind their base until each is taken. The
-  `agrim-rebase` skill's pushes (§3b) are the same guard and cost the same decision.
+  `sigma-rebase` skill's pushes (§3b) are the same guard and cost the same decision.
   A **goal** branch's replay (`work.rebase()`) is guarded only over the paths the goal changed
   since it forked, so a goal whose commits reached the base as the **same** commits (a true
   merge) and were then reverted is not seen there — its diff since the fork is empty. Replaying a
   goal whose PR has merged is not a flow the loop takes.
-  The `agrim-rebase` pushes exempt a loss between the remote tip and the pre-rebase head only when
+  The `sigma-rebase` pushes exempt a loss between the remote tip and the pre-rebase head only when
   it is a pure deletion the branch's own non-merge commit made, of a path the base has not touched
   since the remote tip (§3b). **Fork/upstream shape:** a hand rebase onto `upstream/main` can import
   a deletion, followed by upkeep onto `origin/main`, which never touched the file. That deletion
@@ -1833,7 +1833,7 @@ Two things about it that are easy to get wrong:
   to a version held only below the shallow boundary is NOT SEEN by `dropped_paths` there. The
   exemption fails closed — in a shallow repository (`git rev-parse --is-shallow-repository`) nothing
   is exempt and the refusal says the clone is shallow — but the loss detection itself is weaker;
-  run upkeep and `agrim-rebase` from a full clone (`git fetch --unshallow`).
+  run upkeep and `sigma-rebase` from a full clone (`git fetch --unshallow`).
   **Budget.** The history reads come in 200-path batches, each bounded by
   `SIGMA_REBASE_GUARD_TIMEOUT`; all of one push's reads together are bounded by
   `SIGMA_WATCH_CALL_TIMEOUT` (default `120`s), and exceeding it refuses the push rather than
@@ -1885,11 +1885,11 @@ Two things about it that are easy to get wrong:
   sibling fills is the board half.
 - **A hand-run `work.py start` names nobody** (§12). Inference is a record, not a defence; the field
   is defended by the one-directional registry write (§8f) whatever reaches it.
-- **`/agrim-promote` does not clear an ownership or scope hold on its own** (§12, §8f). Both
+- **`/sigma-promote` does not clear an ownership or scope hold on its own** (§12, §8f). Both
   pick-time gates recompute from the registry — plus, for ownership, the issue's author — and read
   no label, so a promotion returns board membership and the next pick reaches the same answer. The
   hold ends with a **registry edit**: `repos.<repo>.authorized = true`, a corrected `owner`, or the
-  repo added to `repos`; promoting is the gesture that comes after one of those. `/agrim-promote`
+  repo added to `repos`; promoting is the gesture that comes after one of those. `/sigma-promote`
   refuses the promotion it can tell would be undone and names the edit, and a goal that is promoted
   and set aside again says so on the issue and in the ledger rather than going quiet (#1569).
 - **Depth 3 is a convention, not a check** (§2). What *is* checked is that a unit name has no `/`.
@@ -2017,8 +2017,8 @@ A unit's own individual issues each carry their own `priority:P0`–`P4` label a
 silent on priority entirely, by design — a unit is about *branching*, not urgency). A unit may
 **additionally** carry its own priority — one value, recorded on the unit's `.sdlc/features/`
 registry entry (§8b's `priority` field, #2261), never a write to any member issue. **Optionally**,
-at the moment a unit is opened (`/agrim-define`'s own `declare` step) or promoted
-(`agrim-goal-review`'s §5 feature-ification, same `declare` step), whoever is driving that pass is
+at the moment a unit is opened (`/sigma-define`'s own `declare` step) or promoted
+(`sigma-goal-review`'s §5 feature-ification, same `declare` step), whoever is driving that pass is
 asked one more question: *"Give `feature:<name>` a priority? (P0–P4, or skip)"*.
 
 - **Answered** — `define.py set-priority --unit <name> --priority <P>` records `P` on `<name>`'s
@@ -2089,7 +2089,7 @@ edge this view cannot resolve (not a fellow open member, not found closed in the
 found open in it either) keeps its dependent **out** of the ready set, the opposite of the pick-time
 dependency gate's own fail-OPEN posture on the same shape of gap. Full reasoning, including why that
 divergence is safe here specifically because this is advisory output rather than a claim gate:
-`skills/agrim-loop/scripts/feature_frontier.py`'s own module docstring, and design #2253
+`skills/sigma-loop/scripts/feature_frontier.py`'s own module docstring, and design #2253
 (BR-4, D-10).
 
 ## 18. The `core` unit, and AI-judgment classification of a dangling goal
@@ -2118,7 +2118,7 @@ outcome.** Both conditions are required: `discovery.no_dangling_goal.enabled` is
 as it always was — nothing in this section changes that promise.
 
 **The classifier: a strict, ordered, 4-tier chain, first match wins, and it never creates
-anything.** `skills/agrim-loop/scripts/feature_classify.py` is the implementation and its own module
+anything.** `skills/sigma-loop/scripts/feature_classify.py` is the implementation and its own module
 docstring is the source of record for the mechanism — this is a summary, not a substitute for it:
 
 1. a **single existing unit, open or closed**, resolves the goal to it. A match on a **closed**
@@ -2163,7 +2163,7 @@ document will say so once one is chosen, rather than implying tiers 1/3 already 
 Full design record: design #2253 D-6 (the sentinel this reverses) and issue #2260's own
 comment history (the 2026-09-10 call that reversed it, and the plan-review that verified the
 never-creates-a-unit guarantee before implementation began). Full mechanism:
-`skills/agrim-loop/scripts/feature_classify.py`'s own module docstring.
+`skills/sigma-loop/scripts/feature_classify.py`'s own module docstring.
 
 ---
 

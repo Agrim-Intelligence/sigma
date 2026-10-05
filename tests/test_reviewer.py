@@ -1,4 +1,4 @@
-"""Tests for skills/agrim-loop/scripts/reviewer.py (issue #1983).
+"""Tests for skills/sigma-loop/scripts/reviewer.py (issue #1983).
 
 Independence is a property of how a review is RUN, not a claim the reviewer can make about itself.
 These assert the resolution ITSELF -- which mechanism a given host/config lands on -- because that is
@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _r():
@@ -305,7 +305,7 @@ def test_run_gesture_timeout_stops_the_reviewer_and_its_child(tmp_path):
 
 def test_review_skills_document_the_executable_run_gesture():
     root = pathlib.Path(__file__).resolve().parent.parent
-    for skill in ("agrim-review", "agrim-plan-review", "agrim-goal-review"):
+    for skill in ("sigma-review", "sigma-plan-review", "sigma-goal-review"):
         text = (root / "skills" / skill / "SKILL.md").read_text()
         assert 'reviewer.py" run .sdlc ' in text, skill
         assert '--scratch "$(pwd)/.sdlc/work/' in text, skill
@@ -318,7 +318,7 @@ def test_template_ships_every_key_the_resolver_reads():
     root = pathlib.Path(__file__).resolve().parent.parent
     # The template is plain JSON -- verified: it parses as-is, with no {{placeholders}} and no //
     # comments. Do not add comment-stripping for a format this file does not use.
-    tmpl = json.loads((root / "skills" / "agrim-init" / "templates" / "config.json.tmpl")
+    tmpl = json.loads((root / "skills" / "sigma-init" / "templates" / "config.json.tmpl")
                       .read_text(encoding="utf-8"))
     review = tmpl["review"]
     for key in ("independent", "host", "command", "timeout_seconds"):
@@ -328,7 +328,7 @@ def test_template_ships_every_key_the_resolver_reads():
 
 def test_template_documents_every_legal_host_value():
     root = pathlib.Path(__file__).resolve().parent.parent
-    doc = (root / "skills" / "agrim-init" / "templates"
+    doc = (root / "skills" / "sigma-init" / "templates"
            / "config.json.tmpl").read_text(encoding="utf-8")
     for host in _r().HOSTS:
         assert host in doc, "_review_host does not document the %s value" % host
@@ -338,9 +338,9 @@ def test_doctor_remedy_string_names_keys_that_actually_exist():
     """doctor.py advertised '"context": "project"' -- a key that is not in the template at all.
     A remedy line telling an operator to set a key nothing reads is worse than none."""
     root = pathlib.Path(__file__).resolve().parent.parent
-    tmpl = json.loads((root / "skills" / "agrim-init" / "templates" / "config.json.tmpl")
+    tmpl = json.loads((root / "skills" / "sigma-init" / "templates" / "config.json.tmpl")
                       .read_text(encoding="utf-8"))
-    doctor = (root / "skills" / "agrim-doctor" / "scripts" / "doctor.py").read_text(encoding="utf-8")
+    doctor = (root / "skills" / "sigma-doctor" / "scripts" / "doctor.py").read_text(encoding="utf-8")
     assert '"context": "project"' not in doctor, "doctor still advertises a nonexistent review key"
     for key in tmpl["review"]:
         assert key in doctor, "doctor's remedy line never mentions review.%s" % key

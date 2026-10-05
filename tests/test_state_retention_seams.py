@@ -12,7 +12,7 @@ import os
 import pathlib
 import time
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 DAY = 86400
 OLD = time.time() - 200 * DAY
 

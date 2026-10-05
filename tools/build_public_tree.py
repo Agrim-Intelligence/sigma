@@ -58,7 +58,7 @@ DISPOSITIONS_PATH = "docs/launch/public-tree-dispositions.json"
 EXPOSURE_ALLOWLIST_PATH = "docs/launch/exposure-allowlist.json"
 DEFINITION_PATH = "docs/launch/definition.json"
 PLUGIN_JSON_PATH = ".claude-plugin/plugin.json"
-DOCTOR_PATH = "skills/agrim-doctor/scripts/doctor.py"
+DOCTOR_PATH = "skills/sigma-doctor/scripts/doctor.py"
 SDLC_DEFAULT = "exclude"
 AUTHOR_NAME = "sigma-public-snapshot"
 AUTHOR_EMAIL = "noreply@users.noreply.github.com"
@@ -71,7 +71,7 @@ CONTENT_RULES = ("private-key-header", "owner-placeholder")
 STDERR_CUT = 200
 #: The running copies whose bytes are compared with the commit's (step 7).
 TOOL_PATHS = ("tools/build_public_tree.py", "tools/leak_refs.py", "tools/readiness/exposure_scan.py",
-              "skills/agrim-loop/scripts/scrub.py")
+              "skills/sigma-loop/scripts/scrub.py")
 LEAK_SCAN_PATH = "tools/leak_scan.py"
 LEAK_SCAN_LABEL = "commit-time scan; key-body rule known incomplete, #433"
 NOT_COVERED = (

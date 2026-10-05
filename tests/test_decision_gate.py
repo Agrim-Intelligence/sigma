@@ -11,7 +11,7 @@ from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 G = ROOT / "hooks" / "decision_gate.py"
-LEDGER_PATH = ROOT / "skills" / "agrim-loop" / "scripts" / "ledger.py"
+LEDGER_PATH = ROOT / "skills" / "sigma-loop" / "scripts" / "ledger.py"
 
 
 def _gate():
@@ -265,7 +265,7 @@ def test_validate_catches_entries_that_can_never_fire():
 
 
 def test_validate_catches_a_malformed_id_at_authoring_time():
-    """#272: the id format `agrim-decide` documents (no internal whitespace, no colons) is enforced
+    """#272: the id format `sigma-decide` documents (no internal whitespace, no colons) is enforced
     HERE, at authoring time -- before a malformed id is ever attached to a real denial. Whitespace
     truncates on the old free-text read side; a colon collides with the `ident: message` separator
     both `evaluate()`'s reason text and a downstream denial metric's extraction regex rely on."""
@@ -307,7 +307,7 @@ def test_registered_as_a_pretooluse_hook():
 
 def test_no_source_repo_leakage():
     banned = ("media-orch", "OnShot", "onshot", "Temporal", "RunPod", "decisions.yaml", "yaml")
-    src = G.read_text() + (ROOT / "skills" / "agrim-decide" / "SKILL.md").read_text()
+    src = G.read_text() + (ROOT / "skills" / "sigma-decide" / "SKILL.md").read_text()
     for b in banned:
         assert b not in src, f"decision gate leaked '{b}'"
 
@@ -424,7 +424,7 @@ _OLD_FREE_TEXT_EXTRACT = re.compile(r"^[^:]*:\s*([^\s:]+)")
 def test_an_id_with_internal_whitespace_no_longer_silently_truncates():
     """Failure mode 1: `"DEC 001"` is syntactically indistinguishable from a real single-word id
     once it is inside free text, so the OLD regex truncates it to its first word ("DEC") -- this
-    cannot be detected on read, only avoided by a format contract at authoring time (agrim-decide's
+    cannot be detected on read, only avoided by a format contract at authoring time (sigma-decide's
     `validate()`). The regression this test actually guards is the NEW field: it must carry the
     id whole regardless of what the old free-text path does with it."""
     m = _gate()

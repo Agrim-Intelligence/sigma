@@ -1,4 +1,4 @@
-"""`agrim-define` -- the skill that OPENS a unit of work (#1662, story #1427, epic #1464).
+"""`sigma-define` -- the skill that OPENS a unit of work (#1662, story #1427, epic #1464).
 
 Every other module on this epic READS a declaration or acts on one. This one is the first that
 CREATES the thing being declared, which puts it on the far side of three rules the rest of the kit
@@ -21,7 +21,7 @@ this repo has already shipped and fixed:
 
 THE ONE RULE THIS MODULE IS ALLOWED TO BREAK, PINNED AS A TEST RATHER THAN AS PROSE. Sigma never
 creates a `feature:*` label; `sources.GitHubSource._run` refuses that exact invocation at the single
-chokepoint every `gh` call in that class passes through. `agrim-define` is the human's own gesture, so
+chokepoint every `gh` call in that class passes through. `sigma-define` is the human's own gesture, so
 it is the one authorized exception -- and `test_the_label_create_is_exactly_the_shape_the_kit_refuses`
 proves the exception is real by feeding this module's own argv to the kit's own refusal predicate. A
 comment claiming the exception would be worth nothing; a test that FAILS if the two ever stop
@@ -35,8 +35,8 @@ import importlib.util
 import pathlib
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFINE_SCRIPTS = _ROOT / "skills" / "agrim-define" / "scripts"
-LOOP = _ROOT / "skills" / "agrim-loop" / "scripts"
+DEFINE_SCRIPTS = _ROOT / "skills" / "sigma-define" / "scripts"
+LOOP = _ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name, where):
@@ -380,7 +380,7 @@ def test_an_existing_registry_directory_is_reported_not_recreated(tmp_path):
 
 
 def test_the_base_precedence_is_the_loops_own(tmp_path):
-    """Explicit, else `work.base`, else the branch we are on -- exactly `agrim-loop/SKILL.md`'s own
+    """Explicit, else `work.base`, else the branch we are on -- exactly `sigma-loop/SKILL.md`'s own
     precedence for a goal's base, borrowed rather than invented, so a repo does not have to hold two
     different answers to "based on what?"."""
     run = Runner(head="develop")
@@ -428,7 +428,7 @@ def test_an_explicit_base_makes_a_detached_checkout_fine(tmp_path):
 
 
 def test_an_empty_configured_base_falls_through_rather_than_pushing_an_empty_ref(tmp_path):
-    """`agrim-init`'s own template ships `work.base: ""`, which MEANS "the branch the loop was
+    """`sigma-init`'s own template ships `work.base: ""`, which MEANS "the branch the loop was
     started on" -- so treating the empty string as a base would push `:refs/heads/feature/x`, which
     git reads as a DELETE."""
     run = Runner(head="develop")

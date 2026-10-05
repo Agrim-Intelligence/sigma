@@ -7,8 +7,8 @@ rationale available: not a paraphrase of the rule, the actual substring, checkab
 against the goal text.
 
 SCOPE, after plan review. An earlier plan proposed a new `model_choice` ledger EVENT kind. That was
-wrong: `skills/agrim-loop/scripts/actionlog.py:112` already ships a `model_choice` kind, already
-carries `(model, effort, phase)`, and `skills/agrim-loop/SKILL.md:103` already instructs logging it at
+wrong: `skills/sigma-loop/scripts/actionlog.py:112` already ships a `model_choice` kind, already
+carries `(model, effort, phase)`, and `skills/sigma-loop/SKILL.md:103` already instructs logging it at
 exactly the point the new event would have been written. A second record under the same name would
 have double-recorded the tier in two streams and dropped `effort`/`phase`. The real gap is one
 field: `signal`.
@@ -22,8 +22,8 @@ import pathlib
 import sys
 
 SKILLS = pathlib.Path(__file__).resolve().parents[1] / "skills"
-sys.path.insert(0, str(SKILLS / "agrim-model" / "scripts"))
-sys.path.insert(0, str(SKILLS / "agrim-loop" / "scripts"))
+sys.path.insert(0, str(SKILLS / "sigma-model" / "scripts"))
+sys.path.insert(0, str(SKILLS / "sigma-loop" / "scripts"))
 
 import actionlog  # noqa: E402
 import predict as P  # noqa: E402

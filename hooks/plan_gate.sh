@@ -5,7 +5,7 @@
 # nothing may depend on it: AGENTS.md is explicit that a Claude Code hook may be
 # an accelerator, never load-bearing, and `gates.hard_plan_gate` is org-lockable,
 # which makes it load-bearing by definition. The host-agnostic enforcement point
-# is `skills/agrim-loop/scripts/work.py`'s `pr()` — plain Python, identical on
+# is `skills/sigma-loop/scripts/work.py`'s `pr()` — plain Python, identical on
 # Claude Code, Cursor and Codex, at most once per goal. Delete this file and the
 # gate still holds on every host; what you lose is EARLINESS, which is the whole
 # value this hook adds:
@@ -20,7 +20,7 @@
 # give opposite answers at its two enforcement points on the same host.
 #
 # Wired as a PreToolUse hook on Edit|Write|MultiEdit|NotebookEdit. The prompt
-# gate (agrim_gate.sh) reminds; THIS one refuses: with the flag on, a SOURCE
+# gate (sigma_gate.sh) reminds; THIS one refuses: with the flag on, a SOURCE
 # edit is denied unless a fresh plan exists under .sdlc/plans/ (the plan the
 # Plan phase wrote). Off by default — absent config = the hook allows
 # everything, so installing it changes nothing until a repo turns it on:

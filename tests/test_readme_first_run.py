@@ -1,7 +1,7 @@
 """The README's first-run path names only things that exist (#231).
 
-A new user copies the README literally. So every `/agrim-*` skill it names must be a shipped skill,
-every repo script path it names must be a tracked file, every `/agrim-init --flag` must be a flag
+A new user copies the README literally. So every `/sigma-*` skill it names must be a shipped skill,
+every repo script path it names must be a tracked file, every `/sigma-init --flag` must be a flag
 the scaffolder accepts, and the version floor it states must be the one doctor enforces -- which
 must not sit above the version the plugin actually ships.
 
@@ -23,10 +23,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
 
 _SPAN = re.compile(r"```[^\n]*\n(.*?)```|`([^`\n]+)`", re.S)
-_SKILL = re.compile(r"(?<![\w/.-])/(agrim-[a-z0-9-]+)")
+_SKILL = re.compile(r"(?<![\w/.-])/(sigma-[a-z0-9-]+)")
 _REPO_PY = re.compile(r"(?:^|[\s\"'(/])((?:skills|hooks|tools|evals)/[\w./-]+?\.py)\b")
 _BARE_PY = re.compile(r"(?<![\w/.-])([A-Za-z_][\w-]*\.py)\b")
-_INIT_FLAG = re.compile(r"/agrim-init((?:\s+--[a-z][\w-]*)+)")
+_INIT_FLAG = re.compile(r"/sigma-init((?:\s+--[a-z][\w-]*)+)")
 
 
 def _code(text):
@@ -54,10 +54,10 @@ def missing_scripts(text, root=ROOT):
 
 
 def unknown_init_flags(text, root=ROOT):
-    usage = (root / "skills/agrim-init/scripts/sdlc_init.py").read_text(encoding="utf-8")
+    usage = (root / "skills/sigma-init/scripts/sdlc_init.py").read_text(encoding="utf-8")
     known = set(re.findall(r"\[(--[a-z]+)\]", re.search(r'USAGE = "([^"]+)"', usage).group(1)))
-    # #236: `/agrim-init` runs init_flow.py, the one entry point; its USAGE lists its own flags.
-    flow = (root / "skills/agrim-init/scripts/init_flow.py").read_text(encoding="utf-8")
+    # #236: `/sigma-init` runs init_flow.py, the one entry point; its USAGE lists its own flags.
+    flow = (root / "skills/sigma-init/scripts/init_flow.py").read_text(encoding="utf-8")
     known |= set(re.findall(r"(?m)^\s+(--[a-z][\w-]*)", re.search(r'USAGE = """(.+?)"""', flow, re.S).group(1)))
     known |= set(re.findall(r"(?<=\s)(--[a-z][\w-]*)", re.search(r'USAGE = """(.+?)"""', flow, re.S).group(1)))
     used = {f for span in _code(text) for group in _INIT_FLAG.findall(span)
@@ -66,7 +66,7 @@ def unknown_init_flags(text, root=ROOT):
 
 
 def _doctor():
-    path = ROOT / "skills/agrim-doctor/scripts/doctor.py"
+    path = ROOT / "skills/sigma-doctor/scripts/doctor.py"
     spec = importlib.util.spec_from_file_location("doctor_231", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -88,7 +88,7 @@ def test_every_script_the_readme_names_ships():
     assert missing_scripts(README.read_text(encoding="utf-8")) == []
 
 
-def test_every_agrim_init_flag_the_readme_names_is_accepted():
+def test_every_sigma_init_flag_the_readme_names_is_accepted():
     assert unknown_init_flags(README.read_text(encoding="utf-8")) == []
 
 
@@ -135,20 +135,20 @@ def test_quickstart_covers_every_host_with_one_placeholder():
 # ---------------------------------------------------------------------------------- the controls
 
 def test_control_a_planted_skill_name_is_caught():
-    text = README.read_text(encoding="utf-8") + "\nRun `/agrim-nonexistent` next.\n"
-    assert missing_skills(text) == ["agrim-nonexistent"]
+    text = README.read_text(encoding="utf-8") + "\nRun `/sigma-nonexistent` next.\n"
+    assert missing_skills(text) == ["sigma-nonexistent"]
 
 
 def test_control_a_planted_script_path_is_caught():
     text = (README.read_text(encoding="utf-8")
-            + "\n```\npython3 skills/agrim-loop/scripts/bogus_script.py .sdlc\n```\n"
+            + "\n```\npython3 skills/sigma-loop/scripts/bogus_script.py .sdlc\n```\n"
             + "and `nothere_helper.py`.\n")
-    assert missing_scripts(text) == ["nothere_helper.py", "skills/agrim-loop/scripts/bogus_script.py"]
+    assert missing_scripts(text) == ["nothere_helper.py", "skills/sigma-loop/scripts/bogus_script.py"]
 
 
 def test_control_a_planted_init_flag_is_caught():
     # (#236: `--board` became a real flag of the one entry point; the plant is a flag nothing has)
-    text = README.read_text(encoding="utf-8") + "\n`/agrim-init --boardroom`\n"
+    text = README.read_text(encoding="utf-8") + "\n`/sigma-init --boardroom`\n"
     assert unknown_init_flags(text) == ["--boardroom"]
 
 
@@ -166,7 +166,7 @@ def _plugin_ids(root=ROOT):
 
 
 def missing_prose_skills(text, root=ROOT):
-    """Every `/agrim-*` the README names ANYWHERE -- prose, headings, tables, code -- ships."""
+    """Every `/sigma-*` the README names ANYWHERE -- prose, headings, tables, code -- ships."""
     return sorted(n for n in set(_SKILL.findall(text))
                   if not (root / "skills" / n / "SKILL.md").is_file())
 
@@ -222,7 +222,7 @@ def _subsection(text, heading_start):
     return rest[:end.start()] if end else rest
 
 
-INIT_SUBSECTIONS = ("What `/agrim-init` will ask you", "If `/agrim-init` says you lack access")
+INIT_SUBSECTIONS = ("What `/sigma-init` will ask you", "If `/sigma-init` says you lack access")
 
 
 _PY_GESTURE = re.compile(r"python3?\s+([\"']?)([^\s\"']+?\.py)\1(?![\w.])")
@@ -252,8 +252,8 @@ def test_every_skill_named_in_prose_ships():
 
 
 def test_control_a_skill_planted_in_plain_prose_is_caught():
-    text = README.read_text(encoding="utf-8") + "\nThen run /agrim-nonexistent to finish.\n"
-    assert missing_prose_skills(text) == ["agrim-nonexistent"]
+    text = README.read_text(encoding="utf-8") + "\nThen run /sigma-nonexistent to finish.\n"
+    assert missing_prose_skills(text) == ["sigma-nonexistent"]
     assert missing_skills(text) == []                  # the old, code-only extractor is blind to it
 
 
@@ -297,16 +297,16 @@ def test_installed_sigma_is_defined_once_and_every_user_gesture_uses_it():
 
 
 @pytest.mark.parametrize("gesture,script", [
-    ("python3 skills/agrim-init/scripts/preflight.py check . --sdlc .sdlc",
-     "skills/agrim-init/scripts/preflight.py"),
-    ("python3 <sigma>/skills/agrim-loop/scripts/loop.py next .sdlc",
-     "<sigma>/skills/agrim-loop/scripts/loop.py"),
-    ("python3 ~/sigma/skills/agrim-init/scripts/init_flow.py . --cursor --demo",
-     "~/sigma/skills/agrim-init/scripts/init_flow.py"),
-    ('python3 "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py" status .sdlc',
-     "${CLAUDE_PLUGIN_ROOT}/skills/agrim-log/scripts/log.py"),
-    ("python3 $CLAUDE_PLUGIN_ROOT/skills/agrim-loop/scripts/ledger.py mine .sdlc",
-     "$CLAUDE_PLUGIN_ROOT/skills/agrim-loop/scripts/ledger.py"),
+    ("python3 skills/sigma-init/scripts/preflight.py check . --sdlc .sdlc",
+     "skills/sigma-init/scripts/preflight.py"),
+    ("python3 <sigma>/skills/sigma-loop/scripts/loop.py next .sdlc",
+     "<sigma>/skills/sigma-loop/scripts/loop.py"),
+    ("python3 ~/sigma/skills/sigma-init/scripts/init_flow.py . --cursor --demo",
+     "~/sigma/skills/sigma-init/scripts/init_flow.py"),
+    ('python3 "${CLAUDE_PLUGIN_ROOT}/skills/sigma-log/scripts/log.py" status .sdlc',
+     "${CLAUDE_PLUGIN_ROOT}/skills/sigma-log/scripts/log.py"),
+    ("python3 $CLAUDE_PLUGIN_ROOT/skills/sigma-loop/scripts/ledger.py mine .sdlc",
+     "$CLAUDE_PLUGIN_ROOT/skills/sigma-loop/scripts/ledger.py"),
     ("python3 watch_daemon.py .sdlc &", "watch_daemon.py"),
     ("python3 evals/run.py", "evals/run.py"),
 ])
@@ -317,10 +317,10 @@ def test_control_an_uncopyable_gesture_is_caught_in_every_spelling(gesture, scri
 
 
 @pytest.mark.parametrize("block", [
-    "python3 /opt/sigma/skills/agrim-loop/scripts/loop.py next .sdlc",
-    'SIGMA=/opt/sigma\npython3 "$SIGMA/skills/agrim-loop/scripts/loop.py" next .sdlc',
-    "export SIGMA=/opt/sigma; python3 ${SIGMA}/skills/agrim-loop/scripts/loop.py next .sdlc",
-    'python3 "<installed-sigma>/skills/agrim-loop/scripts/loop.py" next .sdlc',
+    "python3 /opt/sigma/skills/sigma-loop/scripts/loop.py next .sdlc",
+    'SIGMA=/opt/sigma\npython3 "$SIGMA/skills/sigma-loop/scripts/loop.py" next .sdlc',
+    "export SIGMA=/opt/sigma; python3 ${SIGMA}/skills/sigma-loop/scripts/loop.py next .sdlc",
+    'python3 "<installed-sigma>/skills/sigma-loop/scripts/loop.py" next .sdlc',
 ])
 def test_an_absolute_or_block_defined_script_path_is_copyable(block):
     text = README.read_text(encoding="utf-8")
@@ -331,14 +331,14 @@ def test_an_absolute_or_block_defined_script_path_is_copyable(block):
 
 def _preflight_mod():
     spec = importlib.util.spec_from_file_location(
-        "preflight_277", ROOT / "skills/agrim-init/scripts/preflight.py")
+        "preflight_277", ROOT / "skills/sigma-init/scripts/preflight.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
 
 
 def access_rows(text):
-    """`| Init reports | Run |` rows under "If /agrim-init says you lack access" -> {label: command}."""
+    """`| Init reports | Run |` rows under "If /sigma-init says you lack access" -> {label: command}."""
     rows = {}
     for line in _subsection(text, INIT_SUBSECTIONS[1]).splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -454,7 +454,7 @@ def done_contradictions(text):
 
 
 def _done_surfaces():
-    return [README, ROOT / "skills/agrim-init/templates/config.json.tmpl"] + \
+    return [README, ROOT / "skills/sigma-init/templates/config.json.tmpl"] + \
         sorted((ROOT / "docs").glob("*.md"))
 
 
@@ -642,9 +642,9 @@ def _recorded_status(tmp_path):
     env = dict(os.environ, HOME=str(tmp_path / "home"), GIT_CONFIG_GLOBAL=os.devnull,
                GIT_CONFIG_SYSTEM=os.devnull)
     (tmp_path / "home").mkdir()
-    status = [sys.executable, str(ROOT / "skills/agrim-status/scripts/status.py"), ".sdlc"]
+    status = [sys.executable, str(ROOT / "skills/sigma-status/scripts/status.py"), ".sdlc"]
     before = subprocess.run(status, cwd=repo, env=env, capture_output=True, text=True)
-    rec = subprocess.run([sys.executable, str(ROOT / "skills/agrim-loop/scripts/loop.py"), "record",
+    rec = subprocess.run([sys.executable, str(ROOT / "skills/sigma-loop/scripts/loop.py"), "record",
                           ".sdlc", ".sdlc/goals/0001-add-exclaim.md", "done"],
                          cwd=repo, env=env, capture_output=True, text=True)
     assert rec.returncode == 0, rec.stdout + rec.stderr
@@ -653,7 +653,7 @@ def _recorded_status(tmp_path):
 
 
 def test_the_example_status_sample_is_what_status_py_prints(tmp_path):
-    """examples/hello-sdlc/README.md's `/agrim-status` sample is the real line: a fresh copy, its one
+    """examples/hello-sdlc/README.md's `/sigma-status` sample is the real line: a fresh copy, its one
     goal recorded `done` through `loop.py record`, then `status.py` -- the script the skill runs."""
     before, after = _recorded_status(tmp_path)
     text = (EXAMPLE / "README.md").read_text(encoding="utf-8")
@@ -702,8 +702,8 @@ def auto_unpark_drift(readme, template_mode, code_default):
 
 
 def _auto_unpark_truth():
-    tmpl = json.loads((ROOT / "skills/agrim-init/templates/config.json.tmpl").read_text("utf-8"))
-    src = (ROOT / "skills/agrim-loop/scripts/sources.py").read_text(encoding="utf-8")
+    tmpl = json.loads((ROOT / "skills/sigma-init/templates/config.json.tmpl").read_text("utf-8"))
+    src = (ROOT / "skills/sigma-loop/scripts/sources.py").read_text(encoding="utf-8")
     code = re.search(r'(?m)^DEFAULT_AUTO_UNPARK_MODE = "(\w+)"', src).group(1)
     return tmpl["discovery"]["auto_unpark"]["mode"], code
 

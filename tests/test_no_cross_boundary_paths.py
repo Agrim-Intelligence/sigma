@@ -11,7 +11,7 @@ everything else is derived from it.
     `/`-separated segments EQUALS a private root -- the path joins R1 cannot see
     (`ROOT / "<root>" / ...`, `os.path.join("..", "<root>", ...)`, `"/" + "<root>"`). A root R1
     already matched in the same constant is not counted twice. This was a separate guard over
-    `skills/agrim-loop/` only until #2584 folded it in here, over the whole scanned surface.
+    `skills/sigma-loop/` only until #2584 folded it in here, over the whole scanned surface.
   - IMPORT: a level-0 `import`/`from ... import` whose first dotted segment is EXACTLY a private
     package root (`_IMPORT_ROOTS`, derived) -- so `import pickle` no longer matches a two-letter
     root by prefix (#2584).
@@ -198,7 +198,7 @@ def test_the_guard_takes_no_arguments_and_writes_nothing():
 
 def test_the_real_core_is_scanned():
     scanned = _scanned()
-    assert "hooks/gate_state.py" in scanned and "skills/agrim-loop/scripts/loop.py" in scanned
+    assert "hooks/gate_state.py" in scanned and "skills/sigma-loop/scripts/loop.py" in scanned
     print("cross-boundary guard scans %d file(s)" % len(scanned))
 
 

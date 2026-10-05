@@ -3,7 +3,7 @@ import hashlib, json, os, pathlib, importlib.util, tempfile, subprocess, sys, ti
 import pytest
 from journal_events import journal_events
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 @pytest.fixture(autouse=True)
@@ -350,7 +350,7 @@ def test_note_verb_is_fail_open_but_reports_the_failure_loudly(capsys):
     """#1986: a failed `note` must never crash the run (that half of "fail-open" is unchanged --
     the CLI still catches the exception itself, it does not propagate), but it must no longer
     report success. The OLD shape here returned 0 unconditionally and printed one easy-to-miss
-    stderr line; for `agrim-goal-review`'s REJECT verdict this note is its ENTIRE output (§7g), so a
+    stderr line; for `sigma-goal-review`'s REJECT verdict this note is its ENTIRE output (§7g), so a
     silent 0 left a rejection with zero trace anywhere. Now: `FAILED` on stdout (the same word
     `mark-designed` already prints on ITS failure) plus a non-zero exit, so a caller checking either
     channel sees it."""
@@ -602,7 +602,7 @@ def test_record_failed_prunes_review_copy_without_releasing_the_failed_worktree(
 
 def test_two_real_picker_processes_the_second_is_refused_a_goal_a_live_worker_still_holds():
     """#1197's own acceptance bar, driven end-to-end: two REAL, separate `loop.py next` picker
-    subprocesses against ONE ledger-enabled `.sdlc`, exactly as two `/agrim-loop` sessions minutes
+    subprocesses against ONE ledger-enabled `.sdlc`, exactly as two `/sigma-loop` sessions minutes
     apart, same account, same machine would produce -- not a same-process unit check of
     `claim_belongs_to_me`. The first subprocess wins goal 0001 and exits normally (no crash,
     business as usual); by the time this test asserts, its own pid is already provably dead --
@@ -660,7 +660,7 @@ def test_a_stale_release_from_one_run_of_an_actor_does_not_wipe_a_live_reclaim_b
     pytest process's own pid, shared by both since it spawns them directly -- so worker-A's
     session never reads as dead even though its own short-lived `next` invocation already has, and
     `_next()` skips goal 0001 for worker-B instead of ever reaching the ledger-level reclaim this
-    test means to prove. Passing DISTINCT `--session-pid` values (matching the shipped `/agrim-loop`
+    test means to prove. Passing DISTINCT `--session-pid` values (matching the shipped `/sigma-loop`
     skill's own real pattern: every session captures and threads its OWN stable id, see SKILL.md's
     `--session-pid "$PPID"` on every `start`/`next`/`next-batch` call) is what makes two
     subprocesses actually MODEL two separate sessions -- worker-A's under a provably-dead pid (its
@@ -716,7 +716,7 @@ def test_two_real_picker_processes_under_the_real_shipped_template_the_second_is
     `agent-start` CLI verb -- `agent_start()`'s ONLY production caller, per SKILL.md step 3a's
     `agent-start .sdlc "$goal" --pid $PPID`) with a config loaded the way the real CLI loads it
     (`state.load_config`, inside `main()`/`_dispatch`), shaped like the literal shipped
-    `/agrim-init` template (`config.json.tmpl`) rather than a stripped-down test config that just
+    `/sigma-init` template (`config.json.tmpl`) rather than a stripped-down test config that just
     happens to omit the `agent_watch` key entirely. That gap matters: the template sets
     `agent_watch.enabled` to `false` EXPLICITLY, so if a future edit re-gated the marker write
     behind that flag (reverting #1197's own decoupling fix), every hand-built-dict test above
@@ -729,12 +729,12 @@ def test_two_real_picker_processes_under_the_real_shipped_template_the_second_is
     step 3a instructs -- not a direct Python call."""
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 2)
-        tmpl_path = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" /
+        tmpl_path = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" /
                      "templates" / "config.json.tmpl")
         cfg = json.loads(tmpl_path.read_text(encoding="utf-8"))
         assert cfg["agent_watch"]["enabled"] is False        # the exact shipped default, unchanged
-        # #2741: work.enabled ships `true` directly from /agrim-init as of 1.0.0 (was `null` --
-        # "not yet decided", per #2255 -- until /agrim-setup applied its own adoption default on a
+        # #2741: work.enabled ships `true` directly from /sigma-init as of 1.0.0 (was `null` --
+        # "not yet decided", per #2255 -- until /sigma-setup applied its own adoption default on a
         # fresh scaffold). This assertion documents the real shipped template shape; the rest of
         # this test is unaffected either way, since agent-start's marker write is gated on
         # `agent_watch.enabled` (still explicitly false, asserted above), never on `work.enabled`.
@@ -764,15 +764,15 @@ def test_two_real_picker_processes_under_the_real_shipped_template_the_second_is
 def test_skill_md_step_3a_registers_the_agent_start_marker_unconditionally_not_behind_work_enabled():
     """Independent review of PR #1237: SKILL.md step 3a's `agent-start --pid $PPID` line used to
     sit INSIDE the very same sentence as `With config.work.enabled on: ... work.py start` -- so on
-    a genuinely fresh `/agrim-init` install (`work.enabled: false`, the shipped default -- see
+    a genuinely fresh `/sigma-init` install (`work.enabled: false`, the shipped default -- see
     `config.json.tmpl`), the DOCUMENTED per-goal flow never called `agent-start` at all. That is
-    #1197's own acceptance criterion 6 ("registered by default on a normal /agrim-loop run") failing
-    for exactly the config `/agrim-init` ships, even though `agent_start()` itself was already fixed
+    #1197's own acceptance criterion 6 ("registered by default on a normal /sigma-loop run") failing
+    for exactly the config `/sigma-init` ships, even though `agent_start()` itself was already fixed
     to write unconditionally (see the CLI-verb test above). This is a structural pin, not a
     behavioral one -- SKILL.md is prose an agent reads, not code this suite can execute -- but it
     catches the registration call being silently re-nested under a gate the way it was before this
     fix, or the (now factually wrong) 'a no-op unless agent_watch.enabled' claim creeping back in."""
-    skill = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" /
+    skill = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" /
              "SKILL.md").read_text(encoding="utf-8")
     normalized = " ".join(skill.split())        # collapse hand-wrapped newlines before substring checks
     idx_agent_start = skill.index('agent-start .sdlc "$goal" --pid $PPID')
@@ -1115,7 +1115,7 @@ def test_a_real_phase_end_call_pushes_a_tiny_budget_over_and_loop_next_stops(tmp
     _write_cfg(base, {"max_iterations": 10, "max_tokens": 100})
     lp = _loop()
 
-    # 2. start_run resets run_tokens to 0, matching what /agrim-loop does at the start of a real run.
+    # 2. start_run resets run_tokens to 0, matching what /sigma-loop does at the start of a real run.
     lp.state.start_run(base)
 
     # 3. pre-seed near-exhaustion -- standing in for prior phases already real-run and already
@@ -1682,7 +1682,7 @@ def test_ensure_ledger_delivery_warns_on_a_deferred_publish(capsys):
             publish_fn=lambda *a, **k: "publish deferred (will retry next tick): no route")
         err = capsys.readouterr().err
         assert "ledger backlog is 2 entries" in err, err
-        assert "/agrim-doctor" in err, err
+        assert "/sigma-doctor" in err, err
 
 
 def test_ensure_ledger_delivery_warns_when_nothing_to_publish_still_leaves_a_real_backlog(capsys):
@@ -1700,7 +1700,7 @@ def test_ensure_ledger_delivery_warns_when_nothing_to_publish_still_leaves_a_rea
                                    publish_fn=lambda *a, **k: "nothing to publish")
         err = capsys.readouterr().err
         assert "ledger backlog is 2 entries" in err, err
-        assert "/agrim-doctor" in err, err
+        assert "/sigma-doctor" in err, err
 
 
 def test_ensure_ledger_delivery_is_silent_when_nothing_to_publish_and_the_backlog_is_actually_clear(monkeypatch, capsys):
@@ -2504,10 +2504,10 @@ def test_next_batch_stderr_lines_stay_attributed_to_their_own_goal(capsys):
     match a stderr line to a goal by the goal id the line names, not by position. Two goals with
     two DIFFERENTLY-signalled texts must produce two distinctly-texted lines and two correctly
     paired ledger events. Fixture text for goal "b" verified empirically against the real
-    predict.py (`python3 skills/agrim-model/scripts/predict.py why "Add a status line to the
+    predict.py (`python3 skills/sigma-model/scripts/predict.py why "Add a status line to the
     dashboard\n\nx" .sdlc` -> `model=sonnet signal=`) -- an earlier draft used "Fix a typo in the
     README", which actually resolves to `haiku` ("typo" is a listed haiku signal,
-    skills/agrim-model/scripts/predict.py:128) and would have made this test's own assertions
+    skills/sigma-model/scripts/predict.py:128) and would have made this test's own assertions
     wrong from the start; caught in plan-review, not left for Implement to discover."""
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
@@ -3673,7 +3673,7 @@ def test_cli_start_with_session_pid_writes_a_marker_session_active_sees(capsys):
 
 def test_cli_start_without_session_pid_flag_still_registers_via_ppid():
     """#1199 AC5: `start` now registers a session BY DEFAULT, no `--session-pid` needed -- the
-    shipped `/agrim-loop` skill invocation (SKILL.md's own bare `loop.py start .sdlc`) is exactly
+    shipped `/sigma-loop` skill invocation (SKILL.md's own bare `loop.py start .sdlc`) is exactly
     this call. Falls back to THIS PROCESS's own PPID, the same long-lived-parent identity
     `--session-pid` was always meant to capture (see session_start's own docstring) -- here that's
     the pytest-runner process, genuinely alive throughout the test."""
@@ -3955,9 +3955,9 @@ def test_shipped_skill_start_then_next_registers_a_session_as_actually_invoked()
     `loop.py next .sdlc` bare, NEVER --session-pid" -- that was accurate when written, but this
     PR's own later commit (see `test_os_getppid_is_unstable_across_genuinely_separate_forked_
     dispatch` below) found `os.getppid()` read inside a freshly-forked `loop.py` subprocess is NOT
-    a stable cross-call identity when `loop.py` is dispatched the way the real `/agrim-loop` skill
+    a stable cross-call identity when `loop.py` is dispatched the way the real `/sigma-loop` skill
     actually dispatches it (one Bash-tool call per command, each genuinely forking a fresh shell).
-    The design pivoted in response: SKILL.md/README/agrim-triage's SKILL.md were all rewritten to
+    The design pivoted in response: SKILL.md/README/sigma-triage's SKILL.md were all rewritten to
     pass `--session-pid "$PPID"` on EVERY `start`/`next`/`next-batch` call, unconditionally -- so a
     test asserting the bare, flagless form is "the shipped invocation" was left contradicting the
     doc it claimed to describe. `test_every_start_next_and_next_batch_invocation_in_shipped_skill_
@@ -3984,13 +3984,13 @@ def test_shipped_skill_start_then_next_registers_a_session_as_actually_invoked()
 
 
 def test_every_start_next_and_next_batch_invocation_in_shipped_skill_passes_session_pid():
-    """#1199 AC5 / #1239 review round 3, finding A: "a normal /agrim-loop run registers itself by
+    """#1199 AC5 / #1239 review round 3, finding A: "a normal /sigma-loop run registers itself by
     default, no hand-added flag required" is a claim about the REAL, CURRENT shipped SKILL.md --
     checked here by reading that file fresh on every run, not by hardcoding what an earlier commit
     intended (the exact way the test this replaces went stale: its docstring asserted a bare,
     flagless invocation that SKILL.md had already stopped issuing by the time this PR shipped).
-    Mirrors tests/test_triage_skill_docs.py's own established pattern for locking agrim-triage's
-    SKILL.md the same way, applied here to /agrim-loop's own doc -- the doc this PR's design pivot
+    Mirrors tests/test_triage_skill_docs.py's own established pattern for locking sigma-triage's
+    SKILL.md the same way, applied here to /sigma-loop's own doc -- the doc this PR's design pivot
     actually rewrote."""
     text = (S.parent / "SKILL.md").read_text()
     # Whitespace-collapsed to one line before matching: this doc hand-wraps a long invocation like
@@ -4004,11 +4004,11 @@ def test_every_start_next_and_next_batch_invocation_in_shipped_skill_passes_sess
     total = len(invocation.findall(flat))
     ok = len(flagged.findall(flat))
     assert total >= 2, (
-        "expected to find loop.py start/next/next-batch .sdlc invocations in agrim-loop's own "
+        "expected to find loop.py start/next/next-batch .sdlc invocations in sigma-loop's own "
         "SKILL.md -- if the doc no longer issues them this way, this test is stale, not passing"
     )
     assert ok == total, (
-        f"found {total} loop.py start/next/next-batch .sdlc invocation(s) in agrim-loop's own "
+        f"found {total} loop.py start/next/next-batch .sdlc invocation(s) in sigma-loop's own "
         f"SKILL.md but only {ok} pass --session-pid \"$PPID\" immediately after .sdlc -- a bare "
         f"invocation is exactly the unstable-cross-call-identity gap #1239 review found, and AC5's "
         f"'registers by default' claim only holds because the skill ALWAYS supplies this flag"
@@ -4322,7 +4322,7 @@ def test_agent_alive_expires_a_stale_marker_past_the_ttl_even_for_a_resolvable_p
 def test_agent_start_writes_the_marker_regardless_of_agent_watch_config():
     """#1197: this used to be a no-op unless `agent_watch.enabled is True`. But the SHIPPED config
     template sets `agent_watch: {"enabled": false, ...}` EXPLICITLY, not merely absent — so gating
-    the marker WRITE on that flag made it inert for every fresh `/agrim-init` scaffold, exactly the
+    the marker WRITE on that flag made it inert for every fresh `/sigma-init` scaffold, exactly the
     gap `ledger.claim_belongs_to_me`'s new `live_worker_check` now depends on this marker to close.
     Registering it is unconditional now (cheap, fail-open, local-only); the SEPARATE dead-agent
     NOTIFY tick (`agent_watch.py`'s own `enabled()`) is untouched and still gated."""
@@ -4881,7 +4881,7 @@ def test_cli_verify_refuses_a_traversal_goal_and_writes_no_evidence_outside_the_
 
 def test_cli_verbs_handle_a_never_init_d_sdlc_dir_gracefully(capsys):
     """#403: `next`/`next-batch`/`start`/`session-active` all call `state.load_config` before any
-    of their own logic runs. Pointed at a `.sdlc` that was never `/agrim-init`'d (no config.json at
+    of their own logic runs. Pointed at a `.sdlc` that was never `/sigma-init`'d (no config.json at
     all), each used to crash with a raw, unhandled FileNotFoundError traceback instead of a usable
     message. Non-vacuous: reverting just the fix (`state.ConfigMissing` + `loop.py` main()'s catch)
     makes this fail — `rc` comes back `None` (the process would have raised instead of returning)
@@ -4897,7 +4897,7 @@ def test_cli_verbs_handle_a_never_init_d_sdlc_dir_gracefully(capsys):
             err = capsys.readouterr().err
             assert rc == 2, f"{argv[1]}: expected a clean exit 2, got {rc!r}"
             assert "Traceback" not in err, f"{argv[1]}: a raw traceback leaked to stderr: {err!r}"
-            assert "config.json" in err and "/agrim-init" in err, (
+            assert "config.json" in err and "/sigma-init" in err, (
                 f"{argv[1]}: stderr isn't an actionable one-liner: {err!r}")
 
 
@@ -4948,7 +4948,7 @@ def test_next_skips_a_dead_pickers_claim_when_a_live_worker_marker_is_registered
     decisive on its own once a genuine long-lived worker for THIS goal is registered (`agent_start`,
     exactly as SKILL.md step 3a's `agent-start --pid $PPID` does after a real dispatch) -- `_next()`
     must skip past it to the next eligible goal, not re-pick a goal a live subagent is still
-    actively driving. Reproduces the report's own scenario: two `/agrim-loop` sessions minutes
+    actively driving. Reproduces the report's own scenario: two `/sigma-loop` sessions minutes
     apart, same account, same machine."""
     real_worker_pid = os.getpid()                     # THIS test process -- verifiably alive
     with tempfile.TemporaryDirectory() as d:
@@ -5097,7 +5097,7 @@ def test_auto_reclaim_sweep_reclaims_past_an_unrelated_live_session():
     just reached via wall-clock TTL age instead of a dead-picker-pid misread.
 
     This mattered MORE after #1199 than before it: #1199's SKILL.md has every ordinary
-    `/agrim-loop` call pass `--session-pid "$PPID"`, so a live, correctly-registered session is the
+    `/sigma-loop` call pass `--session-pid "$PPID"`, so a live, correctly-registered session is the
     NORMAL running state, not an edge case -- meaning the sweep was routinely inert for the whole
     DURATION of any properly-run loop, not just in a rare misconfigured-overlap scenario. Worse,
     `_fetch_pending` (sources.py) unconditionally excludes any issue still carrying
@@ -5724,8 +5724,8 @@ def test_verify_goal_refuses_with_exit_4_and_writes_no_evidence_when_the_worktre
 
 
 def test_verify_goal_exit_4_emits_verify_run_to_the_action_log(monkeypatch):
-    """#1899: the actionlog half of the same fix — `/agrim-log` reads ONLY the local actionlog
-    (never `ledger.EVENTS`, see `skills/agrim-log/scripts/log.py`'s own module docstring), so the
+    """#1899: the actionlog half of the same fix — `/sigma-log` reads ONLY the local actionlog
+    (never `ledger.EVENTS`, see `skills/sigma-log/scripts/log.py`'s own module docstring), so the
     ledger write alone (test above) does not actually close the overnight-visibility gap the issue
     names; this is the write that does. Mirrors `test_verify_goal_emits_verify_run_to_the_action_log`'s
     own shape for the exit=0 case, applied to exit=4 — `exit=4` alone, no `ok` key (there is no
@@ -7713,7 +7713,7 @@ def test_run_loop_cleanup_cannot_clear_an_overlapping_same_pid_successor(monkeyp
 
 def test_readme_session_end_gesture_captures_and_returns_the_generation_token():
     readme = (pathlib.Path(__file__).resolve().parent.parent / "README.md").read_text()
-    match = re.search(r'`(session_generation=\$\(python3 <installed-sigma>/skills/agrim-loop/scripts/loop\.py '
+    match = re.search(r'`(session_generation=\$\(python3 <installed-sigma>/skills/sigma-loop/scripts/loop\.py '
                       r'start \.sdlc --session-pid "\$PPID"\))`', readme)
     assert match, "README must contain one complete, copyable generation-capture command"
     # Shell parsing is the control: removing the final `)` makes this exact documented gesture red.
@@ -8073,13 +8073,13 @@ def test_resolve_blockers_for_park_says_so_when_everything_is_now_workable():
 def test_resolve_blockers_for_park_names_what_survived():
     def resolve(sdlc_dir, config, source, goal, refs, run=None, apply=True):
         return {"results": [{"ref": "7", "verdict": "chained",
-                             "detail": "#7 is parked — run /agrim-unpark on #7", "acted": False}],
+                             "detail": "#7 is parked — run /sigma-unpark on #7", "acted": False}],
                 "resolved": [], "surfaced": ["7"]}
     loop = _loop_with_stub_blockers(resolve)
     reason, transition = loop._resolve_blockers_for_park(".sdlc", {}, _NullSource(), "42",
                                                         _pack("7"), "base", None)
     assert transition == "park", "a blocker needing a human IS a park"
-    assert "/agrim-unpark" in reason and "#7" in reason and reason.startswith("base")
+    assert "/sigma-unpark" in reason and "#7" in reason and reason.startswith("base")
 
 
 def test_resolve_blockers_for_park_is_a_no_op_without_a_confident_blocked_by_finding():
@@ -8182,13 +8182,13 @@ def test_the_cli_next_verb_arms_itself_end_to_end_via_subprocess():
     green -- and bare sessions would silently go back to unattributed, which is the entire bug.
 
     This runs the real CLI in a real child process with SIGMA_RUN_ID scrubbed from the
-    environment, exactly as a bare `/agrim-loop` does, and asserts a run_stop row lands carrying the
+    environment, exactly as a bare `/sigma-loop` does, and asserts a run_stop row lands carrying the
     DERIVED id. A subprocess is what makes it honest: an in-process call would inherit this
     interpreter's own os.environ."""
     with tempfile.TemporaryDirectory() as d:
         base = _backlog_with_telemetry(d, 0)          # already drained -> `next` returns DONE
         env = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
-        loop_py = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "loop.py"
+        loop_py = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "loop.py"
         subprocess.run([sys.executable, str(loop_py), "start", base, "--session-pid", "31857"],
                        env=env, capture_output=True, text=True, timeout=60)
         r = subprocess.run([sys.executable, str(loop_py), "next", base, "--session-pid", "31857"],
@@ -8210,7 +8210,7 @@ def test_the_cli_next_verb_arms_itself_end_to_end_via_subprocess():
 # ------------------------------------------------- #1962: a claim reachable off the pick path
 # `claimed` had exactly ONE emitter -- `_next()` -- so it was a side effect of goal SELECTION, and
 # there was no way to claim a goal you had already chosen. Every entry point that names its own goal
-# (`/agrim-goal <issue>`, direct dispatch) reached `loop.py record ... done` unclaimed; measured on
+# (`/sigma-goal <issue>`, direct dispatch) reached `loop.py record ... done` unclaimed; measured on
 # this repo's real store, 197 of 440 terminal goals had no claim, capping a downstream autonomy rate
 # at 55.2% no matter how autonomous the loop actually was.
 
@@ -8380,7 +8380,7 @@ def test_record_does_NOT_arm_a_claim_the_control_against_synthesized_timestamps(
 
 def test_an_advisory_model_tier_query_does_NOT_claim_the_goal():
     """THE SECOND CONTROL (plan-review F1). predict.py's `_emit_model_choice` shells out to
-    `loop.py emit <goal> model_choice` from an ADVISORY /agrim-model question that can be asked
+    `loop.py emit <goal> model_choice` from an ADVISORY /sigma-model question that can be asked
     about any goal. Arming there would mark_in_progress an issue nobody is working, which
     `_next()` then reads as claimed and SKIPS -- a speculative tier query silently deleting a goal
     from the backlog."""
@@ -8451,7 +8451,7 @@ def test_arming_does_nothing_at_all_when_the_ledger_is_switched_off():
 
 # ---------------------------------------- #2029: arming may not relabel a ticket that is no goal
 # The ledger opt-in was the ONLY guard on the arming claim, and it answers "may Sigma record
-# anything here?", never "is this ticket a goal?". `agrim-goal-review` closes on two `loop.py note`
+# anything here?", never "is this ticket a goal?". `sigma-goal-review` closes on two `loop.py note`
 # calls that deliberately target tickets which are never goals -- the Dossier (`story`, SKILL.md
 # §4d) and the Spec/Epic (`epic`, §5g) -- so on 2026-09-01 arming wrote `sdlc:in-progress` onto
 # story #2017 and epic #2020, two seconds before each comment landed. That is the ORPHAN class
@@ -8521,7 +8521,7 @@ def test_note_on_a_non_goal_ticket_still_records_the_local_claim():
 
 def test_note_on_a_real_goal_still_marks_it_in_progress():
     """THE ANTI-VACUOUS MIRROR. Without this the guard above passes just as well if arming stopped
-    marking ANYTHING, which would break every `/agrim-goal <issue>` run rather than fix one."""
+    marking ANYTHING, which would break every `/sigma-goal <issue>` run rather than fix one."""
     with tempfile.TemporaryDirectory() as d:
         base = _gh_base(d)
         lp = _loop(); src = _GhLike(labels=["sdlc:goal", "priority:P1"])

@@ -4,7 +4,7 @@
     "issue": "#457",
     "decision": "source-proven prune",
     "pruner_or_cap": "retention.prune_closed_goal_streams: closed-as-done goals older than 90 days (floor 30), at most 200 removals per sweep",
-    "evidence": "writer actionlog.append; Sigma-owned, repo-local; prune in skills/agrim-loop/scripts/retention.py, tested by tests/test_state_retention.py; see docs/launch/b6-action-log-witness.md"
+    "evidence": "writer actionlog.append; Sigma-owned, repo-local; prune in skills/sigma-loop/scripts/retention.py, tested by tests/test_state_retention.py; see docs/launch/b6-action-log-witness.md"
   },
   {
     "pattern": ".sdlc/state/log/",
@@ -18,21 +18,21 @@
     "issue": "#457",
     "decision": "source-proven prune",
     "pruner_or_cap": "retention.prune_closed_goal_streams: closed-as-done goals older than 90 days (floor 30), at most 200 removals per sweep",
-    "evidence": "skill-prose row for the log glob; the files are the actionlog.append streams pruned by skills/agrim-loop/scripts/retention.py"
+    "evidence": "skill-prose row for the log glob; the files are the actionlog.append streams pruned by skills/sigma-loop/scripts/retention.py"
   },
   {
     "pattern": ".sdlc/state/log/<goal>.jsonl",
     "issue": "#457",
     "decision": "source-proven prune",
     "pruner_or_cap": "retention.prune_closed_goal_streams: closed-as-done goals older than 90 days (floor 30), at most 200 removals per sweep",
-    "evidence": "writer actionlog.append (actionlog.py log_path); pruned by skills/agrim-loop/scripts/retention.py; a live, parked, failed, awaiting-merge or re-claimed goal, or one whose branch survives, is never pruned"
+    "evidence": "writer actionlog.append (actionlog.py log_path); pruned by skills/sigma-loop/scripts/retention.py; a live, parked, failed, awaiting-merge or re-claimed goal, or one whose branch survives, is never pruned"
   },
   {
     "pattern": ".sdlc/state/witness",
     "issue": "#457",
     "decision": "source-proven prune",
     "pruner_or_cap": "retention.prune_closed_goal_streams: removed with its goal's action log under the same closed-as-done rule",
-    "evidence": "writer witness.record (witness.py) called from loop.py verify paths; Sigma-owned, repo-local; pruned by skills/agrim-loop/scripts/retention.py; see docs/launch/b6-action-log-witness.md"
+    "evidence": "writer witness.record (witness.py) called from loop.py verify paths; Sigma-owned, repo-local; pruned by skills/sigma-loop/scripts/retention.py; see docs/launch/b6-action-log-witness.md"
   },
   {
     "pattern": ".sdlc/state/witness/",

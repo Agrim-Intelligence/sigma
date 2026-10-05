@@ -107,17 +107,17 @@ the board.
 and `goal-review` (Stage 2) produce together: a goal carrying it has already been through a
 codebase-mapping design pass AND had that design confirmed. `loop.py design-check` (the Tech-side
 retrofit gate, opt-in via `goal_design.enabled`) is the only reader — it never writes the label.
-`goal-review` (that contract's §7, `/agrim-goal-review`) is the only writer, and only ON
+`goal-review` (that contract's §7, `/sigma-goal-review`) is the only writer, and only ON
 CONFIRMATION: an independent reviewer, fed only `review_context.py`'s `goal-review` brief (never the
 `goal-design` author's own context), confirms the write-up before `loop.py mark-designed` lands the
 label — never at `goal-design` alone, so an interruption between the two steps re-runs design rather
-than silently skipping review. A goal that reaches `agrim-goal`/`agrim-loop` without it gets parked and
+than silently skipping review. A goal that reaches `sigma-goal`/`sigma-loop` without it gets parked and
 a "Design #N" meta-issue filed, the same park-and-defer shape `goal_decompose`'s `file` mode already
-uses. `goal-review` never restores `sdlc:goal` itself either: a human's `/agrim-unpark` is the
+uses. `goal-review` never restores `sdlc:goal` itself either: a human's `/sigma-unpark` is the
 separate gesture that does, if the retrofit check had parked the goal — never a raw label edit. Where
 `goal-review` genuinely cannot run (a source with no story/epic tickets), the same by-hand fallback
 this section used to describe as the ONLY path still works: apply `sdlc:designed` by hand once
-satisfied with a filed design, then `/agrim-unpark`.
+satisfied with a filed design, then `/sigma-unpark`.
 
 ---
 
@@ -233,7 +233,7 @@ The park that follows names each blocker and what happened to it — so a park i
 "blocked" someone has to investigate from scratch. When every blocker was resolved, the goal is
 parked *behind work that is now moving*, and the sweep resumes it the moment that work closes.
 
-Only the residue reaches `/agrim-doctor` and `/agrim-promote`'s `deadlocked` bucket: the cases that
+Only the residue reaches `/sigma-doctor` and `/sigma-promote`'s `deadlocked` bucket: the cases that
 genuinely need a person.
 
 ---
@@ -258,7 +258,7 @@ FLAGGED tier of §5, and this label is what makes it queryable.
         │
         │   visible to every sweep, census and mirror   (it keeps membership)
         │   picked by nothing                            (not_eligible_labels refuses it)
-        │   reported as "ready to pick" by nothing       (/agrim-triage, /agrim-status)
+        │   reported as "ready to pick" by nothing       (/sigma-triage, /sigma-status)
         │
         └── a human creates the label  ──►  Sigma removes sdlc:needs-label itself,
                                             on the very next pick. Nothing to un-park.
@@ -272,7 +272,7 @@ dependency would be cleared by that sweep and re-held by this one, forever: two 
 false "blocker closed" comment per cycle. Two reasons need two labels.
 
 **Who clears it:** only the loop, and only by observing that the label now exists. A human never has
-to remove it, and `/agrim-unpark` is not its remedy — it is not a park, and the goal is already
+to remove it, and `/sigma-unpark` is not its remedy — it is not a park, and the goal is already
 approved. Create the label (and the branch), and the goal moves on its own.
 
 ---
@@ -298,14 +298,14 @@ authoritative about. So the goal is held:
         │   a ledger entry goes to the UNIT's owner, naming the goal and the repo
         │   one comment lands on the issue itself, saying the same thing
         │
-        └── the owner accepts, adds the repo to `repos`, and runs /agrim-promote
+        └── the owner accepts, adds the repo to `repos`, and runs /sigma-promote
 ```
 
 **Why this label and not `sdlc:needs-label`'s overlay shape.** A missing label self-heals — somebody
 creates it and the next pick clears the overlay unattended, so membership is worth keeping. A scope
 expansion needs a **decision**, and there is no observation that could resolve it on its own.
 `sdlc:needs-confirmation` is exactly this tool's existing state for "inert until its owner rules on
-it", and `/agrim-promote` is exactly the gesture that ends it.
+it", and `/sigma-promote` is exactly the gesture that ends it.
 
 **The one place this bends §2b's reasoning.** That section justifies auto-promoting a blocker
 carrying `sdlc:followup` + `sdlc:needs-confirmation` on the grounds that the pair means *no human has
@@ -322,7 +322,7 @@ every pick, so the worst case is one promote/refuse pair per event, and the goal
 inert. Closing it needs a signal `classify` can see, and `classify` reads labels only; the choice
 belongs to whoever owns that row. It is named in `feature_propagate.gate_at_pick`'s docstring too.
 
-**Who clears it:** a human, through `/agrim-promote`, after adding the repo to the unit. No sweep
+**Who clears it:** a human, through `/sigma-promote`, after adding the repo to the unit. No sweep
 clears this one, deliberately — nothing the machine can observe answers a question about scope.
 
 ---
@@ -357,7 +357,7 @@ before they have seen it.
         │   a ledger entry goes to the BOARD owner (the unit owner where there is no board owner)
         │   one comment lands on the issue itself, saying the same thing
         │
-        ├── the owner promotes this one issue with /agrim-promote, OR
+        ├── the owner promotes this one issue with /sigma-promote, OR
         └── the owner sets `repos.<repo>.authorized = true` once, and every issue under that
             unit is filed directly from then on — follow-ups included
 ```
@@ -381,7 +381,7 @@ that opened the first goal picked onto it — the only inference in the model �
 thereafter only by editing the registry. No reassignment on inactivity: an owner reassignable by
 whoever picks up work next is a lease, not an owner.
 
-**Who clears it:** a human, through `/agrim-promote`, or once and for all through the registry grant.
+**Who clears it:** a human, through `/sigma-promote`, or once and for all through the registry grant.
 No sweep clears this one, for §2b-ii's reason — nothing a machine can observe answers a question
 about authority.
 
@@ -416,7 +416,7 @@ goal declaring no unit is picked exactly as it always was, down to the byte.
         │
         │   visible to every sweep, census and mirror   (it keeps membership)
         │   picked by nothing                            (not_eligible_labels refuses it)
-        │   reported as "ready to pick" by nothing       (/agrim-triage, /agrim-status)
+        │   reported as "ready to pick" by nothing       (/sigma-triage, /sigma-status)
         │
         └── a human declares a unit  ──►  Sigma removes sdlc:needs-unit itself,
                                            on the very next pick. Nothing to un-park.
@@ -439,7 +439,7 @@ That call was reversed: `core` is now bootstrapped once as a **real** registered
 `feature:core` label, a real `feature/core` branch, a real registry entry) — full contract in
 `docs/branching-model.md` §18 — and a goal declaring no unit is no longer simply attributed to it by
 comment. It is run through a strict, 4-tier classification chain instead
-(`skills/agrim-loop/scripts/feature_classify.py`):
+(`skills/sigma-loop/scripts/feature_classify.py`):
 
 1. a single existing unit (open or closed — a closed match **reopens** it, see the Reopening
    section below) → attach to it, not the catch-all at all;
@@ -460,7 +460,7 @@ statement of that gap and what would close it.
 
 **Who clears `sdlc:needs-unit`:** only the loop, and only by observing that the issue now declares a
 unit — the same "only the loop, only by observing the condition resolved" rule §2b-i states for its
-own sweep. `/agrim-unpark` is not its remedy, for the identical reason: it is not a park, and the
+own sweep. `/sigma-unpark` is not its remedy, for the identical reason: it is not a park, and the
 goal is already approved.
 
 ---
@@ -478,7 +478,7 @@ Expected to be rare by design; §18 is where the mechanism that produces it live
         │
         │   visible to every sweep, census and mirror   (it keeps membership)
         │   picked by nothing                            (not_eligible_labels refuses it)
-        │   reported as "ready to pick" by nothing       (/agrim-triage, /agrim-status)
+        │   reported as "ready to pick" by nothing       (/sigma-triage, /sigma-status)
         │
         └── NO automatic sweep clears this one. A human declares a unit or attaches an
             existing `feature:<name>` label by hand, and ALSO removes `sdlc:needs-triage`
@@ -621,12 +621,12 @@ legitimate on a member of the backlog.
 | the `claim` verb | the same queue |
 | `_ensure_claimed` — arming (#1962) | **it was never asked** |
 
-Arming exists so a goal named directly (`/agrim-goal <issue>`, direct dispatch) still emits a
+Arming exists so a goal named directly (`/sigma-goal <issue>`, direct dispatch) still emits a
 `claimed` event instead of reaching `record` unclaimed. It fires on the first `note`, `verify` or
 `agent-start` for whatever issue number it is handed, and its only guard was the ledger opt-in —
 which answers *"may Sigma record anything on this repo?"* and never *"is this ticket a goal?"*.
 
-**Measured on this repo, 2026-09-01.** `agrim-goal-review` closes by commenting, through `loop.py
+**Measured on this repo, 2026-09-01.** `sigma-goal-review` closes by commenting, through `loop.py
 note`, on the two tickets that are never goals by construction: the Dossier (`story`) and the
 Spec/Epic (`epic`). Story #2017 and epic #2020 were labelled `sdlc:in-progress` two seconds before
 each comment landed (`11:34:41Z` label / `11:34:43Z` comment; `11:35:02Z` / `11:35:04Z`), and
@@ -709,7 +709,7 @@ So there is now a reconciler with **three tiers**, and the tiering is the import
   ┌────────────────────────────────────────────────────────────────────┐
   │ 1. CENSUS  (read-only, always safe)                                │
   │    Lists every issue Sigma is responsible for and classifies   │
-  │    it. Reported by /agrim-doctor.                                   │
+  │    it. Reported by /sigma-doctor.                                   │
   └────────────────────────────────────────────────────────────────────┘
                                  │
   ┌──────────────────────────────┼─────────────────────────────────────┐
@@ -763,12 +763,12 @@ minutes) — but a TTL is only ever *checked*, not scheduled; something still ha
 independent callers do, both gated by the same `discovery.reconcile.mode`/`ttl_minutes`, so there is
 one config an operator has to understand, not two:
 
-- every `/agrim-loop` pick (`next`/`next-batch`), which is where this always ran; and
+- every `/sigma-loop` pick (`next`/`next-batch`), which is where this always ran; and
 - a wall-clock heartbeat that fires even when nobody is actively picking — `watch_daemon.py`'s own standing
   tick (`reconcile_tick.py`, threaded in alongside `agent_watch.py`/`comment_watch.py`), or, for an
-  operator who does not run `watch_daemon.py` at all, the `skills/agrim-loop/AUTOWATCH.md` Desktop/CLI adapter pattern.
+  operator who does not run `watch_daemon.py` at all, the `skills/sigma-loop/AUTOWATCH.md` Desktop/CLI adapter pattern.
 
-Before this second caller existed, an idle repo — nobody driving `/agrim-loop` — got zero automatic
+Before this second caller existed, an idle repo — nobody driving `/sigma-loop` — got zero automatic
 correction no matter how short the TTL was set, because nothing was calling the function that checks
 it. Off (the default) is unchanged either way: no `gh` calls, from either caller, until this is
 turned on. Case (b)'s own gate (`reconcile.open_issue_mode`) is throttled and triggered the
@@ -860,7 +860,7 @@ It tells you the issue number and the one thing that would unstick it.
    sdlc:parked       →  NEVER resumed automatically                        ✗
 ```
 
-A park is a person's decision, so only a person reverses it (`/agrim-unpark`). That is precisely what
+A park is a person's decision, so only a person reverses it (`/sigma-unpark`). That is precisely what
 lets the automatic sweep be on by default without ever overriding somebody — it can only undo the
 loop's own state, never yours.
 
@@ -886,7 +886,7 @@ Two labels are a human's to move, and each now has a command — because doing i
 edits against an API with no transactions, and getting one of them wrong is exactly how the states
 in §4a happen.
 
-### Approving an AI-filed issue — `/agrim-promote`
+### Approving an AI-filed issue — `/sigma-promote`
 
 ```
    THE GESTURE PEOPLE EXPECT          THE GESTURE THAT IS CORRECT
@@ -898,8 +898,8 @@ in §4a happen.
    not a state we have a name for     approved
 ```
 
-`/agrim-promote` does both halves as **one** swap, moves the board card to `Ready` with it, and
-leaves an audit comment. `/agrim-promote list` shows three buckets:
+`/sigma-promote` does both halves as **one** swap, moves the board card to `Ready` with it, and
+leaves an audit comment. `/sigma-promote list` shows three buckets:
 
 ```
    ┌──────────────────────────────────────────────────────────────────┐
@@ -911,7 +911,7 @@ leaves an audit comment. `/agrim-promote list` shows three buckets:
 
 There is also `demote`, the exact inverse — promoting something by mistake now has an undo.
 
-### Getting a parked goal moving again — `/agrim-unpark`
+### Getting a parked goal moving again — `/sigma-unpark`
 
 **A park is a question nobody answered.** Un-parking without answering it is the worst option
 available:
@@ -972,7 +972,7 @@ agent actually reads. That created one trap, and it is worth knowing it was clos
 
 **Nothing automatic ever overrides a human.** A `sdlc:parked` set by a person is never un-parked by
 the machine. And where a project uses the *same* label name for both a human "do not touch" hold and
-Sigma's own machine-managed blocked state — which one of our adopters does today — `/agrim-doctor` now
+Sigma's own machine-managed blocked state — which one of our adopters does today — `/sigma-doctor` now
 reports it as a configuration error, because a reconciler cannot tell those two apart.
 
 **Two agents can never share a worktree.** Previously, reclaiming a goal from an agent that was
@@ -998,7 +998,7 @@ labels. This is the mapping the loop writes:
 | **Done** | merged and recorded | *no* `sdlc:*` label | nobody — terminal |
 | **Blocked** | a real dependency was found | `sdlc:goal` + `sdlc:blocked` | **the loop, by itself**, as soon as the blocker closes |
 | **Blocked** | declares a `feature:` unit whose label does not exist | `sdlc:goal` + `sdlc:needs-label` | **the loop, by itself**, as soon as a human creates that label |
-| **Parked** | a human checkpoint | `sdlc:parked` **alone** | **only a human**, via `/agrim-unpark` |
+| **Parked** | a human checkpoint | `sdlc:parked` **alone** | **only a human**, via `/sigma-unpark` |
 
 The last two rows are the distinction the whole release exists to draw, and **they are not the same
 kind of stop.** A `Blocked` card is still the loop's work — it keeps `sdlc:goal`, every sweep
@@ -1018,26 +1018,26 @@ that has no such option — so nothing changes for a board that predates it.
 | If you… | Then… |
 |---|---|
 | want the loop to pick something up | give it `sdlc:goal` (a board card alone is not enough) |
-| want to approve an AI-filed issue | **`/agrim-promote`** — or remove `sdlc:needs-confirmation` by hand |
-| want a parked goal moving again | **`/agrim-unpark`** — it asks what is blocking before it flips anything |
+| want to approve an AI-filed issue | **`/sigma-promote`** — or remove `sdlc:needs-confirmation` by hand |
+| want a parked goal moving again | **`/sigma-unpark`** — it asks what is blocking before it flips anything |
 | want to stop the loop touching something | give it `sdlc:parked` — nothing automatic will undo it |
 | use the board to prioritise | keep doing it; card order still decides order among eligible issues |
 | see `sdlc:goal` + `sdlc:in-progress` | that is normal, active work — leave it alone |
-| see two lifecycle labels at once | that is drift; `/agrim-doctor` will report it |
+| see two lifecycle labels at once | that is drift; `/sigma-doctor` will report it |
 | want to see the current state | `reconcile.py census .sdlc` — read-only, safe any time |
 
 ---
 
 ## 10. Moving an issue by hand, without making a mess
 
-Most days you will not touch a label directly — `/agrim-promote` and `/agrim-unpark` exist so you do
+Most days you will not touch a label directly — `/sigma-promote` and `/sigma-unpark` exist so you do
 not have to. But when you do, these are the gestures that are *correct*, and the ones that quietly
 create the drift this release spent its life removing.
 
 ### Approving something the loop filed (`sdlc:needs-confirmation` → workable)
 
 ```bash
-/agrim-promote                 # lists what is waiting; approve from there
+/sigma-promote                 # lists what is waiting; approve from there
 ```
 
 Doing it by hand: **remove `sdlc:needs-confirmation`, then add `sdlc:goal`.**
@@ -1045,7 +1045,7 @@ Doing it by hand: **remove `sdlc:needs-confirmation`, then add `sdlc:goal`.**
 > ⚠️ **Adding `sdlc:goal` on its own does nothing.** The issue then carries *both* labels, and both
 > queue paths refuse it — so it looks approved and is picked by nothing. That is the single most
 > common way to create drift, and it is the intuitive gesture, which is why the command exists.
-> `/agrim-promote list` has a `drift` bucket that finds anything already in this state.
+> `/sigma-promote list` has a `drift` bucket that finds anything already in this state.
 
 Not ready to approve it? Leave it alone. `sdlc:needs-confirmation` is a perfectly good resting
 state — it means "filed, nobody has ruled on it", which is often the truth.
@@ -1053,7 +1053,7 @@ state — it means "filed, nobody has ruled on it", which is often the truth.
 ### Getting a parked goal moving again (`sdlc:parked` → workable)
 
 ```bash
-/agrim-unpark                  # asks what was blocking, records the answers, then unparks
+/sigma-unpark                  # asks what was blocking, records the answers, then unparks
 ```
 
 Doing it by hand: **remove `sdlc:parked`, then add `sdlc:goal`.**
@@ -1063,7 +1063,7 @@ Doing it by hand: **remove `sdlc:parked`, then add `sdlc:goal`.**
 >
 > And the reason to prefer the command is not tidiness: a park is a *question nobody answered*.
 > Flip the label without answering it and the next agent rediscovers the same obstacle and parks it
-> again. `/agrim-unpark` writes the answers onto the issue so that does not happen.
+> again. `/sigma-unpark` writes the answers onto the issue so that does not happen.
 
 ### Parking something yourself
 
@@ -1099,7 +1099,7 @@ there.
 That is deliberate rather than an oversight. Re-entering the queue is a decision, and an issue
 silently returning to it because someone reopened a ticket is exactly the kind of unrequested work
 the membership model exists to prevent. But it does mean the gesture is yours: **reopen, then add
-`sdlc:goal`** (or `/agrim-promote` it, which does both halves atomically).
+`sdlc:goal`** (or `/sigma-promote` it, which does both halves atomically).
 
 **A different "closed", with one narrow, deliberate exception (#2362).** Everything above is about
 an *issue's* `sdlc:goal` membership, which this section says is always a human's gesture, with no
@@ -1109,7 +1109,7 @@ entirely: an issue can be reopened while its unit stays closed, and vice versa. 
 this section states for issues has held without exception until now: `feature_registry.
 resolve_open_unit` answers `None` for a closed unit precisely so nothing built on it is ever
 tempted to retarget one, and reopening one has always meant a human hand-edit. Epic #2260's
-tier-1 auto-classifier (slice B, **shipped** — `skills/agrim-loop/scripts/feature_classify.py`,
+tier-1 auto-classifier (slice B, **shipped** — `skills/sigma-loop/scripts/feature_classify.py`,
 `docs/branching-model.md` §18) introduces the one narrow carve-out to that: it may reopen a closed
 unit **without** a human editing anything, but only when its own AI-judgment match is confident. It
 does so via the sibling resolver `resolve_open_unit` cannot serve for this — `feature_registry.
@@ -1128,7 +1128,7 @@ contract once one is; it is not yet a claim about what happens on a real board.
 | you want | do this | do NOT do this |
 |---|---|---|
 | approve a proposal | remove `needs-confirmation`, add `goal` | add `goal` and leave `needs-confirmation` |
-| resume a park | `/agrim-unpark`, or remove `parked` + add `goal` | add `goal` and leave `parked` |
+| resume a park | `/sigma-unpark`, or remove `parked` + add `goal` | add `goal` and leave `parked` |
 | park something | add `parked`, remove `goal` + any overlay | add `parked` and leave `goal` |
 | hand work to the loop | add `goal` | drag a board card and stop there |
 | stop the loop touching it | add `parked` | remove `goal` and leave it bare — that is an orphan |
@@ -1147,7 +1147,7 @@ is *invisible* to it — the census exists specifically to hunt those down.
   something out-of-date is still pointed at it. Worth confirming everyone is current.
 - **Semantic mistakes are still possible.** If an issue is labelled correctly but the label is simply
   the *wrong* one for reality, no amount of atomicity catches that — that is what the census and
-  `/agrim-doctor` are for.
+  `/sigma-doctor` are for.
 
 ---
 
@@ -1164,7 +1164,7 @@ thing as each other:
 
 | Prefix | Does Sigma define it? | Does Sigma read the value? | What the value means |
 |---|---|---|---|
-| `priority:*` | no | **yes** | dispatch order. `/agrim-triage`'s own scripts (`triage.py`'s `survey`/`plan`/`enact`) sort waves by it and never write it themselves — `_bucket_hygiene`'s detection stays read-only by contract, same as every other survey bucket. `define.py bump-priority` (branching-model.md §16, opt-in, human-invoked directly by name) is one place Sigma **writes** this label — sets a `feature:<name>` unit's own open members to exactly the unit's chosen tier, never on its own initiative. Since #2266, neither `/agrim-define`'s nor `agrim-goal-review`'s own priority question calls it any more: giving a unit its own priority now records a value on the unit's `.sdlc/features/` registry entry instead (`define.py set-priority`), which never writes this label at all — that value feeds the pick comparator's tie-break, not this table's row. Since #2296, `/agrim-triage`'s own question round is a second, narrower write path: for a picked issue `_bucket_hygiene` flags as missing `priority:*`, its computed `priority_hint` (the P0-P4 rubric applied mechanically to that issue's own title+body) is, when non-ambiguous, applied as a real label by the agent running the skill (`gh issue edit <n> --add-label priority:P<tier>`, one explicit command, before the plan is compiled) — surfaced in the survey, never silent. Still never on the script's own initiative: a genuinely ambiguous hint (two adjacent tiers) is asked about, not guessed |
+| `priority:*` | no | **yes** | dispatch order. `/sigma-triage`'s own scripts (`triage.py`'s `survey`/`plan`/`enact`) sort waves by it and never write it themselves — `_bucket_hygiene`'s detection stays read-only by contract, same as every other survey bucket. `define.py bump-priority` (branching-model.md §16, opt-in, human-invoked directly by name) is one place Sigma **writes** this label — sets a `feature:<name>` unit's own open members to exactly the unit's chosen tier, never on its own initiative. Since #2266, neither `/sigma-define`'s nor `sigma-goal-review`'s own priority question calls it any more: giving a unit its own priority now records a value on the unit's `.sdlc/features/` registry entry instead (`define.py set-priority`), which never writes this label at all — that value feeds the pick comparator's tie-break, not this table's row. Since #2296, `/sigma-triage`'s own question round is a second, narrower write path: for a picked issue `_bucket_hygiene` flags as missing `priority:*`, its computed `priority_hint` (the P0-P4 rubric applied mechanically to that issue's own title+body) is, when non-ambiguous, applied as a real label by the agent running the skill (`gh issue edit <n> --add-label priority:P<tier>`, one explicit command, before the plan is compiled) — surfaced in the survey, never silent. Still never on the script's own initiative: a genuinely ambiguous hint (two adjacent tiers) is asked about, not guessed |
 | `model:*` | no | **no** | nothing. Sigma defines no values and reads none |
 | anything else (`area:*`, `feature:*`, your own) | no | no | yours |
 
@@ -1173,7 +1173,7 @@ thing as each other:
 **A label that already exists on your board is never modified.** Not its colour, not its
 description, not by any code path in the kit. This is worth stating because it was untrue until
 #1917: every `gh label create` Sigma issued carried `--force`, which on an existing label
-overwrites its colour — so filing a single `/agrim-scope` plan that named `priority:P1` and
+overwrites its colour — so filing a single `/sigma-scope` plan that named `priority:P1` and
 `priority:P2` repainted both to the kit's own `#d4c5f9`, and `_ensure_labels` repainted the
 `sdlc:*` labels themselves on every loop start. Nothing reported it. The flag is gone from all
 four sites; `gh` refuses to re-create a label that exists, and that refusal is now the guarantee.
@@ -1191,7 +1191,7 @@ typo there mints a label that outlives the unit — §2b-i, and the refusal is e
 This is the one worth stating plainly, because the name invites the opposite conclusion. **Putting
 `model:opus` on an issue does not run that goal on Opus.** No code path reads the value.
 
-The tier a goal actually runs at is decided by `/agrim-model`'s predictor (`predict.py`) reading the
+The tier a goal actually runs at is decided by `/sigma-model`'s predictor (`predict.py`) reading the
 goal's **text**, gated on `"model_selection": "auto"` in `.sdlc/config.json`. Its tiers are
 `haiku | sonnet | opus | fable` — the Task tool's tiers, not a label vocabulary. With
 `model_selection` off (the default) portable prediction is disabled. Inline work runs at the
@@ -1200,14 +1200,14 @@ versioned ordinary-work mapping. A label cannot influence either outcome, becaus
 nothing else. (The one later change to a goal's tier is a review send-back raising it one rung through
 `loop.py escalate`; that reads no label either.)
 
-So what *is* a `model:*` label? An annotation, in whatever vocabulary you choose, that `/agrim-triage`
+So what *is* a `model:*` label? An annotation, in whatever vocabulary you choose, that `/sigma-triage`
 will display in its survey and carry through a plan you write. That is the whole contract. Because
 Sigma defines no value set, no value is "wrong" — and because it reads none, no value has an
 effect.
 
 ### Why there is no recommended value set
 
-There was, briefly and by accident, and it did damage. `/agrim-triage` used to report a missing
+There was, briefly and by accident, and it did damage. `/sigma-triage` used to report a missing
 `model:*` as a **hygiene gap** — a claim that an issue was not ready to be picked — while the kit
 documented no legal values anywhere and its own two hardcoded ones (`model:daily` on decompose
 meta-issues, `model:bulk` in a README example) matched neither each other nor the predictor's tiers.
@@ -1217,7 +1217,7 @@ one audited board had grown `daily`, `sonnet` and `haiku`; Sigma's own had five 
 Publishing a recommended set would not have fixed that, it would have entrenched it — a documented
 `model:opus` reads as a *setting*, and this document is exactly where a reader is entitled to believe
 what it says. The demand was removed instead (#1602). A goal with no `model:*` label is exactly as
-enqueue-ready as one with it, `/agrim-triage` no longer flags its absence, and Sigma no longer
+enqueue-ready as one with it, `/sigma-triage` no longer flags its absence, and Sigma no longer
 attaches a value of its own to anything.
 
 **If you want a tier vocabulary, use one** — pick your values, create the labels yourself in the

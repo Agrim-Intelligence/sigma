@@ -1,5 +1,5 @@
-"""#1828: the feature-ification hook is pure SKILL.md prose -- `agrim-goal-review`'s step 5 invokes
-`agrim-define`'s own already-tested scripts (`define.py open/declare`, `brainstorm.py`'s
+"""#1828: the feature-ification hook is pure SKILL.md prose -- `sigma-goal-review`'s step 5 invokes
+`sigma-define`'s own already-tested scripts (`define.py open/declare`, `brainstorm.py`'s
 `resolve_target`) plus the already-tested `sources.append_to_body`, with no new Python anywhere in
 the tree. Every primitive this step composes already has its own full suite
 (`tests/test_define.py`, `tests/test_sources.py`, `tests/test_features.py`,
@@ -14,10 +14,10 @@ import pathlib
 from skill_corpus import skill_corpus
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_SKILL_DIR = _ROOT / "skills" / "agrim-goal-review"
+_SKILL_DIR = _ROOT / "skills" / "sigma-goal-review"
 #: #2108 split the file into a body + references/*.md — this is "the skill", not just the file
 #: (see tests/skill_corpus.py's own docstring: the subject was never the FILE, it was the SKILL).
-SKILL = skill_corpus("agrim-goal-review")
+SKILL = skill_corpus("sigma-goal-review")
 FRONTMATTER = SKILL.split("---", 2)[1]
 #: The always-attached BODY alone, for a pin that is specifically about content that stayed there.
 #: `## 6. Handoff` moved nowhere (#2108 kept the whole short section in the body), so a pin scoped
@@ -51,8 +51,8 @@ def _mod(name, where):
 
 # The LIVE modules the prose makes claims about -- pinned so a change to either fails this suite
 # rather than quietly turning the skill's instructions into fiction.
-blocker_scan = _mod("blocker_scan", _ROOT / "skills" / "agrim-loop" / "scripts")
-compile_plan = _mod("compile_plan", _ROOT / "skills" / "agrim-scope" / "scripts")
+blocker_scan = _mod("blocker_scan", _ROOT / "skills" / "sigma-loop" / "scripts")
+compile_plan = _mod("compile_plan", _ROOT / "skills" / "sigma-scope" / "scripts")
 
 
 def test_documents_the_feature_ification_step():
@@ -81,7 +81,7 @@ def test_documents_the_epic_level_ticket_resolution_for_both_4b_and_4c():
 
 def test_documents_the_sdlc_define_scripts_invoked():
     assert "define.py open" in SKILL
-    assert "agrim-define/scripts/define.py" in SKILL and "declare .sdlc" in SKILL
+    assert "sigma-define/scripts/define.py" in SKILL and "declare .sdlc" in SKILL
     assert "brainstorm.py" in SKILL
     assert "resolve_target" in SKILL
 
@@ -107,8 +107,8 @@ def test_documents_the_unattended_default_is_decline():
 # Reported on the 2026-09-08 team call: Sigma used to run a picked goal end to end with no human
 # touchpoint, and started stopping mid-run to ask "should I proceed" once the Dossier pipeline
 # shipped. Traced to here -- step 5's ask fired on BOTH of goal-review's own two paths (the file's
-# own §-top distinction, lines 9-15), when only the Product path (a human runs /agrim-goal-review
-# directly, before /agrim-loop is ever involved) should ever ask anything. On the Tech-side retrofit
+# own §-top distinction, lines 9-15), when only the Product path (a human runs /sigma-goal-review
+# directly, before /sigma-loop is ever involved) should ever ask anything. On the Tech-side retrofit
 # path the loop is already running unattended by construction, and feature-ification is a
 # product-tier decision, not the "genuine technical decision" AGENTS.md reserves the loop's one
 # legitimate stop for -- so that path must never reach AskUserQuestion at all, mechanically, not by
@@ -196,13 +196,13 @@ def test_the_unattended_decline_is_recorded_as_deferred_not_as_a_refusal():
     g = FEATURE.split("**g. Comment the outcome", 1)[-1]
     deferred = g.split("feature-ification: deferred", 1)[-1]
     assert "no human available on this pick" in deferred
-    assert "/agrim-define" in deferred
+    assert "/sigma-define" in deferred
 
 
 def test_every_decline_template_names_the_recovery_gesture():
     g = FEATURE.split("**g. Comment the outcome", 1)[-1]
     for template in ("feature-ification: declined", "feature-ification: deferred"):
-        assert "/agrim-define" in g.split(template, 1)[-1].split("```", 1)[0]
+        assert "/sigma-define" in g.split(template, 1)[-1].split("```", 1)[0]
 
 
 # ============================================================ #1919: the report is read as JSON
@@ -522,7 +522,7 @@ def test_the_blanket_python3_grant_is_named_rather_than_dressed_up():
 # A real design pass wrote `3, and B-1` in the slice table's `Depends on` cell -- a slice edge AND a
 # Blockers id. Step 4b turns that column into `compile_plan.py` `blocked_by` keys, which name
 # SIBLING ISSUES IN THE SAME PLAN and nothing else, so `B-1` had nothing to resolve to and was
-# patched away by hand between the two stages with nothing recorded. `agrim-goal-design` §5 now
+# patched away by hand between the two stages with nothing recorded. `sigma-goal-design` §5 now
 # forbids it at the source; this end is what happens when one arrives anyway.
 
 _SEAM_MARKER = "- **`Depends on` → `blocked_by`, and a token that is not a slice id"
@@ -733,7 +733,7 @@ def test_the_epic_level_resolution_keys_off_the_report_not_the_branch():
 
 def test_the_skill_no_longer_claims_the_artifact_is_gitignored_on_most_repos():
     """False in both directions once measured: `setup.RUNTIME_IGNORES` omits `.sdlc/design/`
-    deliberately, so every `/agrim-setup` repo tracks it, and Sigma's own does too since #1953.
+    deliberately, so every `/sigma-setup` repo tracks it, and Sigma's own does too since #1953.
     The reason to carry `capped` onto the Epic survives -- the tickets reach everyone with board
     access and the artifact reaches only whoever has the repo -- so the argument is kept and the
     false premise it rested on is dropped."""
@@ -1014,17 +1014,17 @@ def test_goal_review_points_at_the_real_goal_design_engine_script():
     actually exists and actually carries the verb, or following this file end to end fails on its
     first real command."""
     block = _budget_block()
-    assert "../agrim-goal-design/scripts/goal_design.py" in block, \
+    assert "../sigma-goal-design/scripts/goal_design.py" in block, \
         "the block does not point at the sibling skill's engine script"
     root = pathlib.Path(__file__).resolve().parent.parent
-    script = root / "skills" / "agrim-goal-design" / "scripts" / "goal_design.py"
+    script = root / "skills" / "sigma-goal-design" / "scripts" / "goal_design.py"
     assert script.is_file(), "goal-review points at a goal_design.py that does not exist on disk"
     assert "def sweep_budget(" in script.read_text(encoding="utf-8"), \
         "goal_design.py no longer defines the function the sweep-budget verb wraps"
 
 
 # ================================================ #2164/#2266: the feature-priority ask, at step f
-# Slice 3 of epic #2161 (design: .sdlc/design/2154.md) wired the same priority question agrim-define
+# Slice 3 of epic #2161 (design: .sdlc/design/2154.md) wired the same priority question sigma-define
 # asks at its own `declare` step (slice #2163) in here too, right after THIS section's own step f
 # (`declare`) succeeds -- one consistent ask regardless of which path created the feature.
 # #2266 (epic #2260, slice 6 of .sdlc/design/2253.md) changed WHAT a real answer does: once
@@ -1042,7 +1042,7 @@ def _priority_block():
 
 def test_feature_priority_ask_sits_after_step_f_and_before_step_g():
     # Ordering is the point (design §"Wiring"): the ask must land before step g's outcome comment,
-    # not after it -- kept consistent with `/agrim-define`'s own placement of the identical question,
+    # not after it -- kept consistent with `/sigma-define`'s own placement of the identical question,
     # even though `set-priority` itself needs nothing from step f's `declare` call.
     # Scoped to FEATURE (references/feature-ification.md, #2108): the pointer paragraph SKILL.md's
     # own body now carries under "## 5." happens to use the same three words "ask about feature
@@ -1056,7 +1056,7 @@ def test_feature_priority_ask_sits_after_step_f_and_before_step_g():
 
 def test_the_priority_question_text_is_present_verbatim():
     # Same convention, same wording, so a user sees one consistent ask regardless of which path
-    # (agrim-define directly, slice #2163, or this feature-ification step) created the feature.
+    # (sigma-define directly, slice #2163, or this feature-ification step) created the feature.
     flat = " ".join(_priority_block().split())
     assert 'Give `feature:<name>` a priority? (P0-P4, or skip)' in flat
 
@@ -1069,7 +1069,7 @@ def test_the_priority_ask_uses_the_askuserquestion_convention():
 
 def test_the_priority_ask_calls_the_same_set_priority_verb_sdlc_define_calls():
     block = _priority_block()
-    assert "agrim-define/scripts/define.py" in block and "set-priority .sdlc" in block
+    assert "sigma-define/scripts/define.py" in block and "set-priority .sdlc" in block
     assert "--unit <name> --priority <P>" in block
 
 

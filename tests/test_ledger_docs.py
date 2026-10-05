@@ -18,7 +18,7 @@ weeks -- so nobody looked, because nothing looked wrong. That is why `test_every
 implies one file per person leaves the reader exactly as unable to recognise a healthy directory.
 
 Two generators write the SAME artifact, `.sdlc/ledger/README.md` -- `sync.py`'s `BRANCH_README`
-(on `bootstrap`, and only `if not exists`) and `agrim-init`'s `templates/ledger/README.md.tmpl`
+(on `bootstrap`, and only `if not exists`) and `sigma-init`'s `templates/ledger/README.md.tmpl`
 (on scaffold, first). Whichever ran first wins for good, so both are pinned and both are checked
 through the real generator rather than by reading the template's source.
 """
@@ -28,7 +28,7 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(path, name):
@@ -40,7 +40,7 @@ def _mod(path, name):
 
 ledger = _mod(SCRIPTS / "ledger.py", "ledger")
 sync = _mod(SCRIPTS / "sync.py", "sync")
-sdlc_init = _mod(ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py", "sdlc_init")
+sdlc_init = _mod(ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py", "sdlc_init")
 
 #: A placeholder actor with no digit and no hex-alphabet-only spelling, so neither substitution
 #: below can collide with it: the host token is 8 hex chars (`0-9a-f`, which cannot spell "actor"
@@ -73,21 +73,21 @@ SHAPE = _shape()
 #: survive, and `ledger.py`'s own header was one of the nine.
 SURFACES = (
     "README.md",
-    "skills/agrim-ledger/SKILL.md",
-    "skills/agrim-init/templates/ledger/README.md.tmpl",
-    "skills/agrim-init/templates/config.json.tmpl",
-    "skills/agrim-loop/scripts/ledger.py",
-    "skills/agrim-loop/scripts/sync.py",
-    "skills/agrim-loop/scripts/feature_registry.py",
+    "skills/sigma-ledger/SKILL.md",
+    "skills/sigma-init/templates/ledger/README.md.tmpl",
+    "skills/sigma-init/templates/config.json.tmpl",
+    "skills/sigma-loop/scripts/ledger.py",
+    "skills/sigma-loop/scripts/sync.py",
+    "skills/sigma-loop/scripts/feature_registry.py",
 )
 
 #: The prose surfaces an ADOPTER reads (as opposed to a maintainer reading a docstring). These are
 #: the ones that have to carry the claim, not merely the filename.
 READER_SURFACES = (
     "README.md",
-    "skills/agrim-ledger/SKILL.md",
-    "skills/agrim-init/templates/ledger/README.md.tmpl",
-    "skills/agrim-init/templates/config.json.tmpl",
+    "skills/sigma-ledger/SKILL.md",
+    "skills/sigma-init/templates/ledger/README.md.tmpl",
+    "skills/sigma-init/templates/config.json.tmpl",
 )
 
 #: Any `entries/…jsonl` / `events/…jsonl` token carrying a `<placeholder>`. A literal `*` glob
@@ -157,7 +157,7 @@ def test_the_branch_readme_generator_ships_the_shape_it_will_write():
 
 
 def test_the_scaffolded_ledger_readme_is_generated_with_the_shape(tmp_path):
-    """Through the REAL scaffolder, not by reading the template: `agrim-init` substitutes into the
+    """Through the REAL scaffolder, not by reading the template: `sigma-init` substitutes into the
     template on the way out, so the artifact is what has to be right."""
     sdlc_init.scaffold(tmp_path)
     generated = (tmp_path / ".sdlc" / "ledger" / "README.md").read_text(encoding="utf-8")
@@ -167,13 +167,13 @@ def test_the_scaffolded_ledger_readme_is_generated_with_the_shape(tmp_path):
 
 
 def test_both_generators_target_one_path_so_neither_may_contradict_the_other(tmp_path):
-    """`agrim-init` scaffolds `.sdlc/ledger/README.md`; `sync.py init` writes the same path and only
+    """`sigma-init` scaffolds `.sdlc/ledger/README.md`; `sync.py init` writes the same path and only
     `if not exists`. Whichever ran first is the one every adopter reads forever, so "fix the
     generator" means BOTH generators -- pinned here because the collision is invisible from either
     file alone."""
     sdlc_init.scaffold(tmp_path)
     scaffolded = tmp_path / ".sdlc" / "ledger" / "README.md"
-    assert scaffolded.exists(), "agrim-init no longer scaffolds the path sync.py also writes"
+    assert scaffolded.exists(), "sigma-init no longer scaffolds the path sync.py also writes"
     assert "README.md" in sync.BRANCH_README or True    # documented by the sync.py write site
     for text in (scaffolded.read_text(encoding="utf-8"), sync.BRANCH_README):
         assert SHAPE in text

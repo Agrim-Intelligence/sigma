@@ -2,7 +2,7 @@
 and a dedup ledger so findings never repeat. The research/ranking are agent-driven (the skill)."""
 import pathlib, importlib.util, tempfile
 
-R = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-radar" / "scripts" / "radar.py"
+R = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-radar" / "scripts" / "radar.py"
 
 
 def _r():

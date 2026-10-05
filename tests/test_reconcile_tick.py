@@ -1,6 +1,6 @@
 """#2294: `reconcile.py`'s AUTOMATIC-tier sweep (and `_reconcile_sweep`'s own TTL gate) only ever
 fires from inside `loop.py`'s `next_batch`/`_next` -- an idle repo with nobody driving
-`/agrim-loop` gets zero board sanitation no matter how the TTL is configured (PC-4,
+`/sigma-loop` gets zero board sanitation no matter how the TTL is configured (PC-4,
 .sdlc/design/2287.md). `reconcile_tick.py` gives it a second, independent, wall-clock-driven
 caller -- these tests prove it reuses `loop._reconcile_sweep` (and therefore its existing
 `discovery.reconcile.mode`/`ttl_minutes` gate, TTL watermark, and fail-open contract) exactly,
@@ -9,7 +9,7 @@ import importlib.util
 import json
 import pathlib
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

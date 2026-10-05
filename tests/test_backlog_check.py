@@ -4,7 +4,7 @@ import hashlib, json, pathlib, importlib.util, tempfile, calendar, time, subproc
 
 from skill_corpus import skill_corpus
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -1108,7 +1108,7 @@ def test_skill_md_dismiss_kind_doc_matches_the_real_internal_identifiers():
     bc = _mod("backlog_check")
     # #1611 split this skill into SKILL.md + references/*.md; the drift claim is about the
     # SKILL, not which of its files holds the line. See tests/skill_corpus.py.
-    text = skill_corpus("agrim-loop")
+    text = skill_corpus("sigma-loop")
     for kind in bc._KIND_PHRASE:
         assert f"`{kind}`" in text, f"SKILL.md dismiss docs never name kind {kind!r}"
     assert "come straight from the park reason" not in text

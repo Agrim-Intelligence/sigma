@@ -19,7 +19,7 @@ import importlib.util, json, os, pathlib, subprocess, sys
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
@@ -209,7 +209,7 @@ def test_nothing_is_emitted_when_the_commit_itself_fails(tmp_path):
 # --------------------------------------------------------------------------- the scan site
 
 def test_the_detector_is_blind_once_the_change_is_committed(tmp_path):
-    """WHY THE EMITTER LIVES IN commit() AND NOT IN THE REVIEW PHASE. `agrim-review`'s prose runs
+    """WHY THE EMITTER LIVES IN commit() AND NOT IN THE REVIEW PHASE. `sigma-review`'s prose runs
     this same detector, but the loop reviews the PR's diff post-commit and post-push — and the
     tripwire reads the working tree, the index and untracked files, all three empty by then. This
     is the measurement that settled the site; if it ever stops holding, a Review-phase emitter

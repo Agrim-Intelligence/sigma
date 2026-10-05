@@ -8,7 +8,7 @@ import json, pathlib, importlib.util
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -235,13 +235,13 @@ def test_a_demotion_is_never_refused_by_a_branching_model_hold(tmp_path):
 
 
 def test_a_park_still_wins_over_the_hold(tmp_path):
-    """ONE reason, and the order is the judgement: a park is a human's decision and /agrim-unpark is
+    """ONE reason, and the order is the judgement: a park is a human's decision and /sigma-unpark is
     its undo, so that message is the one that must be printed even where a unit also holds it."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation", "sdlc:parked", LABEL,
                                     author="a-stranger")})
     detail = p.promote(_sdlc(tmp_path), _config(), ["5"], run=run)["results"][0]["detail"]
-    assert "/agrim-unpark" in detail
+    assert "/sigma-unpark" in detail
 
 
 def test_the_hold_wins_over_needs_label(tmp_path):
@@ -643,7 +643,7 @@ def test_promote_refuses_a_parked_issue_and_names_the_route_out():
     run = _runner(views={"5": _view("sdlc:needs-confirmation", "sdlc:parked")})
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "skipped"
-    assert "/agrim-unpark" in result["results"][0]["detail"]
+    assert "/sigma-unpark" in result["results"][0]["detail"]
     assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
 
 
@@ -719,12 +719,12 @@ def test_demote_refuses_a_parked_issue():
     anything, on the grounds that taking work OUT of the queue is always safe. It is not safe here.
     A park is a human's membership decision, and writing `sdlc:needs-confirmation` onto a parked
     issue leaves TWO membership labels at once -- Sigma overwriting one human-gated state with a
-    different one, which is nobody's idea of an undo. The undo for a park is /agrim-unpark."""
+    different one, which is nobody's idea of an undo. The undo for a park is /sigma-unpark."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:parked")})
     result = p.promote(".sdlc", _config(), ["5"], run=run, demote=True)
     assert result["results"][0]["outcome"] == "skipped"
-    assert "/agrim-unpark" in result["results"][0]["detail"]
+    assert "/sigma-unpark" in result["results"][0]["detail"]
     assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
 
 

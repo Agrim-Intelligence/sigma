@@ -16,14 +16,6 @@
     ]
   },
   {
-    "path": ".sdlc/research/258.md",
-    "rule": "auth",
-    "reason": "plan or research prose using the common word digest, not a credential",
-    "lines": [
-      "b924c6c976f7d7395357ba132da1cd8d75901c7146362d472ec49fff6e67012a"
-    ]
-  },
-  {
     "path": ".sdlc/research/277.md",
     "rule": "absolute-home-path",
     "reason": "research prose quoting an elided placeholder path that the detector allows",
@@ -57,7 +49,7 @@
     ]
   },
   {
-    "path": "skills/agrim-doctor/scripts/migrate.py",
+    "path": "skills/sigma-doctor/scripts/migrate.py",
     "rule": "auth",
     "reason": "user-facing message text using the common word digest, not a credential",
     "lines": [
@@ -65,7 +57,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_classify.py",
+    "path": "skills/sigma-loop/scripts/feature_classify.py",
     "rule": "credential-assignment",
     "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
     "lines": [
@@ -75,7 +67,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_doc.py",
+    "path": "skills/sigma-loop/scripts/feature_doc.py",
     "rule": "auth",
     "reason": "comments using the common word digest for a marker field, not a credential",
     "lines": [
@@ -84,7 +76,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/feature_labels.py",
+    "path": "skills/sigma-loop/scripts/feature_labels.py",
     "rule": "credential-assignment",
     "reason": "constants named *_TOKEN holding fixed label-like marker strings, not secrets",
     "lines": [
@@ -97,7 +89,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/merge_observation.py",
+    "path": "skills/sigma-loop/scripts/merge_observation.py",
     "rule": "email-address",
     "reason": "comment quoting the shape of a git ssh URL; no owner",
     "lines": [
@@ -105,7 +97,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/north_star.py",
+    "path": "skills/sigma-loop/scripts/north_star.py",
     "rule": "absolute-home-path",
     "reason": "documentation literal using an elided placeholder path to describe a git layout; reviewed host-agnostic",
     "lines": [
@@ -114,7 +106,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/scrub.py",
+    "path": "skills/sigma-loop/scripts/scrub.py",
     "rule": "aws-key",
     "reason": "AWS's published documentation example key, listed as a public test fixture",
     "lines": [
@@ -122,7 +114,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/upstream.py",
+    "path": "skills/sigma-loop/scripts/upstream.py",
     "rule": "email-address",
     "reason": "comment naming an invented example address on a reserved example domain",
     "lines": [
@@ -130,7 +122,7 @@
     ]
   },
   {
-    "path": "skills/agrim-loop/scripts/work.py",
+    "path": "skills/sigma-loop/scripts/work.py",
     "rule": "auth",
     "reason": "error messages using the common word digest, not a credential",
     "lines": [
@@ -139,7 +131,7 @@
     ]
   },
   {
-    "path": "skills/agrim-setup/scripts/setup.py",
+    "path": "skills/sigma-setup/scripts/setup.py",
     "rule": "email-address",
     "reason": "comment quoting the shape of a git ssh URL on a public host",
     "lines": [
@@ -217,7 +209,7 @@
     "reason": "hermetic coexistence-control literals under an invented one-letter user home; no real host path",
     "lines": [
       "4ed322b21254986dce458294c7e7171e733a4baa6c7fc3bd1bb56495ba79bfd6",
-      "7cf0362330ceaa2a9bb5ce915d2f8b543479d9f82cca98fdbdc7cf77c46ca863",
+      "5124273c0a92fa0274430c4ca5c060e56d6f515aeaab4088491725aaaa4106c8",
       "c19e57699d05a8b8c5ef8645af5e7ea329acdb2744b958067d4028fc0ef6ef4a",
       "fa8d637eebcfccf67809b3ce8db61e1360ded88f8a63dd545b79eb537acb9fd5"
     ]

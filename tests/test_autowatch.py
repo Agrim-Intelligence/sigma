@@ -4,7 +4,7 @@ import os
 import pathlib
 import time
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -70,7 +70,7 @@ def _all_gates_pass_deps(agents=None, gh=True):
 
 
 def _mark_done(d, goal, outcome="done"):
-    """#1332: mirrors what a REAL successful `/agrim-loop` drive does — `loop.py record` writing a
+    """#1332: mirrors what a REAL successful `/sigma-loop` drive does — `loop.py record` writing a
     genuine `done`/`parked`/`failed` ledger entry — so a fake `run_drive` produces the same
     post-drive ledger state a real one would, exercising the real outcome-verification path
     rather than the old exit-code-only shortcut. Returns None (falsy), so callers chain it with
@@ -485,7 +485,7 @@ def test_hop_limit_accumulates_across_repeated_never_recorded_retries_of_the_sam
     record` at all -- the exact live-reproduced bug #1332's fix exists for -- is deliberately
     left retriable rather than permanently resolved. Without the hop actually accumulating
     across those retries, `hop_limit` could never trip, and the SAME stuck candidate would get a
-    full driven `/agrim-loop` subprocess re-launched on every single tick, forever. It must
+    full driven `/sigma-loop` subprocess re-launched on every single tick, forever. It must
     actually stop once `hop_limit` is reached."""
     d = _sdlc(tmp_path, _config({"hop_limit": 2}))
     _note_or_handoff(d, "note", ME, issue=1)

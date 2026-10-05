@@ -86,7 +86,7 @@ re-touches its marker, which restarts #457's fresh-owner window for that goal's 
 `--dry-run` does not probe the `flock`, so it can list a currently held lock as removable; a real run
 keeps it. The scan runs in name order, not age order, and `--limit` takes the first N it removes.
 
-Operator lever, any host: `python3 skills/agrim-loop/scripts/liveness_prune.py sweep .sdlc [--dry-run]
+Operator lever, any host: `python3 skills/sigma-loop/scripts/liveness_prune.py sweep .sdlc [--dry-run]
 [--limit N]` (`--limit 0` removes everything eligible in one run; the default is 200 per run). In
 line: the same sweep, capped at 200 removals and a 5 s budget that stops the scan as well, runs from
 `loop.py start` and from `loop.py record ... done`; the lever also sweeps dead session entries.

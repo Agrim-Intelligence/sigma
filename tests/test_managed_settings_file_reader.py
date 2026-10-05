@@ -9,11 +9,11 @@ import pathlib
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(name):
-    """Load a module from skills/agrim-loop/scripts/ without importing it into the package."""
+    """Load a module from skills/sigma-loop/scripts/ without importing it into the package."""
     spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)

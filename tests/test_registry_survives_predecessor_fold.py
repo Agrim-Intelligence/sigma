@@ -42,9 +42,9 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
-INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
-MIGRATE = ROOT / "skills" / "agrim-doctor" / "scripts" / "migrate.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
+INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
+MIGRATE = ROOT / "skills" / "sigma-doctor" / "scripts" / "migrate.py"
 
 
 def _load(name):

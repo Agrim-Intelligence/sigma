@@ -1,10 +1,10 @@
-"""#265: `/agrim-status` carries the same age-based loop liveness evidence as slots."""
+"""#265: `/sigma-status` carries the same age-based loop liveness evidence as slots."""
 import importlib.util
 import json
 import pathlib
 
 
-STATUS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-status" / "scripts" / "status.py"
+STATUS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-status" / "scripts" / "status.py"
 spec = importlib.util.spec_from_file_location("status_heartbeat", STATUS)
 status = importlib.util.module_from_spec(spec); spec.loader.exec_module(status)
 

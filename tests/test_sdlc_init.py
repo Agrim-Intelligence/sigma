@@ -1,6 +1,6 @@
 import json, os, subprocess, sys, pathlib, importlib.util, tempfile, shutil
 
-SCAFFOLDER = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+SCAFFOLDER = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -27,7 +27,7 @@ import contextlib
 
 @contextlib.contextmanager
 def _git_tmpdir():
-    """#229: /agrim-init REFUSES a directory that is not a git repository, so every scaffold here
+    """#229: /sigma-init REFUSES a directory that is not a git repository, so every scaffold here
     runs in one (a fresh `git init`, no commit -- the normal first-run state, which init accepts)."""
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(["git", "init", "-q", tmp], check=True)
@@ -35,7 +35,7 @@ def _git_tmpdir():
 
 
 def _load_setup():
-    path = REPO_ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py"
+    path = REPO_ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"
     spec = importlib.util.spec_from_file_location("setup", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -43,9 +43,9 @@ def _load_setup():
 
 
 def test_scaffold_gitignores_the_runtime_dirs_including_events(tmp_path):
-    """#2626: a bare /agrim-init, on its own, must leave every RUNTIME_IGNORES target git-ignored --
+    """#2626: a bare /sigma-init, on its own, must leave every RUNTIME_IGNORES target git-ignored --
     an init-only install is a real, supported install, not conditional on also running
-    /agrim-setup. Runs the real CLI subprocess (the documented /agrim-init gesture), turns the
+    /sigma-setup. Runs the real CLI subprocess (the documented /sigma-init gesture), turns the
     journal on the documented way, crosses one real phase boundary via phase_report.py's own CLI
     (mirroring the issue's live repro byte for byte), then checks every RUNTIME_IGNORES target
     (read from setup.py's own live tuple, not hand-copied) via the real git-visibility gesture
@@ -57,14 +57,14 @@ def test_scaffold_gitignores_the_runtime_dirs_including_events(tmp_path):
     result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
                              capture_output=True, text=True)
     assert result.returncode == 0, (
-        f"the documented /agrim-init CLI gesture must succeed on a healthy target\n"
+        f"the documented /sigma-init CLI gesture must succeed on a healthy target\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}")
 
     cfg_path = tmp_path / ".sdlc" / "config.json"
     cfg = json.loads(cfg_path.read_text())
     cfg["journal"]["enabled"] = True
     cfg_path.write_text(json.dumps(cfg) + "\n")
-    phase_report = REPO_ROOT / "skills" / "agrim-loop" / "scripts" / "phase_report.py"
+    phase_report = REPO_ROOT / "skills" / "sigma-loop" / "scripts" / "phase_report.py"
     result = subprocess.run(
         [sys.executable, str(phase_report), "start", str(tmp_path / ".sdlc"), "2626", "research",
          "--model", "sonnet"],
@@ -90,7 +90,7 @@ def test_scaffold_gitignores_the_runtime_dirs_including_events(tmp_path):
         capture_output=True, text=True, check=True).stdout
     for target, probe in probes:
         assert target not in porcelain, (
-            f"{target} must be git-ignored by a bare /agrim-init; git status showed:\n{porcelain}")
+            f"{target} must be git-ignored by a bare /sigma-init; git status showed:\n{porcelain}")
         check = subprocess.run(
             ["git", "-C", str(tmp_path), "check-ignore", "--quiet", str(probe)])
         assert check.returncode == 0, f"{probe} must be reported git-ignored by check-ignore"
@@ -135,7 +135,7 @@ def test_scaffold_gitignore_fix_does_not_make_probe_files_stop_existing(tmp_path
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     result = subprocess.run([sys.executable, str(SCAFFOLDER), str(tmp_path)],
                              capture_output=True, text=True)
-    assert result.returncode == 0, f"a healthy /agrim-init must exit 0: {result.stderr}"
+    assert result.returncode == 0, f"a healthy /sigma-init must exit 0: {result.stderr}"
     setup = _load_setup()
     for target in setup.RUNTIME_IGNORES:
         probe_dir = tmp_path / target
@@ -144,22 +144,22 @@ def test_scaffold_gitignore_fix_does_not_make_probe_files_stop_existing(tmp_path
         probe.write_text('{"kind": "probe"}\n', encoding="utf-8")
         result = subprocess.run(
             ["git", "-C", str(tmp_path), "check-ignore", "--quiet", str(probe)])
-        assert result.returncode == 0, f"{target} must be git-ignored after a bare /agrim-init"
+        assert result.returncode == 0, f"{target} must be git-ignored after a bare /sigma-init"
         assert probe.exists()   # the ignore rule must not have deleted or moved the file
 
 
 def test_scaffold_cli_exits_nonzero_when_the_sibling_setup_script_is_missing(tmp_path):
-    """Produces a REAL missing-script condition (never a monkeypatch): copy only skills/agrim-init/
-    into an isolated tree with no sibling skills/agrim-setup/ beside it, so SETUP_SCRIPT's own
+    """Produces a REAL missing-script condition (never a monkeypatch): copy only skills/sigma-init/
+    into an isolated tree with no sibling skills/sigma-setup/ beside it, so SETUP_SCRIPT's own
     unmodified relative-path resolution lands on a path that genuinely does not exist, then run the
     copied sdlc_init.py via the real CLI subprocess. Companion for the wizard path:
     test_run_scaffold_reports_ok_false_when_the_sibling_setup_script_is_missing in
     test_wizard_actions.py."""
     isolated_root = tmp_path / "isolated_skills" / "skills"
-    shutil.copytree(REPO_ROOT / "skills" / "agrim-init", isolated_root / "agrim-init")
-    isolated_sdlc_init = isolated_root / "agrim-init" / "scripts" / "sdlc_init.py"
-    assert not (isolated_root / "agrim-setup").exists(), (
-        "the isolation must be real: no sibling agrim-setup skill present")
+    shutil.copytree(REPO_ROOT / "skills" / "sigma-init", isolated_root / "sigma-init")
+    isolated_sdlc_init = isolated_root / "sigma-init" / "scripts" / "sdlc_init.py"
+    assert not (isolated_root / "sigma-setup").exists(), (
+        "the isolation must be real: no sibling sigma-setup skill present")
 
     target = tmp_path / "cli_target"
     target.mkdir()
@@ -200,7 +200,7 @@ def test_scaffold_failure_message_prints_no_runnable_command_with_the_target_pat
     """A failed ignore-write's recovery text must not hand the user a copy-paste shell command
     built from the target path (PR #2674 review): a directory named `foo;id`, passed safely as one
     argv element, would become `... ignore foo;id` -- a command that runs `id`. The message names
-    the fix gesture in words (rerun this same /agrim-init) and quotes nothing runnable."""
+    the fix gesture in words (rerun this same /sigma-init) and quotes nothing runnable."""
     target = tmp_path / "foo;id"
     target.mkdir()
     subprocess.run(["git", "init", "-q", str(target)], check=True)
@@ -208,7 +208,7 @@ def test_scaffold_failure_message_prints_no_runnable_command_with_the_target_pat
     result = subprocess.run([sys.executable, str(SCAFFOLDER), str(target)],
                              capture_output=True, text=True)
     assert result.returncode != 0
-    assert "rerun this same /agrim-init" in result.stderr, result.stderr   # non-vacuity: the message printed
+    assert "rerun this same /sigma-init" in result.stderr, result.stderr   # non-vacuity: the message printed
     assert "`python3" not in result.stderr and "by hand" not in result.stderr, result.stderr
 
 
@@ -650,7 +650,7 @@ def test_cursor_flag_also_scaffolds_the_output_contract_rule(capsys):
         assert rule.exists()
         t = rule.read_text(encoding="utf-8")
         assert "alwaysApply: true" in t                                   # always in context
-        assert "skills/agrim-loop/scripts/render.py" in t                  # the command, not the prose
+        assert "skills/sigma-loop/scripts/render.py" in t                  # the command, not the prose
         assert "status|event|decision" in t
         assert "docs/output-contract.md" in t                             # ...and the specification
         assert "log.py slots .sdlc" in t and "phase_report.py end" in t   # the two existing callers

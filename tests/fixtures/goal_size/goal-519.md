@@ -6,7 +6,7 @@ Oversized goals (epics) picked by the loop should be detected deterministically 
 
 ## Scope (8a)
 
-- New `skills/agrim-loop/scripts/goal_size.py`: deterministic classifier, sibling of `predict.py` — ordered signals, first match wins, zero LLM, zero latency. v1 signals: body word/line count over thresholds; >=3 independent `##` sections; >=4 top-level checkboxes naming distinct deliverables; explicit Phase-1/Phase-2 structure. Returns `(flagged: bool, reason: str)`. Thresholds are module constants, documented in the tmpl explainer.
+- New `skills/sigma-loop/scripts/goal_size.py`: deterministic classifier, sibling of `predict.py` — ordered signals, first match wins, zero LLM, zero latency. v1 signals: body word/line count over thresholds; >=3 independent `##` sections; >=4 top-level checkboxes naming distinct deliverables; explicit Phase-1/Phase-2 structure. Returns `(flagged: bool, reason: str)`. Thresholds are module constants, documented in the tmpl explainer.
 - `loop.py`: new `decompose-check <sdlc_dir> <issue>` verb; dispatch mirrors `precheck`'s (`load_config` / `get_source` / print). Behavior:
   - `goal_decompose.enabled` is not `True` -> print `OFF`
   - read title+body via `gh issue view --json title,body` (direct read, no mutation)
@@ -18,7 +18,7 @@ Oversized goals (epics) picked by the loop should be detected deterministically 
   - mode `file` -> behaves as `park` in this slice (the file branch ships later; the operator opted INTO mutation, so degrading to the safe visible action is correct — hard-`OFF` would silently implement oversized goals, inverting their intent)
   - outer try/except -> `PROCEED` (precheck's fail-open idiom; nothing above the mode branches mutates anything)
 - `actionlog.py`: new internal kind `decompose_check` with fields `{verdict, reason, mode}` (not an overload of `note`).
-- `skills/agrim-init/templates/config.json.tmpl`: add `"goal_decompose": { "enabled": false, "mode": "log", "max_children": 8 }` plus a `_goal_decompose` explainer (SKILL-driven like precheck — `run_loop` never calls it; `log` -> classify + annotate only, zero mutation ever; `park` -> park oversized goals for a human to split; `file` -> park AND file one "Decompose #N" meta-goal; deterministic classifier; off by default; absent -> nothing runs).
+- `skills/sigma-init/templates/config.json.tmpl`: add `"goal_decompose": { "enabled": false, "mode": "log", "max_children": 8 }` plus a `_goal_decompose` explainer (SKILL-driven like precheck — `run_loop` never calls it; `log` -> classify + annotate only, zero mutation ever; `park` -> park oversized goals for a human to split; `file` -> park AND file one "Decompose #N" meta-goal; deterministic classifier; off by default; absent -> nothing runs).
 - `SKILL.md`: one new step-3 bullet mirroring precheck's wording, placed AFTER precheck's bullet (a duplicate should park as a duplicate, not get decomposed).
 - CHANGELOG entry under `## Unreleased`.
 

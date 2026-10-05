@@ -3,7 +3,7 @@ session command. No real sessions, no sleeping (scale=0), no network."""
 import importlib.util, os, pathlib, re, subprocess, sys, time
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod():

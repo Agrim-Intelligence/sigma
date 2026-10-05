@@ -1,4 +1,4 @@
-"""Suite-wide fixtures for `tests/` (the agrim-loop suite; a private package's own test lane, if the
+"""Suite-wide fixtures for `tests/` (the sigma-loop suite; a private package's own test lane, if the
 checkout has one, has its own `conftest.py` and its own invocation -- this file never runs there).
 
 `_no_live_gh` (issue #1495): a prior blast-radius review (#1487, on PR #1493) counted **88 live
@@ -104,7 +104,7 @@ def _no_live_gh(request, monkeypatch):
             raise RuntimeError(
                 "un-injected live `gh` call from %s: subprocess.run(%r, ...) would reach the "
                 "real GitHub CLI (#1495). Inject this repo's `run=` convention (most functions "
-                "under skills/agrim-loop/scripts/ take one) with a fake, or mark the test "
+                "under skills/sigma-loop/scripts/ take one) with a fake, or mark the test "
                 "@pytest.mark.live_gh if it genuinely needs the network." % (nodeid, cmd)
             )
         return real_run(*args, **kwargs)
@@ -132,7 +132,7 @@ def _no_live_gh(request, monkeypatch):
 @pytest.fixture(autouse=True)
 def _offline_gh_for_child_processes(request, monkeypatch, tmp_path_factory):
     """#229: the guard above sees only THIS process. A test that runs a script as a child process
-    (`/agrim-init`'s CLI now runs `gh auth status` in its preflight) would reach the developer's real,
+    (`/sigma-init`'s CLI now runs `gh auth status` in its preflight) would reach the developer's real,
     logged-in `gh` -- network, and an outcome that depends on whose machine it is. Every child
     therefore gets an empty gh config and no token: `gh auth status` answers "not logged in" locally
     (measured: 0.02s, no network), exactly like an unconfigured CI runner. `live_gh` tests opt out."""

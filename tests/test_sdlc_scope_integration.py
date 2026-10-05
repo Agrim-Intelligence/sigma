@@ -1,6 +1,6 @@
-"""Integration tests for the agrim-scope skill (epic #902, wave 4 / #921): the five pieces
+"""Integration tests for the sigma-scope skill (epic #902, wave 4 / #921): the five pieces
 (brainstorm.py #916, dedup.py #917, compile_plan.py #918, assign.py #919, scope.py #920) wired
-together the way `skills/agrim-scope/SKILL.md` actually drives them, end to end. Each piece already
+together the way `skills/sigma-scope/SKILL.md` actually drives them, end to end. Each piece already
 has its own isolation suite (test_brainstorm.py, test_dedup.py, test_compile_plan.py, test_assign.py,
 test_scope.py) — this file's job is the composition those suites don't cover: does the REAL output
 of one module feed correctly into the next REAL module, all the way from a raw invocation string to
@@ -21,8 +21,8 @@ import pathlib
 import re
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCOPE_SCRIPTS = _ROOT / "skills" / "agrim-scope" / "scripts"
-LOOP = _ROOT / "skills" / "agrim-loop" / "scripts"
+SCOPE_SCRIPTS = _ROOT / "skills" / "sigma-scope" / "scripts"
+LOOP = _ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name, where):
@@ -329,7 +329,7 @@ def test_compiled_report_flows_into_start_now_handoff_posts_a_real_comment_via_t
 
 def test_structurally_invalid_plan_never_reaches_assign_at_all():
     """A caller-error plan (an unknown `blocked_by` key) must fail BEFORE any issue is created, per
-    `compile_plan.compile_plan`'s own contract -- proving the agrim-scope pipeline actually halts there
+    `compile_plan.compile_plan`'s own contract -- proving the sigma-scope pipeline actually halts there
     rather than assign.py ever being handed a partial or fabricated report."""
     import tempfile
     with tempfile.TemporaryDirectory() as d:

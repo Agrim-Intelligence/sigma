@@ -76,7 +76,7 @@ def test_the_real_tree_selects_the_core():
     files = public_surface.public_files(ROOT)
     manifest = ROOT.joinpath(*public_surface.MANIFEST)
     if manifest.is_file():
-        for rel in ("AGENTS.md", "skills/agrim-loop/scripts/loop.py", "tools/generate_vocabulary.py"):
+        for rel in ("AGENTS.md", "skills/sigma-loop/scripts/loop.py", "tools/generate_vocabulary.py"):
             assert rel in files, rel
         assert "tools/public-manifest.txt" not in files
         assert not [f for f in files if f.startswith(".sdlc/")]

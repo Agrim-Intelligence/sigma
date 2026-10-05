@@ -1,4 +1,4 @@
-"""conflict_walk.py -- agrim-rebase slice 2 (#2305, epic #2303, design `.sdlc/design/2288.md` §5).
+"""conflict_walk.py -- sigma-rebase slice 2 (#2305, epic #2303, design `.sdlc/design/2288.md` §5).
 
 WHY THESE TESTS RUN REAL `git`, mirroring `tests/test_rebase_brief.py`'s own rationale (and
 `test_feature_rebase.py`'s before it): this module classifies conflicts from git's own porcelain
@@ -19,7 +19,7 @@ import subprocess
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-rebase" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-rebase" / "scripts"
 
 
 def _load(name, directory=SCRIPTS):
@@ -647,7 +647,7 @@ def test_walk_conflicts_refuses_a_continue_that_would_silently_drop_the_commit(t
 
 def test_walk_conflicts_pushes_the_branch_once_every_conflict_is_resolved(tmp_path):
     """#2319: `rebase_brief.py`'s clean path was the ONLY force-with-lease push in this whole
-    skill (confirmed by grep across all three agrim-rebase scripts) -- `walk_conflicts` itself never
+    skill (confirmed by grep across all three sigma-rebase scripts) -- `walk_conflicts` itself never
     pushed, so a human following the documented `conflict_walk.py walk` -> `verify_merge.py land`
     flow hit a landing PR against the STALE, un-rebased remote branch. Asserts on the real remote
     via `git ls-remote`, never the tool's own printed text."""

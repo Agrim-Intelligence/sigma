@@ -1,9 +1,9 @@
-"""`/agrim-goal --feature <unit>` — the unit-scoping contract (#1663, epic #1464, story #1427).
+"""`/sigma-goal --feature <unit>` — the unit-scoping contract (#1663, epic #1464, story #1427).
 
-`skills/agrim-goal/` is SKILL.md AND NOTHING ELSE: no script, no argument parser, no code path to
+`skills/sigma-goal/` is SKILL.md AND NOTHING ELSE: no script, no argument parser, no code path to
 compile. Its "goal selection" is step 1 of its own prose, which the host agent reads and follows.
 So the flag is a PROSE CONTRACT — and that is this repo's established shape for a skill-level flag
-rather than a corner cut: `/agrim-audit --file` is exactly the same thing, a flag no script parses
+rather than a corner cut: `/sigma-audit --file` is exactly the same thing, a flag no script parses
 whose whole implementation is the skill's text, and `tests/test_audit_skill.py` holds it exactly
 the way this file holds this one.
 
@@ -25,10 +25,10 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
-SCRIPTS = SKILLS / "agrim-loop" / "scripts"
+SCRIPTS = SKILLS / "sigma-loop" / "scripts"
 
-SDLC_GOAL = (SKILLS / "agrim-goal" / "SKILL.md").read_text(encoding="utf-8")
-SDLC_LOOP = (SKILLS / "agrim-loop" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_GOAL = (SKILLS / "sigma-goal" / "SKILL.md").read_text(encoding="utf-8")
+SDLC_LOOP = (SKILLS / "sigma-loop" / "SKILL.md").read_text(encoding="utf-8")
 
 #: Read as TEXT, not imported. These tests ask whether the prose still matches the source, so the
 #: source is a thing to be measured rather than a dependency to be executed — `tests/test_docs.py`'s
@@ -62,7 +62,7 @@ def test_the_flag_is_documented_with_the_loops_spelling():
     """`--feature <name>`, one spelling across both orchestrators and the adopter doc (#1660)."""
     assert "--feature" in SDLC_GOAL, "the flag is not documented at all"
     assert "`--feature <unit>`" in SDLC_GOAL, "the flag must be documented with its argument"
-    assert "/agrim-goal --feature voice-interview" in SDLC_GOAL, "a worked invocation must be shown"
+    assert "/sigma-goal --feature voice-interview" in SDLC_GOAL, "a worked invocation must be shown"
 
 
 def test_step_one_routes_to_the_section():
@@ -110,7 +110,7 @@ def test_the_three_commitments_ride_with_the_guarantee():
 
 
 def test_the_two_skills_state_the_exclusivity_in_one_wording():
-    """The sibling lane adds `--feature` to `/agrim-loop`. THE MOMENT its SKILL.md names the flag,
+    """The sibling lane adds `--feature` to `/sigma-loop`. THE MOMENT its SKILL.md names the flag,
     the two contracts must make the same promise in the same words: one guarantee stated twice, in
     two wordings, is two guarantees, and the softer one is the one an agent will follow.
 
@@ -118,7 +118,7 @@ def test_the_two_skills_state_the_exclusivity_in_one_wording():
     assert EXCLUSIVITY in SDLC_GOAL
     if "--feature" in SDLC_LOOP:
         assert _flat(EXCLUSIVITY) in _flat(SDLC_LOOP), (
-            "/agrim-loop documents `--feature` but does not carry the agreed exclusivity wording — "
+            "/sigma-loop documents `--feature` but does not carry the agreed exclusivity wording — "
             "reconcile the two SKILL.md files to ONE sentence (this file's EXCLUSIVITY), do not "
             "loosen either")
 
@@ -139,7 +139,7 @@ def test_name_legality_is_cited_and_never_restated():
     paraphrase of it would be a second definition, free to be subtly wrong in a way nobody
     re-measures."""
     assert "features._is_unit_name" in SDLC_GOAL, "the validator must be named"
-    assert "skills/agrim-loop/scripts/features.py" in SDLC_GOAL, "and its home must be cited"
+    assert "skills/sigma-loop/scripts/features.py" in SDLC_GOAL, "and its home must be cited"
     for restatement in ("check-ref-format", ".lock", "[A-Za-z0-9"):
         assert restatement not in SDLC_GOAL, (
             "the SKILL is restating the unit-name rule (%r) instead of citing it — one definition, "
@@ -150,7 +150,7 @@ def test_the_cited_validator_still_exists():
     """Independent of the prose: a rename of `_is_unit_name` fails HERE, loudly, instead of leaving
     every prose test above passing forever against a function that no longer exists."""
     assert "def _is_unit_name(" in FEATURES, (
-        "features._is_unit_name was renamed or removed — skills/agrim-goal/SKILL.md cites it by "
+        "features._is_unit_name was renamed or removed — skills/sigma-goal/SKILL.md cites it by "
         "name as the one definition of a legal unit name")
 
 
@@ -177,7 +177,7 @@ def test_the_cited_membership_readers_still_exist():
 def test_a_self_contradicting_issue_is_never_guessed_at():
     assert "AmbiguousUnit" in SDLC_GOAL, "the one state with no honest verdict must be handled"
     assert "class AmbiguousUnit(" in FEATURES, (
-        "features.AmbiguousUnit was renamed or removed — skills/agrim-goal/SKILL.md names it")
+        "features.AmbiguousUnit was renamed or removed — skills/sigma-goal/SKILL.md names it")
 
 
 # --------------------------------------------------------------------------- the two outcomes
@@ -195,7 +195,7 @@ def test_the_drained_unit_stops_the_run_in_the_loops_own_words():
     it has a backlog it may not claim from. Reusing it means an operator reads one vocabulary."""
     assert "nothing pickable" in SDLC_GOAL
     assert "nothing pickable" in LOOP_PY, (
-        "loop.py no longer prints 'nothing pickable' — skills/agrim-goal/SKILL.md tells the agent "
+        "loop.py no longer prints 'nothing pickable' — skills/sigma-goal/SKILL.md tells the agent "
         "to reuse that exact phrase, so either restore it or agree a new one in BOTH places")
     flat = _flat(SDLC_GOAL)
     assert "NAME THE UNIT" in flat, (

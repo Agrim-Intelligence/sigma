@@ -37,12 +37,12 @@ that the new repository starts from one commit that still names this repository'
 places below, and a clone of it that is not repointed addresses THIS repository. The release goal
 (#359) and the later rename must handle each of these before the new repository is published:
 
-- **Safety hazard — the loop's own configured repository.** `/agrim-setup` writes
+- **Safety hazard — the loop's own configured repository.** `/sigma-setup` writes
   `discovery.github.repo` into every adopter's `.sdlc/config.json`
-  (`skills/agrim-setup/scripts/setup.py:190`, `:255`; `/agrim-init` fills the same key,
-  `skills/agrim-init/scripts/init_flow.py:309`), and this repository's own `.sdlc/config.json`
+  (`skills/sigma-setup/scripts/setup.py:190`, `:255`; `/sigma-init` fills the same key,
+  `skills/sigma-init/scripts/init_flow.py:309`), and this repository's own `.sdlc/config.json`
   holds `Agrim-Intelligence/sigma` there. The loop addresses GitHub by that slug directly, not by
-  the git remote: it reads goals from it (`skills/agrim-loop/scripts/sources.py:88`) and passes it
+  the git remote: it reads goals from it (`skills/sigma-loop/scripts/sources.py:88`) and passes it
   as `--repo` (`sources.py:1253`) to every label edit, comment, close, body edit and issue create
   (for example `:2819`, `:2838`, `:3608`). A loop in a
   clone of the new repository whose configuration still names this repository's slug reads goals
@@ -50,7 +50,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
   ship a step for such a clone: repoint or blank `discovery.github.repo`, and verify it with a
   read-only `gh api repos/<slug> --jq .full_name`. The same step covers
   `discovery.github.project.owner` / `number` if the board moves, and `ledger.handoff.upstream_repo`
-  (`skills/agrim-loop/scripts/upstream.py:332`; opt-in, empty by default, but an adopter who set it
+  (`skills/sigma-loop/scripts/upstream.py:332`; opt-in, empty by default, but an adopter who set it
   to this slug files kit findings on the public repository). The other remote settings —
   `work.remote`, `ledger.remote`, `knowledge_graph.sync.remote` — name a git remote (`origin`),
   not a slug, so they follow `origin`'s URL in each clone;
@@ -63,7 +63,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
   `:183`), which PATCH the milestone on issues in the named repository;
 - `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
 - the README's CI badge (`README.md:7`);
-- `_MARKETPLACE_REPO` in `skills/agrim-doctor/scripts/doctor.py:1515`. `/agrim-doctor`'s version
+- `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py:1515`. `/sigma-doctor`'s version
   check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
   only as a fallback when that record cannot be read.
 - existing plugin installs: each recorded `Agrim-Intelligence/sigma` as its marketplace source and keep
@@ -71,7 +71,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
   the owner's decision, in #359.
 
 This list is from a grep of the whole tree for the slug and for every configuration key that
-holds one (`skills/agrim-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,
+holds one (`skills/sigma-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,
 `sync.py`, the board settings). Tests that use the slug as a fixture are not listed; they do not
 address GitHub. `.claude-plugin/marketplace.json` names no repository (its source is `./`), and
 `.github/CODEOWNERS` names an organisation team, which the new repository does not change.

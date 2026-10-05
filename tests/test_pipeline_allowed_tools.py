@@ -1,6 +1,6 @@
 """#1957: `allowed-tools` on the three Dossier-pipeline skills, and the one property it can keep.
 
-This defect class has surfaced three times. #1911: `agrim-goal-design` mandated a comment its grant
+This defect class has surfaced three times. #1911: `sigma-goal-design` mandated a comment its grant
 could not post. #1927: that fix left the claim "every command below appears in the list" still
 false, because step 2 named no inventory command at all. #1957: the note insisted `find`/`ls`/`wc`/
 `cat` were withheld deliberately and that the steps named only covered commands, and the first
@@ -38,7 +38,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 #: The three stages of `docs/dossier-pipeline.md`. The decision is theirs jointly -- one of them
 #: reverting to a boundary story is the drift this file exists to catch.
-PIPELINE = ("agrim-dossier", "agrim-goal-design", "agrim-goal-review")
+PIPELINE = ("sigma-dossier", "sigma-goal-design", "sigma-goal-review")
 
 #: The one sentence all three carry verbatim, so a reader who lands on any of them gets the same
 #: posture rather than three compatible-sounding paraphrases.
@@ -55,10 +55,10 @@ COMMAND_WORDS = frozenset((
 
 def _skill(name):
     """The whole skill an agent actually reads: SKILL.md plus every `references/*.md` beside it
-    (#2107/#2108 split `agrim-goal-design`/`agrim-goal-review` into body + references/*.md — a raw
+    (#2107/#2108 split `sigma-goal-design`/`sigma-goal-review` into body + references/*.md — a raw
     SKILL.md-only read would silently stop seeing any command that moved into a reference file,
     reporting a false `clean` rather than failing loud). `skill_corpus()` on an unsplit skill (no
-    reference files) returns the SKILL.md text unchanged, so this is a no-op for `agrim-dossier`."""
+    reference files) returns the SKILL.md text unchanged, so this is a no-op for `sigma-dossier`."""
     return skill_corpus(name)
 
 
@@ -86,8 +86,8 @@ def _granted_prefixes(text):
 
 #: #1993: a fence is not, by itself, proof its content is a template rather than an instruction to
 #: run. Confirmed by inspecting every fence in all three pipeline files: the two tags that appear
-#: are `markdown` (`agrim-goal-design`'s `.sdlc/design/<n>.md` artifact shape) and `json`
-#: (`agrim-dossier`'s example answers payload) -- both genuinely data/documentation, never a command.
+#: are `markdown` (`sigma-goal-design`'s `.sdlc/design/<n>.md` artifact shape) and `json`
+#: (`sigma-dossier`'s example answers payload) -- both genuinely data/documentation, never a command.
 #: Every OTHER fence -- bare, or tagged `bash` -- wraps a literal command in these files, and that
 #: is where nearly all of the pipeline's real commands actually live. So only a fence tagged with
 #: one of these two is dropped; everything else is scanned exactly like the surrounding prose.
@@ -167,11 +167,11 @@ def test_no_pipeline_skill_claims_its_grant_is_an_enforcement_boundary():
     granted beside them. They are pinned individually because a reader re-introducing one would be
     restating a claim that was measured wrong, not writing a new one."""
     forbidden = (
-        # agrim-goal-design, citing its sibling as the enforceable posture
+        # sigma-goal-design, citing its sibling as the enforceable posture
         "structurally cannot explore",
-        # agrim-dossier, on its own omission of Read/Grep/Glob
+        # sigma-dossier, on its own omission of Read/Grep/Glob
         "the constraint is enforced here",
-        # agrim-dossier, on `ls skills/`
+        # sigma-dossier, on `ls skills/`
         "general-purpose repo-search back door",
     )
     for name in PIPELINE:
@@ -194,7 +194,7 @@ def test_every_command_a_pipeline_skill_names_is_covered_by_its_own_grant():
 def test_the_scan_can_actually_see_an_uncovered_command():
     """The control for the check above, run in-process so it is not a claim about a check nobody
     watched fail. An ungranted command spliced into a real step must be reported."""
-    text = _skill("agrim-goal-design")
+    text = _skill("sigma-goal-design")
     assert not _uncovered(text), "baseline is not clean -- the control below proves nothing"
     spiked = text.replace("## 5. Write the artifact",
                           "## 5. Write the artifact\n\nWrite it with `cat > .sdlc/design/<n>.md`.", 1)
@@ -206,14 +206,14 @@ def test_the_scan_can_actually_see_an_uncovered_command_inside_a_fenced_block():
     """#1993: the control above only ever exercised an INLINE backtick span, but nearly every real
     command in these three files is written inside a fenced block, not as a bare span -- which the
     scan used to strip before ever looking. Reproduces the review's own live finding: splice an
-    uncovered command (`gh issue list` -- not in `agrim-goal-review`'s grant, which only has `gh
+    uncovered command (`gh issue list` -- not in `sigma-goal-review`'s grant, which only has `gh
     issue view *`/`gh issue comment *`) into an EXISTING fenced block (step 3's REJECT comment,
     verbatim) and it must be seen too, not just the identical string as prose."""
-    text = _skill("agrim-goal-review")
+    text = _skill("sigma-goal-review")
     assert not _uncovered(text), "baseline is not clean -- the control below proves nothing"
     # #2482: the anchor text moved when step 3 gained a design-PR close call folded into the
     # same comment -- re-anchored to the current exact string rather than the pre-#2482 one.
-    target = ('python3 "${CLAUDE_SKILL_DIR}/../agrim-loop/scripts/loop.py" note .sdlc <n> '
+    target = ('python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc <n> '
               '"goal-review: REJECTED -- <findings> -- design PR: <close-design\'s own result>"')
     assert target in text, "step 3's REJECT command moved -- re-anchor this splice point"
     spiked = text.replace(target, target + '\ngh issue list --search "is:open" --json number', 1)

@@ -1,9 +1,9 @@
-"""issue #1778: EXECUTED tests for skills/agrim-loop/scripts/north_star.py.
+"""issue #1778: EXECUTED tests for skills/sigma-loop/scripts/north_star.py.
 
-The defect these pin is a check that was never seen to fail. `agrim-research` §4 and
-`agrim-plan-review` §4 both gated their strategy/architecture pass on `.sdlc/context/north-star.md`
+The defect these pin is a check that was never seen to fail. `sigma-research` §4 and
+`sigma-plan-review` §4 both gated their strategy/architecture pass on `.sdlc/context/north-star.md`
 existing in the CURRENT directory; the loop runs both phases from inside the goal's worktree, and
-`.gitignore` excludes `.sdlc/*`, so that file is never there. Worse, `agrim-plan-review` read the
+`.gitignore` excludes `.sdlc/*`, so that file is never there. Worse, `sigma-plan-review` read the
 absence as "no north-star = drop-in project: skip this check; it's a no-op" — reporting NOT
 APPLICABLE where the truth was I COULD NOT LOOK.
 
@@ -27,7 +27,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "skills" / "agrim-loop" / "scripts" / "north_star.py"
+SCRIPT = ROOT / "skills" / "sigma-loop" / "scripts" / "north_star.py"
 
 
 def _load():
@@ -234,28 +234,28 @@ def test_cli_exits_zero_on_every_verdict_including_unreachable(tmp_path):
 # --- #2147: the OTHER skills that ground themselves in the north-star -------------------------
 #
 # #1778 fixed two. Nine more read the same file, and `.gitignore`'s `.sdlc/*` hides it from every
-# one of them that the loop runs after `agrim-loop/SKILL.md` 3a cuts the worktree. The split below
+# one of them that the loop runs after `sigma-loop/SKILL.md` 3a cuts the worktree. The split below
 # is the whole point: a skill that emits a VERDICT a human acts on has to tell `absent` from
 # `unreachable`, and a skill that only wants the path does not.
 
 #: Emit a verdict grounded in the north-star, so ABSENT-is-not-PASS applies: they MUST name all
-#: three states. (`agrim-retro`'s grade feeds `loop.py record`; `agrim-security-review`'s severities
-#: feed `agrim-review`'s Blocking rule; `agrim-contract-check` has an explicit FROZEN-contract gate.)
-_GATES = ("agrim-research", "agrim-plan-review", "agrim-review", "agrim-retro", "agrim-context",
-          "agrim-security-review", "agrim-contract-check")
+#: three states. (`sigma-retro`'s grade feeds `loop.py record`; `sigma-security-review`'s severities
+#: feed `sigma-review`'s Blocking rule; `sigma-contract-check` has an explicit FROZEN-contract gate.)
+_GATES = ("sigma-research", "sigma-plan-review", "sigma-review", "sigma-retro", "sigma-context",
+          "sigma-security-review", "sigma-contract-check")
 
 #: Grounding only - they get no reviewer brief and assert nothing about the north-star, so they need
 #: the PATH and nothing more. Three-state prose here would be ceremony.
-_POINTERS = ("agrim-migration-check", "agrim-debug", "agrim-brainstorm")
+_POINTERS = ("sigma-migration-check", "sigma-debug", "sigma-brainstorm")
 
 _GROUNDING = _GATES + _POINTERS
 
 #: Where naming `.sdlc/context/north-star.md` in prose is a DEFECT - it is the path that does not
 #: exist in a worktree, and a model that sees it will open it instead of resolving. Excluded, with
-#: reasons: `agrim-research`/`agrim-plan-review` cite it while EXPLAINING the defect; `agrim-retro:69`
-#: proposes an edit *to* the file; `agrim-implement` only ever cites it (see the pin below).
-_MUST_NOT_NAME_THE_BARE_PATH = ("agrim-review", "agrim-context", "agrim-security-review",
-                                "agrim-contract-check", "agrim-migration-check", "agrim-debug")
+#: reasons: `sigma-research`/`sigma-plan-review` cite it while EXPLAINING the defect; `sigma-retro:69`
+#: proposes an edit *to* the file; `sigma-implement` only ever cites it (see the pin below).
+_MUST_NOT_NAME_THE_BARE_PATH = ("sigma-review", "sigma-context", "sigma-security-review",
+                                "sigma-contract-check", "sigma-migration-check", "sigma-debug")
 
 BARE_PATH = ".sdlc/context/north-star.md"
 
@@ -284,9 +284,9 @@ def test_the_bare_path_is_gone_from_every_skill_that_only_wanted_to_read_it(skil
 
 
 def test_sdlc_retro_keeps_only_its_one_legitimate_bare_path():
-    """Not a blanket ban: `agrim-retro` PROPOSES an edit to the north-star, and naming the file it
+    """Not a blanket ban: `sigma-retro` PROPOSES an edit to the north-star, and naming the file it
     would edit is correct. Exactly one such mention may survive - the grounding read must not."""
-    assert _skill_text("agrim-retro").count(BARE_PATH) == 1
+    assert _skill_text("sigma-retro").count(BARE_PATH) == 1
 
 
 @pytest.mark.parametrize("skill", _GATES)
@@ -323,7 +323,7 @@ def test_the_gesture_each_skill_prints_actually_runs_from_a_worktree(skill, tmp_
         assert pathlib.Path(path) == repo / ".sdlc" / "context" / "north-star.md"
 
 
-#: `agrim-implement` is deliberately NOT in `_GROUNDING`: all three of its north-star mentions QUOTE
+#: `sigma-implement` is deliberately NOT in `_GROUNDING`: all three of its north-star mentions QUOTE
 #: the rule inline, so nothing is read and nothing can silently fail. Pinned so a later consistency
 #: sweep cannot convert a citation into a phantom read of a path that is not there.
 _IMPLEMENT_CITATIONS = (
@@ -334,11 +334,11 @@ _IMPLEMENT_CITATIONS = (
 
 
 def test_sdlc_implement_still_cites_the_north_star_inline_rather_than_reading_it():
-    text = _skill_text("agrim-implement")
+    text = _skill_text("sigma-implement")
     for quoted in _IMPLEMENT_CITATIONS:
         assert quoted in text, (
-            "agrim-implement no longer quotes %r inline - if it now sends the reader to the file "
+            "sigma-implement no longer quotes %r inline - if it now sends the reader to the file "
             "instead, it needs the resolver like every skill in _GROUNDING" % quoted)
     assert "north_star.py" not in text, (
-        "agrim-implement gained a resolver call; if it now READS the north-star it belongs in "
+        "sigma-implement gained a resolver call; if it now READS the north-star it belongs in "
         "_GROUNDING, and this pin is the wrong guard for it")

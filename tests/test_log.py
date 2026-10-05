@@ -1,8 +1,8 @@
-"""Local-only action log — read side (skills/agrim-log/scripts/log.py). Mirrors
+"""Local-only action log — read side (skills/sigma-log/scripts/log.py). Mirrors
 tests/test_status.py's own shape: a thin, hermetic read layer over a state file loop.py/work.py
 write elsewhere.
 
-Fixtures here are written with the REAL writer (skills/agrim-loop/scripts/actionlog.py's own
+Fixtures here are written with the REAL writer (skills/sigma-loop/scripts/actionlog.py's own
 `append()`) so these tests are validated against genuine production-shaped output, not a
 hand-rolled approximation that could drift from the real format — this is a TEST-ONLY dependency
 on actionlog.py, not a production one: log.py's own source never imports it (format-only coupling,
@@ -15,8 +15,8 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOG_S = ROOT / "skills" / "agrim-log" / "scripts"
-ACTIONLOG_S = ROOT / "skills" / "agrim-loop" / "scripts"
+LOG_S = ROOT / "skills" / "sigma-log" / "scripts"
+ACTIONLOG_S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(path, name):
@@ -354,7 +354,7 @@ def test_main_usage_fallback_on_bad_args(capsys):
 #
 # `render.py` is loaded here so the two modules' shared constants can be PINNED against each
 # other. That is a test-only load, exactly like `actionlog` above: log.py's own source shells out
-# to render.py and imports nothing from `skills/agrim-loop/scripts/`, which
+# to render.py and imports nothing from `skills/sigma-loop/scripts/`, which
 # `test_log_module_loads_no_sibling_skill_module` re-checks now that a second sibling is in play.
 render = _load(ACTIONLOG_S / "render.py", "render")
 
@@ -831,7 +831,7 @@ def test_bounded_fields_are_a_subset_of_what_the_writer_actually_writes():
 
 
 def test_log_module_loads_no_sibling_skill_module():
-    """log.py shells out to render.py and imports nothing from `skills/agrim-loop/scripts/` — the
+    """log.py shells out to render.py and imports nothing from `skills/sigma-loop/scripts/` — the
     only arrangement that satisfies both of this repo's import bans at once."""
     import re
     src = (LOG_S / "log.py").read_text(encoding="utf-8")

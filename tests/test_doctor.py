@@ -1,11 +1,11 @@
-"""agrim-doctor: a setup check-up. doctor.check() audits only what THIS project's config makes relevant
+"""sigma-doctor: a setup check-up. doctor.check() audits only what THIS project's config makes relevant
 (github board -> gh auth+scope; KG -> builder; vision-first -> north-star) and returns each check with
 the exact one-line fix. The command runner is injectable so these are hermetic (no real gh/graphify)."""
 import base64, json, os, pathlib, importlib.util, shutil, stat, subprocess, sys, tempfile, time
 
 import pytest
 
-D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 
 
 def _doc():
@@ -13,9 +13,9 @@ def _doc():
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
-#: skills/agrim-doctor/scripts/doctor.py -> skills/agrim-loop/scripts/gh_session.py, mirroring
+#: skills/sigma-doctor/scripts/doctor.py -> skills/sigma-loop/scripts/gh_session.py, mirroring
 #: doctor.py's own `_load_loop_script` cross-load target (#78's shared proxy-block classifier).
-GH_SESSION = D.parent.parent.parent / "agrim-loop" / "scripts" / "gh_session.py"
+GH_SESSION = D.parent.parent.parent / "sigma-loop" / "scripts" / "gh_session.py"
 
 
 def _gh_session():
@@ -23,10 +23,10 @@ def _gh_session():
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
-#: skills/agrim-doctor/scripts/doctor.py -> skills/agrim-loop/scripts/actionlog.py, same cross-load
+#: skills/sigma-doctor/scripts/doctor.py -> skills/sigma-loop/scripts/actionlog.py, same cross-load
 #: shape as GH_SESSION above -- needed so local-action-log fixtures can reuse actionlog.py's own
 #: `_stamp()` rather than a test-local reimplementation of its millisecond-timestamp format.
-ACTIONLOG = D.parent.parent.parent / "agrim-loop" / "scripts" / "actionlog.py"
+ACTIONLOG = D.parent.parent.parent / "sigma-loop" / "scripts" / "actionlog.py"
 
 
 def _actionlog():
@@ -232,7 +232,7 @@ def test_flags_auto_refresh_on_but_the_graph_was_never_built():
         c = _by_name(d.check(base, run=_runner(builder="graphify 1.0")))
         row = c["knowledge graph auto-refresh is working"]
         assert row["ok"] is False
-        assert "auto_refresh" in row["fix"] and "/agrim-kg" in row["fix"]
+        assert "auto_refresh" in row["fix"] and "/sigma-kg" in row["fix"]
 
 
 def test_auto_refresh_on_with_a_built_graph_is_ok():
@@ -271,7 +271,7 @@ def test_flags_stale_graph_when_corpus_has_a_newer_document():
         row = c["knowledge graph auto-refresh is working"]
         assert row["ok"] is False
         assert "stale" in row["fix"].lower()
-        assert "/agrim-kg" in row["fix"]
+        assert "/sigma-kg" in row["fix"]
 
 
 def test_graph_newer_than_the_corpus_is_fresh_not_stale():
@@ -313,7 +313,7 @@ def test_a_quiet_corpus_is_not_stale():
 
 def test_auto_refresh_off_produces_no_such_row_at_all():
     """NEGATIVE CONTROL on the gate. `enabled` alone must not raise this row: a project that
-    deliberately builds the graph by hand with /agrim-kg has nothing wrong with it, and reporting a
+    deliberately builds the graph by hand with /sigma-kg has nothing wrong with it, and reporting a
     never-built graph as a fault there would be a false alarm on every doctor run."""
     d = _doc()
     with tempfile.TemporaryDirectory() as t:
@@ -732,7 +732,7 @@ def test_check_adds_no_entry_at_all_when_either_side_is_undeterminable():
 # fetch of the installed marketplace's own contents (#2730) --
 # measured on this box at 3.82s cold / 3.00s warm for the whole call, against 0.01s with
 # cheap_only=True. AGENTS.md's SAFETY property forbids spending that without the operator opting
-# in, so the wizard takes the cheap subset and `/agrim-doctor` keeps the full sweep.
+# in, so the wizard takes the cheap subset and `/sigma-doctor` keeps the full sweep.
 
 
 def _exploding_runner(*forbidden):
@@ -806,7 +806,7 @@ def test_cheap_only_still_reports_real_setup_gaps():
 def test_features_dashboard_reports_states(tmp_path):
     import json, importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
     base = tmp_path / ".sdlc"; base.mkdir()
     base.joinpath("config.json").write_text(json.dumps(
@@ -824,7 +824,7 @@ def test_features_reports_the_plan_review_gate(tmp_path):
     including the ON-but-not-enforced case, where `work.enabled` is off and `pr` never runs."""
     import json, importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
     key = "plan-review gate (PR push needs an approving review of the exact plan)"
 
@@ -846,7 +846,7 @@ def test_features_flags_a_legacy_env_var_name_under_any_env_key(tmp_path):
     attribute, never spelled here, so neither file carries the retired spelling whole."""
     import json, importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
     legacy = d._RETIRED_ENV_PREFIX + "SLACK_BOT_TOKEN"
     assert legacy.endswith("_SLACK_BOT_TOKEN") and legacy[:1].isupper() and "SIGMA" not in legacy
@@ -866,7 +866,7 @@ def test_features_flags_a_legacy_env_var_name_under_any_env_key(tmp_path):
     assert "SIGMA_SMTP_PASS" not in state and "SIGMA_RUN_ID" not in state, state
     # Post-PR review of #2750: the remedy must be one the user can perform today. Since #239 that is
     # the migration script that now ships -- and the named script must exist on disk.
-    assert fix == ("run: python3 skills/agrim-doctor/scripts/migrate.py .sdlc (dry run), then --apply; "
+    assert fix == ("run: python3 skills/sigma-doctor/scripts/migrate.py .sdlc (dry run), then --apply; "
                    "and rename the environment variable it names to match"), fix
     assert (_pl.Path(d.__file__).resolve().parent / "migrate.py").is_file()
     assert "rebrand_migrate" not in state and "rebrand_migrate" not in fix, (state, fix)
@@ -877,11 +877,11 @@ def test_features_flags_a_legacy_env_var_name_under_any_env_key(tmp_path):
 
 def test_features_reports_decision_tier_state(tmp_path):
     """#1185: decision_tier was undiscoverable (absent from README, SKILL.md, the scaffolded
-    template, and agrim-doctor alike). This pins the doctor half of that fix -- the dashboard must
+    template, and sigma-doctor alike). This pins the doctor half of that fix -- the dashboard must
     show whether it's on, matching every other opt-in feature row's convention."""
     import json, importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
 
     base_off = tmp_path / "off" / ".sdlc"; base_off.mkdir(parents=True)
@@ -953,7 +953,7 @@ def test_doctor_handoff_default_matches_loop_pys_own_constant():
     numbers ever diverge, which Top Risk 2 already predicts will happen once a real multi-goal run
     argues for retuning `after_goals`."""
     import re
-    loop_path = D.parent.parent.parent / "agrim-loop" / "scripts" / "loop.py"   # same D.parent chain
+    loop_path = D.parent.parent.parent / "sigma-loop" / "scripts" / "loop.py"   # same D.parent chain
     spec = importlib.util.spec_from_file_location("loop_for_sync_check", loop_path)          # GH_SESSION uses above
     loop_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(loop_mod)
@@ -1103,7 +1103,7 @@ def test_features_reports_the_ledger_and_counts_its_entries(tmp_path):
 
 def _sync():
     import importlib.util, pathlib as _pl
-    path = (_pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+    path = (_pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
             / "sync.py")
     spec = importlib.util.spec_from_file_location("sync", path)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
@@ -1141,7 +1141,7 @@ _LEDGER_ON = {"ledger": {"enabled": True, "actor": "amy"}}
 
 def _ledger_mod():
     import importlib.util, pathlib as _pl
-    path = (_pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+    path = (_pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
             / "ledger.py")
     spec = importlib.util.spec_from_file_location("ledger", path)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
@@ -1281,7 +1281,7 @@ def test_features_ledger_with_entries_but_no_worktree_reports_local_only(tmp_pat
     ever on the ops branch, reported as a healthy 'ON — 263 entries' the whole time."""
     import json, importlib.util, pathlib as _pl
     spec = importlib.util.spec_from_file_location(
-        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
     base = tmp_path / ".sdlc"; base.mkdir()
     base.joinpath("config.json").write_text(json.dumps({"ledger": {"enabled": True}}))
@@ -1531,7 +1531,7 @@ def test_flags_ledger_enabled_but_not_initialised():
         base = _sdlc(t, {"ledger": {"enabled": True}})               # on in config, never created
         c = _by_name(d.check(base, run=_runner()))
         assert c["team ledger initialized"]["ok"] is False
-        assert "/agrim-ledger" in c["team ledger initialized"]["fix"]
+        assert "/sigma-ledger" in c["team ledger initialized"]["fix"]
 
 
 def test_ledger_check_passes_once_the_worktree_exists():
@@ -1593,7 +1593,7 @@ def test_features_flags_an_enabled_but_unset_up_ledger(tmp_path):
     d = _doc()
     base = _sdlc(tmp_path, {"ledger": {"enabled": True}})            # enabled, nothing created yet
     rows = {name: state for name, state, _ in d.features(base)}
-    assert "NOT set up" in rows["team ledger"] and "/agrim-ledger" in rows["team ledger"]
+    assert "NOT set up" in rows["team ledger"] and "/sigma-ledger" in rows["team ledger"]
 
 
 # --- the verify permanent-refusal trap: enforce on with no command ---------------------------
@@ -1821,7 +1821,7 @@ def test_doctor_and_loop_enforce_reads_agree_on_the_same_truth_table():
     F17's own investigation, including the ones that only matter for a safety-gate's fail-direction)
     through both and asserts identical results."""
     d = _doc()
-    L = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "loop.py"
+    L = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "loop.py"
     spec = importlib.util.spec_from_file_location("loop", L)
     loop = importlib.util.module_from_spec(spec); spec.loader.exec_module(loop)
 
@@ -1845,7 +1845,7 @@ def test_gate_enabled_reads_the_full_generous_truth_table():
     established for the loop.py/doctor.py `_enforce_enabled` pair, extended to this third copy so
     a future edit to any ONE of the three fails loudly here rather than silently drifting."""
     d = _doc()
-    T = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "triage.py"
+    T = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "triage.py"
     spec = importlib.util.spec_from_file_location("triage", T)
     triage = importlib.util.module_from_spec(spec); spec.loader.exec_module(triage)
 
@@ -2147,7 +2147,7 @@ def _adopt_unit(base, name, open_=True, owner="me"):
 
 
 def _load_loop_script_for_test(name):
-    path = D.parent.parent.parent / "agrim-loop" / "scripts" / f"{name}.py"
+    path = D.parent.parent.parent / "sigma-loop" / "scripts" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
@@ -2265,7 +2265,7 @@ def test_check_backlog_thresholds_ok_when_sane_and_absent_when_disabled(tmp_path
     assert "backlog cross-check thresholds sane" not in {c["name"] for c in d.check(off, run=_runner())}
 
 
-# --- #389: /agrim-doctor dependency-marker check -- a comment matching backlog_check._BLOCK_RE with
+# --- #389: /sigma-doctor dependency-marker check -- a comment matching backlog_check._BLOCK_RE with
 # NO matching body marker is likely-intended-but-silently-ignored by precheck(). Cost-bounded (R6:
 # default max_issues=10, ~6s added on a real repo, down from an initial 30/~18.5s draft) and the
 # bound is always visibly reported in the check's own `name`, pass or fail -- never silently applied.
@@ -2366,7 +2366,7 @@ def test_dependency_marker_doctor_check_skipped_in_local_mode(tmp_path):
 
 def test_dependency_marker_doctor_check_default_max_issues_is_ten(tmp_path):
     """R6: the plan-review measured ~0.62s/call for `gh issue view --json comments` on a real repo;
-    at the ORIGINAL draft default of 30 that is ~18.5s added to a routine /agrim-doctor run (4-7x
+    at the ORIGINAL draft default of 30 that is ~18.5s added to a routine /sigma-doctor run (4-7x
     regression), and since candidates are issues WITHOUT a body marker -- nearly all of them in
     practice -- that cap is hit on essentially any real backlog, so it was the TYPICAL cost, not a
     worst case. Lowered to 10 (~6s) by default, still configurable."""
@@ -2390,7 +2390,7 @@ def test_dependency_marker_doctor_check_survives_a_malformed_doctor_scan_block(t
     d.check(base, run=_dm_run(issues))    # must not raise
 
 
-# --- #1205: /agrim-doctor blocked-label check -- discovery.github.blocked_label is what makes the
+# --- #1205: /sigma-doctor blocked-label check -- discovery.github.blocked_label is what makes the
 # label-queue path (sources.py's _fetch_pending) actually honor a repo-local "do not auto-pick"
 # label; unset (the default), an issue carrying such a label is fully visible to the picker with
 # nothing warning the convention is inert. This nudges that gap at setup time: unset + a
@@ -2707,7 +2707,7 @@ def test_multi_state_label_doctor_check_skipped_in_local_mode(tmp_path):
     assert _MSL_NAME not in names
 
 
-# --- #1207: /agrim-doctor states plainly whether board columns (including Blocked) actually gate
+# --- #1207: /sigma-doctor states plainly whether board columns (including Blocked) actually gate
 # the pick path. Under `queue_source: "label"` (or with the board/project off entirely), sources.py's
 # `_ready_lane()` short-circuits BEFORE it ever reads the board -- `if not self.project_enabled or
 # self.queue_source != "status": return None` -- so a card sitting in Blocked is not protected from
@@ -2757,7 +2757,7 @@ def test_features_does_not_claim_board_gated_before_the_board_exists(tmp_path):
     """PR #1268 review finding: `_pick_path_gate_state` used to report BOARD-GATED from config
     alone (`project.enabled=True`, `queue_source` defaulting to "status"), but the REAL pick-path
     gate -- `GitHubSource._ready_lane()` -- goes on past that config check to do a live read: it
-    confirms a board actually EXISTS (`_find_project`), which is false right after `agrim-init`
+    confirms a board actually EXISTS (`_find_project`), which is false right after `sigma-init`
     (board creation is lazy -- the first status WRITE, per sources.py's own comment), not at config
     time. `gh project list` returning no matching project is exactly that state. The real
     `_ready_lane()` returns None in this state -- Blocked gates nothing, the pick path falls
@@ -2796,7 +2796,7 @@ def test_features_does_not_claim_board_gated_before_the_board_is_migrated(tmp_pa
 
 def test_features_pick_path_gating_degrades_cleanly_when_the_board_read_fails(tmp_path):
     """A `gh` call that fails entirely (no auth, network down, `gh` missing) must degrade to the
-    same non-BOARD-GATED message as "board doesn't exist yet" -- never crash `/agrim-doctor`, and
+    same non-BOARD-GATED message as "board doesn't exist yet" -- never crash `/sigma-doctor`, and
     never claim protection that can't be confirmed live."""
     base = _sdlc(tmp_path, {"discovery": {"source": "github",
                                           "github": {"project": {"enabled": True}}}})
@@ -2844,9 +2844,9 @@ def test_features_pick_path_gating_differs_meaningfully_between_label_and_status
 
 
 def _sources():
-    #: skills/agrim-doctor/scripts/doctor.py -> skills/agrim-loop/scripts/sources.py, the module
+    #: skills/sigma-doctor/scripts/doctor.py -> skills/sigma-loop/scripts/sources.py, the module
     #: `_pick_path_gate_state`'s docstring claims to mirror byte for byte.
-    S = D.parent.parent.parent / "agrim-loop" / "scripts" / "sources.py"
+    S = D.parent.parent.parent / "sigma-loop" / "scripts" / "sources.py"
     spec = importlib.util.spec_from_file_location("sources", S)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
@@ -2886,7 +2886,7 @@ def test_check_never_flags_queue_source_label_as_a_pass_fail_gap(tmp_path):
 
 # --- standing-doc hygiene: the mechanical half of context maintenance -------------------------
 # Rot that a script can settle (a reference that no longer resolves), NOT the judgment half
-# (demoting a rule CI now enforces) — that's agrim-retro's, because it changes files.
+# (demoting a rule CI now enforces) — that's sigma-retro's, because it changes files.
 
 def _hyg(d, project_md=None, north_star=None):
     base = pathlib.Path(d) / ".sdlc"
@@ -2928,9 +2928,9 @@ def test_hygiene_ignores_patterns_and_urls():
 
 # --- #1210: a slash-command mention is not a file-path citation --------------------------------
 # `_CITED` matches any backticked token with a `/` in it, and a standing doc naming the very
-# commands that operate on it (`/agrim-doctor`, `/agrim-loop`) satisfies that trivially. Resolved as
-# repo-root-relative (the leading-slash convention #545 established), `/agrim-doctor` is checked
-# against `<repo>/agrim-doctor`, which never exists, so the best-written docs failed the check that
+# commands that operate on it (`/sigma-doctor`, `/sigma-loop`) satisfies that trivially. Resolved as
+# repo-root-relative (the leading-slash convention #545 established), `/sigma-doctor` is checked
+# against `<repo>/sigma-doctor`, which never exists, so the best-written docs failed the check that
 # exists to validate them.
 
 def test_hygiene_does_not_flag_a_known_slash_command_reference():
@@ -2938,8 +2938,8 @@ def test_hygiene_does_not_flag_a_known_slash_command_reference():
     these can ever resolve as a repo-root-relative file, by design."""
     with tempfile.TemporaryDirectory() as d:
         sdlc = _hyg(d, project_md=(
-            "Run `/agrim-doctor` for a check-up, `/agrim-loop` to drain the backlog, "
-            "or `/agrim-init` to scaffold a new project."))
+            "Run `/sigma-doctor` for a check-up, `/sigma-loop` to drain the backlog, "
+            "or `/sigma-init` to scaffold a new project."))
         rows = {c["name"]: c for c in _doc().hygiene(sdlc, d)}
         assert rows["standing docs: cited paths resolve"]["ok"]
 
@@ -2949,31 +2949,31 @@ def test_hygiene_still_flags_a_slash_reference_that_names_no_real_command():
     shipped skill is an ordinary (bogus) repo-root-relative citation and must still be flagged --
     no over-suppression just because it LOOKS like a command."""
     with tempfile.TemporaryDirectory() as d:
-        sdlc = _hyg(d, project_md="See `/agrim-doctor` and `/this-does-not-exist` for details.")
+        sdlc = _hyg(d, project_md="See `/sigma-doctor` and `/this-does-not-exist` for details.")
         rows = {c["name"]: c for c in _doc().hygiene(sdlc, d)}
         paths = rows["standing docs: cited paths resolve"]
         assert not paths["ok"]
-        assert "/this-does-not-exist" in paths["fix"] and "/agrim-doctor" not in paths["fix"]
+        assert "/this-does-not-exist" in paths["fix"] and "/sigma-doctor" not in paths["fix"]
 
 
 def test_hygiene_command_suppression_does_not_swallow_a_real_multi_segment_path():
     """A reference that merely STARTS with a command name but names a deeper path is a real file
     citation, not a command mention, and must still resolve normally."""
     with tempfile.TemporaryDirectory() as d:
-        sdlc = _hyg(d, project_md="Source at `/agrim-doctor/scripts/doctor.py`.")
+        sdlc = _hyg(d, project_md="Source at `/sigma-doctor/scripts/doctor.py`.")
         rows = {c["name"]: c for c in _doc().hygiene(sdlc, d)}
         paths = rows["standing docs: cited paths resolve"]
         assert not paths["ok"]
-        assert "/agrim-doctor/scripts/doctor.py" in paths["fix"]
+        assert "/sigma-doctor/scripts/doctor.py" in paths["fix"]
 
 
 def test_hygiene_bare_relative_citation_still_flags_with_a_repo_root_explanation():
     """AC4/#1210: a `.sdlc/project.md` citing `goals/` (meaning its own sibling `.sdlc/goals/`)
     still fails to resolve -- `_stale_paths` anchors every cited path at the repo root, same as
-    `/agrim-doctor` would if it weren't a known command, NOT at the citing document's own directory
+    `/sigma-doctor` would if it weren't a known command, NOT at the citing document's own directory
     (that would be `_dangling_links`' convention, and flipping `_stale_paths` to match it would
     break the repo-root convention every OTHER citation in this codebase already relies on --
-    `src/live.py` in the fixture above, `skills/agrim-doctor/scripts/doctor.py` throughout this
+    `src/live.py` in the fixture above, `skills/sigma-doctor/scripts/doctor.py` throughout this
     file's own comments). The decision made for AC4 is the OTHER branch it offers: the reference
     stays flagged, but the fix line now says outright that cited paths resolve from the repo root,
     so the operator does not have to read `_under`'s docstring to know that `goals/` needs to be
@@ -3089,7 +3089,7 @@ def test_doctor_output_survives_a_non_utf8_locale(tmp_path):
     import subprocess, os, sys, json, pathlib as _pl
     base = tmp_path / ".sdlc"; base.mkdir()
     base.joinpath("config.json").write_text(json.dumps({}))   # default features incl. an em-dash row
-    D = _pl.Path(__file__).resolve().parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+    D = _pl.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
     env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONIOENCODING="ascii")
     p = subprocess.run([sys.executable, str(D), "features", str(base)],
                        capture_output=True, text=True, env=env)
@@ -3924,7 +3924,7 @@ def test_malformed_decision_gate_block_does_not_crash_with_a_registry_present(tm
     # `_decision_gate_state` short-circuits BEFORE reaching the malformed-block read when
     # decisions.json is absent (`if not reg.exists(): return "off..."`) — so a malformed
     # gates.decision_gate only actually reaches the vulnerable line when a registry exists (the
-    # realistic state for any adopter who has run /agrim-decide). Without the registry present,
+    # realistic state for any adopter who has run /sigma-decide). Without the registry present,
     # this case would pass even on the unfixed code — reaching the line is the whole test.
     d = _doc()
     base = _sdlc(tmp_path, {"gates": {"decision_gate": "oops"}})
@@ -4348,7 +4348,7 @@ def test_workflow_check_is_read_only():
 
 
 def test_workflow_check_fails_open_on_every_unreadable_case():
-    """Same convention as its two siblings: a doctor check that can crash /agrim-doctor is worse
+    """Same convention as its two siblings: a doctor check that can crash /sigma-doctor is worse
     than no check. No scope, no board, an API blip, malformed JSON — all silent."""
     d = _doc()
     def boom(a):
@@ -4416,7 +4416,7 @@ def test_no_open_issue_stranded_at_done_is_silent():
 
 
 def test_open_issue_done_card_check_fails_open_on_every_unreadable_case():
-    """Same convention as its sibling: a doctor check that can crash /agrim-doctor is worse than no
+    """Same convention as its sibling: a doctor check that can crash /sigma-doctor is worse than no
     check. No pinned number, no repo, no `project` scope (empty read), an API blip, malformed
     JSON on either call -- all silent, never a false alarm."""
     d = _doc()
@@ -4496,7 +4496,7 @@ def test_a_blocking_issue_with_no_goal_label_is_flagged_as_a_deadlock(tmp_path):
                                   {"name": "sdlc:needs-confirmation"}]}]})
     hit = {c["name"]: c for c in d.check(base, run=run)}[_UNREACHABLE]
     assert hit["ok"] is False and "#7" in hit["fix"]
-    assert "/agrim-promote" in hit["fix"]          # a finding must name its route out
+    assert "/sigma-promote" in hit["fix"]          # a finding must name its route out
 
 
 def test_a_blocking_issue_that_is_already_a_goal_is_not_flagged(tmp_path):
@@ -4706,7 +4706,7 @@ def _dr():
     import importlib.util, pathlib as _p
     spec = importlib.util.spec_from_file_location(
         "doctor_1509", _p.Path(__file__).resolve().parent.parent
-        / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
@@ -5038,7 +5038,7 @@ def test_no_owner_check_when_the_ledger_is_off():
         base = _sdlc(t, {"ledger": {"enabled": False}})
         assert _OWNER_ROW not in _by_name(d.check(base, run=_runner()))
 # --- #1484: a hand-written north-star with no tier headings must not read as "filled" ----------
-# _NORTH_STAR_TIERS lists PLACEHOLDER strings from /agrim-init's scaffold. That answers "does any
+# _NORTH_STAR_TIERS lists PLACEHOLDER strings from /sigma-init's scaffold. That answers "does any
 # placeholder survive?", which is right for a scaffolded-then-edited file and wrong for a
 # hand-written one: with nothing to find, every tier read as complete. This repo's own north-star
 # has zero of the four tier headings and doctor reported OK.
@@ -5672,7 +5672,7 @@ def test_an_unadopted_checkout_keeps_the_old_off_string_byte_for_byte():
 
 def _managed_settings_module():
     spec = importlib.util.spec_from_file_location(
-        "managed_settings", D.parent.parent.parent / "agrim-loop" / "scripts" / "managed_settings.py")
+        "managed_settings", D.parent.parent.parent / "sigma-loop" / "scripts" / "managed_settings.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
@@ -5725,7 +5725,7 @@ def test_the_managed_settings_filename_matches_the_loops_own():
     """doctor.py carries a deliberate second copy of _MANAGED_SETTINGS_FILE (S1-G5, standalone-diagnostic
     convention). Pinned so the two cannot drift the way an un-pinned copy always eventually does."""
     spec = importlib.util.spec_from_file_location(
-        "managed_settings", D.parent.parent.parent / "agrim-loop" / "scripts" / "managed_settings.py")
+        "managed_settings", D.parent.parent.parent / "sigma-loop" / "scripts" / "managed_settings.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     assert _doc()._MANAGED_SETTINGS_FILE == m.MANAGED_SETTINGS_FILENAME
@@ -5819,7 +5819,7 @@ _ACTIONLOG_MOD = None
 def _iso_ago_ms(now, days_ago=0):
     """Millisecond-precision counterpart to _iso_ago, delegating to actionlog.py's own `_stamp()`
     (cached after the first load) rather than a test-local reimplementation of its `.mmmZ` format --
-    agrim-log's log.py._epoch() requires that fractional-second suffix (_TS_RE) and returns None
+    sigma-log's log.py._epoch() requires that fractional-second suffix (_TS_RE) and returns None
     without it, unlike ledger.py._epoch()'s whole-second format _iso_ago produces. Local
     action-log fixtures (agent_dispatch/agent_done entries) must use this one, not _iso_ago, or a
     recency-filtering read silently sees an unparseable timestamp on every line."""
@@ -5940,9 +5940,9 @@ def test_dispatch_compliance_ignores_phase_start_events_never_double_counts(tmp_
 
 
 def test_dispatch_compliance_row_is_wired_into_features(tmp_path):
-    """Surfaced in `/agrim-doctor`'s dashboard, not just importable in isolation -- `check` (the CLI
+    """Surfaced in `/sigma-doctor`'s dashboard, not just importable in isolation -- `check` (the CLI
     verb the issue names) prints `features()` too (main()'s own 'check' branch), so wiring it here
-    is what actually reaches a human running `/agrim-doctor`. Uses real wall-clock time (no `now`
+    is what actually reaches a human running `/sigma-doctor`. Uses real wall-clock time (no `now`
     seam on `features()` itself) so the fixture falls inside the real 30-day window."""
     import time as _time
     now = _time.time()
@@ -6132,7 +6132,7 @@ def test_dispatch_model_compliance_slice_ignores_a_dispatch_older_than_the_30_da
 
 
 def test_dispatch_model_compliance_slice_row_is_wired_into_features(tmp_path):
-    """Mirrors test_dispatch_compliance_row_is_wired_into_features -- surfaced in /agrim-doctor's
+    """Mirrors test_dispatch_compliance_row_is_wired_into_features -- surfaced in /sigma-doctor's
     dashboard, not just importable in isolation."""
     import time as _time
     now = _time.time()
@@ -6397,7 +6397,7 @@ def test_the_journal_counters_are_renamed_and_both_are_kept(tmp_path):
 
 def _feature_registry():
     spec = importlib.util.spec_from_file_location(
-        "feature_registry", D.parent.parent.parent / "agrim-loop" / "scripts" / "feature_registry.py")
+        "feature_registry", D.parent.parent.parent / "sigma-loop" / "scripts" / "feature_registry.py")
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
@@ -6521,7 +6521,7 @@ def test_doctor_model_max_tier_default_and_vocabulary_match_predict_pys_own_cons
     shape exactly (same architecture-rule-3 reason: doctor.py cannot `import predict`, so this is
     the mechanism instead of an import), loading predict.py directly from its file path and
     failing loudly if either constant ever drifts from doctor.py's own hand-duplicated copy."""
-    predict_path = (D.parent.parent.parent / "agrim-model" / "scripts" / "predict.py")
+    predict_path = (D.parent.parent.parent / "sigma-model" / "scripts" / "predict.py")
     spec = importlib.util.spec_from_file_location("predict_for_sync_check", predict_path)
     predict_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(predict_mod)
@@ -6695,7 +6695,7 @@ def test_cheap_only_runs_no_network_preflight_call_without_github(tmp_path):
 def test_cheap_only_never_runs_ls_remote_or_owner_lookup_even_under_github(tmp_path):
     """Review block #1 (BLOCKING 2): the SessionStart wizard runs doctor with cheap_only=True in every
     repo. github discovery opting into `gh auth status` is NOT consent to `git ls-remote` (ssh, can
-    stall for the whole call bound) or `gh api users/<owner>`: those are /agrim-doctor's."""
+    stall for the whole call bound) or `gh api users/<owner>`: those are /sigma-doctor's."""
     d = _doc()
     base = _sdlc(tmp_path, {"work": {"enabled": True}, "discovery": {"source": "github"}})
     calls = []
@@ -6737,7 +6737,7 @@ def test_wizard_status_is_fast_with_a_hanging_ls_remote(tmp_path, monkeypatch):
     base = _hanging_ls_remote_repo(tmp_path, monkeypatch,
                                    {"work": {"enabled": True}, "discovery": {"source": "github"}})
     spec = importlib.util.spec_from_file_location(
-        "setup_wizard_229", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+        "setup_wizard_229", D.parent.parent.parent / "sigma-init" / "scripts" / "setup_wizard.py")
     wiz = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(wiz)
     start = time.monotonic()
@@ -6784,7 +6784,7 @@ def _alias_run(ssh_answer):
 
 def _wizard():
     spec = importlib.util.spec_from_file_location(
-        "setup_wizard_229b", D.parent.parent.parent / "agrim-init" / "scripts" / "setup_wizard.py")
+        "setup_wizard_229b", D.parent.parent.parent / "sigma-init" / "scripts" / "setup_wizard.py")
     wiz = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(wiz)
     return wiz

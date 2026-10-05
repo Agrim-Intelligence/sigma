@@ -15,7 +15,7 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PREFLIGHT = ROOT / "skills" / "agrim-init" / "scripts" / "preflight.py"
+PREFLIGHT = ROOT / "skills" / "sigma-init" / "scripts" / "preflight.py"
 
 
 def _load():
@@ -383,7 +383,7 @@ def test_real_runner_reports_a_missing_binary():
 
 def _work():
     spec = importlib.util.spec_from_file_location(
-        "work_229", ROOT / "skills" / "agrim-loop" / "scripts" / "work.py")
+        "work_229", ROOT / "skills" / "sigma-loop" / "scripts" / "work.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -439,7 +439,7 @@ def test_a_board_counts_only_under_github_discovery():
 
 # ------------------------------------------------------------------ init + suite guards (#229)
 
-INIT = ROOT / "skills" / "agrim-init" / "scripts" / "sdlc_init.py"
+INIT = ROOT / "skills" / "sigma-init" / "scripts" / "sdlc_init.py"
 
 
 def test_init_refuses_a_non_git_directory_and_writes_nothing(tmp_path):
@@ -513,7 +513,7 @@ def test_deep_false_never_runs_ls_remote_or_owner_lookup():
                           deep=False)
     assert not any(a[:2] in (["git", "ls-remote"], ["gh", "api"]) for a in calls), calls
     c = by_id(checks)
-    assert c["base"]["note"] == "skipped" and "/agrim-doctor" in c["base"]["detail"]
+    assert c["base"]["note"] == "skipped" and "/sigma-doctor" in c["base"]["detail"]
     assert c["base"]["ok"] is None
 
 

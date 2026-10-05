@@ -6,7 +6,7 @@ import pathlib
 import re
 
 SKILL = (
-    pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "SKILL.md"
+    pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "SKILL.md"
 ).read_text()
 _FLAT = re.sub(r"\s+", " ", SKILL)
 
@@ -49,6 +49,6 @@ def test_no_subagent_host_has_single_goal_inline_path_and_fresh_session_bound():
 
 def test_codex_goal_slot_requires_a_fresh_child_context():
     assert 'fork_turns="none"' in SKILL
-    picking = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" /
+    picking = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" /
                "references" / "picking.md").read_text()
     assert 'fork_turns="none"' in picking

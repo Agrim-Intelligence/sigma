@@ -1,11 +1,11 @@
-"""audit-collect.sh — the /agrim-audit evidence collector. Mirrors alignment-collect.sh's contract:
+"""audit-collect.sh — the /sigma-audit evidence collector. Mirrors alignment-collect.sh's contract:
 read-only, reproducible, fail-open, secret-safe, zero-dep, renders no verdict. Where alignment-collect
 walks COMMITS over a window and asks what changed, this walks the tracked FILE SET and asks what
 exists."""
 import json, pathlib, subprocess, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "skills" / "agrim-audit" / "scripts" / "audit-collect.sh"
+SCRIPT = ROOT / "skills" / "sigma-audit" / "scripts" / "audit-collect.sh"
 
 
 def _run(cwd, *args):
@@ -141,7 +141,7 @@ def test_source_definition_stays_in_sync_with_alignment_collect():
     audits of the same repo disagree about what they even looked at. Mirrors the precedent in
     tests/test_risk_detect.py, which pins risk-detect.sh's patterns to alignment-collect.sh's."""
     import re
-    align = (ROOT / "skills" / "agrim-align" / "scripts" / "alignment-collect.sh").read_text()
+    align = (ROOT / "skills" / "sigma-align" / "scripts" / "alignment-collect.sh").read_text()
     audit = SCRIPT.read_text()
     pat = re.compile(r'^SOURCE_EXTS="([^"]+)"', re.M)
     a, b = pat.search(align), pat.search(audit)

@@ -4,14 +4,14 @@
     "issue": "#458",
     "decision": "already bounded + crash-leak sweep",
     "pruner_or_cap": "loop.agent_end at record plus goal_state_prune.sweep for dead markers of a goal done 7+ days",
-    "evidence": "agent_end in loop.py _record; sweep in skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
+    "evidence": "agent_end in loop.py _record; sweep in skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/agents/<goal>/<thread>.active",
     "issue": "#458",
     "decision": "already bounded + crash-leak sweep",
     "pruner_or_cap": "loop.agent_end at record plus goal_state_prune.sweep for dead markers of a goal done 7+ days",
-    "evidence": "agent_end in loop.py _record; sweep in skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
+    "evidence": "agent_end in loop.py _record; sweep in skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_dead_agent_marker_removed_with_the_goal and ::test_alive_agent_marker_keeps_everything; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/agents/<key>",
@@ -32,7 +32,7 @@
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/goal-review",
@@ -67,98 +67,98 @@
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/landing/",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/landing/<goal>.json",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/phase/",
     "issue": "#458",
     "decision": "already bounded + crash-leak sweep",
     "pruner_or_cap": "loop._phase_marker_end at record done; sweep removes a leaked marker of a goal done 7+ days",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/phase/<goal>.json",
     "issue": "#458",
     "decision": "already bounded + crash-leak sweep",
     "pruner_or_cap": "loop._phase_marker_end at record done; sweep removes a leaked marker of a goal done 7+ days",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/propagation",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/propagation/",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/propagation/<goal>.json",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/run_stop",
     "issue": "#458",
     "decision": "age-based prune",
     "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/run_stop/",
     "issue": "#458",
     "decision": "age-based prune",
     "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/run_stop/<run_id>.json",
     "issue": "#458",
     "decision": "age-based prune",
     "pruner_or_cap": "marker files older than 30 days removed by goal_state_prune.sweep",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_run_stop_markers_pruned_by_age_only; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/unit-tracking/",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/unit-tracking/<goal>.attempt",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_a_marker_recreated_late_on_a_done_goal_is_swept_after_the_grace; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/verify/<goal>.json",
     "issue": "#458",
     "decision": "terminal-goal prune after 7 days",
     "pruner_or_cap": "removed by goal_state_prune.sweep once the goal is done and 7 days old (the largest family: median 16,468 B, max 593,634 B measured)",
-    "evidence": "skills/agrim-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
+    "evidence": "skills/sigma-loop/scripts/goal_state_prune.py; tests/test_goal_state_prune.py::test_terminal_goal_every_family_removed; docs/launch/b6-per-goal-state.md"
   },
   {
     "pattern": ".sdlc/state/withheld",

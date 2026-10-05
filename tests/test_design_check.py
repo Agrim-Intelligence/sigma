@@ -2,7 +2,7 @@
 `loop.py`'s `design-check` verb, mirroring `decompose_check`'s own `file`-mode shape one section up
 (tests/test_decompose_check.py). Before a picked goal spends a token: unless it already carries
 `sdlc:designed`, park it and file ONE idempotency-guarded "Design #N" meta-issue instructing a
-codebase-mapping design pass (`skills/agrim-goal-design/SKILL.md`). Opt-in (`goal_design.enabled`),
+codebase-mapping design pass (`skills/sigma-goal-design/SKILL.md`). Opt-in (`goal_design.enabled`),
 zero LLM, fail-open before the label/comment read, fail-CLOSED for that one read, off by default.
 Hermetic, $0.
 
@@ -16,7 +16,7 @@ import tempfile
 import pytest
 from skill_corpus import skill_corpus
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
@@ -565,7 +565,7 @@ def test_design_meta_body_documents_sdlc_designed_is_goal_review_only():
     body = dg.render_meta_body("825", "full")
     assert "sdlc:designed" in body
     assert "goal-review" in body
-    assert "/agrim-unpark" in body
+    assert "/sigma-unpark" in body
 
 
 def test_design_meta_body_documents_the_design_artifact_path():
@@ -635,7 +635,7 @@ def test_decompose_check_proceeds_for_a_design_of_meta_goal_without_ever_classif
 
 
 def test_goal_design_key_is_discoverable_in_the_scaffolded_config():
-    tmpl_path = ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl"
+    tmpl_path = ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl"
     tmpl = tmpl_path.read_text(encoding="utf-8")
     cfg = json.loads(tmpl)          # also proves the template is still valid JSON with the new key
     assert cfg.get("goal_design") == {"enabled": False, "mode": "full"}
@@ -648,7 +648,7 @@ def test_goal_design_key_is_discoverable_in_the_scaffolded_config():
 
 def test_scaffolded_default_config_is_off_end_to_end(tmp_path):
     lp = _mod("loop")
-    tmpl_path = ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl"
+    tmpl_path = ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl"
     tmpl_cfg = json.loads(tmpl_path.read_text(encoding="utf-8"))
     base = _sdlc(tmp_path, {"goal_design": tmpl_cfg["goal_design"]})
     src = _FakeSource(body=_PLAIN_BODY)
@@ -657,13 +657,13 @@ def test_scaffolded_default_config_is_off_end_to_end(tmp_path):
 
 
 def test_skill_documents_design_check_and_the_new_skill():
-    skill = skill_corpus("agrim-loop")   # #1611: SKILL.md + references/*.md
+    skill = skill_corpus("sigma-loop")   # #1611: SKILL.md + references/*.md
     assert "design-check" in skill
-    assert "agrim-goal-design" in skill
+    assert "sigma-goal-design" in skill
 
 
 def test_sdlc_goal_design_skill_exists_and_documents_the_handoff():
-    skill_path = ROOT / "skills" / "agrim-goal-design" / "SKILL.md"
+    skill_path = ROOT / "skills" / "sigma-goal-design" / "SKILL.md"
     assert skill_path.is_file()
     text = skill_path.read_text(encoding="utf-8")
     assert "sdlc:designed" in text

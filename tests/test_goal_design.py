@@ -1,12 +1,12 @@
-"""#2032: goal_design.py -- the engine behind `agrim-goal-design`'s sweep-round budget.
+"""#2032: goal_design.py -- the engine behind `sigma-goal-design`'s sweep-round budget.
 
 Before this issue "the budget is three sweep rounds" was a number stated only in `SKILL.md` prose;
 nothing in Python counted a round and nothing checked what a design pass claimed it ran under. A
 bare `goal_design.rounds` config key with no reader would have been exactly that same silent
 half-guarantee with an extra name on it (AGENTS.md's SAFETY property forbids this) -- so the fix is
 this module: `sweep_budget()` is engine-owned data behind a CLI verb, mirroring
-`skills/agrim-dossier/scripts/dossier.py`'s own `followups()`. `agrim-goal-design` calls it to obey
-the ceiling; `agrim-goal-review` calls it again, independently, to check the artifact's `**Budget**`
+`skills/sigma-dossier/scripts/dossier.py`'s own `followups()`. `sigma-goal-design` calls it to obey
+the ceiling; `sigma-goal-review` calls it again, independently, to check the artifact's `**Budget**`
 field was not written from memory.
 
 The bool-trap control (`True == 1` and `isinstance(True, int)` are both true in Python) is run for
@@ -18,8 +18,8 @@ import importlib.util
 import json
 import pathlib
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
-G = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-goal-design" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
+G = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-goal-design" / "scripts"
 
 
 def _mod(name, base=S):

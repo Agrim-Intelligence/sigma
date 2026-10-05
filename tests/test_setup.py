@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import sys
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-setup" / "scripts" / "setup.py"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-setup" / "scripts" / "setup.py"
 
 
 def _mod():
@@ -128,8 +128,8 @@ def test_configure_local_goals_source(tmp_path):
 # ------------------------------------------------------------------ configure: null sentinel (#2255)
 
 #: The REAL template, not a hand-built fixture -- the whole point of #2255's own regression is that
-#: `configure()`'s defaults silently never fired on the file `/agrim-init` actually scaffolds.
-TMPL = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-init" / "templates" / "config.json.tmpl"
+#: `configure()`'s defaults silently never fired on the file `/sigma-init` actually scaffolds.
+TMPL = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-init" / "templates" / "config.json.tmpl"
 
 
 def test_apply_default_only_fires_on_none(tmp_path):
@@ -145,7 +145,7 @@ def test_configure_seeded_from_the_real_sdlc_init_template_gets_the_documented_d
     """#2255's own regression, reproduced end to end against the REAL template file and the
     documented invocation (SKILL.md step 5: `configure .sdlc --repo <owner/name> --verify ...`,
     source defaults to "github") -- not a hand-built `{}` or a unit-level dict. This is the exact
-    sequence SKILL.md's step 2 prescribes ("If there's no `.sdlc/`, run `/agrim-init` first... Then
+    sequence SKILL.md's step 2 prescribes ("If there's no `.sdlc/`, run `/sigma-init` first... Then
     continue.") and is the one test that would have caught the original bug."""
     d = tmp_path / ".sdlc"
     d.mkdir()
@@ -368,7 +368,7 @@ def test_ensure_core_labels_already_exists_refusal_counts_as_existed(tmp_path):
 
 
 def test_ensure_core_labels_safe_to_call_repeatedly(tmp_path):
-    """A re-run of `/agrim-setup` against a repo that already has every label reads them back and
+    """A re-run of `/sigma-setup` against a repo that already has every label reads them back and
     writes nothing -- idempotent by measurement, not by swallowing a refusal."""
     d = _sdlc(tmp_path, _github_cfg())
     have = set()
@@ -431,7 +431,7 @@ def test_detect_repo_is_empty_for_a_non_github_host():
 def test_detect_repo_non_github_hosts_match_preflight():
     """The host list is duplicated (setup.py does not load the init skill's preflight) -- pinned."""
     spec = importlib.util.spec_from_file_location(
-        "pf_for_setup_test", S.parent.parent.parent / "agrim-init" / "scripts" / "preflight.py")
+        "pf_for_setup_test", S.parent.parent.parent / "sigma-init" / "scripts" / "preflight.py")
     pf = importlib.util.module_from_spec(spec); spec.loader.exec_module(pf)
     assert tuple(setup._NON_GITHUB) == tuple(pf._NON_GITHUB)
 

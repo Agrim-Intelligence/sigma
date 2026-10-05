@@ -1,4 +1,4 @@
-"""#239: `skills/agrim-doctor/scripts/migrate.py`, the one-shot rewrite of state written under the
+"""#239: `skills/sigma-doctor/scripts/migrate.py`, the one-shot rewrite of state written under the
 plugin's previous name. Dry run by default, `--apply` to write, idempotent, byte-preserving, and it
 refuses (untouched, listed, exit 2) anything it cannot rewrite with certainty.
 
@@ -18,8 +18,8 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MIGRATE = ROOT / "skills" / "agrim-doctor" / "scripts" / "migrate.py"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
+MIGRATE = ROOT / "skills" / "sigma-doctor" / "scripts" / "migrate.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
 RETIRED = "loop" + "smith"
 RETIRED_ENV = RETIRED.upper() + "_"
 

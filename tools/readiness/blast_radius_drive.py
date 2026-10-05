@@ -112,7 +112,7 @@ def drive(repo, run_mode, workdir, baseline_out, unrelated, rest, environ, sigma
     gh_out = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True).stdout.strip()
     env = child_env(oc, root, bin_dir, repo, gh_out, environ)
     run = oc.Run("drill/" + run_mode)
-    py, loop = sys.executable, pathlib.Path(sigma) / "skills" / "agrim-loop" / "scripts"
+    py, loop = sys.executable, pathlib.Path(sigma) / "skills" / "sigma-loop" / "scripts"
     summary = {"repo": repo, "run": run_mode}
     try:
         oc._git(["clone", "-q", url, str(repo_dir)], root, env)

@@ -1,4 +1,4 @@
-"""scope.py (#920, agrim-scope skill, wave 3 of epic #902): the ONE thin bridge connecting #918's
+"""scope.py (#920, sigma-scope skill, wave 3 of epic #902): the ONE thin bridge connecting #918's
 `compile_plan.compile_plan()` to #919's `assign.py execute --report <path>` CLI -- exactly the
 piece the orchestration layer is otherwise missing.
 
@@ -22,7 +22,7 @@ import json
 import pathlib
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCOPE_SCRIPTS = _ROOT / "skills" / "agrim-scope" / "scripts"
+SCOPE_SCRIPTS = _ROOT / "skills" / "sigma-scope" / "scripts"
 
 
 def _mod(name, where):
@@ -289,8 +289,8 @@ def test_main_end_to_end_through_the_real_local_goals_source(tmp_path, capsys):
 
 
 # --------------------------------------------- #1919: the "human text only" claim in three docs
-# `compile_plan.py`'s CLI gained a `--json` arm for `agrim-goal-review`. Three separate documents --
-# this test's own docstring, `scope.py`'s module docstring and `skills/agrim-scope/SKILL.md` -- each
+# `compile_plan.py`'s CLI gained a `--json` arm for `sigma-goal-review`. Three separate documents --
+# this test's own docstring, `scope.py`'s module docstring and `skills/sigma-scope/SKILL.md` -- each
 # opened by asserting that CLI emits human text ONLY, which the flag falsified in all three at once.
 # Pinned against the LIVE `main()` rather than against each other, so the code is what moves first.
 
@@ -300,7 +300,7 @@ def test_no_document_still_claims_compile_plans_cli_is_human_text_only():
     compile_plan = _mod("compile_plan", SCOPE_SCRIPTS)
     assert '"--json"' in inspect.getsource(compile_plan.main), "the live fact this prose tracks"
     stale = "human-text" + "-only"          # assembled: this file is one of the three it scans
-    for rel in ("skills/agrim-scope/scripts/scope.py", "skills/agrim-scope/SKILL.md",
+    for rel in ("skills/sigma-scope/scripts/scope.py", "skills/sigma-scope/SKILL.md",
                 "tests/test_scope.py"):
         text = (_ROOT / rel).read_text(encoding="utf-8")
         assert stale not in text, f"{rel} still asserts a CLI shape that changed"

@@ -19,7 +19,7 @@ _EXCERPT_CHARS = 400
 
 #: Secret-shaped substrings are redacted before anything reaches disk — the same location-only rule
 #: the risk collectors follow: NEVER write the matched substring, each match becomes a typed
-#: placeholder. The patterns live in ONE place, `skills/agrim-loop/scripts/scrub.py` (the publish leak
+#: placeholder. The patterns live in ONE place, `skills/sigma-loop/scripts/scrub.py` (the publish leak
 #: gate imports the same `SHAPE_RULES`), and this hook loads that file by path exactly as
 #: `hooks/time_track.py` loads its sibling scripts — an inlined copy here drifted once already and
 #: needed a parity test to hold it (#2718). Loaded LAZILY: a project that did not opt in must stay a
@@ -27,7 +27,7 @@ _EXCERPT_CHARS = 400
 #: attributes because `ledger.py` / `actionlog.py` / `upstream.py` cross-load this hook and call
 #: `mod._scrub(text)`; on a load failure `_scrub` RAISES (they degrade on their own terms) and no
 #: breadcrumb is written — there is deliberately no fallback pattern copy (that would be the third).
-_SCRUB_PATH = Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "scrub.py"
+_SCRUB_PATH = Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "scrub.py"
 _SCRUB_MOD = None      # memo: the loaded scrub module
 _SCRUB_ERR = None      # memo: the first load failure, re-raised on every later call (no retry storm)
 
@@ -94,7 +94,7 @@ def build_breadcrumb(tool_name, tool_input, tool_response):
     Security: we persist a provenance breadcrumb — source, subject, and a SHORT, scrubbed excerpt —
     never the raw response body. Raw web bodies can carry tokens/PII; dumping any of it verbatim into
     a git-tracked dir is the leak this closes. The excerpt is scrubbed of secret-shaped substrings and
-    THEN capped at `_EXCERPT_CHARS`; `.sdlc/knowledge/` is also gitignored by /agrim-setup, so even a
+    THEN capped at `_EXCERPT_CHARS`; `.sdlc/knowledge/` is also gitignored by /sigma-setup, so even a
     scrubbed breadcrumb stays local unless the adopter deliberately commits it (defense in depth)."""
     if tool_name not in _WEB_TOOLS:
         return None

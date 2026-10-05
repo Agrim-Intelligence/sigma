@@ -23,7 +23,7 @@ import types
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _mask_slack_sdk(monkeypatch):
@@ -1415,7 +1415,7 @@ def test_cut_worktree_output_is_directly_usable_by_rebase_brief(tmp_path):
     try:
         # sc itself does not import rebase_brief (only the driven session does, by path, per
         # _REBASE_EXTRA_PROMPT's own instruction) -- load it the same way here.
-        rb_path = ROOT / "skills" / "agrim-rebase" / "scripts" / "rebase_brief.py"
+        rb_path = ROOT / "skills" / "sigma-rebase" / "scripts" / "rebase_brief.py"
         spec = importlib.util.spec_from_file_location("rebase_brief_2355", rb_path)
         rebase_brief = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(rebase_brief)
@@ -1714,12 +1714,12 @@ def test_rebase_reply_conflict_reports_parked_never_a_fake_success(tmp_path):
 
     def drive(cmd_str, prompt, cwd, env, timeout, on_spawn=None):
         sc.ledger.safe_append(d, "parked", key, config=cfg,
-                               why="conflict in f.txt -- run /agrim-rebase locally")
+                               why="conflict in f.txt -- run /sigma-rebase locally")
         return 1, "conflict"
 
     text = sc._rebase_reply(d, cfg, "billing", run_drive=drive)
     assert text == ("`--rebase billing` stopped for a human -- conflict in f.txt -- run "
-                     "/agrim-rebase locally")
+                     "/sigma-rebase locally")
     assert "done" not in text.lower()
 
 
@@ -1804,7 +1804,7 @@ def test_rebase_extra_prompt_forbids_the_interactive_conflict_walker():
     session must never invite it to call `conflict_walk.py`'s interactive walker unattended."""
     assert "conflict_walk.py" in sc._REBASE_EXTRA_PROMPT
     assert "do NOT" in sc._REBASE_EXTRA_PROMPT
-    assert "/agrim-rebase" in sc._REBASE_EXTRA_PROMPT
+    assert "/sigma-rebase" in sc._REBASE_EXTRA_PROMPT
 
 
 def test_dispatch_prompt_for_rebase_carries_the_rebase_specific_instructions(tmp_path):
@@ -1869,7 +1869,7 @@ def test_merge_check_reports_parked_when_a_rebase_is_stopped(tmp_path, monkeypat
     monkeypatch.setattr(sc.feature_rebase, "rebase_stopped", lambda run, cwd: True)
     kind, why = sc._merge_check(str(local), {})
     assert kind == "parked"
-    assert "--rebase" in why and "/agrim-rebase" in why
+    assert "--rebase" in why and "/sigma-rebase" in why
 
 
 def test_merge_check_reports_failed_when_no_verify_command_is_configured(tmp_path, monkeypatch):

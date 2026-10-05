@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts" / "release_manifest.py"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "release_manifest.py"
 spec = importlib.util.spec_from_file_location("release_manifest", S)
 release_manifest = importlib.util.module_from_spec(spec)
 try:

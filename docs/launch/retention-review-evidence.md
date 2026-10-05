@@ -74,4 +74,4 @@ Left alone on purpose (the residual, unbounded by decision):
   generation is gone, so the goal stays attributable and the next call finishes the job (`test_partial_prune_heals`, `test_manifest_left_behind_is_collected`).
 - Restore from backup: a restored store of finished goals is drained 10 goals per `done`; nothing needs a stamp, so a stale stamp cannot suppress it.
 - Lost action log: spares data (the goal is never proven terminal); the lever above reclaims it.
-- Operator lever: `python3 skills/agrim-loop/scripts/work.py prune-review-generations <sdlc_dir> [<goal> [--done]] [--limit N]`, same bound and checks.
+- Operator lever: `python3 skills/sigma-loop/scripts/work.py prune-review-generations <sdlc_dir> [<goal> [--done]] [--limit N]`, same bound and checks.

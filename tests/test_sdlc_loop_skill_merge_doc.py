@@ -1,5 +1,5 @@
-"""#1212: `merge()` in skills/agrim-loop/scripts/work.py has no in-repo Python caller at all --
-the sole consumer of its return string is the autonomous agent reading skills/agrim-loop/SKILL.md's
+"""#1212: `merge()` in skills/sigma-loop/scripts/work.py has no in-repo Python caller at all --
+the sole consumer of its return string is the autonomous agent reading skills/sigma-loop/SKILL.md's
 prose and following its documented decision table. That makes SKILL.md the operational contract for
 merge(), not just a description of it -- when merge()'s real behavior changes, SKILL.md has to
 change with it (the project's own convention: commit ec19e3e / #254/#759 touched SKILL.md in the
@@ -20,7 +20,7 @@ import re
 
 from skill_corpus import skill_corpus
 
-SKILL = skill_corpus("agrim-loop")
+SKILL = skill_corpus("sigma-loop")
 
 
 def _flat(text):
@@ -63,7 +63,7 @@ def test_pr_review_docs_require_the_generation_bound_evidence_gesture():
         'work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve',
     )
     for path in ("references/landing.md", "references/running.md"):
-        text = _flat((pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / path).read_text())
+        text = _flat((pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / path).read_text())
         for gesture in required:
             assert gesture in text, "%s omits required PR-review gesture: %s" % (path, gesture)
 
@@ -106,7 +106,7 @@ def test_plan_review_docs_record_the_verdict_gesture():
     brief would hash the edited plan, so the sha check could never fail (rev 1 of the plan did
     exactly that). SKILL.md carries a second copy of the dispatch gesture, so it is read DIRECTLY:
     `skill_corpus` concatenates the references and would pass on running.md's copy alone."""
-    scripts = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop"
+    scripts = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop"
     brief_file = '/tmp/brief-$(basename "$goal" .md).md'
     dispatch = '[--artifact <path|PR#>] > "' + brief_file + '"'
     running = (scripts / "references" / "running.md").read_text(encoding="utf-8")

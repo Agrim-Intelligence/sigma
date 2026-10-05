@@ -20,7 +20,7 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 FILE = ROOT / "docs" / "launch" / "dispositions" / "461.json"
 DOC = ROOT / "docs" / "launch" / "growth-audit.md"
 DAY = 86400

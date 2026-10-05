@@ -8,8 +8,8 @@ canonical example) — this guard exists so that shape can't quietly reappear he
 
 WHY AST, NOT REGEX — the identical argument tests/test_import_boundary.py's own docstring makes for
 a different guard ("Grepping for the substring ... would false-positive on this very sentence"):
-`skills/agrim-init/scripts/sdlc_init.py:196` prints a human-facing instruction telling an operator to
-run `gh issue create --label sdlc:goal ...` by hand during `agrim-init --github --demo` setup — a
+`skills/sigma-init/scripts/sdlc_init.py:196` prints a human-facing instruction telling an operator to
+run `gh issue create --label sdlc:goal ...` by hand during `sigma-init --github --demo` setup — a
 plain `ast.Constant` string argument to `print()`, never a `List`/`Tuple` literal (confirmed by
 inspection, not assumed — see test_ignores_prose_mentions_of_issue_create below, which plants the
 same shape as a fixture). A substring/regex scan over that file's text would false-positive on it. So
@@ -27,7 +27,7 @@ simple stack-based visitor (the same technique tests/test_vocabulary_coverage.py
 own Call-node scan), so a match can be reported as "which function, in which class" and checked
 against the allowlist below.
 
-ALLOWLIST — exactly one entry: `skills/agrim-loop/scripts/sources.py`, class `GitHubSource`, method
+ALLOWLIST — exactly one entry: `skills/sigma-loop/scripts/sources.py`, class `GitHubSource`, method
 `create_dependency` — the helper's own internal call. Anything else that matches is a violation.
 
 NAMED LIMITATION, stated rather than silently assumed away (matching this repo's own established
@@ -62,7 +62,7 @@ _SCAN_DIRS = ("skills", "hooks")
 #: Exactly one allowlisted (relpath-under-"skills"-POSIX, class, function) — create_dependency's own
 #: internal call. Nothing else may open an issue this way.
 _ALLOWED_IN_SKILLS = frozenset({
-    ("agrim-loop/scripts/sources.py", "GitHubSource", "create_dependency"),
+    ("sigma-loop/scripts/sources.py", "GitHubSource", "create_dependency"),
 })
 
 
@@ -224,7 +224,7 @@ def test_create_dependencys_own_list_is_found_but_suppressed_by_the_allowlist():
     checker suppresses exactly that match."""
     root = ROOT / "skills"
     raw = _raw_matches(root)
-    assert any(rel == "agrim-loop/scripts/sources.py" and cls == "GitHubSource"
+    assert any(rel == "sigma-loop/scripts/sources.py" and cls == "GitHubSource"
                and fn == "create_dependency" for rel, cls, fn, _ in raw), (
         "the matcher itself no longer finds create_dependency's own issue-create list — "
         f"got: {raw}"

@@ -1,4 +1,4 @@
-"""Target resolution for /agrim-scope (brainstorm.py, issue #916): given the raw invocation
+"""Target resolution for /sigma-scope (brainstorm.py, issue #916): given the raw invocation
 string, resolve which of the 4 forms it is (inline free text / local markdown file / fuzzy issue
 reference / direct issue number) and return a single, documented shape (`brainstorm-target/v1`,
 see the module docstring) later callers (#917 dedup, #918 plan compilation, #920 SKILL.md) can rely
@@ -12,7 +12,7 @@ import tempfile
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-scope" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-scope" / "scripts"
 
 
 def _mod(name="brainstorm"):

@@ -24,7 +24,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 FILE = ROOT / "docs" / "launch" / "dispositions" / "462.json"
 DOC = ROOT / "docs" / "launch" / "growth-audit.md"
 CEILING_DOC = ROOT / "docs" / "launch" / "b6-committed-work-records.md"
@@ -41,7 +41,7 @@ DIRS = ("plans", "research", "acceptance")
 #: What the scan produces TODAY.  The issue's list came from an older snapshot: the scan no longer
 #: produces `.sdlc/plans/0007-fix-retry.md` or `.sdlc/plans/2521.md` (the prose that named them was
 #: reworded, and a pattern the scan does not produce is refused), and now also produces
-#: `.sdlc/research/235.md` (a citation in `skills/agrim-init/references/board.md`).
+#: `.sdlc/research/235.md` (a citation in `skills/sigma-init/references/board.md`).
 TRACKED = [".sdlc/acceptance/", ".sdlc/acceptance/<goal-stem>.md", ".sdlc/plans/",
            ".sdlc/plans/<epic>-plan.md", ".sdlc/plans/<goal-stem>.md",
            ".sdlc/plans/<goal-stem>.slices.json", ".sdlc/research/", ".sdlc/research/235.md",

@@ -63,8 +63,8 @@ import pytest
 import path_recorder
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-P = ROOT / "skills" / "agrim-loop" / "scripts" / "feature_registry.py"
-FEATURES_P = ROOT / "skills" / "agrim-loop" / "scripts" / "features.py"
+P = ROOT / "skills" / "sigma-loop" / "scripts" / "feature_registry.py"
+FEATURES_P = ROOT / "skills" / "sigma-loop" / "scripts" / "features.py"
 
 
 def _mod():
@@ -1088,7 +1088,7 @@ def test_the_registry_sits_at_sdlc_features(tmp_path):
     must not be, because a gitignored backup is not a backup."""
     r = _mod()
     import importlib.util as u
-    spec = u.spec_from_file_location("setup", ROOT / "skills" / "agrim-setup" / "scripts" / "setup.py")
+    spec = u.spec_from_file_location("setup", ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py")
     setup = u.module_from_spec(spec)
     spec.loader.exec_module(setup)
     assert r.registry_dir(tmp_path / ".sdlc") == tmp_path / ".sdlc" / "features"
@@ -1479,7 +1479,7 @@ def _classified():
 #: `_NO_UNIT_NAME`.
 _UNIT_NAME_VOCABULARY = ("is_unit_name", "InvalidUnitName", "unit_key", "unit_path", "UNIT_SUFFIX")
 
-_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _feature_sources():

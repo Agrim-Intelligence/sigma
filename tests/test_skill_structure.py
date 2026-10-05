@@ -6,7 +6,7 @@ on a spend decision. This is the free, deterministic tier in between.
 
 WHAT IT DOES NOT PROVE, said here as well as in the module, because a guard oversold is worse than
 no guard: preserving text does not preserve ATTENTION. Every assertion below is about structure. The
-failure mode that matters after #1611 splits `agrim-loop/SKILL.md` — the agent no longer CHOOSING to
+failure mode that matters after #1611 splits `sigma-loop/SKILL.md` — the agent no longer CHOOSING to
 open a reference file — is invisible to all of it, and stays invisible until Tier 2 is unparked.
 
 Every negative assertion here was RUN RED before it was trusted: each `_findings_for` /
@@ -118,23 +118,23 @@ def test_the_report_names_every_shipped_skill_and_its_waiver():
 
 def test_an_oversized_skill_with_no_waiver_is_a_finding(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
+    _skill(root, "sigma-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
     out = ss.findings(root=root, waivers={})
-    assert any("agrim-huge: est_tokens" in f and "is not waived" in f for f in out), out
+    assert any("sigma-huge: est_tokens" in f and "is not waived" in f for f in out), out
 
 
 def test_a_skill_over_the_line_limit_with_no_waiver_is_a_finding(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-tall", "line\n" * (ss.LINE_LIMIT + 1))
+    _skill(root, "sigma-tall", "line\n" * (ss.LINE_LIMIT + 1))
     out = ss.findings(root=root, waivers={})
-    assert any(f"agrim-tall: lines {ss.LINE_LIMIT + 1}" in f for f in out), out
+    assert any(f"sigma-tall: lines {ss.LINE_LIMIT + 1}" in f for f in out), out
 
 
 def test_a_skill_just_inside_both_budgets_is_not_a_finding(tmp_path):
     """The control for the two above: the same shape, one unit smaller, must be silent — otherwise
     they would pass against an off-by-one that fails everything."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-ok", _big(ss.COMPACTION_TOKEN_CAP - 100))
+    _skill(root, "sigma-ok", _big(ss.COMPACTION_TOKEN_CAP - 100))
     assert ss.findings(root=root, waivers={}) == []
 
 
@@ -143,8 +143,8 @@ def test_a_gate_keyword_past_the_cap_is_its_own_finding(tmp_path):
     the 5,000 tokens compaction keeps. Waiving the size must not waive the gate."""
     root = tmp_path / "skills"
     body = _big(ss.COMPACTION_TOKEN_CAP + 2000) + "\n\nNEVER force an irreversible action.\n"
-    _skill(root, "agrim-deep", body)
-    waivers = {"agrim-deep": {"issue": 1, "reason": "x",
+    _skill(root, "sigma-deep", body)
+    waivers = {"sigma-deep": {"issue": 1, "reason": "x",
                              "recorded": {"est_tokens": 10 ** 9, "lines": 10 ** 9}}}
     out = ss.findings(root=root, waivers=waivers)
     assert any("deepest_gate_tokens" in f for f in out), out
@@ -152,9 +152,9 @@ def test_a_gate_keyword_past_the_cap_is_its_own_finding(tmp_path):
 
 def test_a_skill_stating_no_gate_at_all_reports_none_not_zero(tmp_path):
     """`None` and `0` must not compare equal: 'no gate fell off the cliff' and 'this skill states no
-    hard rule' are different facts, and `agrim-goal-review` is really the second one."""
+    hard rule' are different facts, and `sigma-goal-review` is really the second one."""
     root = tmp_path / "skills"
-    d = _skill(root, "agrim-quiet", "no hard rules here, only lowercase never and must\n")
+    d = _skill(root, "sigma-quiet", "no hard rules here, only lowercase never and must\n")
     assert ss.measure(d)["deepest_gate_tokens"] is None
     assert ss.measure(d)["gates"] == 0
 
@@ -163,7 +163,7 @@ def test_lowercase_prose_is_not_counted_as_a_gate(tmp_path):
     """475 sentences in the shipped corpus contain a lowercase must/never/always. Counting them
     would make 'the deepest gate' mean 'the end of the file' for every skill — i.e. nothing."""
     root = tmp_path / "skills"
-    d = _skill(root, "agrim-prose", "you must always do this and never that\n")
+    d = _skill(root, "sigma-prose", "you must always do this and never that\n")
     assert ss.measure(d)["gates"] == 0
 
 
@@ -171,11 +171,11 @@ def test_lowercase_prose_is_not_counted_as_a_gate(tmp_path):
 
 
 def test_a_waived_skill_that_grows_past_its_record_is_a_finding(tmp_path):
-    """Ratchet 1. `agrim-loop` grew 51% between #1611 being filed and being fixed and nothing said a
+    """Ratchet 1. `sigma-loop` grew 51% between #1611 being filed and being fixed and nothing said a
     word. A waiver freezes the breach; it does not license more of it."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-huge", _big(9000))
-    waivers = {"agrim-huge": {"issue": 1611, "reason": "x",
+    _skill(root, "sigma-huge", _big(9000))
+    waivers = {"sigma-huge": {"issue": 1611, "reason": "x",
                              "recorded": {"est_tokens": 6000, "lines": 10 ** 9}}}
     out = ss.findings(root=root, waivers=waivers)
     assert any("exceeds its own recorded waiver" in f for f in out), out
@@ -185,8 +185,8 @@ def test_a_waived_skill_that_shrinks_but_still_breaches_is_silent(tmp_path):
     """The control for the ratchet: shrinking toward the budget must not be punished, or the only
     way to satisfy the gate would be to leave the skill exactly as it is."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-huge", _big(6000))
-    waivers = {"agrim-huge": {"issue": 1611, "reason": "x",
+    _skill(root, "sigma-huge", _big(6000))
+    waivers = {"sigma-huge": {"issue": 1611, "reason": "x",
                              "recorded": {"est_tokens": 9000, "lines": 10 ** 9}}}
     assert ss.findings(root=root, waivers=waivers) == []
 
@@ -196,16 +196,16 @@ def test_a_waiver_whose_skill_is_now_inside_every_budget_is_stale_and_fails(tmp_
     CI goes RED until its entry is deleted. Fixing the skill is not enough — the debt record has to
     go with it."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-fixed", _big(1000))
-    waivers = {"agrim-fixed": {"issue": 1611, "reason": "x", "recorded": {"est_tokens": 9000}}}
+    _skill(root, "sigma-fixed", _big(1000))
+    waivers = {"sigma-fixed": {"issue": 1611, "reason": "x", "recorded": {"est_tokens": 9000}}}
     out = ss.findings(root=root, waivers=waivers)
     assert any("STALE WAIVER" in f for f in out), out
 
 
 def test_a_waiver_naming_no_shipped_skill_is_a_finding(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-real", "small\n")
-    out = ss.findings(root=root, waivers={"agrim-ghost": {"issue": 1, "reason": "x",
+    _skill(root, "sigma-real", "small\n")
+    out = ss.findings(root=root, waivers={"sigma-ghost": {"issue": 1, "reason": "x",
                                                          "recorded": {}}})
     assert any("names no shipped skill" in f for f in out), out
 
@@ -288,7 +288,7 @@ def test_a_clean_run_prints_its_own_limit_beside_the_pass():
 @requires_git
 def test_the_preserved_gesture_prints_the_same_limit_when_it_finds_nothing():
     """The other green a reader can over-trust: 'nothing was lost' is not 'nothing got worse'."""
-    r = subprocess.run([sys.executable, str(MODULE), "--preserved", "HEAD", "agrim-vision"],
+    r = subprocess.run([sys.executable, str(MODULE), "--preserved", "HEAD", "sigma-vision"],
                        cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0
     assert "attention" in r.stdout.lower()
@@ -318,14 +318,14 @@ def test_the_docs_state_the_residual_risk_and_cite_the_parked_decision():
 
 def test_an_unlinked_reference_file_is_a_finding(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-orphan", "body with no links\n", references__deep_md="rules\n")
+    _skill(root, "sigma-orphan", "body with no links\n", references__deep_md="rules\n")
     out = ss.findings(root=root, waivers={})
     assert any("references/deep.md` is not reachable" in f for f in out), out
 
 
 def test_a_directly_linked_reference_file_is_reachable(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-linked", "see [rules](references/deep.md)\n", references__deep_md="rules\n")
+    _skill(root, "sigma-linked", "see [rules](references/deep.md)\n", references__deep_md="rules\n")
     assert ss.findings(root=root, waivers={}) == []
 
 
@@ -333,17 +333,17 @@ def test_a_reference_reached_only_through_another_reference_is_reachable(tmp_pat
     """The control against a direct-only check: `AUTOWATCH.md` links
     `channels/sigma-autowatch/README.md`, and an agent following the prose gets there fine."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-chain", "see [a](A.md)\n", A_md="then see [b](inner/B.md)\n",
+    _skill(root, "sigma-chain", "see [a](A.md)\n", A_md="then see [b](inner/B.md)\n",
            inner__B_md="the rules\n")
     assert ss.findings(root=root, waivers={}) == []
 
 
 def test_a_brace_expanded_link_is_reachable(tmp_path):
-    """`agrim-vision` links its four guides as `references/{vision,strategy,design,architecture}.md`.
+    """`sigma-vision` links its four guides as `references/{vision,strategy,design,architecture}.md`.
     Without brace expansion this check reports four orphans that are not orphans — a false finding
     is how a guard gets switched off."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-braced", "load `${CLAUDE_SKILL_DIR}/references/{one,two}.md`\n",
+    _skill(root, "sigma-braced", "load `${CLAUDE_SKILL_DIR}/references/{one,two}.md`\n",
            references__one_md="a\n", references__two_md="b\n")
     assert ss.findings(root=root, waivers={}) == []
 
@@ -352,7 +352,7 @@ def test_scripts_are_not_required_to_be_linked(tmp_path):
     """Scoped to markdown deliberately — 50 of the kit's shipped helpers are called by other code,
     never read as reference material, and demanding each be named in prose is 50 false findings."""
     root = tmp_path / "skills"
-    d = _skill(root, "agrim-scripted", "body\n")
+    d = _skill(root, "sigma-scripted", "body\n")
     (d / "scripts").mkdir()
     (d / "scripts" / "helper.py").write_text("print(1)\n", encoding="utf-8")
     assert ss.findings(root=root, waivers={}) == []
@@ -362,29 +362,29 @@ def test_a_link_to_a_file_that_does_not_exist_is_a_finding(tmp_path):
     """The half a restructure trips first: `[gates](references/gates.md)` written before the file
     is. It reads perfectly and points at nothing."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-dead", "see [gates](references/gates.md)\n")
+    _skill(root, "sigma-dead", "see [gates](references/gates.md)\n")
     out = ss.findings(root=root, waivers={})
     assert any("links `references/gates.md`, which does not exist" in f for f in out), out
 
 
 def test_a_dead_skill_dir_reference_is_a_finding(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-dead2", "load `${CLAUDE_SKILL_DIR}/references/nope.md`\n")
+    _skill(root, "sigma-dead2", "load `${CLAUDE_SKILL_DIR}/references/nope.md`\n")
     out = ss.findings(root=root, waivers={})
     assert any("links `references/nope.md`" in f for f in out), out
 
 
 def test_a_placeholder_path_in_emitted_prose_is_not_a_dead_link(tmp_path):
-    """`agrim-goal-design` writes `[<n>-in-brief.md](<n>-in-brief.md)` — a template for the artifact
+    """`sigma-goal-design` writes `[<n>-in-brief.md](<n>-in-brief.md)` — a template for the artifact
     it EMITS, not a link into the skill. Angle brackets are the kit's placeholder convention."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-tmpl", "start with [`<n>-in-brief.md`](<n>-in-brief.md)\n")
+    _skill(root, "sigma-tmpl", "start with [`<n>-in-brief.md`](<n>-in-brief.md)\n")
     assert ss.findings(root=root, waivers={}) == []
 
 
 def test_an_external_link_is_not_a_dead_link(tmp_path):
     root = tmp_path / "skills"
-    _skill(root, "agrim-ext", "see [docs](https://example.invalid/x.md)\n")
+    _skill(root, "sigma-ext", "see [docs](https://example.invalid/x.md)\n")
     assert ss.findings(root=root, waivers={}) == []
 
 
@@ -392,20 +392,20 @@ def test_an_external_link_is_not_a_dead_link(tmp_path):
 
 
 def test_a_repo_relative_python_gesture_in_skill_md_is_a_finding(tmp_path):
-    """#2733: `python3 skills/agrim-loop/scripts/x.py` resolves only inside the kit's own checkout.
+    """#2733: `python3 skills/sigma-loop/scripts/x.py` resolves only inside the kit's own checkout.
     From a buyer's repository — where the plugin lives in the plugin cache and `skills/` is not a
     directory — the documented gesture dies with `can't open file`. The check names the file and
     line so the fix is one edit away."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-rel", "run `python3 skills/agrim-loop/scripts/x.py list`\n")
+    _skill(root, "sigma-rel", "run `python3 skills/sigma-loop/scripts/x.py list`\n")
     out = ss.findings(root=root, waivers={})
-    assert any("python3 skills/" in f and "agrim-rel/SKILL.md:1" in f for f in out), out
+    assert any("python3 skills/" in f and "sigma-rel/SKILL.md:1" in f for f in out), out
 
 
 def test_a_repo_relative_python_gesture_in_a_reference_is_a_finding(tmp_path):
     """A gesture moved into `references/` by a restructure is still a documented gesture."""
     root = tmp_path / "skills"
-    _skill(root, "agrim-relref", "see [r](references/r.md)\n",
+    _skill(root, "sigma-relref", "see [r](references/r.md)\n",
            references__r_md="x\npython3 skills/a/scripts/b.py\n")
     out = ss.findings(root=root, waivers={})
     assert any("python3 skills/" in f and "references/r.md:2" in f for f in out), out
@@ -481,7 +481,7 @@ def test_a_simulated_restructure_of_the_real_loop_skill_loses_nothing():
     """The dress rehearsal, on the real 16,792-token corpus this guard exists for, run BEFORE the
     restructure is written rather than after — which is the only way the instrument is known to work
     when #1611 needs it. `--preserved` is what #1611's PR runs against the pre-restructure ref."""
-    corpus = ss.worktree_corpus(ss.SKILLS_DIR / "agrim-loop")
+    corpus = ss.worktree_corpus(ss.SKILLS_DIR / "sigma-loop")
     before = list(corpus.values())
     after = _simulated_1611_split(corpus["SKILL.md"]) + \
         [t for rel, t in corpus.items() if rel != "SKILL.md"]
@@ -492,7 +492,7 @@ def test_the_dress_rehearsal_catches_a_gate_dropped_by_the_restructure():
     """Break the rehearsal deliberately: drop the paragraph holding a real uppercase gate and prove
     the comparison names it. Without this the test above passes against a comparison that always
     returns []."""
-    corpus = ss.worktree_corpus(ss.SKILLS_DIR / "agrim-loop")
+    corpus = ss.worktree_corpus(ss.SKILLS_DIR / "sigma-loop")
     skill = corpus["SKILL.md"]
     victim = next(b for b in skill.split("\n\n") if ss.GATE_KEYWORDS.search(b))
     after = _simulated_1611_split(skill.replace(victim, "", 1)) + \
@@ -509,14 +509,14 @@ def test_the_dress_rehearsal_catches_a_gate_dropped_by_the_restructure():
 
 @requires_git
 def test_git_corpus_reads_a_skill_at_a_ref():
-    corpus = ss.git_corpus("HEAD", "agrim-vision")
+    corpus = ss.git_corpus("HEAD", "sigma-vision")
     assert "SKILL.md" in corpus and "references/vision.md" in corpus
     assert corpus["SKILL.md"].startswith("---")
 
 
 @requires_git
 def test_preserved_against_head_is_clean_for_an_untouched_skill():
-    r = subprocess.run([sys.executable, str(MODULE), "--preserved", "HEAD", "agrim-vision"],
+    r = subprocess.run([sys.executable, str(MODULE), "--preserved", "HEAD", "sigma-vision"],
                        cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "0 instruction unit(s) lost in total." in r.stdout
@@ -527,13 +527,13 @@ def test_preserved_exits_nonzero_when_the_ref_held_more(monkeypatch):
     documented invocation exits 1 and prints the missing line."""
     monkeypatch.setattr(ss, "git_corpus",
                         lambda ref, skill, root=None: {"SKILL.md": "A rule nobody kept.\n"})
-    rc = ss.main(["--preserved", "HEAD", "agrim-vision"])
+    rc = ss.main(["--preserved", "HEAD", "sigma-vision"])
     assert rc == 1
 
 
 def test_preserved_says_so_when_the_skill_did_not_exist_at_the_ref(monkeypatch):
     monkeypatch.setattr(ss, "git_corpus", lambda ref, skill, root=None: {})
-    assert ss.main(["--preserved", "HEAD", "agrim-vision"]) == 0
+    assert ss.main(["--preserved", "HEAD", "sigma-vision"]) == 0
 
 
 # ---------------------------------------------------------------- the gate as a CLI
@@ -541,7 +541,7 @@ def test_preserved_says_so_when_the_skill_did_not_exist_at_the_ref(monkeypatch):
 
 def test_the_gate_exits_nonzero_on_a_finding(tmp_path, monkeypatch):
     root = tmp_path / "skills"
-    _skill(root, "agrim-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
+    _skill(root, "sigma-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
     monkeypatch.setattr(ss, "SKILLS_DIR", root)
     monkeypatch.setattr(ss, "load_waivers", lambda *a, **k: {})
     assert ss.main([]) == 1
@@ -549,7 +549,7 @@ def test_the_gate_exits_nonzero_on_a_finding(tmp_path, monkeypatch):
 
 def test_table_mode_never_fails(tmp_path, monkeypatch):
     root = tmp_path / "skills"
-    _skill(root, "agrim-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
+    _skill(root, "sigma-huge", _big(ss.COMPACTION_TOKEN_CAP + 500))
     monkeypatch.setattr(ss, "SKILLS_DIR", root)
     monkeypatch.setattr(ss, "load_waivers", lambda *a, **k: {})
     assert ss.main(["--table"]) == 0
@@ -585,7 +585,7 @@ def test_an_untracked_markdown_file_in_a_real_skill_dir_is_invisible_to_every_sw
     Must be a real skill directory, not a synthetic one: `_tracked_md_files` falls open to the raw
     walk for any path outside `ROOT` (a `tmp_path` skill is exactly that), on purpose — see its own
     docstring — so a synthetic-dir test would exercise the fallback, not the fix."""
-    target = ROOT / "skills" / "agrim-loop" / "zzz-untracked-scratch-2176.md"
+    target = ROOT / "skills" / "sigma-loop" / "zzz-untracked-scratch-2176.md"
     assert not target.exists(), "a real file already sits at the scratch path this test uses"
     target.write_text("this file is never staged or committed -- it must never be seen", encoding="utf-8")
     try:
@@ -593,7 +593,7 @@ def test_an_untracked_markdown_file_in_a_real_skill_dir_is_invisible_to_every_sw
                                 capture_output=True, text=True)
         assert status.stdout.strip().startswith("??"), "the scratch file must be untracked, not staged"
 
-        skill_dir = ROOT / "skills" / "agrim-loop"
+        skill_dir = ROOT / "skills" / "sigma-loop"
         refs = ss.reference_files(skill_dir)
         assert "zzz-untracked-scratch-2176.md" not in refs, refs
 
@@ -656,6 +656,10 @@ def _tokens(line):
     return [t for t in out if t]
 
 
+#: First line of the CHANGELOG rename entry: it and everything below it is history.
+_CHANGELOG_HISTORY = "- **Every skill and command now starts with `sigma-`**"
+
+
 def _shipped_path_findings(root):
     """Every path a shipped `.md`/`.mdc` names that the public snapshot does not carry.
 
@@ -703,7 +707,17 @@ def _shipped_path_findings(root):
         text = source.read_text(encoding="utf-8", errors="replace")
         stats["files"] += 1
         stats["scanned"].add(rel)
+        # History names paths as they were (#523): recorded launch evidence, and the CHANGELOG from
+        # its rename entry down. Neither is a promise that a path still ships, so neither is scanned
+        # for one; everything above the rename entry (new entries) still is.
+        if rel.startswith("docs/launch/evidence/"):
+            continue
+        history = False
         for number, line in enumerate(text.splitlines(), 1):
+            if rel == "CHANGELOG.md" and line.startswith(_CHANGELOG_HISTORY):
+                history = True
+            if history:
+                continue
             for expanded in ss.expand_braces(line).splitlines():
                 for token in _tokens(expanded):
                     verdict = resolve(rel, token)
@@ -745,7 +759,7 @@ def test_every_path_a_shipped_doc_names_ships():
         % (len(findings), "\n  ".join(findings)))
 
 
-#: The historical defect, restored verbatim from fragments: `agrim-review/SKILL.md` once pointed
+#: The historical defect, restored verbatim from fragments: `sigma-review/SKILL.md` once pointed
 #: at a root-level canon that the snapshot never carried. Spelled in two adjacent literals because
 #: `test_no_private_names` scans this file and the whole name is a retired one.
 _HISTORICAL_LINK = "../../sdlc-" "review-skill.md"
@@ -756,12 +770,12 @@ def test_a_planted_dangling_link_is_flagged(tmp_path):
     it -- a filesystem resolver passes this, which is exactly the check the guard must not be."""
     target = _HISTORICAL_LINK.rsplit("/", 1)[-1]
     public_surface.plant(tmp_path, {
-        "skills/agrim-review/SKILL.md": "# review\n\nthe canon is [axes](%s).\n" % _HISTORICAL_LINK,
+        "skills/sigma-review/SKILL.md": "# review\n\nthe canon is [axes](%s).\n" % _HISTORICAL_LINK,
         target: "the canon\n",
     }, manifest="skills/\n")
     assert (tmp_path / target).is_file()
     findings, stats = _shipped_path_findings(tmp_path)
-    assert findings == ["skills/agrim-review/SKILL.md:3\t%s" % _HISTORICAL_LINK], findings
+    assert findings == ["skills/sigma-review/SKILL.md:3\t%s" % _HISTORICAL_LINK], findings
     assert stats["dangling"] == 1
 
 
@@ -769,9 +783,9 @@ def test_a_planted_legit_link_resolves(tmp_path):
     """The control for the control: a relative link and a `${CLAUDE_SKILL_DIR}` span to a file the
     manifest DOES select are both `ok`, so the guard above cannot be passing by flagging everything."""
     public_surface.plant(tmp_path, {
-        "skills/agrim-x/SKILL.md": ("see [sel](references/selection.md) and load "
+        "skills/sigma-x/SKILL.md": ("see [sel](references/selection.md) and load "
                                     "`${CLAUDE_SKILL_DIR}/references/selection.md`\n"),
-        "skills/agrim-x/references/selection.md": "triggers\n",
+        "skills/sigma-x/references/selection.md": "triggers\n",
     }, manifest="skills/\n")
     findings, stats = _shipped_path_findings(tmp_path)
     assert findings == [], findings

@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 STALE = time.time() - 2 * 86400          # far past the 12 h claim-lease TTL
 OLD_DONE = time.time() - 10 * 86400      # past goal_state_prune's seven-day window
 

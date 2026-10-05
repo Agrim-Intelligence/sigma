@@ -3,7 +3,7 @@
 Scope: the files under the repo-local, gitignored `.sdlc/state/` keyed by goal or run id:
 `work`, `landing`, `verify`, `propagation`, `escalation`, `withheld`, `unit-tracking`, `goal-review`,
 `phase`, `run_stop`, `agents`. Every path is written by Sigma Python (or, for `goal-review`, by the
-agent following `skills/agrim-goal-review/references/confirm.md`) inside the project; none is under
+agent following `skills/sigma-goal-review/references/confirm.md`) inside the project; none is under
 a host configuration root, and nothing here prunes one. Sibling slices own the action log and
 witness (#457), events/time/ledger (#461) and review evidence (#459).
 
@@ -54,7 +54,7 @@ not exactly `<goal><suffix>`. `--limit` caps goals pruned per call, so permanent
 starve the prunable ones. The goal's own log and witness files are left to #457.
 
 Lever (operator, any host; the answer for a machine that records no further `done`, where the
-in-line sweep never runs): `python3 skills/agrim-loop/scripts/goal_state_prune.py sweep .sdlc
+in-line sweep never runs): `python3 skills/sigma-loop/scripts/goal_state_prune.py sweep .sdlc
 [--dry-run] [--limit N] [--min-age-days N]`. `--dry-run` prints what it would remove. The seven-day
 default is an unmeasured policy choice, not derived from any consumer's cadence: the readers
 traced after `done` are `tools/onboarding_control.py` (within minutes) and the frozen `verify` kind

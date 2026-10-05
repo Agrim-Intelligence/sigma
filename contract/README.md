@@ -77,7 +77,7 @@ The entries stream carries 11 record kinds:
 
 ### Acceptance records (1.3.0)
 
-Run `python3 skills/agrim-loop/scripts/acceptance.py record .sdlc <goal>` before code.
+Run `python3 skills/sigma-loop/scripts/acceptance.py record .sdlc <goal>` before code.
 `<goal>` is an issue number or a local goal Markdown path. The source must contain a
 `## Done when` section with 3–7 single-line checklist statements. If absent, the P1 agent writes
 a draft file with that section and adds `--draft <file>`; for a GitHub goal the capture posts

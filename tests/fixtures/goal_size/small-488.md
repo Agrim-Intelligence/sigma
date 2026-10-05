@@ -7,7 +7,7 @@ already-existing file, under whichever casing was created first. `files_for()`'s
 against the OS-reported (case-preserved) directory-entry name, then fails to find that actor's own
 file under the *other* casing — even though the content genuinely exists, merged in.
 
-**Where:** `skills/agrim-loop/scripts/ledger.py::files_for()` (glob pattern) and `_safe_name()` (no
+**Where:** `skills/sigma-loop/scripts/ledger.py::files_for()` (glob pattern) and `_safe_name()` (no
 case normalization — line ~417-421, "keep = [c for c in str(who) if c.isalnum() or c in \"-_.\"]",
 never lowercased).
 

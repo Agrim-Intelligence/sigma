@@ -19,7 +19,7 @@ import pytest
 
 import gqlfake
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):
@@ -524,7 +524,7 @@ def test_a_refusal_sets_the_blocked_overlay_and_keeps_membership():
 
 def test_a_refused_goal_is_not_reported_as_ready_to_pick():
     """F1. `not_eligible_labels`' own docstring is "pickable iff it carries goal_label and none of
-    these", and `/agrim-triage` and `/agrim-status` both read it. Before the overlay, a permanently
+    these", and `/sigma-triage` and `/sigma-status` both read it. Before the overlay, a permanently
     refused goal was still counted as ready -- the exact failure #1393 was filed about, and one a
     compiled drain plan would happily schedule."""
     triage, src = _mod("triage"), _mod("sources")
@@ -861,7 +861,7 @@ def test_resume_clears_the_overlay_once_the_label_exists():
 
 
 def test_resume_works_with_the_LEDGER_OFF():
-    """THE reason the label is the attribution. `ledger.enabled` ships FALSE in `/agrim-init`'s own
+    """THE reason the label is the attribution. `ledger.enabled` ships FALSE in `/sigma-init`'s own
     template, and an attribution kept in the ledger meant the overlay landed, nothing was recorded,
     and the goal was stuck permanently behind a comment promising it would resume by itself."""
     fl = _mod("feature_labels")
@@ -1405,7 +1405,7 @@ def test_status_counts_a_held_goal_as_needs_label_not_as_pending():
     `-f labels=a,b` field that call constructs instead of repeated `--label` flags."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "status", S.parent.parent.parent / "skills" / "agrim-status" / "scripts" / "status.py")
+        "status", S.parent.parent.parent / "skills" / "sigma-status" / "scripts" / "status.py")
     status = importlib.util.module_from_spec(spec); spec.loader.exec_module(status)
     counts = {("sdlc:goal",): 3, ("sdlc:goal", "sdlc:in-progress"): 1,
               ("sdlc:goal", "sdlc:needs-label"): 1}
@@ -1428,7 +1428,7 @@ def test_reconcile_treats_it_as_an_overlay_not_a_primary_state():
 
 
 def test_promote_names_the_right_remedy_and_not_unpark():
-    """`/agrim-unpark` is not this state's remedy: the goal is already approved and already carries
+    """`/sigma-unpark` is not this state's remedy: the goal is already approved and already carries
     `sdlc:goal`. Sending an operator to a command that does not apply is worse than saying nothing."""
     promote = _mod("promote")
     gh = _mod("sources").GitHubSource(_CONFIG, run=_runner())
@@ -1739,7 +1739,7 @@ def _enclosing_function(tree, lineno):
 
 
 def _adoption_gated_call_sites():
-    """Every `file.py:function` under `skills/agrim-loop/scripts/` containing an adoption-gate call,
+    """Every `file.py:function` under `skills/sigma-loop/scripts/` containing an adoption-gate call,
     per `_is_adoption_gate_call` above. AST-based, never text-based: a mention of `is_dir()` or
     `registry_dir` inside a docstring or comment -- this very module now carries several, see
     `feature_labels.py`'s own module docstring -- can never be mistaken for the real thing, because
@@ -1754,7 +1754,7 @@ def _adoption_gated_call_sites():
     return found
 
 
-#: THE CENSUS, REVIEWED (#1543). A fifteenth call site anywhere under `skills/agrim-loop/scripts/`
+#: THE CENSUS, REVIEWED (#1543). A fifteenth call site anywhere under `skills/sigma-loop/scripts/`
 #: fails `test_the_set_of_adoption_gated_call_sites_is_pinned` below until it is added here on
 #: purpose -- which is the point: whether a future consumer gates on `.sdlc/features/` must be a
 #: decision someone writes down, never a side effect nobody reviewed.
@@ -2469,7 +2469,7 @@ def test_the_no_unit_sweep_runs_before_the_pick_and_frees_the_goal_in_the_same_c
 def test_status_counts_a_held_no_unit_goal_as_needs_unit_not_as_pending():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "status", S.parent.parent.parent / "skills" / "agrim-status" / "scripts" / "status.py")
+        "status", S.parent.parent.parent / "skills" / "sigma-status" / "scripts" / "status.py")
     status = importlib.util.module_from_spec(spec); spec.loader.exec_module(status)
     counts = {("sdlc:goal",): 3, ("sdlc:goal", "sdlc:in-progress"): 1,
               ("sdlc:goal", "sdlc:needs-unit"): 1}
@@ -2539,7 +2539,7 @@ def test_the_survey_fallback_tuple_also_refuses_a_held_no_unit_goal():
 def test_doctor_blocked_label_scan_never_flags_needs_unit_as_a_repo_convention():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        "doctor", S.parent.parent.parent / "skills" / "agrim-doctor" / "scripts" / "doctor.py")
+        "doctor", S.parent.parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
     doctor = importlib.util.module_from_spec(spec); spec.loader.exec_module(doctor)
     issues = [{"number": 42, "labels": [{"name": "sdlc:goal"}, {"name": "sdlc:needs-unit"}]}]
     run = lambda args: json.dumps(issues)

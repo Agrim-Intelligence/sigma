@@ -14,8 +14,8 @@ import pytest
 import boardfake
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "skills" / "agrim-init" / "scripts"
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
+SCRIPTS = ROOT / "skills" / "sigma-init" / "scripts"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
 
 
 def _load(path, name):

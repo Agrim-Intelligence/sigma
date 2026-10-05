@@ -8,8 +8,8 @@ only asks for one).
 
 Documented gesture, copied from the docs: `python3 -m pytest tests/test_reviewer_independence_claims.py`
 after planting a removed phrase in any shipped file goes red; the row test goes red when a clause is
-dropped from `EXTERNAL_CONTROLS` in `skills/agrim-doctor/scripts/enforcement_table.py` and the doc is
-regenerated with `python3 skills/agrim-doctor/scripts/enforcement_table.py > docs/enforcement.md`.
+dropped from `EXTERNAL_CONTROLS` in `skills/sigma-doctor/scripts/enforcement_table.py` and the doc is
+regenerated with `python3 skills/sigma-doctor/scripts/enforcement_table.py > docs/enforcement.md`.
 
 `test_the_scan_flags_a_planted_overclaim` is a smoke control of the scanner on a temporary tree; it
 cannot see the real tree, so the system of record is the real-tree scan above it.
@@ -46,7 +46,7 @@ REMOVED_OVERCLAIMS = (
     "ON — a fresh, author-blind reviewer per gate",
     "independent review (maker is never the checker)",
     "independent review actually enforced before auto-merge",
-    "`agrim-plan-review` runs author-blind",
+    "`sigma-plan-review` runs author-blind",
     "gets it for real only in the loop",
     "true (default) = a fresh author-blind reviewer subagent per gate",
     "The maker is never the checker (`config.review.independent`",

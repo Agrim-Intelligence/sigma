@@ -41,7 +41,7 @@ def payload():
 
 def main():
     spec = importlib.util.spec_from_file_location(
-        "feature_rebase", ROOT / "skills/agrim-loop/scripts/feature_rebase.py")
+        "feature_rebase", ROOT / "skills/sigma-loop/scripts/feature_rebase.py")
     guard = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guard)
     result = {"platform": platform.platform(), "machine": platform.machine(),

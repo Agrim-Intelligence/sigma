@@ -3,7 +3,7 @@ responsible for and classifies each issue, rather than querying for corruption (
 an issue whose defect IS a missing label)."""
 import json, re, pathlib, importlib.util
 
-S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "agrim-loop" / "scripts"
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
 def _mod(name):

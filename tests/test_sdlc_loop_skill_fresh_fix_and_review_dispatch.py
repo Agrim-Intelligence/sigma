@@ -22,9 +22,9 @@ import re
 from skill_corpus import skill_corpus
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SKILL_MD = ROOT / "skills" / "agrim-loop" / "SKILL.md"
+SKILL_MD = ROOT / "skills" / "sigma-loop" / "SKILL.md"
 
-CORPUS = skill_corpus("agrim-loop")
+CORPUS = skill_corpus("sigma-loop")
 _CORPUS_FLAT = re.sub(r"\s+", " ", CORPUS)
 
 _SKILL_BODY = SKILL_MD.read_text(encoding="utf-8")
@@ -35,7 +35,7 @@ _SKILL_FLAT = re.sub(r"\s+", " ", _SKILL_BODY)
 
 def test_running_md_states_a_fix_round_never_resumes_the_blocked_agent():
     assert "never resume the one that got blocked" in _CORPUS_FLAT, (
-        "expected the agrim-loop corpus (references/running.md) to state that a review-gate block "
+        "expected the sigma-loop corpus (references/running.md) to state that a review-gate block "
         "or a failed verify redispatches the fix to a FRESH subagent, never a resume of the one "
         "that got blocked -- #2543's core rule"
     )

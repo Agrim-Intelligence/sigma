@@ -18,8 +18,8 @@ import boardfake
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-LOOP = ROOT / "skills" / "agrim-loop" / "scripts"
-DOCTOR = ROOT / "skills" / "agrim-doctor" / "scripts" / "doctor.py"
+LOOP = ROOT / "skills" / "sigma-loop" / "scripts"
+DOCTOR = ROOT / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 WARN = "has no matching option"
 
 
@@ -393,7 +393,7 @@ def test_doctor_reads_the_field_list_once_for_both_board_rows(tmp_path):
 
 def test_init_template_column_map_equals_the_loops_defaults():
     """`config.json.tmpl` keeps its own literal map; it must never drift from `BOARD_COLUMNS`."""
-    tmpl = (ROOT / "skills" / "agrim-init" / "templates" / "config.json.tmpl").read_text(
+    tmpl = (ROOT / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(
         encoding="utf-8")
     line = next(ln for ln in tmpl.splitlines() if ln.strip().startswith('"columns":'))
     got = json.loads("{" + line.strip().rstrip(",") + "}")["columns"]

@@ -17,7 +17,7 @@ import pytest
 from journal_events import journal_events
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 LOOP_PY = S / "loop.py"
 
 
@@ -165,7 +165,7 @@ def test_a_caller_repeating_its_original_tier_still_climbs_to_the_ceiling(tmp_pa
 
 
 def test_the_bound_holds_with_every_recording_surface_off(tmp_path):
-    """No ledger, no journal, no action log (the strictest case: `/agrim-init` ships the action log
+    """No ledger, no journal, no action log (the strictest case: `/sigma-init` ships the action log
     on). The floor is control state, so a caller repeating `haiku` still reaches CEILING instead of
     looping sonnet forever."""
     d = _sdlc(tmp_path, model_selection="auto")
@@ -331,7 +331,7 @@ def test_the_ceiling_vocabulary_matches_the_router_it_mirrors():
     so it keeps its own copy of the price order and the ceiling default. This pins the copy: if the
     router's ceiling ever changes, this goes red instead of the two silently disagreeing."""
     te = _mod("tier_escalation", S / "tier_escalation.py")
-    predict = _mod("predict_for_2828", ROOT / "skills" / "agrim-model" / "scripts" / "predict.py")
+    predict = _mod("predict_for_2828", ROOT / "skills" / "sigma-model" / "scripts" / "predict.py")
     assert te.PRICE_ORDER == predict._TIER_PRICE_ORDER
     assert te.MAX_TIER_DEFAULT == predict._MAX_TIER_DEFAULT
     assert te.MAX_TIER_KEY == predict._MAX_TIER_KEY
@@ -341,10 +341,10 @@ def test_the_ceiling_vocabulary_matches_the_router_it_mirrors():
 
 # ----------------------------------------------------------------------------- the docs' gesture
 
-SKILL = (ROOT / "skills" / "agrim-loop" / "SKILL.md").read_text(encoding="utf-8")
-RUNNING = (ROOT / "skills" / "agrim-loop" / "references" / "running.md").read_text(encoding="utf-8")
-PLAN_REVIEW = (ROOT / "skills" / "agrim-plan-review" / "SKILL.md").read_text(encoding="utf-8")
-PICKING = (ROOT / "skills" / "agrim-loop" / "references" / "picking.md").read_text(encoding="utf-8")
+SKILL = (ROOT / "skills" / "sigma-loop" / "SKILL.md").read_text(encoding="utf-8")
+RUNNING = (ROOT / "skills" / "sigma-loop" / "references" / "running.md").read_text(encoding="utf-8")
+PLAN_REVIEW = (ROOT / "skills" / "sigma-plan-review" / "SKILL.md").read_text(encoding="utf-8")
+PICKING = (ROOT / "skills" / "sigma-loop" / "references" / "picking.md").read_text(encoding="utf-8")
 
 #: The gesture as the docs print it: `python3 "${CLAUDE_SKILL_DIR}/<...>loop.py" escalate .sdlc
 #: "$goal" <tier> [--after <gate>]`, up to the closing backtick.
@@ -356,8 +356,8 @@ def _documented_gestures(text):
     return [g for g in found if not g.endswith("--show")]      # the read-back runs in its own test
 
 
-_DOCS = {"agrim-loop/SKILL.md": SKILL, "agrim-loop/references/running.md": RUNNING,
-         "agrim-plan-review/SKILL.md": PLAN_REVIEW, "agrim-loop/references/picking.md": PICKING}
+_DOCS = {"sigma-loop/SKILL.md": SKILL, "sigma-loop/references/running.md": RUNNING,
+         "sigma-plan-review/SKILL.md": PLAN_REVIEW, "sigma-loop/references/picking.md": PICKING}
 
 
 @pytest.mark.parametrize("name", sorted(_DOCS))

@@ -29,7 +29,7 @@ import time
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-S = ROOT / "skills" / "agrim-loop" / "scripts"
+S = ROOT / "skills" / "sigma-loop" / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures" / "hostile"
 DRILL = ROOT / "tools" / "readiness" / "injection_drill.py"
 
@@ -77,7 +77,7 @@ comment_watch = _mod("comment_watch")
 ledger = _mod("ledger")
 actionlog = _mod("actionlog")
 render = _mod("render")
-log = _mod("log", ROOT / "skills" / "agrim-log" / "scripts")
+log = _mod("log", ROOT / "skills" / "sigma-log" / "scripts")
 
 #: Token-shaped, built at run time: no file in the repository holds one (leak scan, private-name scan).
 TOKEN = "gh" + "p_" + "A1b2C3d4E5" * 3 + "x9Y8z7"

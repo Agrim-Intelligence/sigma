@@ -3,7 +3,7 @@
 
 This is NOT a data-format contract -- it is an ALGORITHMIC agreement ("same --since window, same
 merge-commit counting rule") between two independent implementations
-(skills/agrim-velocity/scripts/velocity.py's measure() and a downstream git reader's own
+(skills/sigma-velocity/scripts/velocity.py's measure() and a downstream git reader's own
 windowed measure). A JSONL fixture cannot represent "the same counting algorithm", so this is not
 folded into the contract. Each side instead gets its own behavioral pin against real,
 disposable git repositories it builds itself, asserting LITERAL expected counts -- never
@@ -24,7 +24,7 @@ import pathlib
 import subprocess
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-_VELOCITY_PATH = REPO_ROOT / "skills" / "agrim-velocity" / "scripts" / "velocity.py"
+_VELOCITY_PATH = REPO_ROOT / "skills" / "sigma-velocity" / "scripts" / "velocity.py"
 
 
 def _velocity():
