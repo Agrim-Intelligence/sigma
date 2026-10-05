@@ -628,14 +628,7 @@ def _try_commit(w, name):
                           capture_output=True, text=True, env=w["env"])
 
 
-@posix_only
-@pytest.mark.parametrize("gesture", ["documented", "setup-alias"])
-def test_documented_init_keeps_a_failing_pre_commit_hook_running(tmp_path, gesture):
-    """#614 AC-1/AC-5: a failing pre-commit hook blocks a commit before adoption AND after it.
-    Before #614 init wrote a hooksPath naming a directory nothing creates, so git ran no hooks and
-    the second commit went through. Runs the documented gesture verbatim (and the /sigma-setup
-    alias, the same flow); `--yes --no-verify` without a remote ends in a preflight FAIL (rc 1),
-    which must not matter -- a failed adoption wrote the key too."""
+def _init_keeps_a_failing_pre_commit_hook_running(tmp_path, gesture):
     w = _world(tmp_path, origin=None)
     _failing_hook(w["repo"] / ".git" / "hooks")
     before = _try_commit(w, "before.txt")
@@ -646,6 +639,23 @@ def test_documented_init_keeps_a_failing_pre_commit_hook_running(tmp_path, gestu
     after = _try_commit(w, "after.txt")
     assert after.returncode != 0 and "HOOK-RAN-614" in after.stdout + after.stderr, after.stdout
     assert _local_hooks_path(w) is None
+
+
+@posix_only
+def test_documented_init_keeps_a_failing_pre_commit_hook_running(tmp_path):
+    """#614 AC-1/AC-5: a failing pre-commit hook blocks a commit before adoption AND after it.
+    Before #614 init wrote a hooksPath naming a directory nothing creates, so git ran no hooks and
+    the second commit went through. Runs the documented gesture verbatim; `--yes --no-verify`
+    without a remote ends in a preflight FAIL (rc 1), which must not matter -- a failed adoption
+    wrote the key too. Not parametrized: the test-first gate credits a red only to an
+    unambiguous node."""
+    _init_keeps_a_failing_pre_commit_hook_running(tmp_path, "documented")
+
+
+@posix_only
+def test_setup_alias_keeps_a_failing_pre_commit_hook_running(tmp_path):
+    """#614 AC-1 through /sigma-setup, an alias of the same flow."""
+    _init_keeps_a_failing_pre_commit_hook_running(tmp_path, "setup-alias")
 
 
 @posix_only
@@ -664,11 +674,7 @@ def test_documented_init_keeps_a_global_hook_path_in_force(tmp_path):
     assert after.returncode != 0 and "HOOK-RAN-614" in after.stdout + after.stderr, after.stdout
 
 
-@posix_only
-@pytest.mark.parametrize("value, make_dir", [(".husky/_", True), ("missing-hooks", False)])
-def test_init_adopts_and_keeps_an_existing_hook_path(tmp_path, value, make_dir):
-    """#614 AC-2: a repository that already sets its own hooksPath (husky, or any value that is not
-    the one Sigma wrote, even one whose directory is missing) adopts normally and keeps it."""
+def _init_adopts_and_keeps(tmp_path, value, make_dir):
     w = _world(tmp_path, origin=None)
     if make_dir:
         (w["repo"] / value).mkdir(parents=True)
@@ -678,6 +684,20 @@ def test_init_adopts_and_keeps_an_existing_hook_path(tmp_path, value, make_dir):
     assert (w["sdlc"] / "config.json").is_file()
     assert _local_hooks_path(w) == value
     assert "core.hooksPath" not in p.stdout + p.stderr
+
+
+@posix_only
+def test_init_adopts_and_keeps_an_existing_hook_path(tmp_path):
+    """#614 AC-2: a repository that already sets its own hooksPath (husky's) adopts normally and
+    keeps it. Not parametrized: the test-first gate credits a red only to an unambiguous node."""
+    _init_adopts_and_keeps(tmp_path, ".husky/_", True)
+
+
+@posix_only
+def test_init_adopts_and_keeps_a_hook_path_whose_directory_is_missing(tmp_path):
+    """#614 AC-2: any value that is not the one Sigma wrote is the user's, even with its directory
+    missing -- never unset."""
+    _init_adopts_and_keeps(tmp_path, "missing-hooks", False)
 
 
 @posix_only
