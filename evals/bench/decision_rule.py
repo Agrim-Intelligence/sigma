@@ -27,7 +27,7 @@ from functools import lru_cache
 from math import comb, factorial, gcd
 from pathlib import Path
 
-ALPHA = Fraction(1, 20)          # recommended one-sided alpha; an owner decision
+ALPHA = Fraction(1, 20)          # one-sided alpha; decided by the owner 2026-10-05
 N_TASKS = 15                     # the frozen design
 N_RANGE = range(12, 19)          # the 12 to 18 task range the document reports
 MAX_D = 18
@@ -295,7 +295,7 @@ def render(alpha=ALPHA):
     out.append("The superseded bootstrap rule on the same counts (n = %d, one comparison, exact "
                "infinite-resample limit):" % N_TASKS)
     out += [""] + superseded_table() + [""]
-    out.append("Owner decision, alpha alternatives at n = %d (one comparison):" % N_TASKS)
+    out.append("Alpha alternatives considered at n = %d (decided: 0.05; one comparison):" % N_TASKS)
     out += [""] + alpha_table() + [""]
     out.append("Rejected alternative, non-inferiority by an unconditional test that rejects when "
                "W - L is at least c, size maximised over a discordant-rate grid in steps of 1 percent:")
