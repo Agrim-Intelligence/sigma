@@ -1,6 +1,6 @@
 # Benchmark task set: sourcing, selection and freeze
 
-Status: **frozen** (`"frozen": true` in `evals/bench/tasks/manifest.json`; the freeze commit will be recorded in the pre-registration's Deviations once this change has merged). 15 tasks: 8 external and 4 internal
+Status: **frozen** (`"frozen": true` in `evals/bench/tasks/manifest.json`; the freeze commit is recorded in the pre-registration's Deviations). 15 tasks: 8 external and 4 internal
 non-trap tasks, plus 3 traps that are **agent-authored** (see "Trap authorship" below), all verified.
 The method is fixed in [`preregistration.md`](preregistration.md); this page records how the tasks were found and what was
 measured about them. Nothing here ran an arm, called a model or spent money.
