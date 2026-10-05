@@ -114,7 +114,7 @@ The unit is processed tokens: input, including cache reads, plus output, as the 
 | S1 | freeze commit, inventory, exposure scans, legal | < 0.5M | not measured |
 | S2 | mechanical gates | 1–2M | not measured |
 | S3 | calibration pilots (the pilot goal, #361) | 20–50M | 3.89M spent (measured, $2.50; P-a and P-b only, P-c and P-d unmeasured) |
-| S4 | high-risk code review + sample + verification | 25–45M | measured so far: 4 of 16 Tier A units (10,093 lines), 6,833,669 tokens ($3.448) for reviewers and verifiers, 677.1 per line, plus 813,999 for the governance reviewers and 11,658,953 slot overhead (19,306,621 in all, cumulative 47,369,450, 7,369,450 over the 40M checkpoint; S4 paused for the owner); the other 12 units and Tier B are not reached ([review-s4-c3faf6f23e12.md](evidence/review-s4-c3faf6f23e12.md)); the 43.73M ceiling row below is unchanged and stays the estimate for the rest |
+| S4 | high-risk code review + sample + verification | 25–45M | measured: all 16 Tier A units (36,519 lines), 24,845,157 tokens ($12.37) for reviewers and verifiers, 680.3 per line; cumulative 69,433,345 at the time the evidence was written (29,433,345 over the 40M checkpoint, inside the owner-approved 75M cap; slot overhead and governance of the evidence PR come on top); Tier B was not reviewed by owner decision ([review-s4-c3faf6f23e12.md](evidence/review-s4-c3faf6f23e12.md)); the 43.73M ceiling row below is the replaced estimate, kept for the Tier B part |
 | S5 | phase-skill review | 8–15M | not measured |
 | S6 | host runs, migration, drills, red team | 20–50M | not measured |
 | S7 | outside first-run | 0 | not applicable |
