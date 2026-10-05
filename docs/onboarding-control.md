@@ -168,6 +168,13 @@ under the previous plugin id and repository: they are history, not a measurement
 | `codex plugin add <plugin id as it was then>` | 0.097 | ok, 1.0.0 |
 | real profile plugin-surface hash before / after | | `b4844e1dc784e0ab` / `b4844e1dc784e0ab`: untouched |
 
+**Re-run for the new plugin id (2026-10-05, #524), Claude Code only.** `python3 tools/onboarding_control.py --mode local
+--install claude --from-install` on macOS with Claude Code 2.1.284, from the committed renamed tree, whole run 21.0s:
+`claude plugin marketplace add` of the checkout (the README's URL swapped for the checkout path) 0.685s, ok, adding the
+marketplace `sigmaloop`; `claude plugin install sigmaloop@sigmaloop` 0.727s, ok, 1.0.0; local-goals GREEN in 8.9s; real
+profile untouched. `claude plugin details` of that install lists 42 skills and 5 hooks. This is one run, on one machine. The
+Codex rows above were NOT re-run (no Codex CLI on the machine that did this change).
+
 The Codex CLI is not on PATH on this machine; the control found it in the ChatGPT app bundle
 (`codex-cli 0.154.0-alpha.6.2`). Install works there; a live Codex session was not run (see below).
 

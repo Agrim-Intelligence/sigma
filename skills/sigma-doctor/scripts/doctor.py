@@ -1836,7 +1836,7 @@ def _old_install_row(host, ours, others_on_marketplace=()):
                 steps.append("claude plugin marketplace remove %s" % market)
         steps += ["claude plugin marketplace add %s" % source,
                   "claude plugin install %s@%s" % (_PLUGIN, _PLUGIN)]
-        note = "each uninstall is per scope"
+        note = "Each uninstall is per scope"
     return _chk("Sigma Loop plugin installed under the pre-launch id %s (it no longer receives updates)"
                 % ", ".join(ids), False,
                 "the plugin was renamed to %s, so an install under the old id silently stopped updating. "
