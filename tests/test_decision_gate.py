@@ -679,3 +679,53 @@ def test_validate_names_an_unfireable_files_target_only_once_even_with_overlappi
             "INV-DUP: param 'max_iterations' never appears in assignment shape in "
             "cfg.json — it can never fire"
         ]
+
+
+# --- #622: `init` is the engine step that refuses to write a registry in an unadopted repo -------
+
+def _init(root, *extra):
+    """The documented gesture, verbatim from skills/sigma-decide/SKILL.md: decision_gate.py init <root>."""
+    return subprocess.run([sys.executable, str(G), "init", str(root), *extra],
+                          capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+
+
+def test_init_refuses_without_config_json_names_sigma_init_and_writes_nothing(tmp_path):
+    r = _init(tmp_path)
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert "/sigma-init" in r.stderr
+    assert not (tmp_path / ".sdlc" / "decisions.json").exists()
+    assert not (tmp_path / ".sdlc").exists()
+
+
+def test_init_writes_a_skeleton_in_an_adopted_repo_with_no_registry(tmp_path):
+    (tmp_path / ".sdlc").mkdir(); (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    r = _init(tmp_path)
+    assert r.returncode == 0, r.stderr
+    reg = tmp_path / ".sdlc" / "decisions.json"
+    assert reg.is_file(), "init wrote no registry"
+    assert json.loads(reg.read_text()) == {"version": 1, "decisions": []}
+    assert str(reg.resolve()) in r.stdout
+
+
+def test_init_never_overwrites_an_existing_registry(tmp_path):
+    (tmp_path / ".sdlc").mkdir(); (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    reg = tmp_path / ".sdlc" / "decisions.json"; reg.write_text('{"keep": 1}')
+    r = _init(tmp_path)
+    assert r.returncode == 1 and reg.read_text() == '{"keep": 1}'
+
+
+def test_init_from_a_subdirectory_lands_in_the_adopted_ancestor(tmp_path):
+    (tmp_path / ".sdlc").mkdir(); (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    sub = tmp_path / "pkg" / "deep"; sub.mkdir(parents=True)
+    r = _init(sub)
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / ".sdlc" / "decisions.json").is_file()
+    assert str((tmp_path / ".sdlc" / "decisions.json").resolve()) in r.stdout
+
+
+def test_validate_notes_that_the_hook_is_inert_in_an_unadopted_repo(tmp_path):
+    (tmp_path / ".sdlc").mkdir(); (tmp_path / ".sdlc" / "decisions.json").write_text(json.dumps(_reg(_inv())))
+    r = subprocess.run([sys.executable, str(G), "validate", str(tmp_path)], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0
+    lines = r.stdout.strip().splitlines()
+    assert lines[0].startswith("decision registry:") and "[NOTE]" in lines[-1] and "/sigma-init" in lines[-1]

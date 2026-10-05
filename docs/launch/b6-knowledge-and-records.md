@@ -68,7 +68,7 @@ in a goal worktree that carries only tracked files, so it never stages the main 
 | Store | Writer | Owner |
 | --- | --- | --- |
 | `context/north-star.md`, `project.md` | `sigma-vision`; `sigma-retro` only proposes (an unattended run never edits a standing document) | operator |
-| `decisions.json` | hand-authored per `sigma-decide`; read by `hooks/decision_gate.py` | operator |
+| `decisions.json` | skeleton via `decision_gate.py init`, entries hand-authored per `sigma-decide`; read by `hooks/decision_gate.py` | operator |
 | `pipeline.json` | operator-declared; read by `pipeline.py card` | operator |
 | `features/units/<unit>.json`, `features/index.json` | `feature_registry.write_unit` and `write_index`, via `sigma-define` | the project |
 | `design/<n>.md`, `<n>-in-brief.md` | `sigma-goal-design` prose, committed in the design PR | the project |

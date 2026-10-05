@@ -4306,6 +4306,10 @@ def _decision_gate_state(base, cfg):
     reg = pathlib.Path(base) / "decisions.json"
     if not reg.exists():
         return "off (no registry — nothing is enforced)"
+    # #622: the hook is inert without the adoption marker. Deliberately simpler than
+    # gate_state.adopted_root (no upward walk; doctor is handed the .sdlc dir itself) and pinned by a test.
+    if not (pathlib.Path(base) / "config.json").exists():
+        return "registry present but repo NOT adopted (no .sdlc/config.json) — the hook enforces nothing; run /sigma-init"
     if _block(_block(cfg, "gates"), "decision_gate").get("enabled") is False:
         return "DISABLED by config (registry present but not enforced)"
     try:
@@ -4578,7 +4582,7 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          'config: "gates": {"plan_review": {"enabled": true}}'),
         ("decision gate (deny edits that break a registered invariant)",
          _decision_gate_state(base, cfg),
-         "author .sdlc/decisions.json (see /sigma-decide) — authoring it IS the opt-in"),
+         "in an adopted repo (.sdlc/config.json), author .sdlc/decisions.json (see /sigma-decide) — authoring it is the opt-in"),
         ("decision tier (advisory park-detail classifier)",
          "AUTO — needs_decision/irreversible/unknown parks get an autonomous/escalate_l1/escalate_l0 "
          "tier (decision_tier.py), surfaced in the ledger, review-queue.md and the park comment"

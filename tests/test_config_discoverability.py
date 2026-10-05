@@ -47,7 +47,7 @@ def test_every_gate_the_code_reads_is_discoverable_in_the_scaffolded_config():
 
 
 def test_a_gate_with_no_enabled_flag_says_how_it_is_actually_turned_on():
-    """decision_gate is the odd one out: authoring the registry is the opt-in, so there is no
+    """decision_gate is the odd one out: authoring the registry (in an adopted repo) is the opt-in, so there is no
     `enabled: true` to set. Left unexplained next to two gates that DO take that flag, the natural
     reading is 'add enabled: true' — which does nothing, and the user concludes the gate is broken."""
     assert "_decision_gate" in TMPL
