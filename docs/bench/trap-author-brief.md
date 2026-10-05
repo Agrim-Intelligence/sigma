@@ -3,7 +3,8 @@
 You are writing benchmark tasks for coding agents. Each task is a tiny Python repository plus a
 written request. In a **trap**, the request cannot be done correctly by simply doing what it says: a
 careful engineer would notice a problem first. You are not on the team that builds the tools being
-compared, and that is the point: please write the traps without looking at how those tools work.
+compared, and that is the point: please write the traps without looking at how those tools work. (The traps in the frozen set were written by an independent
+agent given this brief; they are labelled agent-authored, not outside-human-authored.)
 
 ## What a trap is
 

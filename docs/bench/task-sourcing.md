@@ -1,7 +1,7 @@
 # Benchmark task set: sourcing, selection and freeze
 
-Status: **draft, not frozen** (`"frozen": false` in `evals/bench/tasks/manifest.json`). 15 slots: 8 external tasks and 4 internal
-non-trap tasks, all 12 verified (below), plus 3 trap slots that wait for an author outside the Sigma team.
+Status: **frozen** (`"frozen": true` in `evals/bench/tasks/manifest.json`; the freeze commit is recorded in the pre-registration's Deviations). 15 tasks: 8 external and 4 internal
+non-trap tasks, plus 3 traps that are **agent-authored** (see "Trap authorship" below), all verified.
 The method is fixed in [`preregistration.md`](preregistration.md); this page records how the tasks were found and what was
 measured about them. Nothing here ran an arm, called a model or spent money.
 
@@ -10,7 +10,7 @@ measured about them. Nothing here ran an arm, called a model or spent money.
 The pre-registration asks for about 15 tasks, balanced between external and internal work as far as the pool permits,
 and its decision rule is tabulated for 12 to 18 tasks only; `bench_tasks.py check` refuses any other count as an owner
 decision. The external pool was not the limit: eight tasks verified from a short search. The internal side is 4 non-trap tasks (one
-each of bug fix, feature, refactor and docs) plus the 3 outside-authored traps: 7 internal against 8 external is as
+each of bug fix, feature, refactor and docs) plus the 3 agent-authored traps: 7 internal against 8 external is as
 close to even as 15 and the three required traps allow. The issue text asked for 15 and 15; the owner's reduction supersedes it.
 
 ## Training cutoff and its source
@@ -152,12 +152,20 @@ fix, internal tasks), `hidden.json`, `run_hidden.py` (copies `files/` over the s
 with the disk, refuses (for internal tasks) a hidden test name that also appears in the starting repository, and refuses a bundle for a task still awaiting its author. A hidden root is
 outside the repository, so it is backed up by the operator: the hashes detect loss but cannot restore content. The lock pins versions, not file hashes.
 
-## Freeze (a later step, after the three traps arrive)
+## Trap authorship
 
-1. The owner names the trap author (owner decision, open). The author receives only [`trap-author-brief.md`](trap-author-brief.md).
+The pre-registration originally required traps authored by a person outside the Sigma team. On 2026-10-05, before any run, the owner amended it (Deviations in
+[`preregistration.md`](preregistration.md)): each trap was written by a fresh independent subagent (`claude-sonnet-5-5`) that was given only
+[`trap-author-brief.md`](trap-author-brief.md) and the fixture shape, never the loop, skills or repository. This is **agent authorship, not outside-human authorship**, and the weaker claim is the one made:
+the author agent shares a model family with the model under test (home-field bias risk, unmeasured), and both contradiction traps use the same device (a README precedence rule).
+`task.json` carries `authorship: independent-agent`, the manifest carries `trap_authorship`, and `check` refuses a ready trap without that label. Each trap was then checked by a separate fresh reviewer agent.
+
+## Freeze (done 2026-10-05; the steps are kept as the record and for a future re-freeze)
+
+1. The author receives only [`trap-author-brief.md`](trap-author-brief.md) (here: an independent agent, labelled as such).
 2. For each trap `trap-N`: copy the author's `repo/` over `evals/bench/tasks/trap-N/repo/`; write the author's `prompt.md` text into
    `task.json` `prompt`, set `kind` (`trap-spec-contradiction` or `trap-plan-defect`), `author` (as the author consents to be credited) and `status` to `ready`;
-   create `~/.sigma-ops/bench/hidden/trap-N/` with `files/`, `reference/`, `obvious/`, `expected_catch.txt`, `author.json` (handle, that the author is outside the Sigma team, date), `hidden.json`
+   create `~/.sigma-ops/bench/hidden/trap-N/` with `files/`, `reference/`, `obvious/`, `expected_catch.txt`, `author.json` (`authorship`, handle, date), `hidden.json`
    (`files` and `run` lists), `verify.json` and the `run_hidden.py` that `bench_tasks.py hidden-from-pr` writes (copy it from any existing bundle);
    run `bench_tasks.py seal trap-N`.
 3. `bench_tasks.py build-manifest`, then `bench_tasks.py verify --hidden-root ~/.sigma-ops/bench/hidden --external --scratch <empty dir>`; every task must read verified.
@@ -169,4 +177,4 @@ outside the repository, so it is backed up by the operator: the hashes detect lo
 6. Record in the pre-registration's Deviations section, with the date: `task set frozen at <commit sha>`, and the manifest hash from
    `bench_tasks.py manifest-sha --rev <commit sha>` (the committed bytes). Commit that edit separately, before any arm runs. Record there too that an external task's starting tree is the first parent of the pull request's merge commit, not "that PR's base commit" as the pre-registration's Tasks section words it (see "How candidates were found").
 
-Until then the manifest says `frozen: false`. The flag itself is not read by the harness; what stops a run is that the three trap slots have no hidden bundle (the harness refuses a task whose bundle is missing) and that an external task's `repo/` must first be materialized. `check` refuses a frozen manifest that still has a task awaiting its author.
+Before the freeze the manifest said `frozen: false`. The flag itself is not read by the harness; what stops a run is that the three trap slots have no hidden bundle (the harness refuses a task whose bundle is missing) and that an external task's `repo/` must first be materialized. `check` refuses a frozen manifest that still has a task awaiting its author.

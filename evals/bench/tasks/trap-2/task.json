@@ -3,10 +3,10 @@
   "kind": "trap-spec-contradiction",
   "origin": "internal",
   "trap": true,
-  "status": "awaiting-author",
-  "author": null,
+  "status": "ready",
+  "author": "independent-agent (claude-sonnet-5-5)",
   "expected_catch": null,
-  "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+  "prompt": "Add a `take(item, qty)` method to `Inventory` in `inventory.py`. It removes `qty` of `item` from the stock and returns the remaining count. Taking more than is in stock is rejected with a `ValueError`, and the stock is left unchanged.\n\nMake the change in this repository.",
   "source": "trap-2/repo",
   "visible_command": [
     "python3",
@@ -18,7 +18,19 @@
   ],
   "visible_expected": "pass",
   "hidden_bundle": "trap-2",
-  "hidden_sha256": "",
-  "hidden_files": {},
-  "tree_sha256": ""
+  "hidden_sha256": "941fed33891af7ba0f5f3ba7dd961a5de7badc9b88c4319730724ff836e6279d",
+  "hidden_files": {
+    "author.json": "65bfbfca3e72a9fda3ccf1828783a66661ab6f5a4a46c4f30c6f1b41363850ed",
+    "expected_catch.txt": "c1deb3e973825465847569b78c50377c7dcd1d898750ded34204df3af0980b90",
+    "files/test_take.py": "3e79e70073237934246582d9ce0d57c24dbe7854dc3220cc886544efb50d1fa1",
+    "files/test_take_readme.py": "06391cd630f50dc7911a761b2e535413ba9c29de2cf0f890714a151e53521700",
+    "hidden.json": "7f987b00a3bc70f1bf1fb681de08227c504b820764a3f41fbb576b4689c3adee",
+    "obvious/inventory.py": "eef3b39144e51ef397573571b2a28e599e74b3a770c30b1930436567eec4f763",
+    "reference/README.md": "8c96d622022d35fa2159adc219af6af3b8721cd415180813696fe3bad4b4f84f",
+    "reference/inventory.py": "eef3b39144e51ef397573571b2a28e599e74b3a770c30b1930436567eec4f763",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "9ba499497d7570c65dc61085349a77877fffaa232507780b0230b352b1ad4e33",
+  "authorship": "independent-agent"
 }

@@ -31,8 +31,11 @@ between external and internal work. Run one repeat per arm and task.
   and the PR's test changes are the hidden tests.
 - Internal tasks are small fixture repositories shaped like `examples/hello-sdlc`, balanced across
   bug fix, feature, refactor and docs. There are three traps, each containing a planted specification
-  contradiction or a planted defect in the obvious plan. A person outside the Sigma team authors
-  every trap; the owner recruits that person.
+  contradiction or a planted defect in the obvious plan. An independent agent authors every trap: a
+  fresh subagent that never saw Sigma's loop, skills or repository internals and was given only the
+  trap author brief and the fixture shape. The traps are labelled agent-authored everywhere (the
+  manifest, this document, the evals README and each task); they are not outside-human-authored, and
+  that weaker claim is the one made (see Deviations, 2026-10-05).
 - Each `task.json` stores the SHA-256 of its hidden-test bundle. Commit the hash of
   `tasks/manifest.json` before the first run.
 
@@ -155,8 +158,9 @@ behind each choice, and what the alternatives cost, stay in the tables that foll
    as the rule. Whether the launch proceeds without a performance claim, or more tasks are added, is not
    decided here and stays a business choice made after a result exists.
 
-Still open and owner-gated, not decided by the above: the freeze of the task set, naming the trap author
-and the three traps they write, whether to pin the model ID (`task-sourcing.md`), and the S9 spend ceiling.
+Decided since (owner, 2026-10-05): the trap author is an independent agent and the spend ceiling is $150 in
+total (see Deviations). Still open and owner-gated, not decided by the above: whether to pin the model ID
+(`task-sourcing.md`).
 
 **Post-launch flow (#410): deferred.** The owner decided on 2026-10-01 to decide at launch time and to
 ship the first public snapshot first (#410 stays open and held; the export is the same under either
@@ -366,3 +370,23 @@ Record every change to this pre-registration here with its date and reason.
   authored traps. This makes the launch affordable while preserving a pre-run, paired comparison;
   the analysis and claim boundary above were re-derived to make its lower power and wider intervals
   explicit. No benchmark task has run under either design.
+
+- **2026-10-05 — Traps are authored by an independent agent, not a person outside the Sigma team
+  (#355).** The original text required a person outside the Sigma team to author every trap. The owner
+  chose to amend it rather than wait for a recruit. Reason: no outside person was available, and no
+  benchmark task or arm has run under either wording. The three traps (two specification
+  contradictions, one plan defect) are written by a fresh subagent per trap, run on `claude-sonnet-5-5`,
+  that never saw Sigma's loop, skills or this repository and received only
+  [`trap-author-brief.md`](trap-author-brief.md) and the fixture shape. They are labelled
+  agent-authored in the manifest (`trap_authorship`, each task's `authorship`), in each hidden bundle's
+  `author.json`, in the evals README and in the task-sourcing document. **The weaker claim, stated plainly:**
+  this is not outside-human authorship and does not defend against Sigma-shaped traps the way a human
+  from outside the team would; "independent" means only that the author agent had no access to Sigma's
+  internals, and a trap author and the model under test belong to the same model family, so a home-field
+  bias risk (the traps may be easier or harder for that family than for others) is unmeasured. Both
+  contradiction traps also carry the same device (a README precedence rule), which narrows what the
+  catch rate shows. Launch material may not describe these traps as outside-authored.
+- **2026-10-05 — Spend ceiling and authentication.** Owner decision: the total benchmark spend ceiling
+  is $150 (the harness's `--max-usd`), using API-key authentication supplied by the owner at run time;
+  no arm has been run. The $15 per-run belt above stays a per-run cap and can never exceed the
+  remaining ceiling.

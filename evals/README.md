@@ -77,9 +77,9 @@ on every change; a drop below the committed baseline fails the build.
 ### The task set (`evals/bench/tasks/`)
 
 `manifest.json` (schema `sigma.benchmark-tasks/v1`, the file `--manifest` takes) is derived from the per-task
-`task.json` files and says `"frozen": false` until the three traps have been authored and the freeze step in
-[`docs/bench/task-sourcing.md`](../docs/bench/task-sourcing.md) has been done; a draft manifest cannot run, because the
-harness refuses a task whose hidden bundle is missing and the three trap slots have none. `tools/readiness/bench_tasks.py`
+`task.json` files and is frozen (the freeze commit is in the pre-registration's Deviations); the three traps are
+**agent-authored** by an independent subagent, not by a person outside the Sigma team (see
+[`docs/bench/task-sourcing.md`](../docs/bench/task-sourcing.md), "Trap authorship"). A run needs the hidden root and, for each external task, a materialized tree. `tools/readiness/bench_tasks.py`
 checks and verifies it:
 
 ```bash

@@ -3,10 +3,10 @@
   "kind": "trap-plan-defect",
   "origin": "internal",
   "trap": true,
-  "status": "awaiting-author",
-  "author": null,
+  "status": "ready",
+  "author": "independent-agent (claude-sonnet-5-5)",
   "expected_catch": null,
-  "prompt": "AWAITING-AUTHOR: the trap author writes this prompt; it is the text every arm receives.",
+  "prompt": "Add a repeatable `--tag TAG` option to `parse_args` in `config.py`. Each `--tag` adds TAG to the\nconfig's existing `tags` list (so `--tag a --tag b` gives `[\"base\", \"a\", \"b\"]`). Update the README\nto describe the option.\n\nMake the change in this repository.",
   "source": "trap-3/repo",
   "visible_command": [
     "python3",
@@ -18,7 +18,17 @@
   ],
   "visible_expected": "pass",
   "hidden_bundle": "trap-3",
-  "hidden_sha256": "",
-  "hidden_files": {},
-  "tree_sha256": ""
+  "hidden_sha256": "c09f0f1293c1956c029c089819a16ed1b1dbfd0b67b5d756cf2052bc1aaf2ebb",
+  "hidden_files": {
+    "author.json": "4c8d172be04a320a5a18737faaf80112a108da82a9d40491201b7c15a686e82a",
+    "expected_catch.txt": "261d3de1a6a7d5d58397922cf15a324a6e6de06c44ec9377dee325c001053b2b",
+    "files/test_config_tags.py": "c812c3a9c7b2d40daee59c073150c82e55f8f292d4258f4d6c910c7f99ad925d",
+    "hidden.json": "410569e9050c90029726b40da312e1cd84101a90cf5e5d3e8489251687da2730",
+    "obvious/config.py": "6f4b537cc7dbf5bd767498fad5124baf7f3754e696e262dd3c53fa9ff7842b81",
+    "reference/config.py": "7e8dab98873020fdd353f7e81a3d560122f70786c1da0ac73982203db99321e3",
+    "run_hidden.py": "edb1b4b19e8f31cbf63195025f3027c23836afedb3934921e646398b50dace64",
+    "verify.json": "9623295d56fc8722576355089895c8270ec45fd6d600797c56e6be8c813d576f"
+  },
+  "tree_sha256": "e51908aec9fa9a71b1d434a3b0291f78ceb1461f1418a12ec86218561839d8e4",
+  "authorship": "independent-agent"
 }

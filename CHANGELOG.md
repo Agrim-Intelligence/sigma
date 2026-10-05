@@ -53,7 +53,14 @@ All notable changes to Sigma are recorded here, newest first.
   `tests/test_slack_commands_listen.py` set its own SIGHUP and SIGTERM dispositions: it failed under `nohup` (inherited ignored
   SIGHUP, which the production code respects on purpose) and passes with or without it. No production code changed.
 
-- **The benchmark task set exists in draft: 8 external post-cutoff tasks and 4 internal tasks verified, 3 trap slots awaiting an
+- **The benchmark task set is frozen: 15 tasks, with the 3 traps authored by an independent agent** (#355, readiness dimension D3).
+  The owner amended the pre-registration on 2026-10-05, before any run: traps are written by a fresh subagent that saw only
+  `docs/bench/trap-author-brief.md` and the fixture shape, labelled agent-authored in the manifest (`trap_authorship`, each task's
+  `authorship`), the pre-registration, the evals README and each hidden bundle, and **not** claimed to be outside-human authored
+  (home-field bias risk stated). `bench_tasks.py check` refuses a ready trap without that label and a frozen manifest is now
+  checked without a hidden root unless `--frozen` is given. The total spend ceiling of $150 is recorded; no arm has run.
+
+- **(Superseded by the frozen entry above.) The benchmark task set existed in draft: 8 external post-cutoff tasks and 4 internal tasks verified, 3 trap slots awaiting an
   outside author** (#355, readiness dimension D3; the issue's 30-task scope was reduced by the owner on 2026-10-03).
   `evals/bench/tasks/manifest.json` is in the format `evals/bench/bench.py` loads and says `"frozen": false`;
   `tools/readiness/bench_tasks.py` checks it (`check`), scores every task through the harness's own scoring functions in one

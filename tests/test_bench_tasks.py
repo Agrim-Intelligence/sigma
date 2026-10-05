@@ -58,6 +58,16 @@ def _rebuild(tool, directory):
     tool.build_manifest(directory)
 
 
+def _awaiting(copy, frozen=False, **more):
+    """Turn trap-1 of a copy back into the placeholder shape it had before its author delivered."""
+    _edit_task(copy, "trap-1", status="awaiting-author", hidden_sha256="", hidden_files={}, tree_sha256="",
+               prompt="AWAITING-AUTHOR: placeholder", **more)
+    manifest = json.loads((copy / "manifest.json").read_text(encoding="utf-8"))
+    manifest["frozen"] = frozen
+    _write_json(copy / "manifest.json", manifest)
+    _rebuild(_tool(), copy)
+
+
 def _synthetic(tmp_path, tool, hidden_test, reference_fixed=True):
     """A one-task internal set plus its hidden root: `add(1, 2)` returns 3 only after the reference fix."""
     tasks = tmp_path / "syn-tasks"
@@ -96,13 +106,14 @@ def test_the_committed_task_set_is_consistent():
     assert tool.check(TASKS) == []
 
 
-def test_manifest_is_the_one_the_harness_loads_and_is_not_frozen_while_traps_await():
+def test_manifest_is_the_one_the_harness_loads_and_is_frozen_with_three_labelled_traps():
     tool = _tool()
     manifest = _real_tasks()
     assert tool.harness_accepts(TASKS) == ""
-    assert manifest["frozen"] is False
+    assert manifest["frozen"] is True
     traps = [t for t in manifest["tasks"] if t["trap"]]
-    assert len(traps) == 3 and all(t["status"] == "awaiting-author" for t in traps)
+    assert len(traps) == 3 and all(t["status"] == "ready" and t["authorship"] == "independent-agent" for t in traps)
+    assert "agent-authored" in manifest["trap_authorship"] and "not by a person outside" in manifest["trap_authorship"]
     assert 12 <= len(manifest["tasks"]) <= 18
     for row in manifest["tasks"]:
         if row["status"] == "ready":
@@ -128,9 +139,7 @@ def test_copying_a_hidden_file_into_a_task_is_named_and_refused(tmp_path):
 def test_a_frozen_manifest_cannot_have_traps_awaiting_an_author(tmp_path):
     tool = _tool()
     copy = _copy_real(tmp_path)
-    manifest = json.loads((copy / "manifest.json").read_text(encoding="utf-8"))
-    manifest["frozen"] = True
-    _write_json(copy / "manifest.json", manifest)
+    _awaiting(copy, frozen=True)
     problems = tool.check(copy, hidden_root=tmp_path)
     assert any("awaiting an author" in p for p in problems)
     assert tool.check(copy, require_frozen=True) != []
@@ -284,7 +293,7 @@ def test_documented_cli_check_passes_and_frozen_check_refuses_an_unfrozen_set():
     ok = subprocess.run([sys.executable, str(TOOL), "check"], capture_output=True, text=True, cwd=ROOT)
     assert ok.returncode == 0 and "0 finding(s)" in ok.stdout, ok.stdout + ok.stderr
     frozen = subprocess.run([sys.executable, str(TOOL), "check", "--frozen"], capture_output=True, text=True, cwd=ROOT)
-    assert frozen.returncode == 1 and "frozen is false" in frozen.stdout
+    assert frozen.returncode == 1 and "pass --hidden-root" in frozen.stdout
     helped = subprocess.run([sys.executable, str(TOOL), "--help"], capture_output=True, text=True, cwd=ROOT)
     assert helped.returncode == 0 and "USAGE" in helped.stdout
 
@@ -359,6 +368,7 @@ def test_hidden_test_names_in_the_starting_repository_are_named(tmp_path):
 def test_a_bundle_for_a_task_awaiting_its_author_would_make_the_harness_run_the_placeholder(tmp_path):
     tool = _tool()
     copy = _copy_real(tmp_path)
+    _awaiting(copy)
     hidden = tmp_path / "hidden"
     for row in json.loads((copy / "manifest.json").read_text(encoding="utf-8"))["tasks"]:
         if row["status"] == "ready":
@@ -373,6 +383,7 @@ def test_the_harness_itself_refuses_the_unfrozen_manifest_while_a_trap_has_no_bu
     tool = _tool()
     bench = tool._bench_module()
     copy = _copy_real(tmp_path)
+    _awaiting(copy)
     hidden = tmp_path / "hidden"
     for row in json.loads((copy / "manifest.json").read_text(encoding="utf-8"))["tasks"]:
         if row["status"] == "ready":
@@ -392,6 +403,28 @@ def test_a_ready_trap_needs_its_author_expected_catch_and_attestation(tmp_path):
     assert any("non-empty expected_catch.txt" in p for p in problems)
     assert any("non-empty author.json" in p for p in problems)
     assert any("must name its author" in p for p in problems)
+
+
+def test_a_ready_trap_must_declare_its_authorship_and_the_manifest_states_the_weaker_claim(tmp_path):
+    tool = _tool()
+    tasks, hidden = _synthetic(tmp_path, tool, "from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n")
+    (hidden / "syn" / "obvious").mkdir()
+    (hidden / "syn" / "expected_catch.txt").write_text("notice it\n", encoding="utf-8")
+    _write_json(hidden / "syn" / "author.json", {"authorship": "independent-agent", "handle": "agent"})
+    _edit_task(tasks, "syn", kind="trap-plan-defect", trap=True, author="agent")
+    tool.build_manifest(tasks)
+    problems = tool.check(tasks, hidden_root=hidden)
+    assert any("must declare authorship" in p for p in problems)
+    _edit_task(tasks, "syn", authorship="independent-agent")
+    tool.build_manifest(tasks)
+    problems = tool.check(tasks, hidden_root=hidden)
+    assert any("trap_authorship" in p for p in problems)
+    manifest = json.loads((tasks / "manifest.json").read_text(encoding="utf-8"))
+    manifest["trap_authorship"] = "agent-authored, not outside-human"
+    _write_json(tasks / "manifest.json", manifest)
+    assert not [p for p in tool.check(tasks, hidden_root=hidden) if "authorship" in p]
+    _write_json(hidden / "syn" / "author.json", {"authorship": "outside-human", "handle": "x"})
+    assert any("author.json" in p and "authorship" in p for p in tool.check(tasks, hidden_root=hidden))
 
 
 def test_verify_fails_when_the_two_scoring_paths_disagree(tmp_path, monkeypatch):
@@ -776,6 +809,14 @@ def _break_task(task_id, **changes):
     return mutate
 
 
+def _awaiting_then(**changes):
+    def mutate(copy):
+        _awaiting(copy)
+        _edit_task(copy, "trap-1", **changes)
+        _rebuild(_tool(), copy)
+    return mutate
+
+
 def _drop_task_key(task_id, key):
     def mutate(copy):
         path = copy / task_id / "task.json"
@@ -828,7 +869,6 @@ STRUCTURAL_RULES = [
     ("duplicate ids", _duplicate_row, "manifest task ids are not unique"),
     ("model field", _break_manifest(**{"model.cutoff_source": ""}), "manifest model.cutoff_source is not recorded"),
     ("environment interpreter", _break_manifest(**{"environment.python": ""}), "the interpreter the lock was resolved under"),
-    ("frozen needs a hidden root", _break_manifest(frozen=True), "pass --hidden-root"),
     ("task key missing", _drop_task_key("int-bugfix-1", "prompt"), "int-bugfix-1/task.json: missing `prompt`"),
     ("task key missing stops further checks", _drop_task_key("int-bugfix-1", "kind"), "int-bugfix-1/task.json: missing `kind`"),
     ("id differs", _break_task("int-bugfix-1", id="other"), "differs from its directory"),
@@ -840,8 +880,8 @@ STRUCTURAL_RULES = [
     ("hidden bundle name", _break_task("int-bugfix-1", hidden_bundle="elsewhere"), "hidden_bundle must equal the id"),
     ("tree hash recorded", _break_task("int-bugfix-1", tree_sha256=""), "tree_sha256 is not recorded"),
     ("closing line", _break_task("int-bugfix-1", prompt="Fix top_words."), "prompt must end with the line `Make the change in this repository.`"),
-    ("awaiting holds no hashes", _break_task("trap-1", hidden_sha256="a" * 64), "holds no hidden hashes yet"),
-    ("awaiting says so", _break_task("trap-1", prompt="a real prompt"), "must say so in its prompt"),
+    ("awaiting holds no hashes", _awaiting_then(hidden_sha256="a" * 64), "holds no hidden hashes yet"),
+    ("awaiting says so", _awaiting_then(prompt="a real prompt"), "must say so in its prompt"),
     ("external needs fetch.json", _delete("ext-bottle-1539", "fetch.json"), "external task needs fetch.json"),
     ("external tree digest agrees", _break_task("ext-bottle-1539", tree_sha256="b" * 64), "differs from the base-tree digest"),
     ("internal repo non-empty", _empty_repo, "internal task needs a non-empty repo/"),
