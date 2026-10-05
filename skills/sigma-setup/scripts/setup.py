@@ -222,8 +222,17 @@ def configure(sdlc_dir, repo="", source="github", verify_command="", auto_merge=
 
 
 def write_cfg(sdlc_dir, cfg):
-    (pathlib.Path(sdlc_dir) / "config.json").write_text(
-        json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    """Temp file + os.replace: a crash mid-write leaves the old config whole, never a truncated one (#625)."""
+    import tempfile
+    path = pathlib.Path(sdlc_dir) / "config.json"
+    fd, tmp = tempfile.mkstemp(prefix=".config.json.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(cfg, indent=2) + "\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 # --------------------------------------------------------------------------- labels
@@ -392,6 +401,15 @@ def main(argv):
             # directory init never scaffolded). Refuse, name the entry point, write nothing.
             print(f"setup.py configure: REFUSED - no {sdlc / 'config.json'}; run /sigma-init first "
                   f"({INIT_FLOW}). Nothing written.", file=sys.stderr)
+            return 2
+        try:
+            if not isinstance(_load_cfg(sdlc), dict):
+                raise ValueError("top level is not a JSON object")
+        except (OSError, ValueError) as exc:             # #625: refuse, never a traceback or a rewrite
+            print(f"setup.py configure: REFUSED - {sdlc / 'config.json'} is unreadable ({exc}). Nothing "
+                  f"written, file untouched. Repair the JSON by hand, or back it up "
+                  f"(`cp config.json config.json.bak`) and delete it on purpose, then re-run.",
+                  file=sys.stderr)
             return 2
         source = f.get("source", "github")
         # --repo, else the repository config.json already names (never swapped for `origin`), else

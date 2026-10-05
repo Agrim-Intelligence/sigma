@@ -4,6 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`/sigma-init` no longer replaces a corrupt or non-object `.sdlc/config.json` with a fresh one** (#625). A truncated
+  or hand-broken config, or one whose top level is an array, string or `null`, was read as `{}` and written back, so every
+  key the user had was lost with no refusal. `/sigma-init` now stops with exit 2 before writing anything, names the file,
+  what is wrong and the lever (repair it by hand, or back it up and delete it on purpose); `setup.py configure` refuses the
+  same way instead of a traceback. Config writes in `setup.py` and the `--cursor` step are now temp file plus rename. A valid
+  config behaves as before. No `.bak` is written because no path replaces an existing config. The write has no `fsync`, so a
+  power loss can still leave an empty file; `preflight.set_local_only` still raises a traceback (no write) on a non-object config.
 - **A repository that already has a verify command is told to trust it, once per checkout** (#615, epic #613). Sigma
   runs a repository-configured verify command only after the checkout grants Git-local trust (#422), and that trust is
   neither committed nor cloned, so a migrated repository or a teammate's fresh clone used to get `[ok] verify` from
