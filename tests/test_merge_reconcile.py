@@ -426,7 +426,7 @@ def _merge_runner(comments):
         ("isCrossRepository", json.dumps({"isCrossRepository": False})),
         ("viewerPermission", "ADMIN"),
         ("comments,author", json.dumps({"author": {"login": "bot"},
-                                        "comments": [{"body": c, "author": {"login": "bot"}}
+                                        "comments": [{"body": c, "author": {"login": "bot"}, "authorAssociation": "OWNER"}
                                                      for c in comments]})),
         ("reviewDecision,latestReviews", json.dumps({"reviewDecision": None, "latestReviews": []})),
         ("nameWithOwner", "acme/app"),

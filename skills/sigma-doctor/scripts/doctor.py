@@ -503,7 +503,7 @@ def _self_merge_risk(gh_cfg, wk, run):
         return None                            # genuinely protected -- something IS enforced independently
     return (f"work.auto_merge is \"always\" and require_review is \"approval\", but that mode's "
             f"self-authorship fallback (a `sigma:approve` COMMENT, not a real review -- GitHub "
-            f"forbids approving your own PR) is satisfiable by ANY commenter, and {base!r} has NO "
+            f"forbids approving your own PR) is satisfiable by any OWNER, MEMBER or COLLABORATOR commenter (the PR author included), and {base!r} has NO "
             "branch protection. Nothing independent stands between an unattended merge and this "
             "branch. Add branch protection requiring an approval from a second identity, or accept "
             "the risk knowingly.")

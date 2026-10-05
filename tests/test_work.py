@@ -4509,7 +4509,8 @@ def test_cli_root_works_with_the_feature_off(tmp_path, capsys):
 # on an unprotected base is invisible to it. review_gate reads the actual review state and parks on it.
 
 
-def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_authors=(), pr_author=None):
+def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_authors=(), pr_author=None,
+            associations=()):
     """Handlers for the review gate: the `--json comments,author` marker scan, the `--json
     reviewDecision,latestReviews` read, and the GraphQL thread count. Ordered so the specific
     `--json comments` / `reviewDecision` matches win over a generic `pr view` handler that also
@@ -4523,9 +4524,10 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
     threads = json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {
         "nodes": [{"isResolved": False}] * unresolved}}}}})
     authors = list(comment_authors) + [None] * (len(comments) - len(comment_authors))
+    assoc = list(associations) + ["OWNER"] * (len(comments) - len(associations))   # #635: trusted unless a test says otherwise
     comment_json = json.dumps({"author": {"login": pr_author},
-                               "comments": [{"body": b, "author": {"login": a}}
-                                            for b, a in zip(comments, authors)]})
+                               "comments": [{"body": b, "author": {"login": a}, "authorAssociation": x}
+                                            for b, a, x in zip(comments, authors, assoc)]})
     return [("json comments", comment_json), ("reviewDecision", reviews),
             ("nameWithOwner", "acme/app"), ("graphql", threads)]
 
@@ -4624,10 +4626,22 @@ def test_review_gate_does_not_warn_when_a_stale_same_author_comment_sits_alongsi
     assert capsys.readouterr().err == ""
 
 
-def test_review_gate_fails_open_on_a_read_error(tmp_path):
+def test_review_gate_approval_mode_fails_closed_on_an_unreadable_decision(tmp_path):
+    """#635: was `fails_open` under approval, which merged with NO approval signal at all when the read
+    failed. Approval is a positive requirement, so an unknown decision parks."""
     cfg = {"work": {"enabled": True, "require_review": "approval"}}
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner([("reviewDecision", RuntimeError("gh boom"))])
+    run = _runner([("json comments", json.dumps({"author": {"login": "bot"}, "comments": []})),
+                   ("reviewDecision", RuntimeError("gh boom"))])
+    ok, why = work.review_gate(d, cfg, g, run=run)
+    assert ok is False and "review decision" in why
+
+
+def test_review_gate_fails_open_on_a_read_error(tmp_path):
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    run = _runner([("json comments", json.dumps({"author": {"login": "bot"}, "comments": []})),
+                   ("reviewDecision", RuntimeError("gh boom"))])         # #635: comments readable, decision not
     assert work.review_gate(d, cfg, g, run=run) == (True, "")           # other gates still hold
 
 
@@ -4690,6 +4704,102 @@ def test_a_later_block_beats_an_earlier_approve_even_when_formally_approved(tmp_
     run = _runner(_review(decision="APPROVED", comments=["sigma:approve", "sigma:block — wait, no"]))
     ok, why = work.review_gate(d, cfg, g, run=run)
     assert ok is False and "sigma:block" in why              # a block overrides even a formal approval
+
+
+# --- #635: only OWNER / MEMBER / COLLABORATOR comments are honoured as sigma: markers. On a public
+# repository anyone can comment; before this a stranger's `sigma:approve` satisfied the gate. ---
+
+_APPROVAL = {"work": {"enabled": True, "require_review": "approval"}}
+_CHANGES = {"work": {"enabled": True, "require_review": "changes"}}
+
+
+def test_a_non_collaborators_sigma_approve_is_ignored_and_loud(capsys, tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:approve — lgtm"], comment_authors=["rando"],
+                          associations=["NONE"], pr_author="loop-bot"))
+    ok, why = work.review_gate(d, _APPROVAL, g, run=run)
+    assert ok is False and "not approved" in why
+    err = capsys.readouterr().err
+    assert "ignoring" in err and "rando" in err and "NONE" in err and "sigma:approve" in err
+
+
+@pytest.mark.parametrize("assoc", ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "MANNEQUIN", "NONE", "", None, 7])
+def test_every_non_trusted_association_is_ignored(assoc, tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:approve"], comment_authors=["x"],
+                          associations=[assoc]))
+    assert work.review_gate(d, _APPROVAL, g, run=run)[0] is False
+
+
+def test_a_marker_comment_with_no_association_field_at_all_parks(tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    payload = json.dumps({"author": {"login": "bot"}, "comments": [{"body": "sigma:approve", "author": {"login": "x"}}]})
+    run = _runner([("json comments", payload), ("reviewDecision", json.dumps({"reviewDecision": None, "latestReviews": []})),
+                   ("nameWithOwner", "a/b"), ("graphql", "{}")])
+    ok, why = work.review_gate(d, _APPROVAL, g, run=run)
+    assert ok is False and "could not read" in why
+
+
+@pytest.mark.parametrize("assoc", ["OWNER", "MEMBER", "COLLABORATOR"])
+def test_trusted_associations_are_honoured(assoc, tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:approve"], comment_authors=["h"],
+                          associations=[assoc], pr_author="loop-bot"))
+    assert work.review_gate(d, _APPROVAL, g, run=run) == (True, "")
+
+
+def test_a_non_collaborators_sigma_block_does_not_park(capsys, tmp_path):
+    d = _sdlc(tmp_path, _CHANGES); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:block"], comment_authors=["rando"],
+                          associations=["NONE"]))
+    assert work.review_gate(d, _CHANGES, g, run=run) == (True, "")
+    assert "ignoring" in capsys.readouterr().err
+
+
+def test_a_non_collaborators_sigma_unblock_does_not_clear_a_trusted_block(tmp_path):
+    d = _sdlc(tmp_path, _CHANGES); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:block", "sigma:unblock"],
+                          comment_authors=["maint", "rando"], associations=["OWNER", "NONE"]))
+    ok, why = work.review_gate(d, _CHANGES, g, run=run)
+    assert ok is False and "sigma:block" in why
+
+
+def test_a_stranger_cannot_override_a_trusted_approval_with_a_later_marker(tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision=None, comments=["sigma:approve", "sigma:block"],
+                          comment_authors=["maint", "rando"], associations=["COLLABORATOR", "NONE"]))
+    assert work.review_gate(d, _APPROVAL, g, run=run) == (True, "")
+
+
+@pytest.mark.parametrize("cfg", [_CHANGES, _APPROVAL])
+def test_unreadable_comments_park_instead_of_failing_open(cfg, tmp_path):
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    run = _runner([("json comments", RuntimeError("gh boom"))] + _review(decision="APPROVED"))
+    ok, why = work.review_gate(d, cfg, g, run=run)
+    assert ok is False and "could not read" in why
+
+
+def test_a_non_object_comment_entry_parks_instead_of_crashing(tmp_path):
+    d = _sdlc(tmp_path, _CHANGES); g = _started(d)
+    run = _runner([("json comments", json.dumps({"author": {"login": "b"}, "comments": ["sigma:approve"]}))]
+                  + _review(decision="APPROVED"))
+    assert work.review_gate(d, _CHANGES, g, run=run)[0] is False
+
+
+def test_unparseable_comments_park_too(tmp_path):
+    d = _sdlc(tmp_path, _CHANGES); g = _started(d)
+    run = _runner([("json comments", "not json")] + _review(decision="APPROVED"))
+    assert work.review_gate(d, _CHANGES, g, run=run)[0] is False
+
+
+def test_merge_does_not_arm_on_a_non_collaborators_approval(tmp_path):
+    """The documented gesture: `work.py merge` under `require_review: approval`."""
+    cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "approval"}}
+    d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
+    run = _runner(_rights() + _review(decision=None, comments=["sigma:approve"], comment_authors=["rando"],
+                                      associations=["NONE"]) + [("pr view", _view())])
+    out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK") and not any("pr merge" in c for c in run.calls)
 
 
 # --- F9: comment-marker parsing is line-anchored — a negated ("do NOT sigma:approve"), quoted
