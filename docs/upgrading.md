@@ -3,7 +3,7 @@
 Sigma was published under a different name before its 1.0.0 release. A repository adopted under
 that name (any 1.4.x release) carries the old name in its state. Sigma reads that state as it is, so
 the files need no migration to be understood. One thing is not carried over, because it is deliberately
-kept out of the repository: [each checkout grants verify trust once](#verify-commands-need-a-one-time-per-checkout-trust).
+kept out of the repository: [each checkout grants verify trust once](#verify-commands-need-a-one-time-per-checkout-trust). Fresh installs also differ in a few defaults: [What changes when you switch](#what-changes-when-you-switch) lists each one with its cost.
 When you want the files themselves to stop carrying the old name, run the one-shot migration.
 
 The old name is not spelled out in this document. `migrate.py` prints it at the top of every run,
@@ -90,6 +90,37 @@ What tells you it is missing:
 `/sigma-init`'s explicit `verify_detect.py confirm` and `set` gestures record the same trust for the command you confirm,
 which is why a fresh adoption never meets the refusal. The policy itself (Git-local, default no) is unchanged; see
 [the threat model](threat-model.md#repository-configured-shell-commands).
+
+## What changes when you switch
+
+A repository that carries its own `.sdlc/config.json` keeps every value in it, so a carried-over repository does not change
+behaviour in the rows below that name a key. The differences reach a **fresh** adoption (`/sigma-init` writes the Sigma template)
+or a config that never set the key. Each row gives the previous plugin's behaviour, Sigma's, what it costs where that was
+measured, and how to get the previous behaviour back.
+
+| Key or behaviour | Previous plugin | Sigma | Cost | Restore |
+|---|---|---|---|---|
+| `work.require_review` | `off`: the PR is merged without a loop review pass | `changes`: after the PR opens, one fresh author-blind review runs; each `block` adds a fix, a verify and a re-review, capped by `work.max_review_cycles` (3) | Tokens: [measured below](#what-the-review-pass-costs) | Set `work.require_review` to `off` in `.sdlc/config.json` |
+| `action_log.enabled` | `false`: no action log | `true`: a local trace in `.sdlc/state/log/`, git-ignored, bounded by retention | No model tokens; local disk only | Set `action_log.enabled` to `false` |
+| `work.enabled` | `null`: reads as off, unless setup resolved it to on during a GitHub adoption | `true`: one worktree, branch and PR per goal from the first run | No model tokens; one worktree on disk per goal | Set `work.enabled` to `false` to keep the loop writing in your checkout |
+| `verify.command` | Runs when configured | Runs only after this checkout is trusted, once per checkout; see [the trust section](#verify-commands-need-a-one-time-per-checkout-trust) | None | Grant the trust as that section says |
+| `discovery.reconcile.mode` | A missing key reads `on`: stale `sdlc:in-progress` labels on closed issues are cleaned up | The template writes `off`, and a missing key reads `off` today. The owner decided on 2026-10-01 that a missing key reads `on`; that change is pending and not in this release | Label writes on closed issues only; about 21 `gh` calls an hour while on, the figure in the owner's decision on #393 (rate-limited, not billed) | The missing-key default is what differs, so there is no value to restore: set `discovery.reconcile.mode` to `on` explicitly |
+| Git hooks | Adoption leaves git hooks alone | Adoption never writes `core.hooksPath`. Earlier Sigma releases wrote it, pointing at the old hooks path, a directory nothing creates, so git ran no hooks. `/sigma-init` unsets a value that matches it when no worktree of the repository has that directory, and prints one line saying so; a `core.hooksPath` you set yourself is kept | None | Nothing to restore. To clear a stale value yourself: `git config --local --unset core.hooksPath`; `/sigma-doctor` shows a failing row naming it, and [the uninstall guide](uninstall.md) has the same step |
+| Setup wizard and decision gate outside adopted repositories | The session-start wizard prompts in any repository | Silent until the repository has `.sdlc/`; the decision-gate hook also stays inert without `.sdlc/config.json` | None | Run `/sigma-init` in the repository |
+
+### What the review pass costs
+
+`work.require_review: changes` is the one default that changes your bill. The owner decided to keep it (decision D-2) and to state
+its cost here. Two measurements exist, and neither is a measured per-goal total:
+
+- **One review pass: 139,235 tokens** (about 214 seconds), measured once (n=1) on the previous plugin's own goals, against a mean
+  goal of **168,174 tokens** over its ten most recent goals. One pass was therefore about 83% of a mean goal's whole cost.
+- **Passes per goal:** this repository's action log holds 130 review verdicts over 73 goals (82 pass, 48 block), so it averages
+  1.78 passes per goal.
+
+Multiplying the two gives about 248,000 tokens of review per goal. That is an **estimate** from an n=1 pass and a different
+repository's mean, not a measurement. The cycle count also reflects the loop's own habits, not only this switch. A per-PR cost
+receipt is opt-in and has not landed yet, so today the bill shows up in your provider usage, not on the PR.
 
 ## What Sigma reads without any migration
 
