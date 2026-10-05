@@ -1215,15 +1215,20 @@ def test_apply_config_refuses_unreadable_config_directly(tmp_path, name, raw):
     (tmp_path / "config.json").write_bytes(raw)
     res = {"mode": ("local-goals", "flag"), "work": (None, "open"), "ledger": (None, "open"),
            "board": (None, "open")}
-    with pytest.raises(flow.ConfigUnreadable) as exc:
+    raised = None
+    try:
         flow.apply_config(str(tmp_path), res, "")
-    assert "config.json" in str(exc.value)
+    except Exception as exc:                            # asserted below, so the red is an assertion
+        raised = exc
+    assert type(raised).__name__ == "ConfigUnreadable", raised
+    assert "config.json" in str(raised)
     assert (tmp_path / "config.json").read_bytes() == raw
     assert [p.name for p in tmp_path.iterdir()] == ["config.json"]
 
 
 def test_valid_config_still_updated_and_written_atomically(tmp_path):
     flow = _load_flow()
+    assert hasattr(flow, "read_config_strict")
     (tmp_path / "config.json").write_text(json.dumps({"keep": {"me": 1}, "discovery": {"source": "github"}}))
     res = {"mode": ("local-goals", "flag"), "work": (None, "open"), "ledger": (None, "open"),
            "board": (None, "open")}
@@ -1257,8 +1262,12 @@ def test_setup_write_cfg_is_atomic(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise OSError("simulated crash at the rename")
     monkeypatch.setattr(os, "replace", boom)
-    with pytest.raises(OSError):
+    failure = None
+    try:
         mod.write_cfg(str(tmp_path), {"new": 1})
+    except OSError as exc:
+        failure = exc
+    assert failure is not None, "the new content reached config.json without os.replace"
     assert json.loads(path.read_text()) == {"old": True}
     assert [p.name for p in tmp_path.iterdir()] == ["config.json"]
     monkeypatch.setattr(os, "replace", real)
