@@ -422,7 +422,7 @@
   "slot_overhead": {
     "tokens": 15711360,
     "dollars": 8.355,
-    "turns": 81,
+    "turns": 121,
     "note": "wave 1 slot (11,658,953 tokens, 81 turns, metered after it stopped) plus the wave 2 slot as metered when this was written; later turns of the wave 2 slot and the wave 2 evidence PR governance reviewers are not included"
   },
   "counters": {
@@ -442,7 +442,8 @@
       "label": "launch:blocker",
       "klass": "B2",
       "queued": true,
-      "promoted": false
+      "promoted": false,
+      "note": "closed after filing (fixed on main); queued and unpromoted when filed"
     },
     {
       "issue": 590,
