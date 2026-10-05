@@ -1860,11 +1860,29 @@ be the loop's channel. Plain comments have no such restriction: **`sigma:approve
 approve). The same markers let a **human** review a loop PR when they want to, and a formal `APPROVE` or an
 unresolved review thread still counts whenever a second identity leaves one.
 
+**Who may comment a marker.** A `sigma:approve`, `sigma:block` or `sigma:unblock` comment counts only
+when GitHub reports the commenter's `authorAssociation` as `OWNER`, `MEMBER` or `COLLABORATOR`. On a public
+repository anyone can comment, so any other commenter (including an absent or unknown association) is
+ignored, and the gate prints one stderr line per ignored marker naming the commenter and association; it
+is never counted as an approval, a block or a clear. If the PR's comments cannot be read at all, the
+gate parks instead of merging. To let someone approve, add them as a collaborator (or have them leave a
+formal review, which GitHub already restricts to write access); the ignored comment stays on the PR and
+the next gate run simply re-reads (association is read at gate time, so a later change in someone's role
+applies to their older comments too). The account the loop posts as must itself count: a machine user needs
+at least collaborator access, and a GitHub App or `GITHUB_TOKEN` identity that GitHub reports as anything
+else would have every loop `sigma:approve` ignored, parking each goal under `"approval"` (and its `sigma:block` ignored
+under `"changes"`). A marker comment with no `authorAssociation` field at all (an old `gh`) parks the merge
+instead of being guessed at. A minimised trusted comment still counts. A stranger's formal
+"Request changes" review is not filtered by this rule and can still park a merge on a public repository
+(a delay, never an approval). `MEMBER` is any organisation member and can be broader than write
+access, so this is not a substitute for branch protection.
+
 **What `"approval"` does NOT verify.** The comment channel exists because GitHub can't tell the loop's
 own account apart from a reviewer's — which cuts both ways: it also can't tell a genuinely independent
 `sigma:approve` from the SAME session that wrote the diff posting one about its own work. The gate
-itself still doesn't care who commented — a same-author `sigma:approve` clears the merge exactly as
-a different account's would (it has to: that's the whole reason the comment channel exists). What changed
+only checks the commenter's relationship to the repository (below), not independence — a same-author
+`sigma:approve` clears the merge exactly as a different account's would (it has to: that's the whole
+reason the comment channel exists). What changed
 is visibility, not the gate: the loop now warns loudly when a same-author comment is the ONLY approval
 signal, so the case is at least seen — never silently accepted as equivalent to independent review. That's
 not a gap you can code around here: the "fresh subagent with fresh context" review above is the discipline that

@@ -226,6 +226,10 @@ def emit(obj, jq_expr, argv):
         print(val)
 
 
+def _as_comment(c):
+    return c if isinstance(c, dict) else {"body": c, "assoc": "OWNER"}
+
+
 def pr_obj(state, number):
     pr = state["prs"][number]
     head_sha = git_rev_parse(state, "refs/heads/" + pr["head"]) or ""
@@ -236,7 +240,9 @@ def pr_obj(state, number):
         "nameWithOwner": state["repo"],
         # #232: the review gate's own reads -- `comments,author` for `sigma:` directives and
         # `reviewDecision,latestReviews` for formal reviews. Comments are what `pr comment` stored.
-        "comments": [{"body": c, "author": {"login": state["login"]}} for c in pr.get("comments", [])],
+        "comments": [{"body": c["body"], "author": {"login": state["login"]},
+                      "authorAssociation": c["assoc"]}                  # #635: who the comment is from
+                     for c in map(_as_comment, pr.get("comments", []))],
         "author": {"login": state["login"]}, "reviewDecision": None, "latestReviews": [],
     }
 
@@ -423,7 +429,8 @@ def cmd_pr(state, argv, pos, flags):
     if sub == "comment":
         pr = state["prs"].get(pos[1])
         if pr is not None:
-            pr.setdefault("comments", []).append(flags.get("body", ""))
+            pr.setdefault("comments", []).append({"body": flags.get("body", ""),
+                                                  "assoc": os.environ.get("FAKEGH_ASSOC", "OWNER")})
         save_state(state); return
     unhandled(argv, "unmodeled pr subcommand")
 
@@ -753,9 +760,10 @@ def _cli(argv, cwd, env, check=True):
     return proc
 
 
-def _fakegh(world, args, cwd=None, check=True):
+def _fakegh(world, args, cwd=None, check=True, assoc=None):
+    env = dict(world["env"], **({"FAKEGH_ASSOC": assoc} if assoc else {}))
     proc = subprocess.run([sys.executable, str(world["fake_gh"]), *args], cwd=str(cwd or world["clone_dir"]),
-                          env=world["env"], capture_output=True, text=True)
+                          env=env, capture_output=True, text=True)
     if check:
         assert proc.returncode == 0, "fake gh %s exited %d\nSTDOUT:\n%s\nSTDERR:\n%s" % (
             args, proc.returncode, proc.stdout, proc.stderr)
@@ -927,6 +935,14 @@ def _run_sequence(world, run_probe):
                     "--body", "sigma:block the change has no test"], cwd=clone_dir)
     blocked = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
     obs["blocked_merge_stdout"] = blocked.stdout.strip()
+    # #635: a stranger's `sigma:approve` / `sigma:unblock` must NOT clear that block (public repo: anyone
+    # can comment). Only the owner's approve below does.
+    for stranger_marker in ("sigma:approve", "sigma:unblock"):
+        _fakegh(world, ["pr", "comment", pr_number, "--repo", world["repo"],
+                        "--body", stranger_marker], cwd=clone_dir, assoc="NONE")
+    stranger = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
+    obs["stranger_merge_stdout"] = stranger.stdout.strip()
+    obs["stranger_merge_stderr"] = stranger.stderr
     _fakegh(world, ["pr", "comment", pr_number, "--repo", world["repo"],
                     "--body", "sigma:approve"], cwd=clone_dir)
     merge = _cli([WORK, "merge", sdlc, "1"], clone_dir, env)
@@ -1039,6 +1055,8 @@ def test_a_goal_goes_from_filed_to_merged_on_the_public_profile(primary_world):
     # The review gate ran on defaults: a block parks, an approve lets the PR be left for a human.
     assert obs["blocked_merge_stdout"].startswith("PARK:"), obs["blocked_merge_stdout"]
     assert "sigma:block" in obs["blocked_merge_stdout"]
+    assert obs["stranger_merge_stdout"].startswith("PARK:"), obs["stranger_merge_stdout"]   # #635
+    assert "ignoring a sigma:approve comment" in obs["stranger_merge_stderr"]
     assert obs["merge_stdout"].startswith("clean and safe")
     assert "review gate passed" in obs["merge_stdout"]
     assert obs["merge_stdout"].endswith("leaving PR #%s for a human" % obs["pr_number"])

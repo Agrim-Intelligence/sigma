@@ -133,7 +133,9 @@ ENFORCEMENT_GATES = (
      "mechanism": "reads the PR's actual review state, independent of branch protection: `off` "
                   "checks nothing; `changes` parks on a Request-changes, an unresolved thread or a "
                   "`sigma:block` comment; `approval` also requires an approval (formal, or a "
-                  "`sigma:approve` comment)",
+                  "`sigma:approve` comment); a `sigma:` comment counts only from an OWNER, MEMBER or "
+                  "COLLABORATOR commenter (others are ignored with a stderr note) and an unreadable "
+                  "comment list parks the merge (as does an unreadable review decision under `approval`)",
      "readme": "PR review gate (on by default)"},
     {"control": "Review-to-fix cycle cap", "function": "post_review", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": ("work.max_review_cycles",),
@@ -1102,6 +1104,13 @@ REVIEW_OFF, REVIEW_CHANGES, REVIEW_APPROVAL = "off", "changes", "approval"
 # quoted back is documentation, not a command.
 _DIRECTIVE_RE = re.compile(r"^\s*" + legacy.MARKER_PREFIX_RE + r":(approve|block|unblock)\b",
                            re.IGNORECASE)   # #239: a legacy `block` on an in-flight PR still blocks
+
+
+# #635: who may issue a `sigma:` marker comment. On a public repository anyone can comment, so a marker
+# counts only from a commenter GitHub itself reports as related to the repository this way. MEMBER is
+# any organisation member (can be broader than write access); this is not a substitute for branch
+# protection. Anything else, an absent or unknown value included, is ignored (never honoured).
+_TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
 def settings(config):
@@ -4797,18 +4806,34 @@ def _comment_directive(rec, run):
     or either login is unreadable — a signal this call cannot interpret must not itself block a
     merge, matching the fail-open unreadable-comments case below.
 
-    Fail-open: unreadable comments -> (None, None) (the formal signals still apply)."""
+    #635: a marker counts only from a commenter whose `authorAssociation` is in
+    `_TRUSTED_ASSOCIATIONS`; any other (or absent) is skipped with one stderr line naming the commenter
+    and association. All three markers alike: a stranger can neither approve, nor park the loop with a
+    block, nor clear a trusted block. RAISES `ValueError` when the comments cannot be read or parsed, or
+    a marker comment has no `authorAssociation` field at all:
+    the gate cannot know whether a trusted block exists, so `review_gate` parks (fails closed)."""
     try:
         data = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
                                                  "--json", "comments,author"]))
-    except Exception:                           # noqa: BLE001 - can't read comments -> no directive
-        return None, None
+        if not isinstance(data, dict) or not all(isinstance(c, dict) for c in data.get("comments") or []):
+            raise TypeError("not the expected shape")
+    except Exception as exc:                    # noqa: BLE001 - unreadable comments -> the caller parks
+        raise ValueError(f"{type(exc).__name__}") from None
     pr_author = (data.get("author") or {}).get("login")
     directive = None
     same_author = None
     for comment in data.get("comments") or []:  # chronological; the last marker is the current state
         marker = _line_directive(comment.get("body") or "")
         commenter = (comment.get("author") or {}).get("login")
+        if marker and "authorAssociation" not in comment:
+            # The field is absent altogether (an old `gh`, an odd host): trust cannot be judged, and
+            # skipping could drop the loop's OWN block, so park rather than guess either way.
+            raise ValueError("a marker comment carries no authorAssociation")
+        if marker and comment.get("authorAssociation") not in _TRUSTED_ASSOCIATIONS:
+            print(f"sigma: ignoring a sigma:{marker} comment on PR #{rec['pr']} from "
+                  f"{commenter or 'an unknown commenter'} ({comment.get('authorAssociation') or 'no association'}): "
+                  "only OWNER, MEMBER or COLLABORATOR comments are honoured", file=sys.stderr)
+            continue
         if marker == "block":
             directive = "block"
             same_author = pr_author is not None and commenter == pr_author
@@ -4837,8 +4862,10 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     PR, so on a repo where one identity opens AND reviews (a solo maintainer, or an org that pins all
     automation to one account), the formal APPROVE / CHANGES_REQUESTED signals can NEVER fire — `approval`
     would refuse forever. Plain comments have no such restriction, so `sigma:block` / `sigma:approve`
-    are honoured as a self-usable equivalent. Fail-open on a read error: the other gates still hold, but
-    an unreadable review state must not be the thing that blocks a merge.
+    are honoured as a self-usable equivalent, but only from an OWNER / MEMBER / COLLABORATOR commenter
+    (#635). An unreadable COMMENT list fails closed (parks), as does an unreadable review DECISION under
+    `approval`; under `changes` an unreadable decision still fails open (the other gates still hold, and
+    that read must not be the thing that blocks a merge). Unresolved-thread count errors stay open.
 
     `mode` (#1774) overrides the local `review_mode(config)` read, and is how an Org's locked
     ceiling reaches this gate: `merge()` resolves it through `effective_review_mode` first and
@@ -4858,14 +4885,21 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     rec = _record(sdlc_dir, goal)
     # sigma:block / :approve / :unblock — self-usable; same_author is #821's addition, see
     # _comment_directive's own docstring for why it exists and what it does (and does not) change.
-    directive, directive_same_author = _comment_directive(rec, run)
+    try:
+        directive, directive_same_author = _comment_directive(rec, run)
+    except ValueError as exc:                   # #635: fail CLOSED, a trusted block may be hiding there
+        return False, (f"could not read PR #{rec['pr']}'s comments ({exc}), so the review gate cannot "
+                       "tell whether a trusted `sigma:block` is on it — re-queue the issue once `gh` works")
     if directive == "block":
         return False, (f"a `sigma:block` comment is on PR #{rec['pr']} — address it, then comment "
                        "`sigma:unblock` or `sigma:approve` and re-queue the issue")
     try:
         data = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
                                                 "--json", "reviewDecision,latestReviews"]))
-    except Exception:                           # noqa: BLE001 - fail-open; don't block on an unreadable state
+    except Exception:                           # noqa: BLE001 - see below: open for `changes`, CLOSED for `approval`
+        if mode == REVIEW_APPROVAL:             # #635: an approval is a positive requirement; unknown is not met
+            return False, (f"could not read PR #{rec['pr']}'s review decision, so `require_review: approval` "
+                           "cannot be satisfied — re-queue the issue once `gh` works")
         return True, ""
     decision = data.get("reviewDecision")
     changed_by = sorted({(r.get("author") or {}).get("login") for r in (data.get("latestReviews") or [])
