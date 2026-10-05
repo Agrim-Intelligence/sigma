@@ -132,26 +132,36 @@ python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md
 
 ## Owner decisions
 
-These values are recommended, not settled by statistics alone. Each is an owner decision; the
-document records the recommendation and what the alternatives cost, and the owner may change them
-while no benchmark task has run.
+The owner accepted the first three recommendations below on 2026-10-05, before any benchmark task
+ran. They are decided: changing one now needs a new pull request and a re-run of
+`python3 evals/bench/decision_rule.py --check docs/bench/preregistration.md`. The statistics
+behind each choice, and what the alternatives cost, stay in the tables that follow.
 
-1. **alpha, one-sided (owner decision).** Recommended 0.05. The alpha table in
+1. **alpha, one-sided: DECIDED, 0.05 (owner, 2026-10-05).** The alpha table in
    [Operating characteristics](#operating-characteristics) gives the cost of each choice at 15 tasks:
    A smaller alpha (0.025) needs more net wins and cuts power further; a larger one (0.10, 0.20) needs fewer
    net wins, raises the worst-case wrong-GO probability toward alpha itself and raises power. A looser alpha
    buys power with a larger chance of a claim the data do not support.
-2. **Margin (owner decision).** Recommended 0 tasks (superiority). A non-inferiority margin of 1, 2 or 3
+2. **Margin: DECIDED, 0 tasks, superiority (owner, 2026-10-05).** A non-inferiority margin of 1, 2 or 3
    tasks (6.7, 13.3 or 20 points) would let a GO say "no worse than that margin", but the
    rejected-alternative table shows margins below 20 points cost more net wins than superiority does, and a
    20-point margin is too loose to call non-inferior.
-3. **Arms in the decision (owner decision).** Recommended: both A2 and A3 must pass (an intersection-union
-   test, no alpha correction needed). The alternative is to name A3 (matched-spend, the harder comparison)
-   as the single primary comparison and report A2 descriptively; that raises P(GO) to the single-arm value in
-   the table but says nothing about A2 at the same confidence.
-4. **What follows an INCONCLUSIVE outcome (owner decision).** The statistics only fix that it is not a win
-   and permits no comparative claim. Whether the launch proceeds without a performance claim, or more
-   tasks are added (see tasks needed above), is a business decision this document does not make.
+3. **Arms in the decision: DECIDED, GO needs both A2 and A3 (owner, 2026-10-05).** An intersection-union
+   test, no alpha correction needed. The rejected alternative was to name A3 (matched-spend, the harder
+   comparison) as the single primary comparison and report A2 descriptively; that raises P(GO) to the
+   single-arm value in the table but says nothing about A2 at the same confidence.
+4. **What follows an INCONCLUSIVE outcome: DECIDED, no comparative claim (owner, 2026-10-05).** The
+   statistics fix that INCONCLUSIVE is not a win and permits no comparative claim; the owner accepted that
+   as the rule. Whether the launch proceeds without a performance claim, or more tasks are added, is not
+   decided here and stays a business choice made after a result exists.
+
+Still open and owner-gated, not decided by the above: the freeze of the task set, the three traps
+written by someone outside the Sigma team, and the S9 spend ceiling.
+
+**Post-launch flow (#410): deferred.** The owner decided on 2026-10-01 to decide at launch time and to
+ship the first public snapshot first (#410 stays open and held; the export is the same under either
+option). Until it is decided, nothing here promises that outside contributions are accepted or ported
+back.
 
 ## Operating characteristics
 
