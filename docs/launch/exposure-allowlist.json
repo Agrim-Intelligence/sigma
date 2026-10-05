@@ -32,6 +32,22 @@
     ]
   },
   {
+    "path": "CODE_OF_CONDUCT.md",
+    "rule": "email-address",
+    "reason": "the owner-approved shipped maintainer contact address (company domain) in the CODE_OF_CONDUCT.md contact line; intended, not a leak",
+    "lines": [
+      "c318eb7bf13fb368fd1d324f4de5774d6327ee771bcfc07759b6b552bf9bd51c"
+    ]
+  },
+  {
+    "path": "SECURITY.md",
+    "rule": "email-address",
+    "reason": "the owner-approved shipped maintainer contact address (company domain) in the SECURITY.md contact line; intended, not a leak",
+    "lines": [
+      "5f7051fa985e8989ac01615bdb71e848a4dab1aecf9508ddcdab8538cf1b0fc8"
+    ]
+  },
+  {
     "path": "docs/launch/evidence/mutation-70c2c6e96136.json",
     "rule": "email-address",
     "reason": "recorded mutation diff text containing a decorator (@contextlib), not an address",
