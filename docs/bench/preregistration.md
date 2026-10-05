@@ -390,3 +390,16 @@ Record every change to this pre-registration here with its date and reason.
   is $150 (the harness's `--max-usd`), using API-key authentication supplied by the owner at run time;
   no arm has been run. The $15 per-run belt above stays a per-run cap and can never exceed the
   remaining ceiling.
+- **2026-10-05 — Task set frozen at 12232c788c133338ffe46d05298fd677e8d6f542 (#355).** The manifest
+  `evals/bench/tasks/manifest.json` at that commit (pull request #641) has SHA-256
+  `312f07a2c7733fc1125163dcd9b9e6b7e99c17437164c07d2413fb000b04ffa7` (from
+  `bench_tasks.py manifest-sha --rev 12232c788c133338ffe46d05298fd677e8d6f542`, the committed bytes).
+  It lists 15 tasks: 8 external, 4 internal non-trap and 3 agent-authored traps, all verified
+  (`docs/launch/evidence/355-bench-task-verification.json`), with `bench_tasks.py check --frozen
+  --hidden-root ~/.sigma-ops/bench/hidden` reporting 0 findings. This was recorded after the merge and
+  before any arm ran. One wording correction: an external task's starting tree is the first parent of
+  the pull request's merge commit, not "that PR's base commit" as the Tasks section words it
+  ([`task-sourcing.md`](task-sourcing.md), "How candidates were found"). The task set has not been run:
+  the matched-spend arm's behaviour on external tasks (the visible tests already pass) and the model
+  pin remain open owner decisions.
+
