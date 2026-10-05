@@ -1656,6 +1656,13 @@ def test_no_trust_row_without_a_configured_command():
         assert _TRUST_ROW not in _by_name(d.check(base, run=_runner()))
 
 
+def test_trust_row_treats_a_whitespace_only_command_as_configured_like_init():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _git_project(t, {"command": "   "})
+        assert _by_name(d.check(base, run=_runner()))[_TRUST_ROW]["ok"] is False
+
+
 def test_trust_row_outside_a_git_worktree_is_red_and_says_so():
     d = _doc()
     with tempfile.TemporaryDirectory() as t:

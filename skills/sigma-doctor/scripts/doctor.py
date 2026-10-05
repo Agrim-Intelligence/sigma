@@ -2704,7 +2704,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # git config is not cloned, so every migrated repo and every teammate's new clone starts without it
     # and its first `loop.py verify` is refused (with enforce on, every goal stalls). Command text is
     # repository input: it is never put in the fix line.
-    if (verify.get("command") or "").strip():
+    if verify.get("command"):
         project = pathlib.Path(os.path.abspath(sdlc_dir)).parent
         trusted = _verify_trusted(project)
         if _in_git_worktree(project):
