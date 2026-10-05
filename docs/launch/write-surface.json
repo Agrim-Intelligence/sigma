@@ -234,14 +234,6 @@
     },
     {
       "path": "skills/sigma-init/scripts/sdlc_init.py",
-      "function": "scaffold_extras",
-      "rule": "fs-write",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-init/scripts/sdlc_init.py",
       "function": "scaffold_github",
       "rule": "fs-write",
       "count": 2,
@@ -2171,10 +2163,10 @@
     {
       "path": "skills/sigma-setup/scripts/setup.py",
       "function": "write_cfg",
-      "rule": "fs-write",
-      "count": 1,
+      "rule": "fs-remove",
+      "count": 2,
       "gate": "ungated",
-      "risk": "medium"
+      "risk": "high"
     },
     {
       "path": "skills/sigma-status/scripts/merge_queue_enable.py",
