@@ -343,3 +343,31 @@ def test_scrub_authorization_scheme_word_leaves_no_tail_and_empty_quotes_are_lef
     for text in ("Authoriz" "ation: Tok" "en " + v, "Authoriz" "ation: Api" "Key " + v, "SECRET_KEY_" "BASE=" + v):
         assert v not in scrub(text), text
     assert scrub('gh_auth=""') == 'gh_auth=""'
+
+
+def test_scrub_values_with_url_chars_nested_json_other_separators_and_open_ended_auth_schemes():
+    scrub = _mod("scrub").scrub
+    v = _fake()
+    cases = ["PASS" "WORD=ab&cd<" + v + ">", "PASS" "WORD=<" + v + ">", "?to" "ken=ab&" + v,
+             '{"pass' 'word":\\"' + v + '\\"}', "PASS" "WORD => " + v, "PASS" "WORD := " + v,
+             '"pass' 'word" => "' + v + '"', "Authoriz" "ation: NTLM " + v, "Authoriz" "ation: Negotiate " + v]
+    for text in cases:
+        out = scrub(text)
+        assert v not in out and "cd<" not in out, text
+
+
+def test_scrub_backslash_run_after_a_key_is_linear():
+    scrub = _mod("scrub").scrub
+    for text in ("pass" "word=" + "\\" * 200_000, "pass" "word=\\" * 30_000):
+        t = time.perf_counter()
+        scrub(text)
+        assert time.perf_counter() - t < 5
+
+
+def test_the_commit_gate_does_not_widen_with_the_redactor():
+    """The wide #629 rules are redactor-only: ordinary code that assigns or sends a credential-named
+    variable must not become a commit-gate hit (a gate's false-positive budget differs)."""
+    module = _mod("scrub")
+    for line in ("my_to" "ken = fetch_it()", "GITHUB_TO" "KEN=" + _fake(), 'headers = {"Authoriz" "ation": "x " + y}'):
+        assert module.commit_secret_hits(line) == [], line
+    assert {n for n, _ in module.COMMIT_SHAPE_RULES}.isdisjoint({"authorization-header", "credential-assignment-suffix"})
