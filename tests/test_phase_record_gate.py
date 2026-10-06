@@ -335,3 +335,11 @@ def test_a_phase_agent_id_missing_from_the_readable_transcript_store_is_refused(
     ph("retro", "a4")
     r = run(p, "loop.py", "record", ".sdlc", GOAL, "done", env=env)
     assert r.returncode == 4 and "implement: agent id ghost has no transcript" in r.stderr
+
+
+def test_research_recorded_after_the_plan_is_refused(tmp_path):
+    p = _project(tmp_path)
+    phase(p, "plan", "a2"); phase(p, "research", "a1"); phase(p, "plan_review", "rev1"); plan_review(p)
+    phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p); phase(p, "retro", "a4")
+    r = done(p)
+    assert r.returncode == 4 and "research was recorded AFTER plan" in r.stderr

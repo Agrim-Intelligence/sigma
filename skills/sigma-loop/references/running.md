@@ -49,7 +49,7 @@ logging a second, differently-computed value here would silently contradict the 
 recorded. A defaulted tier matches nothing and correctly carries no signal — pass it empty or
 omit it. **Per-step `resolve-step` below is UNCHANGED** — it stays prose-invoked, since a plan
 step's free text has no structured, goal-agnostic artifact code could read on its own.
-**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A phase that silently regresses to inline breaks the maker≠checker discipline, so since #684 the gate is on the OTHER side: `loop.py record ... done` refuses a goal whose action log lacks the phases (below). The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
+**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A phase that silently regresses to inline breaks the maker≠checker discipline, so since #684 the gate is on the OTHER side: `loop.py record ... done` refuses a goal whose action log lacks the phases (below). Detecting the gap after the fact stays tracked in #1779. The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
 Then run **each phase as its own subagent** with that host's model override. Claude's Task tool
 accepts the ledger tier directly: pass that exact Task `model` selector to
 `phase_report.py start --requested-model <selector>` too, so the step banner can name what was

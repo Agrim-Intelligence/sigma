@@ -16,7 +16,10 @@ boundary and a verdict were RECORDED, in order, bound to the plan's bytes. For a
 phases, and, where the host's transcript store is readable at record time, that a transcript for each
 phase's agent id exists. A reviewer resumed for a second verdict counts as the same agent (use a fresh one). On an `inline` route (the host cannot spawn one) none of that applies; the
 record says INLINE and `loop.py phases` shows it. It does not
-prove the phase's work was good. Research and retro are boundary-proof only. When the transcript store
+prove the phase's work was good. Research and retro are boundary-proof only. The review verdict is bound
+to no code state (the verify gate refuses an edit after its green verify). The reviewer route comes from the
+review config and environment, so whoever can edit them can also turn the different-agent checks off, exactly
+as they can turn the gate off. When the transcript store
 is not readable the verdict is stored `unverified` and `loop.py phases` says so.
 
 LEVER. `loop.py waive-phases <sdlc> <goal> research,retro --reason ...` waives research and retro only
@@ -129,7 +132,8 @@ def status(sdlc_dir, config, goal):
             f = rc.phase_doc_file(sdlc_dir, goal, sub)
             if not _file_ok(f):
                 ok, detail, fix = False, f"no non-empty .sdlc/{sub}/<goal>.md artifact", \
-                    f"the {ph} subagent must file .sdlc/{sub}/<goal-stem>.md"
+                    (f"the {ph} subagent must file .sdlc/{sub}/<goal-stem>.md in the MAIN checkout "
+                     "(a copy only in the goal worktree does not count)")
         if ph in ("plan_review", "review"):
             vi, v = verdict.get(ph, (None, None))
             approving = PLAN_REVIEW_APPROVING if ph == "plan_review" else REVIEW_APPROVING
@@ -193,7 +197,8 @@ def status(sdlc_dir, config, goal):
     def at(ph):
         return last_end[ph][0] if ph in last_end else None
     rv = verdict.get("review")
-    chain = (("plan", at("plan"), "plan-review's approving verdict", last_ok_plan, "plan"),
+    chain = (("research", at("research"), "plan", at("plan"), "research"),
+             ("plan", at("plan"), "plan-review's approving verdict", last_ok_plan, "plan"),
              ("implement", at("implement"), "the review verdict", rv[0] if rv else None, "implement"),
              ("the review verdict", rv[0] if rv else None, "retro", at("retro"), "review"))
     for a_name, a, b_name, b, ph in chain:
