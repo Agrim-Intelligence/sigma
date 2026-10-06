@@ -475,7 +475,7 @@ All notable changes to Sigma are recorded here, newest first.
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
-  fresh public snapshot repository named `Agrim-Intelligence/sigma` (this private repository
+  fresh public snapshot repository named `Agrim-Intelligence/sigmaloop` (this repository
   is not renamed and stays private; the public repository is created new, by the owner, under its
   own name; the sequence is prepared in #397), version `1.0.0`; supported = Claude Code on
   macOS and Linux, Python 3.10-3.13, `local-goals` and `github` modes (launch-blocking

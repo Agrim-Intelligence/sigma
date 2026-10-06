@@ -42,6 +42,8 @@ did not produce an installed tagged plugin: the two marketplace source forms
 could not authenticate over SSH, and cloning the public HTTPS source at
 `v1.0.0` reported that the branch/tag does not exist.
 
+(The recorded probes ran against the earlier slug `Agrim-Intelligence/sigma`, before the public repository was named `Agrim-Intelligence/sigmaloop`; they are history, not a result for the new repository.)
+
 Do not document or ask users to use a pin until an owner repeats the following
 in an isolated profile against the real public release and records an install
 whose installed `plugin.json` reports the selected version:

@@ -57,7 +57,11 @@ def main(argv):
     text = "\n".join(body).strip()
     if not text:
         return refuse("the '## %s' section is empty" % version)
-    sys.stdout.write(text + "\n")
+    try:
+        sys.stdout.write(text + "\n")
+        sys.stdout.flush()
+    except BrokenPipeError:
+        pass  # the reader (head, a closed pipe) went away; not a refusal
     return 0
 
 
