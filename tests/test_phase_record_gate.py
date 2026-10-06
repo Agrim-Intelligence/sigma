@@ -228,3 +228,75 @@ def test_phases_verb_prints_status_and_next_command(tmp_path):
     assert "ok      research" in out and "MISSING plan:" in out and "NEXT: plan" in out
     full_run(p)
     assert "NEXT: all phases recorded" in run(p, "loop.py", "phases", ".sdlc", GOAL).stdout
+
+
+def _dispatching_run(p, skip_agent_for=None, order_review_early=False):
+    """A run on a host that can spawn subagents (route `subagent`): every phase names its own agent."""
+    env = {"CLAUDECODE": "1"}
+    def ph(name, agent):
+        run(p, "phase_report.py", "start", ".sdlc", GOAL, name, "--model", "sonnet")
+        args = ["end", ".sdlc", GOAL, name] + ([] if name == skip_agent_for else ["--agent-id", agent])
+        assert run(p, "phase_report.py", *args).returncode == 0
+    ph("research", "a1"); ph("plan", "a2"); ph("plan_review", "rev1")
+    assert run(p, "work.py", "record-plan-review", ".sdlc", GOAL, "--verdict", "SOUND",
+               "--plan-sha256", plan_sha(p), "--agent-id", "rev1", env=env).returncode == 0
+    if order_review_early:
+        assert run(p, "work.py", "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "rev2",
+                   env=env).returncode == 0
+    ph("implement", "a3"); ph("review", "rev2")
+    if not order_review_early:
+        assert run(p, "work.py", "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "rev2",
+                   env=env).returncode == 0
+    ph("retro", "a4")
+
+
+def test_a_dispatching_host_requires_every_phase_to_name_its_own_agent(tmp_path):
+    p = _project(tmp_path)
+    _dispatching_run(p)
+    assert done(p).returncode == 0
+    (tmp_path / "b").mkdir()
+    q = _project(tmp_path / "b")
+    _dispatching_run(q, skip_agent_for="implement")            # the maker ran inline, no agent id
+    r = done(q)
+    assert r.returncode == 4 and "implement: ended with no agent id" in r.stderr
+
+
+def test_the_chain_is_ordered_implement_then_review_then_retro(tmp_path):
+    p = _project(tmp_path)
+    _dispatching_run(p, order_review_early=True)               # review verdict BEFORE implement ended
+    r = done(p)
+    assert r.returncode == 4 and "implement was recorded AFTER the review verdict" in r.stderr
+
+
+def test_a_refused_record_plan_review_leaves_no_record_behind(tmp_path):
+    p = _project(tmp_path)
+    r = run(p, "work.py", "record-plan-review", ".sdlc", GOAL, "--verdict", "SOUND",
+            "--plan-sha256", plan_sha(p), env={"CLAUDECODE": "1"})      # subagent route, no --agent-id
+    assert r.returncode == 2 and "--agent-id" in r.stderr
+    assert not any(x["kind"] == "verdict" for x in log_rows(p))
+    assert not (p / ".sdlc/state/gates").exists()
+
+
+def test_a_malformed_row_is_skipped_or_refused_never_a_traceback(tmp_path):
+    p = _project(tmp_path)
+    full_run(p)
+    with (p / ".sdlc/state/log/0001-x.jsonl").open("a") as fh:
+        fh.write(json.dumps({"ts": "2026-10-06T00:00:00.000Z", "kind": "phase", "phase": ["x"], "state": {}}) + "\n")
+        fh.write(json.dumps({"ts": "2026-10-06T00:00:00.001Z", "kind": "verdict", "phase": {"a": 1}}) + "\n")
+    r = done(p)
+    assert "Traceback" not in r.stderr and r.returncode in (0, 4), r.stderr
+
+
+def test_merge_is_parked_by_the_same_gate(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("work_684", S / "work.py")
+    work = importlib.util.module_from_spec(spec); spec.loader.exec_module(work)
+    p = _project(tmp_path)
+    sdlc = str(p / ".sdlc")
+    cfg = json.loads((p / ".sdlc/config.json").read_text())
+    (p / ".sdlc/state/work").mkdir(parents=True, exist_ok=True)
+    (p / ".sdlc/state/work/0001-x.json").write_text(json.dumps({"pr": 5, "worktree": str(p), "branch": "b"}))
+    work.merge_rights = lambda *a, **k: (True, "")
+    work._emit_test_trust = lambda *a, **k: None
+    out = work.merge(sdlc, cfg, GOAL)
+    assert out.startswith("PARK: the SDLC phase record is incomplete"), out

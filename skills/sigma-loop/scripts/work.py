@@ -208,15 +208,16 @@ ENFORCEMENT_GATES = (
      "mechanism": "`loop.py record done` (every mode, local-only included) and `work.py merge` refuse "
                   "unless the goal's action log shows research, plan, plan-review with an approving "
                   "verdict bound to the plan's sha256, implement started after that verdict, review "
-                  "with an approving verdict, and retro; a subagent-route verdict must name a "
-                  "reviewer agent id that no other phase used and, where the host's transcript store "
-                  "is readable, that exists in it; the refusal names each missing item, the command "
+                  "with an approving verdict, and retro; where the host dispatches subagents every phase must name "
+                  "its own agent id (no id serves two phases) and a verdict's reviewer id must exist in the "
+                  "host's transcript store when that is readable; the refusal names each missing item, the command "
                   "that records it and the lever; `loop.py waive-phases` waives research and retro "
                   "only, recorded and visible",
      "condition": "the rows are written by `phase_report.py`, `record-plan-review` and "
                   "`record-review`, which a maker can call itself: the record proves boundaries and "
                   "verdicts were recorded in order, not that the work was good; research and retro "
-                  "are boundary-proof only; reached through the CLI verb and `work.py merge` -- not "
+                  "are boundary-proof only; on a host whose reviewer route is `inline` (it cannot spawn a "
+                  "subagent) the different-agent checks do not apply and the record says so; reached through the CLI verb and `work.py merge` -- not "
                   "`reconcile-merges` (a PR someone else merged must not strand) and not the "
                   "test-only `run_loop` driver; refuses when `action_log.enabled` is not true; an "
                   "ABSENT key is off (`/sigma-init` ships it true); not org-lockable",
@@ -1274,6 +1275,12 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
               "plan": plan_rel, "plan_hash": sha,
               "reviewer_route": {key: route.get(key) for key in ("host", "mechanism", "verified")},
               "verdict": mapped}
+    # #684: the action-log row `phase_gate.py` reads (the one that works with `work.enabled` off), written
+    # BEFORE any other record so a refusal (an unverifiable reviewer id, a missing id on the subagent
+    # route) leaves nothing behind: `gates.plan_review` must never see a verdict the gate refused.
+    if _load("actionlog").enabled(config):
+        _load("phase_gate").record_verdict(sdlc_dir, config, goal, "plan_review", mapped,
+                                           agent_id=agent_id, plan_hash=sha)
     path = None
     if kept:
         rc._atomic_bytes(target, (json.dumps(record, sort_keys=True, separators=(",", ":"))
@@ -1292,11 +1299,6 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     mirror = {"why": reason} if reason else {}
     ledger.safe_append(sdlc_dir, "gate", goal, config=config, stream=ledger.EVENTS,
                        gate="plan_review", verdict=mapped, **mirror)
-    # #684: the action-log row `phase_gate.py` reads (the one that works with `work.enabled` off).
-    # Raises ValueError (a refusal) for an unverifiable reviewer id; a disabled log writes nothing.
-    if _load("actionlog").enabled(config):
-        _load("phase_gate").record_verdict(sdlc_dir, config, goal, "plan_review", mapped,
-                                           agent_id=agent_id, plan_hash=sha)
     return {**record, "path": path}
 
 

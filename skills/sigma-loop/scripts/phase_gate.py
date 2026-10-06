@@ -12,8 +12,10 @@ WHAT IT PROVES, AND WHAT IT DOES NOT. Rows are written by `phase_report.py start
 `work.py record-plan-review` and `work.py record-review`, and by `loop.py waive-phases`. A maker can call
 those verbs itself, exactly as it can call `record-plan-review` today; so the record proves that a phase
 boundary and a verdict were RECORDED, in order, bound to the plan's bytes. For a verdict whose route is
-`subagent` it also proves the named agent id differs from every other phase's agent id and, where the
-host's transcript store is readable at record time, that a transcript for that id exists. It does not
+`subagent` (the host can dispatch) it also proves every phase named its own agent id, no id served two
+phases, and, where the host's transcript store is readable at record time, that a transcript for each
+verdict's reviewer id exists. On an `inline` route (the host cannot spawn one) none of that applies; the
+record says INLINE and `loop.py phases` shows it. It does not
 prove the phase's work was good. Research and retro are boundary-proof only. When the transcript store
 is not readable the verdict is stored `unverified` and `loop.py phases` says so.
 
@@ -93,7 +95,7 @@ def status(sdlc_dir, config, goal):
     reports. Pure read; never raises on a malformed log (a bad row is skipped by `read_goal`)."""
     work = _load("work")
     rc = _load("review_context")
-    rows = _rows(sdlc_dir, goal)
+    rows = [r for r in _rows(sdlc_dir, goal) if isinstance(r.get("phase", ""), str)]   # a malformed row is skipped
     waived = {r.get("phase") for r in rows if r.get("kind") == "phase_waived"} & set(WAIVABLE)
     why = {r.get("phase"): r.get("reason", "") for r in rows if r.get("kind") == "phase_waived"}
     last_end, first_start, verdict = {}, {}, {}
@@ -165,6 +167,37 @@ def status(sdlc_dir, config, goal):
                 ok, detail, fix = False, "implement started BEFORE the plan-review verdict", \
                     "the claim is plan before code; run the loop in order (re-run implement after review)"
         out.append((ph, ok, detail, fix))
+    # One subagent PER PHASE (#684 root cause). On a host that can dispatch (either verdict's route is
+    # `subagent`), every recorded phase must name its own agent id, and no id may serve two phases:
+    # this is what stops one worker doing the phases inline and calling `phase_report` back to back.
+    dispatching = any(v is not None and v[1].get("route") == "subagent" for v in verdict.values())
+    if dispatching:
+        seen = {}
+        for i, (ph, ok, detail, fix) in enumerate(out):
+            if not ok or ph in waived or ph not in last_end:
+                continue
+            aid = last_end[ph][1].get("agent_id")
+            if not aid:
+                out[i] = (ph, False, "ended with no agent id: this host dispatches subagents, so the phase "
+                          "must run as its own subagent", f"dispatch a subagent for {ph}; {end(ph)}")
+            elif aid in seen:
+                out[i] = (ph, False, f"agent id {aid} also ran {seen[aid]} (one subagent per phase)",
+                          f"dispatch a FRESH subagent for {ph}")
+            else:
+                seen[aid] = ph
+    # Order: the chain research -> plan -> approved plan-review -> implement -> approved review -> retro.
+    def at(ph):
+        return last_end[ph][0] if ph in last_end else None
+    rv = verdict.get("review")
+    chain = (("plan", at("plan"), "plan-review's approving verdict", first_ok_plan, "plan"),
+             ("implement", at("implement"), "the review verdict", rv[0] if rv else None, "implement"),
+             ("the review verdict", rv[0] if rv else None, "retro", at("retro"), "review"))
+    for a_name, a, b_name, b, ph in chain:
+        if a is not None and b is not None and a > b:
+            for i, row in enumerate(out):
+                if row[0] == ph and row[1]:
+                    out[i] = (ph, False, f"{a_name} was recorded AFTER {b_name}",
+                              "re-run the phases in order: a change after its review needs a fresh review")
     return {"rows": out, "notes": notes}
 
 
@@ -176,7 +209,11 @@ def refusal(sdlc_dir, config, goal):
         return ("gates.phase_record is on but action_log.enabled is not true, so the phases cannot be "
                 "verified: set action_log.enabled to true, or switch the gate off with "
                 "gates.phase_record.enabled: false (REFUSED rather than passed unverified)")
-    bad = [r for r in status(sdlc_dir, config, goal)["rows"] if not r[1]]
+    try:
+        bad = [r for r in status(sdlc_dir, config, goal)["rows"] if not r[1]]
+    except Exception as exc:                  # noqa: BLE001 - an unreadable record is a refusal, never a pass
+        return (f"the SDLC phase record could not be read ({type(exc).__name__}: {exc}); repair or move "
+                f".sdlc/state/log/<goal>.jsonl and re-record the phases ({_LEVER})")
     if not bad:
         return None
     lines = ["the SDLC phase record is incomplete (README: every goal runs its seven phases):"]
