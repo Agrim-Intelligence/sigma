@@ -24,11 +24,9 @@ run from your backlog on GitHub (issues and a Projects board) or from local goal
 - Work is tracked where it already lives: the `sdlc:*` label model on GitHub issues and a Projects board, plus a local
   action log (`/sigma-log`, `/sigma-status`) and one renderer that builds every status line.
 - Supported at launch: Claude Code on Linux (Python 3.10 to 3.13) and macOS (Python 3.12), in local-goals and github
-  modes; each is a cell CI runs. Codex, Cursor and Windows are experimental. Coexistence with the predecessor tool on
-  one shared ledger is not claimed.
+  modes; each is a cell CI runs. Codex, Cursor and Windows are experimental.
 - Safe by default: nothing sends data off the machine, spawns a background process or consumes quota without the
   operator opting in. Released under the MIT licence.
-- Outside contributions are not accepted yet; issues are welcome.
 
 <!-- release-notes:end -->
 
