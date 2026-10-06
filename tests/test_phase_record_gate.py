@@ -162,6 +162,7 @@ def test_a_missing_required_row_fails_closed_and_last_row_per_phase_counts(tmp_p
     p = _project(tmp_path)
     full_run(p)
     log = p / ".sdlc/state/log/0001-x.jsonl"
+    assert log.exists(), "the phases must have been written to the action log"
     rows = [x for x in log.read_text().splitlines() if '"kind": "verdict"' not in x or '"review"' not in x]
     log.write_text("\n".join(rows) + "\n")                     # the review verdict row is gone
     r = done(p)
@@ -281,12 +282,14 @@ def test_a_refused_record_plan_review_leaves_no_record_behind(tmp_path):
 
 def test_a_malformed_row_is_skipped_or_refused_never_a_traceback(tmp_path):
     p = _project(tmp_path)
-    full_run(p)
+    phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1"); plan_review(p)
+    phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p)            # retro never recorded
     with (p / ".sdlc/state/log/0001-x.jsonl").open("a") as fh:
         fh.write(json.dumps({"ts": "2026-10-06T00:00:00.000Z", "kind": "phase", "phase": ["x"], "state": {}}) + "\n")
         fh.write(json.dumps({"ts": "2026-10-06T00:00:00.001Z", "kind": "verdict", "phase": {"a": 1}}) + "\n")
     r = done(p)
-    assert "Traceback" not in r.stderr and r.returncode in (0, 4), r.stderr
+    assert "Traceback" not in r.stderr
+    assert r.returncode == 4 and "retro: no phase end recorded" in r.stderr, r.stderr
 
 
 def test_merge_is_parked_by_the_same_gate(tmp_path):
@@ -314,6 +317,7 @@ def test_a_plan_revised_and_re_reviewed_after_a_first_approval_is_not_over_refus
     phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p); phase(p, "retro", "a4")
     r = done(p)
     assert r.returncode == 0, r.stderr
+    assert [x["phase"] for x in log_rows(p) if x["kind"] == "verdict"].count("plan_review") == 2
 
 
 def test_a_phase_agent_id_missing_from_the_readable_transcript_store_is_refused(tmp_path):
