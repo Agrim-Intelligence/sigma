@@ -14,7 +14,7 @@ those verbs itself, exactly as it can call `record-plan-review` today; so the re
 boundary and a verdict were RECORDED, in order, bound to the plan's bytes. For a verdict whose route is
 `subagent` (the host can dispatch) it also proves every phase named its own agent id, no id served two
 phases, and, where the host's transcript store is readable at record time, that a transcript for each
-verdict's reviewer id exists. On an `inline` route (the host cannot spawn one) none of that applies; the
+phase's agent id exists. A reviewer resumed for a second verdict counts as the same agent (use a fresh one). On an `inline` route (the host cannot spawn one) none of that applies; the
 record says INLINE and `loop.py phases` shows it. It does not
 prove the phase's work was good. Research and retro are boundary-proof only. When the transcript store
 is not readable the verdict is stored `unverified` and `loop.py phases` says so.
@@ -95,7 +95,8 @@ def status(sdlc_dir, config, goal):
     reports. Pure read; never raises on a malformed log (a bad row is skipped by `read_goal`)."""
     work = _load("work")
     rc = _load("review_context")
-    rows = [r for r in _rows(sdlc_dir, goal) if isinstance(r.get("phase", ""), str)]   # a malformed row is skipped
+    rows = [r for r in _rows(sdlc_dir, goal)             # a malformed row is skipped, never a crash
+            if all(isinstance(r.get(k, ""), str) for k in ("phase", "agent_id", "verdict", "state"))]
     waived = {r.get("phase") for r in rows if r.get("kind") == "phase_waived"} & set(WAIVABLE)
     why = {r.get("phase"): r.get("reason", "") for r in rows if r.get("kind") == "phase_waived"}
     last_end, first_start, verdict = {}, {}, {}
@@ -107,9 +108,9 @@ def status(sdlc_dir, config, goal):
                 first_start[r["phase"]] = i
         elif r.get("kind") == "verdict":
             verdict[r.get("phase")] = (i, r)
-    first_ok_plan = next((i for i, r in enumerate(rows) if r.get("kind") == "verdict"
-                          and r.get("phase") == "plan_review"
-                          and r.get("verdict") in PLAN_REVIEW_APPROVING), None)
+    ok_plan = [i for i, r in enumerate(rows) if r.get("kind") == "verdict"
+               and r.get("phase") == "plan_review" and r.get("verdict") in PLAN_REVIEW_APPROVING]
+    first_ok_plan, last_ok_plan = (ok_plan[0], ok_plan[-1]) if ok_plan else (None, None)
     out, notes = [], []
     start = lambda ph: _cmd("phase_report.py", f"start <sdlc> <goal> {ph} --model <tier> --pid \"$PPID\"")
     end = lambda ph: _cmd("phase_report.py", f"end <sdlc> <goal> {ph} --agent-id <agentId> --pid \"$PPID\"")
@@ -177,7 +178,10 @@ def status(sdlc_dir, config, goal):
             if not ok or ph in waived or ph not in last_end:
                 continue
             aid = last_end[ph][1].get("agent_id")
-            if not aid:
+            if last_end[ph][1].get("verified") == "missing":
+                out[i] = (ph, False, f"agent id {aid} has no transcript in this session's subagent store",
+                          f"pass the id of the subagent that actually ran {ph}: {end(ph)}")
+            elif not aid:
                 out[i] = (ph, False, "ended with no agent id: this host dispatches subagents, so the phase "
                           "must run as its own subagent", f"dispatch a subagent for {ph}; {end(ph)}")
             elif aid in seen:
@@ -189,7 +193,7 @@ def status(sdlc_dir, config, goal):
     def at(ph):
         return last_end[ph][0] if ph in last_end else None
     rv = verdict.get("review")
-    chain = (("plan", at("plan"), "plan-review's approving verdict", first_ok_plan, "plan"),
+    chain = (("plan", at("plan"), "plan-review's approving verdict", last_ok_plan, "plan"),
              ("implement", at("implement"), "the review verdict", rv[0] if rv else None, "implement"),
              ("the review verdict", rv[0] if rv else None, "retro", at("retro"), "review"))
     for a_name, a, b_name, b, ph in chain:

@@ -128,8 +128,7 @@ Then repeat until the helper says stop:
    `config.work.enabled`, first register its worker:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" agent-start .sdlc "$goal" --pid $PPID`.
    **A nonzero exit from `agent-start` means task ownership was not established — another live
-   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed
-  .** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
+   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed.** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
    .sdlc "$goal" --session-pid "$PPID"`. **Pass `--session-pid "$PPID"` — the same value you just
    gave `agent-start --pid`, and the same one every `loop.py` call takes.** Read the line it prints — it
    names the base it actually cut from. **If this command exits 4, STOP this goal and do NOT

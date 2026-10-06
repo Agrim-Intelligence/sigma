@@ -300,3 +300,38 @@ def test_merge_is_parked_by_the_same_gate(tmp_path):
     work._emit_test_trust = lambda *a, **k: None
     out = work.merge(sdlc, cfg, GOAL)
     assert out.startswith("PARK: the SDLC phase record is incomplete"), out
+
+
+def test_a_plan_revised_and_re_reviewed_after_a_first_approval_is_not_over_refused(tmp_path):
+    p = _project(tmp_path)
+    phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1")
+    plan_review(p, "SOUND-WITH-REFINEMENTS")
+    (p / ".sdlc/plans/0001-x.md").write_text("# Plan\n\n## Tests\n- `tests/t.py`\n\nrefined\n")
+    phase(p, "plan", "a2b"); phase(p, "plan_review", "rev1b")
+    plan_review(p, "SOUND", "rev1b")                       # a fresh approving verdict for the refined plan
+    phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p); phase(p, "retro", "a4")
+    r = done(p)
+    assert r.returncode == 0, r.stderr
+
+
+def test_a_phase_agent_id_missing_from_the_readable_transcript_store_is_refused(tmp_path):
+    p = _project(tmp_path)
+    home = tmp_path / "home"
+    store = home / ".claude/projects/proj/sess1/subagents"
+    store.mkdir(parents=True)
+    env = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "sess1", "HOME": str(home)}
+    for a in ("a1", "a2", "rev1", "a3", "rev2", "a4"):
+        (store / f"agent-{a}.jsonl").write_text("{}\n")
+
+    def ph(name, agent):
+        assert run(p, "phase_report.py", "start", ".sdlc", GOAL, name, "--model", "sonnet", env=env).returncode == 0
+        assert run(p, "phase_report.py", "end", ".sdlc", GOAL, name, "--agent-id", agent, env=env).returncode == 0
+    ph("research", "a1"); ph("plan", "a2"); ph("plan_review", "rev1")
+    assert run(p, "work.py", "record-plan-review", ".sdlc", GOAL, "--verdict", "SOUND", "--plan-sha256",
+               plan_sha(p), "--agent-id", "rev1", env=env).returncode == 0
+    ph("implement", "ghost"); ph("review", "rev2")          # `ghost` never ran: no transcript
+    assert run(p, "work.py", "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "rev2",
+               env=env).returncode == 0
+    ph("retro", "a4")
+    r = run(p, "loop.py", "record", ".sdlc", GOAL, "done", env=env)
+    assert r.returncode == 4 and "implement: agent id ghost has no transcript" in r.stderr

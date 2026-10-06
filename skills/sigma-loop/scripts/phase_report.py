@@ -2237,8 +2237,14 @@ def cmd_end(argv):
 
     # #684: the action-log row `phase_gate.py` reads; `cost` is the figure the banner prints.
     _cost = result.get("cost_usd")
+    # `verified`: whether the host's own transcript store holds this agent id (`transcript`), could not be
+    # asked (`unverified`) or does not hold it (`missing`, which the phase gate refuses on a dispatching host).
+    _vf = None
+    if agent_id:
+        _ok, _bad = _load("phase_gate").verify_agent(agent_id)
+        _vf = _ok or "missing"
     _load("actionlog").safe_append(sdlc_dir, goal, "phase", phase=phase, state="end",
-                                   agent_id=agent_id or None,
+                                   agent_id=agent_id or None, verified=_vf,
                                    cost=(f"${_cost:.2f}" if _cost is not None else "unavailable"))
 
     warning = unpriced_budget_warning(result)
