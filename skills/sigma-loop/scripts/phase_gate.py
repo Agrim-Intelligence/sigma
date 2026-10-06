@@ -226,7 +226,7 @@ def start_refusal(sdlc_dir, goal, phase):
     return ("no approving plan-review verdict is recorded for this goal, so implement may not start (plan "
             "before code): run the plan-review, record its verdict with `work.py record-plan-review "
             "<sdlc> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS --plan-sha256 <brief sha> --agent-id "
-            "<reviewer agentId>`, then start implement (" + _LEVER.split(";")[0] + ")")
+            "<reviewer agentId>`, then start implement (plan-review cannot be waived)")
 
 
 def refusal(sdlc_dir, config, goal):

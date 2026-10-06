@@ -220,7 +220,10 @@ ENFORCEMENT_GATES = (
                   "subagent) the different-agent checks do not apply and the record says so; reached through the CLI verb and `work.py merge` -- not "
                   "`reconcile-merges` (a PR someone else merged must not strand) and not the "
                   "test-only `run_loop` driver; refuses when `action_log.enabled` is not true; an "
-                  "ABSENT key is off (`/sigma-init` ships it true); not org-lockable",
+                  "ABSENT key is off (`/sigma-init` ships it true); `phase_report.py start implement` is also "
+                  "refused before an approving plan-review verdict but fails open if the gate cannot be "
+                  "read (the `done` check still refuses); `record-review` records the code review "
+                  "before retro, a later send-back needs a fresh review and retro; not org-lockable",
      "readme": "Every phase runs and is recorded"},
     {"control": "Dirty root checkout refuses `start`", "function": "_dirty_root_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),

@@ -14,7 +14,7 @@ All notable changes to Sigma are recorded here, newest first.
   records it and the lever. `loop.py phases <dir> <goal>` shows the state and the next step; `loop.py waive-phases` waives
   research and retro only (recorded, visible). `gates.phase_record.enabled` ships `true` from `/sigma-init`; an absent key
   is off, so an adopted repo is not retro-fitted. The record proves boundaries and verdicts were recorded in order, not that
-  the work was good. The loop costs more: measured numbers are in the PR.
+  the work was good. The loop costs more: on one live task the default loop cost about $2.1 and 8 minutes against $0.88 and 3 minutes before (measured, three runs; the PR has the table).
 
 - **`/sigma-init` no longer replaces a corrupt or non-object `.sdlc/config.json` with a fresh one** (#625). A truncated
   or hand-broken config, or one whose top level is an array, string or `null`, was read as `{}` and written back, so every
