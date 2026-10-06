@@ -244,10 +244,19 @@ def test_control_phantom_blocker_scan_can_fail():
     _check(blocker_hits("this needs the model field from #3"), "the blocker scan no longer flags a plain needs sentence")
 
 
-def test_named_still_to_produce_files_are_absent():
-    """A dated snapshot guard: when one of these lands, the plan's table must be updated in the same change."""
-    present = [p for p in ("docs/launch/evidence/legal.md", "NOTICE") if (ROOT / p).exists()]
-    _check(not present, f"now on main, so update the evidence table: {present}")
+def test_legal_fact_sheet_and_notice_are_cited_and_still_awaiting_counsel():
+    """The #343 artifacts landed, so the D13 evidence row must cite them; and they must still read as UNDECIDED.
+
+    The old guard said the files must be absent. They are the agent's fact sheet and a DRAFT notice, written while counsel
+    has not answered: the guard now fails if the row stops citing them, or if the sheet or the notice loses its
+    AWAITING COUNSEL marker (a decision cannot appear without counsel's answer being committed with it)."""
+    rows = _evidence_rows(_plan())
+    cell = " ".join(rows["D13"])
+    for path in ("docs/launch/evidence/legal.md", "NOTICE"):
+        _check((ROOT / path).exists(), f"{path} is missing")
+        _check(path in cell, f"the D13 evidence row does not cite {path}")
+        _check("AWAITING COUNSEL" in (ROOT / path).read_text(encoding="utf-8"), f"{path} lost its AWAITING COUNSEL marker")
+    _check("not scoreable until counsel answers" in rows["D13"][3], "D13 owner cell lacks the counsel statement")
 
 
 CAL = ROOT / "docs" / "launch" / "evidence" / "cost-calibration.md"

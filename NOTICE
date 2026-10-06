@@ -1,0 +1,56 @@
+NOTICE  --  DRAFT. NOT APPROVED. Every line marked AWAITING COUNSEL is a placeholder, not wording to ship.
+Facts behind each line: docs/launch/evidence/legal.md
+
+Sigma Loop
+Copyright (c) 2026 Agrim Intelligence
+[AWAITING COUNSEL: confirm the copyright holder; the LICENSE file names the company, the plugin manifests name an individual]
+
+Sigma Loop is licensed under the MIT License. The licence text is in the file LICENSE.
+
+------------------------------------------------------------------------------------------
+Provenance
+------------------------------------------------------------------------------------------
+
+[AWAITING COUNSEL: provenance statement. Fact supplied by the owner and not independently verified: this project is a
+rebrand of an earlier plugin by the same owner. The name of that plugin, whether and how it is named here, and any
+licence statement about it are for counsel. No licence term of the earlier plugin is stated in this draft because it has
+not been read.]
+
+------------------------------------------------------------------------------------------
+Third-party software
+------------------------------------------------------------------------------------------
+
+Sigma Loop's shipped Python code uses only the Python standard library, with the one optional exception below. Nothing
+listed here is bundled into this repository; each item is installed by the user, only if the user chooses the feature that
+needs it. Licence facts were read from the published packages on 2026-10-06 (details and digests in
+docs/launch/evidence/legal.md, section 4).
+
+Optional, installed by the user:
+
+  slack-sdk (Python module slack_sdk), version checked: 3.45.0
+    Licence: MIT. Copyright (c) 2015- Slack Technologies, LLC
+    Used by: skills/sigma-loop/scripts/slack_commands_listen.py (the optional Slack command listener)
+
+  @modelcontextprotocol/sdk (npm), version in the lock file: 1.30.0
+    Licence: MIT. Copyright (c) 2024 Anthropic, PBC
+    Used by: skills/sigma-loop/channels/sigma-autowatch (the optional autowatch channel). Installing it with Bun also
+    installs 92 further npm packages pinned in that directory's bun.lock; their licences as declared in registry metadata
+    are MIT (82), ISC (7), BSD-3-Clause (2) and BSD-2-Clause (1). The full list is in legal.md, section 4.3. Their licence
+    files were not read for this draft.
+
+Development and test only (not shipped, not required to use Sigma Loop):
+
+  pytest 9.1.1, MIT, Copyright (c) 2004 Holger Krekel and others
+  pytest-xdist 3.8.0, MIT, Copyright (c) 2010 Holger Krekel and contributors.
+  PyYAML 6.0.3, MIT, Copyright (c) 2017-2021 Ingy döt Net; Copyright (c) 2006-2016 Kirill Simonov
+
+[AWAITING COUNSEL: whether these notices, as worded and placed, are what is required, and whether test-only
+dependencies belong in this file at all.]
+
+------------------------------------------------------------------------------------------
+Names of other products
+------------------------------------------------------------------------------------------
+
+[AWAITING COUNSEL: any statement about the names of other companies' products that appear in this repository (Claude Code,
+Claude, Anthropic, Codex, Cursor, GitHub, Slack), including whether a "not affiliated" sentence is wanted. The list of where
+the names appear is docs/launch/evidence/nominative-use-542a8bf.md.]
