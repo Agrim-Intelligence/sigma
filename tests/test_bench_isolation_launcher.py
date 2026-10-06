@@ -30,7 +30,7 @@ SURFACE = (".claude/plugins/marketplace.json", ".claude/settings.json", ".codex/
            ".codex/plugins/index.json")
 SURFACE_NAMES = (".claude/plugins", ".claude/settings.json", ".codex/config.toml", ".codex/plugins")
 ALLOWED_ENV = {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "SHELL", "USER", "LOGNAME", "HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "TMPDIR",
-               "__CF_USER_TEXT_ENCODING"}
+               "__CF_USER_TEXT_ENCODING", "CLAUDE_CODE_OAUTH_TOKEN"}
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="the launcher is POSIX-only by design")
 
@@ -124,7 +124,7 @@ class World:
         self.claude.write_text(FAKE_CLAUDE.replace("__PY__", sys.executable), encoding="utf-8")
         self.claude.chmod(0o755)
         self.config = {"repo_root": str(self.repo), "hidden_root": str(self.hidden), "deadline_seconds": 30,
-                       "credential_var": None, "claude_path": str(self.bin / "claude"),
+                       "credential_var": "CLAUDE_CODE_OAUTH_TOKEN", "claude_path": str(self.bin / "claude"),
                        "extra_env": [], "scratch_root": str(tmp_path / "self-scratch"), "parent_marker": None,
                        "real_home": str(self.real)}
         self.write_config()
@@ -151,7 +151,8 @@ class World:
                "GH_TOKEN": "t-" + uuid.uuid4().hex, "AWS_SECRET_ACCESS_KEY": "a-" + uuid.uuid4().hex,
                "SSH_AUTH_SOCK": "/tmp/agent.sock", "XDG_CONFIG_HOME": "/xdg", "ANTHROPIC_BASE_URL": "https://x.test",
                "CLAUDE_CODE_USE_BEDROCK": "1", "SIGMA_BENCH_ARM_NAME": "plain", "HOME": str(self.real),
-               "SIGMA_LAUNCHER_TEST_MODE": "1"}
+               "SIGMA_LAUNCHER_TEST_MODE": "1",
+               "CLAUDE_CODE_OAUTH_TOKEN": "o-default-" + uuid.uuid4().hex}
         env.update(variables or {})
         env.update(extra)
         return env
@@ -193,18 +194,14 @@ def test_profile_variables_are_the_harness_dirs_and_nothing_else_leaks(world):
     assert len({env[n] for n in variables}) == 4
 
 
-def test_only_the_named_credential_reaches_the_claude_path_and_never_scoring(world):
+def test_only_the_subscription_token_reaches_the_claude_path_and_never_scoring(world):
     key = "k-" + uuid.uuid4().hex
     token = "o-" + uuid.uuid4().hex
     extra = {"ANTHROPIC_API_KEY": key, "CLAUDE_CODE_OAUTH_TOKEN": token}
 
     result, record = _dump(world, extra=extra)
-    assert "ANTHROPIC_API_KEY" not in record["env"] and "CLAUDE_CODE_OAUTH_TOKEN" not in record["env"]
-
-    world.write_config(credential_var="ANTHROPIC_API_KEY")
-    result, record = _dump(world, extra=extra)
-    assert record["env"]["ANTHROPIC_API_KEY"] == key
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in record["env"]
+    assert record["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == token
+    assert "ANTHROPIC_API_KEY" not in record["env"], "a stray API key would switch billing to pay-per-token"
     assert key not in result.stdout + result.stderr and token not in result.stdout + result.stderr
 
     _, variables = world.new_run()
@@ -212,7 +209,8 @@ def test_only_the_named_credential_reaches_the_claude_path_and_never_scoring(wor
     probe = "import json, os; json.dump(dict(os.environ), open(%r, 'w'))" % str(scoring)
     done = world.launch([sys.executable, "-c", probe], env=world.env(variables, **extra))
     assert done.returncode == 0, done.stderr
-    assert "ANTHROPIC_API_KEY" not in json.loads(scoring.read_text())
+    scored = json.loads(scoring.read_text())
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in scored and "ANTHROPIC_API_KEY" not in scored
 
     lookalike = world.tmp / "other-bin" / "claude"  # a program merely NAMED claude is not the configured one
     lookalike.parent.mkdir()
@@ -220,11 +218,50 @@ def test_only_the_named_credential_reaches_the_claude_path_and_never_scoring(wor
     other = world.tmp / "lookalike.json"
     _, variables = world.new_run()
     done = world.launch([str(lookalike), "-p"], env=world.env(variables, **extra), stdin=json.dumps({"dump": str(other)}))
-    assert done.returncode == 0 and "ANTHROPIC_API_KEY" not in json.loads(other.read_text())["env"]
+    assert done.returncode == 0 and "CLAUDE_CODE_OAUTH_TOKEN" not in json.loads(other.read_text())["env"]
 
     world.write_config(claude_path=None)
     refused = world.claude_run({"exit": 0}, extra=extra)
     assert refused.returncode == 2 and "claude_path" in refused.stderr
+
+
+@pytest.mark.parametrize("absent", ["missing", "empty"])
+def test_a_claude_run_without_the_subscription_token_refuses_loudly_and_starts_nothing(world, absent):
+    """Control: without this guard an unauthenticated first run only shows up later as an unreadable run."""
+    secret = "k-" + uuid.uuid4().hex
+    out = world.tmp / "ran.json"
+    _, variables = world.new_run()
+    env = world.env(variables, ANTHROPIC_API_KEY=secret)
+    if absent == "missing":
+        del env["CLAUDE_CODE_OAUTH_TOKEN"]
+    else:
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+
+    done = world.launch([str(world.claude), "-p"], env=env, stdin=json.dumps({"dump": str(out)}))
+
+    assert done.returncode == 2 and "REFUSED" in done.stderr
+    assert "authentication" in done.stderr and "CLAUDE_CODE_OAUTH_TOKEN" in done.stderr
+    assert "claude setup-token" in done.stderr
+    assert not out.exists(), "claude was started without credentials"
+    alerts = (world.tmp / "self-scratch" / "launcher-alerts.log").read_text()
+    assert "CLAUDE_CODE_OAUTH_TOKEN" in alerts and secret not in alerts + done.stderr + done.stdout
+
+
+def test_the_version_probe_and_scoring_do_not_need_the_token(world):
+    _, variables = world.new_run()
+    env = world.env(variables)
+    del env["CLAUDE_CODE_OAUTH_TOKEN"]
+    done = world.launch([str(world.claude), "--version"], env=env)
+    assert done.returncode == 0 and "fake-claude" in done.stdout, done.stderr
+    done = world.launch([sys.executable, "-c", "pass"], env=env)
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize("value, needle", [(None, "required"), ("ANTHROPIC_API_KEY", "pay-per-token")])
+def test_the_config_must_name_the_subscription_token_and_never_an_api_key(world, value, needle):
+    world.write_config(credential_var=value)
+    done = world.claude_run({"exit": 0})
+    assert done.returncode == 2 and "credential_var" in done.stderr and needle in done.stderr
 
 
 def test_extra_env_passes_named_non_credential_names_only(world):
@@ -549,11 +586,15 @@ def test_plugin_dir_only_from_a_clean_sibling_export(world):
 def test_dry_run_starts_version_only(world):
     out = world.tmp / "version-env.json"
     (world.bin / "dump-on-version").write_text(str(out))
-    world.write_config(credential_var="ANTHROPIC_API_KEY")
-    key = "k-" + uuid.uuid4().hex
-    done = world.launch(["claude", "--version"], flags=("--dry-run",), env=world.env(ANTHROPIC_API_KEY=key))
+    token = "o-" + uuid.uuid4().hex
+    done = world.launch(["claude", "--version"], flags=("--dry-run",),
+                        env=world.env(CLAUDE_CODE_OAUTH_TOKEN=token))
     assert done.returncode == 0 and "fake-claude" in done.stdout, done.stderr
-    assert "ANTHROPIC_API_KEY" not in json.loads(out.read_text())["env"]
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in json.loads(out.read_text())["env"]
+    bare = world.env()
+    del bare["CLAUDE_CODE_OAUTH_TOKEN"]
+    done = world.launch(["claude", "--version"], flags=("--dry-run",), env=bare)
+    assert done.returncode == 0, "the dry run needs no credential"
 
     for argv in (["claude", "-p"], ["claude", "--version", "--help"], ["claude"]):
         refused = world.launch(argv, flags=("--dry-run",), env=world.env())
@@ -644,11 +685,11 @@ def _harness(world, monkeypatch, extra="", ids=("one",)):
     bundles = world.hidden / "bundles"
     hidden = arms_test._hidden(world.tmp, ids=ids, root=bundles)
     manifest = arms_test._manifest(world.tmp, ids=ids, visible=WRITES_INTO_PROFILE)
-    world.write_config(hidden_root=str(bundles), credential_var="ANTHROPIC_API_KEY", claude_path=str(fake),
+    world.write_config(hidden_root=str(bundles), credential_var="CLAUDE_CODE_OAUTH_TOKEN", claude_path=str(fake),
                        parent_marker=None)
     monkeypatch.setenv("SIGMA_LAUNCHER_TEST_MODE", "1")
     monkeypatch.setenv("HOME", str(world.real))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k-" + uuid.uuid4().hex)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "o-" + uuid.uuid4().hex)
     monkeypatch.setenv("GH_TOKEN", "t-" + uuid.uuid4().hex)
     for name in ("CI", "CLAUDE_CONFIG_DIR", "CODEX_HOME"):
         monkeypatch.delenv(name, raising=False)
@@ -656,7 +697,7 @@ def _harness(world, monkeypatch, extra="", ids=("one",)):
                   rates=arms_test._rates(world.tmp))
 
     def run(arms):
-        return bench.run_benchmark(manifest, arms, max_usd=10.0, hidden_root=hidden,
+        return bench.run_benchmark(manifest, arms, max_tokens=10 ** 9, hidden_root=hidden,
                                    results_path=world.tmp / "results.json", scratch_root=world.tmp / "scratch",
                                    isolation_launcher=world.launcher)
     return bench, arms_test, common, dump, run
@@ -679,8 +720,8 @@ def test_the_real_harness_runs_all_three_arms_and_scoring_through_the_launcher(w
     assert len(records) == 3 and sum("--plugin-dir" in r["argv"] for r in records) == 1
     for record in records:
         seen = record["env"]
-        assert set(seen) <= ALLOWED_ENV | {"ANTHROPIC_API_KEY"} and "GH_TOKEN" not in seen
-        assert seen["ANTHROPIC_API_KEY"] == os.environ["ANTHROPIC_API_KEY"]
+        assert set(seen) <= ALLOWED_ENV and "GH_TOKEN" not in seen
+        assert seen["CLAUDE_CODE_OAUTH_TOKEN"] == os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
         assert os.path.realpath(seen["HOME"]) != os.path.realpath(world.real)
 
 
@@ -695,12 +736,12 @@ def test_a_tampered_last_run_aborts_the_real_harness_with_paid_rows_kept(world, 
     rates.write_text(arms_test.RATES, encoding="utf-8")
     manifest = world.tmp / "tasks" / "manifest.json"
     env = {"PATH": os.environ["PATH"], "HOME": str(world.real), "SIGMA_LAUNCHER_TEST_MODE": "1",
-           "ANTHROPIC_API_KEY": "k-" + uuid.uuid4().hex}
+           "CLAUDE_CODE_OAUTH_TOKEN": "o-" + uuid.uuid4().hex}
 
     def harness(results):
         argv = [sys.executable, str(BENCH), "run", "--manifest", str(manifest), "--hidden-root",
                 str(world.hidden / "bundles"), "--results", str(world.tmp / results), "--scratch-root",
-                str(world.tmp / ("scratch-" + results)), "--max-usd", "10", "--isolation-launcher",
+                str(world.tmp / ("scratch-" + results)), "--max-tokens", "1000000000", "--isolation-launcher",
                 str(world.launcher), "--arm", "plain", "--model", "claude-test", "--permission-mode",
                 "acceptEdits", "--claude", str(world.bin / "harness-claude"), "--rates", str(rates)]
         return subprocess.run(argv, env=env, capture_output=True, text=True, timeout=120)
@@ -725,9 +766,9 @@ def test_readme_commands_and_figures_are_real():
     assert "--scratch-root <outside-home>" in line, "the scratch root must be outside the home directory"
     assert not re.search(r'(KEY|TOKEN)=(?!\$)', line), "the first-run command must not carry a literal credential"
     argv = line.split("python3 evals/bench/bench.py run", 1)[1].split()
-    fill = {"<ceiling>": "1", "<seconds-above-deadline_seconds>": "3600"}
+    fill = {"<token-ceiling>": "1", "<seconds-above-deadline_seconds>": "3600"}
     args = bench.parse_args(["run"] + [fill.get(p, "x") if p.startswith("<") else p for p in argv])
-    assert args.isolation_launcher is not None and args.max_usd is not None and args.arm == "all"
+    assert args.isolation_launcher is not None and args.max_tokens is not None and args.arm == "all" and args.batch_pairs == 3
     assert "sigma_bench_launcher.py --dry-run -- claude --version" in text
     evidence = COST_EVIDENCE.read_text(encoding="utf-8")
     for figure in ("$0.628", "$0.415", "$0.502", "$0.271", "$1.044", "$0.773"):

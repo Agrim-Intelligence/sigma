@@ -48,7 +48,7 @@ def test_go_threshold_is_an_exact_paired_test_with_owner_decisions():
     text = _text()
     live = _live(text)
     # the old bootstrap bound is not a rule in force
-    for stale in ("10,000", "20261001", "−5 points", "lower 95% CI bound"):
+    for stale in ("10,000 resamples", "20261001", "−5 points", "lower 95% CI bound"):
         assert stale not in live, stale
     go = _section(text, "## Go threshold")
     for needle in ("exact one-sided binomial", "discordant", "alpha = 0.05", "GO", "NO-GO",
@@ -110,3 +110,72 @@ def test_preregistration_deviations_section_is_a_real_post_run_log():
     dev = _section(text, "## Deviations")
     assert "#502" in dev
     assert "No benchmark task has run" in dev.split("#502", 1)[1]
+
+
+# -- 2026-10-06: the benchmark runs on the owner's subscription (tokens, batches, resume) -------------
+
+BUDGET = ROOT / "docs" / "bench" / "token-budget.md"
+FROZEN = "12232c788c133338ffe46d05298fd677e8d6f542"
+CEILING = 210_000_000
+
+
+def _entry(text, date):
+    dev = _section(text, "## Deviations")
+    start = dev.index("- **" + date)
+    nxt = re.search(r"^- \*\*", dev[start + 3:], re.M)
+    return dev[start:start + 3 + nxt.start()] if nxt else dev[start:]
+
+
+def _budget_rows():
+    rows = {}
+    for line in BUDGET.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if re.match(r"^\| (S\d\d|P\d) \|", line):
+            ident, kind, *numbers = cells
+            rows[ident] = (kind, [float(n.replace(",", "")) for n in numbers])
+    return rows
+
+
+def test_the_subscription_deviation_is_recorded_before_any_arm_ran():
+    text = _text()
+    entry = _entry(text, "2026-10-06")
+    for needle in ("subscription", "$150", "API-key", "supersedes", FROZEN, "No arm has been run",
+                   "indicative", "not-run", "token ceiling", f"{CEILING:,}", "no dollars-per-task claim",
+                   "exact one-sided sign test", "INCONCLUSIVE", "--resume", "--batch-pairs",
+                   "token-budget.md", "unmeasured"):
+        assert needle in entry, needle
+    assert "bill" in entry and "never a bill" in entry.replace("\n", " ").replace("  ", " ")
+
+
+def test_the_rules_in_force_speak_in_tokens_not_dollars_and_name_the_resume_lever():
+    text = _text()
+    live = _live(text)
+    for stale in ("$150", "$15 ", "API-key authentication", "re-run once", "spend reaches A1's spend"):
+        assert stale not in live, stale
+    arms = _section(text, "## Arms")
+    assert "token spend reaches A1's token spend" in arms
+    assert "tokens per passing run" in _section(text, "## Metrics")
+    runs = _section(text, "## Runs")
+    for needle in ("not-run", "--resume", "--batch-pairs", "rate limit", "never recorded as a failure"):
+        assert needle in runs, needle
+    assert f"{CEILING:,}" in live
+
+
+def test_the_token_ceiling_is_recomputed_from_the_measured_table():
+    """Control: edit one measured figure (or the ceiling) and this goes red."""
+    rows = _budget_rows()
+    assert len(rows) == 24 and sum(k == "sigma-loop" for k, _ in rows.values()) == 22
+    ratios = []
+    for ident, (kind, numbers) in rows.items():
+        parts, total, usd = numbers[:4], numbers[4], numbers[5]
+        assert sum(parts) == total, ident
+        ratios.append(total / usd)
+    floor_ceiling = int(150 * min(ratios) // 10_000_000 * 10_000_000)
+    assert floor_ceiling == CEILING
+    sigma = [n[4] for k, n in rows.values() if k == "sigma-loop"]
+    plain = [n[4] for k, n in rows.values() if k == "plain"]
+    worst_pair_set = max(sigma) + max(plain) + (max(sigma) + max(plain))
+    assert 15 * worst_pair_set < CEILING, "the observed worst case must fit under the ceiling"
+    text = BUDGET.read_text(encoding="utf-8")
+    assert "/Users/" not in text and ".jsonl" not in text
+    assert "not a bound" in text and "effective n" in text

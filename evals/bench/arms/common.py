@@ -26,23 +26,52 @@ class ArmRefusal(ValueError):
     """An arm precondition was not met; the harness turns this into a benchmark refusal."""
 
 
+KIND_NAMES = ("input", "output", "cache_read", "cache_write")
+
+
 class Spend:
-    """Priced dollars an arm has already paid in the run in flight (kept for the abort report)."""
+    """What an arm has already used in the run in flight (kept for the abort report).
+
+    ``tokens`` is the measured fact the ceiling is enforced on; ``usd`` is INDICATIVE (tokens priced at
+    published list rates), kept only for the report.
+    """
 
     def __init__(self):
         self.usd = 0.0
+        self.tokens = 0
+        self.detail = dict.fromkeys(KIND_NAMES, 0)
 
-    def add(self, cost, priced_part):
+    def add(self, cost, priced_part, tokens=None, detail=None):
         self.usd += cost if cost is not None else (priced_part or 0.0)
+        self.tokens += tokens or 0
+        for name in KIND_NAMES:
+            self.detail[name] += (detail or {}).get(name, 0)
 
 
 @dataclass(frozen=True)
 class Attempt:
+    """One ``claude -p`` run.  ``tokens`` is None when no usage record could be read at all.
+
+    ``rate_limit`` is the host's rate-limit record found in the run's transcripts, if any; ``throttled`` is
+    that record when the run did not exit cleanly OR the session ended on it (no real turn after it), so the
+    unmeasured exit status of a throttled ``claude -p`` is not what decides.  A transient record that real
+    work followed, on a run that exited 0, is noted and scored as usual.
+    """
     cost: Optional[float]
     priced_part: Optional[float]
     returncode: int
     timed_out: bool
     session_id: str
+    tokens: Optional[int] = None
+    detail: Optional[dict] = None
+    rate_limit: Optional[dict] = None
+
+    @property
+    def throttled(self):
+        limit = self.rate_limit
+        if limit is not None and (limit.get("final") or self.returncode != 0 or self.timed_out):
+            return limit
+        return None
 
 
 def require_posix():
@@ -214,24 +243,40 @@ def claude_argv(launcher, claude, *, session_id, model, permission_mode, budget_
     return argv
 
 
-def session_cost(config_dir, session_id, rates):
-    """``(total, priced_part)`` from this session's own transcripts; ``(None, None)`` when none exist."""
+def session_usage(config_dir, session_id, rates):
+    """The host's own usage records for one session, or None when no transcript exists.
+
+    Returns ``{"cost", "priced_part", "tokens", "detail", "rate_limit"}``: tokens are the measured fact;
+    cost is indicative dollars (None when any turn is unpriced).
+    """
     module = meter()
     paths = module.session_paths(session_id, Path(config_dir) / "projects")
     if not paths:
-        return None, None
+        return None
     metered = module.meter_transcripts(paths, rates=rates)
-    return metered["cost_usd"], metered["cost_usd_priced_part"]
+    return {"cost": metered["cost_usd"], "priced_part": metered["cost_usd_priced_part"],
+            "tokens": metered["tokens_total"],
+            "detail": {"input": metered["tokens_in"], "output": metered["tokens_out"],
+                       "cache_read": metered["tokens_cache_read"],
+                       "cache_write": metered["tokens_cache_write"]},
+            "rate_limit": metered["rate_limited"]}
 
 
 def run_claude(*, launcher, claude, model, permission_mode, budget_usd, plugin_dir, workdir, prompt,
                environment, profile_dir, deadline, rates):
-    """One metered ``claude -p`` run in a fresh isolated profile, bounded by ``deadline``."""
+    """One metered ``claude -p`` run in a fresh isolated profile, bounded by ``deadline``.
+
+    ``budget_usd`` is the host's own per-run ``--max-budget-usd`` belt: a client-side, token-priced estimate
+    (indicative under a subscription), kept as a runaway guard.  It is not the benchmark's ceiling.
+    """
     env = isolated_env(environment, profile_dir)
     session_id = str(uuid.uuid4())
     argv = claude_argv(launcher, claude, session_id=session_id, model=model,
                        permission_mode=permission_mode, budget_usd=budget_usd, plugin_dir=plugin_dir)
     returncode, timed_out, _ = run_bounded(argv, cwd=workdir, env=env, timeout=deadline - time.monotonic(),
                                            stdin_text=prompt)
-    cost, priced_part = session_cost(env["CLAUDE_CONFIG_DIR"], session_id, rates)
-    return Attempt(cost, priced_part, returncode, timed_out, session_id)
+    usage = session_usage(env["CLAUDE_CONFIG_DIR"], session_id, rates)
+    if usage is None:
+        return Attempt(None, None, returncode, timed_out, session_id)
+    return Attempt(usage["cost"], usage["priced_part"], returncode, timed_out, session_id,
+                   usage["tokens"], usage["detail"], usage["rate_limit"])

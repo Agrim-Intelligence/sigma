@@ -12,13 +12,15 @@ edit this document in review; after the first full run, changes are recorded in
 | --- | --- | --- | --- |
 | A1 Sigma | Claude Code | Sigma at a pinned commit, loaded from a clean `git archive` export | Never load the full repository as a plugin directory. |
 | A2 plain agent | Claude Code | none | The agent alone. |
-| A3 matched-spend | Claude Code | none | Retry the plain agent in fresh workdirs until visible tests pass or spend reaches A1's spend for that task; score the first visible-test-passing attempt. |
+| A3 matched-spend | Claude Code | none | Retry the plain agent in fresh workdirs until visible tests pass or token spend reaches A1's token spend for that task (tokens from the host's own usage records: input, output, cache read and cache write); score the first visible-test-passing attempt. |
 
 ## Held constant
 
 Every arm uses one owner-selected model ID (proposed `claude-sonnet-5-5`), one `claude --version`,
 one OS image, one fixture per task, identical prompt text, a 60-minute proposed wall-clock limit,
-and the same proposed per-run `--max-budget-usd` belt of $15.
+and the same proposed per-run `--max-budget-usd` belt (the host's own client-side estimate, indicative
+under a subscription: a runaway guard, not the ceiling). Every arm runs on the owner's Max subscription
+login (see Deviations, 2026-10-06), and the benchmark's ceiling is a token ceiling.
 
 ## Tasks
 
@@ -50,8 +52,9 @@ final tree to scratch, adds the hidden tests there, and runs them there.
 The primary metric is hidden-test pass per run, a boolean. With one repeat per arm and task, each
 task contributes one paired binary outcome; there is no within-task pass rate to estimate.
 
-Secondary metrics are cost per passing run (total dollars divided by passes, metered identically
-for every arm by `evals/bench/meter.py`), median wall time, interventions (any human action a run
+Secondary metrics are tokens per passing run (total tokens divided by passes, read from the host's
+own usage records and metered identically for every arm by `evals/bench/meter.py`; indicative dollars
+are reported beside them and are never a bill), median wall time, interventions (any human action a run
 needed), trap catch rate, visible-test regressions, and escapes (an arm reports done but hidden
 tests fail). A trap catch is a defect flagged before merge by a plan-review or review block event,
 or by the arm's final message naming the contradiction or defect.
@@ -158,8 +161,9 @@ behind each choice, and what the alternatives cost, stay in the tables that foll
    as the rule. Whether the launch proceeds without a performance claim, or more tasks are added, is not
    decided here and stays a business choice made after a result exists.
 
-Decided since (owner, 2026-10-05): the trap author is an independent agent and the spend ceiling is $150 in
-total (see Deviations). Still open and owner-gated, not decided by the above: whether to pin the model ID
+Decided since (owner): the trap author is an independent agent (2026-10-05); the dollar ceiling set on
+2026-10-05 was superseded on 2026-10-06 by a 210,000,000-token ceiling on the owner's subscription (see
+Deviations). Still open and owner-gated, not decided by the above: whether to pin the model ID
 (`task-sourcing.md`).
 
 **Post-launch flow (#410): deferred.** The owner decided on 2026-10-01 to decide at launch time and to
@@ -321,8 +325,14 @@ Rejected alternative, non-inferiority by an unconditional test that rejects when
 
 ## Runs
 
-Run one repeat per arm and task unattended. A run lost to infrastructure, such as a host crash or
-rate limit, is re-run once and logged. Every other failure counts as a failure; nothing is dropped.
+Run one repeat per arm and task, unattended within a batch, in batches: `--batch-pairs` (default 3 pairs, one
+task's three arms) stops cleanly, and `--resume` continues the results file instead of starting over. A pair
+that a host rate limit, a crash or a lost run kept from completing is recorded `not-run`,
+never recorded as a failure, and is attempted again on resume. That is the only reason a pair is run again:
+a pair that completed, passing or failing, is never re-run. Every other failure counts as a failure; nothing is dropped. The run stops
+when the host reports a rate limit (exit 75), and at the token ceiling of 210,000,000 tokens (exit 76; see
+Deviations, 2026-10-06, and [`token-budget.md`](token-budget.md)). Only a results file in which every pair
+completed is evidence: a file with a not-run pair is never analysed or committed as the result.
 
 ## Deviations
 
@@ -403,3 +413,40 @@ Record every change to this pre-registration here with its date and reason.
   the matched-spend arm's behaviour on external tasks (the visible tests already pass) and the model
   pin remain open owner decisions.
 
+- **2026-10-06 — The benchmark runs on the owner's Max subscription: tokens, not dollars; batched and
+  resumable.** Owner decision: the owner has no Anthropic API key and no API funds, so the benchmark (#275)
+  and all validation run through headless `claude -p` on the owner's Max subscription login. This supersedes
+  the 2026-10-05 entry "Spend ceiling and authentication" ($150 ceiling, API-key authentication). Recorded
+  before any arm has run: No arm has been run, the manifest is frozen at
+  `12232c788c133338ffe46d05298fd677e8d6f542` (entry above), and the task manifest, the hidden tests
+  and the decision rule are unchanged. What changes, and what does not:
+  1. **Measured facts and dollars.** `evals/bench/meter.py` reports tokens (input, output, cache read, cache
+     write and their sum) read from the host's own usage records. Dollars are indicative: the same tokens priced
+     at published list rates, never a bill, because a subscription is not charged per token.
+  2. **A3 in tokens.** The matched-spend arm retries the plain agent in fresh workdirs until the visible tests
+     pass or its cumulative tokens reach A1's token total for that task. A pair whose A1 count is unreadable is
+     not-run. The host has no per-run token cap, so the last attempt can overshoot by up to one attempt; the
+     overshoot is counted.
+  3. **The token ceiling replaces the $150 ceiling: 210,000,000 tokens.** Derived in
+     [`token-budget.md`](token-budget.md) from 24 measured headless sessions (22 Sigma loop sessions, 2 plain
+     runs): $150 times the lowest measured tokens per indicative dollar (1,424,499), rounded down. That is an
+     estimate, not a bound: the effective n is about 4 distinct bugs, the benchmark tasks differ, and the ceiling
+     is checked between runs. The worst observed per-task pattern times 15 tasks (165.9 million) fits under it.
+  4. **Rate windows: batches, a resume-safe cursor, a stop rule.** The run is batched at 3 pairs
+     (`--batch-pairs 3`). The results file is the cursor, rewritten after every pair and always listing every
+     planned pair as completed, failed or not-run; `--resume` never re-runs a completed pair, refuses unless the
+     conditions match the first batch, and may raise but never lower the ceiling. When the host reports a rate
+     limit the throttled pair is recorded not-run and never scored, the run stops (exit 75), and after the reset
+     the same command with `--resume` continues. A pair that did not complete is not-run, never a failure. The
+     "re-run once" wording of the Runs section is replaced by this.
+  5. **Authentication.** The launcher requires the subscription token (`CLAUDE_CODE_OAUTH_TOKEN`, from
+     `claude setup-token`) and refuses an API key, a missing token, or an unreadable usage record, loudly and
+     without echoing any secret; the token is never in a config file or a log, and is revoked after the run.
+     That a token-authenticated `claude -p` in an empty profile writes the usage and rate-limit
+     records the harness reads is unmeasured; the first batch is that measurement.
+  6. **What the claim becomes.** Relative outcome (W, L and T against each other arm, as before) and relative
+     token cost per arm (tokens, tokens per passing run, tokens relative to A1) on the 15 frozen tasks. The
+     exact one-sided sign test (alpha 0.05, margin 0, both arms, the trap condition) is unchanged and the
+     INCONCLUSIVE rule is unchanged: no comparative claim. There is no dollars-per-task claim and no claim
+     about what the run costs in money. The secondary metric "cost per passing run" becomes tokens per passing run.
+  The model pin and the matched-spend arm's behaviour on external tasks remain open owner decisions.

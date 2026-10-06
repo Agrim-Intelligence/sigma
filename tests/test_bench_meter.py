@@ -195,3 +195,103 @@ def test_recorded_sonnet_evidence_has_a_content_free_reproducible_breakdown():
     assert rows[-1]["rate"] is None and rows[-1]["units"] == 0
     public = json.dumps(evidence, sort_keys=True)
     assert "/Users/" not in public and ".jsonl" not in public
+
+
+# -- subscription auth (2026-10-06): tokens are the measured fact, dollars are indicative --------
+
+def _full_line(message_id, *, input_tokens=0, output_tokens=0, cache_read=0, write_5m=0, write_1h=0):
+    line = _line(message_id, input_tokens=input_tokens, output_tokens=output_tokens)
+    usage = line["message"]["usage"]
+    usage["cache_read_input_tokens"] = cache_read
+    usage["cache_creation"] = {"ephemeral_5m_input_tokens": write_5m, "ephemeral_1h_input_tokens": write_1h}
+    return line
+
+
+# The shape of a real rate-limit record, copied from a Claude Code transcript written when a weekly
+# limit was hit (interactive session, host 2.1.284); the synthetic model is why phase_report never
+# counts it as a turn.  No `claude -p` run under a subscription token has been observed.
+RATE_LIMIT_RECORD = {
+    "type": "assistant", "timestamp": "2026-10-01T20:35:26.780Z", "error": "rate_limit",
+    "isApiErrorMessage": True, "apiErrorStatus": 429,
+    "quotaLimits": {"status": "rejected", "resetsAt": 1790895600, "rateLimitType": "seven_day",
+                    "overageStatus": "rejected", "isUsingOverage": False},
+    "message": {"id": "synthetic", "role": "assistant", "model": "<synthetic>",
+                "content": [{"type": "text", "text": "You've hit your weekly limit"}],
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}},
+}
+
+
+def test_meter_reports_every_token_kind_and_their_total_from_the_usage_records(tmp_path):
+    """Control: summing only input and output (the old meter) leaves cache tokens out of the total."""
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, _full_line("a", input_tokens=10, output_tokens=20, cache_read=300,
+                                  write_5m=4000, write_1h=50000),
+           _full_line("b", input_tokens=1, output_tokens=2, cache_read=3, write_5m=4))
+
+    result = meter.meter_transcripts([transcript], rates=_rates(tmp_path))
+
+    assert result["tokens_in"] == 11 and result["tokens_out"] == 22
+    assert result["tokens_cache_read"] == 303
+    assert result["tokens_cache_write"] == 54004
+    assert result["tokens_total"] == 11 + 22 + 303 + 54004
+
+
+def test_meter_counts_a_duplicated_message_id_once_for_every_token_kind(tmp_path):
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, _full_line("same", cache_read=5, write_5m=7, output_tokens=1),
+           _full_line("same", cache_read=5, write_5m=7, output_tokens=9))
+
+    result = meter.meter_transcripts([transcript], rates=_rates(tmp_path))
+
+    assert result["tokens_total"] == 5 + 7 + 9
+
+
+def test_dollars_are_labelled_indicative_and_never_a_bill(tmp_path):
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, _line("a", input_tokens=1_000_000))
+
+    result = meter.meter_transcripts([transcript], rates=_rates(tmp_path))
+
+    basis = result["cost_basis"]
+    assert "indicative" in basis and "not a bill" in basis
+    assert "published" in basis
+
+
+def test_a_rate_limit_record_in_a_transcript_is_reported_with_its_reset_time(tmp_path):
+    """Control: without the scan a throttled run would be scored as the arm's failure."""
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, _line("a", output_tokens=5), RATE_LIMIT_RECORD)
+
+    result = meter.meter_transcripts([transcript], rates=_rates(tmp_path))
+
+    assert result["rate_limited"] == {"resets_at": 1790895600, "limit_type": "seven_day", "final": True}
+    assert result["turns"] == 1, "the synthetic record is not a model turn"
+    assert result["tokens_total"] == 5
+
+
+def test_a_transcript_without_a_rate_limit_record_reports_none(tmp_path):
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, _line("a", output_tokens=5))
+
+    assert meter.meter_transcripts([transcript], rates=_rates(tmp_path))["rate_limited"] is None
+
+
+def test_a_rate_limit_record_in_a_subagent_transcript_is_found_through_the_session_id(tmp_path):
+    projects = tmp_path / "projects"
+    _write(projects / "-repo" / "sess.jsonl", _line("top", output_tokens=1))
+    _write(projects / "-repo" / "sess" / "subagents" / "agent-a.jsonl", _line("sub", output_tokens=2),
+           RATE_LIMIT_RECORD)
+
+    result = meter.meter_transcripts(meter.session_paths("sess", projects), rates=_rates(tmp_path))
+
+    assert result["rate_limited"] is not None and result["tokens_total"] == 3
+
+
+def test_a_rate_limit_record_followed_by_real_work_is_reported_as_not_final(tmp_path):
+    """A transient limit the session worked through must not discard a finished run."""
+    transcript = tmp_path / "s.jsonl"
+    _write(transcript, RATE_LIMIT_RECORD, _line("a", output_tokens=5))
+
+    result = meter.meter_transcripts([transcript], rates=_rates(tmp_path))
+
+    assert result["rate_limited"]["final"] is False and result["tokens_total"] == 5

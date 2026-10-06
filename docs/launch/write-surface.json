@@ -34,6 +34,30 @@
     },
     {
       "path": "evals/bench/bench.py",
+      "function": "__enter__",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run harness only: opens (append mode, never truncating) the results file's own .lock file beside it, to refuse a second invocation",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/bench/bench.py",
+      "function": "_run_locked",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call",
+      "risk": "high"
+    },
+    {
+      "path": "evals/bench/bench.py",
+      "function": "_run_locked",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run harness only: refuses CI and background runs; takes an exclusive lock on the results file first; creates its scratch root and per-run directories (all removed after scoring) under an empty scratch root",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/bench/bench.py",
       "function": "_write_json_atomic",
       "rule": "fs-write",
       "count": 1,
@@ -51,22 +75,6 @@
     {
       "path": "evals/bench/bench.py",
       "function": "run",
-      "rule": "fs-write",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "evals/bench/bench.py",
-      "function": "run_benchmark",
-      "rule": "fs-rmtree",
-      "count": 1,
-      "gate": "operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call",
-      "risk": "high"
-    },
-    {
-      "path": "evals/bench/bench.py",
-      "function": "run_benchmark",
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",

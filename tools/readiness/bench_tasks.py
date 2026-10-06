@@ -174,7 +174,7 @@ def harness_validates(tasks_dir, hidden_root):
         bench = _bench_module()
         try:
             loaded = bench._load_tasks(copy / "manifest.json")
-            bench._validate_inputs(loaded, 1.0, Path(hidden_root), Path(scratch) / "out" / "results.json", False, {},
+            bench._validate_inputs(loaded, 1, Path(hidden_root), Path(scratch) / "out" / "results.json", False, {},
                                    Path(scratch) / "scratch")
         except Exception as exc:
             return f"the harness refuses these tasks with this hidden root: {exc}"

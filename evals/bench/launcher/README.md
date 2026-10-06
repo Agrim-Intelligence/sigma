@@ -5,7 +5,8 @@
 below, and read the script, before you trust it.
 
 Status: written and tested only against a fake `claude` executable. No `claude -p` has ever been run through it,
-against a model or otherwise.
+against a model or otherwise. In particular no `claude -p` run authenticated by a subscription token has been observed
+(see [Authentication](#authentication-the-subscription-owner-decision-2026-10-06)).
 
 ## What the harness does with it
 
@@ -36,7 +37,7 @@ file in this directory is a **source you install**, not the path you pass.
    list in `extra_env` (never a name containing KEY, TOKEN, SECRET, PASSWORD, CREDENTIAL, AUTH or COOKIE), the four
    profile variables, and the one credential variable you name, passed **only** to the program whose real path is
    `claude_path`. Scoring commands and every other program never receive it. The allowlist has not been measured
-   against a real agent run: a missing variable shows up as an unpriced first run, which stops the harness safely.
+   against a real agent run: a missing variable shows up as a first run with no readable usage records, which stops the harness safely.
 5. Hashes the real plugin surface: `~/.claude/plugins`, `~/.claude/settings.json`, `~/.codex/config.toml`,
    `~/.codex/plugins`.
 6. Starts a **supervisor** in its own session. The supervisor runs the command in the command's own process group,
@@ -53,7 +54,7 @@ file in this directory is a **source you install**, not the path you pass.
 Exit status: the command's own (128+n when a signal ended it); 2 refused (nothing started); 97 real profile changed;
 124 deadline; 127 cannot start. The deadline clock starts after the before-hash, so one call can take the before-hash,
 `deadline_seconds` and the after-hash.
-Because the harness discards stderr, **read `<scratch_root>/launcher-alerts.log`** when a run stops: every refusal is appended there, and the latch holds the cause of a 97. The harness itself will only say "could not be priced (claude exit 2)" or "claude exit 97".
+Because the harness discards stderr, **read `<scratch_root>/launcher-alerts.log`** when a run stops: every refusal is appended there, and the latch holds the cause of a 97. The harness itself will only say "no readable usage records (claude exit 2)" or "claude exit 97" (a missing token is refused by the launcher itself, naming the variable, on stderr and in the alert log).
 
 The launcher writes only inside `scratch_root` (its dry-run profile, the latch, the alert log; the log stops growing at 1 MiB). It is the
 config's own directory, not the harness's `--scratch-root`: use two different directories.
@@ -89,7 +90,7 @@ config's own directory, not the harness's `--scratch-root`: use two different di
 - Exit 2 can collide with a command's own exit 2, and the launcher's 124 reads as "claude exit 124" in the harness row.
 - **One extra paid run is possible after a harness kill.** The next invocation can start before the original
   supervisor has written the latch, and the run that tripped is not in `aborted.cost_usd_spent` (its transcript is
-  deleted unpriced), so the reported spend is a lower bound.
+  deleted before it is read), so the reported spend is a lower bound; on resume the in-flight marker counts such a pair as an unknown-token run.
 - **What the hash proves.** It compares file contents (and link targets) at the start and end of one invocation. A change
   reverted before the end, or a permissions-only change, is not seen.
 - **A command can outlive its group.** The supervisor kills the command's process group. A process that leaves it
@@ -103,7 +104,7 @@ config's own directory, not the harness's `--scratch-root`: use two different di
   The latch and alert log carry the cause.
 - **The credential match is a path.** `claude_path` is compared by real path with the program the harness starts. If
   `claude_path` names a version-specific file rather than the stable symlink, an auto-update leaves it pointing at
-  the old version, the credential is withheld and the first run stops unpriced; name the stable path, pin the version,
+  the old version, the credential is withheld and the first run stops with no readable usage records; name the stable path, pin the version,
   or add `DISABLE_AUTOUPDATER` to `extra_env`.
 - **Hash cost** is two full hashes of the four paths per invocation (the launcher's before-hash, the supervisor's
   after-hash), one invocation per command. The harness's own
@@ -111,22 +112,32 @@ config's own directory, not the harness's `--scratch-root`: use two different di
   unmeasured, so leave headroom in `deadline_seconds`.
 - Never exercised against a real `claude`, a model, or a platform the tests did not run on.
 
-## Authentication: the owner's decision
+## Authentication: the subscription (owner decision, 2026-10-06)
 
-Claude Code documentation (code.claude.com/docs/en/authentication and /env-vars, fetched 2026-10-05) says that in
-non-interactive mode (`-p`) `ANTHROPIC_API_KEY` "is always used when present", and that `CLAUDE_CODE_OAUTH_TOKEN`
-(from `claude setup-token`, a one-year subscription token) takes precedence over keychain-stored credentials. Either is
-one environment variable, so an empty profile can authenticate **without copying any login state**, and this
-launcher never copies your real credentials anywhere. Recommended: `ANTHROPIC_API_KEY`, because it is priced in dollars, which is what `--max-budget-usd` and the harness meter
-assume. Choose one:
+The owner has no API key and no API funds: the benchmark runs through headless `claude -p` on the owner's Max
+**subscription** login. Because every run starts in a fresh, empty profile (so no login state is copied into an
+agent-readable directory), the subscription login has to arrive as a token: create it once, interactively, with
+`claude setup-token` (a long-lived OAuth token for the subscription; the Claude Code documentation fetched 2026-10-05
+says it takes precedence over keychain credentials in `-p` mode). The launcher takes it as the one credential
+variable, `CLAUDE_CODE_OAUTH_TOKEN`, and passes it only to the program whose real path is `claude_path`.
 
-| Option | `credential_var` | Billing and risk |
-|---|---|---|
-| Console API key | `ANTHROPIC_API_KEY` | Pay per token; `--max-budget-usd` and the harness meter apply in dollars. Use a key made for this benchmark with a spend limit and revoke it afterwards. |
-| Subscription token | `CLAUDE_CODE_OAUTH_TOKEN` | Counts against your plan's usage limits, not dollars, so the meter's list-price dollars are not what you are charged; the token lasts a year. |
-| Copy your real login into the profile | none | **Not supported:** it puts your real account in an agent-readable directory. |
+- **`credential_var` must be `CLAUDE_CODE_OAUTH_TOKEN`.** `null` is refused ("required") and `ANTHROPIC_API_KEY` is
+  refused ("pay-per-token"): the same documentation says `ANTHROPIC_API_KEY` "is always used when present" in `-p` mode,
+  so a stray key would silently move the benchmark from the subscription to per-token billing. The launcher builds the
+  environment from nothing, so an API key in your shell never reaches `claude` either.
+- **A `claude` model run refuses loudly when the token is missing or empty** (exit 2, alert log, the message names the
+  variable, never a value). `claude --version`, the dry run and the scoring commands do not need it.
+- **The token is the one secret, and it is never in a file or a log.** The config names the variable, not the value;
+  the launcher never writes the environment anywhere. The token is a one-year credential: it reaches the agent's own tool
+  subprocesses and the sigma arm's plugin hooks (unavoidable, as before), and the tasks pull external repositories, so
+  **revoke or rotate it after the benchmark** (re-run `claude setup-token`, or revoke it in your account's settings).
+- **Unmeasured:** that a token-authenticated `claude -p` in an empty profile reads the subscription's limits and writes
+  usage records in the same shape as an interactive login. The first batch is the measurement: if it leaves no readable
+  usage record the harness stops with "no readable usage records ... authentication is missing" before scoring anything.
+- Copying your real login into the profile is **not supported**: it puts your real account in an agent-readable directory.
 
-The harness requires a priced run, so the first run stops at "could not be priced" if no credential reaches `claude`.
+Tokens, not dollars, are what the harness meters and limits: dollars in a results file are **indicative** (the same
+tokens priced at published list rates) and are never what a subscription is charged. See `docs/bench/token-budget.md`.
 
 ## Install
 
@@ -139,8 +150,8 @@ cp evals/bench/launcher/launcher.example.json ~/.sigma-ops/bench/launcher/sigma_
 The script's first line is `#!/usr/bin/env -S python3 -B` (`-B` because Apple's python otherwise writes its startup
 bytecode into the profile's `HOME`, which would make it non-empty; `env -S` needs macOS or GNU coreutils 8.30+).
 Edit the JSON (it must sit beside the script with the same name and `.json`). Keys: `repo_root`, `hidden_root`,
-`scratch_root` (required, see above), `deadline_seconds` (required, no default), `credential_var` (`null`,
-`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) with `claude_path` (required; from `command -v claude`), `extra_env`
+`scratch_root` (required, see above), `deadline_seconds` (required, no default), `credential_var` (required:
+`CLAUDE_CODE_OAUTH_TOKEN`) with `claude_path` (required; from `command -v claude`), `extra_env`
 (for example `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`; a proxy URL can itself hold a password),
 `parent_marker` (default `bench.py`; null never signals a parent) and `real_home` (tests only: refused unless
 `SIGMA_LAUNCHER_TEST_MODE=1`; leave it out). Unknown keys refuse.
@@ -158,27 +169,38 @@ removes the profile. It refuses any other command.
 
 ## First run (owner)
 
-Only after you have read this file and the script and chosen a credential option; it spends real money. From the
-repository root, add `--dry-run` to this same command first (the harness then checks its own inputs and the launcher's location and executable bit, and prints each arm's planned
-facts; it neither runs the launcher nor reads its config, and the sigma arm's facts step runs `git`):
+Only after you have read this file and the script and created the subscription token. From the repository root, add
+`--dry-run` to this same command first (the harness then checks its own inputs and the launcher's location and
+executable bit, and prints each arm's planned facts; it neither runs the launcher nor reads its config, and the sigma
+arm's facts step runs `git`). The run is **batched**: this command runs at most `--batch-pairs` task/arm pairs (default 3,
+one task's three arms) and then stops cleanly. Run it again with `--resume` (and the same other flags) to continue, and
+use `--resume` after any rate-limit stop; `docs/bench/token-budget.md` explains the cursor, the batch size and the stop rule.
 
 ```
-env -i PATH="$PATH" HOME="$HOME" SHELL="$SHELL" USER="$USER" LOGNAME="$LOGNAME" LANG="$LANG" TERM="$TERM" "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" python3 evals/bench/bench.py run --manifest <tasks/manifest.json> --hidden-root <hidden-root> --results <results.json> --max-usd <ceiling> --scratch-root <outside-home> --isolation-launcher ~/.sigma-ops/bench/launcher/sigma_bench_launcher.py --arm all --model <pinned-model-id> --permission-mode <mode> --sigma-commit <sha> --deadline-seconds <seconds-above-deadline_seconds>
+env -i PATH="$PATH" HOME="$HOME" SHELL="$SHELL" USER="$USER" LOGNAME="$LOGNAME" LANG="$LANG" TERM="$TERM" "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" python3 evals/bench/bench.py run --manifest <tasks/manifest.json> --hidden-root <hidden-root> --results <results.json> --max-tokens <token-ceiling> --batch-pairs 3 --scratch-root <outside-home> --isolation-launcher ~/.sigma-ops/bench/launcher/sigma_bench_launcher.py --arm all --model <pinned-model-id> --permission-mode <mode> --sigma-commit <sha> --deadline-seconds <seconds-above-deadline_seconds>
 ```
 
-The key's value passes through `env`'s argument list for the instant before it starts `python3`. (With the subscription token, name `CLAUDE_CODE_OAUTH_TOKEN` instead of `ANTHROPIC_API_KEY`, in both places.) `<outside-home>` is an
+The token's value passes through `env`'s argument list for the instant before it starts `python3` (and is visible to
+`ps` for that instant): export it in your shell without typing the value on a command line, so it is not in your shell
+history, and do not paste it anywhere else. `<outside-home>` is an
 empty directory outside your home that only you can read, for example one made with `mkdir -m 700` under a private
 parent; it holds task copies and, during scoring, the hidden bundle, so it must not be world-readable. Your launcher
 `scratch_root` is a different, persistent directory (not in `/tmp`, which a reboot clears and would lose the latch); it must
 not be that harness scratch root or inside any run. Do not put it inside the harness scratch root either: the
-harness refuses to start when that is not empty.
+harness refuses to start when that is not empty (a crashed run leaves its run directory there; empty it deliberately).
+
+Exit codes the harness gives a driving script: 0 (the batch finished or the whole run is complete; the JSON on stdout
+says `complete`), 75 (the host reported a rate limit; wait for the reset it names, then run again with `--resume`), 76
+(the token ceiling was reached; raising it is a recorded decision), 2 (refused: nothing was started, or a stop with an
+`aborted` object in the results file).
 
 ## Cost expectations
 
-Measured figures only, from `docs/launch/evidence/cost-calibration.md` (2026-10-04, list prices, one run per row, no
-variance known). These are **review** passes, not benchmark runs:
+Measured figures only. The first table is from `docs/launch/evidence/cost-calibration.md` (2026-10-04, list prices, one
+run per row, no variance known); these are **review** passes, not benchmark runs, and the dollars are indicative (the
+tokens priced at list rates), not a bill:
 
-| Run | Dollars |
+| Run | Indicative dollars |
 |---|---|
 | review of unit A01 | $0.628 |
 | verification of A01's findings | $0.415 |
@@ -187,6 +209,9 @@ variance known). These are **review** passes, not benchmark runs:
 | A01 reviewed and verified | $1.044 |
 | B01 reviewed and verified | $0.773 |
 
-**The benchmark pilot is unmeasured.** No benchmark task has run, so there is no measured cost per arm, task or run,
-and none of the figures above predicts one. Set `--max-usd` to a number you accept losing; the harness stops at it,
-and `--belt-usd` bounds each `claude -p`.
+The measured token counts of 24 headless validation sessions (22 Sigma loop sessions, 2 plain runs) and the ceiling
+derived from them are in `docs/bench/token-budget.md`, with their stated uncertainty. **The benchmark itself is
+unmeasured:** no benchmark task has run, so there is no measured cost per arm or task on the frozen set, and none of the
+figures above predicts one. `--max-tokens` is checked between runs (the host has no per-run token cap, so one run can
+overshoot, and the overshoot is counted); `--belt-usd` is the host's client-side per-run dollar estimate, a runaway
+guard only.
