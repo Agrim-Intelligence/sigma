@@ -1896,8 +1896,12 @@ def test_phase_report_loads_no_network_capable_sibling_module():
     #
     # `actionlog` joined it with #684 (the per-phase row `phase_gate.py` reads). It qualifies like
     # `timing_store`: local-file append, loads only state and work, no socket, no subprocess.
+    #
+    # `phase_gate` joined it with #684 (`verify_agent`, a read of the host's own transcript directory
+    # that `end` records beside the phase row); it loads `work`, `actionlog` and `reviewer` lazily and
+    # opens no socket and spawns no subprocess.
     assert loaded == {"state", "work", "ledger", "frontmatter", "timing_store", "sources",
-                      "actionlog"}, loaded
+                      "actionlog", "phase_gate"}, loaded
     sources_callers = {fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
                        for call in ast.walk(fn)
                        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
