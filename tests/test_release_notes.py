@@ -53,3 +53,22 @@ def test_shipped_changelog_refuses_while_the_placeholder_stands():
         assert done.returncode == 2 and done.stdout == "" and "REFUSED" in done.stderr
     else:
         assert done.returncode == 0 and done.stdout.strip()
+
+
+def test_end_marker_stops_the_notes(tmp_path):
+    text = DATED.replace("- two\n", "- two\n\n<!-- release-notes:end -->\n\n- detailed log\n")
+    done = _run(tmp_path, text, "1.0.0")
+    assert done.returncode == 0 and done.stdout.strip() == "- one\n- two"
+
+
+def test_oversize_notes_are_refused(tmp_path):
+    done = _run(tmp_path, DATED.replace("- two", "- " + "x" * 121000), "1.0.0")
+    assert done.returncode == 2 and done.stdout == "" and "REFUSED" in done.stderr and "limit" in done.stderr
+
+
+def test_shipped_notes_fit_once_dated(tmp_path):
+    """The real fold, dated in a copy: the extraction must succeed and stay under GitHub's body limit."""
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").replace("— DATE-PENDING —", "— 2099-01-01 —", 1)
+    done = _run(tmp_path, text, "1.0.0")
+    assert done.returncode == 0, done.stderr
+    assert 500 < len(done.stdout) < 20000 and "development log" not in done.stdout

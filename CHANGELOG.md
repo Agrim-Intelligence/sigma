@@ -9,6 +9,31 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## 1.0.0 — DATE-PENDING — the first public release
 
+Sigma Loop 1.0.0 is the first public release: guardrails and an overnight autopilot for an AI coding agent,
+run from your backlog on GitHub (issues and a Projects board) or from local goal files.
+
+- A seven-phase SDLC for every goal: goal, research, plan, plan-review, implement, review and retrospective.
+  Plan-review is an adversarial review of the plan before any edit.
+- In the autonomous loop the phases are checked, not just asked: `loop.py record done` and `work.py merge` refuse
+  a goal unless the action log shows research, plan, an approved plan-review bound to the plan's bytes, implement,
+  an approved review and retro (`gates.phase_record`, on in a fresh `/sigma-init`). The record proves the phases and
+  verdicts were recorded in order, not that the work was good; interactive work outside those commands is not gated.
+- `/sigma-loop` drains a backlog autonomously with fresh phase agents, one worktree, branch and verified pull request
+  per goal; `/sigma-goal` runs one goal with an approval gate at each phase boundary; `/sigma-doctor` checks the
+  setup and prints the fix; `/sigma-init` and `/sigma-setup` scaffold and adopt the project layer.
+- Work is tracked where it already lives: the `sdlc:*` label model on GitHub issues and a Projects board, plus a local
+  action log (`/sigma-log`, `/sigma-status`) and one renderer that builds every status line.
+- Supported at launch: Claude Code on Linux (Python 3.10 to 3.13) and macOS (Python 3.12), in local-goals and github
+  modes; each is a cell CI runs. Codex, Cursor and Windows are experimental. Coexistence with the predecessor tool on
+  one shared ledger is not claimed.
+- Safe by default: nothing sends data off the machine, spawns a background process or consumes quota without the
+  operator opting in. Released under the MIT licence.
+- Outside contributions are not accepted yet; issues are welcome.
+
+<!-- release-notes:end -->
+
+The detailed development log of everything folded into this release follows; it is not part of the release notes.
+
 - **The default loop now records every SDLC phase, and `record done` is refused without them** (#684, class B3). A live
   run with model tiering `off` let one worker do every phase inline: no research, plan, plan-review or retro was recorded
   and the independent review lived only in prose. `phase_report.py start|end` now write phase rows to the action log,

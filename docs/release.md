@@ -18,7 +18,9 @@ manifest drift and an undated published CHANGELOG heading.
    `## 1.0.0 — DATE-PENDING — the first public release` in `CHANGELOG.md`: replace `DATE-PENDING` with the
    release date (`YYYY-MM-DD`; no date is invented for you). For a later release, move the intended entries
    out of `## Unreleased` and under `## X.Y.Z — YYYY-MM-DD`. The consistency controls accept
-   `DATE-PENDING` only as the newest heading, and `tools/release_notes.py` (step 7) refuses it.
+   `DATE-PENDING` only as the newest heading, and `tools/release_notes.py` (step 7) refuses it. Review the
+   curated 1.0.0 summary above the `<!-- release-notes:end -->` line: that is the release notes (GitHub rejects a body over
+   125,000 characters, so the tool refuses one over 120,000); the detailed log below the marker is not sent.
 2. Bump both plugin manifests to the same `X.Y.Z` version.
 3. Run the full suite successfully on every supported CI cell.
 4. For the first public release, require `GO` from the decision-rule checker, which ships in this tree:
