@@ -51,7 +51,8 @@ def test_plan_gate_keeps_the_any_depth_docs_exemption_and_handles_relative_paths
     under_docs = tmp_path / "docs" / "p"
     under_docs.mkdir(parents=True)
     tpg._project(under_docs)
-    assert "deny" in tpg._run(under_docs, "src/app.py")                         # the red half
+    assert "deny" in tpg._run(under_docs, str(under_docs / "src" / "app.py"))   # the red half
+    assert tpg._run(under_docs, "docs/guide.py") == ""
     tpg._project(tmp_path)
     assert tpg._run(tmp_path, "docs/guide.py") == ""
     assert tpg._run(tmp_path, "packages/x/docs/foo.py") == ""
@@ -192,6 +193,13 @@ def test_sync_init_still_fast_forwards_a_branch_that_is_only_behind(tmp_path):
     base, repo, ops = _ops_fixture(tmp_path, local_extra=0, remote_extra=2)
     sync.init(base, CONFIG)
     assert _contains(repo, ops, _git(repo, "rev-parse", f"origin/{ops}"))
+    # the red half: an ahead-only sibling clone must keep its unpushed commit while this one moved
+    tmp2 = tmp_path / "ahead"
+    tmp2.mkdir()
+    base2, repo2, branch2 = _ops_fixture(tmp2, local_extra=1, remote_extra=0)
+    unpushed = _git(repo2, "rev-parse", branch2)
+    sync.init(base2, CONFIG)
+    assert _contains(repo2, branch2, unpushed)
 
 
 def test_sync_init_with_a_failing_fetch_keeps_an_existing_local_ops_branch(tmp_path):
