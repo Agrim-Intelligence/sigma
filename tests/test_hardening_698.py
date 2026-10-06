@@ -116,21 +116,21 @@ def _ops_fixture(tmp_path, local_extra, remote_extra):
     """A clone whose `sdlc-ledger` branch exists locally and on origin. `local_extra`/`remote_extra`
     are the number of commits each side holds beyond the shared root. Returns (base, repo, tips)."""
     repo, origin = _repo_with_origin(tmp_path)
-    ops = "sdlc-ledger"
-    _git(repo, "branch", ops)
-    _git(repo, "push", "-q", "origin", ops)
+    ledger_branch = "sdlc-ledger"
+    _git(repo, "branch", ledger_branch)
+    _git(repo, "push", "-q", "origin", ledger_branch)
     other = tmp_path / "other"
     subprocess.run(["git", "clone", "-q", str(origin), str(other)], check=True)
     for k, v in (("user.email", "t@example.com"), ("user.name", "T"), ("commit.gpgsign", "false")):
         _git(other, "config", k, v)
-    _git(other, "checkout", "-q", ops)
+    _git(other, "checkout", "-q", ledger_branch)
     for i in range(remote_extra):
         (other / f"r{i}.txt").write_text("r\n")
         _git(other, "add", "--", f"r{i}.txt")
         _git(other, "commit", "-q", "-m", f"remote {i}")
     if remote_extra:
-        _git(other, "push", "-q", "origin", ops)
-    _git(repo, "checkout", "-q", ops)
+        _git(other, "push", "-q", "origin", ledger_branch)
+    _git(repo, "checkout", "-q", ledger_branch)
     for i in range(local_extra):
         (repo / f"l{i}.txt").write_text("l\n")
         _git(repo, "add", "--", f"l{i}.txt")
@@ -140,7 +140,7 @@ def _ops_fixture(tmp_path, local_extra, remote_extra):
     base.mkdir(exist_ok=True)
     (base / "config.json").write_text(json.dumps({"ledger": {"enabled": True, "actor": "dana"}}))
     (repo / ".gitignore").write_text(".sdlc/\n")
-    return base, repo, ops
+    return base, repo, ledger_branch
 
 
 CONFIG = {"ledger": {"enabled": True, "actor": "dana"}}
