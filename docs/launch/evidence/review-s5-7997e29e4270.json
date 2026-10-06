@@ -1,0 +1,445 @@
+{
+  "schema": "review-s5/v1",
+  "commit_reviewed": "7997e29e4270f2d333a63d913657bc146f4cfe19",
+  "units": [
+    "sigma-goal",
+    "sigma-brainstorm",
+    "sigma-research",
+    "sigma-plan",
+    "sigma-plan-review",
+    "sigma-implement",
+    "sigma-review",
+    "sigma-verify",
+    "sigma-retro",
+    "sigma-loop"
+  ],
+  "unit_list_note": "docs/launch/review-plan.md says \"the 10 phase skills\" without naming them; this is a defensible reading (orchestrator, goal driver, and one skill per SDLC phase plus verify), not a derivation. Each unit is the skill SKILL.md plus its references/.",
+  "method": "one fresh sonnet reviewer per unit (medium effort), one fresh verifier per finding told to refute, at most 3 concurrent; supported cells only (Claude Code on Linux/macOS, Python 3.10-3.13, GitHub mode)",
+  "findings_reported": 35,
+  "findings_verified": 11,
+  "findings_dropped": 24,
+  "verified_by_class": {
+    "gate-skip": 5,
+    "injection": 3,
+    "prose-vs-code": 3
+  },
+  "gate_skip_ambiguities_verified": 5,
+  "gate_skip_ambiguities_including_prose_vs_code_that_disables_a_gate": 6,
+  "d2_threshold": 0,
+  "d2_threshold_met": false,
+  "findings": [
+    {
+      "unit": "sigma-goal",
+      "id": "goal:F1",
+      "cls": "gate-skip",
+      "location": "skills/sigma-goal/SKILL.md:117-119",
+      "claim": "The skill says each phase is dispatched as its own subagent (line 46) yet offers \"Running inline (no subagent dispatched)? Call `end` without `--agent-id`\", so a model can run all phases inline and still pass, while loop.py:5690 says phases are run \"never inline\".",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-goal/SKILL.md:117-119 (text exists as cited) | Quoted: \"Running inline (no subagent dispatched)? Call `end` without `--agent-id`\". Closed by code: skills/sigma-loop/scripts/phase_gate.py:175-193 -- on a host whose reviewer route is `subagent` (Claude Code), a phase \"ended with no agent id: this host dispatches subagents, so the phase must run as its own subagent\" and `loop.py record done` / `work.py merge` refuse (gates.phase_record, on from /sigma-init; loop.py:5690 notice says so at every pick). Also phase_gate.py:276 requires --agent-id for the review verdict on "
+    },
+    {
+      "unit": "sigma-goal",
+      "id": "goal:F2",
+      "cls": "gate-skip",
+      "location": "skills/sigma-goal/SKILL.md:56-60",
+      "claim": "`sigma-verify` is named only in the portable-executor branch (\"`sigma-review` + `sigma-verify` \u2192 Review\"), so with the companion installed Review resolves to \"`superpowers` / `code-review`\" and the verification gate can be skipped.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F2 | VERIFIED | skills/sigma-goal/SKILL.md:56-60 confirmed | Wording: \"on Claude with the companion installed, the `superpowers` / `code-review` skill; otherwise Sigma's portable executor (... `sigma-review` + `sigma-verify` \u2192 Review ...)\". `sigma-verify` appears only on line 60 in all of sigma-goal/ (grep). The only other cues are soft prose: \"Review (evidence before \"done\")\" and step 4 \"verified, not assumed\". Code does not close it by default: `loop.py record done` refuses without fresh verify evidence only when `verify.enforce` is on, and the shipped template is `\"verify\": { \"command\": \"\","
+    },
+    {
+      "unit": "sigma-goal",
+      "id": "goal:F3",
+      "cls": "gate-skip",
+      "location": "skills/sigma-goal/SKILL.md:170-181",
+      "claim": "\"The \u00a74 pair is `features.read`'s answer, never a re-reading of it\" but features.py has no CLI and the skill gives no command, so the named-goal membership check (\"A goal named on the line that is not a member: stop\") is left to hand judgment (e.g. label only).",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F3 | DROPPED | skills/sigma-goal/SKILL.md:170-181 confirmed as cited | Text says \"Membership is the \u00a74 declaration pair, never the label alone\" (l.160) and \"Do not settle membership from the label alone\" (l.171-172), and \"A goal named on the line that is not a member: stop.\" (l.178). features.py has no CLI (confirmed: only importable `read(issue)`, line 421), and `loop.py claim` has no --feature scoping, so no script enforces it for a named goal. But the gap is mechanism-only: the text names the function, forbids the label-only shortcut explicitly, and a capable model can call features.read on"
+    },
+    {
+      "unit": "sigma-goal",
+      "id": "goal:F4",
+      "cls": "gate-skip",
+      "location": "skills/sigma-goal/SKILL.md:25-32",
+      "claim": "\"Then **claim it**\" is followed by \"Skipping the line does not break the run\", and the self-arm only fires on `note`/`verify`/`agent-start` (loop.py:1698), not on the acceptance, predict or phase_report start calls that precede the first note.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F4 | DROPPED | skills/sigma-goal/SKILL.md:25-32 confirmed as worded | \"Skipping the line does not break the run: `loop.py` self-arms the claim on the first goal-scoped verb this skill calls anyway (step 2's `note` is one). Typing it is simply earlier, and therefore truer.\" The claim step is explicitly documented as non-gating, and code (loop.py _ARMS_CLAIM = note/verify/agent-start) backs the self-arm; the only effect of skipping is a later claimed_ts, not a skipped mandatory gate (the mandatory gates are plan-review, acceptance, etc., which are separate). The intermediate window before the fi"
+    },
+    {
+      "unit": "sigma-goal",
+      "id": "goal:F5",
+      "cls": "injection",
+      "location": "skills/sigma-goal/SKILL.md:37-43",
+      "claim": "The skill has the model pass the full issue title and body as `resolve \"<that text>\"` in a double-quoted shell argument, so `$(...)` or backticks in an issue body execute, with no boundary or file/stdin handoff.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F5 | VERIFIED | skills/sigma-goal/SKILL.md:37-43 confirmed | Wording: `predict.py\" resolve \"<that text>\" .sdlc \"<goal>\"`, where <that text> is the output of `gh issue view ... --jq '.title + \"\\n\\n\" + (.body // \"\")'`. Issue title/body is author-controlled text that the model substitutes inside double quotes in a Bash call (allowed-tools: Bash(python3 *) auto-permits it). In double quotes, $(...) and backticks expand. No quoting instruction, stdin/file handoff, or boundary exists: predict.py main() takes argv[2] only (_read_goal(path-or-text); no stdin or \"-\" support), and hooks.json's only Bash"
+    },
+    {
+      "unit": "sigma-brainstorm",
+      "id": "brainstorm:F1",
+      "cls": "gate-skip",
+      "location": "skills/sigma-brainstorm/SKILL.md:16-20,53-59",
+      "claim": "Executor rule says \"Claude Code + `superpowers` installed -> prefer `superpowers:brainstorming`\" while the mandatory \"Record P1 acceptance before handing off\" step exists only in this skill, so the delegated path can legitimately skip acceptance.py record.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-brainstorm/SKILL.md:16-20,53-59 confirmed as cited | The acceptance step is not exclusive to this skill. skills/sigma-loop/references/running.md:125-133 says \"P1 GOAL records acceptance before Research or code ... This step applies regardless of companion or portable executor.\" skills/sigma-goal/SKILL.md:62 says \"Before Research or code, capture P1 acceptance for every goal\". Both orchestrators run acceptance.py themselves, so delegating to superpowers:brainstorming does not skip it. Only a bare standalone /sigma-brainstorm invocation could skip it, and that is not "
+    },
+    {
+      "unit": "sigma-brainstorm",
+      "id": "brainstorm:F2",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-brainstorm/SKILL.md:37-39",
+      "claim": "Skill says north_star.py \"prints its real path\" and \"nothing there just means a drop-in project\", but the script prints `present <path>`, `absent <path>` or `unreachable <why>` (north_star.py:46), so `unreachable` can be misread as drop-in and the north-star skipped.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | skills/sigma-brainstorm/SKILL.md:37-39 confirmed as worded, but not a gate | Wording: \"prints its real path ... nothing there just means a drop-in project\". north_star.py does print `present|absent|unreachable <why>` (docstring line 'prints \"present <path>\" | \"absent <path>\" | \"unreachable <why>\"'), so the prose is loosely inaccurate. But step 1 is \"Explore context\" reading, not a mandatory gate with a verdict: the brainstorm hard gate is design approval (SKILL.md:31-34), which is unaffected. A printed `unreachable <why>` line is not \"nothing there\", and a drop-in misreading onl"
+    },
+    {
+      "unit": "sigma-research",
+      "id": "research:F1",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-research/SKILL.md:130",
+      "claim": "The skill says both orchestrators resolve the lane with `discovery.py lane \"<goal>\"`, but discovery.py:185-205 returns \"medium\" for any GitHub issue ref (local mode only), so in GitHub mode the measured lane is never read.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-research/SKILL.md:130 confirmed (wording loose) | Line 130: \"each resolving it with `discovery.py lane \"<goal>\"`\". discovery.py:185-205 does return DEFAULT_LANE (medium) for issue refs, and its docstring says \"github mode reads the lane from the phase note instead\". But the consumers close the gap: sigma-loop/references/running.md:275 says \"in github mode ... read the lane from Research's phase note on the issue timeline\"; sigma-goal/SKILL.md:74 says the same. Failure direction is toward more rigour (medium), and \"Plan-Review runs in full at every lane\" (sigma-goal:"
+    },
+    {
+      "unit": "sigma-research",
+      "id": "research:F2",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-research/SKILL.md:42",
+      "claim": "The skill says \"Skipping it is a legitimate outcome\" and to go straight to Plan, but phase_gate.py:39-40,100-136 refuses `record done` without a research phase end and dossier unless `loop.py waive-phases` was run, which the skill never names.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | skills/sigma-research/SKILL.md:42 confirmed (wording exists), phase_gate.py:39-40,100-136 confirmed | Skill: \"Skipping it is a legitimate outcome\" / \"go straight to Plan\". Code does refuse `record done` without a research end unless `loop.py waive-phases` ran (WAIVABLE=research,retro). But the gate is not skipped: the refusal \"names each missing item, the command that records it and the lever\" (phase_gate.py:65 _LEVER, work.py:214), and sigma-loop/references/running.md:97 documents the trivial-goal lever. Following the text yields a loud, self-describing refusal with the fix, no"
+    },
+    {
+      "unit": "sigma-research",
+      "id": "research:F3",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-research/SKILL.md:134",
+      "claim": "The skill says \"Write `.sdlc/research/<goal-slug>.md`\" from a goal worktree (:97-99), but phase_gate.py:130-136 only counts the dossier in the MAIN checkout and requires phase_report.py start/end bracketing, neither stated in the skill.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F3 | DROPPED | skills/sigma-research/SKILL.md:134 confirmed (wording exists) | Code does count only the MAIN-checkout dossier (phase_gate.py:~125-132 \"must file .sdlc/{sub}/<goal-stem>.md in the MAIN checkout (a copy only in the goal worktree does not count)\"), but this is not a gate skip: a missing artifact or missing phase end makes the gate FAIL loudly with that exact fix text, so nothing is bypassed. Orchestrator sigma-loop/SKILL.md:139 (\"Bookkeeping is the exception and stays in the MAIN checkout\") and :163-164 (phase_report.py start/end bracketing, run by the orchestrator, not the resear"
+    },
+    {
+      "unit": "sigma-plan",
+      "id": "plan:F1",
+      "cls": "gate-skip",
+      "location": "SKILL.md:20",
+      "claim": "Under Claude Code with superpowers installed the skill says \"prefer **`superpowers:writing-plans`**\" without stating that the `.sdlc/plans/<goal-stem>.md` write, the `## Tests` section, the no-step-commit rule and the `sigma-plan-review` hand-off still bind, so a model can delegate wholesale and skip them.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | SKILL.md:20 read in context | The line only picks the executor (\"prefer superpowers:writing-plans ... Otherwise ... use this. Same discipline\"); the same skill then states the binding steps. Line 75: \"The finished plan goes to sigma-plan-review (never skipped) before any edit\", and line 23 names it too. Section 5 says the plan must be written to .sdlc/plans/<goal-stem>.md, and it is enforced by code (PreToolUse hook denies edits; work.py pr refuses the push without a plan). Section 4 requires \"## Tests\", which loop.py/red_green.py parse. The no-step-commit rule is in section 3 o"
+    },
+    {
+      "unit": "sigma-plan-review",
+      "id": "plan-review:F1",
+      "cls": "gate-skip",
+      "location": "skills/sigma-plan-review/SKILL.md:44",
+      "claim": "The wording \"If this brief already reached you, you ARE the resolved reviewer \u2014 do not re-resolve and do not dispatch again\" lets a maker that itself assembled the brief (lines 51-55) claim reviewer status and skip resolve/dispatch, self-reviewing its own plan.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-plan-review/SKILL.md:44 confirmed as cited | Wording relied on: \"If this brief already reached you, you ARE the resolved reviewer\" (l.44) read with \"The reviewer must not be the author ... Resolve it before judging anything\" (l.27-30) and \"Resolution happens once, at the site that spawns the review\" (l.45). \"Reached you\" means delivered by a spawner; a maker that runs `review_context.py brief` itself (l.51-55) authored the brief and did not receive it, so the sentence does not apply and the resolve-first instruction (l.27-30) still binds. The sentence is a recursion"
+    },
+    {
+      "unit": "sigma-plan-review",
+      "id": "plan-review:F2",
+      "cls": "gate-skip",
+      "location": "skills/sigma-plan-review/SKILL.md:53-65",
+      "claim": "`reviewer.py check` \"exits non-zero if the brief NAMES a shared scratch path\" but the skill states no required action on non-zero, and for the subagent mechanism `run` (the second check) is \"For process / command only\", so the model can dispatch despite a failed check.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F2 | VERIFIED | skills/sigma-plan-review/SKILL.md:53-65 confirmed | The only non-zero statement is \"It exits non-zero if the brief NAMES a shared scratch path\", placed AFTER the `run` block (lines 57-65), which is introduced \"For **`process`** / **`command`** only\". For `subagent` the text says only \"`brief` prints to stdout, so redirect it and check the file\" and never says what to do on a failed `check` (stop/fix/fall back); only the process/command failure path has stated handling (lines 40-42). Code: reviewer.py main returns 1 on LEAK, but nothing gates subagent dispatch or `work.py record"
+    },
+    {
+      "unit": "sigma-plan-review",
+      "id": "plan-review:F3",
+      "cls": "gate-skip",
+      "location": "skills/sigma-plan-review/SKILL.md:136-139",
+      "claim": "\"Refinements carried into Implement without editing the plan file stay inside the approval\" lets arbitrarily substantive SOUND-WITH-REFINEMENTS refinements ship with only a `loop.py note`, bypassing the fresh plan-review the plan-sha256 binding exists to force.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F3 | DROPPED | skills/sigma-plan-review/SKILL.md:136-139 confirmed as worded | Quote: \"Refinements carried into Implement without editing the plan file stay inside the approval (note each disposition with `loop.py note`). Edit the plan FILE and the approval no longer covers it: run a fresh plan-review\". The refinements are the ones the reviewer itself listed in the SOUND-WITH-REFINEMENTS verdict, so carrying them out is what the approval means, not a gate skip. The sha256 binding (work.py record-plan-review / pr) is designed to catch edits to the plan bytes, and the text plus running.md:168-16"
+    },
+    {
+      "unit": "sigma-implement",
+      "id": "implement:F1",
+      "cls": "gate-skip",
+      "location": "skills/sigma-implement/SKILL.md:79",
+      "claim": "The text says \"Skip TDD for prototypes, generated code, or config; say so.\" which lets the agent self-classify any change as prototype/config and skip the test-first gate with only a console remark, outside the `--no-tests` bypass.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-implement/SKILL.md:79 confirmed | Wording: \"Skip TDD for prototypes, generated code, or config; say so. With `verify.enforce`, `work.py pr --no-tests <reason>` is a PR-body exception; it bypasses only test-first proof, never other gates.\" The self-classified skip is only a prose scope statement; the mandatory gate is code. With verify.enforce on, work.py `_test_first_refusal` (work.py:3159-3190) refuses the PR (\"TEST-FIRST REFUSED\") unless red_green.refusal finds observed assertion-red then green proof on the planned tests, or an explicit nonempty --no-tests reason "
+    },
+    {
+      "unit": "sigma-implement",
+      "id": "implement:F2",
+      "cls": "gate-skip",
+      "location": "skills/sigma-implement/SKILL.md:143",
+      "claim": "Mutation testing is described as a \"standing, expected step\" but applies only \"for any non-trivial guard or check\", a judgement the implementer makes, with no recording step, so it can be skipped as trivial.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | skills/sigma-implement/SKILL.md:143 confirmed (wording exists) | Quoted: \"After GREEN, for any non-trivial guard or check \u2014 a validation, a concurrency check, a pagination boundary, anything whose whole job is to reject or correct something \u2014 revert the specific line the fix depends on, re-run the relevant test, confirm it now fails, then restore and confirm green again.\" Drop reason: \"non-trivial\" is the scope definition of the step, bounded by an explicit class (\"whole job is to reject or correct something\") and two worked PR examples, not an exit from a mandatory gate; a guar"
+    },
+    {
+      "unit": "sigma-implement",
+      "id": "implement:F3",
+      "cls": "gate-skip",
+      "location": "skills/sigma-implement/SKILL.md:26",
+      "claim": "On Claude Code with superpowers the skill says \"prefer superpowers:test-driven-development\", and the lists of regardless-applicable sections (:32-45) omit the `loop.py verify` red/green recording, so a model following the companion path can skip recording the stages.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F3 | VERIFIED | skills/sigma-implement/SKILL.md:26-45 confirmed (recording instruction at :70-77) | Wording: \"Claude Code + `superpowers` installed -> prefer **`superpowers:test-driven-development`** + **`superpowers:executing-plans`**\"; the regardless-applicable carve-outs (:32-45) name only Security defaults, Mutation testing, Announce each step. The `loop.py verify` red/green recording lives in \"## Test-first (TDD)\" (:70-77), which the companion replaces, so a model on the companion path has a legitimate reading that skips it. Code does not close it by default: work.py `_test_first_refusal`"
+    },
+    {
+      "unit": "sigma-implement",
+      "id": "implement:F4",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-implement/SKILL.md:42",
+      "claim": "The text cites \"source citations in `## Where these rules come from` below\" but no such heading exists in the file; only `## Sources` (:83) exists.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F4 | VERIFIED | skills/sigma-implement/SKILL.md:42 confirmed | Quoted: \"neither carries the source citations in `## Where these rules come from` below\". grep across frozen/ finds that string only at :42; headings list has no such heading, the citations live under `## Sources` (:83). Dangling cross-reference (low impact, no gate skipped)."
+    },
+    {
+      "unit": "sigma-implement",
+      "id": "implement:F5",
+      "cls": "reachability",
+      "location": "skills/sigma-implement/SKILL.md:139",
+      "claim": "The skill cites \"`.sdlc/context/north-star.md` Standing rule #1\" and \"#2\" (:175) as the standing rules behind the mandatory Security defaults, but that file is untracked and absent from the repo and from consumer installs.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F5 | DROPPED | skills/sigma-implement/SKILL.md:139,:175 confirmed as cited | The file is absent from the frozen clone, but the skill inlines the rule text it relies on (\"A claim in prose is not evidence. Execute it\"; \"a variable reaching a SQL fragment or filesystem path is untrusted by default\"), and the SAFETY quote is from AGENTS.md. Mutation testing and the two security checks are fully specified without opening the file. north_star.py treats context/north-star.md as an optional per-project artifact (REL_PATH handling). So the dangling citation is a minor doc-reachability point and no mand"
+    },
+    {
+      "unit": "sigma-review",
+      "id": "review:F1",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-review/SKILL.md:144-149",
+      "claim": "The skill says to run risk-detect.sh \"over the change\" and run the named risk reviews for each `matched` category, but risk-detect.sh:137-150 scans only the uncommitted working tree, staged and untracked files, so on a committed branch/PR it returns `matched: []` and the migration/contract/sensitive reviews are never triggered.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F1 | VERIFIED | skills/sigma-review/SKILL.md:144-149 confirmed (file is under frozen/skills/sigma-review/; script at frozen/skills/sigma-loop/scripts/risk-detect.sh:137-150)"
+    },
+    {
+      "unit": "sigma-review",
+      "id": "review:F2",
+      "cls": "gate-skip",
+      "location": "skills/sigma-review/SKILL.md:43-44",
+      "claim": "\"If this brief already reached you, you ARE the resolved reviewer \u2014 do not re-resolve and do not dispatch again\" lets the author, who assembled the brief (line 32), claim the brief reached them and skip independent dispatch.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | skills/sigma-review/SKILL.md:43-44 confirmed as cited | Line 32 closes the exit: \"hand a FRESH subagent **only that**, and let it review. You do not.\" Line 26: \"The reviewer must not be the author\". The line 43 sentence (\"If this brief already reached you, you ARE the resolved reviewer\") sits after the author has already run resolve (line 29) and assembled the brief itself; \"reached you\" means delivered by a dispatcher, and the author who ran the command was explicitly told they do not review. Reading it as licence to self-claim is a strained, non-legitimate reading. Residual no"
+    },
+    {
+      "unit": "sigma-review",
+      "id": "review:F3",
+      "cls": "gate-skip",
+      "location": "skills/sigma-review/SKILL.md:74-76",
+      "claim": "\"Claude Code + the `code-review` plugin installed \u2192 prefer `/code-review` + `superpowers:requesting-code-review`. Otherwise ... use this.\" lets a model satisfy the review with the plugin alone and skip every gate in this skill.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F3 | VERIFIED | skills/sigma-review/SKILL.md:74-76 confirmed | \"Claude Code + the `code-review` plugin installed \u2192 prefer `/code-review` + `superpowers:requesting-code-review`.\" / \"**Otherwise** (Cursor / any host / no companion) \u2192 use this. Same discipline, portable.\" The text frames the plugin as an alternative executor to \"this\" skill; no sentence says the reviewer.py resolve/brief, north-star, risk-detect gates or verdict format still run when the plugin is used, and nothing in references/ or scripts mentions the plugin (grep: only these lines). \"prefer\" is soft but a capable model has a l"
+    },
+    {
+      "unit": "sigma-review",
+      "id": "review:F4",
+      "cls": "gate-skip",
+      "location": "skills/sigma-review/SKILL.md:50-54",
+      "claim": "For the subagent mechanism the only leak check is `reviewer.py check`, and the skill never says to stop or fix the brief on its non-zero exit, so a LEAK can be ignored and the brief still dispatched (only `run`, process/command only, refuses).",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F4 | VERIFIED (low severity) | skills/sigma-review/SKILL.md:50-54 confirmed | Wording: \"`brief` prints to stdout, so redirect it and check the file\" then `reviewer.py check ...`; the later \"It exits non-zero if the brief NAMES a shared scratch path\" sits under the process/command-only `run` block (lines 56-67). For `subagent` no sentence says to stop/fix the brief on a non-zero `check`. In code, only `run_review` (reviewer.py) re-checks and returns 1; nothing else in skills or scripts calls the check, so the subagent dispatch is unenforced. Caveat: the intent (\"check\") is clear, so this is a g"
+    },
+    {
+      "unit": "sigma-review",
+      "id": "review:F5",
+      "cls": "prose-vs-code",
+      "location": "skills/sigma-review/SKILL.md:184",
+      "claim": "\"File it with `--label sdlc:followup` instead of blocking\" names a label but no command, target or label-model reference, so the Follow-up path cannot be executed as written and can be satisfied in name only.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F5 | DROPPED | skills/sigma-review/SKILL.md:184 confirmed (wording exists) | Wording: \"File it with `--label sdlc:followup` instead of blocking.\" Not a mandatory-gate skip: the finding is still reported in the verdict (line 157 / \"still gets reported, as Follow-up ... never dropped\"), so no gate is bypassed; only the filing mechanics are terse. Filing is owned by sigma-loop/references/filing.md, which states \"`sdlc:followup` is applied automatically to every issue this command files\" so the label needs no manual handling and the claim's \"satisfied in name only\" has no consequence (a stale-word"
+    },
+    {
+      "unit": "sigma-verify",
+      "id": "verify:F1",
+      "cls": "gate-skip",
+      "location": "skills/sigma-verify/SKILL.md:21",
+      "claim": "The wording \"prefer `superpowers:verification-before-completion` (its richer version)\" lets a model on Claude Code with superpowers delegate entirely and never run this skill's `loop.py verify` machine-evidence step (line 54).",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | skills/sigma-verify/SKILL.md:21 confirmed as worded | Wording \"prefer `superpowers:verification-before-completion` (its richer version)\" exists, but line 54 says \"With `config.verify.enforce` on, this gate is MACHINE-CHECKED: `loop.py verify .sdlc <goal>` records the evidence and `record done` is refused without it\", and loop.py:6363 (`argv[4] == \"done\" and _enforce_enabled(...)`) enforces that in code, so delegating cannot skip machine evidence when the gate is on. When enforce is off (README:452 says it ships off until a verify command is confirmed), `loop.py verify` is not a "
+    },
+    {
+      "unit": "sigma-verify",
+      "id": "verify:F2",
+      "cls": "gate-skip",
+      "location": "skills/sigma-verify/SKILL.md:30-31",
+      "claim": "The wording \"the repo's tests/build/lint, or `.sdlc/project.md` -> Verify command\" lets a model choose lint or a partial test run instead of the declared Verify command and still claim a goal done.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | skills/sigma-verify/SKILL.md:30-31 read in context | Quoted: \"Identify the command that proves the claim \u2014 the repo's tests/build/lint, or `.sdlc/project.md` \u2192 **Verify command**.\" The selection criterion is \"proves the claim\", not a free choice among alternatives; the table at :39-46 closes the exit (\"Lint / type clean ... Not enough: a partial check\"; \"Goal done | its `done_when` met, with evidence | 'tests pass, close enough'\"), and step 4 requires the output to confirm the claim. In code, a declared verify command is machine-enforced at merge (config.json.tmpl `_auto_merge_2"
+    },
+    {
+      "unit": "sigma-retro",
+      "id": "retro:F1",
+      "cls": "gate-skip",
+      "location": "SKILL.md:78-82",
+      "claim": "The skill says to \"carry it forward to the `record` step\" and forbids `loop.py emit ... retro --grade`, but loop.py only records the grade when `--retro-grade` is passed (loop.py:4277) and the skill never tells the model to pass it, so a standalone /sigma-retro can drop the grade (and the gated KG-note check) while the text says the record call \"already happens unconditionally\".",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | SKILL.md:78-82 confirmed | Quoted: \"carry it forward to the `record` step that follows Retrospective \u2014 `loop.py record`'s own `--retro-grade achieved|partial|diverged` flag (issue #1013)\". The claim's premise \"the skill never tells the model to pass it\" is false: the text names the exact flag and says to pass it on record. loop.py:4277 gating on retro_grade is exactly what the text describes; line 127 also says `loop.py record --retro-grade` runs the KG note-check. A standalone /sigma-retro has no record step of its own, so the grade is advisory output (Output section) and recor"
+    },
+    {
+      "unit": "sigma-retro",
+      "id": "retro:F2",
+      "cls": "prose-vs-code",
+      "location": "SKILL.md:4,34,123",
+      "claim": "Frontmatter allows only `Bash(python3 *)`, `Bash(git *)`, `Bash(gh issue *)` yet the body mandates \"`rg --files` and `rg -n`\" (:34) and an `echo \"$note_text\" | python3 ... kg.py note` pipeline (:123) that match no allowed pattern, so those steps cannot run under the grant.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F2 | DROPPED | SKILL.md:4,34,123 confirmed as text | Frontmatter `allowed-tools: Bash(python3 *), Bash(git *), Bash(gh issue *)` is a pre-approval list, not a restriction; unlisted commands (`rg`, and `echo`, a read-only command) just fall to the normal permission flow, and the Grep/Read tools remain available. Line 34 \"Locate evidence with `rg --files` and `rg -n`\" is advisory and the section is \"fail-open\" (\"never break the run\"); the line-123 kg.py note is \"always safe to make\" and skipping it only prints a warning. No mandatory gate is skipped and the steps are not impossible."
+    },
+    {
+      "unit": "sigma-retro",
+      "id": "retro:F3",
+      "cls": "injection",
+      "location": "SKILL.md:86-88,112-123",
+      "claim": "Issue/diff-derived text (e.g. `# Issue #<N>: <title>`) is placed into `\"retro: <lesson>\"` and `echo \"$note_text\"` double-quoted shell with no quoting/untrusted-data boundary, so backticks or `$(...)` in an issue title would execute.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F3 | VERIFIED (narrowed) | SKILL.md:86-88 confirmed; 112-123 only partly | Wording: `loop.py note .sdlc \"<goal>\" \"retro: <lesson>\"` with no quoting/untrusted-data instruction anywhere in SKILL.md or references/ (grep for untrusted/quote/injection: none). A lesson drawn from an issue/diff and inlined in the double-quoted literal executes backticks or `$(...)`; backticks in issue titles are common. Narrowing: `echo \"$note_text\"` (line ~123) does not re-evaluate an already-assigned variable, so that site is only exposed if the model inlines the text in a double-quoted literal when assigning it. N"
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F1",
+      "cls": "gate-skip",
+      "location": "references/progress.md:16",
+      "claim": "The phase `start` marker is described as \"best-effort, skip it rather than guess the phase name\" (Codex-only carve-out), so on Claude a refused `start implement` (running.md:97, \"refused before the plan-review verdict\") can be read as a skippable best-effort failure.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F1 | DROPPED | references/progress.md:16 confirmed | \"best-effort, skip it rather than guess the phase name\" qualifies an unknown phase NAME, not a refused start; running.md:97 says \"`start implement` is refused before the plan-review verdict\" and \"`record done` is refused until research, plan, an approved plan-review, implement (started after it)... are recorded\" (code: loop.py:6394 -> work.phase_record_refusal, phase_gate.start_refusal in phase_report.py:1716). Skipping a refused start leaves implement unrecorded so record done is refused (gate on in scaffold); the plan-review verdict is sti"
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F2",
+      "cls": "prose-vs-code",
+      "location": "SKILL.md:92",
+      "claim": "Says \"`record done` is REFUSED without each, #684\" unconditionally, but phase_gate.py:27 and :54-58 make the gate off when `gates.phase_record` is absent and refuse only when action_log is enabled; running.md:98 gives no default.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F2 | VERIFIED | SKILL.md:92 confirmed | SKILL.md:92 \"`record done` is REFUSED without each, #684\" is unconditional. phase_gate.py:27 \"Absent key = off (an adopted repo is not retro-fitted); `/sigma-init` ships it true\" and :54-58 (gate_on returns False when the key is absent) contradict it; :237 refuses only when the gate is on and action_log is not enabled. running.md:98 only says \"Gate: `gates.phase_record.enabled`\" with no default. Nothing in SKILL.md closes the gap, so the prose overstates for adopted repos without the key (low severity: scaffolded repos have it true)."
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F3",
+      "cls": "gate-skip",
+      "location": "references/progress.md:121",
+      "claim": "Retrospective is \"advisory\" (SKILL.md:181) and \"Fail-open \u2014 it never breaks the run\", while running.md:96 says `record done` needs retro, so a model can skip or abandon retro as optional.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F3 | DROPPED | references/progress.md:121 confirmed (wording exists) | \"(advisory)\" / \"Fail-open \u2014 it never breaks the run\" describe retro's own failure mode, not skippability; step 6 still records the retro grade, running.md:96 says \"`record done` is refused until research, plan, ... review and retro are recorded\", and scripts/phase_gate.py (REQUIRED includes \"retro\"; wired into loop.py record at ~6394 via work.phase_record_refusal) refuses `done` without a retro row; only the recorded `waive-phases ... retro --reason` lever exits. Gate is on in /sigma-init scaffolds (absent key = off only fo"
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F4",
+      "cls": "gate-skip",
+      "location": "references/landing.md:131",
+      "claim": "Reviewer independence is \"asked, not proved\" (SKILL.md:98) and \"code cannot stop it\", with the verdict and reason supplied by the maker through `record-subagent-review`, so the independent-review gate can be satisfied in name only.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F4 | DROPPED | references/landing.md:131 confirmed | Quoted: \"The skills ask that the maker not clear its own PR; code cannot stop it.\" and landing.md \"For a resolved `subagent`, hand only `$REVIEW_BRIEF` to a fresh host subagent, then run ... record-subagent-review\". work.py:792 docstring admits it \"does not claim it can prove who called the host's Task tool\" (it does bind route/generation, create-once result). Drop: this is a candidly disclosed host-boundary limit, not a gate-skip; the text mandates a fresh subagent (SKILL.md: \"No subagents is **not** a degradation\"; only a resolver `inline`"
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F5",
+      "cls": "injection",
+      "location": "references/landing.md:231",
+      "claim": "On `REPAIR: ... log excerpt: \u2026` the model is told to start Implement \"with that exact bounded brief\", which is raw CI log text (work.py:482 only truncates it), with no untrusted-data boundary.",
+      "reviewer_severity": "NEXT",
+      "verdict": "VERIFIED",
+      "verifier": "F5 | VERIFIED (low-moderate severity) | references/landing.md:231 confirmed; scripts/work.py:476-482 and 538-545 confirmed"
+    },
+    {
+      "unit": "sigma-loop",
+      "id": "loop:F6",
+      "cls": "prose-vs-code",
+      "location": "SKILL.md:15",
+      "claim": "\"Detailed selection triggers: [selection](references/selection.md)\" points to a 7-line file (references/selection.md:1-7) that contains no selection triggers.",
+      "reviewer_severity": "NEXT",
+      "verdict": "DROPPED",
+      "verifier": "F6 | DROPPED | SKILL.md:15 and references/selection.md:3 confirmed | Claim says selection.md \"contains no selection triggers\", but line 3 reads \"Use when the user runs /sigma-loop or asks to run goals autonomously / overnight / unattended\" and lines 6-7 say \"These fuller triggers are kept outside the always-listed description.\" The file does hold the fuller trigger text, so the pointer resolves. It is also not a mandatory-gate skip: the pointer is auxiliary and SKILL.md procedure steps are in references/picking.md etc."
+    }
+  ],
+  "metering": {
+    "method": "evals/bench/meter.py over each subagent transcript; processed tokens = input incl. cache reads and writes + output; dollars are indicative",
+    "by_role": {
+      "verifiers": {
+        "agents": 35,
+        "processed_tokens": 14171345,
+        "cost_usd": 6.161
+      },
+      "reviewers": {
+        "agents": 10,
+        "processed_tokens": 8037742,
+        "cost_usd": 3.246
+      },
+      "plan reviewers and this slot": {
+        "agents": 4,
+        "processed_tokens": 9673714,
+        "cost_usd": 3.237
+      }
+    },
+    "s5_total_processed_tokens": 31882801,
+    "s4_cumulative_before": 69433345,
+    "cumulative_after": 101316146,
+    "checkpoint": 100000000,
+    "cap": 120000000,
+    "note": "slot overhead measured at filing time; the post-PR reviewer, CI polling and the rest of this slot are not included",
+    "s5_total_processed_tokens_at_filing": 33562525,
+    "cumulative_at_filing": 102995870,
+    "lesson": "A verifier costs about 405k processed tokens each (14.17M for 35), almost all cache reads re-counted every turn, against about 70k of its own output: the budget for a verify pass must be set in processed tokens per verifier, not in the verifier-reported tokens, and a per-finding verifier fleet is the expensive choice. Reviewers cost about 0.8M each."
+  },
+  "filing": {
+    "blockers_queued_not_promoted": [
+      {
+        "issue": 713,
+        "class_": "B8",
+        "covers": [
+          "goal:F5",
+          "retro:F3"
+        ]
+      },
+      {
+        "issue": 714,
+        "class_": "B8",
+        "covers": [
+          "loop:F5"
+        ]
+      }
+    ],
+    "next": {
+      "issue": 715,
+      "covers": [
+        "goal:F2",
+        "plan-review:F2",
+        "implement:F3",
+        "implement:F4",
+        "review:F1",
+        "review:F3",
+        "review:F4",
+        "loop:F2"
+      ]
+    },
+    "dedup": "dedup.py reported no goals in the clean worktree (degraded); a gh issue search for the same terms found no duplicate"
+  },
+  "not_covered": "single shallow pass per unit; recall unmeasured; reviewers medium effort requested not verified; the verifier is a model reading prose, so a DROPPED verdict is a judgement not a proof; scripts the skills drive were read only where a claim needed it"
+}
