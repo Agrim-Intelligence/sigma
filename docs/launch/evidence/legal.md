@@ -37,7 +37,7 @@ The tree already carries these names: `.claude-plugin/plugin.json:2` and `.claud
 
 ## 4. Dependencies and their licences
 
-How each row was verified is in 4.4. "Declared" means the package's own metadata field. "Read" means the licence file inside
+How each row was verified is in section 4.4. "Declared" means the package's own metadata field. "Read" means the licence file inside
 the package artifact was opened and its text and copyright line read; for every Python row below the file was MIT licence
 text (the permission and warranty paragraphs were present).
 
@@ -49,11 +49,11 @@ library and one optional third-party module, `slack_sdk`. The scan is `tests/tes
 
 | Dependency | Version checked | Declared licence | Licence file read | Copyright line in that file | Role | Where |
 |---|---|---|---|---|---|---|
-| `slack-sdk` (import `slack_sdk`) | 3.45.0 (latest on PyPI 2026-10-06; the code pins no version) | MIT (`License: MIT`, classifier MIT) | `slack_sdk-3.45.0.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2015- Slack Technologies, LLC" | optional; the user installs it by hand; imported lazily inside two functions | `skills/sigma-loop/scripts/slack_commands_listen.py:1612`, `:1691`, `:1692`; install text at `:228` and `skills/sigma-loop/SLACK_COMMANDS.md:111` |
-| `@modelcontextprotocol/sdk` (TypeScript, not Python) | 1.30.0 (the lock) | MIT | `package/LICENSE` in the npm tarball | "Copyright (c) 2024 Anthropic, PBC" | optional; the user installs it with Bun for the autowatch channel | `skills/sigma-loop/channels/sigma-autowatch/package.json` (range `^1.0.0`), `bun.lock`, `webhook.ts` |
+| `slack-sdk` (import `slack_sdk`) | ==3.45.0 (latest on PyPI 2026-10-06; the code pins no version) | MIT (`License: MIT`, classifier MIT) | `slack_sdk-3.45.0.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2015- Slack Technologies, LLC" | optional; the user installs it by hand; imported lazily inside two functions | `skills/sigma-loop/scripts/slack_commands_listen.py:1612`, `:1691`, `:1692`; install text at `:228` and `skills/sigma-loop/SLACK_COMMANDS.md:111` |
+| `@modelcontextprotocol/sdk` (TypeScript, not Python) | ==1.30.0 (the lock) | MIT | `package/LICENSE` in the npm tarball | "Copyright (c) 2024 Anthropic, PBC" | optional; the user installs it with Bun for the autowatch channel | `skills/sigma-loop/channels/sigma-autowatch/package.json` (range `^1.0.0`), `bun.lock`, `webhook.ts` |
 
 Facts that may matter to the owner, recorded without comment: (a) `SLACK_COMMANDS.md:111` and the error text at
-`slack_commands_listen.py:228` tell the user to install `slack_sdk[socket-mode]`; the 3.45.0 wheel metadata declares one
+`slack_commands_listen.py:228` tell the user to install `slack_sdk[socket-mode]`; the ==3.45.0 wheel metadata declares one
 extra only (`optional`), so `socket-mode` is not an extra of that release. (b) The `optional` extra of `slack-sdk` would add
 `aiohttp`, `aiodns`, `websockets`, `websocket-client`, `SQLAlchemy` and `boto3`; the repository does not ask for it.
 
@@ -61,116 +61,116 @@ extra only (`optional`), so `socket-mode` is not an extra of that release. (b) T
 
 | Dependency | Version checked | Declared licence | Licence file read | Copyright line in that file | Used by |
 |---|---|---|---|---|---|
-| `pytest` | 9.1.1 | MIT (`License-Expression: MIT`) | `pytest-9.1.1.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2004 Holger Krekel and others" | the test suite; `.github/workflows/ci.yml:43` |
-| `pytest-xdist` | 3.8.0 | MIT (`License-Expression: MIT`) | `pytest_xdist-3.8.0.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2010 Holger Krekel and contributors." | `-n 4` in `CONTRIBUTING.md:18` |
-| `PyYAML` | 6.0.3 | MIT (`License: MIT`, classifier MIT) | `LICENSE` in the source archive, identical (same sha256) to `pyyaml-6.0.3.dist-info/licenses/LICENSE` in the macOS wheel | "Copyright (c) 2017-2021 Ingy döt Net" and "Copyright (c) 2006-2016 Kirill Simonov" | `tests/test_skill_frontmatter_yaml.py` (loaded with `pytest.importorskip`); `.github/workflows/ci.yml:60` |
+| `pytest` | ==9.1.1 | MIT (`License-Expression: MIT`) | `pytest-9.1.1.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2004 Holger Krekel and others" | the test suite; `.github/workflows/ci.yml:43` |
+| `pytest-xdist` | ==3.8.0 | MIT (`License-Expression: MIT`) | `pytest_xdist-3.8.0.dist-info/licenses/LICENSE` in the wheel | "Copyright (c) 2010 Holger Krekel and contributors." | `-n 4` in `CONTRIBUTING.md:18` |
+| `PyYAML` | ==6.0.3 | MIT (`License: MIT`, classifier MIT) | `LICENSE` in the source archive, identical (same sha256) to `pyyaml-6.0.3.dist-info/licenses/LICENSE` in the macOS wheel | "Copyright (c) 2017-2021 Ingy döt Net" and "Copyright (c) 2006-2016 Kirill Simonov" | `tests/test_skill_frontmatter_yaml.py` (loaded with `pytest.importorskip`); `.github/workflows/ci.yml:60` |
 
-Runtime requirements those test tools declare, metadata only (the licence files were NOT read for these): `pluggy` 1.6.0 MIT;
-`iniconfig` 2.3.0 MIT; `packaging` 26.3 `Apache-2.0 OR BSD-2-Clause`; `pygments` 2.21.0 `BSD-2-Clause`; `execnet` 2.1.2 MIT;
-and, on older Pythons or Windows only, `exceptiongroup` 1.3.1 MIT, `tomli` 2.4.1 MIT, `colorama` (not queried).
+Runtime requirements those test tools declare, metadata only (the licence files were NOT read for these): `pluggy` ==1.6.0 MIT;
+`iniconfig` ==2.3.0 MIT; `packaging` 26.3 `Apache-2.0 OR BSD-2-Clause`; `pygments` ==2.21.0 `BSD-2-Clause`; `execnet` ==2.1.2 MIT;
+and, on older Pythons or Windows only, `exceptiongroup` ==1.3.1 MIT, `tomli` ==2.4.1 MIT, `colorama` (not queried).
 
 ### 4.3 The npm channel's full lock closure
 
 `skills/sigma-loop/channels/sigma-autowatch/bun.lock` pins 93 packages (the direct dependency above plus its transitive
 closure). The licence column is the `license` field of each package's registry metadata for that exact version; the licence
-files were NOT read for the 92 transitive packages. `content-type` 2.1.0 appears twice below because the lock holds two nested copies (under `body-parser` and `type-is`); the 93 lock entries are 92 distinct name and version pairs. Declared licences by count: MIT 83, ISC 7, BSD-3-Clause 2, BSD-2-Clause 1.
+files were NOT read for the 92 transitive packages. `content-type@2.1.0` appears twice below because the lock holds two nested copies (under `body-parser` and `type-is`); the 93 lock entries are 92 distinct name and version pairs. Declared licences by count: MIT 83, ISC 7, BSD-3-Clause 2, BSD-2-Clause 1.
 Nothing here is shipped as a bundle: the user installs these with Bun (`README.md` of the channel).
 
-| Package | Version | Declared licence |
-|---|---|---|
-| `@hono/node-server` | 2.1.1 | MIT |
-| `@modelcontextprotocol/sdk` | 1.30.0 | MIT |
-| `accepts` | 2.0.0 | MIT |
-| `ajv` | 8.20.0 | MIT |
-| `ajv-formats` | 3.0.1 | MIT |
-| `body-parser` | 2.3.0 | MIT |
-| `bytes` | 3.1.2 | MIT |
-| `call-bind-apply-helpers` | 1.0.2 | MIT |
-| `call-bound` | 1.0.4 | MIT |
-| `content-disposition` | 1.1.0 | MIT |
-| `content-type` | 1.0.5 | MIT |
-| `content-type` | 2.1.0 | MIT |
-| `content-type` | 2.1.0 | MIT |
-| `cookie` | 0.7.2 | MIT |
-| `cookie-signature` | 1.2.2 | MIT |
-| `cors` | 2.8.6 | MIT |
-| `cross-spawn` | 7.0.6 | MIT |
-| `debug` | 4.4.3 | MIT |
-| `depd` | 2.0.0 | MIT |
-| `dunder-proto` | 1.0.1 | MIT |
-| `ee-first` | 1.1.1 | MIT |
-| `encodeurl` | 2.0.0 | MIT |
-| `es-define-property` | 1.0.1 | MIT |
-| `es-errors` | 1.3.0 | MIT |
-| `es-object-atoms` | 1.1.2 | MIT |
-| `escape-html` | 1.0.3 | MIT |
-| `etag` | 1.8.1 | MIT |
-| `eventsource` | 3.0.7 | MIT |
-| `eventsource-parser` | 3.1.1 | MIT |
-| `express` | 5.2.1 | MIT |
-| `express-rate-limit` | 8.6.2 | MIT |
-| `fast-deep-equal` | 3.1.3 | MIT |
-| `fast-uri` | 3.1.5 | BSD-3-Clause |
-| `finalhandler` | 2.1.1 | MIT |
-| `forwarded` | 0.2.0 | MIT |
-| `fresh` | 2.0.0 | MIT |
-| `function-bind` | 1.1.2 | MIT |
-| `get-intrinsic` | 1.3.0 | MIT |
-| `get-proto` | 1.0.1 | MIT |
-| `gopd` | 1.2.0 | MIT |
-| `has-symbols` | 1.1.0 | MIT |
-| `hasown` | 2.0.4 | MIT |
-| `hono` | 4.13.3 | MIT |
-| `http-errors` | 2.0.1 | MIT |
-| `iconv-lite` | 0.7.3 | MIT |
-| `inherits` | 2.0.4 | ISC |
-| `ip-address` | 10.5.0 | MIT |
-| `ipaddr.js` | 1.9.1 | MIT |
-| `is-promise` | 4.0.0 | MIT |
-| `isexe` | 2.0.0 | ISC |
-| `jose` | 6.2.9 | MIT |
-| `json-schema-traverse` | 1.0.0 | MIT |
-| `json-schema-typed` | 8.0.2 | BSD-2-Clause |
-| `math-intrinsics` | 1.1.0 | MIT |
-| `media-typer` | 1.1.1 | MIT |
-| `merge-descriptors` | 2.0.0 | MIT |
-| `mime-db` | 1.54.0 | MIT |
-| `mime-types` | 3.0.2 | MIT |
-| `ms` | 2.1.3 | MIT |
-| `negotiator` | 1.0.0 | MIT |
-| `object-assign` | 4.1.1 | MIT |
-| `object-inspect` | 1.13.4 | MIT |
-| `on-finished` | 2.4.1 | MIT |
-| `once` | 1.4.0 | ISC |
-| `parseurl` | 1.3.3 | MIT |
-| `path-key` | 3.1.1 | MIT |
-| `path-to-regexp` | 8.4.2 | MIT |
-| `pkce-challenge` | 5.0.1 | MIT |
-| `proxy-addr` | 2.0.7 | MIT |
-| `qs` | 6.15.3 | BSD-3-Clause |
-| `range-parser` | 1.3.0 | MIT |
-| `raw-body` | 3.0.2 | MIT |
-| `require-from-string` | 2.0.2 | MIT |
-| `router` | 2.2.0 | MIT |
-| `safer-buffer` | 2.1.2 | MIT |
-| `send` | 1.2.1 | MIT |
-| `serve-static` | 2.2.1 | MIT |
-| `setprototypeof` | 1.2.0 | ISC |
-| `shebang-command` | 2.0.0 | MIT |
-| `shebang-regex` | 3.0.0 | MIT |
-| `side-channel` | 1.1.1 | MIT |
-| `side-channel-list` | 1.0.1 | MIT |
-| `side-channel-map` | 1.0.1 | MIT |
-| `side-channel-weakmap` | 1.0.2 | MIT |
-| `statuses` | 2.0.2 | MIT |
-| `toidentifier` | 1.0.1 | MIT |
-| `type-is` | 2.1.0 | MIT |
-| `unpipe` | 1.0.0 | MIT |
-| `vary` | 1.1.2 | MIT |
-| `which` | 2.0.2 | ISC |
-| `wrappy` | 1.0.2 | ISC |
-| `zod` | 4.4.3 | MIT |
-| `zod-to-json-schema` | 3.25.2 | ISC |
+| Package and version | Declared licence |
+|---|---|
+| `@hono/node-server@2.1.1` | MIT |
+| `@modelcontextprotocol/sdk@1.30.0` | MIT |
+| `accepts@2.0.0` | MIT |
+| `ajv@8.20.0` | MIT |
+| `ajv-formats@3.0.1` | MIT |
+| `body-parser@2.3.0` | MIT |
+| `bytes@3.1.2` | MIT |
+| `call-bind-apply-helpers@1.0.2` | MIT |
+| `call-bound@1.0.4` | MIT |
+| `content-disposition@1.1.0` | MIT |
+| `content-type@1.0.5` | MIT |
+| `content-type@2.1.0` | MIT |
+| `content-type@2.1.0` | MIT |
+| `cookie@0.7.2` | MIT |
+| `cookie-signature@1.2.2` | MIT |
+| `cors@2.8.6` | MIT |
+| `cross-spawn@7.0.6` | MIT |
+| `debug@4.4.3` | MIT |
+| `depd@2.0.0` | MIT |
+| `dunder-proto@1.0.1` | MIT |
+| `ee-first@1.1.1` | MIT |
+| `encodeurl@2.0.0` | MIT |
+| `es-define-property@1.0.1` | MIT |
+| `es-errors@1.3.0` | MIT |
+| `es-object-atoms@1.1.2` | MIT |
+| `escape-html@1.0.3` | MIT |
+| `etag@1.8.1` | MIT |
+| `eventsource@3.0.7` | MIT |
+| `eventsource-parser@3.1.1` | MIT |
+| `express@5.2.1` | MIT |
+| `express-rate-limit@8.6.2` | MIT |
+| `fast-deep-equal@3.1.3` | MIT |
+| `fast-uri@3.1.5` | BSD-3-Clause |
+| `finalhandler@2.1.1` | MIT |
+| `forwarded@0.2.0` | MIT |
+| `fresh@2.0.0` | MIT |
+| `function-bind@1.1.2` | MIT |
+| `get-intrinsic@1.3.0` | MIT |
+| `get-proto@1.0.1` | MIT |
+| `gopd@1.2.0` | MIT |
+| `has-symbols@1.1.0` | MIT |
+| `hasown@2.0.4` | MIT |
+| `hono@4.13.3` | MIT |
+| `http-errors@2.0.1` | MIT |
+| `iconv-lite@0.7.3` | MIT |
+| `inherits@2.0.4` | ISC |
+| `ip-address@10.5.0` | MIT |
+| `ipaddr.js@1.9.1` | MIT |
+| `is-promise@4.0.0` | MIT |
+| `isexe@2.0.0` | ISC |
+| `jose@6.2.9` | MIT |
+| `json-schema-traverse@1.0.0` | MIT |
+| `json-schema-typed@8.0.2` | BSD-2-Clause |
+| `math-intrinsics@1.1.0` | MIT |
+| `media-typer@1.1.1` | MIT |
+| `merge-descriptors@2.0.0` | MIT |
+| `mime-db@1.54.0` | MIT |
+| `mime-types@3.0.2` | MIT |
+| `ms@2.1.3` | MIT |
+| `negotiator@1.0.0` | MIT |
+| `object-assign@4.1.1` | MIT |
+| `object-inspect@1.13.4` | MIT |
+| `on-finished@2.4.1` | MIT |
+| `once@1.4.0` | ISC |
+| `parseurl@1.3.3` | MIT |
+| `path-key@3.1.1` | MIT |
+| `path-to-regexp@8.4.2` | MIT |
+| `pkce-challenge@5.0.1` | MIT |
+| `proxy-addr@2.0.7` | MIT |
+| `qs@6.15.3` | BSD-3-Clause |
+| `range-parser@1.3.0` | MIT |
+| `raw-body@3.0.2` | MIT |
+| `require-from-string@2.0.2` | MIT |
+| `router@2.2.0` | MIT |
+| `safer-buffer@2.1.2` | MIT |
+| `send@1.2.1` | MIT |
+| `serve-static@2.2.1` | MIT |
+| `setprototypeof@1.2.0` | ISC |
+| `shebang-command@2.0.0` | MIT |
+| `shebang-regex@3.0.0` | MIT |
+| `side-channel@1.1.1` | MIT |
+| `side-channel-list@1.0.1` | MIT |
+| `side-channel-map@1.0.1` | MIT |
+| `side-channel-weakmap@1.0.2` | MIT |
+| `statuses@2.0.2` | MIT |
+| `toidentifier@1.0.1` | MIT |
+| `type-is@2.1.0` | MIT |
+| `unpipe@1.0.0` | MIT |
+| `vary@1.1.2` | MIT |
+| `which@2.0.2` | ISC |
+| `wrappy@1.0.2` | ISC |
+| `zod@4.4.3` | MIT |
+| `zod-to-json-schema@3.25.2` | ISC |
 
 ### 4.4 How these were verified (2026-10-06)
 
@@ -248,7 +248,7 @@ It reports what exists, never whether a use is permitted or likely to confuse. T
 | GitHub users and organisations | `search/users` for `sigmaloop`, `sigma-loop`; direct `users/` and `orgs/` lookups | `SigmaLoop` is a User (hit 5); `sigmaloopy` is a User (hit 6); `sigma-loop` is an Organization (hit 7); `orgs/sigmaloop` returned 404 because the handle is a user, not an organisation |
 | GitHub code | `search/code`: `sigmaloop filename:marketplace.json`; `"sigma loop" filename:plugin.json`; `"sigmaloop" claude plugin` | every hit (1, 1 and 21) is in the owner's own repository; no other repository's plugin manifest matched. Code search indexes a subset of repositories |
 | PyPI | `pypi.org/pypi/<name>/json` for `sigmaloop`, `sigma-loop`, `sigma_loop`, `Sigma-Loop`, `SigmaLoop`; and a scan of the full simple index (907,015 project names) for `sigma[-_.]?loop` | all five 404; 0 names in the index match |
-| npm | `registry.npmjs.org/<name>` for `sigmaloop`, `sigma-loop`, `sigma_loop`, `@sigmaloop/cli`, `@sigma-loop/cli`; the registry search endpoint for `sigmaloop` and `sigma loop` | all five 404; `sigmaloop` search returned 0; `sigma loop` returned 26,858 loose full-text matches (the top ones are `sigma` 3.0.3, a graph-drawing library, and its plugins): not a usable collision signal |
+| npm | `registry.npmjs.org/<name>` for `sigmaloop`, `sigma-loop`, `sigma_loop`, `@sigmaloop/cli`, `@sigma-loop/cli`; the registry search endpoint for `sigmaloop` and `sigma loop` | all five 404; `sigmaloop` search returned 0; `sigma loop` returned 26,858 loose full-text matches (the top ones are `sigma` ==3.0.3, a graph-drawing library, and its plugins): not a usable collision signal |
 | VS Code Marketplace | extension query API, criteria text `sigmaloop`, `sigma loop`, `sigma-loop` | `sigmaloop`: 0 extensions; `sigma loop`: 263 total (the text is matched loosely); `sigma-loop`: 185. The first ten of each were read: none is an AI coding agent plugin; they are themes, a signature-format language extension, a smart-board launcher, Sigma Computing's own extension, and some spam listings |
 | Claude plugin marketplace (public manifest of the vendor's official catalogue repository, commit `d4226d0`) | read `.claude-plugin/marketplace.json` | 315 plugins; none has `sigma` in its name or description |
 | Codex and Cursor catalogues | not queried | no public query interface was used |
@@ -266,7 +266,7 @@ It reports what exists, never whether a use is permitted or likely to confuse. T
 | 7 | https://github.com/sigma-loop | organisation created 2025-12-03 | organisation `sigma-loop`, "An interactive educational platform merging LaTeX mathematics, secure code execution, and RAG-powered AI mentorship", 2 public repositories |
 | 8 | https://marketplace.visualstudio.com/items?itemName=SigmaComputing.sigma-vscode-extension | read 2026-10-06 | Sigma Computing's VS Code extension "for managing Sigma data models with git integration" |
 | 9 | https://marketplace.visualstudio.com/items?itemName=humpalum.sigma | read 2026-10-06 | "Support for Sigma Signature Format" (an older security rule-format name) |
-| 10 | https://www.npmjs.com/package/sigma | version 3.0.3 read 2026-10-06 | the package `sigma`, "A JavaScript library aimed at visualizing graphs"; MIT |
+| 10 | https://www.npmjs.com/package/sigma | version ==3.0.3 read 2026-10-06 | the package `sigma`, "A JavaScript library aimed at visualizing graphs"; MIT |
 
 The bare package names `sigmaloop` and `sigma-loop` were not registered on PyPI or npm on 2026-10-06.
 
@@ -277,7 +277,7 @@ read by the agent on 2026-10-04: 33,974 GitHub repositories with "sigma" in the 
 or begin with `sigma` in the Claude Code plugin space (3, 0 and 0 stars) and Sigma Computing's own Claude Code plugin repositories; the names
 `sigma` taken on PyPI (a numerical-methods package) and on npm (the graph library above); 46 VS Code Marketplace matches, none
 an AI plugin among the eight read. Because the skill and command family is still `sigma-` prefixed (section 2), counsel may want
-that earlier result as well. The "agrim" prefix the issue mentions: no shipped skill directory starts with `agrim`; the string
+that earlier result as well. The company-name prefix the issue mentions for skill names: no shipped skill directory starts with it; the company name
 appears in `LICENSE:3` and in two lines of `skills/sigma-doctor/scripts/doctor.py` (1588 and 1829) that name the repository owner.
 
 | Question | Answer |
