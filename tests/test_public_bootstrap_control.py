@@ -917,6 +917,12 @@ def _run_sequence(world, run_probe):
     target = worktree / ".sdlc" / "acceptance" / "1.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(sdlc / "acceptance" / "1.md", target)
+    # #684: this control is about the review/merge gates on the public profile; the SDLC phase record
+    # has its own tests (tests/test_phase_record_gate.py), so it is switched off with the documented lever.
+    cfg_path = pathlib.Path(sdlc) / "config.json"
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg.setdefault("gates", {})["phase_record"] = {"enabled": False}
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
     _cli([PHASE_REPORT, "start", sdlc, "1", "implement", "--model", "sonnet"], clone_dir, env)
     _cli([PHASE_REPORT, "end", sdlc, "1", "implement"], clone_dir, env)
 

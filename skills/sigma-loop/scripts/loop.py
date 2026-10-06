@@ -5827,6 +5827,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
+         "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "precheck <dir> <goal> | "
          "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
          "mark-designed <dir> <goal> | feature-frontier <dir> <unit> | "
@@ -6262,6 +6263,23 @@ def _dispatch(argv):
         result = ff.compute(argv[2], argv[3], config=config)
         print(ff.render(result), end="")
         return 1 if result.get("degraded") else 0
+    if len(argv) >= 4 and argv[1] == "phases":      # #684: which SDLC phases are recorded, and the next step
+        config = state.load_config(argv[2])
+        print(_load("phase_gate").format_status(argv[2], config, argv[3]))
+        return 0
+    if len(argv) >= 5 and argv[1] == "waive-phases":   # #684: the explicit, recorded trivial-goal lever
+        config = state.load_config(argv[2])
+        flags = _flags(argv[5:])
+        try:
+            done_ = _load("phase_gate").waive(argv[2], config, argv[3],
+                                              [x for x in argv[4].split(",") if x], flags.get("reason", ""))
+        except ValueError as exc:
+            print(f"loop.py waive-phases: {exc}", file=sys.stderr)
+            return 2
+        print(f"loop: WAIVED phases {', '.join(done_)} for {argv[3]} -- reason: {flags.get('reason')} "
+              "(recorded in the action log; plan, plan-review, implement and review are never waivable)",
+              file=sys.stderr)
+        return 0
     if len(argv) >= 5 and argv[1] == "note":        # record a journey-log / critical-insight note
         config = state.load_config(argv[2])
         # #1391: a note is proof the agent is alive RIGHT NOW, so it doubles as a free heartbeat.
@@ -6350,6 +6368,26 @@ def _dispatch(argv):
                 print(f"REFUSED: {refusal} — run `loop.py verify {argv[2]} <goal>` first "
                       "(config verify.enforce is on)", file=sys.stderr)
                 return 4
+        # #684: every SDLC phase must be on the record (research, plan, approved plan-review, implement
+        # after it, approved review, retro). Plain Python, so it holds in local-only mode and on every
+        # host; gates.phase_record.enabled (scaffold: true) switches it, `loop.py waive-phases` is the
+        # recorded lever. The refusal names each missing item and its fix.
+        if argv[4] == "done":
+            try:
+                phase_refusal = work.phase_record_refusal(argv[2], config, argv[3])
+            except ValueError as exc:
+                print(f"loop.py record: {exc}", file=sys.stderr)
+                return 2
+            if phase_refusal:
+                print(f"REFUSED: {phase_refusal}", file=sys.stderr)
+                return 4
+            try:
+                _w = [r for r in _load("actionlog").read_goal(argv[2], argv[3]) if r.get("kind") == "phase_waived"]
+            except Exception:                # noqa: BLE001 - a diagnostic never costs a terminal record
+                _w = []
+            if _w:
+                print("loop: recording done with WAIVED phases: " + "; ".join(
+                    f"{r.get('phase')} ({r.get('reason')})" for r in _w), file=sys.stderr)
         if argv[4] == "done" and not work.enabled(config):
             print("loop: work.enabled is off — this goal's change is only in your working tree; no "
                   "branch/commit/PR was created"

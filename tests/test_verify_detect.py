@@ -239,7 +239,18 @@ def test_skill_and_templates_no_longer_send_the_command_to_project_md():
 
 # ---------------------------------------------------------------- end to end, no network
 
+def _phase_record_off(sdlc):
+    """#684: this test is about something other than the SDLC phase record (that has its own
+    tests/test_phase_record_gate.py), so it uses the documented lever: `gates.phase_record.enabled: false`."""
+    path = pathlib.Path(sdlc) / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg.setdefault("gates", {})["phase_record"] = {"enabled": False}
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+
 def _loop(sdlc, *args):
+    if args and args[0] == "record":
+        _phase_record_off(sdlc)
     return _run(LOOP, *args, cwd=sdlc.parent)
 
 

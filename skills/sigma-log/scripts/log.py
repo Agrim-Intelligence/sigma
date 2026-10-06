@@ -295,7 +295,8 @@ UNKNOWN_LINE = "action log state unknown -- slot detail unavailable"
 #: lists together so a kind added there and missed here turns a test red rather than silently
 #: demoting a goal's marker.
 CODE_WRITTEN_KINDS = ("claimed", "worktree_start", "verify_run", "recorded", "gate",
-                      "merge_armed", "merged", "decompose_check", "released", "agent_reclaimed")
+                      "merge_armed", "merged", "decompose_check", "released", "agent_reclaimed",
+                      "phase", "verdict", "phase_waived")
 
 #: The §2 phase vocabulary (`ledger.PHASE_KINDS`, and the kind half of `render.PHASE_TOKENS`).
 #: Copied for the same reason; pinned by `test_phase_kinds_match_the_renderers_own_table`. Values
@@ -381,6 +382,9 @@ BOUNDED_FIELDS = {
     "decompose_check": ("verdict", "mode"),
     "released": (),
     "agent_reclaimed": ("pid",),
+    "phase": ("phase", "state"),
+    "verdict": ("phase", "verdict", "route"),
+    "phase_waived": ("phase",),
     "file": ("path", "op"),
     "model_choice": ("model",),
     "agent_dispatch": ("role", "phase"),

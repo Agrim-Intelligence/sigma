@@ -89,7 +89,7 @@ Then repeat until the helper says stop:
    downgrade: `references/running.md`.
 
    Then run **each phase as its own subagent** with that host's model override (see
-   `references/running.md`). One subagent PER PHASE.
+   `references/running.md`). One subagent PER PHASE, **tier `off` included**: `record done` is REFUSED until each is recorded (#684); `loop.py phases .sdlc "$goal"` names the NEXT step (`references/running.md`).
    Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
    run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
    via its **executor**. `$goal` is a **file path** in local mode (read the file) or a **GitHub
@@ -129,8 +129,7 @@ Then repeat until the helper says stop:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" agent-start .sdlc "$goal" --pid $PPID`.
    **A nonzero exit from `agent-start` means task ownership was not established — another live
    agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed
-   (#2527: this refusal is real for a plain Claude collision now, not only a Codex thread
-   mismatch).** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
+  .** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
    .sdlc "$goal" --session-pid "$PPID"`. **Pass `--session-pid "$PPID"` — the same value you just
    gave `agent-start --pid`, and the same one every `loop.py` call takes.** Read the line it prints — it
    names the base it actually cut from. **If this command exits 4, STOP this goal and do NOT

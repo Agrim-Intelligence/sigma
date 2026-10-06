@@ -91,7 +91,8 @@ def enabled(config):
 #: Mechanically-guaranteed, Python-layer-only kinds — reachable ONLY via `safe_append()`'s
 #: in-process call, never the CLI (see module docstring).
 INTERNAL_KINDS = ("claimed", "worktree_start", "verify_run", "recorded", "gate", "merge_armed",
-                  "merged", "decompose_check", "released", "agent_reclaimed")
+                  "merged", "decompose_check", "released", "agent_reclaimed", "phase", "verdict",
+                  "phase_waived")
 INTERNAL_FIELDS = {
     "claimed": (),
     # #1467: `base` and `base_resolved` joined this entry because they are the two facts a
@@ -123,6 +124,14 @@ INTERNAL_FIELDS = {
     # the specific dead pid that was cleared, so a later reader can tell a real takeover apart
     # from a no-op sweep.
     "agent_reclaimed": ("pid",),
+    # #684: the per-phase record `phase_gate.py` reads before it lets `record done` through. `phase`
+    # is written by `phase_report.py start|end` (cost is the figure the banner printed, or
+    # `unavailable`); `verdict` by `work.py record-plan-review` / `record-review` (`route` is
+    # reviewer.resolve's mechanism, `verified` says whether the agent id was checked against the host's
+    # transcript store); `phase_waived` only by `loop.py waive-phases` (research and retro only).
+    "phase": ("phase", "state", "agent_id", "cost"),
+    "verdict": ("phase", "verdict", "route", "agent_id", "plan_hash", "verified"),
+    "phase_waived": ("phase", "reason"),
 }
 #: `gate.gate` restricted to these three for INTERNAL writes — the only gates this log records
 #: (work.py's merge/code_review/post_review call sites); mirrors ledger.py's own GATE_KINDS being

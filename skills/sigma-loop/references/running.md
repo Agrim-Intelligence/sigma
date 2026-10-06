@@ -49,26 +49,7 @@ logging a second, differently-computed value here would silently contradict the 
 recorded. A defaulted tier matches nothing and correctly carries no signal — pass it empty or
 omit it. **Per-step `resolve-step` below is UNCHANGED** — it stays prose-invoked, since a plan
 step's free text has no structured, goal-agnostic artifact code could read on its own.
-**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked too — the same shape as
-resolve-step just above, for a different reason, and NOT the same consequence.** Whether a phase
-actually ran as its own dispatched Task-tool subagent, or inline in the orchestrating session, is a
-fact that lives on the **agent host's** side (Claude Code's own Task-tool dispatch decision) —
-unlike `model_choice` (#1627), where `predict.py`'s own `resolve()`/`resolve_step()` already hold
-the goal's tier in-process and can shell out to record it themselves, no code in this repo is ever
-inside the call that decides dispatch-vs-inline, on any host: there is no chokepoint to hook.
-**The consequence is not the same as resolve-step's, though**: a plan step resolved to the wrong
-model tier is a bounded cost/quality miss, self-correcting next time a human reads it. A phase that
-silently regresses from dispatched to inline breaks, with zero signal, the maker≠checker discipline
-— see the maker≠checker rule below, the reason per-phase subagents exist at all. Accepted here as a
-documented, permanent boundary, not built into code; detecting (never enforcing) the gap after the
-fact is tracked separately in #1779.
-
-**This paragraph is about whether the DISPATCH CALL ITSELF is code-driven or prose-invoked — a
-separate axis from whether a TIER is available at dispatch time.** Goal-slot no longer lacks one:
-`references/picking.md` step 1a has the orchestrator capture it from the same pick that returned
-the goal, exactly like this paragraph's own phase-dispatch tier a few lines below. Being grouped
-with resolve-step here is only about the first axis; on the second, goal-slot now matches
-phase/slice, not resolve-step.
+**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A phase that silently regresses to inline breaks the maker≠checker discipline, so since #684 the gate is on the OTHER side: `loop.py record ... done` refuses a goal whose action log lacks the phases (below). The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
 Then run **each phase as its own subagent** with that host's model override. Claude's Task tool
 accepts the ledger tier directly: pass that exact Task `model` selector to
 `phase_report.py start --requested-model <selector>` too, so the step banner can name what was
@@ -108,6 +89,13 @@ full-suite invocations when the source and proving command have not changed; rep
 changes or a concrete flaky failure leaves the result uncertain. This keeps independent review
 and required gates intact while avoiding duplicate
 model turns and full-suite reruns.
+**Phases are recorded and enforced (#684), tier `off` included.** Per phase: `phase_report.py start ... <phase> --model <tier|off>`
+before dispatch, `phase_report.py end ... <phase> --agent-id <agentId>` after (banner, cost line, action-log row). Independent
+verdicts carry the reviewer's own agent id: `work.py record-plan-review <dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST
+--plan-sha256 <brief sha> --agent-id <id>` and `work.py record-review <dir> <goal> --verdict APPROVE|SEND-BACK|BLOCK --agent-id <id>`.
+`record done` is refused until research, plan, an approved plan-review, implement (started after it), an approved review and retro are
+recorded; `loop.py phases <dir> <goal>` lists them and the next step. Trivial-goal lever: `loop.py waive-phases <dir> <goal>
+research,retro --reason "<why>"` (recorded, visible; nothing else is waivable). Gate: `gates.phase_record.enabled`.
 If model selection prints `off` (the default), pass `off` to the Codex resolver. It selects the
 versioned ordinary-work mapping (`sonnet` → Terra), never the current parent-session model.
 **Per-STEP downgrade:** once the plan exists, resolve each plan

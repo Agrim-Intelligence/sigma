@@ -958,6 +958,45 @@ def run_local(sigma, readme_text, root, qs=None, variant="confirm"):
                        "gh_calls": _summarise_gh(_gh_calls(base / "gh_calls.jsonl"))})
 
 
+def _scripted_phases(run, loop, repo, env, goal, pid, part):
+    """#684: the phases the loop's one-subagent-per-phase rule produces, scripted like the work itself.
+    `part` "before" runs research, plan and plan-review (with its recorded verdict); "after" runs review
+    (with its verdict) and retro. `record done` is REFUSED without them, so a control that skipped them
+    would only be exercising the refusal."""
+    import hashlib
+    py = sys.executable
+    stem = pathlib.Path(goal).stem
+
+    def phase(name, agent):
+        run.step(f"phase_report start {name}", [py, loop / "phase_report.py", "start", ".sdlc", goal, name,
+                                                "--model", "haiku", "--pid", pid], repo, env)
+        run.step(f"phase_report end {name}", [py, loop / "phase_report.py", "end", ".sdlc", goal, name,
+                                              "--agent-id", agent, "--pid", pid], repo, env)
+    if part == "before":
+        (repo / ".sdlc" / "research").mkdir(parents=True, exist_ok=True)
+        (repo / ".sdlc" / "plans").mkdir(parents=True, exist_ok=True)
+        (repo / ".sdlc" / "research" / f"{stem}.md").write_text("# Research\nscripted\n", encoding="utf-8")
+        phase("research", "onb-research")
+        plan = repo / ".sdlc" / "plans" / f"{stem}.md"
+        plan.write_text("# Plan\nscripted\n", encoding="utf-8")
+        phase("plan", "onb-plan")
+        phase("plan_review", "onb-plan-reviewer")
+        sha = hashlib.sha256(plan.read_bytes()).hexdigest()
+        run.step("record plan-review", [py, loop / "work.py", "record-plan-review", ".sdlc", goal, "--verdict",
+                                        "SOUND", "--plan-sha256", sha, "--agent-id", "onb-plan-reviewer"],
+                 repo, env)
+        wt = repo / ".sdlc" / "work" / goal / ".sdlc"          # work.py pr wants both on the branch
+        if wt.parent.is_dir():
+            for sub in ("research", "plans"):
+                (wt / sub).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(repo / ".sdlc" / sub / f"{stem}.md", wt / sub / f"{stem}.md")
+    else:
+        phase("review", "onb-reviewer")
+        run.step("record review", [py, loop / "work.py", "record-review", ".sdlc", goal, "--verdict",
+                                   "APPROVE", "--agent-id", "onb-reviewer"], repo, env)
+        phase("retro", "onb-retro")
+
+
 def _drive_local_goal(run, loop, repo, env, goal, pid):
     """The sigma-loop skill's per-goal gestures with work.enabled off (--local-only). `goal` is a
     goal file (local-goals mode)."""
@@ -975,6 +1014,7 @@ def _drive_local_goal(run, loop, repo, env, goal, pid):
     if is_file and _frontmatter(repo / goal).get("title") == GOAL_TITLE and (cfg.get("verify") or {}).get("command"):
         capture += ["--verify-command", "test -s " + WORK_FILE]
     run.step(f"record acceptance {name}", capture, repo, env)
+    _scripted_phases(run, loop, repo, env, goal, pid, "before")
     run.step(f"phase_report start {name}", [py, loop / "phase_report.py", "start", ".sdlc", goal,
                                             "implement", "--model", "haiku", "--pid", pid], repo, env)
     if is_file:
@@ -984,6 +1024,7 @@ def _drive_local_goal(run, loop, repo, env, goal, pid):
         work = WORK_FILE
     end = run.step(f"phase_report end {name}", [py, loop / "phase_report.py", "end", ".sdlc", goal,
                                                 "implement", "--pid", pid], repo, env)
+    _scripted_phases(run, loop, repo, env, goal, pid, "after")
     # loop.py verify's exit is recorded, not fatal: `record done` is the gate that decides, and the
     # control asserts at the gate -- so the empty-command trap reads red AT `record done`.
     ver = run.step(f"loop verify {name}", [py, loop / "loop.py", "verify", ".sdlc", goal], repo, env,
@@ -1079,12 +1120,14 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
         target = repo / ".sdlc" / "work" / goal / ".sdlc" / "acceptance" / acceptance.name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(acceptance, target)
+        _scripted_phases(run, loop, repo, env, goal, pid, "before")
         run.step("phase_report start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement",
                                         "--model", "haiku", "--pid", pid], repo, env)
         (repo / ".sdlc" / "work" / goal / WORK_FILE).write_text("hi\n", encoding="utf-8")
         end = run.step("phase_report end", [py, loop / "phase_report.py", "end", ".sdlc", goal,
                                             "implement", "--pid", pid], repo, env)
         obs["cost_line"] = next((l for l in end.stdout.splitlines() if "cost" in l), "")
+        _scripted_phases(run, loop, repo, env, goal, pid, "after")
         obs["verify_rc"] = run.step("loop verify", [py, loop / "loop.py", "verify", ".sdlc", goal],
                                     repo, env, ok_rc=None).returncode
         ev = repo / ".sdlc" / "state" / "verify" / f"{goal}.json"
