@@ -156,7 +156,7 @@ Then repeat until the helper says stop:
    finding is routed off this board: `references/filing.md`.
 
    As you complete each phase, **record it** so the issue timeline is the audit trail:
-   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" note .sdlc "$goal" "<phase>: <key findings / decisions>"`.
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" note .sdlc "$goal" -` (text on stdin, quoted heredoc; #713).
    Mark each phase boundary before dispatch and after return:
 
    ```

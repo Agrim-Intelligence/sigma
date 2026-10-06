@@ -85,6 +85,19 @@ def _real_send_email(email_cfg, subject, body):
     `pass_env` (default SIGMA_SMTP_PASS). There is structurally no code path that accepts a
     literal password value out of `config.json`, so a future `notify.email.pass` key, even if
     someone adds one, is simply never read here."""
+    # R10 (TM-04): host/user/pass_env come from a repository-committed file. Without this a hostile
+    # config could name ANY environment variable (`pass_env: AWS_SECRET_ACCESS_KEY`) and send its
+    # value to a host of the attacker's choosing as the SMTP password. Two refusals, both loud,
+    # both caught by `_send_email`'s fail-open (the ledger note still lands): the operator must opt
+    # in IN THEIR OWN ENVIRONMENT (`SIGMA_ALLOW_REPO_SMTP=1`, never in a clone), and the password
+    # variable must be `SIGMA_SMTP_PASS` or carry the `SIGMA_SMTP_` prefix.
+    if legacy.getenv("SIGMA_ALLOW_REPO_SMTP") != "1":
+        raise RuntimeError("REFUSED: repository-configured SMTP needs the operator-local opt-in "
+                           "`export SIGMA_ALLOW_REPO_SMTP=1` (set in your own shell, not the repo)")
+    pass_env = email_cfg.get("pass_env") or "SIGMA_SMTP_PASS"
+    if not (pass_env == "SIGMA_SMTP_PASS" or str(pass_env).startswith("SIGMA_SMTP_")):
+        raise RuntimeError(f"REFUSED: notify.email.pass_env {pass_env!r} must be SIGMA_SMTP_PASS or "
+                           f"start with SIGMA_SMTP_ (an arbitrary variable would leak to the SMTP host)")
     host, port = email_cfg["host"], int(email_cfg.get("port") or 587)
     timeout = float(email_cfg.get("timeout_seconds") or 10)
     msg = EmailMessage()
@@ -93,14 +106,14 @@ def _real_send_email(email_cfg, subject, body):
     msg.set_content(body)
     with smtplib.SMTP(host, port, timeout=timeout) as server:   # timeout covers connect AND every
         if email_cfg.get("tls", True):                          # subsequent blocking op on the
-            server.starttls()                                   # connection (smtplib's own contract)
+            server.starttls(context=smtplib.ssl.create_default_context())   # connection (smtplib's own contract)
         user = email_cfg.get("user")
         if user:
-            password = legacy.getenv(email_cfg.get("pass_env") or "SIGMA_SMTP_PASS", "")
+            password = legacy.getenv(pass_env, "")
             if not password:
                 raise RuntimeError(
                     "user is set but env var "
-                    f"{email_cfg.get('pass_env') or 'SIGMA_SMTP_PASS'} is empty/unset")
+                    f"{pass_env} is empty/unset")
             server.login(user, password)
         server.send_message(msg)
     return True

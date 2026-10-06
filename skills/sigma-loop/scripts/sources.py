@@ -574,12 +574,14 @@ class LocalSource:
     def note(self, goal, text):
         # journey-log: append a timestamped note for this goal under .sdlc/journey/<stem>.md
         jdir = pathlib.Path(self.sdlc_dir) / "journey"
+        state.refuse_symlinks(self.sdlc_dir, jdir, create_parents=True)    # #708
         jdir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         # `_resolve_ref` handles a bare create_dependency-returned id the same way append_to_body
         # does (#921); `.stem` on its result still strips directories/extensions either way, so no
         # traversal is possible (#486) whether `goal` arrived as a real path or a bare numeric id.
         stem = self._resolve_ref(goal).stem
+        state.refuse_symlinks(self.sdlc_dir, jdir / (stem + ".md"))        # #708
         with (jdir / (stem + ".md")).open("a", encoding="utf-8") as f:
             f.write(f"\n## {ts}\n{text}\n")
 

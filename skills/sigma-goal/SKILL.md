@@ -34,12 +34,13 @@ counterpart to the autonomous `/sigma-loop`).
    a cited brief from the graph + past issues + conventions (no-op when the KG is off). If
    `model_selection` is `auto`, also surface the recommended tier. For a local goal file, run
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" resolve "<goal-path>" .sdlc`.
-   For a GitHub issue number, read its real text with
-   `gh issue view "<goal>" --json title,body --jq '.title + "\n\n" + (.body // "")'` (POSIX
-   shell) — the TITLE on the first line, because a haiku signal counts only there (#2827); plain
-   `--json title,body` prints one-line JSON, which reads as all title — and run
-   `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" resolve "<that text>" .sdlc
-   "<goal>"`; the final argument keeps the ledger event attributed to the issue number. Passing
+   For a GitHub issue number, PIPE its real text in, never paste it into a shell argument (issue
+   text is untrusted data; `$(...)` or backticks inside quotes would run, #713):
+   `gh issue view "<goal>" --json title,body --jq '.title + "\n\n" + (.body // "")' | python3
+   "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" resolve - .sdlc "<goal>"` (POSIX shell;
+   `-` reads the text from stdin) — the TITLE on the first line, because a haiku signal counts only
+   there (#2827); plain `--json title,body` prints one-line JSON, which reads as all title; the final
+   argument keeps the ledger event attributed to the issue number. Passing
    the bare issue number
    as the text classifies its digits and can silently choose the wrong tier. This is the
    same GitHub-mode distinction as `/sigma-loop`'s `../sigma-loop/references/running.md`. Surface the result so you and the user
@@ -74,7 +75,7 @@ counterpart to the autonomous `/sigma-loop`).
    from Research's note on the issue timeline in github mode — see *Lane routing* below.
    Each executor's resolution header encodes this — so it works on any host.
    Record each phase as you go — `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc
-   "<goal>" "<phase>: <findings / decisions>"` (and 🔒 Critical Insights for key decisions) — so the
+   "<goal>" -` (text on stdin, quoted heredoc; #713) (and 🔒 Critical Insights for key decisions) — so the
    issue timeline (github mode) or `.sdlc/journey/` (local) holds the audit trail. Mark phase
    boundaries too, now with real console visibility (#1626) — before dispatching each phase's
    subagent: `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/phase_report.py" start .sdlc

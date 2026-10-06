@@ -1558,7 +1558,7 @@ registers a marker per `(goal, thread)` at the exact points it starts driving on
 finishes (done, parked, or failed — no gate). Each tick checks every goal with an open ledger claim
 for a registered marker whose pid has genuinely died. `notify.email` is stdlib `smtplib` only — zero
 new dependency — and **never accepts a literal password**: `pass_env` names an environment variable
-(default `SIGMA_SMTP_PASS`), since `config.json` is git-committed. A misconfigured or failing
+(default `SIGMA_SMTP_PASS`), since `config.json` is git-committed. Repository-supplied SMTP settings are refused unless you export `SIGMA_ALLOW_REPO_SMTP=1` in your own shell, and `pass_env` must be `SIGMA_SMTP_PASS` or start with `SIGMA_SMTP_` (#707 family, TM-04). A misconfigured or failing
 send is loud on stderr and always falls back to a ledger note addressed to the goal's claimant —
 never silently drops a notification. Exactly-once per dead pid: a fresh `agent-start` is what makes
 it eligible to notify again.

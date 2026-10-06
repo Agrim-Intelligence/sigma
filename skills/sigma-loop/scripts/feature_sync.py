@@ -1130,6 +1130,7 @@ def _goal_number(goal):
 def _remote(config):
     work_settings = config.get("work") if isinstance(config, dict) else None
     remote = work_settings.get("remote") if isinstance(work_settings, dict) else None
+    remote = _load("state").safe_ref("work.remote", remote)       # #710
     return remote if isinstance(remote, str) and remote.strip() else DEFAULT_REMOTE
 
 

@@ -367,6 +367,7 @@ def append(sdlc_dir, goal, kind, actor, thread="main", now=None, **fields):
             entry[name] = _sanitize(value)
 
     path = log_path(sdlc_dir, goal)
+    state.refuse_symlinks(sdlc_dir, path, create_parents=True)         # #708
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, sort_keys=True) + "\n")

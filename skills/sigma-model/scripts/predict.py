@@ -746,7 +746,8 @@ def main(argv):
         sdlc_dir = argv[3] if len(argv) > 3 else ".sdlc"
         goal_id = argv[4] if len(argv) > 4 else argv[2]
         try:
-            tier = resolve(_read_goal(argv[2]), sdlc_dir, goal=goal_id)
+            tier = resolve(sys.stdin.read() if argv[2] == "-" else _read_goal(argv[2]), sdlc_dir,
+                           goal=goal_id)       # `-`: text on stdin, never in shell quotes (#713)
         except ValueError as exc:
             print(f"predict.py: {exc}", file=sys.stderr)
             return 2

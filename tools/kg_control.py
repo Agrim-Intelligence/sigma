@@ -55,6 +55,10 @@ def _repo(base, *, enabled=True):
     root = base / ("enabled" if enabled else "disabled")
     sdlc = root / ".sdlc"
     (sdlc / "knowledge" / "analysis").mkdir(parents=True, exist_ok=True)
+    # #707: the control's own builder is a custom one, so it needs the Git-local opt-in a real
+    # operator would set after inspecting the project -- this control is that operator.
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "--local", "sigma.allowRepositoryShellCommands", "true"], check=True)
     (sdlc / "goals").mkdir(exist_ok=True)
     goal = sdlc / "goals" / "kg-control.md"
     goal.write_text("---\ntitle: KG control\npriority: P1\nstatus: in_progress\n---\n")
@@ -91,6 +95,9 @@ def run(workdir):
 
     missing_root = workdir / "missing"; missing_sdlc = missing_root / ".sdlc"
     (missing_sdlc / "knowledge" / "analysis").mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(missing_root)], check=True)     # #707: operator opt-in
+    subprocess.run(["git", "-C", str(missing_root), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     (missing_sdlc / "knowledge" / "analysis" / "seed.md").write_text("# Seed\n")
     (missing_sdlc / "config.json").write_text(json.dumps({"knowledge_graph": {
         "enabled": True, "scope": "research", "builder": "missing-kg-builder", "auto_refresh": True,

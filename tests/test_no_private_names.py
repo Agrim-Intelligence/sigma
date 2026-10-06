@@ -842,7 +842,7 @@ RAW_RESIDUAL_SHIPPED = {
     "skills/sigma-loop/scripts/loop.py": {"collector": 1, "critical-insight": 1},
     # core role noun: the discovery-scan evidence script
     "skills/sigma-loop/scripts/pipeline.py": {"collector": 1},
-    "skills/sigma-loop/scripts/risk-detect.sh": {"collector": 2},
+    "skills/sigma-loop/scripts/risk-detect.sh": {"collector": 1},
     "skills/sigma-loop/scripts/scrub.py": {"collectors": 1},
     # core label
     "skills/sigma-loop/scripts/sources.py": {"critical-insight": 1},

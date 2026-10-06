@@ -127,6 +127,15 @@ def _compile(triggers):
     return re.compile(r"(?i)\b(" + "|".join(triggers) + r")\b[^\n#,;.!?]{0,40}?#(\d+)")
 
 
+def is_cross_repo(text, match):
+    """#709: True when the `#N` this match captured is really `owner/repo#N` (or `repo#N`): another
+    repository's issue, which must never collapse to the LOCAL #N and become a blocker edge. The
+    shared pattern stays byte-identical (tools/leak_refs.py and mirror.py pin it); the consumers that
+    ACT on a ref (`backlog_check`, `extract_refs`) skip a cross-repo hit with this."""
+    i = match.start(2) - 2          # the character just before `#`
+    return i >= 0 and (text[i].isalnum() or text[i] in "_/-.")
+
+
 _BLOCK_RE = _compile(TRIGGERS)                    # check time: the excerpt + comment text
 _EXPLICIT_BLOCK_RE = _compile(EXPLICIT_TRIGGERS)  # fetch time: a whole issue body
 

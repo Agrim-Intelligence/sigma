@@ -623,6 +623,7 @@ def _record(sdlc_dir, decision):
     it reads `None` and refuses -- and must not cost the pick its goal."""
     try:
         path = decision_path(sdlc_dir, decision["goal"])
+        state.refuse_symlinks(sdlc_dir, path, create_parents=True)     # #708
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(decision, indent=2, sort_keys=True), encoding="utf-8")
     except Exception as exc:              # noqa: BLE001 - never break a pick over a record

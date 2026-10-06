@@ -48,6 +48,14 @@ def _mod(name):
 
 sc = _mod("slack_commands_listen")
 feature_registry = _mod("feature_registry")
+
+
+@pytest.fixture(autouse=True)
+def _repository_shell_trusted(monkeypatch):
+    """#707: verify.command now needs the operator's Git-local opt-in; these fixtures' repos are
+    the operator's own, so grant it for the module's own copy of the policy."""
+    monkeypatch.setattr(sc.verify_merge.shell_policy, "repository_shell_commands_allowed",
+                        lambda path: True)
 drift_watch = _mod("drift_watch")
 
 

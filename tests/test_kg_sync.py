@@ -139,6 +139,8 @@ def _clone(tmp_path, name, origin, sync_block="on", with_config=True):
     root = tmp_path / name
     root.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    # #707: a custom builder needs the operator's Git-local opt-in; this is the operator's own clone.
+    subprocess.run(["git", "-C", str(root), "config", "--local", "sigma.allowRepositoryShellCommands", "true"], check=True)
     _git(root, "config", "user.email", f"{name}@example.com")
     _git(root, "config", "user.name", name.upper())
     _git(root, "config", "commit.gpgsign", "false")

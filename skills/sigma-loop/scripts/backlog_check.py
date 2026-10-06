@@ -27,7 +27,7 @@ surfaces an explicit `degraded` flag instead of silently no-op'ing — see `_loc
     python3 pipeline.py crosscheck <sdlc_dir> <goal>      # prints a backlog-check/v1 JSON pack
     python3 backlog_check.py dismiss-text <kind> <ref> [reason...]  # prints the dismissal marker text
 """
-import hashlib, importlib.util, json, math, pathlib, re, subprocess
+import hashlib, importlib.util, json, math, pathlib, re, subprocess, sys
 from collections import Counter
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -411,6 +411,8 @@ def _explicit_blockers(goal_doc, docs, extra_text=""):
     matched = {}                                    # ref -> (confident, phrase) -- OR across matches
     for m in _BLOCK_RE.finditer(haystack):
         n = m.group(2)
+        if blocker_scan.is_cross_repo(haystack, m):     # #709: owner/repo#N is not local #N
+            continue
         if n == goal_doc["ref"] or n not in open_refs:
             continue
         phrase = m.group(1).lower()
@@ -453,7 +455,8 @@ def _referenced_blocker_refs(goal_doc, extra_text=""):
     Same self-reference guard as `_explicit_blockers` (`n != goal_doc["ref"]`) — a goal cannot be
     its own blocker."""
     haystack = _blocker_haystack(goal_doc, extra_text)
-    refs = {m.group(2) for m in _BLOCK_RE.finditer(haystack) if m.group(2) != goal_doc.get("ref")}
+    refs = {m.group(2) for m in _BLOCK_RE.finditer(haystack)
+            if m.group(2) != goal_doc.get("ref") and not blocker_scan.is_cross_repo(haystack, m)}
     # #1487, and the superset relationship is preserved BY CONSTRUCTION: `_explicit_blockers` draws
     # its extra refs from the same `_record_blocker_refs` list and then narrows them to open ones,
     # so this stays a superset of that function's output over the identical goal doc.
@@ -490,9 +493,19 @@ def _fetch_scrubbed_comments(sdlc_dir, config, goal_doc, run=None):
     try:
         # #650: a marker from a commenter outside the trust set is defused here, once, so neither the
         # dismissed-finding scan nor auto_unpark's keep-parked check can see it; the prose still counts.
-        return [scrub(sources.defuse_body(c["body"], c.get("association"), c.get("author"),
-                                          goal_doc["ref"]))
-                for c in sources.fetch_comments(config, goal_doc["ref"], run=run)]
+        # #709: only a TRUSTED author's prose reaches the blocker scan at all. Defusing markers (the
+        # #650 rule) left a stranger's "Blocked by #50" prose driving the default-on auto-unpark
+        # sweep past the needs-confirmation gate; the whole text is dropped, with one stderr note.
+        kept = []
+        for c in sources.fetch_comments(config, goal_doc["ref"], run=run):
+            if c.get("association") not in sources.TRUSTED_ASSOCIATIONS:
+                print(f"sigma: ignoring a comment on {goal_doc['ref']} from "
+                      f"{c.get('author') or 'an unknown author'} (association "
+                      f"{c.get('association') or 'none'}): only OWNER/MEMBER/COLLABORATOR comments "
+                      f"feed blocker detection (#709)", file=sys.stderr)
+                continue
+            kept.append(scrub(c["body"]))
+        return kept
     except Exception:
         return []
 

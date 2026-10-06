@@ -21,6 +21,7 @@ def _load(name):
 
 ledger = _load("ledger")
 classify = _load("watch_classify")
+state = _load("state")
 
 INBOX = "inbox.md"
 CURSOR = "watch-cursor.json"
@@ -58,7 +59,7 @@ def tick(sdlc_dir, config=None, me=None):
     if not items:
         return ""
     path = inbox_path(sdlc_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    state.refuse_symlinks(sdlc_dir, path, create_parents=True)         # #708
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     rendered = classify.render_inbox(items, me)
     path.write_text((existing + "\n" + rendered) if existing.strip() else rendered, encoding="utf-8")
@@ -68,7 +69,11 @@ def tick(sdlc_dir, config=None, me=None):
 def read_inbox(sdlc_dir):
     path = inbox_path(sdlc_dir)
     try:
+        state.refuse_symlinks(sdlc_dir, path)                          # #708: no leak through a link
         return path.read_text(encoding="utf-8").strip()
+    except state.UnsafeStatePath as exc:
+        print(f"watch: {exc}", file=sys.stderr)
+        return ""
     except OSError:
         return ""
 
@@ -77,6 +82,11 @@ def clear_inbox(sdlc_dir):
     """Called once the loop has surfaced the items — the inbox is a hand-off point, not a log; the
     ledger is the durable record."""
     path = inbox_path(sdlc_dir)
+    try:
+        state.refuse_symlinks(sdlc_dir, path)                          # #708
+    except state.UnsafeStatePath as exc:
+        print(f"watch: {exc}", file=sys.stderr)
+        return
     if path.exists():
         path.write_text("", encoding="utf-8")
 
