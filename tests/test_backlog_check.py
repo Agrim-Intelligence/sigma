@@ -254,7 +254,8 @@ def _raising_runner():
 
 
 def _gh_comment(body, author="someone", cid="IC_1", created="2026-08-01T00:00:00Z"):
-    return {"id": cid, "author": {"login": author}, "body": body, "createdAt": created}
+    return {"id": cid, "author": {"login": author}, "body": body, "createdAt": created,
+            "authorAssociation": "OWNER"}
 
 
 def test_explicit_blocked_by_comment_only_no_body_marker():

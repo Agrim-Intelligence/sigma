@@ -2682,7 +2682,7 @@ def test_merge_lands_directly_when_clean_and_safe(tmp_path):
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert "1 required check" in out and "1 required review" in out
-    assert "gh pr merge 7 --squash" in run.calls
+    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
     assert not any("allow_auto_merge" in c for c in run.calls)   # not even consulted
 
@@ -2724,7 +2724,7 @@ def test_merge_reports_success_even_when_the_branch_delete_fails_from_a_worktree
                          "failed to run git: fatal: 'main' is already used by worktree"))])
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
-    assert "gh pr merge 7 --squash" in run.calls          # the merge call itself is untouched
+    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls          # the merge call itself is untouched
 
 
 def test_merge_never_raises_when_the_record_is_missing_a_branch_name(tmp_path):
@@ -3139,7 +3139,7 @@ def test_merge_lands_directly_on_a_repo_that_disallows_auto_merge(tmp_path):
     run = _runner(_rights() + _protected() + _auto_merge_allowed(False) + [("pr view", _view())])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
-    assert "gh pr merge 7 --squash" in run.calls
+    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
 
 
@@ -3170,7 +3170,7 @@ def test_merge_protected_policy_still_arms_on_pending_checks_when_auto_merge_is_
                   + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
-    assert "gh pr merge 7 --auto --squash" in run.calls
+    assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
 
 
 def test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge(tmp_path):
@@ -3234,7 +3234,7 @@ def test_merge_arms_auto_merge_when_required_checks_are_still_pending_past_the_b
                   + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
-    assert "gh pr merge 7 --auto --squash" in run.calls
+    assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
     # proves merge() relies on gate()'s existing budget rather than adding a second one of its own.
     # Filtered on "mergeStateStatus" (gate()'s own --json field list) so merge_rights()'s SEPARATE,
     # single `gh pr view --json isCrossRepository` call (also a "pr view" substring) isn't counted.
@@ -3821,7 +3821,7 @@ def test_behind_reconcile_self_heals_transient_window_within_one_merge(tmp_path)
     run = _runner(_rights() + _protected() + [("pr view", view)])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
-    assert "gh pr merge 7 --squash" in run.calls
+    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == 1   # ONE rebase, not a storm
 
@@ -3840,7 +3840,7 @@ def test_behind_reconcile_arms_when_the_rebased_head_settles_to_pending(tmp_path
                   + [("pr view", view)])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7") and "pending" in out
-    assert "gh pr merge 7 --auto --squash" in run.calls
+    assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == 1
 
 
@@ -3970,7 +3970,7 @@ def test_always_merges_unprotected_but_says_nothing_gated_it(tmp_path):
     run = _runner(_rights() + UNPROTECTED + [("pr view", _view())])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "WARNING" in out and "local verify was the only gate" in out
-    assert "gh pr merge 7 --squash" in run.calls
+    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
 
 

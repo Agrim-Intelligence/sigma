@@ -87,7 +87,8 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
                 bodies = comments.get(n, [])
                 return json.dumps({"comments": [
                     {"id": f"c{i}", "author": {"login": "x"}, "body": b,
-                     "createdAt": "2026-01-01T00:00:00Z"} for i, b in enumerate(bodies)]})
+                     "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
+                    for i, b in enumerate(bodies)]})
             return "{}"
         return ""
     run.calls = calls

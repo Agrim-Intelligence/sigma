@@ -306,7 +306,7 @@ def scan_paths(root, paths):
                 function = max(matching, default=(0, "<module>"))[1]
                 rules = _rules_for_call(node, values)
                 if (path.relative_to(root).as_posix() == "skills/sigma-loop/scripts/channel_notify.py"
-                        and function == "_real_post" and _call_name(node.func) == "urllib.request.urlopen"):
+                        and function == "_real_post" and _call_name(node.func) in {"urllib.request.urlopen", "opener.open"}):
                     rules.add("network-post")
                 for rule in rules:
                     key = (path.relative_to(root).as_posix(), function, rule)

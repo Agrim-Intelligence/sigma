@@ -1771,8 +1771,8 @@ def test_fetch_comments_shapes_id_author_body_created_at():
     run = _recording_runner({"view": json.dumps(payload)})
     out = src.fetch_comments({}, "5", run=run)
     assert out == [
-        {"id": "IC_1", "author": "amy", "body": "first", "created_at": "2026-08-01T00:00:00Z"},
-        {"id": "IC_2", "author": "bob", "body": "second", "created_at": "2026-08-02T00:00:00Z"},
+        {"id": "IC_1", "author": "amy", "body": "first", "created_at": "2026-08-01T00:00:00Z", "association": ""},
+        {"id": "IC_2", "author": "bob", "body": "second", "created_at": "2026-08-02T00:00:00Z", "association": ""},
     ]
     assert any("issue view 5" in " ".join(c) and "--json comments" in " ".join(c) for c in run.calls)
 
@@ -1817,7 +1817,7 @@ def test_fetch_comments_maps_a_missing_id_to_empty_string():
     payload = {"comments": [{"author": {"login": "amy"}, "body": "no id here", "createdAt": "2026-08-01T00:00:00Z"}]}
     run = _recording_runner({"view": json.dumps(payload)})
     out = src.fetch_comments({}, "5", run=run)
-    assert out == [{"id": "", "author": "amy", "body": "no id here", "created_at": "2026-08-01T00:00:00Z"}]
+    assert out == [{"id": "", "author": "amy", "body": "no id here", "created_at": "2026-08-01T00:00:00Z", "association": ""}]
 
 
 # --- #500: pinning safe-by-construction Path(goal).stem sites (no work.stem() reduction needed) ---

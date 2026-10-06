@@ -88,7 +88,7 @@ def _runner(body="", labels=(), comments=(), absent=(), fail_on=()):
             if "labels" in fields:
                 out["labels"] = [{"name": n} for n in sorted(live)]
             if "comments" in fields:
-                out["comments"] = [{"body": c} for c in comments]
+                out["comments"] = [{"body": c, "authorAssociation": "OWNER"} for c in comments]
             return json.dumps(out)
         if _is_issues_list_call(args):
             # #1468: the needs-label sweep asks for its own label and needs body+labels back.

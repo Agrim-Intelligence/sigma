@@ -104,11 +104,21 @@ def _save_cursor(path, cursor):
     path.write_text(json.dumps(cursor, sort_keys=True), encoding="utf-8")
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}   # one set for the local-only check and the proxy bypass
+
+
 def _real_post(url, payload):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST",
                                   headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as resp:      # noqa: S310 - local-only URL, config-set
+    # #627: a loopback destination never goes through a proxy named by http_proxy/HTTPS_PROXY (the
+    # environment would otherwise carry the full local URL to it). A remote host, reachable only
+    # by the explicit allow_remote_webhook opt-in, keeps the operator's own egress proxy.
+    if urllib.parse.urlparse(url).hostname in _LOOPBACK_HOSTS:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    else:
+        opener = urllib.request.build_opener()
+    with opener.open(req, timeout=10) as resp:      # noqa: S310 - config-set URL, local unless opted in
         return 200 <= resp.status < 300
 
 
@@ -136,7 +146,7 @@ def _local_webhook_url(url, settings):
             return False
         if settings.get("allow_remote_webhook") is True:
             return True
-        return parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+        return parsed.hostname in _LOOPBACK_HOSTS
     except (TypeError, ValueError):
         return False
 
