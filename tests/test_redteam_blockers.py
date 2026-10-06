@@ -365,3 +365,23 @@ def test_tree_scan_cap_fails_closed(tmp_path, monkeypatch):
 def test_predict_dash_without_goal_and_note_dash_on_a_tty(monkeypatch, tmp_path):
     predict = _mod("predict", ROOT / "skills" / "sigma-model" / "scripts")
     assert predict.main(["predict.py", "resolve", "-"]) == 2
+
+
+def test_concurrent_first_use_never_fails_the_state_lock(tmp_path):
+    """Regression from this change: parent creation raced and fail-opened the cursor lock (a lost
+    update, seen as 119 != 120 in tests/test_state.py on macOS)."""
+    import threading
+    state = _mod("state")
+    sdlc = tmp_path / ".sdlc"             # deliberately NOT created: the base may be missing too
+    errors = []
+
+    def go():
+        try:
+            for _ in range(50):
+                state.refuse_symlinks(sdlc, sdlc / "state" / "log" / "x.jsonl", create_parents=True)
+        except Exception as exc:                # noqa: BLE001
+            errors.append(exc)
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors, errors

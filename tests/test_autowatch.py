@@ -15,6 +15,15 @@ def _mod(name):
 
 
 autowatch = _mod("autowatch")
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _operator_trusts_the_harness(monkeypatch):
+    """#707: a non-default drive command needs the Git-local opt-in; these tests ARE the operator."""
+    monkeypatch.setattr(autowatch.shell_policy, "repository_shell_commands_allowed", lambda p: True)
 ledger = _mod("ledger")
 loop = _mod("loop")
 

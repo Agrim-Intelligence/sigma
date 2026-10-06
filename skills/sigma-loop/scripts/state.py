@@ -199,7 +199,7 @@ def _cursor_lock(sdlc_dir):
         return
     lock_path = pathlib.Path(sdlc_dir) / "state" / "STATE.md.lock"
     try:
-        safe_state_open(sdlc_dir, "state/STATE.md.lock", "a").close()      # #708: no symlink walk-through
+        refuse_symlinks(sdlc_dir, lock_path, create_parents=True)           # #708
         fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         yield                      # can't even open the lock file -- fail open, see docstring
@@ -244,7 +244,10 @@ def refuse_symlinks(sdlc_dir, rel, create_parents=False):
                     continue
                 return cur
             if i < len(parts) - 1:
-                cur.mkdir()
+                cur.mkdir(parents=True, exist_ok=True)      # the base may not exist yet; races are fine
+                if os.path.islink(cur):
+                    raise UnsafeStatePath(
+                        f"REFUSED: {cur} is a symlink under .sdlc/ (#708). Fix: `git rm` it.")
             continue
         if stat_is_link(st):
             raise UnsafeStatePath(
