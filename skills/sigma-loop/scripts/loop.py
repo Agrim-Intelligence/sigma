@@ -6382,7 +6382,13 @@ def _dispatch(argv):
                 print(f"REFUSED: {phase_refusal}", file=sys.stderr)
                 return 4
             try:
-                _w = [r for r in _load("actionlog").read_goal(argv[2], argv[3]) if r.get("kind") == "phase_waived"]
+                _rows = _load("actionlog").read_goal(argv[2], argv[3])
+                _w = [r for r in _rows if r.get("kind") == "phase_waived"]
+                if work.phase_gate_on(config) and any(r.get("kind") == "verdict" and r.get("route") == "inline"
+                                                      for r in _rows):
+                    print("loop: WARNING: a review route is INLINE here, so the different-agent and "
+                          "one-subagent-per-phase checks did not apply to this goal (the phases are recorded, "
+                          "not proved independent)", file=sys.stderr)
             except Exception:                # noqa: BLE001 - a diagnostic never costs a terminal record
                 _w = []
             if _w:

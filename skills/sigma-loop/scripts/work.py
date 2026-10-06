@@ -1316,6 +1316,11 @@ def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason=""):
     return pg.record_verdict(sdlc_dir, config, goal, "review", mapped, agent_id=agent_id)
 
 
+def phase_gate_on(config):
+    """True when `gates.phase_record` is on (an absent key is off); see phase_gate.gate_on."""
+    return _load("phase_gate").gate_on(config)
+
+
 def phase_record_refusal(sdlc_dir, config, goal):
     """None when `gates.phase_record` is off or the goal's action log shows every phase (#684), else
     the refusal text. The gate itself lives in phase_gate.py; this is the registered entry point."""
