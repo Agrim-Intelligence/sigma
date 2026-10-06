@@ -452,13 +452,13 @@ def _drift_reply(sdlc_dir, config, run=None):
         return NO_OPEN_UNITS_MESSAGE
     work_settings = config.get("work") if isinstance(config, dict) else None
     work_settings = work_settings if isinstance(work_settings, dict) else {}
-    base = (work_settings.get("base") or "").strip()
+    base = (feature_rebase.state_safe_ref("work.base", work_settings.get("base")) or "").strip()
     if not base:
         return "work.base is not configured -- nothing to compare against."
 
     runner = run or drift_watch._run
     cwd = str(pathlib.Path(sdlc_dir).parent)
-    remote = (work_settings.get("remote") or "").strip() or "origin"
+    remote = (feature_rebase.state_safe_ref("work.remote", work_settings.get("remote")) or "").strip() or "origin"
     drift_watch._fetch(runner, cwd, remote, [base] + [branch for _, branch in units])
 
     repo_ref = owner_ref = None
@@ -1456,7 +1456,7 @@ def _unsafe_merge_check(cwd, sdlc_dir, config, name):
     -> `(kind, why)`, mirroring `_merge_check`'s own return shape so the SAME dispatch/ledger
     plumbing (#2338) handles both commands unchanged. `kind` is one of `"parked"|"failed"|"done"`."""
     branch = feature_rebase.features.BRANCH_PREFIX + name
-    base = (feature_rebase._settings(config) or {}).get("base")
+    base = feature_rebase.state_safe_ref("work.base", (feature_rebase._settings(config) or {}).get("base"))
     run = feature_rebase._run
     result = verify_merge.verify_and_offer_merge(
         run, cwd, sdlc_dir, config, branch, base, decide=lambda: True)

@@ -211,7 +211,8 @@ def test_send_email_reads_password_from_the_configured_env_var_never_from_config
     """Structural, not just conventional: even a literal `pass` key somehow present in config must
     never be read -- only os.environ, via `pass_env`."""
     monkeypatch.delenv("SIGMA_SMTP_PASS", raising=False)
-    monkeypatch.setenv("CUSTOM_SMTP_VAR", "s3cret")
+    monkeypatch.setenv("SIGMA_ALLOW_REPO_SMTP", "1")
+    monkeypatch.setenv("SIGMA_SMTP_CUSTOM", "s3cret")
     sent = {}
 
     class FakeSMTP:
@@ -225,7 +226,7 @@ def test_send_email_reads_password_from_the_configured_env_var_never_from_config
         def __exit__(self, *exc_info):
             return False
 
-        def starttls(self):
+        def starttls(self, context=None):
             pass
 
         def login(self, user, password):
@@ -237,7 +238,7 @@ def test_send_email_reads_password_from_the_configured_env_var_never_from_config
 
     monkeypatch.setattr(agent_watch.smtplib, "SMTP", FakeSMTP)
     email_cfg = {"host": "smtp.example.com", "to": "lead@example.com", "user": "bot",
-                 "pass_env": "CUSTOM_SMTP_VAR", "pass": "LITERAL-SHOULD-NEVER-BE-READ"}
+                 "pass_env": "SIGMA_SMTP_CUSTOM", "pass": "LITERAL-SHOULD-NEVER-BE-READ"}
     assert agent_watch._real_send_email(email_cfg, "subj", "body") is True
     assert sent["password"] == "s3cret"
     assert sent["password"] != "LITERAL-SHOULD-NEVER-BE-READ"
@@ -245,6 +246,7 @@ def test_send_email_reads_password_from_the_configured_env_var_never_from_config
 
 def test_real_send_email_raises_when_user_set_but_password_env_var_missing(monkeypatch):
     monkeypatch.delenv("SIGMA_SMTP_PASS", raising=False)
+    monkeypatch.setenv("SIGMA_ALLOW_REPO_SMTP", "1")
 
     class FakeSMTP:
         def __init__(self, host, port, timeout=None):
@@ -256,7 +258,7 @@ def test_real_send_email_raises_when_user_set_but_password_env_var_missing(monke
         def __exit__(self, *exc_info):
             return False
 
-        def starttls(self):
+        def starttls(self, context=None):
             pass
 
         def login(self, user, password):

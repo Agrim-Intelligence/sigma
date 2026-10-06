@@ -173,6 +173,7 @@ def _load(name):
 
 
 features = _load("features")
+_safe_ref = state_safe_ref = _load("state").safe_ref     # #710: ONE validator for config-supplied git names
 registry = _load("feature_registry")
 sync = _load("feature_sync")
 
@@ -404,7 +405,7 @@ def _settings(config):
 
 
 def _remote(config):
-    remote = _settings(config).get("remote")
+    remote = _safe_ref("work.remote", _settings(config).get("remote"))
     return remote if isinstance(remote, str) and remote.strip() else DEFAULT_REMOTE
 
 
@@ -574,7 +575,7 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
     run = run or _run
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
-    base = _settings(config).get("base") or ""
+    base = _safe_ref("work.base", _settings(config).get("base")) or ""
     branch = features.BRANCH_PREFIX + unit
     result = {"ok": False, "unit": unit, "acked": [], "why": "", "path": ""}
     try:
@@ -1404,7 +1405,7 @@ def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd,
         # both act on `rec["branch"]`, so a report naming anything else would name a branch nothing
         # in this pass ever touched.
         goal_branch = rec.get("branch") or "%s%s" % (
-            _settings(config).get("branch_prefix") or "sdlc/", name)
+            _safe_ref("work.branch_prefix", _settings(config).get("branch_prefix")) or "sdlc/", name)
         if rec.get("base") != branch:
             report["skipped"].append({"branch": goal_branch,
                                       "why": "based on %r, not %s" % (rec.get("base"), branch)})
@@ -1893,7 +1894,7 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
     branch = features.BRANCH_PREFIX + unit
-    base = _settings(config).get("base") or ""
+    base = _safe_ref("work.base", _settings(config).get("base")) or ""
     report["branch"], report["base"] = branch, base
 
     # THE LOCK IS TAKEN BEFORE ANY OTHER DECISION, and the reordering is the fix for a strand that
@@ -2082,7 +2083,7 @@ def main(argv):
         config = state.load_config(argv[2])
         remote, branch = _remote(config), features.BRANCH_PREFIX + argv[3]
         cwd = str(pathlib.Path(argv[2]).parent)
-        base = _settings(config).get("base") or ""
+        base = _safe_ref("work.base", _settings(config).get("base")) or ""
         print(json.dumps({
             "unit": argv[3], "branch": branch, "base": base,
             "verifiable": _verifiable(config), "merge_method": merge_method(config),

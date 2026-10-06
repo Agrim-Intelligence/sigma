@@ -84,7 +84,7 @@ events for one retrospective.
 **Route each durable lesson to the right store.** Most stop at the first; the rest are *proposed* and
 *parked* for approval:
 - **Audit trail** — rationale worth re-reading later → record it on the goal:
-  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" "retro: <lesson>"`
+  Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `retro: <lesson>` (stdin, quoted heredoc; #713).
   (comments the issue in github mode, appends to `.sdlc/journey/` in local mode). Safe to write freely.
 - **North-star** — if the build *taught the strategy or architecture* (a bet confirmed / refuted, the
   code's shape now differs from a rule) → **propose** an edit to `.sdlc/context/north-star.md` and let

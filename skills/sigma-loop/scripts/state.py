@@ -4,7 +4,7 @@ Zero third-party dependency, not zero process: since #1897 `done_refusal` shells
 -only: `merge-base`, `diff --name-only`, `ls-files`) to ask what content a verify actually ran
 against. A repo where git cannot answer degrades exactly as one with no work record does — see
 `content_fingerprint`."""
-import contextlib, hashlib, json, os, pathlib, importlib.util, re, subprocess, tempfile, time
+import contextlib, hashlib, json, os, pathlib, importlib.util, re, subprocess, sys, tempfile, time
 
 try:
     import fcntl                    # POSIX only -- see _cursor_lock's docstring
@@ -199,8 +199,8 @@ def _cursor_lock(sdlc_dir):
         return
     lock_path = pathlib.Path(sdlc_dir) / "state" / "STATE.md.lock"
     try:
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+        refuse_symlinks(sdlc_dir, lock_path, create_parents=True)           # #708
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         yield                      # can't even open the lock file -- fail open, see docstring
         return
@@ -214,6 +214,164 @@ def _cursor_lock(sdlc_dir):
         yield
     finally:
         os.close(fd)               # releases the flock too -- the kernel drops it the instant fd closes
+
+
+def refuse_symlinks(sdlc_dir, rel, create_parents=False):
+    """#708: lstat every component of `rel` below `sdlc_dir`; raise `UnsafeStatePath` (naming the fix)
+    if any is a symlink, optionally creating missing parents one level at a time. `rel` may be a
+    path under `sdlc_dir` (it is made relative). Returns the checked path. Writers whose call shape
+    the write-surface/growth audits read statically call THIS before their unchanged write (a
+    residual lstat->open window needs concurrent write access inside the checkout); everything else
+    uses `safe_state_open`, which also opens the leaf with O_NOFOLLOW."""
+    base = pathlib.Path(sdlc_dir)
+    rel_path = pathlib.Path(rel)
+    if rel_path.is_absolute():
+        try:
+            rel_path = rel_path.relative_to(base)
+        except ValueError:
+            rel_path = rel_path.relative_to(base.resolve())
+    parts = rel_path.parts
+    if not parts or ".." in parts:
+        raise UnsafeStatePath(f"REFUSED: unsafe state path {str(rel)!r}")
+    cur = base
+    for i, part in enumerate(parts):
+        cur = cur / part
+        try:
+            st = os.lstat(cur)
+        except FileNotFoundError:
+            if not create_parents:
+                if i == len(parts) - 1:
+                    continue
+                return cur
+            if i < len(parts) - 1:
+                cur.mkdir(parents=True, exist_ok=True)      # the base may not exist yet; races are fine
+                if os.path.islink(cur):
+                    raise UnsafeStatePath(
+                        f"REFUSED: {cur} is a symlink under .sdlc/ (#708). Fix: `git rm` it.")
+            continue
+        if stat_is_link(st):
+            raise UnsafeStatePath(
+                f"REFUSED: {cur} is a symlink under .sdlc/ -- Sigma never writes through one "
+                f"(#708). Fix: `git rm` the committed symlink; this is not overridable.")
+    return cur
+
+
+_TREE_SCAN_CAP = 50000        # entries; ceiling of the per-invocation walk (~tens of ms at the cap)
+
+
+def refuse_symlinked_tree(sdlc_dir):
+    """#708: raise `UnsafeStatePath` if ANY symlink exists at or below `.sdlc/state` or
+    `.sdlc/journey` (a committed one is checked out as-is and every writer there would follow it).
+    ONE choke point run at the top of the mutating CLIs (`loop.py`, `work.py`), so a writer added
+    later is covered without remembering a per-site call; the per-site `refuse_symlinks` calls stay
+    as defence in depth for entry points that skip it. Cost: one `scandir` walk, O(files in those
+    two trees), bounded by `_TREE_SCAN_CAP` entries (beyond it the check REFUSES -- a ceiling stated
+    here, fail closed, never an unbounded cost or a silent pass). Missing dirs are fine."""
+    base = pathlib.Path(sdlc_dir)
+    seen = 0
+    for top in ("state", "journey"):
+        stack = [base / top]
+        while stack:
+            cur = stack.pop()
+            try:
+                if cur.is_symlink():
+                    raise UnsafeStatePath(f"REFUSED: {cur} is a symlink under .sdlc/ -- Sigma never "
+                                          f"writes through one (#708). Fix: `git rm` it.")
+                it = os.scandir(cur)
+            except UnsafeStatePath:
+                raise
+            except OSError:
+                continue
+            with it:
+                for entry in it:
+                    seen += 1
+                    if seen > _TREE_SCAN_CAP:
+                        raise UnsafeStatePath(
+                            f"REFUSED: more than {_TREE_SCAN_CAP} entries under .sdlc/state and "
+                            f".sdlc/journey, so the symlink check cannot finish (#708, fail closed); "
+                            f"run `loop.py prune-state` or remove stale files")
+                    if entry.is_symlink():
+                        raise UnsafeStatePath(f"REFUSED: {entry.path} is a symlink under .sdlc/ -- "
+                                              f"Sigma never writes through one (#708). Fix: `git rm` it.")
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(pathlib.Path(entry.path))
+
+
+def guard_argv(argv, who):
+    """#708: CLI entry guard. For every argv element that is a directory holding `state/` or
+    `journey/`, run `refuse_symlinked_tree`; print the refusal and return 2, else 0. Used as
+    `sys.exit(guard_argv(sys.argv, name) or main(sys.argv))` by every sigma CLI that writes under
+    `.sdlc/` (the watchers, sync, kg, log, rebase), so a committed symlink never reaches a writer."""
+    for arg in argv[1:]:
+        try:
+            if os.path.isdir(arg) and (os.path.isdir(os.path.join(arg, "state"))
+                                       or os.path.isdir(os.path.join(arg, "journey"))):
+                refuse_symlinked_tree(arg)
+        except UnsafeStatePath as exc:
+            print(f"{who}: {exc}", file=sys.stderr)
+            return 2
+    return 0
+
+
+INERT_REF = "refused-invalid-ref-710"
+
+
+def safe_ref(key, value):
+    """#710 (TM-04): the ONE validator for a repository-supplied git remote/branch/prefix that is
+    about to reach `git fetch|push|ls-remote|worktree` as a positional argument. A value that is not
+    a plain string, starts with `-` (git reads it as an OPTION: `--upload-pack=<cmd>` runs <cmd>) or
+    holds whitespace/control characters is REFUSED loudly on stderr and replaced by an inert name git
+    rejects harmlessly, so every caller fails closed without needing its own except. Lever: put a
+    plain remote/branch name in .sdlc/config.json (not overridable)."""
+    if value in (None, ""):
+        return value
+    if (not isinstance(value, str) or value.startswith("-")
+            or any(c.isspace() or ord(c) < 32 for c in value)):
+        print(f"sigma: REFUSED {key} {value!r}: it would reach git as an option (#710); set a "
+              f"plain name in .sdlc/config.json", file=sys.stderr)
+        return INERT_REF
+    return value
+
+
+class UnsafeStatePath(OSError):
+    """A path under `.sdlc/` has a symlink component (#708). An OSError so every existing fail-open
+    caller keeps its posture, but every writer that catches it SAYS so (see `safe_state_open`)."""
+
+
+def safe_state_open(sdlc_dir, rel, mode="a", encoding="utf-8"):
+    """#708: the ONE way Sigma opens a file under `.sdlc/` that a repository could have pre-seeded.
+
+    A repository can COMMIT a symlink at `.sdlc/state/inbox.md` (or `.sdlc/state` itself, or
+    `.sdlc/journey`): git checks it out, `.gitignore` does not apply to tracked files, and a plain
+    `open(..., "w")` then truncates or appends to a file OUTSIDE the repo as the user. So: lstat every
+    component of `rel` below `sdlc_dir` and REFUSE (raise `UnsafeStatePath`, naming the fix) if any
+    is a symlink; missing parents are created one level at a time, re-checked; the leaf opens with
+    `O_NOFOLLOW` (closing the lstat->open window for the file itself) and must be a regular file.
+    `mode` is "r", "a" or "w" (w truncates only AFTER the regular-file check). Lever: `git rm` the
+    symlink. Residual: a directory component swapped for a symlink between the walk and the open is
+    not closed on hosts without dir-fd support; that needs write access inside the checkout.
+    Returns a text file object; the caller closes it."""
+    cur = refuse_symlinks(sdlc_dir, rel, create_parents=mode != "r")
+    flags = {"r": os.O_RDONLY, "a": os.O_WRONLY | os.O_APPEND | os.O_CREAT,
+             "w": os.O_WRONLY | os.O_CREAT}[mode] | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(cur, flags, 0o644)
+    except OSError as exc:
+        if getattr(exc, "errno", None) in (40, 62):          # ELOOP (linux, macos): raced symlink
+            raise UnsafeStatePath(f"REFUSED: {cur} is a symlink under .sdlc/ (#708)") from exc
+        raise
+    import stat as _stat
+    if not _stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise UnsafeStatePath(f"REFUSED: {cur} is not a regular file (#708)")
+    if mode == "w":
+        os.ftruncate(fd, 0)
+    return os.fdopen(fd, {"r": "r", "a": "a", "w": "w"}[mode], encoding=encoding)
+
+
+def stat_is_link(st):
+    import stat as _stat
+    return _stat.S_ISLNK(st.st_mode)
 
 
 def _patch_cursor(sdlc_dir, patch):
@@ -556,6 +714,7 @@ def _queue(sdlc_dir, goal_path, reason, needs, tier=None):
     first entry. A cosmetic ordering quirk on one file, in exchange for never dropping a parked
     goal."""
     q = pathlib.Path(sdlc_dir) / "state" / "review-queue.md"
+    refuse_symlinks(sdlc_dir, q, create_parents=True)       # #708: O_EXCL fails on a link, `open("a")` follows it
     q.parent.mkdir(parents=True, exist_ok=True)
     try:
         fd = os.open(str(q), os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_APPEND, 0o644)

@@ -26,6 +26,10 @@ def _r():
 def _sdlc(d, review):
     base = pathlib.Path(d) / ".sdlc"; base.mkdir(parents=True, exist_ok=True)
     (base / "config.json").write_text(json.dumps({"review": review}), encoding="utf-8")
+    # #707: review.command needs the operator's Git-local opt-in; these fixtures are the operator's own.
+    subprocess.run(["git", "init", "-q", str(base.parent)], check=True)
+    subprocess.run(["git", "-C", str(base.parent), "config", "--local",
+                    "sigma.allowRepositoryShellCommands", "true"], check=True)
     return str(base)
 
 

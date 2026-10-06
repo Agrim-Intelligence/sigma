@@ -93,6 +93,15 @@ def _load_sibling(name):
     return module
 
 
+def _safe_ref(key, value):
+    """#710: the sigma-loop validator (`state.safe_ref`), cross-loaded like every sigma-init loader."""
+    path = _HERE.parent.parent / "sigma-loop" / "scripts" / "state.py"
+    spec = importlib.util.spec_from_file_location("preflight_state", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.safe_ref(key, value)
+
+
 _vd = _load_sibling("verify_detect")          # printable / _q / python_command / _atomic_write_json
 printable = _vd.printable
 
@@ -317,8 +326,8 @@ def requirements(config):
             # the board mirrors github issues only: `project.enabled` means nothing in local-goals
             # mode (the template ships it true there), exactly as doctor has always gated it
             "board": github and bool(_cfg_block(gh_disc, "project").get("enabled")),
-            "remote": (str(work.get("remote") or "").strip() or "origin"),
-            "base": str(work.get("base") or "").strip(),
+            "remote": (_safe_ref("work.remote", str(work.get("remote") or "").strip()) or "origin"),
+            "base": _safe_ref("work.base", str(work.get("base") or "").strip()) or "",     # #710
             "repo": str(gh_disc.get("repo") or "").strip()}
 
 

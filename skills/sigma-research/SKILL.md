@@ -170,7 +170,7 @@ renders on GitHub as a run of literal pipes, not a table. And a cited location i
 one.
 
 Then record the phase note, which is what puts research in the audit trail:
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" "research: <summary>"`
+Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `research: <summary>` (stdin, quoted heredoc; #713).
 
 The note routes itself — it comments the **issue timeline** in github mode and appends to
 `.sdlc/journey/` in local mode — so make it carry what a *teammate* needs without opening your working

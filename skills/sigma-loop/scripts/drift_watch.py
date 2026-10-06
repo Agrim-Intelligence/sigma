@@ -332,14 +332,14 @@ def sweep(sdlc_dir, config=None, run=None, now=None, post=None):
     units = _open_units(sdlc_dir)
     work_settings = config.get("work") if isinstance(config, dict) else None
     work_settings = work_settings if isinstance(work_settings, dict) else {}
-    base = (work_settings.get("base") or "").strip()
+    base = (feature_rebase.state_safe_ref("work.base", work_settings.get("base")) or "").strip()
     if not units or not base:
         _stamp(sdlc_dir, now=now)
         return ""
 
     run = run or _run
     cwd = str(pathlib.Path(sdlc_dir).parent)
-    remote = (work_settings.get("remote") or "").strip() or "origin"
+    remote = (feature_rebase.state_safe_ref("work.remote", work_settings.get("remote")) or "").strip() or "origin"
     _fetch(run, cwd, remote, [base] + [branch for _, branch in units])
 
     repo_ref = owner_ref = None

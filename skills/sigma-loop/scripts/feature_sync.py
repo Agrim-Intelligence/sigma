@@ -1130,6 +1130,7 @@ def _goal_number(goal):
 def _remote(config):
     work_settings = config.get("work") if isinstance(config, dict) else None
     remote = work_settings.get("remote") if isinstance(work_settings, dict) else None
+    remote = _load("state").safe_ref("work.remote", remote)       # #710
     return remote if isinstance(remote, str) and remote.strip() else DEFAULT_REMOTE
 
 
@@ -1437,5 +1438,15 @@ def main(argv):
     return 2
 
 
+def _symlink_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey before any write."""
+    import importlib.util as _u
+    import pathlib as _p
+    spec = _u.spec_from_file_location("_guard_state", _p.Path(__file__).resolve().parent / "state.py")
+    mod = _u.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.guard_argv(argv, _p.Path(__file__).name)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(_symlink_guard(sys.argv) or main(sys.argv))

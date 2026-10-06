@@ -27,6 +27,9 @@ def _load(name, directory=SCRIPTS):
     spec = importlib.util.spec_from_file_location(name, pathlib.Path(directory) / (name + ".py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
+    if name == "verify_merge" and not os.environ.get("SIGMA_TEST_SHELL_POLICY_REAL"):
+        # #707: `verify.command` needs the Git-local opt-in; these fixtures are the operator's repos.
+        m.shell_policy.repository_shell_commands_allowed = lambda path: True
     return m
 
 

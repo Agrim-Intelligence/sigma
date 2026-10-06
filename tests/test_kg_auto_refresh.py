@@ -86,6 +86,10 @@ def _repo(tmp_path, kg_block):
     root = tmp_path / "repo"
     d = root / ".sdlc"
     (d / "state").mkdir(parents=True)
+    # #707: a custom builder needs the operator's Git-local opt-in; this is the operator's own repo.
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "--local", "sigma.allowRepositoryShellCommands", "true"], check=True)
     # ledger+journal on, matching test_loop.py's own `_telemetry_base`: the fail-open test below
     # reads back the `retro` event to prove the goal's bookkeeping survived a broken builder.
     cfg = {"budget": {}, "ledger": {"enabled": True, "actor": "rae"}, "journal": {"enabled": True}}

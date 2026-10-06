@@ -102,10 +102,17 @@ CONTRACT_GLOBS='*openapi* *swagger* *.proto *.graphql *api/* *routes/* *controll
 # matcher. A project overriding SENSITIVE_GLOBS in .sdlc/risk-detect.conf replaces this whole line
 # and does not inherit the companion — the same all-or-nothing override this config has always had.
 SENSITIVE_GLOBS='*auth* *login* *session* *permission* *rbac* *payment* *billing* .env* *.env */.env* *secret* *credential*'
-# Optional glob overrides. Sourcing executes trusted repo-local bash — it lives in the harness-owned,
-# scan-excluded .sdlc/ dir (same trust as a .envrc), not the source tree this collector reports on.
-# shellcheck disable=SC1091
-[ -f "$PROJECT_DIR/.sdlc/risk-detect.conf" ] && . "$PROJECT_DIR/.sdlc/risk-detect.conf" 2>/dev/null
+# Optional glob overrides. Sourcing EXECUTES repository-supplied bash, so (#710, TM-04) it happens
+# only when the operator made the Git-local opt-in shell_policy.py documents -- the same gate as
+# verify.command. Without it the file is skipped, loudly, and the defaults above apply.
+if [ -f "$PROJECT_DIR/.sdlc/risk-detect.conf" ]; then
+  if [ "$(git -C "$PROJECT_DIR" config --local --type=bool sigma.allowRepositoryShellCommands 2>/dev/null)" = "true" ]; then
+    # shellcheck disable=SC1091
+    . "$PROJECT_DIR/.sdlc/risk-detect.conf" 2>/dev/null
+  else
+    echo "risk-detect: REFUSED to source .sdlc/risk-detect.conf (repository-supplied shell); run \`git -C <trusted-project> config --local sigma.allowRepositoryShellCommands true\` after inspecting it. Using default globs." >&2
+  fi
+fi
 
 # Exclude the SDLC machinery and docs from the scan — the tripwire watches the
 # engineer's source, not the harness state (.sdlc/*) or documentation (docs/*).

@@ -41,6 +41,12 @@ def _mod(name):
 
 autowatch = _mod("autowatch")
 
+
+@pytest.fixture(autouse=True)
+def _operator_trusts_the_harness(monkeypatch):
+    """#707: a non-default drive command needs the Git-local opt-in; these controls ARE the operator."""
+    monkeypatch.setattr(autowatch.shell_policy, "repository_shell_commands_allowed", lambda p: True)
+
 #: The driven "model". argv: <dir> <grandchild-mode> [ignored prompt]. Writes `child.pid`, starts a
 #: grandchild that writes `grandchild.pid`, waits for that file, then sleeps past any timeout.
 CHILD = r'''
@@ -83,6 +89,7 @@ TICK = r'''
 import importlib.util, os, pathlib, signal, sys
 spec = importlib.util.spec_from_file_location("autowatch", sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.shell_policy.repository_shell_commands_allowed = lambda p: True   # #707: the harness is the operator
 if len(sys.argv) > 3:
     m.DRIVE_TERM_GRACE_SECONDS = float(sys.argv[3])
     m.DRIVE_REAP_SECONDS = 0.5      # the tick may not sit out the lifeline sentinel's own sweep
@@ -343,6 +350,7 @@ RACE_TICK = r'''
 import importlib.util, os, pathlib, signal, subprocess, sys
 spec = importlib.util.spec_from_file_location("autowatch", sys.argv[1])
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.shell_policy.repository_shell_commands_allowed = lambda p: True   # #707: the harness is the operator
 m.DRIVE_TERM_GRACE_SECONDS = 1
 seam, out = sys.argv[3], pathlib.Path(sys.argv[4])
 if seam == "dead-sentinel-sigpipe":

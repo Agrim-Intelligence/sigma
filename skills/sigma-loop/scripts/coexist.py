@@ -107,6 +107,7 @@ def _load(name):
 
 
 legacy = _load("legacy")
+state = _load("state")
 
 BRAND = legacy.BRAND
 OLD = legacy.RETIRED
@@ -973,6 +974,7 @@ def _mark(marker):
     be written costs one repeated notice line, never a stopped surface)."""
     try:
         if marker.parent.is_dir():
+            state.refuse_symlinks(marker.parent.parent, marker)        # #708
             marker.write_text("%d\n" % int(time.time()), encoding="utf-8")
     except OSError:
         pass

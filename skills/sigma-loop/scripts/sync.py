@@ -96,12 +96,23 @@ their code checkout.
 """
 
 
+def _ref_value(key, value):
+    """#710 (TM-04): a repository-supplied remote/branch reaches `git fetch|push|worktree` as a
+    positional arg; a leading `-` makes it an OPTION (`--upload-pack=<cmd>` runs <cmd>). Refuse
+    loudly. Lever: fix the value in .sdlc/config.json (not overridable)."""
+    if not isinstance(value, str) or value.startswith("-") or any(c.isspace() or ord(c) < 32
+                                                                 for c in value):
+        raise ValueError(f"REFUSED: {key} {value!r} would reach git as an option (#710); "
+                         f"set a plain remote/branch name in .sdlc/config.json")
+    return value
+
+
 def branch(config):
-    return ledger.settings(config).get("branch") or DEFAULT_BRANCH
+    return _ref_value("ledger.branch", ledger.settings(config).get("branch") or DEFAULT_BRANCH)
 
 
 def remote(config):
-    return ledger.settings(config).get("remote") or DEFAULT_REMOTE
+    return _ref_value("ledger.remote", ledger.settings(config).get("remote") or DEFAULT_REMOTE)
 
 
 def project_root(sdlc_dir):
@@ -170,11 +181,12 @@ def knowledge_enabled(config):
 
 
 def knowledge_branch(config):
-    return knowledge_settings(config).get("branch") or DEFAULT_KNOWLEDGE_BRANCH
+    return _ref_value("knowledge.branch",
+                      knowledge_settings(config).get("branch") or DEFAULT_KNOWLEDGE_BRANCH)
 
 
 def knowledge_remote(config):
-    return knowledge_settings(config).get("remote") or DEFAULT_REMOTE
+    return _ref_value("knowledge.remote", knowledge_settings(config).get("remote") or DEFAULT_REMOTE)
 
 
 def knowledge_worktree(sdlc_dir):
@@ -1280,5 +1292,15 @@ def main(argv):
     return 2
 
 
+def _symlink_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey before any write."""
+    import importlib.util as _u
+    import pathlib as _p
+    spec = _u.spec_from_file_location("_guard_state", _p.Path(__file__).resolve().parent / "state.py")
+    mod = _u.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.guard_argv(argv, _p.Path(__file__).name)
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_symlink_guard(sys.argv) or main(sys.argv))

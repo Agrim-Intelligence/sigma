@@ -948,5 +948,15 @@ def main(argv):
         return 0
 
 
+def _symlink_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey before any write."""
+    import importlib.util as _u
+    import pathlib as _p
+    spec = _u.spec_from_file_location("_guard_state", _p.Path(__file__).resolve().parent / "state.py")
+    mod = _u.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.guard_argv(argv, _p.Path(__file__).name)
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_symlink_guard(sys.argv) or main(sys.argv))

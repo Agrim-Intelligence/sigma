@@ -6,7 +6,7 @@ The detail behind the phase-note, phase-banner, QC and retrospective calls in
 ---
 
 As you complete each phase, **record it** so the issue timeline is the audit trail:
-`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" note .sdlc "$goal" "<phase>: <key findings / decisions>"`.
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" note .sdlc "$goal" - <<'SIGMA_NOTE'` with the body line `<phase>: <key findings / decisions>` and a closing `SIGMA_NOTE` line (stdin through a quoted heredoc, never inside shell quotes, #713).
 Mark phase boundaries too, now with real console visibility (#1626) — before dispatching each
 phase's subagent: `python3 "${CLAUDE_SKILL_DIR}/scripts/phase_report.py" start .sdlc "$goal"
 <goal|research|plan|plan_review|implement|review|retro> --model <tier> --pid "$PPID"` prints a two-line banner

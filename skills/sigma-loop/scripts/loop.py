@@ -3766,6 +3766,18 @@ def _refresh_knowledge_graph(sdlc_dir, goal):
         kg_py = _HERE.parent.parent / "sigma-kg" / "scripts" / "kg.py"
         if not kg_py.exists():                      # a partial install must not break a record
             return
+        # #707 (TM-04): `knowledge_graph.builder` is a repository-supplied executable. Anything but
+        # the shipped default name needs the same Git-local operator opt-in as `verify.command`;
+        # refusing here (not in kg.py, which must not import a sibling skill) keeps the graph a
+        # no-op rather than running a committed binary. Lever: the opt-in in shell_policy's message.
+        kgc = (state.load_config(sdlc_dir) or {}).get("knowledge_graph")
+        if (isinstance(kgc, dict) and kgc.get("enabled") and kgc.get("auto_refresh")
+                and kgc.get("builder", "graphify") != "graphify"
+                and not shell_policy.repository_shell_commands_allowed(
+                    pathlib.Path(sdlc_dir).resolve().parent)):
+            print(f"sigma: knowledge-graph refresh skipped for {goal}: custom "
+                  f"knowledge_graph.builder; " + shell_policy.refusal_message(), file=sys.stderr)
+            return
         r = subprocess.run([sys.executable, str(kg_py), "refresh", str(sdlc_dir)],
                            capture_output=True, text=True, timeout=_KG_REFRESH_TIMEOUT)
         for line in (r.stderr or "").strip().splitlines():
@@ -5998,6 +6010,10 @@ def main(argv, *, _merge_lock_held=False):
         print(USAGE)
         return 0
     try:
+        if len(argv) > 2 and argv[1] != "prune-state" and os.path.isdir(argv[2]):
+            # #708: one choke point, every verb. `prune-state` is exempt: it only DELETES, with its
+            # own never-follow guard (tests/test_state_retention.py), and is how a bad tree is cleaned.
+            state.refuse_symlinked_tree(argv[2])
         # #324: with work enabled (the pass's scope), lock before any done side effect.
         # Work-disabled local recorders keep their existing concurrent cursor-update contract.
         # Re-entry is lexical, not a process-global exemption that would let another caller through.
@@ -6013,6 +6029,9 @@ def main(argv, *, _merge_lock_held=False):
                     return 4
                 return main(argv, _merge_lock_held=True)
         return _dispatch(argv)
+    except state.UnsafeStatePath as exc:
+        print(f"loop.py: {exc}", file=sys.stderr)
+        return 2
     except state.ConfigMissing as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
         return 2
@@ -6304,7 +6323,7 @@ def _dispatch(argv):
         # the marker's whole failure mode was that nothing ever refreshed it.
         agent_heartbeat_all(argv[2], argv[3])
         try:
-            sources.get_source(argv[2], config).note(argv[3], argv[4])
+            sources.get_source(argv[2], config).note(argv[3], sys.stdin.read() if (argv[4] == "-" and not sys.stdin.isatty()) else argv[4])   # `-`: stdin (#713)
         except Exception as e:
             # #1986: the OLD shape here printed one easy-to-miss stderr line and always returned 0
             # regardless — for `sigma-goal-review`'s REJECT verdict, this note is THE ENTIRE OUTPUT

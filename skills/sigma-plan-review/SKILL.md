@@ -182,7 +182,7 @@ and re-dispatch the plan revision at the tier its `ESCALATE <next>` names; on `C
 revision loop above continues at the current tier. Interactive runs have a human at every send-back.
 
 Record the rejections in the goal's audit trail —
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" "plan-review: <what was rejected and why>"`
+Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `plan-review: <what was rejected and why>` (stdin, quoted heredoc; #713).
 — which comments the issue in github mode and appends to `.sdlc/journey/` locally. A *rejected*
 finding is the one worth writing down: the accepted ones are visible in the revised plan, while the
 reasoning for overruling a reviewer exists nowhere else, and it is the first thing anyone asks when

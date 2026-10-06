@@ -8,14 +8,14 @@
   "measured_at": "2026-09-30",
   "commit": "2b8cba127b5e86c4b7e49b05c614c74aef9c590d",
   "phases": {
-    "orchestrator": {"ceiling": {"words": 19517, "est_tokens": 32289}},
+    "orchestrator": {"ceiling": {"words": 19527, "est_tokens": 32403}},
     "goal-slot": {"ceiling": {"words": 7456, "est_tokens": 12437}},
-    "research": {"ceiling": {"words": 1949, "est_tokens": 2997}},
+    "research": {"ceiling": {"words": 1958, "est_tokens": 3012}},
     "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
-    "plan-review": {"ceiling": {"words": 2246, "est_tokens": 3645}},
+    "plan-review": {"ceiling": {"words": 2255, "est_tokens": 3661}},
     "implement": {"ceiling": {"words": 2123, "est_tokens": 3448}},
     "review-pre-pr": {"ceiling": {"words": 3924, "est_tokens": 6243}},
     "review-post-pr": {"ceiling": {"words": 3958, "est_tokens": 6305}},
-    "retro": {"ceiling": {"words": 2456, "est_tokens": 3919}}
+    "retro": {"ceiling": {"words": 2465, "est_tokens": 3934}}
   }
 }

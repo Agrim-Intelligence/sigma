@@ -73,6 +73,9 @@ def _out(mechanism, host, reason, command=None, verified=True, timeout=900):
     return got
 
 
+shell_policy = _load("shell_policy")      # #707
+
+
 def resolve(sdlc_dir, env=None, which=None):
     """-> the dict the SKILL prose branches on. Never raises; never returns an unknown mechanism."""
     env = os.environ if env is None else env
@@ -230,6 +233,12 @@ def run_review(sdlc_dir, brief_path, scratch_paths):
         for finding in findings:
             print(f"LEAK: {finding}", file=sys.stderr)
         return 1
+    if mechanism == "command" and not shell_policy.repository_shell_commands_allowed(
+            pathlib.Path(sdlc_dir).resolve().parent):
+        # #707 (TM-04): `review.command` is a repository-supplied shell string, and its stdout is
+        # accepted as the reviewer's verdict. Same gate as `verify.command`; no verdict is produced.
+        print("reviewer run: " + shell_policy.refusal_message(), file=sys.stderr)
+        return 2
     timeout = route["timeout_seconds"]
     if not isinstance(timeout, int) or timeout <= 0:
         print("reviewer run: review.timeout_seconds must be positive", file=sys.stderr)

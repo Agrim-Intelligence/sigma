@@ -84,6 +84,7 @@ feature_rebase = _load("feature_rebase", _LOOP_SCRIPTS)
 rebase_brief = _load("rebase_brief", _HERE)
 state = _load("state", _LOOP_SCRIPTS)
 ledger = _load("ledger", _LOOP_SCRIPTS)
+shell_policy = _load("shell_policy", _LOOP_SCRIPTS)
 unit_completion = _load("unit_completion", _LOOP_SCRIPTS)
 
 # --------------------------------------------------------------------------- verify (§6)
@@ -118,6 +119,10 @@ def run_verify_command(cmd, cwd):
     shell, an unreadable `cwd`) is reported as a failed verify, not a crash that leaves the human
     wondering whether anything ran at all."""
     start = time.perf_counter()
+    if not shell_policy.repository_shell_commands_allowed(cwd):
+        # #707 (TM-04): same gate `loop.py verify` applies to the same `verify.command`.
+        return {"ok": False, "exit": None, "ms": 0, "tail": [],
+                "why": shell_policy.refusal_message()}
     try:
         proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
     except Exception as exc:                  # noqa: BLE001 - a verify that could not start is FAIL, not a crash
@@ -528,5 +533,15 @@ def main(argv):
     return 0 if report["outcome"] == MERGED else 1
 
 
+def _state_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey before any write."""
+    import importlib.util as _u
+    import pathlib as _p
+    spec = _u.spec_from_file_location("_guard_state", _p.Path(__file__).resolve().parent.parent.parent / "sigma-loop" / "scripts" / "state.py")
+    mod = _u.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.guard_argv(argv, _p.Path(__file__).name)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(_state_guard(sys.argv) or main(sys.argv))

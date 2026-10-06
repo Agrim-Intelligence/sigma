@@ -114,6 +114,7 @@ def _load(name):
 ledger = _load("ledger")
 legacy = _load("legacy")   # #239: operator env vars under the previous prefix
 loop = _load("loop")
+shell_policy = _load("shell_policy")
 
 #: See the module docstring's "SCOPE → LEDGER KIND" section. Deliberately maps `assignments` and
 #: `blockers` onto the SAME ledger kind (`handoff`) — `ledger.py`'s own vocabulary has no third
@@ -880,6 +881,13 @@ def _run_drive(cmd_str, prompt, cwd, env, timeout, on_spawn=None):
     the CHILD's own pid (also its process-group id) — not just its own, short-lived, calling
     process's pid — closing the gap where a listener killed while blocked inside this call would
     otherwise orphan the child with nothing tracking it (see `slack_commands_listen.dispatch`)."""
+    if (cmd_str != DEFAULT_DRIVE_CMD and cmd_str != legacy.getenv("SIGMA_AUTOWATCH_CMD")
+            and not shell_policy.repository_shell_commands_allowed(cwd)):
+        # #707 (TM-04): at the ONE spawn point, so the autowatch tick, the Slack listener and its
+        # merge-drive paths are all covered. A command that is neither the shipped default nor the
+        # operator's own env var came from repo config: it needs the Git-local opt-in.
+        print("autowatch: " + shell_policy.refusal_message(), file=sys.stderr)
+        return 2, "autowatch: " + shell_policy.refusal_message()
     try:
         args = shlex.split(cmd_str) + [prompt]
     except ValueError as exc:
@@ -1006,6 +1014,12 @@ def _drive(sdlc_dir, config, settings, issue, next_hop, deps):
     cmd_str = _drive_cmd(settings)
     prompt = _drive_prompt(issue, config)
     repo_root = str(pathlib.Path(sdlc_dir).resolve().parent)
+    if (not legacy.getenv("SIGMA_AUTOWATCH_CMD") and settings.get("drive_cmd")
+            and not shell_policy.repository_shell_commands_allowed(repo_root)):
+        # #707 (TM-04): a repo-config `drive_cmd` is a repository-supplied executable. The env var
+        # is the operator's own and stays ungated.
+        print("autowatch: " + shell_policy.refusal_message(), file=sys.stderr)
+        return 2, "autowatch: " + shell_policy.refusal_message()
     env = dict(os.environ)
     env["SIGMA_AUTOWATCH_HOP"] = str(next_hop)
     if not env.get("SIGMA_RUN_ID"):

@@ -1402,14 +1402,6 @@
     },
     {
       "path": "skills/sigma-loop/scripts/state.py",
-      "function": "_cursor_lock",
-      "rule": "fs-write",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/state.py",
       "function": "_patch_cursor",
       "rule": "fs-remove",
       "count": 1,
@@ -1462,6 +1454,14 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/state.py",
+      "function": "refuse_symlinks",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "creates missing parent directories under .sdlc only, one level at a time, after an lstat symlink refusal (#708)",
       "risk": "medium"
     },
     {
@@ -1708,7 +1708,7 @@
       "path": "skills/sigma-loop/scripts/watch.py",
       "function": "tick",
       "rule": "fs-write",
-      "count": 2,
+      "count": 1,
       "gate": "ungated",
       "risk": "medium"
     },

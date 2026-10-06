@@ -395,8 +395,28 @@ _REFRESH_TIMEOUT = 900
 def _run_builder(argv, timeout=None):
     """The real subprocess call, isolated so `refresh()`'s tests can inject a fake and assert on the
     argv that WOULD have run. Returns the same dict shape a fake must return."""
+    if argv[0] != "graphify" and not _shell_opt_in(pathlib.Path(argv[-1])):
+        # #707 (TM-04): a repo-configured builder is a repository-supplied executable. Gated HERE, at
+        # the one real spawn, so every caller (loop.py record, a direct `kg.py refresh`) is covered.
+        # A DUPLICATE of shell_policy's Git-local read, never an import (a skill must not import a
+        # sibling's Python).
+        return {"returncode": 126, "stdout": "", "stderr": (
+            "REFUSED: repository-configured knowledge_graph.builder requires explicit operator trust; "
+            "run `git -C <trusted-project> config --local sigma.allowRepositoryShellCommands true` "
+            "after inspecting the project")}
     r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     return {"returncode": r.returncode, "stdout": r.stdout or "", "stderr": r.stderr or ""}
+
+
+def _shell_opt_in(root):
+    """The operator's Git-local opt-in (`sigma.allowRepositoryShellCommands`); any failure is no."""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "config", "--local", "--type=bool",
+                            "sigma.allowRepositoryShellCommands"],
+                           capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and r.stdout.strip().lower() == "true"
 
 
 def refresh(sdlc_dir, repo_root=".", runner=None):
@@ -786,5 +806,15 @@ def main(argv):
     return 2
 
 
+def _state_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey before any write."""
+    import importlib.util as _u
+    import pathlib as _p
+    spec = _u.spec_from_file_location("_guard_state", _p.Path(__file__).resolve().parent.parent.parent / "sigma-loop" / "scripts" / "state.py")
+    mod = _u.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.guard_argv(argv, _p.Path(__file__).name)
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_state_guard(sys.argv) or main(sys.argv))
