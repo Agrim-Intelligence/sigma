@@ -327,9 +327,11 @@ Rejected alternative, non-inferiority by an unconditional test that rejects when
 
 Run one repeat per arm and task, unattended within a batch, in batches: `--batch-pairs` (default 3 pairs, one
 task's three arms) stops cleanly, and `--resume` continues the results file instead of starting over. A pair
-that a host rate limit, a crash or a lost run kept from completing is recorded `not-run`,
-never recorded as a failure, and is attempted again on resume. That is the only reason a pair is run again:
-a pair that completed, passing or failing, is never re-run. Every other failure counts as a failure; nothing is dropped. The run stops
+that a host rate limit, a crash, a lost run or an unexplained non-zero exit of `claude` kept from completing is
+recorded `not-run`,
+never recorded as a failure, and is attempted again on resume. Those are the only reasons a pair is run again:
+a pair that completed, passing or failing, is never re-run. Every other failure counts as a failure (a run killed at
+the wall-clock limit included); nothing is dropped. The run stops
 when the host reports a rate limit (exit 75), when a run exits non-zero with no recorded cause (exit 77: not
 scored, a person looks first), and at the token ceiling of 210,000,000 tokens (exit 76; see
 Deviations, 2026-10-06, and [`token-budget.md`](token-budget.md)). Only a results file in which every pair

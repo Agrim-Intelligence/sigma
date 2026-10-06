@@ -138,6 +138,10 @@ which is why it is batched and resumable rather than a single unattended run.
   is recorded not-run and the harness stops (exit 77), because the host's rate-limit signal under `-p` (and its overloaded
   and auth errors) is unmeasured and must not be scored as the arm failing. If `claude -p` legitimately exits non-zero in
   normal operation, the first batch shows it and the owner decides, with a recorded Deviation, before any result is kept.
+  The rule is deliberately conservative: a non-zero exit stops the run even when the visible tests pass. The likeliest
+  trigger is the host's own `--max-budget-usd` belt tripping (believed, not verified, to exit non-zero); because a resume
+  re-runs that pair and would trip the belt again, do not keep resuming a pair that stops twice with the same exit status:
+  look at the cause first.
 - **The lever, in order:** wait for the reset the stop names, then run the same command with `--resume`. To go slower, pass
   a smaller `--batch-pairs`. To continue after a ceiling stop, raise `--max-tokens` with a recorded Deviation.
   `bench.py summarize --results <file>` refuses any file with a not-run pair, so a half-finished file cannot be analysed.

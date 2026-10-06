@@ -38,8 +38,9 @@ def run_matched(workdir, attempts_root, *, attempt, visible, guard, match_tokens
     Returns ``{"tokens", "detail", "cost_usd", "reason", "rate_limit"}``: ``tokens`` is the cumulative spend
     of every attempt (None when an attempt left no readable usage), ``cost_usd`` is indicative dollars (None
     when any attempt could not be priced), and ``rate_limit`` is set (the pair did not complete) when the
-    host throttled an attempt, in which case the caller records the pair as not-run; ``suspect_exit`` is set
-    likewise when an attempt exited non-zero with real work and no record to explain it.
+    host throttled an attempt, in which case the caller records the pair as not-run; ``suspect_exit`` (also in
+    the result) is set, with the same consequence, when an attempt exited non-zero with real work and no record
+    to explain it.
     """
     attempts_root = Path(attempts_root)
     snapshot = attempts_root / "pristine"
