@@ -330,7 +330,8 @@ task's three arms) stops cleanly, and `--resume` continues the results file inst
 that a host rate limit, a crash or a lost run kept from completing is recorded `not-run`,
 never recorded as a failure, and is attempted again on resume. That is the only reason a pair is run again:
 a pair that completed, passing or failing, is never re-run. Every other failure counts as a failure; nothing is dropped. The run stops
-when the host reports a rate limit (exit 75), and at the token ceiling of 210,000,000 tokens (exit 76; see
+when the host reports a rate limit (exit 75), when a run exits non-zero with no recorded cause (exit 77: not
+scored, a person looks first), and at the token ceiling of 210,000,000 tokens (exit 76; see
 Deviations, 2026-10-06, and [`token-budget.md`](token-budget.md)). Only a results file in which every pair
 completed is evidence: a file with a not-run pair is never analysed or committed as the result.
 
@@ -396,7 +397,7 @@ Record every change to this pre-registration here with its date and reason.
   bias risk (the traps may be easier or harder for that family than for others) is unmeasured. Both
   contradiction traps also carry the same device (a README precedence rule), which narrows what the
   catch rate shows. Launch material may not describe these traps as outside-authored.
-- **2026-10-05 — Spend ceiling and authentication.** Owner decision: the total benchmark spend ceiling
+- **2026-10-05 — Spend ceiling and authentication (superseded 2026-10-06, below).** Owner decision: the total benchmark spend ceiling
   is $150 (the harness's `--max-usd`), using API-key authentication supplied by the owner at run time;
   no arm has been run. The $15 per-run belt above stays a per-run cap and can never exceed the
   remaining ceiling.

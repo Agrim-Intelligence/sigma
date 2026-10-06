@@ -127,6 +127,8 @@ if env.get("SIGMA_FAKE_SLEEP"):
     time.sleep(float(env["SIGMA_FAKE_SLEEP"]))
 if limited and not env.get("SIGMA_FAKE_RATE_LIMIT_EXIT0"):
     sys.exit(1)
+if env.get("SIGMA_FAKE_EXIT_CODE_ON") and n == int(env["SIGMA_FAKE_EXIT_CODE_ON"]):
+    sys.exit(3)
 if env.get("SIGMA_FAKE_ZERO_TOKENS_ON") and n == int(env["SIGMA_FAKE_ZERO_TOKENS_ON"]):
     sys.exit(1)
 if env.get("SIGMA_FAKE_HANG"):
@@ -1317,3 +1319,73 @@ def test_a_stale_spend_from_the_previous_pair_is_never_reported_for_the_next_one
 
     assert message == "before the arm ran"
     assert _saved(tmp_path)["aborted"]["tokens_spent"] == 0, "pair one's 100000 tokens are in its row, not here"
+
+
+def test_an_unexplained_nonzero_exit_is_not_scored_as_the_arm_failing_and_stops_the_run(
+        tmp_path, monkeypatch, capsys):
+    """Control: without this a rate limit that leaves no record would be scored as a hidden-test failure."""
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two", "three"))
+    monkeypatch.setenv("SIGMA_FAKE_EXIT_CODE_ON", "2")
+
+    assert bench.main(argv) == 77
+    err = capsys.readouterr().err
+    assert "exited 3" in err and "--resume" in err
+    saved = _saved(tmp_path)
+    assert _statuses(saved) == [("one", "plain", "completed"), ("two", "plain", "not-run"),
+                                ("three", "plain", "not-run")]
+    assert saved["runs"][1]["visible_passed"] is None and saved["runs"][1]["hidden_passed"] is None
+    assert saved["stop"]["kind"] == "suspect-exit" and saved["tokens_unscored"] == 100_000
+    assert len(_calls(tmp_path)) == 2
+
+    assert bench.main(argv + ["--resume"]) == 0
+    assert _saved(tmp_path)["complete"] is True
+
+
+def test_an_unexplained_nonzero_exit_on_a_matched_attempt_makes_the_whole_pair_not_run(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_EXIT_CODE_ON", "3")
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path))
+
+    assert _statuses(report) == [("one", "sigma", "completed"), ("one", "matched", "not-run")]
+    assert report["stop"]["kind"] == "suspect-exit" and report["tokens_unscored"] == 200_000
+
+
+def test_a_deadline_kill_is_still_an_arm_failure_not_a_suspect_exit(tmp_path, monkeypatch):
+    bench = _bench()
+    monkeypatch.setenv("SIGMA_FAKE_SLEEP", "30")
+
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path),
+                  deadline_seconds=2)
+
+    assert _row(report, "plain")["status"] == "completed" and report["stop"] is None
+
+
+def test_a_batch_stop_tells_the_operator_what_to_do_and_a_stuck_a3_ends_as_incomplete(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    assert "--resume" in capsys.readouterr().err
+
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    manifest, hidden = _manifest(tmp_path, visible=FAILS, tag="tasks-b"), _hidden(tmp_path, root=tmp_path / "hidden-b")
+    _run(bench, tmp_path, arms, manifest, hidden, batch_pairs=1, results="b.json")
+    saved = _saved(tmp_path, "b.json")
+    saved["runs"][0]["tokens"] = None
+    (tmp_path / "b.json").write_text(json.dumps(saved), encoding="utf-8")
+    report = _run(bench, tmp_path, arms, manifest, hidden, resume=True, results="b.json")
+    assert report["stop"]["kind"] == "incomplete" and report["complete"] is False
+
+
+def test_summarize_refuses_a_malformed_row_instead_of_a_traceback(tmp_path, capsys):
+    bench = _bench()
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps({"schema": "sigma.benchmark-results/v2", "complete": True,
+                                "runs": [{"status": "completed"}]}), encoding="utf-8")
+
+    assert bench.main(["summarize", "--results", str(path)]) == 2
+    assert "malformed row" in capsys.readouterr().err

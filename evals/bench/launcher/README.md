@@ -191,8 +191,10 @@ harness refuses to start when that is not empty (a crashed run leaves its run di
 
 Exit codes the harness gives a driving script: 0 (the batch finished or the whole run is complete; the JSON on stdout
 says `complete`), 75 (the host reported a rate limit; wait for the reset it names, then run again with `--resume`), 76
-(the token ceiling was reached; raising it is a recorded decision), 2 (refused: nothing was started, or a stop with an
-`aborted` object in the results file).
+(the token ceiling was reached; raising it is a recorded decision), 77 (a run exited non-zero with real work done and no
+rate-limit record to explain it: it is not scored, because it could be an infrastructure fault; find the cause, then
+`--resume` retries it), 78 (the run ended with not-run pairs that nothing else explains), 2 (refused: nothing was
+started, or a stop with an `aborted` object in the results file). Every non-zero stop and every batch stop prints what to do on stderr.
 
 ## Cost expectations
 

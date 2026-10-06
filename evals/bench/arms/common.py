@@ -73,6 +73,15 @@ class Attempt:
             return limit
         return None
 
+    @property
+    def suspect(self):
+        """The exit status of a run that did real work, did not hit the deadline, and did not exit cleanly,
+        with no rate-limit record to explain it: an infrastructure fault (the host's rate-limit signal under
+        ``-p`` is unmeasured, and so is an overloaded or auth error) must not be scored as the arm failing."""
+        if self.returncode != 0 and not self.timed_out and self.throttled is None and self.tokens:
+            return self.returncode
+        return None
+
 
 def require_posix():
     if not IS_POSIX:

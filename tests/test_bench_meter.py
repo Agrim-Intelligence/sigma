@@ -234,6 +234,8 @@ def test_meter_reports_every_token_kind_and_their_total_from_the_usage_records(t
     assert result["tokens_cache_read"] == 303
     assert result["tokens_cache_write"] == 54004
     assert result["tokens_total"] == 11 + 22 + 303 + 54004
+    assert result["tokens_total"] == (result["tokens_in"] + result["tokens_out"] + result["tokens_cache_read"]
+                                      + result["tokens_cache_write"]), "the two dedup paths must agree"
 
 
 def test_meter_counts_a_duplicated_message_id_once_for_every_token_kind(tmp_path):

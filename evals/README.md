@@ -64,7 +64,10 @@ What the harness enforces, and what it does not:
   permission mode, Sigma commit, `claude --version`, belt, attempt bound, deadlines, hidden-bundle digest) match the first
   batch; a ceiling may be raised on resume, never lowered. A host rate-limit record on a run that did not exit cleanly (or a session that ended on it) stops
   the harness (exit 75, reset time in the message): that pair is recorded not-run, never scored and never a failure. Exit 76
-  is the token ceiling. A `<results>.lock` refuses a second invocation on the same cursor. Every other stop keeps the rows
+  is the token ceiling. A run that exits non-zero with real work done and no rate-limit record to explain it (the host's
+  rate-limit signal under `-p` is unmeasured, and so are overloaded and auth errors) is not scored either: it is recorded
+  not-run and the harness stops (exit 77), so an infrastructure fault is never scored as the arm failing; exit 78 is
+  not-run pairs nothing else explains. A `<results>.lock` refuses a second invocation on the same cursor. Every other stop keeps the rows
   already paid for with an `aborted` object. A pair killed in flight is counted on resume as an unknown-token run
   (`unknown_runs`, and `tokens_spent` is then a lower bound). `bench.py summarize --results <file>` prints relative outcome
   and relative token cost per arm and refuses an incomplete file. The last A3 attempt can overshoot A1's token spend by up

@@ -133,7 +133,11 @@ which is why it is batched and resumable rather than a single unattended run.
   A transient record that real work followed, on a run that exited 0, is scored as usual and the row says so. The record's shape was copied from a
   real transcript (an interactive session that hit a weekly limit); a `-p` run under a subscription token is not observed.
   Independently, a run that leaves no readable usage records, or zero tokens, stops the harness ("authentication is missing or
-  the transcripts cannot be read") before scoring: it is not-run, never a failure.
+  the transcripts cannot be read") before scoring: it is not-run, never a failure. And a run that did real work, was not
+  killed at the wall-clock limit, and exited non-zero with no rate-limit record to explain it is not scored either: it
+  is recorded not-run and the harness stops (exit 77), because the host's rate-limit signal under `-p` (and its overloaded
+  and auth errors) is unmeasured and must not be scored as the arm failing. If `claude -p` legitimately exits non-zero in
+  normal operation, the first batch shows it and the owner decides, with a recorded Deviation, before any result is kept.
 - **The lever, in order:** wait for the reset the stop names, then run the same command with `--resume`. To go slower, pass
   a smaller `--batch-pairs`. To continue after a ceiling stop, raise `--max-tokens` with a recorded Deviation.
   `bench.py summarize --results <file>` refuses any file with a not-run pair, so a half-finished file cannot be analysed.

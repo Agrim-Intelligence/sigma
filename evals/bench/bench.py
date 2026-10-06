@@ -51,6 +51,8 @@ COST_BASIS = ("indicative dollars: tokens priced at published list rates; not a 
 COMPLETED, FAILED, NOT_RUN = "completed", "failed", "not-run"
 EXIT_RATE_LIMIT = 75  # EX_TEMPFAIL: the host said no; resume after the reset
 EXIT_CEILING = 76     # the token ceiling stopped the run; raising it is a recorded decision
+EXIT_SUSPECT = 77     # a run exited non-zero with no recorded cause: not scored; a person looks, then --resume
+EXIT_INCOMPLETE = 78  # the run ended with not-run pairs that no other stop explains
 DEFAULT_BATCH_PAIRS = 3  # one task's three arms
 
 
@@ -81,6 +83,7 @@ class ArmRun:
     tokens: Optional[int] = None  # measured from the host's usage records; None = unreadable
     tokens_detail: Optional[dict] = None
     rate_limited: Optional[dict] = None  # the host throttled the run: the pair did not complete
+    suspect_exit: Optional[int] = None  # non-zero exit with work done and no record: not scored, run stops
 
 
 class Arm:
@@ -161,7 +164,7 @@ class LiveArm(Arm):
         if attempt.rate_limit is not None and attempt.throttled is None:
             reason += " (a rate-limit record was seen on a run that exited 0; scored as usual)"
         return ArmRun(cost_usd=attempt.cost, tokens=attempt.tokens, tokens_detail=attempt.detail,
-                      rate_limited=attempt.throttled, reason=reason)
+                      rate_limited=attempt.throttled, suspect_exit=attempt.suspect, reason=reason)
 
 
 class PlainArm(LiveArm):
@@ -241,7 +244,7 @@ class MatchedArm(LiveArm):
             match_tokens=self.match_tokens, remaining_tokens=int(env["SIGMA_BENCH_MAX_TOKENS"]),
             max_attempts=self.max_attempts, deadline=deadline, spend=self.spend)
         return ArmRun(cost_usd=done["cost_usd"], tokens=done["tokens"], tokens_detail=done["detail"],
-                      reason=done["reason"], rate_limited=done["rate_limit"])
+                      reason=done["reason"], rate_limited=done["rate_limit"], suspect_exit=done["suspect_exit"])
 
 
 LIVE_ARMS = (SigmaArm, PlainArm, MatchedArm)
@@ -822,6 +825,18 @@ def _run_locked(manifest_path, tasks, arms, planned, max_tokens, hidden_root, re
                 tokens = tokens or 0
                 if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
                     raise BenchmarkRefusal(f"arm {arm.name!r} reported invalid tokens")
+                if result.suspect_exit is not None:
+                    ledger.tokens_unscored += tokens
+                    reason = ("claude exited %s with no rate-limit record to explain it: the run was discarded "
+                              "and never scored (it could be an infrastructure fault, not the arm failing); its %d "
+                              "token(s) are counted as unscored. Find the cause, then run again with --resume. %s"
+                              % (result.suspect_exit, tokens, result.reason))
+                    ledger.set_not_run(key, reason)
+                    ledger.stop = {"kind": "suspect-exit", "reason": reason, "exit_status": result.suspect_exit}
+                    ledger.in_flight = None
+                    ledger.write()
+                    current = {}
+                    break
                 if result.cost_usd is not None and (not isinstance(result.cost_usd, (int, float)) or
                                                     not math.isfinite(result.cost_usd) or result.cost_usd < 0):
                     raise BenchmarkRefusal(f"arm {arm.name!r} reported invalid cost")
@@ -849,6 +864,9 @@ def _run_locked(manifest_path, tasks, arms, planned, max_tokens, hidden_root, re
                 _remove_run_directory(run_root)
         guard()
         ledger.in_flight = None
+        if ledger.stop is None and any(key not in ledger.rows for key in planned):
+            ledger.stop = {"kind": "incomplete", "reason": "pair(s) were not run and nothing else explains it: %s"
+                           % "; ".join(sorted(set(ledger.reasons.values()))[:3])}
     except BaseException as exc:
         if ledger.ready and (current or ledger.rows or ledger.tokens_unscored):
             spend = getattr(current.get("arm_object"), "spend", None)
@@ -887,6 +905,8 @@ def summarize(results_path):
         raise BenchmarkRefusal("the results file is not complete: %d pair(s) are not-run; finish the run with "
                                "--resume before analysing (a partial file is never evidence)" % len(pending))
     arms, passes = {}, {}
+    if any(not isinstance(row, dict) or not all(k in row for k in ("arm", "task", "repeat")) for row in raw["runs"]):
+        raise BenchmarkRefusal("the results file has a malformed row (needs arm, task and repeat)")
     for row in raw["runs"]:
         entry = arms.setdefault(row["arm"], {"pairs": 0, "hidden_passes": 0, "tokens_total": 0,
                                              "tokens_detail": dict.fromkeys(arms_common.KIND_NAMES, 0)})
@@ -998,6 +1018,8 @@ def _build_live_arms(args):
 def _stop_message(report):
     stop = report.get("stop") or {}
     pending = sum(1 for row in report["runs"] if row["status"] == NOT_RUN)
+    if stop.get("kind") == "batch":
+        return "bench.py: batch finished; %d pair(s) are not-run; run the same command again with --resume" % pending
     if stop.get("kind") == "rate-limit":
         when = stop.get("resets_at")
         shown = ""
@@ -1039,10 +1061,10 @@ def main(argv=None):
         return 143
     print(json.dumps(report, sort_keys=True))
     kind = (report.get("stop") or {}).get("kind")
-    if kind in ("rate-limit", "token-ceiling"):
+    if kind:
         print(_stop_message(report), file=sys.stderr)
-        return EXIT_RATE_LIMIT if kind == "rate-limit" else EXIT_CEILING
-    return 0
+    return {"rate-limit": EXIT_RATE_LIMIT, "token-ceiling": EXIT_CEILING, "suspect-exit": EXIT_SUSPECT,
+            "incomplete": EXIT_INCOMPLETE}.get(kind, 0)
 
 
 if __name__ == "__main__":
