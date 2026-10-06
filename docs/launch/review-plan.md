@@ -150,7 +150,7 @@ The owner raised both on 2026-10-06 (from 75M and 40M, which the owner had chose
 The pilots' measured numbers are applied to both below (a step the pilots did not measure stays unmeasured), and S9 gets its own
 owner-approved ceiling, which the benchmark pilot would have set and did not.
 
-**What the 40M checkpoint counts: decided.** The owner decided on 2026-10-04, in chat, that pilot spend counts toward
+**What the (then) 40M checkpoint counts: decided.** The owner decided on 2026-10-04, in chat, that pilot spend counts toward
 both counters, as this page had recommended. The counter is the running sum of processed tokens, as the hosts report
 them, over S1–S8 plus S10: the same counter as the then 75M ceiling (now 120M), and S3 (the pilots) is part of it. The $75 pilot
 ceiling stays the hard stop on pilot dollars. Pilot spend so far: 3,887,193 processed tokens and $2.50, so
