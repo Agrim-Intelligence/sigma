@@ -5681,6 +5681,21 @@ def _cli_feature(argv_tail, source):
     return sources.scope_to_feature(source, raw)
 
 
+def _phase_gate_notice(sdlc_dir, config, kind, payload):
+    """#684: at the moment a goal is picked, say on stderr (where the orchestrator reads it) that the phase
+    record is ENFORCED for it. A live run that never saw this ran the whole goal inline and was refused at
+    `done`; the instruction in SKILL.md is read once, this line is read at every pick. Silent when the gate
+    is off; never fails a pick."""
+    try:
+        if kind == "goal" and work.phase_gate_on(config):
+            print(f"sigma: phase record is ENFORCED for {payload}: run research, plan, plan-review, implement, "
+                  "review and retro each as its OWN dispatched subagent, never inline, and bracket each with "
+                  "phase_report.py start/end; `record done` is REFUSED otherwise. `loop.py phases "
+                  f"{sdlc_dir} <goal>` names the next step.", file=sys.stderr)
+    except Exception:                       # noqa: BLE001 - a notice never costs a pick
+        pass
+
+
 def _print_pick(kind, payload):
     """Shared by `next`/`next-batch`'s own CLI dispatch (#411): prints exactly what each already
     printed before this fix for `"goal"`/`"DONE"` (`payload`/`kind` respectively) — UNCHANGED, on
@@ -6202,6 +6217,7 @@ def _dispatch(argv):
         kind, payload = _next(argv[2], source, config,
                                extra_skip=skip, session_pid=session_pid)
         _print_pick(kind, payload)
+        _phase_gate_notice(argv[2], config, kind, payload)
         return 0
     if len(argv) >= 3 and argv[1] == "next-batch":  # F10.5-3/#375: up to parallel.goals.max_concurrent
         config = state.load_config(argv[2])         # goals to dispatch as concurrent worktree subagents
@@ -6221,6 +6237,7 @@ def _dispatch(argv):
         _arm_run_id(session_pid)                            # #889: attribute a bare session
         for kind, payload in next_batch(argv[2], source, config, extra_skip=skip, session_pid=session_pid):
             _print_pick(kind, payload)
+            _phase_gate_notice(argv[2], config, kind, payload)
         return 0
     if len(argv) >= 3 and argv[1] == "reconcile-merges":   # #232: close goals whose PR has merged
         config = state.load_config(argv[2])

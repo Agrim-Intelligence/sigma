@@ -13,3 +13,15 @@ def test_done_on_an_inline_route_prints_a_loud_warning(tmp_path):
     g.full_run(p)                                                  # the test env has no host marker: inline
     r = g.done(p)
     assert r.returncode == 0 and "INLINE" in r.stderr and "not proved independent" in r.stderr, r.stderr
+
+
+def test_picking_a_goal_says_the_phase_record_is_enforced(tmp_path):
+    p = g._project(tmp_path)
+    (p / ".sdlc/goals/0001-x.md").write_text("---\nid: 0001\ntitle: x\nstatus: pending\n---\nbody\n")
+    r = g.run(p, "loop.py", "next", ".sdlc")
+    assert r.stdout.strip().endswith("0001-x.md"), r.stdout + r.stderr
+    assert "phase record is ENFORCED" in r.stderr and "OWN dispatched subagent" in r.stderr, r.stderr
+    off = g._project(tmp_path / "off") if (tmp_path / "off").mkdir() is None else None
+    (off / ".sdlc/config.json").write_text('{"action_log": {"enabled": true}}')       # key absent: off
+    (off / ".sdlc/goals/0001-x.md").write_text("---\nid: 0001\ntitle: x\nstatus: pending\n---\nbody\n")
+    assert "ENFORCED" not in g.run(off, "loop.py", "next", ".sdlc").stderr
