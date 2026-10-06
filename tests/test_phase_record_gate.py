@@ -284,6 +284,7 @@ def test_a_malformed_row_is_skipped_or_refused_never_a_traceback(tmp_path):
     p = _project(tmp_path)
     phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1"); plan_review(p)
     phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p)            # retro never recorded
+    assert (p / ".sdlc/state/log/0001-x.jsonl").exists(), "the phases must have been written to the action log"
     with (p / ".sdlc/state/log/0001-x.jsonl").open("a") as fh:
         fh.write(json.dumps({"ts": "2026-10-06T00:00:00.000Z", "kind": "phase", "phase": ["x"], "state": {}}) + "\n")
         fh.write(json.dumps({"ts": "2026-10-06T00:00:00.001Z", "kind": "verdict", "phase": {"a": 1}}) + "\n")
