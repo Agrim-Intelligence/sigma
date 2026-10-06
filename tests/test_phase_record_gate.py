@@ -103,10 +103,13 @@ def test_record_done_passes_when_every_phase_is_recorded_in_order(tmp_path):
     assert ends == ["research", "plan", "plan_review", "implement", "review", "retro"]
 
 
-def test_implement_before_the_plan_review_verdict_is_refused(tmp_path):
+def test_implement_before_the_plan_review_verdict_is_refused_at_done_even_if_the_start_gate_was_off(tmp_path):
     p = _project(tmp_path)
+    cfg = (p / ".sdlc/config.json").read_text()
     phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1")
+    (p / ".sdlc/config.json").write_text(json.dumps({"action_log": {"enabled": True}}))   # start gate off
     run(p, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet")
+    (p / ".sdlc/config.json").write_text(cfg)
     plan_review(p)
     run(p, "phase_report.py", "end", ".sdlc", GOAL, "implement", "--agent-id", "a3")
     phase(p, "review", "rev2"); review(p); phase(p, "retro", "a4")
@@ -117,13 +120,12 @@ def test_implement_before_the_plan_review_verdict_is_refused(tmp_path):
 def test_a_fix_first_plan_review_or_send_back_review_does_not_count(tmp_path):
     p = _project(tmp_path)
     phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1")
-    plan_review(p, "FIX-FIRST")
+    plan_review(p, "SOUND")
     phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p, "SEND-BACK"); phase(p, "retro", "a4")
+    plan_review(p, "FIX-FIRST")                                    # the LAST verdict per phase counts
     r = done(p)
     assert r.returncode == 4
     assert "plan_review: last verdict is 'block'" in r.stderr and "review: last verdict is 'send-back'" in r.stderr
-    plan_review(p, "SOUND"); review(p, "APPROVE", "rev3")      # last verdict per phase counts
-    assert "implement started BEFORE" in done(p).stderr        # ...but the order is still wrong
 
 
 def test_subagent_route_verdict_without_agent_id_or_with_the_makers_id_is_refused(tmp_path):
@@ -343,3 +345,18 @@ def test_research_recorded_after_the_plan_is_refused(tmp_path):
     phase(p, "implement", "a3"); phase(p, "review", "rev2"); review(p); phase(p, "retro", "a4")
     r = done(p)
     assert r.returncode == 4 and "research was recorded AFTER plan" in r.stderr
+
+
+def test_implement_may_not_start_before_the_plan_review_verdict_is_recorded(tmp_path):
+    p = _project(tmp_path)
+    phase(p, "research", "a1"); phase(p, "plan", "a2"); phase(p, "plan_review", "rev1")
+    r = run(p, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet")
+    assert r.returncode == 2 and "no approving plan-review verdict" in r.stderr and "plan before code" in r.stderr
+    plan_review(p, "FIX-FIRST")                                   # a non-approving verdict does not open it
+    assert run(p, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet").returncode == 2
+    plan_review(p, "SOUND")
+    assert run(p, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet").returncode == 0
+    (tmp_path / "off").mkdir()
+    q = _project(tmp_path / "off")
+    (q / ".sdlc/config.json").write_text(json.dumps({"action_log": {"enabled": True}}))     # gate key absent: off
+    assert run(q, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet").returncode == 0

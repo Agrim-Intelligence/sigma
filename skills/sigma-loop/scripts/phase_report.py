@@ -1712,6 +1712,14 @@ def cmd_start(argv):
         print(f"phase_report.py: {pid_err}", file=sys.stderr)
         return 2
     _refresh_loop_heartbeat(sdlc_dir, pid)
+    try:
+        start_refused = _load("phase_gate").start_refusal(sdlc_dir, goal, phase)
+    except Exception as exc:                    # noqa: BLE001 - a broken gate read must not stop a phase
+        start_refused = None
+        print(f"phase_report: phase gate unreadable at start (non-fatal): {exc}", file=sys.stderr)
+    if start_refused:
+        print(f"phase_report.py: REFUSED: {start_refused}", file=sys.stderr)
+        return 2
     model = flags.get("model", "")
     host_model = flags.get("host-model", "")
     requested_model = flags.get("requested-model", "")

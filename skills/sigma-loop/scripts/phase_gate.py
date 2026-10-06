@@ -210,6 +210,25 @@ def status(sdlc_dir, config, goal):
     return {"rows": out, "notes": notes}
 
 
+def start_refusal(sdlc_dir, goal, phase):
+    """Refusal text when `phase_report.py start implement` runs before an approving plan-review verdict is
+    on the record (the product claim: plan before code), else None. Only with the gate on and the action log
+    on; any other phase starts freely. Refusing HERE, not only at `done`, lets the maker fix it before any
+    code is written; a live run recorded the verdict seconds after starting implement."""
+    if phase != "implement":
+        return None
+    config = _load("state").load_config(sdlc_dir)
+    if not gate_on(config) or not _load("actionlog").enabled(config):
+        return None
+    if any(r.get("kind") == "verdict" and r.get("phase") == "plan_review"
+           and r.get("verdict") in PLAN_REVIEW_APPROVING for r in _rows(sdlc_dir, goal)):
+        return None
+    return ("no approving plan-review verdict is recorded for this goal, so implement may not start (plan "
+            "before code): run the plan-review, record its verdict with `work.py record-plan-review "
+            "<sdlc> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS --plan-sha256 <brief sha> --agent-id "
+            "<reviewer agentId>`, then start implement (" + _LEVER.split(";")[0] + ")")
+
+
 def refusal(sdlc_dir, config, goal):
     """None when the gate is off or satisfied; else the refusal text (names each fix and the lever)."""
     if not gate_on(config):

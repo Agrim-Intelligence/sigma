@@ -94,8 +94,8 @@ before dispatch, `phase_report.py end ... <phase> --agent-id <agentId>` after (b
 verdicts carry the reviewer's own agent id: `work.py record-plan-review <dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST
 --plan-sha256 <brief sha> --agent-id <id>` and `work.py record-review <dir> <goal> --verdict APPROVE|SEND-BACK|BLOCK --agent-id <id>`.
 `record done` is refused until research, plan, an approved plan-review, implement (started after it), an approved review and retro are
-recorded; `loop.py phases <dir> <goal>` lists them and the next step. Trivial-goal lever: `loop.py waive-phases <dir> <goal>
-research,retro --reason "<why>"` (recorded, visible; nothing else is waivable). Gate: `gates.phase_record.enabled`.
+recorded; `loop.py phases <dir> <goal>` lists them and the next step (run it after each phase, obey NEXT; `start implement` is refused before the plan-review verdict). Trivial-goal lever: `loop.py waive-phases <dir> <goal>
+research,retro --reason "<why>"` (recorded; nothing else waivable). Gate: `gates.phase_record.enabled`.
 If model selection prints `off` (the default), pass `off` to the Codex resolver. It selects the
 versioned ordinary-work mapping (`sonnet` → Terra), never the current parent-session model.
 **Per-STEP downgrade:** once the plan exists, resolve each plan
