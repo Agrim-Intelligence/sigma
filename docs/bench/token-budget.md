@@ -81,7 +81,7 @@ attempts, each under the belt, stopping once spend reaches A1's) by more. Every 
 
 Cross-check against expected need, per task (A1 + A2 + A3): the observed worst case is
 (5,236,384 + 293,055) x 2 = 11,058,878 tokens, so 15 tasks come to 165.9 million, under 210 million; the typical case
-(A1 median, A2 median, and A3 passing on its first attempt) is 3,981,203 + 217,610 + 217,610 = 4.42 million per task, 66.3 million
+(A1 median, A2 median, and A3 passing on its first attempt) is 3,981,203 + 217,610 + 217,610 = 4.42 million per task, 66.2 million
 for 15. So the ceiling is a runaway tripwire, expected to trip only if the benchmark costs about 1.3 times the worst
 observed pattern. If it trips, the remaining pairs are recorded `not-run` and the run stops (exit 76); raising it is a
 recorded decision, not a flag typed in passing.

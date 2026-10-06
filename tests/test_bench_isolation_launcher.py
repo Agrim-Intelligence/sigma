@@ -225,7 +225,7 @@ def test_only_the_subscription_token_reaches_the_claude_path_and_never_scoring(w
     assert refused.returncode == 2 and "claude_path" in refused.stderr
 
 
-@pytest.mark.parametrize("absent", ["missing", "empty"])
+@pytest.mark.parametrize("absent", ["missing", "empty", "blank"])
 def test_a_claude_run_without_the_subscription_token_refuses_loudly_and_starts_nothing(world, absent):
     """Control: without this guard an unauthenticated first run only shows up later as an unreadable run."""
     secret = "k-" + uuid.uuid4().hex
@@ -235,7 +235,7 @@ def test_a_claude_run_without_the_subscription_token_refuses_loudly_and_starts_n
     if absent == "missing":
         del env["CLAUDE_CODE_OAUTH_TOKEN"]
     else:
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = "" if absent == "empty" else "  "
 
     done = world.launch([str(world.claude), "-p"], env=env, stdin=json.dumps({"dump": str(out)}))
 

@@ -1097,7 +1097,7 @@ def test_batch_pairs_stops_cleanly_and_resume_continues_from_the_cursor(tmp_path
                                 ("three", "plain", "not-run")]
     assert saved["stop"]["kind"] == "batch" and saved["complete"] is False
     assert len(_calls(tmp_path)) == 2
-    assert "not-run" in saved["runs"][2]["reason"] or "batch" in saved["runs"][2]["reason"]
+    assert "batch of 2 pair(s) done" in saved["runs"][2]["reason"]
 
     assert bench.main(argv + ["--resume"]) == 0
     saved = _saved(tmp_path)
@@ -1276,3 +1276,44 @@ def test_the_documented_gesture_as_a_real_process_exits_75_on_a_rate_limit_and_0
     second = process("--resume")
     assert second.returncode == 0, second.stderr
     assert json.loads(second.stdout)["complete"] is True
+
+
+def test_summarize_carries_the_caveats_a_reader_needs_and_resume_refuses_a_bad_token_count(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    saved = _saved(tmp_path)
+    saved["in_flight"] = {"task": "two", "arm": "plain", "repeat": 1}
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+    assert bench.main(argv + ["--resume"]) == 0
+    capsys.readouterr()
+
+    assert bench.main(["summarize", "--results", str(tmp_path / "results.json")]) == 0
+    assert json.loads(capsys.readouterr().out)["caveats"] == {"unknown_runs": 1}
+
+    saved = _saved(tmp_path)
+    saved["runs"][0]["tokens"] = "lots"
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+    assert bench.main(argv + ["--resume"]) == 2
+    assert "invalid token count" in capsys.readouterr().err
+
+
+def test_a_stale_spend_from_the_previous_pair_is_never_reported_for_the_next_one(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    real = bench._run_arm
+    calls = []
+
+    def fail_second_before_it_runs(arm_, *args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise bench.BenchmarkRefusal("before the arm ran")
+        return real(arm_, *args, **kwargs)
+
+    monkeypatch.setattr(bench, "_run_arm", fail_second_before_it_runs)
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message == "before the arm ran"
+    assert _saved(tmp_path)["aborted"]["tokens_spent"] == 0, "pair one's 100000 tokens are in its row, not here"

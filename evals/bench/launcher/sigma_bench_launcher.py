@@ -256,7 +256,7 @@ def require_authentication(argv, environ, config):
     credential = config.get("credential_var")
     if not credential or not is_claude(argv[0], environ, config) or argv[1:] == ["--version"]:
         return
-    if not environ.get(credential):
+    if not (environ.get(credential) or "").strip():
         raise Refusal("authentication is missing: %s is not set in the launcher's environment, so claude cannot "
                       "use the subscription (create it once with `claude setup-token`, then start the harness "
                       "with that variable only)" % credential)

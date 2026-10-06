@@ -624,6 +624,9 @@ def _restore(ledger, raw, planned_keys, conditions, max_tokens):
             raise BenchmarkRefusal("--resume refused: the results file does not match this run's planned pairs")
         seen.add(key)
         if row.get("status") in (COMPLETED, FAILED):
+            tokens = row.get("tokens")
+            if isinstance(tokens, bool) or not (tokens is None or isinstance(tokens, int)) or (tokens or 0) < 0:
+                raise BenchmarkRefusal("--resume refused: a results row has an invalid token count")
             ledger.rows[key] = row
     for name in ("tokens_unscored", "unknown_runs", "invocations"):
         value = raw.get(name, 0)
@@ -773,6 +776,8 @@ def _run_locked(manifest_path, tasks, arms, planned, max_tokens, hidden_root, re
             if isinstance(arm, MatchedArm) and task.identifier not in a1_tokens:
                 ledger.set_not_run(key, "no A1 token count recorded for this task (its cap is A1's token spend)")
                 continue
+            if isinstance(arm, LiveArm):
+                arm.spend = arms_common.Spend()  # never report an earlier pair's spend for this one
             current = {"task": task.identifier, "arm": arm.name, "repeat": repeat, "spent": 0.0,
                        "arm_object": arm}
             ledger.in_flight = {"task": task.identifier, "arm": arm.name, "repeat": repeat}
@@ -837,9 +842,9 @@ def _run_locked(manifest_path, tasks, arms, planned, max_tokens, hidden_root, re
                                     "tokens_detail": result.tokens_detail, "cost_usd": result.cost_usd,
                                     "wall_seconds": elapsed, "interventions": result.interventions}
                 ledger.in_flight = None
+                current = {}  # before the write: a signal in between must not count this pair twice
                 ledger.write()
                 executed += 1
-                current = {}
             finally:
                 _remove_run_directory(run_root)
         guard()
@@ -909,8 +914,10 @@ def summarize(results_path):
             losses += 1 if passed and not sigma_passed else 0
             ties += 1 if sigma_passed == passed else 0
         paired[name] = {"sigma_wins": wins, "sigma_losses": losses, "ties": ties}
+    caveats = {name: raw.get(name) for name in ("tokens_unscored", "unknown_runs", "ceiling_changes")
+               if raw.get(name)}
     return {"schema": SUMMARY_SCHEMA, "pairs": len(raw["runs"]), "arms": arms, "paired_vs_sigma": paired,
-            "cost_basis": COST_BASIS}
+            "caveats": caveats, "cost_basis": COST_BASIS}
 
 
 def parse_args(argv):
