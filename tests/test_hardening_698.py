@@ -36,12 +36,22 @@ def test_plan_gate_denies_a_source_edit_when_the_project_lives_under_a_docs_dire
 
 
 def test_plan_gate_still_exempts_the_projects_own_docs_and_sdlc_paths(tmp_path):
+    under_docs = tmp_path / "docs" / "p"
+    under_docs.mkdir(parents=True)
+    tpg._project(under_docs)
+    assert "deny" in tpg._run(under_docs, str(under_docs / "src" / "a.py"))     # the red half
+    for rel in ("docs/x.py", ".sdlc/work/9/src/a.py"):
+        assert tpg._run(under_docs, str(under_docs / rel)) == "", rel          # the pinned half
     tpg._project(tmp_path)
     for rel in ("docs/x.py", ".sdlc/work/9/src/a.py", "deep/docs/tools/build.py", "a/.sdlc/x.py"):
         assert tpg._run(tmp_path, str(tmp_path / rel)) == "", rel
 
 
 def test_plan_gate_keeps_the_any_depth_docs_exemption_and_handles_relative_paths(tmp_path):
+    under_docs = tmp_path / "docs" / "p"
+    under_docs.mkdir(parents=True)
+    tpg._project(under_docs)
+    assert "deny" in tpg._run(under_docs, "src/app.py")                         # the red half
     tpg._project(tmp_path)
     assert tpg._run(tmp_path, "docs/guide.py") == ""
     assert tpg._run(tmp_path, "packages/x/docs/foo.py") == ""
@@ -251,6 +261,7 @@ def test_append_to_body_leaves_the_goal_file_intact_when_the_publish_fails(tmp_p
 
 def test_atomic_write_keeps_the_file_mode_and_leaves_no_temp_file(tmp_path):
     state = _mod("state")
+    assert hasattr(state, "atomic_write_text")
     goal = tmp_path / "g.md"
     goal.write_text("old")
     os.chmod(goal, 0o640)
