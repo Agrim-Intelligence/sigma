@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The default loop now records every SDLC phase, and `record done` is refused without them** (#684, class B3). A live
+  run with model tiering `off` let one worker do every phase inline: no research, plan, plan-review or retro was recorded
+  and the independent review lived only in prose. `phase_report.py start|end` now write phase rows to the action log,
+  `work.py record-plan-review` (new `--agent-id`) and the new `work.py record-review` write verdict rows, and
+  `loop.py record ... done` (every mode, local-only included) and `work.py merge` refuse unless research, plan, an approved
+  plan-review bound to the plan's bytes, implement started after it, an approved review and retro are on record; where the
+  host dispatches subagents each phase must name its own agent id. The refusal names each missing item, the command that
+  records it and the lever. `loop.py phases <dir> <goal>` shows the state and the next step; `loop.py waive-phases` waives
+  research and retro only (recorded, visible). `gates.phase_record.enabled` ships `true` from `/sigma-init`; an absent key
+  is off, so an adopted repo is not retro-fitted. The record proves boundaries and verdicts were recorded in order, not that
+  the work was good. The loop costs more: on one live task the default loop cost about $2.1 and 8 minutes against $0.88 and 3 minutes before (measured, three runs; the PR has the table).
+
 - **`/sigma-init` no longer replaces a corrupt or non-object `.sdlc/config.json` with a fresh one** (#625). A truncated
   or hand-broken config, or one whose top level is an array, string or `null`, was read as `{}` and written back, so every
   key the user had was lost with no refusal. `/sigma-init` now stops with exit 2 before writing anything, names the file,

@@ -1893,7 +1893,15 @@ def test_phase_report_loads_no_network_capable_sibling_module():
     # github mode with `project.enabled` AND a pinned `project.number` -- so a repo without a board
     # still loads nothing network-capable here (executed, not asserted, in tests/test_board_phase.py
     # `test_a_repo_without_a_pinned_board_spawns_nothing_at_a_phase_start`).
-    assert loaded == {"state", "work", "ledger", "frontmatter", "timing_store", "sources"}, loaded
+    #
+    # `actionlog` joined it with #684 (the per-phase row `phase_gate.py` reads). It qualifies like
+    # `timing_store`: local-file append, loads only state and work, no socket, no subprocess.
+    #
+    # `phase_gate` joined it with #684 (`verify_agent`, a read of the host's own transcript directory
+    # that `end` records beside the phase row); it loads `work`, `actionlog` and `reviewer` lazily and
+    # opens no socket and spawns no subprocess.
+    assert loaded == {"state", "work", "ledger", "frontmatter", "timing_store", "sources",
+                      "actionlog", "phase_gate"}, loaded
     sources_callers = {fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
                        for call in ast.walk(fn)
                        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)

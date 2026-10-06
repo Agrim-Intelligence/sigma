@@ -93,7 +93,7 @@ dispatches a moment later; passing it in here does not change what the ceiling I
 resolves it first. The one exception is a review send-back that tier cannot converge: the slot
 runs `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
 and re-dispatches that phase at the tier its `ESCALATE` answer names — never a park for "budget" or
-"tier too small" (#2828; `references/running.md`). **Never** dispatch with an unattended `claude -p` (same reason as 3b: uncapped spend,
+"tier too small" (#2828; `references/running.md`). **Say in the slot's prompt** that each phase (research, plan, plan-review, implement, review, retro) is its own dispatched subagent, never inline, tier `off` included: `loop.py record done` is REFUSED otherwise (#684); `loop.py phases` names the next step. **Never** dispatch with an unattended `claude -p` (same reason as 3b: uncapped spend,
 and a second unmanaged worker on one `.sdlc` breaks state) — and **never** hand a subagent's own
 scratch/comparison work a `cp`/`rsync` of another goal's live worktree; a worktree's `.git` is a file
 pointing at shared metadata, and copying it can corrupt the real one.

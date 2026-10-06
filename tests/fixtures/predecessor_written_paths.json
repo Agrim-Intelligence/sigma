@@ -771,7 +771,9 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
+    "skills/sigma-loop/scripts/phase_gate.py::waive"
    ]
   },
   {
@@ -785,7 +787,9 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal"
+    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
+    "skills/sigma-loop/scripts/phase_gate.py::waive"
    ]
   },
   {

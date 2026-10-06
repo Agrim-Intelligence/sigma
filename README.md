@@ -12,9 +12,12 @@ CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on m
 
 **Guardrails + an overnight autopilot for your AI coding agent — one that plans before it codes, has every plan reviewed against your strategy, and gets sharper every run.**
 
-Drop it into any repo and every non-trivial prompt is held to a disciplined **7-phase SDLC** — Goal →
+Drop it into any repo and every non-trivial prompt is asked to follow a disciplined **7-phase SDLC** — Goal →
 Research → Plan → Plan-Review → Implement → Review → Retrospective — so the agent stops jumping
-straight to code. Then queue a backlog and let it **run autonomously**: each goal is driven to a
+straight to code. In the autonomous loop that is **checked, not just asked**: `loop.py record done` is
+refused until the action log shows research, plan, an approved plan-review, implement (started after it),
+an approved independent review and retro (`gates.phase_record`, on in a fresh `/sigma-init`; what the record
+does and does not prove is in [docs/enforcement.md](docs/enforcement.md)). Then queue a backlog and let it **run autonomously**: each goal is driven to a
 *verified* finish, moved across a **GitHub Projects board**, and recorded with a full audit trail.
 Start from an existing repo **or** a product vision; Sigma Loop grounds the work in your strategy and
 remembers what it learns in a **self-improving knowledge graph**.
@@ -52,14 +55,17 @@ happens at a checkpoint. The repo-scoped prompt hook underpins both.
 
 One goal through the engine, **pausing for your approval at each gate**. Take a goal from
 `.sdlc/goals/` (preferred — so it's tracked) or inline text, then walk Goal → Research → Plan →
-**Plan-Review** (via `sigma-plan-review`, never skipped) → Implement (test-first) → Review (evidence
+**Plan-Review** (via `sigma-plan-review`; recorded, and the loop refuses `done` without it) → Implement (test-first) → Review (evidence
 before "done"). It does **not** auto-proceed past checkpoints — you approve each one. The outcome is
 recorded to `.sdlc/` (`done`, or `parked` with a reason) so it shows in `/sigma-status`.
 
 ### `/sigma-loop` — autonomous
 
 Pulls the backlog — local `.sdlc/goals/` files or [GitHub issues](#your-backlog-local-files-or-github-issues) —
-and runs **each goal autonomously** through the same phases. Anything
+and runs **each goal autonomously** through the same phases, one dispatched subagent per phase, each bracketed
+by `phase_report.py` (banner and cost line) and recorded in the action log; `loop.py phases <dir> <goal>` shows
+what is recorded and the next step. A trivial goal can waive research and retro only
+(`loop.py waive-phases`, recorded and visible); more phases mean more spend, so measure it on your own goals. Anything
 that needs a human is **parked to `.sdlc/state/review-queue.md`** and the loop continues — it parks,
 it does not force. It parks on:
 
@@ -368,6 +374,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Stop gate (opt-in)** | On Claude Code, with `gates.stop_gate.enabled`, a session can't END with source changed but no fresh plan — the Stop-time counterpart to the plan-gate, so an interactive session doesn't quietly finish unplanned work | `hooks/completion_gate.sh` · [enforcement](docs/enforcement.md) |
 | **SessionStart brief (opt-in)** | With `session_start.enabled`, injects the SDLC policy + a doctor-lite install self-check at session start, so the conventions are in context before the first prompt | `hooks/session_start.sh` · [enforcement](docs/enforcement.md) |
 | **Machine-checked done** | With `verify.enforce`, "done" is refused until the goal's proving command passes THIS run. On once `/sigma-init` records a confirmed command; never on with an empty one | `loop.py verify` · [enforcement](docs/enforcement.md) |
+| **Every phase runs and is recorded** | `loop.py record done` (every mode, local-only included) and `work.py merge` are refused unless the action log shows research, plan, an approved plan-review (bound to the plan's bytes), implement started after it, an approved review (by an agent no other phase used, where the host can spawn subagents), and retro. On in a fresh `/sigma-init` (`gates.phase_record`); an absent key is off. Research and retro can be waived for a trivial goal, recorded and visible. Proves the boundaries and verdicts were recorded, not that the work was good; on a host that cannot spawn a reviewer (route `inline`) the phases are recorded but not proved independent, and `record done` says so | `loop.py phases` · `loop.py waive-phases` · [enforcement](docs/enforcement.md) |
 | **Bidirectional report card** | Declare your pipeline's stages once; every stage gets a forward (nothing dropped) + reverse (nothing invented) lane — uninstrumented lanes read ABSENT, never green — with a recurrence delta across runs | `.sdlc/pipeline.json` + `pipeline.py card` |
 | **Model + effort auto-selection (opt-in)** | Per-goal ceiling AND per-step downgrade: mechanical steps run on a cheaper tier/effort (`model_selection: "auto"`, default off) | `predict.py resolve / resolve-step` |
 | **Findings become work** | The card's failing signals become `proposed` goals (proof-of-fix pre-wired); the loop never runs one until you promote it | `pipeline.py propose` |

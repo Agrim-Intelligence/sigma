@@ -246,6 +246,15 @@ def _cfg(w):
     return json.loads((w["sdlc"] / "config.json").read_text(encoding="utf-8"))
 
 
+def _phase_record_off(sdlc):
+    """#684: this test is about something other than the SDLC phase record (that has its own
+    tests/test_phase_record_gate.py), so it uses the documented lever: `gates.phase_record.enabled: false`."""
+    path = pathlib.Path(sdlc) / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg.setdefault("gates", {})["phase_record"] = {"enabled": False}
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+
 def _gh_state(w):
     return json.loads(w["state"].read_text(encoding="utf-8"))
 
@@ -310,6 +319,7 @@ def test_local_goals_flow_reaches_done(tmp_path):
     (w["repo"] / "sigma-demo.md").write_text("Sigma ran this goal.\n")
     v = _run(w, [LOOP, "verify", ".sdlc", ".sdlc/goals/0000-demo.md"])
     assert v.returncode == 0, v.stdout + v.stderr
+    _phase_record_off(w["sdlc"])
     d = _run(w, [LOOP, "record", ".sdlc", ".sdlc/goals/0000-demo.md", "done"])
     assert d.returncode == 0, d.stdout + d.stderr
     assert "status: done" in demo.read_text()
@@ -378,6 +388,7 @@ def test_github_flow_makes_only_label_writes_offers_the_board_and_reaches_done(t
     assert nxt.stdout.strip() == "1", nxt.stdout + nxt.stderr
     v = _run(w, [LOOP, "verify", ".sdlc", "1"])
     assert v.returncode == 0, v.stdout + v.stderr
+    _phase_record_off(w["sdlc"])
     d = _run(w, [LOOP, "record", ".sdlc", "1", "done"])
     assert d.returncode == 0, d.stdout + d.stderr
     assert _gh_state(w)["issues"]["1"]["state"] == "closed"

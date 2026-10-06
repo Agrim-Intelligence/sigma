@@ -202,6 +202,29 @@ ENFORCEMENT_GATES = (
                   "a goal with no plan is not checked here (`gates.hard_plan_gate` requires one); "
                   "not org-lockable",
      "readme": "Plan review before any edit"},
+    {"control": "Every SDLC phase recorded before `record done`", "function": "phase_record_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("gates.phase_record.enabled",),
+     "settings": (),
+     "mechanism": "`loop.py record done` (every mode, local-only included) and `work.py merge` refuse "
+                  "unless the goal's action log shows research, plan, plan-review with an approving "
+                  "verdict bound to the plan's sha256, implement started after that verdict, review "
+                  "with an approving verdict, and retro; where the host dispatches subagents every phase must name "
+                  "its own agent id (no id serves two phases) and a verdict's reviewer id must exist in the "
+                  "host's transcript store when that is readable; the refusal names each missing item, the command "
+                  "that records it and the lever; `loop.py waive-phases` waives research and retro "
+                  "only, recorded and visible",
+     "condition": "the rows are written by `phase_report.py`, `record-plan-review` and "
+                  "`record-review`, which a maker can call itself: the record proves boundaries and "
+                  "verdicts were recorded in order, not that the work was good; research and retro "
+                  "are boundary-proof only; on a host whose reviewer route is `inline` (it cannot spawn a "
+                  "subagent) the different-agent checks do not apply and the record says so; reached through the CLI verb and `work.py merge` -- not "
+                  "`reconcile-merges` (a PR someone else merged must not strand) and not the "
+                  "test-only `run_loop` driver; refuses when `action_log.enabled` is not true; an "
+                  "ABSENT key is off (`/sigma-init` ships it true); `phase_report.py start implement` is also "
+                  "refused before an approving plan-review verdict but fails open if the gate cannot be "
+                  "read (the `done` check still refuses); `record-review` records the code review "
+                  "before retro, a later send-back needs a fresh review and retro; not org-lockable",
+     "readme": "Every phase runs and is recorded"},
     {"control": "Dirty root checkout refuses `start`", "function": "_dirty_root_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py start` while the root checkout carries tracked, uncommitted "
@@ -1194,7 +1217,7 @@ def _relative_posix(path, base):
         return pathlib.Path(path).as_posix()
 
 
-def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None):
+def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None, agent_id=""):
     """Record a plan-review verdict against the exact plan bytes the reviewer was briefed on (#258).
 
     `plan_sha256` is the `Plan sha256:` line of the brief written at DISPATCH time, never a rebuilt
@@ -1255,6 +1278,12 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
               "plan": plan_rel, "plan_hash": sha,
               "reviewer_route": {key: route.get(key) for key in ("host", "mechanism", "verified")},
               "verdict": mapped}
+    # #684: the action-log row `phase_gate.py` reads (the one that works with `work.enabled` off), written
+    # BEFORE any other record so a refusal (an unverifiable reviewer id, a missing id on the subagent
+    # route) leaves nothing behind: `gates.plan_review` must never see a verdict the gate refused.
+    if _load("actionlog").enabled(config):
+        _load("phase_gate").record_verdict(sdlc_dir, config, goal, "plan_review", mapped,
+                                           agent_id=agent_id, plan_hash=sha)
     path = None
     if kept:
         rc._atomic_bytes(target, (json.dumps(record, sort_keys=True, separators=(",", ":"))
@@ -1274,6 +1303,28 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     ledger.safe_append(sdlc_dir, "gate", goal, config=config, stream=ledger.EVENTS,
                        gate="plan_review", verdict=mapped, **mirror)
     return {**record, "path": path}
+
+
+def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason=""):
+    """Record the code-review verdict in the action log (#684) -- the only place a local-only goal,
+    which has no PR, can show that an independent review ran and approved. Verdicts: APPROVE,
+    SEND-BACK, BLOCK. The record is agent-written (see phase_gate.py's honesty note)."""
+    pg = _load("phase_gate")
+    mapped = pg.REVIEW_VERDICTS.get(str(verdict or "").strip().upper())
+    if not mapped:
+        raise ValueError(f"unknown review verdict {verdict!r}: one of " + ", ".join(pg.REVIEW_VERDICTS))
+    return pg.record_verdict(sdlc_dir, config, goal, "review", mapped, agent_id=agent_id)
+
+
+def phase_gate_on(config):
+    """True when `gates.phase_record` is on (an absent key is off); see phase_gate.gate_on."""
+    return _load("phase_gate").gate_on(config)
+
+
+def phase_record_refusal(sdlc_dir, config, goal):
+    """None when `gates.phase_record` is off or the goal's action log shows every phase (#684), else
+    the refusal text. The gate itself lives in phase_gate.py; this is the registered entry point."""
+    return _load("phase_gate").refusal(sdlc_dir, config, goal)
 
 
 _GIT_LOCATION_ENV = frozenset((
@@ -5669,6 +5720,10 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         return (f"PARK: no fresh verify evidence for this run ({refusal}; {required}) — run "
                 f"`loop.py verify {sdlc_dir} {goal}` in this run, then merge again")
 
+    phase_refused = phase_record_refusal(sdlc_dir, config, goal)       # #684
+    if phase_refused:
+        return "PARK: " + phase_refused
+
     ok, verdict, final_data = gate(sdlc_dir, config, goal, run=run, sleep=sleep)
     if verdict == BEHIND:                            # the ONE case a rebase is the right answer
         # #406: a rebase force-pushes a new head whose CI has not attached yet, so a SINGLE re-check
@@ -6664,7 +6719,9 @@ _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
 
 _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal> --verdict "
                              "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
-                             "[--reason \"<text>\"]")
+                             "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
+_RECORD_REVIEW_USAGE = ("usage: work.py record-review <sdlc_dir> <goal> --verdict "
+                        "APPROVE|SEND-BACK|BLOCK [--agent-id <reviewer agentId>] [--reason \"<text>\"]")
 
 
 def _flag(argv, name):
@@ -6696,6 +6753,7 @@ def main(argv):
             "reconcile-review-post": "usage: work.py reconcile-review-post <sdlc_dir> <goal> --evidence <path>",
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
             "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
+            "record-review": _RECORD_REVIEW_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -6799,11 +6857,25 @@ def main(argv):
         try:
             config = state.load_config(argv[2])
             result = record_plan_review(argv[2], config, argv[3], _flag(argv, "--verdict"),
-                                        _flag(argv, "--plan-sha256"), reason=reason)
+                                        _flag(argv, "--plan-sha256"), reason=reason,
+                                        agent_id=_flag(argv, "--agent-id"))
         except (state.ConfigMissing, OSError, ValueError, RuntimeError) as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
         print(json.dumps(result, sort_keys=True))
+        return 0
+    if len(argv) >= 2 and argv[1] == "record-review":           # #684
+        if len(argv) < 4 or "--verdict" not in argv:
+            print(_RECORD_REVIEW_USAGE, file=sys.stderr)
+            return 2
+        try:
+            config = state.load_config(argv[2])
+            row = record_review(argv[2], config, argv[3], _flag(argv, "--verdict"),
+                                agent_id=_flag(argv, "--agent-id"))
+        except (state.ConfigMissing, OSError, ValueError, RuntimeError) as exc:
+            print(f"work: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(row, sort_keys=True))
         return 0
     if len(argv) >= 3 and argv[1] == "root":                    # no config needed; never fails
         print(root(argv[2], argv[3] if len(argv) > 3 else ""))

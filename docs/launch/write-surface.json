@@ -2354,6 +2354,14 @@
     },
     {
       "path": "tools/onboarding_control.py",
+      "function": "_scripted_phases",
+      "rule": "fs-write",
+      "count": 5,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
       "function": "_stub_gh",
       "rule": "fs-write",
       "count": 1,

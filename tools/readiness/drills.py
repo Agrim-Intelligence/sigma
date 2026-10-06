@@ -332,9 +332,11 @@ def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     acceptance = repo / ".sdlc" / "acceptance" / (goal + ".md")
     target = repo / ".sdlc" / "work" / goal / ".sdlc" / "acceptance" / acceptance.name
     target.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(acceptance, target)
+    control._scripted_phases(run, loop, repo, env, goal, pid, "before")      # #684: the recorded phases
     step("phase start", [py, loop / "phase_report.py", "start", ".sdlc", goal, "implement", "--model", "haiku", "--pid", pid])
     (repo / ".sdlc" / "work" / goal / control.WORK_FILE).write_text("hi\n", encoding="utf-8")
     step("phase end", [py, loop / "phase_report.py", "end", ".sdlc", goal, "implement", "--pid", pid])
+    control._scripted_phases(run, loop, repo, env, goal, pid, "after")
     step("verify", [py, loop / "loop.py", "verify", ".sdlc", goal])
     step("work commit", [py, loop / "work.py", "commit", ".sdlc", goal, "--message", "sdlc: readiness drill"])
     step("work pr", [py, loop / "work.py", "pr", ".sdlc", goal, "--no-tests", "Fixture verification is retained."])

@@ -711,11 +711,21 @@ def test_init_flow_proceeds_with_one_notice(tmp_path):
     assert (repo / ".sdlc" / "config.json").exists()
 
 
+def _phase_record_off(sdlc):
+    """#684: this test is about something other than the SDLC phase record (that has its own
+    tests/test_phase_record_gate.py), so it uses the documented lever: `gates.phase_record.enabled: false`."""
+    path = pathlib.Path(sdlc) / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg.setdefault("gates", {})["phase_record"] = {"enabled": False}
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+
+
 def _scaffolded(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_init(repo)
     assert _run([INIT, repo], _env(**_host(tmp_path / "clear"))).returncode == 0
+    _phase_record_off(repo / ".sdlc")
     return repo
 
 

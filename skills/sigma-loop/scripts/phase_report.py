@@ -1712,6 +1712,14 @@ def cmd_start(argv):
         print(f"phase_report.py: {pid_err}", file=sys.stderr)
         return 2
     _refresh_loop_heartbeat(sdlc_dir, pid)
+    try:
+        start_refused = _load("phase_gate").start_refusal(sdlc_dir, goal, phase)
+    except Exception as exc:                    # noqa: BLE001 - a broken gate read must not stop a phase
+        start_refused = None
+        print(f"phase_report: phase gate unreadable at start (non-fatal): {exc}", file=sys.stderr)
+    if start_refused:
+        print(f"phase_report.py: REFUSED: {start_refused}", file=sys.stderr)
+        return 2
     model = flags.get("model", "")
     host_model = flags.get("host-model", "")
     requested_model = flags.get("requested-model", "")
@@ -1744,6 +1752,8 @@ def cmd_start(argv):
                  claude_session_id=_session_id() or None)
     ledger = _load("ledger")
     ledger.safe_append(sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase, state="start")
+    # #684: the action-log row `phase_gate.py` reads. Unconditional of the opt-in journal above.
+    _load("actionlog").safe_append(sdlc_dir, goal, "phase", phase=phase, state="start")
     # NOT routed through `render.py`: a start is an announcement, not a boundary -- `start_lines`
     # carries the whole argument.
     for line in start_lines(goal_ref(goal), phase, model, title,
@@ -2232,6 +2242,18 @@ def cmd_end(argv):
     if not uncredited_codex_budget:
         _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id,
                           interval_ms=interval_ms, stale=bool(stale_reason))
+
+    # #684: the action-log row `phase_gate.py` reads; `cost` is the figure the banner prints.
+    _cost = result.get("cost_usd")
+    # `verified`: whether the host's own transcript store holds this agent id (`transcript`), could not be
+    # asked (`unverified`) or does not hold it (`missing`, which the phase gate refuses on a dispatching host).
+    _vf = None
+    if agent_id:
+        _ok, _bad = _load("phase_gate").verify_agent(agent_id)
+        _vf = _ok or "missing"
+    _load("actionlog").safe_append(sdlc_dir, goal, "phase", phase=phase, state="end",
+                                   agent_id=agent_id or None, verified=_vf,
+                                   cost=(f"${_cost:.2f}" if _cost is not None else "unavailable"))
 
     warning = unpriced_budget_warning(result)
     if warning:
