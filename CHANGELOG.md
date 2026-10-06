@@ -4,10 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-<!-- OWNER ACTION before release: replace DATE-PENDING in the 1.0.0 heading below with the release date (YYYY-MM-DD).
-     No date is invented here. tools/release_notes.py refuses this section until you do (docs/release.md, steps 1 and 7). -->
 
-## 1.0.0 — DATE-PENDING — the first public release
+## 1.0.0 — 2026-10-07 — the first public release
 
 Sigma Loop 1.0.0 is the first public release: guardrails and an overnight autopilot for an AI coding agent,
 run from your backlog on GitHub (issues and a Projects board) or from local goal files.
