@@ -6,19 +6,19 @@ allowlist is `tests/fixtures/third_party_imports.json`; the licence facts behind
 `docs/launch/evidence/legal.md`. This is a fact check, not a legal one: it says what is imported, never
 whether a licence is acceptable.
 
-SHIPPED means: every tracked `*.py` file except `tests/` and any file named `test_*.py` or `conftest.py`
-wherever it sits (the benchmark task repos under `evals/bench/tasks/` and `examples/` carry their own
-`test_*.py` fixtures that import pytest; they are fixtures, not plugin code).
+SHIPPED means: every tracked `*.py` file except everything under `tests/`, and the `test_*.py` and `conftest.py`
+files under `evals/bench/tasks/` and `examples/` (the benchmark task repos and the example carry their own pytest
+fixtures; they are fixtures, not plugin code). A `test_*.py` anywhere else is scanned like any other file.
 
 THIRD-PARTY means: an absolute import whose first segment is neither in `sys.stdlib_module_names` nor a
-module or package sitting beside the importing file (how a script that sets up its own `sys.path` reaches
+module, package or plain directory sitting beside the importing file (how a script that sets up its own `sys.path` reaches
 its siblings, for example `evals/bench/bench.py` and its `arms` package).
 
 KNOWN LIMITS, stated so nobody reads more into a green run than is there:
   * Dynamic imports (`importlib.import_module(x)`, `__import__(x)`) are not covered; only `import` and
     `from ... import` statements are, as in `tests/test_import_boundary.py`.
-  * A file planted beside the importing file with the same name as a third-party package (a `requests.py`)
-    makes that import read as local. `test_control_a_same_named_sibling_hides_the_import` pins this limit.
+  * A file or directory planted beside the importing file with the same name as a third-party package (a
+    `requests.py`, or a `requests/` directory) makes that import read as local. `test_control_a_same_named_sibling_hides_the_import` pins this limit.
   * Shell and TypeScript are not Python: the one shipped npm channel is pinned by
     `test_npm_channel_dependencies_are_the_allowlisted_set`, nothing else non-Python is scanned.
   * The scan needs Python 3.10 or newer (`sys.stdlib_module_names`), which is the supported floor.
@@ -43,11 +43,15 @@ NPM = ALLOWLIST["npm_channel"]
 pytestmark = pytest.mark.skipif(not hasattr(sys, "stdlib_module_names"), reason="needs Python 3.10+")
 
 
+FIXTURE_ROOTS = (("evals", "bench", "tasks"), ("examples",))
+
+
 def _is_shipped(rel: str) -> bool:
     p = pathlib.PurePosixPath(rel)
     if p.suffix != ".py" or p.parts[0] == "tests":
         return False
-    return not (p.name.startswith("test_") or p.name == "conftest.py")
+    is_test_name = p.name.startswith("test_") or p.name == "conftest.py"
+    return not (is_test_name and any(p.parts[:len(r)] == r for r in FIXTURE_ROOTS))
 
 
 def _tracked_py(root: pathlib.Path):
@@ -59,14 +63,19 @@ def _tracked_py(root: pathlib.Path):
 
 
 def _imports(tree):
-    """Yield (root_module, lineno, at_module_level) for every absolute import statement."""
-    top = set(id(n) for n in tree.body)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                yield alias.name.split(".")[0], node.lineno, id(node) in top
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            yield node.module.split(".")[0], node.lineno, id(node) in top
+    """Yield (root_module, lineno, inside_function) for every absolute import statement.
+
+    `inside_function` is True only when some enclosing node is a function or lambda; an import under a module-level
+    `try:` or `if:` runs at import time and so is NOT lazy."""
+    def walk(node, in_func):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.Import):
+                for alias in child.names:
+                    yield alias.name.split(".")[0], child.lineno, in_func
+            elif isinstance(child, ast.ImportFrom) and child.level == 0 and child.module:
+                yield child.module.split(".")[0], child.lineno, in_func
+            yield from walk(child, in_func or isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)))
+    yield from walk(tree, False)
 
 
 def violations(root: pathlib.Path, files, modules):
@@ -77,7 +86,7 @@ def violations(root: pathlib.Path, files, modules):
         path = root / rel
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
         here = path.parent
-        for name, lineno, at_top in _imports(tree):
+        for name, lineno, in_func in _imports(tree):
             if name in sys.stdlib_module_names or (here / (name + ".py")).exists() or (here / name).is_dir():
                 continue
             entry = modules.get(name)
@@ -87,7 +96,7 @@ def violations(root: pathlib.Path, files, modules):
             seen[name].add(rel)
             if rel not in entry.get("where", []):
                 bad.append(f"{rel}:{lineno}: `{name}` is allowlisted, but not for this file")
-            if entry.get("optional") and at_top:
+            if entry.get("optional") and not in_func:
                 bad.append(f"{rel}:{lineno}: optional `{name}` must be imported lazily, inside a function")
     for name, entry in modules.items():
         if not str(entry.get("licence", "")).strip():
@@ -152,8 +161,10 @@ def test_control_stdlib_relative_and_sibling_imports_are_clean(tmp_path):
 
 
 def test_control_a_same_named_sibling_hides_the_import(tmp_path):
-    """The documented limit, pinned: a planted requests.py beside the importer makes `import requests` read as local."""
+    """The documented limit, pinned: a planted requests.py (or requests/ directory) beside the importer hides the import."""
     files = _plant(tmp_path, {"d/a.py": "import requests\n", "d/requests.py": ""})
+    assert violations(tmp_path, files, {}) == []
+    files = _plant(tmp_path, {"e/a.py": "import requests\n", "e/requests/x.txt": ""})
     assert violations(tmp_path, files, {}) == []
 
 
@@ -161,8 +172,11 @@ def test_control_the_allowlisted_import_is_clean_only_where_listed_and_lazy(tmp_
     mods = {"slack_sdk": {"pypi": "slack-sdk", "licence": "MIT", "optional": True, "where": ["ok.py"]}}
     ok = _plant(tmp_path, {"ok.py": "def f():\n    from slack_sdk import WebClient\n    return WebClient\n"})
     assert violations(tmp_path, ok, mods) == []
-    eager = _plant(tmp_path, {"ok.py": "import slack_sdk\n"})
-    assert any("lazily" in b for b in violations(tmp_path, eager, mods))
+    for text in ("import slack_sdk\n",
+                 "try:\n    import slack_sdk\nexcept ImportError:\n    slack_sdk = None\n",
+                 "if True:\n    import slack_sdk\n"):
+        eager = _plant(tmp_path, {"ok.py": text})
+        assert any("lazily" in b for b in violations(tmp_path, eager, mods)), text
     elsewhere = _plant(tmp_path, {"other.py": "def f():\n    import slack_sdk\n", "ok.py": "def f():\n    import slack_sdk\n"})
     assert any("other.py" in b and "not for this file" in b for b in violations(tmp_path, elsewhere, mods))
 
@@ -175,6 +189,8 @@ def test_control_a_stale_entry_and_a_missing_licence_are_caught(tmp_path):
 
 
 def test_control_test_files_and_tests_dir_are_not_shipped():
-    assert not _is_shipped("tests/test_x.py") and not _is_shipped("evals/bench/tasks/t/repo/test_a.py")
-    assert not _is_shipped("x/conftest.py") and not _is_shipped("README.md")
+    assert not _is_shipped("tests/helper.py") and not _is_shipped("tests/sub/test_x.py")
+    assert not _is_shipped("evals/bench/tasks/t/repo/test_a.py") and not _is_shipped("examples/e/conftest.py")
+    assert _is_shipped("skills/x/scripts/test_like.py") and _is_shipped("hooks/conftest.py")
+    assert not _is_shipped("README.md")
     assert _is_shipped("skills/sigma-loop/scripts/loop.py")

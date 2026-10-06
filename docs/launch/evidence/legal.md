@@ -3,8 +3,8 @@
 ## 1. Status of this page
 
 This is a FACT SHEET assembled by an agent on 2026-10-06. It is not legal advice and contains no legal conclusion.
-Where a decision belongs to the owner or to counsel, the cell reads `AWAITING COUNSEL` and has been left empty on
-purpose. Counsel has been engaged by the owner and has NOT answered. D13 (`docs/launch/review-plan.md`) is therefore not
+Where a decision belongs to the owner or to counsel, the cell reads `AWAITING COUNSEL` and has been left as a marked
+placeholder on purpose. Counsel has been engaged by the owner and has NOT answered. D13 (`docs/launch/review-plan.md`) is therefore not
 scoreable, and nothing on this page makes it so.
 
 What every fact below rests on is named beside it: a file and line in this tree at commit `542a8bf`, a registry response
@@ -73,7 +73,7 @@ and, on older Pythons or Windows only, `exceptiongroup` 1.3.1 MIT, `tomli` 2.4.1
 
 `skills/sigma-loop/channels/sigma-autowatch/bun.lock` pins 93 packages (the direct dependency above plus its transitive
 closure). The licence column is the `license` field of each package's registry metadata for that exact version; the licence
-files were NOT read for the 92 transitive packages. Declared licences by count: MIT 83, ISC 7, BSD-3-Clause 2, BSD-2-Clause 1.
+files were NOT read for the 92 transitive packages. `content-type` 2.1.0 appears twice below because the lock holds two nested copies (under `body-parser` and `type-is`); the 93 lock entries are 92 distinct name and version pairs. Declared licences by count: MIT 83, ISC 7, BSD-3-Clause 2, BSD-2-Clause 1.
 Nothing here is shipped as a bundle: the user installs these with Bun (`README.md` of the channel).
 
 | Package | Version | Declared licence |
@@ -257,7 +257,7 @@ It reports what exists, never whether a use is permitted or likely to confuse. T
 
 | # | URL | Date | What it is |
 |---|---|---|---|
-| 1 | https://github.com/kohsheen1234/sigmaloop | created and last pushed 2026-04-10 | repository `sigmaloop`, MIT, 0 stars, "Self-improving agent loop: autonomously optimises an agent against a live benchmark through continuo..." (same general space) |
+| 1 | https://github.com/kohsheen1234/sigmaloop | created and last pushed 2026-04-10 | repository `sigmaloop`, MIT, 0 stars, "Self-improving agent loop: autonomously optimises an agent against a live benchmark through continuo..." |
 | 2 | https://github.com/BamiTunes/sigmaLoop | created 2025-07-12 | repository `sigmaLoop`, no description, HTML, 0 stars |
 | 3 | https://github.com/jshishimaru/Sigma_Loop | created 2023-12-01 | repository `Sigma_Loop`, no description, C, 0 stars |
 | 4 | https://github.com/Peace098/sigma-loop | created 2025-07-05 | repository `sigma-loop`, "Sistema AI per guadagni passivi" (an AI money-making system, in Italian), 0 stars |
@@ -272,13 +272,13 @@ The bare package names `sigmaloop` and `sigma-loop` were not registered on PyPI 
 
 ### 7.3 Earlier search for the bare word "Sigma" (2026-10-04, summarised, not re-run)
 
-The owner's decision of 2026-10-06 replaced the bare name, so the generic search was not repeated. Its recorded findings, as
+The owner's decision of 2026-10-06 replaced the earlier working name `sigma`, so the generic search was not repeated. Its recorded findings, as
 read by the agent on 2026-10-04: 33,974 GitHub repositories with "sigma" in the name; three public repositories whose names are
 or begin with `sigma` in the Claude Code plugin space (3, 0 and 0 stars) and Sigma Computing's own Claude Code plugin repositories; the names
 `sigma` taken on PyPI (a numerical-methods package) and on npm (the graph library above); 46 VS Code Marketplace matches, none
 an AI plugin among the eight read. Because the skill and command family is still `sigma-` prefixed (section 2), counsel may want
 that earlier result as well. The "agrim" prefix the issue mentions: no shipped skill directory starts with `agrim`; the string
-appears in `LICENSE:3` and in two lines under `skills/` and `hooks/` that name the repository owner.
+appears in `LICENSE:3` and in two lines of `skills/sigma-doctor/scripts/doctor.py` (1588 and 1829) that name the repository owner.
 
 | Question | Answer |
 |---|---|
