@@ -137,7 +137,7 @@ Sigma's own; no companion ships it.
    → *executor:* `superpowers:writing-plans` · portable `sigma-plan`.
 4. **Plan-Review** — adversarially review the plan **before** any edit: verify each claim against the
    real code, stress-test what breaks after it ships, check scope/fit, and (vision-first) check it
-   against your strategy. The skills ask the agent never to skip it; with `gates.plan_review.enabled` (off by default; needs `work.enabled`, since the check lives in `work.py pr`), `work.py pr` refuses a plan with no recorded approving review — otherwise no code checks that it ran. This is the step `superpowers` doesn't provide, so Sigma
+   against your strategy. The skills ask the agent never to skip it. In the loop it is also checked: `gates.phase_record` (on in a fresh `/sigma-init`) makes `loop.py record done` and `work.py merge` refuse a goal with no approved plan-review (recorded through `work.py record-plan-review`, which binds it to the exact plan bytes; the gate needs `action_log.enabled`), and the opt-in `gates.plan_review.enabled` (off by default; needs `work.enabled`) additionally refuses the push in `work.py pr`. Interactive work that never calls `record done` or `work.py merge` is asked, not gated; the record is agent-written, so it proves a verdict was recorded, not who reviewed. This is the step `superpowers` doesn't provide, so Sigma
    ships it.
    → *owned by* **`sigma-plan-review`** (always Sigma's — no companion equivalent).
 5. **Implement** — build test-first and execute the plan step by step.
@@ -365,7 +365,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | Capability | What it gives you | Command / component |
 |---|---|---|
 | **Repo-scoped SDLC reminder** | On Claude Code, the prompt hook asks the agent to follow the 7-phase spine; Codex and Cursor read the same standing rule from an opt-in scaffolded file (`AGENTS.md` via `--codex`, `.cursor/rules/sdlc.mdc` via `--cursor`) | `hooks/sigma_gate.sh`, `/sigma-init --codex` / `--cursor` · [enforcement](docs/enforcement.md) |
-| **Plan review before any edit** | Asks the agent to have the plan adversarially reviewed *before* any edit — the step `superpowers` doesn't ship. **Opt-in gate** (`gates.plan_review.enabled`, off by default): `work.py pr` refuses to push, on every host, unless `work.py record-plan-review` recorded an approving verdict for the exact plan bytes on the branch — checked at `work.py pr`'s push only (not the first edit, not a later rebase force-push); the record is agent-written, so it proves a verdict was recorded, not who reviewed. Off, no code checks that it ran | `sigma-plan-review`, `work.py record-plan-review` · [enforcement](docs/enforcement.md) |
+| **Plan review before any edit** | Asks the agent to have the plan adversarially reviewed *before* any edit — the step `superpowers` doesn't ship. **Gated in the loop, not in interactive use:** `gates.phase_record` (on in a fresh `/sigma-init`) makes `loop.py record done` and `work.py merge` refuse without an approving verdict bound to the plan's bytes; work that never calls them is not gated. **Further opt-in gate** (`gates.plan_review.enabled`, off by default): `work.py pr` refuses to push, on every host, unless `work.py record-plan-review` recorded an approving verdict for the exact plan bytes on the branch — checked at `work.py pr`'s push only (not the first edit, not a later rebase force-push); the record is agent-written, so it proves a verdict was recorded, not who reviewed. With `gates.phase_record` off or absent and this gate off, nothing in code verifies it ran | `sigma-plan-review`, `work.py record-plan-review` · [enforcement](docs/enforcement.md) |
 | **Strategy-alignment check** | Asks the plan reviewer to send back (FIX-FIRST) a plan that contradicts your stated strategy / non-goals | `sigma-plan-review` + north-star · [enforcement](docs/enforcement.md) |
 | **Two ways to start** | **Drop-in** (existing repo) or **vision-first** (start from a product vision) | `/sigma-init`, `/sigma-vision` |
 | **One-command adoption** | Detects the repo + board, scaffolds `.sdlc/`, writes a safe config (github discovery scoped to `@me`, ledger on, PRs on) and creates the core `sdlc:*` lifecycle labels — avoiding the verify-trap, never clobbering an ignore rule you already set, and never touching `priority:*` labels or any issue | `/sigma-setup` |
@@ -428,7 +428,7 @@ What you don't get anywhere else, in one kit:
 - **Automatic model selection.** It predicts the right tier per goal — `haiku · sonnet · opus · fable` —
   and runs that goal's phases there, so a rename won't burn Opus and a migration won't crawl on Haiku — you set nothing.
 - **A plan review before any edit.** The skills ask the agent to have the plan adversarially reviewed against the real code first,
-  and the prompt hook reminds it on every prompt not to skip straight to coding. The reminder is automatic; following it is still the agent's job. With `gates.plan_review.enabled` (needs `work.enabled`), `work.py pr` refuses a plan with no recorded approving review, on every host.
+  and the prompt hook reminds it on every prompt not to skip straight to coding. The reminder is automatic; following it is still the agent's job. In the loop, `gates.phase_record` makes `record done` and `work.py merge` refuse without a recorded approving review, and with `gates.plan_review.enabled` (needs `work.enabled`) `work.py pr` refuses the push too, on every host; interactive work outside those commands is not gated.
 - **Your strategy is in every review.** The plan reviewer is asked to send back **FIX-FIRST** any plan that
   contradicts your stated strategy or advances a non-goal against your north-star — so building the wrong thing has to get past a reviewer told to look for it.
 - **An overnight autopilot, not a one-shot.** It drives a whole backlog unattended, parks anything that needs you,
@@ -456,7 +456,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `model_selection: "auto"` | off | per-goal model ceiling + per-step model/effort downgrade |
 | `verify: {"enforce": true}` | off until a command is confirmed (an empty command would refuse every `done`) | `record done` refused without fresh machine evidence (`loop.py verify`) |
 | `gates.hard_plan_gate.enabled` | off | unplanned source refused: the PR push on every host (`work.py pr`, needs `work.enabled`), plus the edit itself on Claude Code (`hooks/plan_gate.sh`, `plan_freshness_hours` window) |
-| `gates.plan_review.enabled` | off | the PR push refused on every host (`work.py pr`, needs `work.enabled`) unless `work.py record-plan-review` recorded an approving plan-review verdict (SOUND / SOUND-WITH-REFINEMENTS) for the exact plan bytes on the branch; covers `.sdlc/plans/<stem>.md` only |
+| `gates.plan_review.enabled` | off (`gates.phase_record`, on in a fresh `/sigma-init`, already makes `loop.py record done` and `work.py merge` refuse without an approved plan-review) | the PR push refused on every host (`work.py pr`, needs `work.enabled`) unless `work.py record-plan-review` recorded an approving plan-review verdict (SOUND / SOUND-WITH-REFINEMENTS) for the exact plan bytes on the branch; covers `.sdlc/plans/<stem>.md` only |
 | `decision_tier: "auto"` | off | classify a `needs_decision`/`irreversible`/`unknown` park's detail text into an L0/L1/L2 escalation tier (`escalate_l0`/`escalate_l1`/`autonomous`, `decision_tier.py`) and surface it in the ledger `park` event, `review-queue.md`, and the park comment — **advisory only**, it never changes what the loop does with the parked goal |
 | `.sdlc/pipeline.json` | absent | the bidirectional report card + `propose` (findings → groomable goals) |
 | `ledger: {"enabled": true}` | unset (`null`, reads as off; `/sigma-setup` writes `true`) | the committed team ledger — claims and outcomes recorded per author, plus cross-area hand-off |
@@ -2212,6 +2212,10 @@ catch drift (see [`evals/README.md`](evals/README.md)):
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution rules. Ask questions
 or report bugs through [SUPPORT.md](SUPPORT.md) and its GitHub Issue templates. Report security
 vulnerabilities privately under [SECURITY.md](SECURITY.md), never in a public issue.
+
+Outside contributions are not accepted yet; issues are welcome.
+
+Coexistence with the predecessor tool on one shared ledger is not claimed at launch; do not run both against the same ledger (tracked as #616, after launch).
 
 ## Other platforms supported
 

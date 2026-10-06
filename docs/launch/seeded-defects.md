@@ -130,7 +130,10 @@ missed 03-injection
 recall: 0.667 (2/3)
 ```
 
-Below 80% the review is re-run, not reported. The missed list tells the next reviewer where to
+Below 80% the tool's run is re-run, not reported. That 80% is a property of this tool's exit code and
+is not a D1 threshold: the owner amended the D1 recall rule on 2026-10-06 because recall was not
+measured (see `review-plan.md`, "Owner decisions of 2026-10-06"), so no launch claim cites a recall
+percentage. The missed list tells the next reviewer where to
 look, so it goes to the seed author only: a re-run uses a fresh seed set, or a reviewer who has not
 seen the list. The default output is safe to show a reviewer, since a missed seed is `NN-<class>`
 (`unclassified` if the id does not read that way), never its slug, file or line.

@@ -7,7 +7,7 @@ has a ceiling. This page is a plan: nothing in it has been scored, and no dimens
 ## Status
 
 Proposed. The ceilings are the owner's decision, made on 2026-10-03 and recorded here from the owner's
-chat answer (Question 2 of 8: 75M tokens with a checkpoint at 40M). The pilot ceiling was set later, at $75 as a hard
+chat answer (Question 2 of 8: 75M tokens with a checkpoint at 40M; both raised on 2026-10-06, see "Owner decisions of 2026-10-06"). The pilot ceiling was set later, at $75 as a hard
 stop (2026-10-04, recorded in a comment on #361). No other committed file or issue holds those figures yet, so the owner's merge of this page
 confirms them. They are provisional: the calibration pilots (#361) have run, and the section "Measured ceilings" below recomputes them
 from the measured spend in [the calibration record](evidence/cost-calibration.md). A step the pilots did not measure keeps its
@@ -39,7 +39,7 @@ rows below.
 | # | Dimension | Measurement | Pass threshold | Gating |
 |---|---|---|---|---|
 | D0 | Launch definition | `docs/launch/definition.json` | `status: signed` | prerequisite |
-| D1 | Correctness | high-risk units reviewed in full, seeded sample of the rest, planted-defect recall, mutation kill rate, flake census (10 runs Linux + 10 macOS), coverage | 0 open B1/B8; recall ≥ 80%; 0 flaky tests; kill rate recorded per module | yes |
+| D1 | Correctness | high-risk units reviewed in full, seeded sample of the rest, planted defects seeded, mutation kill rate, flake census (10 runs Linux + 10 macOS), coverage | 0 open B1/B8; the review claims "found and verified N defects" (N counted, each with a reproducer or cited line), never a recall percentage (rule AMENDED 2026-10-06); 0 flaky tests; kill rate recorded per module | yes |
 | D2 | Skills | every documented command/verb/flag resolves (script); 5,000-token budget (already 0 waivers); model review of the 10 phase skills; instruction tokens per phase (#262) | 100% resolve; 0 gate-skip ambiguities on supported cells | yes |
 | D3 | Outcomes and cost | pre-registered benchmark (3 arms: Sigma, plain agent, matched-spend; about 15 tasks, 1 repeat, 3 outside traps), cost per passing run | per `docs/bench/preregistration.md` as amended | yes |
 | D5 | Five properties | crash/restore drills at random kill points (N ≥ 5 each), dead-vs-idle (#265), growth audit, 10x/100x table | every drill recovers alone or has a documented polite lever; every growing store has a pruner or cap | yes |
@@ -96,8 +96,8 @@ a seed author (D1) and the outside people (D7).
 
 1. Work in the frozen clone produced by `tools/readiness/baseline.py snapshot`, never in the live checkout.
 2. Use the high-risk list and sample from `docs/launch/review-units.json`.
-3. Plant defects and score recall per `docs/launch/seeded-defects.md`. A review whose recall is below 80% is re-run, not reported.
-4. A different model vendor reviews about 20% of the units and verifies every B-class finding. On Codex, this doubles as the #302 live run.
+3. Plant defects per `docs/launch/seeded-defects.md` when a seeded run is made. The D1 recall rule was AMENDED on 2026-10-06: recall was not measured, so no review is repeated or reported on a recall percentage.
+4. A different model vendor reviews about 20% of the units and verifies every B-class finding (NOT met for launch: the owner accepted no second-vendor pass on 2026-10-06). On Codex, this doubles as the #302 live run.
 5. Every finding carries a reproducer or a cited `file:line`, and a second independent pass verifies it before it is filed.
 6. Before filing, re-check the finding against current `main`.
 7. Before filing, run `python3 skills/sigma-scope/scripts/dedup.py .sdlc "<finding text>"`. A `duplicate` hit becomes a comment on that issue, not a new issue.
@@ -114,7 +114,7 @@ The unit is processed tokens: input, including cache reads, plus output, as the 
 | S1 | freeze commit, inventory, exposure scans, legal | < 0.5M | not measured |
 | S2 | mechanical gates | 1–2M | not measured |
 | S3 | calibration pilots (the pilot goal, #361) | 20–50M | 3.89M spent (measured, $2.50; P-a and P-b only, P-c and P-d unmeasured) |
-| S4 | high-risk code review + sample + verification | 25–45M | measured: all 16 Tier A units (36,519 lines), 24,845,157 tokens ($12.37) for reviewers and verifiers, 680.3 per line; cumulative 69,433,345 at the time the evidence was written (29,433,345 over the 40M checkpoint, inside the owner-approved 75M cap; slot overhead and governance of the evidence PR come on top); Tier B was not reviewed by owner decision ([review-s4-c3faf6f23e12.md](evidence/review-s4-c3faf6f23e12.md)); the 43.73M ceiling row below is the replaced estimate, kept for the Tier B part |
+| S4 | high-risk code review + sample + verification | 25–45M | measured: all 16 Tier A units (36,519 lines), 24,845,157 tokens ($12.37) for reviewers and verifiers, 680.3 per line; cumulative 69,433,345 at the time the evidence was written (29,433,345 over the 40M checkpoint, inside the then owner-approved 75M cap (raised to 120M on 2026-10-06); slot overhead and governance of the evidence PR come on top); Tier B was not reviewed by owner decision ([review-s4-c3faf6f23e12.md](evidence/review-s4-c3faf6f23e12.md)); the 43.73M ceiling row below is the replaced estimate, kept for the Tier B part |
 | S5 | phase-skill review | 8–15M | not measured |
 | S6 | host runs, migration, drills, red team | 20–50M | not measured |
 | S7 | outside first-run | 0 | not applicable |
@@ -145,21 +145,21 @@ unit and is applied to every line of its tier (verification cost follows the num
 Tier A review rate averages two units and is not applied to Tier B. A second-vendor pass over about 20% of the units
 (reviewer rule 4) is **not included and not measured**. The measured passes also had no planted defects and were shallower than the plan's review.
 
-The review ceiling is **75M processed tokens** for S1–S8 plus S10, with an owner checkpoint at **40M**.
-The owner chose both on 2026-10-03; the epic's earlier 150M ceiling and 75M checkpoint are replaced.
+The review ceiling is **120M processed tokens** for S1–S8 plus S10, with an owner checkpoint at **100M**.
+The owner raised both on 2026-10-06 (from 75M and 40M, which the owner had chosen on 2026-10-03 in place of the epic's 150M ceiling and 75M checkpoint); the measured S4 cumulative at the time was 69,433,345.
 The pilots' measured numbers are applied to both below (a step the pilots did not measure stays unmeasured), and S9 gets its own
 owner-approved ceiling, which the benchmark pilot would have set and did not.
 
-**What the 40M checkpoint counts: decided.** The owner decided on 2026-10-04, in chat, that pilot spend counts toward
+**What the (then) 40M checkpoint counts: decided.** The owner decided on 2026-10-04, in chat, that pilot spend counts toward
 both counters, as this page had recommended. The counter is the running sum of processed tokens, as the hosts report
-them, over S1–S8 plus S10: the same counter as the 75M ceiling, and S3 (the pilots) is part of it. The $75 pilot
+them, over S1–S8 plus S10: the same counter as the then 75M ceiling (now 120M), and S3 (the pilots) is part of it. The $75 pilot
 ceiling stays the hard stop on pilot dollars. Pilot spend so far: 3,887,193 processed tokens and $2.50, so
-**36,112,807 tokens remain under the 40M checkpoint and 71,112,807 under the 75M ceiling** for the rest of the review.
+**36,112,807 tokens remained under the then 40M checkpoint and 71,112,807 under the then 75M ceiling** (superseded on 2026-10-06; the current figures are in "Owner decisions of 2026-10-06" below).
 The checkpoint is a stop-and-ask, not a failure.
 
 **What the measured numbers imply for the caps.** S4 at its measured ceiling is 43.73M (33.64M without headroom).
-Counted on top of the pilots, that is 47.6M (37.5M without headroom), so the 40M checkpoint is reached inside S4 when
-headroom is used, and is not reached at all when it is not (2.5M to spare). The full review does **not** fit under 75M on these
+Counted on top of the pilots, that is 47.6M (37.5M without headroom), so the then 40M checkpoint was reached inside S4 when
+headroom is used, and is not reached at all when it is not (2.5M to spare). The full review did **not** fit under the then 75M on these
 numbers: after the pilots and S4 at its ceiling, 27.38M remain, and the still-unmeasured steps S1, S2, S5, S6, S8 and S10
 have lower bounds that sum to 33.5M (0.5 + 1 + 8 + 20 + 3 + 1), a shortfall of at least 6.1M before any of them reaches
 its upper bound (their upper bounds sum to 75.5M). Without S4's headroom the lower bounds fit (37.5M remain), but the
@@ -167,19 +167,35 @@ upper bounds do not. Covering S4 in full, S1, S2, S5, S8 and S10 at their lower 
 S6, against its estimate of 20–50M: S6 (host runs, drills, red team) is the step that would be cut, and the cap rules
 below say how. These statements rest on the unmeasured estimates for six steps; they are not a forecast.
 
-OWNER DECISION (open, #361): approve the measured ceilings above as the review's S3 and S4 ceilings. Recommendation:
-approve them, keep 75M and 40M as set, and measure S5 and S6 in their own first runs before either is raised. S9 has no
+OWNER DECISION (history, superseded 2026-10-06 by "Owner decisions of 2026-10-06" below; the cap and checkpoint are now 120M and 100M): approve the measured ceilings above as the review's S3 and S4 ceilings. Recommendation: at the time, approve them, keep 75M and 40M as set, and measure S5 and S6 in their own first runs before either is raised. S9 has no
 measured basis until the benchmark pilot runs, and this page does not choose its ceiling.
 
-**At 75M the review will cover less than the plan describes.** What the plan does when the ceiling binds:
+**At 120M the review will cover less than the plan describes.** What the plan does when the ceiling binds:
 
 1. High-risk units are reviewed in full first. Nothing else runs ahead of them.
 2. The sample rate is reduced before any high-risk unit is cut.
 3. Every unit not covered is listed by id in the scorecard evidence for D1 and D2, with the reason. A
    unit is never dropped silently, and a dimension whose coverage fell short does not score 3 on
    the strength of the part that ran.
-4. At 40M the review stops and the owner decides whether to continue, cut scope, or raise the ceiling.
+4. At 100M the review stops and the owner decides whether to continue, cut scope, or raise the ceiling.
    Nobody raises it unrecorded.
+
+## Owner decisions of 2026-10-06
+
+Recorded here from the owner's decisions of 2026-10-06. They amend this page; where an older sentence above
+quotes the earlier rule or figures, it is history and these decisions govern.
+
+- **D1 recall rule AMENDED.** Planted-defect recall was not measured, so D1 claims "found and verified N
+  defects", not a recall percentage. The earlier threshold (recall of at least 80%, a review below it
+  re-run) no longer applies to D1. `tools/readiness/seed_defects.py` keeps its own exit code; that is a tool
+  property, not a launch threshold.
+- **Accepted coverage cuts.** The owner accepted this coverage and the review claims no more than it: Tier A only
+  (16 of 16 Tier A units reviewed, see [the S4 record](evidence/review-s4-c3faf6f23e12.md)); mutation kill rates for 14 of 33
+  modules (the rest timed out or did not run, see [the mechanical gates record](evidence/mechanical-gates-859290305d97.md));
+  no Tier B sample; no second-vendor pass (reviewer rule 4 is not met, and nothing here claims it was).
+- **Review token cap RAISED to 120M, checkpoint 100M.** The counter is the same one as before. S4 cumulative
+  is 69,433,345, so **30,566,655 tokens remain under the 100M checkpoint and 50,566,655 under the 120M cap**
+  for the unmeasured steps. The checkpoint is still a stop-and-ask, and nobody raises either figure unrecorded.
 
 ## Facts as of 2026-10-03
 
@@ -214,7 +230,7 @@ Source: the plan review of 2026-09-29 (findings 4, 8, 9, 14, 15, 19 and 22), wri
 - Market no longer gates the launch. D12 is informational and blocks only through B3.
 - Dimensions 6, 7 and 9 no longer start "without a ceiling": each holds live-model runs. Every spend
   now sits in a step with an estimate, an order and a ceiling.
-- The spend estimates are marked unmeasured, and the ceiling was cut from 150M to 75M on the owner's
+- The spend estimates are marked unmeasured, and the ceiling was cut from 150M to 75M (then raised to 120M on 2026-10-06) on the owner's
   decision, recomputed from the pilots on 2026-10-04 for S3 and S4 (RELIABILITY: a claim carries its measurement).
 - The benchmark shrank from four arms and three or more repeats to three arms, about 15 tasks and one
   repeat, with the exact paired sign test of `docs/bench/preregistration.md`. At this size the

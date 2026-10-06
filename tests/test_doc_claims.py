@@ -111,3 +111,47 @@ def test_managed_is_advisory():
     banned = r"not advisory|tamper|\benforced\b|cannot be (?:changed|edited|bypassed|deleted|overridden|removed)"
     _check(not re.search(banned + r"|can(?:not|'t) (?:change|edit|bypass|delete|remove|override)",
                          section, re.I), "managed-settings section contradicts 'advisory'")
+
+
+# ---- owner decisions of 2026-10-06: plan-review claim, loop-gated manifests, contributions, coexistence ----
+
+def _flat(path):
+    return " ".join((ROOT / path).read_text(encoding="utf-8").split())
+
+
+def test_plan_review_gate_claim():
+    """README no longer says nothing checks plan-review; it names what the loop refuses and what it does not gate."""
+    readme = _flat("README.md")
+    _check("no code checks that it ran" not in readme, "README still says no code checks that plan-review ran")
+    step = readme[readme.index("4. **Plan-Review**"):readme.index("5. **Implement**")]
+    for needle in ("loop.py record done", "work.py merge", "gates.phase_record", "not gated"):
+        _check(needle in step, f"README plan-review step lacks {needle!r}")
+    row = next(r for r in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+               if r.startswith("| **Plan review before any edit**"))
+    _check("no code checks that it ran" not in row and "phase_record" in row, "the features row is stale")
+    flag = next(r for r in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+                if r.startswith("| `gates.plan_review.enabled`"))
+    _check("phase_record" in flag, "the flags row does not say phase_record already refuses done")
+
+
+def test_manifest_says_loop_is_gated():
+    import json
+    plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["description"]
+    market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())["plugins"][0]["description"]
+    for text in (plugin, market):
+        _check("will not finish a goal without a recorded plan" in text, f"manifest description: {text[:60]!r}")
+        _check("plan-gated 7-phase" not in text, "manifest still calls the whole tool plan-gated")
+
+
+def test_outside_contributions_not_accepted():
+    for path in ("README.md", "CONTRIBUTING.md"):
+        text = _flat(path).lower()
+        _check("outside contributions are not accepted yet" in text, f"{path} lacks the contributions sentence")
+        _check("issues are welcome" in text, f"{path} does not say issues are welcome")
+
+
+def test_coexistence_not_claimed():
+    for path in ("README.md", "docs/launch/definition.md"):
+        text = _flat(path)
+        _check("not claimed at launch" in text and "predecessor" in text, f"{path} lacks the coexistence statement")
+        _check("#616" in text, f"{path} lacks #616")

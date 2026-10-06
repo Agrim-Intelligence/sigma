@@ -8,7 +8,7 @@ they are called and which gate. They must not disagree:
     gating flag, and the reverse (D0 is the one row that is not scored: its gating cell reads
     `prerequisite` and the scorecard has no D0);
   - the plan's dimension names and gating flags equal the decision rule's two tables;
-  - the review ceiling line says 75M and 40M and not the superseded 150M;
+  - the review ceiling line says 120M and 100M (owner decision 2026-10-06) and not the superseded 150M or 75M;
   - the nine reviewer rules are numbered 1 to 9, and rule 9 is the phantom-blocker rule;
   - every dimension has a row saying what already exists on main and what is still to be produced,
     and every file path cited as existing is on disk;
@@ -48,7 +48,9 @@ def _check(ok, message):
 
 
 def _section(text, heading, stop="\n## "):
-    start = text.index(heading)
+    start = text.find(heading)
+    if start == -1:
+        raise AssertionError(f"no section {heading!r}")
     end = text.find(stop, start + len(heading))
     return text[start:end if end != -1 else len(text)]
 
@@ -167,17 +169,17 @@ SAMPLE_PLAN = "\n".join(
      "| D13 | Legal and naming | m | t | yes |", "", "## Reviewer rules"])
 
 
-def test_ceiling_line_is_75m_with_a_40m_checkpoint():
+def test_ceiling_line_is_120m_with_a_100m_checkpoint():
     lines = [line for line in _plan().splitlines() if line.startswith("The review ceiling is")]
     _check(len(lines) == 1, f"expected one ceiling line, found {len(lines)}")
-    _check("75M" in lines[0] and "40M" in lines[0], f"ceiling line lacks 75M and 40M: {lines[0]!r}")
-    _check("150M" not in lines[0], "the superseded 150M is still the ceiling line")
+    _check("120M" in lines[0] and "100M" in lines[0], f"ceiling line lacks 120M and 100M: {lines[0]!r}")
+    _check("150M" not in lines[0] and "75M" not in lines[0], "a superseded cap is still the ceiling line")
     text = _plan()
-    _check("2026-10-03" in text and "unmeasured" in text, "ceiling decision date or unmeasured label missing")
+    _check("2026-10-06" in text and "unmeasured" in text, "ceiling decision date or unmeasured label missing")
 
 
 def test_ceiling_binding_rule_never_drops_units_silently():
-    block = _section(_plan(), "**At 75M the review will cover less", "\n## ")
+    block = _section(_plan(), "**At 120M the review will cover less", "\n## ")
     for needle in ("High-risk units are reviewed in full first", "sample rate is reduced",
                    "listed by id in the scorecard evidence", "never dropped silently"):
         _check(needle in block, f"ceiling-binding rule lacks {needle!r}")
@@ -261,6 +263,7 @@ def test_legal_fact_sheet_and_notice_are_cited_and_still_awaiting_counsel():
 
 CAL = ROOT / "docs" / "launch" / "evidence" / "cost-calibration.md"
 CUM_TOKENS = 3887193
+S4_CUM_TOKENS = 69433345  # S4 cumulative counter (evidence/review-s4-c3faf6f23e12.md)
 
 
 def _cal():
@@ -328,8 +331,8 @@ def test_plan_measured_ceilings_carry_formulas_and_counters():
     for step in ("S4, Tier A", "S4, Tier B"):
         row = next(r for r in block.splitlines() if r.startswith(f"| {step}"))
         _check("× 1.3" in row, f"{step} lacks the headroom factor")
-    _check(f"{40_000_000 - CUM_TOKENS:,}" in text and f"{75_000_000 - CUM_TOKENS:,}" in text,
-           "tokens remaining under 40M and 75M are not stated")
+    _check(f"{100_000_000 - S4_CUM_TOKENS:,}" in text and f"{120_000_000 - S4_CUM_TOKENS:,}" in text,
+           "tokens remaining under 100M and 120M are not stated")
 
 
 def test_plan_records_the_pilot_counting_decision():
@@ -385,3 +388,25 @@ def test_control_a_changed_line_count_moves_the_recompute():
     text = _cal().replace("A01 (2,267)", "A01 (2,000)", 1)
     _check(recomputed_s4(text, 36018, 11972) != recomputed_s4(_cal(), 36018, 11972),
            "the recompute ignores the line counts in the record")
+
+
+def test_d1_claims_no_recall_percentage():
+    """Owner decision 2026-10-06: recall was not measured, so D1 claims found-and-verified defects, never a recall rate."""
+    plan = _plan()
+    row = next(r for r in plan.splitlines() if r.startswith("| D1 "))
+    _check("recall ≥" not in row and "80%" not in row, "the D1 row still sets a recall threshold")
+    _check("found and verified" in row, "the D1 row does not claim found-and-verified defects")
+    rule3 = next(r for r in plan.splitlines() if r.startswith("3. Plant defects"))
+    _check("re-run" not in rule3, "reviewer rule 3 still re-runs a review on a recall percentage")
+    _check("AMENDED" in plan and "2026-10-06" in plan, "the amendment is not recorded with its date")
+
+
+def test_accepted_coverage_cuts_are_recorded():
+    block = _section(_plan(), "## Owner decisions of 2026-10-06", "\n## ")
+    for needle in ("16 of 16", "14 of 33", "no Tier B sample", "no second-vendor pass", "120M", "100M", "69,433,345"):
+        _check(needle in block, f"the 2026-10-06 decisions lack {needle!r}")
+
+
+def test_seeded_page_80_is_a_tool_property():
+    text = " ".join((ROOT / "docs" / "launch" / "seeded-defects.md").read_text(encoding="utf-8").split())
+    _check("not a D1 threshold" in text, "seeded-defects.md still presents 80% recall as the D1 rule")
