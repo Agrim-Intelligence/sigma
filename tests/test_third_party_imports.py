@@ -43,6 +43,13 @@ NPM = ALLOWLIST["npm_channel"]
 pytestmark = pytest.mark.skipif(not hasattr(sys, "stdlib_module_names"), reason="needs Python 3.10+")
 
 
+#: Standard-library modules that exist only on a newer Python than the 3.10 floor, so `sys.stdlib_module_names` on a
+#: 3.10 interpreter does not list them. `coexist.py` imports `tomllib` inside a `try:` with a 3.10 fallback; CI's 3.10
+#: leg went red on it before this was added. Add a name here only for a module the standard library ships on a
+#: supported newer Python.
+STDLIB_ON_NEWER_PYTHON = frozenset({"tomllib"})
+STDLIB = frozenset(sys.stdlib_module_names) | STDLIB_ON_NEWER_PYTHON
+
 FIXTURE_ROOTS = (("evals", "bench", "tasks"), ("examples",))
 
 
@@ -87,7 +94,7 @@ def violations(root: pathlib.Path, files, modules):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
         here = path.parent
         for name, lineno, in_func in _imports(tree):
-            if name in sys.stdlib_module_names or (here / (name + ".py")).exists() or (here / name).is_dir():
+            if name in STDLIB or (here / (name + ".py")).exists() or (here / name).is_dir():
                 continue
             entry = modules.get(name)
             if entry is None:
@@ -186,6 +193,11 @@ def test_control_a_stale_entry_and_a_missing_licence_are_caught(tmp_path):
     mods = {"slack_sdk": {"pypi": "slack-sdk", "licence": " ", "optional": True, "where": ["ok.py"]}}
     bad = violations(tmp_path, files, mods)
     assert any("no licence" in b for b in bad) and any("stale entry" in b for b in bad), bad
+
+
+def test_control_a_newer_stdlib_module_is_not_third_party(tmp_path):
+    files = _plant(tmp_path, {"a.py": "try:\n    import tomllib\nexcept ImportError:\n    tomllib = None\n"})
+    assert violations(tmp_path, files, {}) == []
 
 
 def test_control_test_files_and_tests_dir_are_not_shipped():
