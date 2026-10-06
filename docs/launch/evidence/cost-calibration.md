@@ -83,7 +83,7 @@ profile, with the `phase_report.py end` cost lines recorded in `docs/onboarding-
   not complete. It landed while this goal ran: the first check, early on 2026-10-04, found it absent.
 
 To measure it the owner supplies the isolation launcher; then run the harness on two of the internal tasks, one run
-per arm, with `--max-usd` set to what remains of the pilot ceiling. **The benchmark ceiling is therefore unmeasured**,
+per arm, with `--max-usd` set to what remains of the pilot ceiling (superseded 2026-10-06: the harness now takes `--max-tokens`, see `docs/bench/token-budget.md`). **The benchmark ceiling is therefore unmeasured**,
 and S9 stays an owner-set ceiling with no measured basis.
 
 ## Spend against the ceiling

@@ -8,7 +8,7 @@ scoring commands).  This file is a SOURCE the operator installs outside the repo
 It is a set of guards, not a sandbox: it cannot stop the host CLI reading the OS keychain, system-wide managed
 settings, the network, or anything the user account can read.  README.md says so.
 
-Exit status: the command's own; 2 refusal (nothing started); 97 the real profile changed; 124 deadline; 127 cannot start.
+Exit status: the command's own; 2 refusal (nothing started; includes a model run with no subscription token); 97 the real profile changed; 124 deadline; 127 cannot start.
 It writes only inside config ``scratch_root`` (dry-run profile, latch, alert log).
 """
 import sys
@@ -30,7 +30,11 @@ import time
 
 PROFILE_VARIABLES = ("HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "TMPDIR")
 PASS_THROUGH = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "SHELL", "USER", "LOGNAME")
-CREDENTIAL_VARIABLES = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
+# The benchmark runs on the owner's Max SUBSCRIPTION (2026-10-06), through `claude setup-token`'s long-lived token.
+# An API key is refused on purpose: `claude -p` prefers it whenever it is present, which would silently switch the
+# run to pay-per-token billing.
+SUBSCRIPTION_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+CREDENTIAL_VARIABLES = (SUBSCRIPTION_VAR,)
 CONFIG_KEYS = {"repo_root", "hidden_root", "deadline_seconds", "credential_var", "claude_path", "extra_env",
                "scratch_root", "real_home", "parent_marker"}
 INSTRUCTION_FILES = ("CLAUDE.md", "CLAUDE.local.md", ".mcp.json", ".claude")
@@ -71,8 +75,12 @@ def load_config(path):
     if (isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline)
             or deadline <= 0):
         raise Refusal("config deadline_seconds must be a positive number (the owner sets it; no default)")
-    if raw.get("credential_var") is not None and raw["credential_var"] not in CREDENTIAL_VARIABLES:
-        raise Refusal("config credential_var must be null or one of %s" % ", ".join(CREDENTIAL_VARIABLES))
+    if raw.get("credential_var") == "ANTHROPIC_API_KEY":
+        raise Refusal("config credential_var ANTHROPIC_API_KEY is refused: an API key bills pay-per-token and the "
+                      "benchmark runs on the subscription; use %s (from `claude setup-token`)" % SUBSCRIPTION_VAR)
+    if raw.get("credential_var") not in CREDENTIAL_VARIABLES:
+        raise Refusal("config credential_var is required and must be %s (the subscription token from "
+                      "`claude setup-token`); the name is configured, the value never is" % SUBSCRIPTION_VAR)
     if not (isinstance(raw.get("claude_path"), str) and os.path.isabs(raw["claude_path"])):
         raise Refusal("config claude_path is required: the absolute path of the one program that gets the "
                       "credential and must start in an empty profile")
@@ -239,6 +247,21 @@ def build_environment(environ, variables, config, program):
     return env
 
 
+def require_authentication(argv, environ, config):
+    """Refuse loudly, before anything starts, when a model run has no subscription token to authenticate with.
+
+    Only a ``claude`` run that talks to the model needs it (not ``--version``, not scoring commands).  The message
+    names the variable and never echoes any value or the environment.
+    """
+    credential = config.get("credential_var")
+    if not credential or not is_claude(argv[0], environ, config) or argv[1:] == ["--version"]:
+        return
+    if not (environ.get(credential) or "").strip():
+        raise Refusal("authentication is missing: %s is not set in the launcher's environment, so claude cannot "
+                      "use the subscription (create it once with `claude setup-token`, then start the harness "
+                      "with that variable only)" % credential)
+
+
 def trip(spec, moved, why):
     """Record that the real profile changed: latch, alert log, and (outside --dry-run) stop the harness."""
     line = "REAL PROFILE CHANGED (%s): %s" % (why, ", ".join(moved))
@@ -394,6 +417,7 @@ def _launch(argv, config, dry_run, environ):
             # (a bare --version runs no agent; the harness's version profile lives in the system temp directory)
             raise Refusal("config scratch_root overlaps the run's directory: an agent there could reach the latch")
         check_plugin_dirs(argv, config, home, profile, made is None)
+        require_authentication(argv, environ, config)
         if is_claude(argv[0], environ, config):
             for name in ("HOME", "CLAUDE_CONFIG_DIR"):
                 if os.listdir(variables[name]):

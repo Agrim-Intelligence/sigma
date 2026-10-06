@@ -6,20 +6,26 @@ The benchmark method is fixed in
 [`docs/bench/preregistration.md`](../docs/bench/preregistration.md).  Three live arms exist, run in
 this order for every task: **A1 `sigma`** (Sigma loaded from a clean `git archive` export of a pinned
 commit, never the repository), **A2 `plain`** (the agent alone) and **A3 `matched`** (the plain agent
-retried in fresh workdirs until the visible tests pass or spend reaches A1's spend for that task; the
-first visible-passing attempt is scored, else the last).  There is no other arm.  A human launches the
+retried in fresh workdirs until the visible tests pass or token spend reaches A1's token spend for that task;
+the first visible-passing attempt is scored, else the last).  There is no other arm.  A human launches the
 harness; it refuses CI and background execution and nothing here has been run against a real model.
 
 ```bash
 python3 evals/bench/bench.py run --manifest <tasks/manifest.json> \
   --hidden-root <external-hidden-bundles> --results <results.json> \
-  --max-usd <ceiling> --isolation-launcher </absolute/operator-sandbox> \
+  --max-tokens <token-ceiling> --batch-pairs 3 --isolation-launcher </absolute/operator-sandbox> \
   --arm all --model <pinned-model-id> --permission-mode <mode> --sigma-commit <sha>
+# after a batch or a rate-limit stop (exit 75): the same command plus --resume
 ```
+
+The benchmark runs on the owner's Max **subscription** (owner decision, 2026-10-06): the measured fact is tokens read from
+the host's own usage records, the ceiling is a token ceiling, and dollars in a results file are indicative (tokens priced
+at list rates), never a bill. The run is batched and resumable; the design, the measured basis of the ceiling
+(210,000,000 tokens) and its uncertainty are in [`docs/bench/token-budget.md`](../docs/bench/token-budget.md).
 
 Add `--dry-run` to validate everything and print each arm's *planned* isolation facts without starting
 anything.  `--fake-arm` replaces `--arm` for the zero-spend smoke control (two local tasks, no `claude`).
-`--max-usd`, `--model`, `--permission-mode` (identical for every arm) and, for the sigma arm,
+`--max-tokens`, `--model`, `--permission-mode` (identical for every arm) and, for the sigma arm,
 `--sigma-commit` have no defaults.  `--scratch-root` must be empty.
 
 What the harness enforces, and what it does not:
@@ -27,10 +33,11 @@ What the harness enforces, and what it does not:
 - **Isolated profile.** Every run, and every A3 attempt, gets a fresh `HOME`, `CLAUDE_CONFIG_DIR` and
   `CODEX_HOME`, and `TMPDIR` points inside that profile (an agent writing to a hard-coded `/tmp` path still shares that
   channel unless the launcher prevents it).  The
-  rest of the harness environment is forwarded WHOLE, not allow-listed: an `ANTHROPIC_API_KEY` set by
-  the operator reaches `claude`, and so does any other credential in that environment (cloud keys,
-  `GH_TOKEN`), readable by the agent and by agent-authored test code at scoring; launch the benchmark
-  from an environment holding only what it needs.  Only values containing the hidden root and the
+  rest of the harness environment is forwarded WHOLE, not allow-listed: the subscription token
+  (`CLAUDE_CODE_OAUTH_TOKEN`) set by the operator reaches `claude`, and so does any other credential in that
+  environment (cloud keys, `GH_TOKEN`, and an `ANTHROPIC_API_KEY`, which `claude -p` prefers and which would silently
+  bill per token), readable by the agent and by agent-authored test code at scoring; launch the benchmark
+  from an environment holding only what it needs (the launcher refuses a missing token and an API-key config).  Only values containing the hidden root and the
   harness's own `SIGMA_BENCH_*` variables are dropped.
 - **Operator plugins untouched.** The operator's `~/.claude/plugins` (and `$CLAUDE_CONFIG_DIR/plugins`)
   is content-hashed once before anything starts, again before every run and every A3 attempt, and after
@@ -45,14 +52,28 @@ What the harness enforces, and what it does not:
   root, and the scratch root must be outside the repository.  Each run directory (worktree, profile, transcripts, scoring copy with the hidden bundle) is
   deleted right after scoring, so a later arm or attempt cannot read an earlier solution or the bundle.
   Scoring commands run through the launcher, bounded by `--scoring-timeout-seconds`.
-- **Spend.** Each `claude -p` gets `--max-budget-usd` of the smaller of `--belt-usd` and what is left of
-  `--max-usd`; a run that cannot be priced, or that overshoots, stops the benchmark.  Every stop keeps
-  the rows already paid for in the results file with an `aborted` object (its `cost_usd_spent` is a lower bound: the killed in-flight run's own transcript is
-  deleted unpriced), so a report with `aborted` is partial.  There is no resume: a re-run re-pays every arm.  The last A3 attempt can overshoot A1's spend
-  by up to one attempt; A3 stops on `--max-attempts`, the remaining ceiling or the run deadline too (one deadline shared by all
-  its attempts, where A1 and A2 each get a full one), and
-  its row's reason names which.  Cost is read from the transcript under the profile, so it is exactly as
-  honest as the launcher.
+- **Tokens, batches and resume.** The ceiling `--max-tokens` is TOKENS (input + output + cache read + cache write, summed
+  over a run's transcripts, subagents included) and is checked between runs, because the host has no per-run token cap:
+  one run can overshoot, and the overshoot is counted. Each `claude -p` also gets `--max-budget-usd` of `--belt-usd`, the
+  host's client-side estimate (indicative under a subscription), as a runaway guard. A run with no readable usage record,
+  or zero tokens, stops the benchmark before it is scored ("authentication is missing or the transcripts cannot be read").
+  The results file is the resume cursor: rewritten atomically after every pair, always listing every planned pair as
+  `completed`, `failed` or `not-run` (`complete` is true only when none is not-run), with an `in_flight` marker while a
+  pair runs. `--batch-pairs N` (default 3) stops cleanly after N pairs; `--resume` re-attempts only not-run pairs, carries
+  A1's token count to A3 and the tokens already spent, and refuses unless the conditions (manifest hash, arms, model,
+  permission mode, Sigma commit, `claude --version`, belt, attempt bound, deadlines, hidden-bundle digest) match the first
+  batch; a ceiling may be raised on resume, never lowered. A host rate-limit record on a run that did not exit cleanly (or a session that ended on it) stops
+  the harness (exit 75, reset time in the message): that pair is recorded not-run, never scored and never a failure. Exit 76
+  is the token ceiling. A run that exits non-zero with real work done and no rate-limit record to explain it (the host's
+  rate-limit signal under `-p` is unmeasured, and so are overloaded and auth errors) is not scored either: it is recorded
+  not-run and the harness stops (exit 77), so an infrastructure fault is never scored as the arm failing; exit 78 is
+  not-run pairs nothing else explains. A `<results>.lock` refuses a second invocation on the same cursor. Every other stop keeps the rows
+  already paid for with an `aborted` object. A pair killed in flight is counted on resume as an unknown-token run
+  (`unknown_runs`, and `tokens_spent` is then a lower bound). `bench.py summarize --results <file>` prints relative outcome
+  and relative token cost per arm and refuses an incomplete file. The last A3 attempt can overshoot A1's token spend by up
+  to one attempt; A3 stops on `--max-attempts`, the remaining ceiling or the run deadline too (one deadline shared by all
+  its attempts, where A1 and A2 each get a full one), and its row's reason names which. Usage is read from the transcript
+  under the profile, so it is exactly as honest as the launcher.
 - **Commands are bounded.** Every launched command runs in its own process group with a timeout and the
   whole group is killed on expiry or normal exit (a launcher, or a process an agent or Sigma's own
   hooks start in a new session, escapes this; a watcher the sigma arm's hooks leave behind can outlive
@@ -67,8 +88,8 @@ so hidden-test confidentiality at scoring time (the bundle sits beside agent-aut
 agent's reach into the real filesystem depend entirely on it.  Arbitrary in-process `Arm` subclasses are
 refused; only the exact in-tree arm classes run.  The `claude` flags (`--plugin-dir`, `--session-id`,
 `--max-budget-usd`, `--permission-mode`, prompt on stdin) are listed by this host's `claude --help` but
-have not been exercised end to end, and the first live run will stop at the unpriced-run guard until the
-operator supplies credentials.
+have not been exercised end to end, and the first live run will stop at the no-usage guard until the
+operator supplies the subscription token.
 
 Sigma's "output" is agent *behavior* (does it follow the spine, plan before editing, verify before
 claiming done). Behavior is non-deterministic, so quality is guarded in tiers. Run the whole thing

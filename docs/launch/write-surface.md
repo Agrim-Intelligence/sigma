@@ -8,11 +8,12 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | evals/bench/arms/common.py | remove_tree | fs-rmtree | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only a run, attempt or workdir child directory it was handed | high |
 | evals/bench/arms/matched.py | _replace_tree | fs-remove | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; replaces only the arm's own run workdir | high |
 | evals/bench/arms/sigma.py | extract_tar | fs-write | 3 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; writes only the three export trees after validating the whole archive | medium |
+| evals/bench/bench.py | __enter__ | fs-write | 1 | operator-run harness only: opens (append mode, never truncating) the results file's own .lock file beside it, to refuse a second invocation | medium |
+| evals/bench/bench.py | _run_locked | fs-rmtree | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call | high |
+| evals/bench/bench.py | _run_locked | fs-write | 1 | operator-run harness only: refuses CI and background runs; takes an exclusive lock on the results file first; creates its scratch root and per-run directories (all removed after scoring) under an empty scratch root | medium |
 | evals/bench/bench.py | _write_json_atomic | fs-write | 1 | ungated | medium |
 | evals/bench/bench.py | facts | fs-rmtree | 1 | dry run only: removes the temp export directory it created | high |
 | evals/bench/bench.py | run | fs-write | 1 | ungated | medium |
-| evals/bench/bench.py | run_benchmark | fs-rmtree | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only the temp directory of the one claude --version call | high |
-| evals/bench/bench.py | run_benchmark | fs-write | 1 | ungated | medium |
 | evals/bench/launcher/sigma_bench_launcher.py | _launch | fs-rmtree | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; removes only the --dry-run profile it just made with mkdtemp | high |
 | evals/bench/launcher/sigma_bench_launcher.py | alert_to | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; one line per refusal or trip into launcher-alerts.log, bounded at 1 MiB | medium |
 | evals/bench/launcher/sigma_bench_launcher.py | fresh_profile | fs-write | 2 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; --dry-run only: a fresh mkdtemp profile with four empty directories | medium |

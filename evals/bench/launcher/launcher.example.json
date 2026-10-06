@@ -2,7 +2,7 @@
   "repo_root": "/ABSOLUTE/PATH/TO/YOUR/SIGMA/CHECKOUT",
   "hidden_root": "/ABSOLUTE/PATH/TO/YOUR/HIDDEN/BUNDLES",
   "deadline_seconds": 3540,
-  "credential_var": null,
+  "credential_var": "CLAUDE_CODE_OAUTH_TOKEN",
   "claude_path": "/ABSOLUTE/PATH/TO/claude",
   "extra_env": [],
   "scratch_root": "/ABSOLUTE/PATH/TO/AN/EMPTY/SCRATCH/DIR/FOR/DRY/RUNS"

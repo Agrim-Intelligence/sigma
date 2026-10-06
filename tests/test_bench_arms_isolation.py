@@ -1,7 +1,7 @@
 """Hermetic controls for the #354 benchmark arms and isolation rules.
 
 Three arms exist: A1 ``sigma`` (clean plugin export), A2 ``plain`` and A3 ``matched`` (the plain agent
-retried until visible tests pass or spend reaches A1's spend).  Every test drives the arms against a fake
+retried until visible tests pass or token spend reaches A1's token spend).  Every test drives the arms against a fake
 ``claude`` executable written here: no model, no network, no money, and ``HOME`` is a temp directory so the
 operator's real ``~/.claude/plugins`` is never read or touched.
 
@@ -90,19 +90,32 @@ if touch and n == int(env.get("SIGMA_FAKE_TOUCH_ON", "1")):
     pathlib.Path(touch).write_text("changed")
 tokens = int(env.get("SIGMA_FAKE_SIGMA_TOKENS", "250000")) if plugin \
     else int(env.get("SIGMA_FAKE_TOKENS", "100000"))
-if env.get("SIGMA_FAKE_HONOR_BUDGET"):
-    tokens = min(tokens, int(round(float(opt("--max-budget-usd")) / 10 * 1000000)))
+limited = env.get("SIGMA_FAKE_RATE_LIMIT_ON") and n >= int(env["SIGMA_FAKE_RATE_LIMIT_ON"]) \
+    and not (env.get("SIGMA_FAKE_RATE_LIMIT_UNTIL") and n > int(env["SIGMA_FAKE_RATE_LIMIT_UNTIL"]))
+if env.get("SIGMA_FAKE_ZERO_TOKENS_ON") and n == int(env["SIGMA_FAKE_ZERO_TOKENS_ON"]):
+    tokens = 0
 skip = env.get("SIGMA_FAKE_NO_TRANSCRIPT_ON")
 if not (skip and n == int(skip)):
     transcript = pathlib.Path(env["CLAUDE_CONFIG_DIR"]) / "projects" / "-fake" / (opt("--session-id") + ".jsonl")
     transcript.parent.mkdir(parents=True, exist_ok=True)
-    transcript.write_text(json.dumps({
+    turn = json.dumps({
         "type": "assistant", "timestamp": "2026-10-01T00:00:00Z",
         "message": {"id": "m%d" % n, "role": "assistant", "model": "claude-test",
                     "usage": {"input_tokens": 0, "output_tokens": tokens, "cache_read_input_tokens": 0,
                               "cache_creation": {"ephemeral_5m_input_tokens": 0,
                                                  "ephemeral_1h_input_tokens": 0}}},
-    }) + "\n")
+    }) + "\n"
+    limit = json.dumps({
+        "type": "assistant", "timestamp": "2026-10-01T00:00:01Z", "error": "rate_limit",
+        "isApiErrorMessage": True, "apiErrorStatus": 429,
+        "quotaLimits": {"status": "rejected", "resetsAt": 1790895600, "rateLimitType": "five_hour"},
+        "message": {"id": "s%d" % n, "role": "assistant", "model": "<synthetic>",
+                    "content": [{"type": "text", "text": "limit"}],
+                    "usage": {"input_tokens": 0, "output_tokens": 0}}}) + "\n"
+    if limited and env.get("SIGMA_FAKE_RATE_LIMIT_TRANSIENT"):
+        transcript.write_text(limit + turn)  # real work followed the record
+    else:
+        transcript.write_text(turn + (limit if limited else ""))
 if env.get("SIGMA_FAKE_LEAVE"):
     leftover = subprocess.Popen(["sleep", "300"])
     pathlib.Path(env["SIGMA_FAKE_LEAVE"]).write_text(str(leftover.pid))
@@ -112,6 +125,12 @@ if env.get("SIGMA_FAKE_TERM_PARENT"):
     time.sleep(300)
 if env.get("SIGMA_FAKE_SLEEP"):
     time.sleep(float(env["SIGMA_FAKE_SLEEP"]))
+if limited and not env.get("SIGMA_FAKE_RATE_LIMIT_EXIT0"):
+    sys.exit(1)
+if env.get("SIGMA_FAKE_EXIT_CODE_ON") and n == int(env["SIGMA_FAKE_EXIT_CODE_ON"]):
+    sys.exit(3)
+if env.get("SIGMA_FAKE_ZERO_TOKENS_ON") and n == int(env["SIGMA_FAKE_ZERO_TOKENS_ON"]):
+    sys.exit(1)
 if env.get("SIGMA_FAKE_HANG"):
     child = subprocess.Popen(["sleep", "300"])
     pathlib.Path(env["SIGMA_FAKE_HANG"]).write_text(str(child.pid))
@@ -243,9 +262,9 @@ def _sigma(bench, tmp_path, repo, sha, **kwargs):
     return _arm(bench, "SigmaArm", tmp_path, repo=repo, commit=sha, **kwargs)
 
 
-def _run(bench, tmp_path, arms, manifest, hidden, *, max_usd=100.0, launcher=None, scratch=None,
+def _run(bench, tmp_path, arms, manifest, hidden, *, max_tokens=10**9, launcher=None, scratch=None,
          results="results.json", **kwargs):
-    return bench.run_benchmark(manifest, arms, max_usd=max_usd, hidden_root=hidden,
+    return bench.run_benchmark(manifest, arms, max_tokens=max_tokens, hidden_root=hidden,
                                results_path=tmp_path / results,
                                scratch_root=scratch or tmp_path / "scratch",
                                isolation_launcher=launcher or _launcher(tmp_path), **kwargs)
@@ -280,7 +299,7 @@ def _cli(tmp_path, *extra, arm="all", hidden=None, launcher=None, tag=""):
     launcher = launcher or _launcher(tmp_path)
     argv = ["run", "--manifest", str(manifest), "--hidden-root", str(hidden),
             "--results", str(tmp_path / "results.json"), "--scratch-root", str(tmp_path / "scratch"),
-            "--max-usd", "1", "--isolation-launcher", str(launcher), "--arm", arm,
+            "--max-tokens", "1000000000", "--isolation-launcher", str(launcher), "--arm", arm,
             "--model", "claude-test", "--claude", str(tmp_path / "bin" / "claude")]
     return argv + list(extra)
 
@@ -542,11 +561,12 @@ def test_abort_keeps_the_rows_already_paid_for(tmp_path, monkeypatch):
 
     assert message is not None
     saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
-    assert [(row["task"], row["cost_usd"]) for row in saved["runs"]] == [("one", 1.0)]
+    assert [(row["task"], row["cost_usd"]) for row in saved["runs"] if row["status"] == "completed"] == [("one", 1.0)]
+    assert [(row["task"], row["status"]) for row in saved["runs"]] == [("one", "completed"), ("two", "not-run")]
     assert saved["aborted"]["task"] == "two"
     assert saved["aborted"]["arm"] == "plain"
     assert saved["aborted"]["cost_usd_spent"] == 0.0
-    assert saved["schema"] == "sigma.benchmark-results/v1"
+    assert saved["schema"] == "sigma.benchmark-results/v2" and saved["complete"] is False
 
 
 def test_unpriced_run_stops_the_benchmark_instead_of_counting_zero(tmp_path, monkeypatch):
@@ -558,10 +578,10 @@ def test_unpriced_run_stops_the_benchmark_instead_of_counting_zero(tmp_path, mon
     message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest,
                                        _hidden(tmp_path, ids=("one", "two"))))
 
-    assert message is not None and "could not be priced" in message
+    assert message is not None and "no readable usage" in message
     assert len(_calls(tmp_path)) == 1
     saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
-    assert saved["runs"] == []
+    assert [row["status"] for row in saved["runs"]] == ["not-run", "not-run"], "never recorded as a failure"
     assert saved["aborted"]["arm"] == "plain"
 
 
@@ -587,7 +607,8 @@ def test_exception_mid_row_writes_the_in_flight_spend_into_aborted(tmp_path, mon
         _run(bench, tmp_path, arms, manifest, _hidden(tmp_path))
 
     saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
-    assert [row["arm"] for row in saved["runs"]] == ["sigma"]
+    assert [row["arm"] for row in saved["runs"] if row["status"] == "completed"] == ["sigma"]
+    assert [row["status"] for row in saved["runs"] if row["arm"] == "matched"] == ["not-run"]
     assert saved["aborted"]["reason"] == "KeyboardInterrupt"
     assert saved["aborted"]["arm"] == "matched"
     assert saved["aborted"]["cost_usd_spent"] == 1.0
@@ -606,7 +627,7 @@ def test_matched_arm_stops_at_a_spend_cap_of_two_and_a_half_attempts(tmp_path):
     assert _row(report, "sigma")["cost_usd"] == 2.5
     assert len(_calls(tmp_path)) == 4
     assert row["cost_usd"] == 3.0
-    assert "attempts=3" in row["reason"] and "stop=spend-cap" in row["reason"]
+    assert "attempts=3" in row["reason"] and "stop=token-cap" in row["reason"]
     assert row["hidden_passed"] is True, "the LAST attempt's tree must be the scored one"
 
 
@@ -620,7 +641,7 @@ def test_matched_arm_stops_when_spend_equals_the_cap_exactly(tmp_path, monkeypat
 
     row = _row(report, "matched")
     assert _row(report, "sigma")["cost_usd"] == 2.0
-    assert "attempts=2" in row["reason"] and "stop=spend-cap" in row["reason"]
+    assert "attempts=2" in row["reason"] and "stop=token-cap" in row["reason"]
     assert row["cost_usd"] == 2.0
 
 
@@ -667,7 +688,7 @@ def test_matched_arm_stops_when_an_attempt_cannot_be_priced(tmp_path, monkeypatc
     message = _try(bench, lambda: _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS),
                                        _hidden(tmp_path)))
 
-    assert message is not None and "could not be priced" in message
+    assert message is not None and "no readable usage" in message
     assert len(_calls(tmp_path)) == 3
     saved = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
     assert saved["aborted"]["arm"] == "matched"
@@ -693,19 +714,18 @@ def test_matched_arm_stops_at_the_attempt_bound_and_the_row_deadline(tmp_path, m
     assert "stop=deadline" in row["reason"]
 
 
-def test_matched_arm_stops_when_the_global_ceiling_is_exhausted(tmp_path, monkeypatch):
+def test_matched_arm_stops_when_the_global_token_ceiling_is_exhausted(tmp_path):
+    """Control: without the ceiling stop the matched arm keeps retrying up to A1's token spend."""
     bench = _bench()
     repo, sha = _repo(tmp_path)
-    monkeypatch.setenv("SIGMA_FAKE_HONOR_BUDGET", "1")
     arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
 
-    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path), max_usd=4.0)
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path),
+                  max_tokens=400_000)
 
     row = _row(report, "matched")
-    calls = _calls(tmp_path)
-    assert _budgets(calls) == [4.0, 1.5, 0.5]
-    assert all(budget > 0 for budget in _budgets(calls))
-    assert row["cost_usd"] == 1.5 and "stop=ceiling" in row["reason"]
+    assert row["tokens"] == 200_000 and "attempts=2" in row["reason"] and "stop=ceiling" in row["reason"]
+    assert report["tokens_spent"] == 450_000, "the last attempt overshoots by up to one attempt, and it is counted"
 
 
 def test_matched_arm_without_a_prior_a1_run_is_refused(tmp_path):
@@ -736,16 +756,22 @@ def test_matched_arm_refuses_more_than_one_repeat(tmp_path):
     assert _calls(tmp_path) == []
 
 
-def test_attempt_belt_is_the_smaller_of_the_belt_and_the_remaining_spend(tmp_path):
+def test_every_claude_run_gets_the_configured_per_run_belt_which_is_indicative_not_a_ceiling(tmp_path):
+    """The host has no per-run token flag: the belt is its client-side dollar estimate, a runaway guard only.
+
+    The token ceiling is enforced between runs; it is not turned into a per-run budget.
+    """
     bench = _bench()
     manifest = _manifest(tmp_path, ids=("one", "two"))
     hidden = _hidden(tmp_path, ids=("one", "two"))
 
-    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=15.0)], manifest, hidden, max_usd=10.0)
-    assert _budgets(_calls(tmp_path)) == [10.0, 9.0]
+    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=15.0)], manifest, hidden,
+         max_tokens=10_000_000)
+    assert _budgets(_calls(tmp_path)) == [15.0, 15.0]
 
     (tmp_path / "calls.jsonl").unlink()
-    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=3.0)], manifest, hidden, max_usd=10.0)
+    _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path, belt_usd=3.0)], manifest, hidden,
+         max_tokens=10_000_000, results="second.json")
     assert _budgets(_calls(tmp_path)) == [3.0, 3.0]
 
 
@@ -782,6 +808,7 @@ def test_nonempty_scratch_root_is_refused_and_an_abort_leaves_none_behind(tmp_pa
     assert list(scratch.iterdir()) == []
     monkeypatch.delenv("SIGMA_FAKE_NO_TRANSCRIPT_ON")
     (tmp_path / "state" / "count").unlink()
+    (tmp_path / "results.json").unlink()  # the aborted file is the cursor; starting over is deliberate
     assert _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, hidden, scratch=scratch)) is None
 
 
@@ -910,7 +937,7 @@ def test_results_path_inside_the_scratch_root_is_refused(tmp_path):
     arm = _arm(bench, "PlainArm", tmp_path)
 
     message = _try(bench, lambda: bench.run_benchmark(
-        _manifest(tmp_path), [arm], max_usd=1.0, hidden_root=_hidden(tmp_path),
+        _manifest(tmp_path), [arm], max_tokens=1000, hidden_root=_hidden(tmp_path),
         results_path=scratch / "results.json", scratch_root=scratch,
         isolation_launcher=_launcher(tmp_path)))
 
@@ -961,3 +988,404 @@ def test_tree_digest_sees_changed_added_and_removed_files(tmp_path):
     (tree / "b.txt").unlink()
     assert common.tree_digest(tree) == changed
     assert common.tree_digest(tmp_path / "missing") == common.tree_digest(tmp_path / "also-missing") == "absent"
+
+
+# -- subscription auth (2026-10-06): tokens, batches, a resume-safe cursor, rate-limit stop ------
+
+def _plain_cli(tmp_path, ids, *extra):
+    """The documented gesture for the plain arm on ``ids`` (built once per test: the manifest dirs are made once)."""
+    manifest = _manifest(tmp_path, ids=ids)
+    hidden = _hidden(tmp_path, ids=ids)
+    return ["run", "--manifest", str(manifest), "--hidden-root", str(hidden),
+            "--results", str(tmp_path / "results.json"), "--scratch-root", str(tmp_path / "scratch"),
+            "--max-tokens", "1000000000", "--isolation-launcher", str(_launcher(tmp_path)), "--arm", "plain",
+            "--model", "claude-test", "--permission-mode", "acceptEdits",
+            "--claude", str(tmp_path / "bin" / "claude"), *extra]
+
+
+def _with(argv, flag, value):
+    out = list(argv)
+    out[out.index(flag) + 1] = value
+    return out
+
+
+def _saved(tmp_path, name="results.json"):
+    return json.loads((tmp_path / name).read_text(encoding="utf-8"))
+
+
+def _statuses(saved):
+    return [(row["task"], row["arm"], row["status"]) for row in saved["runs"]]
+
+
+def test_a_rate_limited_pair_is_not_run_the_harness_stops_and_resume_never_reruns_done_pairs(
+        tmp_path, monkeypatch, capsys):
+    """Controls: scoring the throttled tree makes row two a failure; dropping the stop starts task three;
+    dropping the skip of completed pairs re-runs task one on resume."""
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two", "three"))
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_ON", "2")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_UNTIL", "2")
+
+    assert bench.main(argv) == 75
+    err = capsys.readouterr().err
+    assert "resume" in err and "1790895600" in err
+    saved = _saved(tmp_path)
+    assert _statuses(saved) == [("one", "plain", "completed"), ("two", "plain", "not-run"),
+                                ("three", "plain", "not-run")]
+    two = saved["runs"][1]
+    assert "rate limit" in two["reason"] and "1790895600" in two["reason"]
+    assert two["visible_passed"] is None and two["hidden_passed"] is None, "a throttled run is never scored"
+    assert saved["stop"]["kind"] == "rate-limit" and saved["stop"]["resets_at"] == 1790895600
+    assert saved["complete"] is False
+    assert saved["tokens_unscored"] == 100_000 and saved["tokens_spent"] == 200_000
+    assert len(_calls(tmp_path)) == 2, "task three must not start after the host said no"
+
+    assert bench.main(argv + ["--resume"]) == 0
+    saved = _saved(tmp_path)
+    assert [status for _, _, status in _statuses(saved)] == ["completed"] * 3
+    assert saved["complete"] is True and saved["stop"] is None
+    assert len(_calls(tmp_path)) == 4, "resume ran tasks two and three only"
+    assert saved["tokens_spent"] == 3 * 100_000 + 100_000, "rows plus the tokens burned by the discarded run"
+
+
+def test_a_throttled_matched_attempt_makes_the_whole_pair_not_run(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_ON", "3")
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path))
+
+    assert _statuses(report) == [("one", "sigma", "completed"), ("one", "matched", "not-run")]
+    assert "rate limit" in _row(report, "matched")["reason"]
+    assert report["tokens_unscored"] == 200_000, "both attempts were paid for and are counted"
+    assert report["stop"]["kind"] == "rate-limit" and len(_calls(tmp_path)) == 3
+
+
+def test_a_rate_limit_record_on_a_run_that_exited_zero_is_scored_and_says_so(tmp_path, monkeypatch):
+    bench = _bench()
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_ON", "1")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_EXIT0", "1")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_TRANSIENT", "1")
+
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path))
+
+    row = _row(report, "plain")
+    assert row["status"] == "completed" and row["hidden_passed"] is True
+    assert "rate-limit record" in row["reason"] and report["stop"] is None
+
+
+def test_a_session_that_ended_on_the_limit_is_throttled_even_if_the_host_exited_zero(tmp_path, monkeypatch):
+    """The exit status of a throttled ``claude -p`` is unmeasured, so it must not be what decides."""
+    bench = _bench()
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_ON", "1")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_EXIT0", "1")
+
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path))
+
+    row = _row(report, "plain")
+    assert row["status"] == "not-run" and row["hidden_passed"] is None
+    assert report["stop"]["kind"] == "rate-limit"
+
+
+def test_batch_pairs_stops_cleanly_and_resume_continues_from_the_cursor(tmp_path, capsys):
+    """The documented gesture: ``--batch-pairs N`` first, then ``--resume --batch-pairs N``."""
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two", "three"), "--batch-pairs", "2")
+
+    assert bench.main(argv) == 0
+    saved = _saved(tmp_path)
+    assert _statuses(saved) == [("one", "plain", "completed"), ("two", "plain", "completed"),
+                                ("three", "plain", "not-run")]
+    assert saved["stop"]["kind"] == "batch" and saved["complete"] is False
+    assert len(_calls(tmp_path)) == 2
+    assert "batch of 2 pair(s) done" in saved["runs"][2]["reason"]
+
+    assert bench.main(argv + ["--resume"]) == 0
+    saved = _saved(tmp_path)
+    assert saved["complete"] is True and len(_calls(tmp_path)) == 3
+    assert capsys.readouterr().out.count('"schema"') == 2
+
+
+def test_resume_needs_the_cursor_and_an_existing_cursor_needs_resume(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    other = _with(argv, "--results", str(tmp_path / "elsewhere.json"))
+
+    assert bench.main(other + ["--resume"]) == 2
+    assert "--resume needs an existing results file" in capsys.readouterr().err
+    assert bench.main(argv) == 0
+    capsys.readouterr()
+    assert bench.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "already exists" in err and "--resume" in err
+    assert len(_calls(tmp_path)) == 1, "neither refusal started a run"
+
+
+def test_resume_refuses_a_changed_condition_and_a_lowered_ceiling_but_allows_a_raised_one(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    capsys.readouterr()
+
+    assert bench.main(_with(argv, "--model", "claude-other") + ["--resume"]) == 2
+    assert "model" in capsys.readouterr().err
+    assert bench.main(_with(argv, "--max-tokens", "999") + ["--resume"]) == 2
+    assert "lowered" in capsys.readouterr().err
+    assert len(_calls(tmp_path)) == 1
+
+    assert bench.main(_with(argv, "--max-tokens", "2000000000") + ["--resume"]) == 0
+    saved = _saved(tmp_path)
+    assert saved["max_tokens"] == 2_000_000_000
+    assert saved["ceiling_changes"] == [{"from": 1_000_000_000, "to": 2_000_000_000}], "never silent"
+
+
+def test_resume_refuses_when_the_hidden_bundles_changed_between_batches(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    capsys.readouterr()
+    (tmp_path / "hidden" / "two" / "extra.txt").write_text("tampered", encoding="utf-8")
+
+    assert bench.main(argv + ["--resume"]) == 2
+    assert "hidden_bundles_sha256" in capsys.readouterr().err
+    assert len(_calls(tmp_path)) == 1
+
+
+def test_a_second_invocation_cannot_use_a_cursor_that_is_already_in_use(tmp_path):
+    """Deterministic in-process control at the seam (a forked race would not be sensitive enough)."""
+    import fcntl
+    bench = _bench()
+    with open(tmp_path / "results.json.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        message = _try(bench, lambda: _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)],
+                                           _manifest(tmp_path), _hidden(tmp_path)))
+
+    assert message is not None and "already running" in message
+    assert _calls(tmp_path) == [] and not (tmp_path / "results.json").exists()
+
+
+def test_the_in_flight_marker_is_written_before_the_run_starts_and_cleared_after(tmp_path, monkeypatch):
+    bench = _bench()
+    seen = []
+    real = bench._run_arm
+
+    def spy(arm, *args, **kwargs):
+        seen.append(_saved(tmp_path).get("in_flight"))
+        return real(arm, *args, **kwargs)
+
+    monkeypatch.setattr(bench, "_run_arm", spy)
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path))
+
+    assert seen == [{"task": "one", "arm": "plain", "repeat": 1}]
+    assert "in_flight" not in report and "in_flight" not in _saved(tmp_path)
+
+
+def test_a_pair_that_died_in_flight_is_counted_unknown_and_rerun_not_failed(tmp_path, capsys):
+    """A SIGKILL between a paid run and its row leaves ``in_flight``; resume must not hide that spend."""
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    saved = _saved(tmp_path)
+    saved["in_flight"] = {"task": "two", "arm": "plain", "repeat": 1}
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    assert bench.main(argv + ["--resume"]) == 0
+    saved = _saved(tmp_path)
+    assert saved["unknown_runs"] == 1 and saved["complete"] is True
+    assert "in_flight" not in saved
+    assert "lower bound" in saved["tokens_note"]
+
+
+def test_a_run_with_zero_usage_is_refused_not_scored_and_not_recorded_as_a_failure(tmp_path, monkeypatch):
+    bench = _bench()
+    monkeypatch.setenv("SIGMA_FAKE_ZERO_TOKENS_ON", "1")
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], manifest,
+                                       _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message is not None and "no readable usage" in message
+    assert "authentication" in message
+    saved = _saved(tmp_path)
+    assert [row["status"] for row in saved["runs"]] == ["not-run", "not-run"]
+    assert len(_calls(tmp_path)) == 1
+
+
+def test_results_are_labelled_indicative_dollars_and_carry_token_components(tmp_path):
+    bench = _bench()
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path))
+
+    row = _row(report, "plain")
+    assert row["tokens"] == 100_000
+    assert row["tokens_detail"] == {"input": 0, "output": 100_000, "cache_read": 0, "cache_write": 0}
+    assert "indicative" in report["cost_basis"] and "not a bill" in report["cost_basis"]
+    assert report["max_tokens"] == 10 ** 9 and "max_usd" not in report
+
+
+def test_summarize_refuses_an_incomplete_file_and_reports_relative_outcome_and_token_cost(tmp_path, capsys):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "PlainArm", tmp_path)]
+    manifest, hidden = _manifest(tmp_path), _hidden(tmp_path)
+    _run(bench, tmp_path, arms, manifest, hidden, batch_pairs=1)
+
+    assert bench.main(["summarize", "--results", str(tmp_path / "results.json")]) == 2
+    assert "not complete" in capsys.readouterr().err
+
+    _run(bench, tmp_path, arms, manifest, hidden, resume=True)
+    assert bench.main(["summarize", "--results", str(tmp_path / "results.json")]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["arms"]["plain"]["tokens_total"] == 100_000
+    assert out["arms"]["sigma"]["tokens_total"] == 250_000
+    assert out["arms"]["plain"]["tokens_vs_sigma"] == 0.4
+    assert out["paired_vs_sigma"]["plain"] == {"sigma_wins": 0, "sigma_losses": 0, "ties": 1}
+    assert "indicative" in out["cost_basis"] and "per_task" not in json.dumps(out), "no dollars-per-task claim"
+
+
+def test_a3_is_not_run_when_its_a1_pair_has_no_readable_token_count(tmp_path):
+    """Control: without this the matched arm would run with no cap (A3 depends on A1's stored tokens)."""
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    manifest, hidden = _manifest(tmp_path, visible=FAILS), _hidden(tmp_path)
+    _run(bench, tmp_path, arms, manifest, hidden, batch_pairs=1)
+    saved = _saved(tmp_path)
+    saved["runs"][0]["tokens"] = None  # an A1 row whose count was lost (hand-edited cursor)
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+    calls_before = len(_calls(tmp_path))
+
+    report = _run(bench, tmp_path, arms, manifest, hidden, resume=True)
+
+    row = _row(report, "matched")
+    assert row["status"] == "not-run" and "no A1 token count" in row["reason"]
+    assert report["complete"] is False and len(_calls(tmp_path)) == calls_before
+
+
+def test_the_documented_gesture_as_a_real_process_exits_75_on_a_rate_limit_and_0_on_resume(tmp_path, monkeypatch):
+    """The README/evals gesture, run as its own process, so the exit status a driving script sees is real."""
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "3")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_ON", "2")
+    monkeypatch.setenv("SIGMA_FAKE_RATE_LIMIT_UNTIL", "2")
+
+    def process(*extra):
+        return subprocess.run([sys.executable, str(BENCH_PATH), *argv, *extra], capture_output=True, text=True,
+                              timeout=120, env=dict(os.environ))
+
+    first = process()
+    assert first.returncode == 75, first.stderr
+    assert "--resume" in first.stderr and json.loads(first.stdout)["complete"] is False
+    second = process("--resume")
+    assert second.returncode == 0, second.stderr
+    assert json.loads(second.stdout)["complete"] is True
+
+
+def test_summarize_carries_the_caveats_a_reader_needs_and_resume_refuses_a_bad_token_count(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    saved = _saved(tmp_path)
+    saved["in_flight"] = {"task": "two", "arm": "plain", "repeat": 1}
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+    assert bench.main(argv + ["--resume"]) == 0
+    capsys.readouterr()
+
+    assert bench.main(["summarize", "--results", str(tmp_path / "results.json")]) == 0
+    assert json.loads(capsys.readouterr().out)["caveats"] == {"unknown_runs": 1}
+
+    saved = _saved(tmp_path)
+    saved["runs"][0]["tokens"] = "lots"
+    (tmp_path / "results.json").write_text(json.dumps(saved), encoding="utf-8")
+    assert bench.main(argv + ["--resume"]) == 2
+    assert "invalid token count" in capsys.readouterr().err
+
+
+def test_a_stale_spend_from_the_previous_pair_is_never_reported_for_the_next_one(tmp_path, monkeypatch):
+    bench = _bench()
+    arm = _arm(bench, "PlainArm", tmp_path)
+    real = bench._run_arm
+    calls = []
+
+    def fail_second_before_it_runs(arm_, *args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise bench.BenchmarkRefusal("before the arm ran")
+        return real(arm_, *args, **kwargs)
+
+    monkeypatch.setattr(bench, "_run_arm", fail_second_before_it_runs)
+    manifest = _manifest(tmp_path, ids=("one", "two"))
+
+    message = _try(bench, lambda: _run(bench, tmp_path, [arm], manifest, _hidden(tmp_path, ids=("one", "two"))))
+
+    assert message == "before the arm ran"
+    assert _saved(tmp_path)["aborted"]["tokens_spent"] == 0, "pair one's 100000 tokens are in its row, not here"
+
+
+def test_an_unexplained_nonzero_exit_is_not_scored_as_the_arm_failing_and_stops_the_run(
+        tmp_path, monkeypatch, capsys):
+    """Control: without this a rate limit that leaves no record would be scored as a hidden-test failure."""
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two", "three"))
+    monkeypatch.setenv("SIGMA_FAKE_EXIT_CODE_ON", "2")
+
+    assert bench.main(argv) == 77
+    err = capsys.readouterr().err
+    assert "exited 3" in err and "--resume" in err
+    saved = _saved(tmp_path)
+    assert _statuses(saved) == [("one", "plain", "completed"), ("two", "plain", "not-run"),
+                                ("three", "plain", "not-run")]
+    assert saved["runs"][1]["visible_passed"] is None and saved["runs"][1]["hidden_passed"] is None
+    assert saved["stop"]["kind"] == "suspect-exit" and saved["tokens_unscored"] == 100_000
+    assert len(_calls(tmp_path)) == 2
+
+    assert bench.main(argv + ["--resume"]) == 0
+    assert _saved(tmp_path)["complete"] is True
+
+
+def test_an_unexplained_nonzero_exit_on_a_matched_attempt_makes_the_whole_pair_not_run(tmp_path, monkeypatch):
+    bench = _bench()
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    monkeypatch.setenv("SIGMA_FAKE_EXIT_CODE_ON", "3")
+
+    report = _run(bench, tmp_path, arms, _manifest(tmp_path, visible=FAILS), _hidden(tmp_path))
+
+    assert _statuses(report) == [("one", "sigma", "completed"), ("one", "matched", "not-run")]
+    assert report["stop"]["kind"] == "suspect-exit" and report["tokens_unscored"] == 200_000
+
+
+def test_a_deadline_kill_is_still_an_arm_failure_not_a_suspect_exit(tmp_path, monkeypatch):
+    bench = _bench()
+    monkeypatch.setenv("SIGMA_FAKE_SLEEP", "30")
+
+    report = _run(bench, tmp_path, [_arm(bench, "PlainArm", tmp_path)], _manifest(tmp_path), _hidden(tmp_path),
+                  deadline_seconds=2)
+
+    assert _row(report, "plain")["status"] == "completed" and report["stop"] is None
+
+
+def test_a_batch_stop_tells_the_operator_what_to_do_and_a_stuck_a3_ends_as_incomplete(tmp_path, capsys):
+    bench = _bench()
+    argv = _plain_cli(tmp_path, ("one", "two"), "--batch-pairs", "1")
+    assert bench.main(argv) == 0
+    assert "--resume" in capsys.readouterr().err
+
+    repo, sha = _repo(tmp_path)
+    arms = [_sigma(bench, tmp_path, repo, sha), _arm(bench, "MatchedArm", tmp_path)]
+    manifest, hidden = _manifest(tmp_path, visible=FAILS, tag="tasks-b"), _hidden(tmp_path, root=tmp_path / "hidden-b")
+    _run(bench, tmp_path, arms, manifest, hidden, batch_pairs=1, results="b.json")
+    saved = _saved(tmp_path, "b.json")
+    saved["runs"][0]["tokens"] = None
+    (tmp_path / "b.json").write_text(json.dumps(saved), encoding="utf-8")
+    report = _run(bench, tmp_path, arms, manifest, hidden, resume=True, results="b.json")
+    assert report["stop"]["kind"] == "incomplete" and report["complete"] is False
+
+
+def test_summarize_refuses_a_malformed_row_instead_of_a_traceback(tmp_path, capsys):
+    bench = _bench()
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps({"schema": "sigma.benchmark-results/v2", "complete": True,
+                                "runs": [{"status": "completed"}]}), encoding="utf-8")
+
+    assert bench.main(["summarize", "--results", str(path)]) == 2
+    assert "malformed row" in capsys.readouterr().err

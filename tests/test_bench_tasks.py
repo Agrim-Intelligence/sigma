@@ -391,7 +391,7 @@ def test_the_harness_itself_refuses_the_unfrozen_manifest_while_a_trap_has_no_bu
         (copy / row["source"]).mkdir(parents=True, exist_ok=True)
     tasks = bench._load_tasks(copy / "manifest.json")
     with pytest.raises(bench.BenchmarkRefusal, match="hidden bundle 'trap-1' is missing"):
-        bench._validate_inputs(tasks, 1.0, hidden, tmp_path / "out" / "r.json", False, {}, tmp_path / "scr")
+        bench._validate_inputs(tasks, 1, hidden, tmp_path / "out" / "r.json", False, {}, tmp_path / "scr")
 
 
 def test_a_ready_trap_needs_its_author_expected_catch_and_attestation(tmp_path):
