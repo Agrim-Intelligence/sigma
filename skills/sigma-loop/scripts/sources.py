@@ -610,7 +610,7 @@ class LocalSource:
         text = path.read_text(encoding="utf-8")
         body = frontmatter.strip(text)
         fence = text[:len(text) - len(body)]      # the frontmatter block, byte-for-byte, untouched
-        path.write_text(fence + body.rstrip() + "\n\n" + marker + "\n", encoding="utf-8")
+        state.atomic_write_text(path, fence + body.rstrip() + "\n\n" + marker + "\n")
 
     def create_dependency(self, title, body, assignee, labels=(), goal_label=True):
         """Local counterpart to GitHubSource.create_dependency — write a NEW goal file and return its

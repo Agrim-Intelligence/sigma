@@ -319,6 +319,26 @@ def _ensure_lines(dest, lines):
     return bool(missing)
 
 
+def _local_branch_exists(git, root, name):
+    try:
+        git(root, ["rev-parse", "--verify", "--quiet", f"refs/heads/{name}"])
+        return True
+    except Exception:                           # noqa: BLE001 - a missing ref is a non-zero exit
+        return False
+
+
+def _local_ahead(git, root, name, rem):
+    """True when the local branch `name` exists and is not provably at-or-behind `<rem>/<name>`: it
+    has commits the remote lacks, or the count could not be read (fail closed). Never raises. A
+    missing local branch is False, so the caller's force simply creates it."""
+    if not _local_branch_exists(git, root, name):
+        return False
+    try:
+        return int(git(root, ["rev-list", "--count", f"{rem}/{name}..{name}"])) > 0
+    except Exception:                           # noqa: BLE001 - unreadable/unparseable: fail closed
+        return True
+
+
 def init(sdlc_dir, config, run=None, channel=LEDGER):
     """Create the ops branch (from the empty tree, so it carries no code) and check it out as the
     channel's worktree. Idempotent: an existing worktree is left alone."""
@@ -332,11 +352,23 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
 
     try:                                        # a colleague may have pushed the branch already
         git(root, ["fetch", rem, name])
-        git(root, ["branch", "--force", name, f"{rem}/{name}"])
-    except Exception:
-        empty = git(root, ["hash-object", "-t", "tree", "/dev/null"])
-        commit = git(root, ["commit-tree", empty, "-m", f"{channel}: start the ops branch"])
-        git(root, ["branch", name, commit])     # plumbing only — the main index is never written
+        if _local_ahead(git, root, name, rem):
+            # #592: a local ops branch holding commits the remote lacks (a ledger entry not yet
+            # published) is never moved: `branch --force` would drop them. Left as it is, the next
+            # publish pushes them. NOT an exception, so the create-from-empty-tree fallback below,
+            # which cannot succeed on an existing branch, is not entered either.
+            print(f"sigma: sync init: local branch {name} has commits {rem}/{name} lacks (or they "
+                  "could not be counted); leaving it where it is", file=sys.stderr)
+        else:
+            git(root, ["branch", "--force", name, f"{rem}/{name}"])
+    except Exception as exc:
+        if _local_branch_exists(git, root, name):
+            print(f"sigma: sync init: could not move local branch {name} onto {rem}/{name} "
+                  f"({str(exc)[:200]}); keeping it as it is", file=sys.stderr)
+        else:
+            empty = git(root, ["hash-object", "-t", "tree", "/dev/null"])
+            commit = git(root, ["commit-tree", empty, "-m", f"{channel}: start the ops branch"])
+            git(root, ["branch", name, commit])     # plumbing only — the main index is never written
 
     try:                                        # a worktree that was `rm -rf`ed still has a registry
         git(root, ["worktree", "prune"])        # entry, and `add` refuses the path until it is pruned

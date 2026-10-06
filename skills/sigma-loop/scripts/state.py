@@ -426,9 +426,41 @@ def advance_cursor(sdlc_dir, summary):
     _patch_cursor(sdlc_dir, patch)
 
 
+def atomic_write_text(path, text):
+    """Publish `text` to `path` so a crash leaves the whole old file or the whole new one, never a
+    torn or empty one (#592, #634): a same-directory temp file, `os.replace` onto the target.
+    Modelled on `_patch_cursor`'s publish, with one deliberate difference: this one fsyncs before the
+    replace, because a goal file is a user-visible record, not a cursor the next write recomputes.
+    The target is resolved through symlinks first (a symlinked goal keeps its link), its mode is
+    copied (a new target gets 0644), the temp is removed on any failure and the error re-raised.
+    Stated limits: ownership, ACLs and xattrs are not carried over; a hard link to the file is not
+    kept; a directory that is not writable now fails where an in-place write used to succeed; a crash
+    can leave a dotted `.<name>.tmp` beside the file (discovery globs `*.md`, nothing prunes it); and
+    two concurrent writers still race, last one wins, as before."""
+    target = os.path.realpath(str(path))
+    try:
+        mode = os.stat(target).st_mode & 0o7777
+    except FileNotFoundError:
+        mode = 0o644
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _set_status(goal_path, status):
     p = pathlib.Path(goal_path)
-    p.write_text(frontmatter.set_field(p.read_text(), "status", status))
+    atomic_write_text(p, frontmatter.set_field(p.read_text(encoding="utf-8"), "status", status))
 
 
 #: Mirrors discovery.py's own `_TERMINAL` vocabulary (done/parked/failed) byte-for-byte. state.py

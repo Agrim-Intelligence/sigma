@@ -164,8 +164,20 @@ except Exception:
 [ -n "$file_path" ] || exit 0
 
 # Docs, config, and the .sdlc layer itself are never gated — only SOURCE is.
+# The exemption is judged on the path RELATIVE TO THE PROJECT (#590): matched against the absolute
+# path, a checkout that merely lives under some directory named `docs` (/x/docs/proj) exempted every
+# edit. Any depth is kept on purpose, in step with `work._branch_touches_source` (a differential test
+# in tests/test_plan_gate.py pins the two). A path outside the project is left as it is.
+rel="$file_path"
+proj_real="$(cd "$PROJECT" 2>/dev/null && pwd -P)" || proj_real=""
+for base in "${PROJECT%/}" "$proj_real"; do
+  [ -n "$base" ] || continue
+  case "$file_path" in "$base"/*) rel="${file_path#"$base"/}"; break ;; esac
+done
+case "/$rel" in
+  */.sdlc/*|*/docs/*) exit 0 ;;
+esac
 case "$file_path" in
-  *"/.sdlc/"*|".sdlc/"*|*"/docs/"*|"docs/"*) exit 0 ;;
   *.md|*.markdown|*.json|*.yaml|*.yml|*.toml|*.txt|*.csv|*.lock) exit 0 ;;
 esac
 # Kept in lockstep with completion_gate.sh's identical list (each hook inlines its own copy so it
