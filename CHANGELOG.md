@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+<!-- OWNER ACTION before release: replace DATE-PENDING in the 1.0.0 heading below with the release date (YYYY-MM-DD).
+     No date is invented here. tools/release_notes.py refuses this section until you do (docs/release.md, steps 1 and 7). -->
+
+## 1.0.0 — DATE-PENDING — the first public release
+
 - **The default loop now records every SDLC phase, and `record done` is refused without them** (#684, class B3). A live
   run with model tiering `off` let one worker do every phase inline: no research, plan, plan-review or retro was recorded
   and the independent review lived only in prose. `phase_report.py start|end` now write phase rows to the action log,
@@ -1343,7 +1348,7 @@ All notable changes to Sigma are recorded here, newest first.
   prints a bare `DONE` on stdout and now says `0 issues carry sdlc:goal — label one to start` on
   stderr.
 
-## 1.0.0 — 2026-09-29 — the first public release
+### Earlier internal 1.0.0 draft (dated 2026-09-29, kept as history)
 
 The first release of the public core: a gated software development lifecycle for coding agents,
 run from GitHub issues, with every phase reviewed before the next one starts.

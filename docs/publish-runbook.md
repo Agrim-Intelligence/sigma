@@ -1,8 +1,9 @@
 # The publish runbook: private references
 
 Before a fresh public snapshot repository is published, no issue, pull request, comment, review or
-release text copied into it may name or link the private repository it grew out of. The private
-repository stays private; its visibility does not flip. `tools/leak_refs.py`
+release text copied into it may name or link the source repository it grew out of. That source
+repository is not renamed and this runbook does not change its visibility; the public repository is a
+new one (`Agrim-Intelligence/sigmaloop`) that starts from one snapshot commit. `tools/leak_refs.py`
 (issue 282) finds every such reference, plans a neutral rewrite of the ones it can safely edit, and
 lists the rest for the owner. It is run by hand, by the owner, attended; no loop runs it.
 
@@ -156,8 +157,8 @@ OWNER RUNBOOK. Run by the owner, attended, from the root of a current checkout.
 8. **Scan twice in a row; both must exit 0.** Review comments and commit comments have no cheap
    per-item count, so a second clean scan is what catches one created or deleted during the first.
    A `history ... title-rename` line cannot be purged. The options are to delete that issue, or to
-   accept the residue; that is the owner's decision, recorded on the issue that gates the
-   visibility flip, and until the issue is deleted the scan keeps reporting the line.
+   accept the residue; that is the owner's decision, recorded on the issue that gates
+   publication of the snapshot, and until the issue is deleted the scan keeps reporting the line.
 9. **Restart the writers**: remove `.sdlc/state/watch.stop`.
 
 Before any goal of this work posts to GitHub, check the tree and the text itself: `tree` must exit
