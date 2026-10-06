@@ -9223,7 +9223,7 @@ def _gate_pr(tmp_path, managed=None, plan=False, sentinel=False, memo=None):
         ("rev-list", "1"),
         ("ls-files", ".sdlc/plans/0001-x.md" if plan else ""),
         ("check-ignore", RuntimeError("::\t.sdlc/plans/0001-x.md")),
-        ("git diff --name-only", "app.py"),
+        ("diff --name-only", "app.py"),
         ("log -1", "feat: x"),
         ("pulls?head", "31"),
     ])

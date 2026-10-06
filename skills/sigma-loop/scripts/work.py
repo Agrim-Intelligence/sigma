@@ -4601,7 +4601,8 @@ def _branch_touches_source(rec, run):
         # branch's own changes. Every other "this branch's own diff" call in the kit already uses
         # three dots (`loop.py`'s two, `work.py`'s own commit-range read).
         changed = run(rec["worktree"],
-                      ["git", "diff", "--name-only", f"{rec['remote']}/{rec['base']}...HEAD"])
+                      ["git", "-c", "core.quotepath=off", "diff", "--name-only",
+                       f"{rec['remote']}/{rec['base']}...HEAD"])
     except Exception:                   # noqa: BLE001 - no answer about the diff -> assume source
         return True
     for path in changed.splitlines():

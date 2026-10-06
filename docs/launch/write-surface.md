@@ -168,7 +168,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/sources.py | _write_board_phase | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _write_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _write_priority_label | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | append_to_body | fs-write | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | append_to_body | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | complete | gh-issue | 1 | discovery.source == github; board writes require project.enabled | high |
 | skills/sigma-loop/scripts/sources.py | create_dependency | fs-write | 2 | discovery.source == github; board writes require project.enabled | medium |
@@ -183,8 +182,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/state.py | _cursor_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | _patch_cursor | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/state.py | _queue | fs-write | 1 | ungated | medium |
-| skills/sigma-loop/scripts/state.py | _set_status | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | _state_file | fs-write | 1 | ungated | medium |
+| skills/sigma-loop/scripts/state.py | atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/state.py | claim_run_stop | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | phase_end_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | reanchor_content | fs-write | 1 | ungated | medium |

@@ -119,9 +119,9 @@ git -C "$PROJECT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || allow
 
 # Did SOURCE change? diff + staged + untracked, excluding the .sdlc layer and docs (harness, not source).
 changed="$( {
-  git -C "$PROJECT" diff --name-only -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
-  git -C "$PROJECT" diff --cached --name-only -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
-  git -C "$PROJECT" ls-files --others --exclude-standard -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
+  git -c core.quotepath=off -C "$PROJECT" diff --name-only -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
+  git -c core.quotepath=off -C "$PROJECT" diff --cached --name-only -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
+  git -c core.quotepath=off -C "$PROJECT" ls-files --others --exclude-standard -- . ':(exclude).sdlc/**' ':(exclude)docs/**' 2>/dev/null
 } | sort -u )" || allow
 
 source_changed=0
