@@ -28,6 +28,10 @@ change with this line.
   the only channel with a recorded end-to-end run.
 - **Version:** `1.0.0`, git-tagged `v1.0.0` in the public repository. `.claude-plugin/plugin.json`
   and `.claude-plugin/marketplace.json` already say `1.0.0`.
+- **Display name:** prose says `Sigma Loop`; the id is `sigmaloop` (plugin, marketplace and repository).
+- **Coexistence is not claimed at launch.** Running the predecessor tool and Sigma Loop on one shared
+  ledger is not claimed at launch (owner decision, 2026-10-06). #616 (honour the predecessor's lease
+  renewals on the shared ledger) stays `launch:next`; the README says so.
 
 ## What the rename changes
 

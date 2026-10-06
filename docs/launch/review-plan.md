@@ -39,7 +39,7 @@ rows below.
 | # | Dimension | Measurement | Pass threshold | Gating |
 |---|---|---|---|---|
 | D0 | Launch definition | `docs/launch/definition.json` | `status: signed` | prerequisite |
-| D1 | Correctness | high-risk units reviewed in full, seeded sample of the rest, planted-defect recall, mutation kill rate, flake census (10 runs Linux + 10 macOS), coverage | 0 open B1/B8; recall ≥ 80%; 0 flaky tests; kill rate recorded per module | yes |
+| D1 | Correctness | high-risk units reviewed in full, seeded sample of the rest, planted defects seeded, mutation kill rate, flake census (10 runs Linux + 10 macOS), coverage | 0 open B1/B8; the review claims "found and verified N defects" (N counted, each with a reproducer or cited line), never a recall percentage (rule AMENDED 2026-10-06); 0 flaky tests; kill rate recorded per module | yes |
 | D2 | Skills | every documented command/verb/flag resolves (script); 5,000-token budget (already 0 waivers); model review of the 10 phase skills; instruction tokens per phase (#262) | 100% resolve; 0 gate-skip ambiguities on supported cells | yes |
 | D3 | Outcomes and cost | pre-registered benchmark (3 arms: Sigma, plain agent, matched-spend; about 15 tasks, 1 repeat, 3 outside traps), cost per passing run | per `docs/bench/preregistration.md` as amended | yes |
 | D5 | Five properties | crash/restore drills at random kill points (N ≥ 5 each), dead-vs-idle (#265), growth audit, 10x/100x table | every drill recovers alone or has a documented polite lever; every growing store has a pruner or cap | yes |
@@ -96,7 +96,7 @@ a seed author (D1) and the outside people (D7).
 
 1. Work in the frozen clone produced by `tools/readiness/baseline.py snapshot`, never in the live checkout.
 2. Use the high-risk list and sample from `docs/launch/review-units.json`.
-3. Plant defects and score recall per `docs/launch/seeded-defects.md`. A review whose recall is below 80% is re-run, not reported.
+3. Plant defects per `docs/launch/seeded-defects.md` when a seeded run is made. The D1 recall rule was AMENDED on 2026-10-06: recall was not measured, so no review is repeated or reported on a recall percentage.
 4. A different model vendor reviews about 20% of the units and verifies every B-class finding. On Codex, this doubles as the #302 live run.
 5. Every finding carries a reproducer or a cited `file:line`, and a second independent pass verifies it before it is filed.
 6. Before filing, re-check the finding against current `main`.
@@ -145,8 +145,8 @@ unit and is applied to every line of its tier (verification cost follows the num
 Tier A review rate averages two units and is not applied to Tier B. A second-vendor pass over about 20% of the units
 (reviewer rule 4) is **not included and not measured**. The measured passes also had no planted defects and were shallower than the plan's review.
 
-The review ceiling is **75M processed tokens** for S1–S8 plus S10, with an owner checkpoint at **40M**.
-The owner chose both on 2026-10-03; the epic's earlier 150M ceiling and 75M checkpoint are replaced.
+The review ceiling is **120M processed tokens** for S1–S8 plus S10, with an owner checkpoint at **100M**.
+The owner raised both on 2026-10-06 (from 75M and 40M, which the owner had chosen on 2026-10-03 in place of the epic's 150M ceiling and 75M checkpoint); the measured S4 cumulative at the time was 69,433,345.
 The pilots' measured numbers are applied to both below (a step the pilots did not measure stays unmeasured), and S9 gets its own
 owner-approved ceiling, which the benchmark pilot would have set and did not.
 
@@ -154,7 +154,7 @@ owner-approved ceiling, which the benchmark pilot would have set and did not.
 both counters, as this page had recommended. The counter is the running sum of processed tokens, as the hosts report
 them, over S1–S8 plus S10: the same counter as the 75M ceiling, and S3 (the pilots) is part of it. The $75 pilot
 ceiling stays the hard stop on pilot dollars. Pilot spend so far: 3,887,193 processed tokens and $2.50, so
-**36,112,807 tokens remain under the 40M checkpoint and 71,112,807 under the 75M ceiling** for the rest of the review.
+**36,112,807 tokens remained under the then 40M checkpoint and 71,112,807 under the then 75M ceiling** (superseded on 2026-10-06; the current figures are in "Owner decisions of 2026-10-06" below).
 The checkpoint is a stop-and-ask, not a failure.
 
 **What the measured numbers imply for the caps.** S4 at its measured ceiling is 43.73M (33.64M without headroom).
@@ -171,15 +171,32 @@ OWNER DECISION (open, #361): approve the measured ceilings above as the review's
 approve them, keep 75M and 40M as set, and measure S5 and S6 in their own first runs before either is raised. S9 has no
 measured basis until the benchmark pilot runs, and this page does not choose its ceiling.
 
-**At 75M the review will cover less than the plan describes.** What the plan does when the ceiling binds:
+**At 120M the review will cover less than the plan describes.** What the plan does when the ceiling binds:
 
 1. High-risk units are reviewed in full first. Nothing else runs ahead of them.
 2. The sample rate is reduced before any high-risk unit is cut.
 3. Every unit not covered is listed by id in the scorecard evidence for D1 and D2, with the reason. A
    unit is never dropped silently, and a dimension whose coverage fell short does not score 3 on
    the strength of the part that ran.
-4. At 40M the review stops and the owner decides whether to continue, cut scope, or raise the ceiling.
+4. At 100M the review stops and the owner decides whether to continue, cut scope, or raise the ceiling.
    Nobody raises it unrecorded.
+
+## Owner decisions of 2026-10-06
+
+Recorded here from the owner's decisions of 2026-10-06. They amend this page; where an older sentence above
+quotes the earlier rule or figures, it is history and these decisions govern.
+
+- **D1 recall rule AMENDED.** Planted-defect recall was not measured, so D1 claims "found and verified N
+  defects", not a recall percentage. The earlier threshold (recall of at least 80%, a review below it
+  re-run) no longer applies to D1. `tools/readiness/seed_defects.py` keeps its own exit code; that is a tool
+  property, not a launch threshold.
+- **Accepted coverage cuts.** The owner accepted this coverage and the review claims no more than it: Tier A only
+  (16 of 16 Tier A units reviewed, see [the S4 record](evidence/review-s4-c3faf6f23e12.md)); mutation kill rates for 14 of 33
+  modules (the rest timed out or did not run, see [the mechanical gates record](evidence/mechanical-gates-859290305d97.md));
+  no Tier B sample; no second-vendor pass (reviewer rule 4 is not met, and nothing here claims it was).
+- **Review token cap RAISED to 120M, checkpoint 100M.** The counter is the same one as before. S4 cumulative
+  is 69,433,345, so **30,566,655 tokens remain under the 100M checkpoint and 50,566,655 under the 120M cap**
+  for the unmeasured steps. The checkpoint is still a stop-and-ask, and nobody raises either figure unrecorded.
 
 ## Facts as of 2026-10-03
 

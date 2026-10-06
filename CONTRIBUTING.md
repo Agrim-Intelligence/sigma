@@ -1,7 +1,8 @@
 # Contributing to Sigma Loop
 
-Thank you for improving Sigma Loop. Please open an issue before substantial work so maintainers can
-confirm the scope.
+Thank you for your interest in Sigma Loop. Outside contributions are not accepted yet; issues are welcome.
+The rest of this page is for maintainers and for when that changes. Please open an issue before substantial
+work so maintainers can confirm the scope.
 
 ## Development setup
 
