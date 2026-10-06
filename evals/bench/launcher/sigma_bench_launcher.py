@@ -33,8 +33,8 @@ PASS_THROUGH = ("PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "SHELL", "US
 # The benchmark runs on the owner's Max SUBSCRIPTION (2026-10-06), through `claude setup-token`'s long-lived token.
 # An API key is refused on purpose: `claude -p` prefers it whenever it is present, which would silently switch the
 # run to pay-per-token billing.
-SUBSCRIPTION_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
-CREDENTIAL_VARIABLES = (SUBSCRIPTION_TOKEN,)
+SUBSCRIPTION_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+CREDENTIAL_VARIABLES = (SUBSCRIPTION_VAR,)
 CONFIG_KEYS = {"repo_root", "hidden_root", "deadline_seconds", "credential_var", "claude_path", "extra_env",
                "scratch_root", "real_home", "parent_marker"}
 INSTRUCTION_FILES = ("CLAUDE.md", "CLAUDE.local.md", ".mcp.json", ".claude")
@@ -77,10 +77,10 @@ def load_config(path):
         raise Refusal("config deadline_seconds must be a positive number (the owner sets it; no default)")
     if raw.get("credential_var") == "ANTHROPIC_API_KEY":
         raise Refusal("config credential_var ANTHROPIC_API_KEY is refused: an API key bills pay-per-token and the "
-                      "benchmark runs on the subscription; use %s (from `claude setup-token`)" % SUBSCRIPTION_TOKEN)
+                      "benchmark runs on the subscription; use %s (from `claude setup-token`)" % SUBSCRIPTION_VAR)
     if raw.get("credential_var") not in CREDENTIAL_VARIABLES:
         raise Refusal("config credential_var is required and must be %s (the subscription token from "
-                      "`claude setup-token`); the name is configured, the value never is" % SUBSCRIPTION_TOKEN)
+                      "`claude setup-token`); the name is configured, the value never is" % SUBSCRIPTION_VAR)
     if not (isinstance(raw.get("claude_path"), str) and os.path.isabs(raw["claude_path"])):
         raise Refusal("config claude_path is required: the absolute path of the one program that gets the "
                       "credential and must start in an empty profile")
