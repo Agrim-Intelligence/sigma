@@ -13,10 +13,15 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ROOT / "tests/fixtures/documented_gestures_allowlist.json"
-GESTURE = re.compile(r"python3?\s+(?P<path>[^\s\"'`]*?(?P<script>[A-Za-z0-9_]+\.py))(?P<rest>(?:\s+[^\s|;&>]+)*)")
+# The path may be wrapped in double quotes: `python3 "${CLAUDE_SKILL_DIR}/../sigma-x/scripts/y.py" verb ...`
+# is the dominant documented form in skills/, and the unquoted-only pattern never saw it (D2-b, #307).
+# `rest` runs to the end of the snippet (or a pipe/`;`/`&&`) so a flag after a quoted argument is seen too.
+GESTURE = re.compile(r"python3?\s+(?P<q>\")?(?P<path>[^\s\"'`]*?(?P<script>[A-Za-z0-9_]+\.py))\"?(?P<rest>(?:[ \t][^|;&`]*)?)")
 FLAG = re.compile(r"--[a-z][a-z0-9-]*")
 VERB = re.compile(r"^[a-z][a-z0-9-]*$")
 # `>` is excluded too: `<org>/sigma-onboarding-...` is a repository name, not a command
+# verbs whose --key value pairs are free-form event fields, not a declared flag set (the verb is still checked)
+FREE_FORM_FLAGS = {("loop.py", "log")}
 SLASH = re.compile(r"(?<![\w/.>-])/(sigma-[a-z0-9-]+)")
 
 
@@ -28,6 +33,7 @@ class Gesture:
     source: Path
     line: int
     text: str
+    quoted: bool = False
 
 
 def extract(text: str, source_path: Path) -> list[Gesture]:
@@ -39,10 +45,13 @@ def extract(text: str, source_path: Path) -> list[Gesture]:
             in_fence = not in_fence
             continue
         snippets = [line] if in_fence else re.findall(r"`([^`\n]+)`", line)
+        if not in_fence and line.count("`") % 2 == 1:
+            # an inline span that opens here and closes on a later line: its first line is still a gesture
+            snippets.append(line.rsplit("`", 1)[1])
         for snippet in snippets:
             for match in GESTURE.finditer(snippet):
                 out.append(Gesture(match.group("path"), match.group("script"),
-                                   tuple(match.group("rest").split()), source_path, line_no, line))
+                                   tuple(match.group("rest").split()), source_path, line_no, line, bool(match.group("q"))))
     return out
 
 
@@ -124,8 +133,11 @@ def validate(gesture: Gesture, *, root=ROOT, corpus=None) -> list[str]:
     candidate = verb(gesture.rest)
     if candidate and not re.search(r"(?<![A-Za-z0-9-])" + re.escape(candidate) + r"(?![A-Za-z0-9-])", corpus):
         failures.append(f"{where}: unknown verb {candidate} for {script.relative_to(root)}")
+    if (gesture.script, candidate) in FREE_FORM_FLAGS:
+        return failures
     for flag in FLAG.findall(" ".join(gesture.rest)):
-        if flag not in corpus:
+        # some scripts parse flags into a name set (`{"session-pid", ...}`), so the bare quoted name counts too
+        if flag not in corpus and f'"{flag[2:]}"' not in corpus:
             failures.append(f"{where}: unknown flag {flag} for {script.relative_to(root)}")
     return failures
 
@@ -160,18 +172,22 @@ def test_stale_allowlist_entry_is_detected():
 
 def test_documented_python_gestures_resolve_to_existing_verbs_and_flags():
     entries, used, failures = allowlist(), set(), []
-    checked = 0
+    checked = quoted = 0
     for source in sources():
         text = (ROOT / source).read_text(encoding="utf-8")
         for item in extract(text, source):
             if allowed(item, entries, used):
                 continue
             checked += 1
+            quoted += item.quoted
             failures.extend(validate(item))
     stale = stale_entries(entries, used)
     # The documented per-line grammar intentionally ignores prose and multiline shell fragments;
     # keep a floor so a regex regression cannot silently reduce this corpus to zero.
     assert checked >= 25, checked
+    # 228 quoted `python3 "${CLAUDE_SKILL_DIR}/..."` gestures measured when the quoted form was added (D2-b);
+    # without the floor, reverting the regex to the unquoted-only form would silently stop checking them.
+    assert quoted >= 190, quoted
     assert not failures, "\n".join(failures)
     assert not stale, "stale documented-gesture allowlist: " + repr(stale)
 
@@ -183,3 +199,29 @@ def test_documented_slash_commands_ship():
             if not (ROOT / "skills" / name / "SKILL.md").is_file():
                 missing.append(f"{source}: /{name}")
     assert not missing, "missing documented skills: " + ", ".join(missing)
+
+
+def test_bad_verb_on_a_quoted_documented_gesture_is_detected():
+    """The dominant documented form quotes the script path; an unquoted-only pattern never saw it (D2-b)."""
+    source = Path("skills/sigma-loop/SKILL.md")
+    line = '`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" nosuchverbxyz .sdlc "<goal>" --no-such-flag-xyz`'
+    found = extract(line, source)
+    assert len(found) == 1 and found[0].quoted and found[0].script == "loop.py"
+    failures = validate(found[0])
+    assert any("unknown verb nosuchverbxyz" in f for f in failures), failures
+    # a flag AFTER a quoted argument is read too
+    assert any("unknown flag --no-such-flag-xyz" in f for f in failures), failures
+
+
+def test_every_quoted_script_path_in_shipped_docs_is_parsed():
+    """A quoted path containing a space cannot be one gesture token, so it would be skipped silently."""
+    unparsed = []
+    for source in sources():
+        in_fence = False
+        for line_no, line in enumerate((ROOT / source).read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            for snippet in ([line] if in_fence else re.findall(r"`([^`\n]+)`", line)):
+                unparsed += [f"{source}:{line_no}" for _ in re.findall(r'python3?\s+"[^"]*\s[^"]*\.py"', snippet)]
+    assert not unparsed, "quoted script path with whitespace is not checked: " + ", ".join(unparsed)
