@@ -1,0 +1,17 @@
+{
+  "_comment": "Allowlist for tests/test_third_party_imports.py. Shipped Python is standard-library only except the modules named here. Every entry names the PyPI distribution, its licence as read from the distribution's own licence file (see docs/launch/evidence/legal.md for the version, file and digest), whether the import is optional, and the shipped files allowed to import it. Adding an entry is a licence decision for the owner, not a test fix.",
+  "modules": {
+    "slack_sdk": {
+      "pypi": "slack-sdk",
+      "licence": "MIT",
+      "optional": true,
+      "where": ["skills/sigma-loop/scripts/slack_commands_listen.py"]
+    }
+  },
+  "npm_channel": {
+    "package_json": "skills/sigma-loop/channels/sigma-autowatch/package.json",
+    "dependencies": ["@modelcontextprotocol/sdk"],
+    "licence": "MIT",
+    "optional": true
+  }
+}
