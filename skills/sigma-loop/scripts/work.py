@@ -4796,22 +4796,44 @@ def _plan_review_refusal(sdlc_dir, config, rec, goal, run):
     return ""
 
 
+_THREAD_PAGE_LIMIT = 50                       # 50 pages x 100 = 5000 threads before the read gives up
+
+
 def _unresolved_threads(rec, run):
     """Count unresolved review threads (line-comment conversations) via GraphQL — `gh pr view --json`
-    can't return them. Fail-open: any error returns 0, because a review query we couldn't run must not
-    be the thing that blocks a merge."""
+    can't return them. Pages 100 at a time (#638: the first 100 only used to be read). Fail-open on a
+    read error: a page that cannot be read ends the walk and returns what was already counted, never
+    discards it. Hitting `_THREAD_PAGE_LIMIT` is the one deliberate fail-closed case: it counts one
+    extra unresolved thread, so the merge is held, and says so on stderr."""
+    count = 0
     try:
         repo = run(rec["worktree"], ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
         owner, name = repo.split("/", 1)
-        query = ("query($o:String!,$n:String!,$p:Int!){repository(owner:$o,name:$n){"
-                 "pullRequest(number:$p){reviewThreads(first:100){nodes{isResolved}}}}}")
-        data = json.loads(run(rec["worktree"], ["gh", "api", "graphql", "-f", "query=" + query,
-                              "-F", "o=" + owner, "-F", "n=" + name, "-F", "p=" + str(rec["pr"])]))
-        nodes = (((data.get("data") or {}).get("repository") or {}).get("pullRequest") or {}) \
-            .get("reviewThreads", {}).get("nodes") or []
-        return sum(1 for t in nodes if not t.get("isResolved"))
+        query = ("query($o:String!,$n:String!,$p:Int!,$a:String){repository(owner:$o,name:$n){"
+                 "pullRequest(number:$p){reviewThreads(first:100,after:$a){nodes{isResolved}"
+                 "pageInfo{hasNextPage endCursor}}}}}")
+        cursor = None
+        for _ in range(_THREAD_PAGE_LIMIT):
+            page_call = ["gh", "api", "graphql", "-f", "query=" + query,
+                         "-F", "o=" + owner, "-F", "n=" + name, "-F", "p=" + str(rec["pr"])]
+            if cursor:
+                page_call += ["-f", "a=" + cursor]
+            data = json.loads(run(rec["worktree"], page_call))
+            threads = (((data.get("data") or {}).get("repository") or {}).get("pullRequest") or {}) \
+                .get("reviewThreads") or {}
+            count += sum(1 for t in threads.get("nodes") or [] if not t.get("isResolved"))
+            info = threads.get("pageInfo") or {}
+            nxt = info.get("endCursor")
+            if not info.get("hasNextPage"):
+                return count
+            if not nxt or nxt == cursor:            # a cursor that does not advance: never loop on it
+                break
+            cursor = nxt
+        print(f"sigma: review threads on PR #{rec['pr']} could not be read to the end within {_THREAD_PAGE_LIMIT} pages; "
+              "counting one more as unresolved so the merge is held", file=sys.stderr)
+        return count + 1
     except Exception:                           # noqa: BLE001 - unknown thread state must not block a merge
-        return 0
+        return count
 
 
 def _line_directive(body):
@@ -5817,6 +5839,12 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         return (f"PR #{rec['pr']} {verdict}, but {detail} — merging it is yours to make "
                 f'(auto_merge: "protected")')
     method = settings(config)["merge_method"]
+    # #638: GitHub merges only if the PR head is still the one `gate()` verified, so a push that
+    # lands between that read and this call is refused instead of merged unreviewed. `gate()` already
+    # refuses an empty head; this PARK is the belt for a path that reaches here without it.
+    vetted_head = (ci["head_sha"] or "").strip()
+    if not vetted_head:
+        return f"PARK: {_PARK_NO_REMOTE_HEAD}"
     gate_detail = detail if guarded else f"WARNING: {detail}; local verify was the only gate"
 
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
@@ -5824,7 +5852,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # Every other path below prefers landing it directly, immediately, over waiting on an async arm.
     if pending_arm and _auto_merge_allowed(rec, run):
         try:
-            run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], "--auto", f"--{method}"])
+            run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], "--auto", f"--{method}",
+                                  "--match-head-commit", vetted_head])
         except Exception as exc:            # noqa: BLE001 - a refused arm is a park, never a crash
             return f"PARK: could not arm auto-merge on PR #{rec['pr']} ({exc})"
         # Record the ARM, not a landing (F26/#344): `--auto` only enables GitHub's auto-merge, it
@@ -5844,7 +5873,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # unattended landing possible at all on a repo with `allow_auto_merge: false` — arming there is
     # refused outright by GitHub, but a plain `gh pr merge` needs no such repo setting.
     try:
-        run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], f"--{method}"])
+        run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], f"--{method}",
+                              "--match-head-commit", vetted_head])
     except Exception as exc:                # noqa: BLE001 - a refused merge is a park, never a crash
         # Never let this escape uncaught: main() would print it to stderr, exit 1, and leave stdout
         # empty — the exact shape that made the original `--auto`-only bug unrecoverable, since the

@@ -180,6 +180,7 @@ def _load(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+legacy = _load("legacy")
 discovery = _load("discovery")
 state = _load("state")
 frontmatter = _load("frontmatter")   # LocalSource.fetch_title_body's title/body split (#519)
@@ -775,9 +776,59 @@ def _sanitize_offboard_reason(reason):
     return f"{_DEGENERATE_OFFBOARD_REASON_MARKER} (caller passed: {stripped!r})"
 
 
+#: #650 item 5: who may issue a `sigma:` marker in an issue comment. On a public repository anyone can
+#: comment, so a marker counts only from a commenter GitHub reports as OWNER, MEMBER or COLLABORATOR
+#: (the #635 trust set `work._TRUSTED_ASSOCIATIONS`; tests/test_hardening_697.py pins the two equal).
+#: MEMBER can be broader than write access, and a bot token with no association has its own markers
+#: ignored: this is a filter on marker text, not a substitute for branch protection.
+TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
+_MARKER_TOKEN_RE = re.compile(legacy.MARKER_PREFIX_RE + ":", re.IGNORECASE)
+_DEFUSED = "[defused]:"            # cannot match `legacy.has_marker` for any marker, either spelling
+
+
+def _carries_marker(body):
+    return bool(_MARKER_TOKEN_RE.search(body or ""))
+
+
+def _ignore_note(goal, login, association):
+    sys.stderr.write(f"sigma: ignoring a sigma: marker in a comment on #{goal} from "
+                     f"{login or 'an unknown commenter'} ({association or 'no association'}): "
+                     "only OWNER, MEMBER or COLLABORATOR comments are honoured\n")
+
+
+def defuse_body(body, association, login, goal):
+    """`body` unchanged when it carries no marker or its author is trusted; otherwise the same text
+    with every marker token defused (so the prose still reaches a blocker-phrase scan but no marker
+    reader can see a marker) and one stderr line naming the commenter. An absent or unknown
+    association is untrusted: fail closed, ignore loudly."""
+    if not _carries_marker(body) or association in TRUSTED_ASSOCIATIONS:
+        return body
+    _ignore_note(goal, login, association)
+    return _MARKER_TOKEN_RE.sub(_DEFUSED, body)
+
+
+def trusted_marker_comments(comments, goal):
+    """The RAW gh comment dicts minus those that carry a marker from an untrusted author (each
+    reported on stderr). Plain comments pass untouched. RAISES `ValueError` when a marker comment has
+    no `authorAssociation` key at all (an old `gh`, an odd host): trust cannot be judged, so the strict
+    reader fails the way a failed read does (every caller already parks or refuses on that)."""
+    out = []
+    for c in comments or []:
+        if not isinstance(c, dict) or not _carries_marker(c.get("body")):
+            out.append(c)
+            continue
+        if "authorAssociation" not in c:
+            raise ValueError("a marker comment carries no authorAssociation")
+        if c.get("authorAssociation") in TRUSTED_ASSOCIATIONS:
+            out.append(c)
+        else:
+            _ignore_note(goal, (c.get("author") or {}).get("login"), c.get("authorAssociation"))
+    return out
+
+
 def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
     """Fetch up to `limit` most-recent comments on issue `goal`, oldest-first:
-    [{"id": str, "author": str, "body": str, "created_at": str}, ...].
+    [{"id": str, "author": str, "body": str, "created_at": str, "association": str}, ...].
 
     ONE `gh issue view --json comments` call. Read-only, injectable `run` (default `_run_gh`) for
     hermetic tests -- same DI contract as every other GitHub read in this file. FAIL-OPEN: any error
@@ -817,6 +868,7 @@ def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
                 "author": ((c.get("author") or {}).get("login") or ""),
                 "body": c.get("body") or "",
                 "created_at": c.get("createdAt") or "",
+                "association": c.get("authorAssociation") or "",
             })
         out.sort(key=lambda c: c["created_at"])          # defensive: never assume gh's own order
         return out[-limit:] if limit else out
@@ -3541,7 +3593,9 @@ class GitHubSource:
         if "comments" not in data:
             raise ValueError("fetch_comments_strict: response has no 'comments' key — "
                              "malformed or incomplete")
-        return {"comments": data.get("comments") or [], "labels": data.get("labels") or []}
+        # #650: a marker from an untrusted author never reaches the readers (see `TRUSTED_ASSOCIATIONS`).
+        return {"comments": trusted_marker_comments(data.get("comments") or [], goal),
+                "labels": data.get("labels") or []}
 
     def append_to_body(self, goal, marker):
         """Append `marker` to the issue's CURRENT body — never overwrite it — read then write, not

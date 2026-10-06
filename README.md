@@ -1884,6 +1884,8 @@ instead of being guessed at. A minimised trusted comment still counts. A strange
 (a delay, never an approval). `MEMBER` is any organisation member and can be broader than write
 access, so this is not a substitute for branch protection.
 
+**Markers in issue comments follow the same rule.** The `sigma:` markers the loop reads from an issue's comments (`keep-parked`, `dismissed-finding`, `decompose-filed`, `design-filed` and the feature-unit flags) count only from an `OWNER`, `MEMBER` or `COLLABORATOR` commenter; any other commenter's marker is ignored with one stderr line, and its prose still reads as ordinary text. A marker comment with no `authorAssociation` at all makes the strict reads (decompose, design, feature flags) fail the way an unreadable timeline does. The limit: if the account the loop posts as is reported as anything else (a bot token), the loop's own idempotency markers are ignored too, so it can repeat a flag comment on every pick or file a second decomposition; use a user or machine account with collaborator access.
+
 **What `"approval"` does NOT verify.** The comment channel exists because GitHub can't tell the loop's
 own account apart from a reviewer's — which cuts both ways: it also can't tell a genuinely independent
 `sigma:approve` from the SAME session that wrote the diff posting one about its own work. The gate

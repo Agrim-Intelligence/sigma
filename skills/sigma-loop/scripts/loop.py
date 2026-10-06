@@ -6533,6 +6533,12 @@ def _dispatch(argv):
         except ValueError:
             print(f"loop.py spend: token count {argv[3]!r} is not an integer", file=sys.stderr)
             return 2
+        if tokens < 0:
+            # #632: a spend report only ever adds. A negative count would lower run_tokens and
+            # re-open a budget the run already spent, so it is refused before any write.
+            print(f"loop.py spend: token count {tokens} is negative; a spend report can only add",
+                  file=sys.stderr)
+            return 2
         # `state.add_tokens` runs FIRST and unconditionally — `budget.max_tokens` enforcement
         # depends on it, so an invalid event flag below must never skip the budget accounting.
         # On a validation failure, the tokens above are still counted; we just refuse to write

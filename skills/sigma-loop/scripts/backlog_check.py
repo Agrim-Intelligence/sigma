@@ -488,7 +488,11 @@ def _fetch_scrubbed_comments(sdlc_dir, config, goal_doc, run=None):
     if not mirror.is_github_mode(config):
         return []
     try:
-        return [scrub(c["body"]) for c in sources.fetch_comments(config, goal_doc["ref"], run=run)]
+        # #650: a marker from a commenter outside the trust set is defused here, once, so neither the
+        # dismissed-finding scan nor auto_unpark's keep-parked check can see it; the prose still counts.
+        return [scrub(sources.defuse_body(c["body"], c.get("association"), c.get("author"),
+                                          goal_doc["ref"]))
+                for c in sources.fetch_comments(config, goal_doc["ref"], run=run)]
     except Exception:
         return []
 

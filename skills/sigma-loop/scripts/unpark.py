@@ -228,7 +228,9 @@ def brief(sdlc_dir, config, number, source=None, run=None):
     data = _fetch_issue(source, number)
     body = data.get("body") or ""
     names = _names(data)
-    comments = [(c.get("body") or "") for c in (data.get("comments") or [])]
+    comments = [sources.defuse_body(c.get("body") or "", c.get("authorAssociation"),
+                                    (c.get("author") or {}).get("login"), number)
+                for c in (data.get("comments") or [])]
     reason, from_sigma = _park_reason(comments)
 
     # #1392 / PR-1: BOTH re-derived from text that is always on the issue. `loop._reason_class` and

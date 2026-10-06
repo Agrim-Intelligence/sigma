@@ -322,6 +322,8 @@ def add_tokens(sdlc_dir, n):
     `parallel.goals`, and now also concurrent phase-end calls — no longer lose increments to each
     other."""
     n = int(n)
+    if n < 0:
+        raise ValueError(f"token count {n} is negative; a spend report can only add (#632)")
     _patch_cursor(sdlc_dir, lambda text: _set_line(text, "run_tokens", _read_int(text, "run_tokens") + n))
 
 
@@ -343,6 +345,8 @@ def record_phase_end(sdlc_dir, phase_attempt, started_at, budget_tokens=None,
     key = phase_attempt_key(phase_attempt)
     amount = int(budget_tokens) if budget_tokens is not None else None
     codex_amount = int(codex_raw_tokens) if codex_raw_tokens is not None else None
+    if amount is not None and amount < 0:
+        raise ValueError("budget_tokens must be nonnegative: a negative amount is a negative token count (#632)")
     if codex_amount is not None and codex_amount < 0:
         raise ValueError("codex_raw_tokens must be nonnegative")
     outcome = [False, False, False]
