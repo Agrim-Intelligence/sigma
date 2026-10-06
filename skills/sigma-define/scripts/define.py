@@ -237,15 +237,17 @@ class _Ctx(object):
         self.config = config if isinstance(config, dict) else {}
         self.run = run or _run_default
         self.cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
-        self.remote = remote or self._configured("remote") or "origin"
-        self.base = base
+        safe = _load_loop_script("state").safe_ref               # #710: no option-shaped git args
+        self._safe = safe
+        self.remote = safe("--remote/work.remote", remote or self._configured("remote") or "origin")
+        self.base = safe("--base", base)
         self.branch = branch_for(name)
         self.label = label_for(name)
 
     def _configured(self, key):
         work = self.config.get("work")
         got = work.get(key) if isinstance(work, dict) else None
-        return got.strip() if isinstance(got, str) and got.strip() else None
+        return self._safe("work." + key, got.strip()) if isinstance(got, str) and got.strip() else None
 
     def resolved_base(self):
         """Explicit, else `work.base`, else the branch we are on -- `sigma-loop/SKILL.md`'s own

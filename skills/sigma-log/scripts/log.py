@@ -849,5 +849,27 @@ def main(argv):
     return 2
 
 
+def _state_guard(argv):
+    """#708: refuse a committed symlink under .sdlc/state or .sdlc/journey (inline: this module is
+    zero-dep and loads no sibling). Mirrors sigma-loop's state.guard_argv."""
+    import os
+    for arg in argv[1:]:
+        for top in ("state", "journey"):
+            root = os.path.join(arg, top)
+            if not os.path.isdir(arg) or not (os.path.lexists(root)):
+                continue
+            for cur, dirs, files in os.walk(root, followlinks=False):
+                for name in dirs + files:
+                    if os.path.islink(os.path.join(cur, name)) or os.path.islink(root):
+                        print(f"log.py: REFUSED: {os.path.join(cur, name)} is a symlink under .sdlc/ "
+                              f"(#708). Fix: `git rm` it.", file=sys.stderr)
+                        return 2
+            if os.path.islink(root):
+                print(f"log.py: REFUSED: {root} is a symlink under .sdlc/ (#708). Fix: `git rm` it.",
+                      file=sys.stderr)
+                return 2
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(_state_guard(sys.argv) or main(sys.argv))

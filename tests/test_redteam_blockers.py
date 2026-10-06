@@ -316,3 +316,52 @@ def test_kg_refresh_itself_refuses_a_custom_builder_without_opt_in(tmp_path):
     (sdlc / "knowledge" / "a.md").write_text("x")
     res = kg.refresh(str(sdlc), str(tmp_path))
     assert "REFUSED" in res["detail"] and res["ok"] is False
+
+
+# ---------------------------------------------------------------- second review round
+
+def test_every_other_config_to_git_site_is_validated(tmp_path):
+    state = _mod("state")
+    cfg = {"work": {"enabled": True, "remote": HOSTILE, "base": HOSTILE}}
+    pre = _mod("preflight", ROOT / "skills" / "sigma-init" / "scripts")
+    req = pre.requirements(cfg)
+    assert req["remote"] == state.INERT_REF and req["base"] == state.INERT_REF
+    rb = _mod("rebase_brief", ROOT / "skills" / "sigma-rebase" / "scripts")
+    assert rb.resolve_base(cfg) == state.INERT_REF
+    df = _mod("define", ROOT / "skills" / "sigma-define" / "scripts")
+    ctx = df._Ctx(str(tmp_path / ".sdlc"), "u", "feature", cfg, lambda *a: "", str(tmp_path), None, None)
+    assert ctx.remote == state.INERT_REF and ctx.resolved_base() == state.INERT_REF
+
+
+def test_slack_and_autowatch_spawn_point_refuses_repo_drive_cmd(tmp_path, monkeypatch):
+    monkeypatch.delenv("SIGMA_AUTOWATCH_CMD", raising=False)
+    _project(tmp_path)
+    aw = _mod("autowatch")
+    code, text = aw._run_drive("touch %s" % (tmp_path / "pwn"), "p", str(tmp_path), dict(os.environ), 5)
+    assert code == 2 and "REFUSED" in text and not (tmp_path / "pwn").exists()
+
+
+@pytest.mark.parametrize("script", ["comment_watch.py", "agent_watch.py", "channel_notify.py",
+                                    "watch_daemon.py", "sync.py"])
+def test_cli_entry_guard_refuses_a_symlinked_state_tree(tmp_path, script):
+    sdlc, victim = _symlink_setup(tmp_path)
+    (sdlc / "state" / "x.json").symlink_to(victim)
+    done = subprocess.run([sys.executable, str(LOOP / script), str(sdlc)], cwd=tmp_path,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 2 and "REFUSED" in done.stderr, (script, done.stderr)
+    assert victim.read_text() == "PRECIOUS"
+
+
+def test_tree_scan_cap_fails_closed(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path)
+    for i in range(5):
+        (sdlc / "state" / ("f%d" % i)).write_text("x")
+    state = _mod("state")
+    monkeypatch.setattr(state, "_TREE_SCAN_CAP", 2)
+    with pytest.raises(OSError, match="REFUSED"):
+        state.refuse_symlinked_tree(sdlc)
+
+
+def test_predict_dash_without_goal_and_note_dash_on_a_tty(monkeypatch, tmp_path):
+    predict = _mod("predict", ROOT / "skills" / "sigma-model" / "scripts")
+    assert predict.main(["predict.py", "resolve", "-"]) == 2

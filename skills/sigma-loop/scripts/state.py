@@ -262,8 +262,8 @@ def refuse_symlinked_tree(sdlc_dir):
     ONE choke point run at the top of the mutating CLIs (`loop.py`, `work.py`), so a writer added
     later is covered without remembering a per-site call; the per-site `refuse_symlinks` calls stay
     as defence in depth for entry points that skip it. Cost: one `scandir` walk, O(files in those
-    two trees), bounded by `_TREE_SCAN_CAP` entries (beyond it the walk stops -- a ceiling stated
-    here, not an unbounded cost). Missing dirs are fine."""
+    two trees), bounded by `_TREE_SCAN_CAP` entries (beyond it the check REFUSES -- a ceiling stated
+    here, fail closed, never an unbounded cost or a silent pass). Missing dirs are fine."""
     base = pathlib.Path(sdlc_dir)
     seen = 0
     for top in ("state", "journey"):
@@ -283,12 +283,31 @@ def refuse_symlinked_tree(sdlc_dir):
                 for entry in it:
                     seen += 1
                     if seen > _TREE_SCAN_CAP:
-                        return
+                        raise UnsafeStatePath(
+                            f"REFUSED: more than {_TREE_SCAN_CAP} entries under .sdlc/state and "
+                            f".sdlc/journey, so the symlink check cannot finish (#708, fail closed); "
+                            f"run `loop.py prune-state` or remove stale files")
                     if entry.is_symlink():
                         raise UnsafeStatePath(f"REFUSED: {entry.path} is a symlink under .sdlc/ -- "
                                               f"Sigma never writes through one (#708). Fix: `git rm` it.")
                     if entry.is_dir(follow_symlinks=False):
                         stack.append(pathlib.Path(entry.path))
+
+
+def guard_argv(argv, who):
+    """#708: CLI entry guard. For every argv element that is a directory holding `state/` or
+    `journey/`, run `refuse_symlinked_tree`; print the refusal and return 2, else 0. Used as
+    `sys.exit(guard_argv(sys.argv, name) or main(sys.argv))` by every sigma CLI that writes under
+    `.sdlc/` (the watchers, sync, kg, log, rebase), so a committed symlink never reaches a writer."""
+    for arg in argv[1:]:
+        try:
+            if os.path.isdir(arg) and (os.path.isdir(os.path.join(arg, "state"))
+                                       or os.path.isdir(os.path.join(arg, "journey"))):
+                refuse_symlinked_tree(arg)
+        except UnsafeStatePath as exc:
+            print(f"{who}: {exc}", file=sys.stderr)
+            return 2
+    return 0
 
 
 INERT_REF = "refused-invalid-ref-710"

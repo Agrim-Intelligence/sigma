@@ -743,6 +743,10 @@ def main(argv):
     # must classify title+body rather than the bare issue number can pass the number as an
     # optional fourth positional argument, preserving attribution without changing old calls.
     if len(argv) >= 3 and argv[1] == "resolve":
+        if argv[2] == "-" and len(argv) < 5:
+            print("predict.py: `resolve -` reads stdin and needs the goal id as the 4th argument "
+                  "(resolve - <sdlc_dir> <goal>)", file=sys.stderr)
+            return 2
         sdlc_dir = argv[3] if len(argv) > 3 else ".sdlc"
         goal_id = argv[4] if len(argv) > 4 else argv[2]
         try:

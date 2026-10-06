@@ -6323,7 +6323,7 @@ def _dispatch(argv):
         # the marker's whole failure mode was that nothing ever refreshed it.
         agent_heartbeat_all(argv[2], argv[3])
         try:
-            sources.get_source(argv[2], config).note(argv[3], sys.stdin.read() if argv[4] == "-" else argv[4])   # `-`: stdin (#713)
+            sources.get_source(argv[2], config).note(argv[3], sys.stdin.read() if (argv[4] == "-" and not sys.stdin.isatty()) else argv[4])   # `-`: stdin (#713)
         except Exception as e:
             # #1986: the OLD shape here printed one easy-to-miss stderr line and always returned 0
             # regardless — for `sigma-goal-review`'s REJECT verdict, this note is THE ENTIRE OUTPUT
