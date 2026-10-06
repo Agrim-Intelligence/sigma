@@ -4,7 +4,7 @@
 
 Sigma Loop does not report usage data. Its measured egress behavior, opt-in integrations, local data, and capture limits are documented in [docs/privacy.md](docs/privacy.md).
 
-[![CI](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml)
+[![CI](https://github.com/Agrim-Intelligence/sigmaloop/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigmaloop/actions/workflows/ci.yml)
 
 To remove Sigma Loop from a repository, follow the read-only verified [uninstall guide](docs/uninstall.md).
 

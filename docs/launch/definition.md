@@ -64,7 +64,8 @@ places below, and a clone of it that is not repointed addresses THIS repository.
 - `docs/publish-runbook.md`'s `tools/leak_refs.py scan` and `rewrite` commands, which pass
   `--repo Agrim-Intelligence/sigma`;
 - `docs/board.md`'s milestone-assignment commands (`REPO=` at `docs/board.md:162`, `$Repo` at
-  `:183`), which PATCH the milestone on issues in the named repository;
+  `:183`, and the copy probe's config at `:201`), now `Agrim-Intelligence/sigmaloop`; they PATCH the milestone on
+  issues in the named repository, so run them against the repository whose issues you mean;
 - `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
 - the README's CI badge (`README.md:7`);
 - `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py` (now the new public slug, #524). `/sigma-doctor`'s version
@@ -81,10 +82,11 @@ holds one (`skills/sigma-init/templates/config.json.tmpl`, hooks, `.claude-plugi
 address GitHub. `.claude-plugin/marketplace.json` names no repository (its source is `./`), and
 `.github/CODEOWNERS` names an organisation team, which the new repository does not change.
 
-`docs/publish-runbook.md` (its opening paragraph and its "Before the visibility flip" section)
-still assumes this repository's visibility flips to public. That contradicts the artifact above,
-a fresh snapshot in a new repository (this repository is already public); it is a known
-contradiction for #359 to fix.
+`docs/publish-runbook.md` and `docs/release.md` now describe this model (a fresh snapshot in a new repository;
+this repository is not renamed, and the loop is not repointed unless a clone of the new repository still names this
+one). The references in the list above that the public tree carries and that mean the PUBLIC repository (the CI
+badge, the issue-template advisory link, `contract/golden/config.json`, `docs/board.md`) name
+`Agrim-Intelligence/sigmaloop`; the references that are about this working repository stay as they are.
 
 ## To whom
 

@@ -14,17 +14,24 @@ manifest drift and an undated published CHANGELOG heading.
 
 ## Release checklist
 
-1. Move the intended entries out of `## Unreleased` and under
-   `## X.Y.Z — YYYY-MM-DD` in the public CHANGELOG.
+1. Set the date. For the first release the entries are already folded under
+   `## 1.0.0 — DATE-PENDING — the first public release` in `CHANGELOG.md`: replace `DATE-PENDING` with the
+   release date (`YYYY-MM-DD`; no date is invented for you). For a later release, move the intended entries
+   out of `## Unreleased` and under `## X.Y.Z — YYYY-MM-DD`. The consistency controls accept
+   `DATE-PENDING` only as the newest heading, and `tools/release_notes.py` (step 7) refuses it. Review the
+   curated 1.0.0 summary above the `<!-- release-notes:end -->` line: that is the release notes (GitHub rejects a body over
+   125,000 characters, so the tool refuses one over 120,000); the detailed log below the marker is not sent.
 2. Bump both plugin manifests to the same `X.Y.Z` version.
 3. Run the full suite successfully on every supported CI cell.
-4. For the first public release, require `GO` from the separately shipped
-   decision-rule checker; do not substitute a local green test result. That
-   checker is currently parked and is not present in this snapshot, so this is
-   an explicit release stop rather than a copyable command that would fail.
+4. For the first public release, require `GO` from the decision-rule checker, which ships in this tree:
+   `python3 tools/readiness/decide.py .`, from the root of a checkout whose `origin` is fetched (it reads
+   `refs/remotes/origin/main`, and the open blockers over `gh`, or `--blockers-json PATH` offline). Exit 0 is `GO`, 1
+   is `NO-GO` (the reasons are printed above the verdict), 2 is refused or malformed input. Do not substitute a
+   local green test result.
 5. Open, independently review, and merge the release pull request.
 6. Confirm the merge commit and create the annotated tag `vX.Y.Z` on it.
-7. Extract that CHANGELOG section to a reviewed file and, as owner, run
+7. Extract that CHANGELOG section with `python3 tools/release_notes.py X.Y.Z > <section-file>` (it exits 2 and
+   prints nothing while the heading is undated), review the file, and, as owner, run
    `gh release create vX.Y.Z --notes-file <section-file>`.
 8. Announce the release, including support status and rollback guidance.
 
@@ -36,6 +43,8 @@ public repository and `v1.0.0` tag do not yet exist. The isolated probes in
 did not produce an installed tagged plugin: the two marketplace source forms
 could not authenticate over SSH, and cloning the public HTTPS source at
 `v1.0.0` reported that the branch/tag does not exist.
+
+(The recorded probes ran against the earlier slug `Agrim-Intelligence/sigma`, before the public repository was named `Agrim-Intelligence/sigmaloop`; they are history, not a result for the new repository.)
 
 Do not document or ask users to use a pin until an owner repeats the following
 in an isolated profile against the real public release and records an install
@@ -52,23 +61,24 @@ Until then, recovery is a forward fix or a revert on the default branch, not a
 promised pin. Never run these experiments against a real profile or modify an
 existing/predecessor installation.
 
-## Pre-rename safety procedure
+## Safety for clones of the new repository
 
-Before the private repository is renamed and the public snapshot takes its
-former name, stop every loop and watcher. In every affected checkout, repoint
-or blank `discovery.github.repo`; update `discovery.github.project.owner` and
-`number` if the board moved; and update `ledger.handoff.upstream_repo` when it
-was set. Repoint `origin` before any push. Verify the intended GitHub target
-read-only with:
+This repository is NOT renamed: it keeps its name and history. The public repository is a NEW repository,
+`Agrim-Intelligence/sigmaloop`, created by the owner with one snapshot commit
+([the public snapshot](public-snapshot.md)); nothing here creates it. So no existing checkout needs repointing
+for the release, and a surviving watcher in a checkout of this repository keeps addressing this repository.
+
+The hazard is the other direction: a clone of the new repository whose `.sdlc/config.json` still names this
+repository's slug would read goals from, and write labels and comments to, THIS repository, whatever its `origin`
+says. Before running a loop in such a clone, stop every loop and watcher, then repoint or blank
+`discovery.github.repo`; update `discovery.github.project.owner` and `number` if the board moved; and update
+`ledger.handoff.upstream_repo` when it was set. Verify the intended GitHub target read-only with:
 
 ```
 gh api repos/<owner>/<repo> --jq .full_name
 ```
 
-Only after each configured slug and remote has been checked may the owner
-perform the repository rename/snapshot publication. This prevents a surviving
-watcher from editing the public repository while its checkout still belongs to
-the private one.
+If you also repoint an existing checkout's `origin` at the new repository, do that only after the same checks.
 
 ## Incident response
 
@@ -93,3 +103,6 @@ The release-heading control is run with
 -p no:cacheprovider`. For the deliberate red run, point
 `SIGMA_RELEASE_CHANGELOG` at a temporary copy whose published heading lacks the
 ISO date; that exact selector must fail before the unchanged tree is accepted.
+The one undated form it accepts is the `DATE-PENDING` placeholder on the newest heading, so the step-7 gesture is
+the control for it: `python3 tools/release_notes.py 1.0.0` must exit 2 (REFUSED, nothing on stdout) while the
+placeholder stands, and print the section once the owner has set the date.

@@ -159,7 +159,7 @@ The roadmap view shows only items that have a milestone. Run this in bash (Linux
 on Windows). It **never overwrites** a milestone an issue already has.
 
 ```bash
-REPO=Agrim-Intelligence/sigma
+REPO=Agrim-Intelligence/sigmaloop
 M=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --jq '.[] | select(.title=="v1.0") | .number')
 echo "v1.0 milestone number: ${M:-<none>}"
 # Only if that printed <none>:  gh api -X POST "repos/$REPO/milestones" -f title=v1.0
@@ -180,7 +180,7 @@ done
 PowerShell equivalent of the apply loop:
 
 ```powershell
-$Repo = "Agrim-Intelligence/sigma"; $M = <the number printed above>
+$Repo = "Agrim-Intelligence/sigmaloop"; $M = <the number printed above>
 "P0","P1" | ForEach-Object { gh api --paginate "repos/$Repo/issues?state=open&labels=priority:$_&per_page=100" --jq '.[] | select(.pull_request | not) | select(.milestone == null) | .number' } |
   Sort-Object -Unique | ForEach-Object { gh api -X PATCH "repos/$Repo/issues/$_" -F milestone=$M --silent; "set #$_" }
 ```
@@ -198,7 +198,7 @@ hide what the copy itself carried.
 gh project copy 17 --source-owner Agrim-Intelligence --target-owner <you or a scratch org> \
   --title "copy-probe-234"                 # prints the new board's URL; note its number C
 mkdir -p /tmp/copy-probe/.sdlc
-printf '%s\n' '{"discovery": {"source": "github", "github": {"repo": "Agrim-Intelligence/sigma", "project": {"owner": "<target owner>"}}}}' > /tmp/copy-probe/.sdlc/config.json
+printf '%s\n' '{"discovery": {"source": "github", "github": {"repo": "Agrim-Intelligence/sigmaloop", "project": {"owner": "<target owner>"}}}}' > /tmp/copy-probe/.sdlc/config.json
 python3 $S/board_layout.py verify /tmp/copy-probe/.sdlc --number C
 gh api graphql -f query='query { <organization|user>(login: "<target owner>") { projectV2(number: C) {
   workflows(first: 30) { nodes { name enabled } } views(first: 20) { nodes { name layout filter } } } } }'

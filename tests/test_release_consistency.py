@@ -16,6 +16,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 RELEASE = ROOT / "docs" / "release.md"
 EVIDENCE = ROOT / "docs" / "launch" / "evidence" / "pin-rollback-2026-10-02.md"
 DATE_HEADING = re.compile(r"^## (?!Unreleased$).+ — \d{4}-\d{2}-\d{2}(?:$| — )")
+#: The ONE undated form the shipped changelog may carry (owner decision 2026-10-06: no release date is
+#: invented; the owner sets it at release). Only as the newest release heading. `tools/release_notes.py`
+#: refuses it, so the documented extraction step cannot publish it.
+PLACEHOLDER = re.compile(r"^## \d+\.\d+\.\d+ — DATE-PENDING — the first public release$")
+
+
+def heading_problems(headings):
+    """Headings that are neither ISO-dated nor the single DATE-PENDING placeholder on the newest one."""
+    return [line for i, line in enumerate(headings)
+            if not DATE_HEADING.match(line) and not (i == 0 and PLACEHOLDER.match(line))]
 
 
 def _doctor():
@@ -59,7 +69,39 @@ def test_every_published_changelog_release_heading_has_an_iso_date():
     headings = [line for line in changelog.read_text(encoding="utf-8").splitlines()
                 if line.startswith("## ") and line != "## Unreleased"]
     assert headings, "the shipped changelog has no release heading"
-    assert all(DATE_HEADING.match(line) for line in headings), headings
+    assert not heading_problems(headings), heading_problems(headings)
+
+
+def test_placeholder_is_accepted_only_as_the_newest_exact_heading():
+    """Control: the placeholder is not a general escape from the dated-heading rule."""
+    ok = "## 1.0.0 — DATE-PENDING — the first public release"
+    older = "## 0.9.0 — 2026-01-02"
+    assert heading_problems([ok, older]) == []
+    assert heading_problems([older, ok]) == [ok]
+    assert heading_problems([ok, ok]) == [ok]
+    assert heading_problems(["## 1.0.0 — DATE-PENDING"]) == ["## 1.0.0 — DATE-PENDING"]
+    assert heading_problems(["## 1.0.0 — TBD — the first public release"]) != []
+
+
+def test_public_tree_names_the_public_repo_not_the_working_repo():
+    """Public-facing references to the PUBLIC repository carry its slug (Agrim-Intelligence/sigmaloop)."""
+    old = "Agrim-Intelligence/" + "sigma"
+    for rel in ("README.md", ".github/ISSUE_TEMPLATE/config.yml", "contract/golden/config.json", "docs/board.md"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert not re.search(re.escape(old) + r"(?![\w-])", text), rel + " still names the working repository slug"
+    assert "Agrim-Intelligence/sigmaloop/security/advisories/new" in (
+        ROOT / ".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
+
+
+def test_release_docs_describe_the_new_repository_model():
+    release = " ".join((ROOT / "docs" / "release.md").read_text(encoding="utf-8").split())
+    assert "is not present in this snapshot" not in release and "currently parked" not in release
+    assert "tools/readiness/decide.py" in release
+    assert "Pre-rename" not in release and "is renamed" not in release
+    assert "NOT renamed" in release and "Agrim-Intelligence/sigmaloop" in release
+    assert "release_notes.py" in release and "DATE-PENDING" in release
+    runbook = " ".join((ROOT / "docs" / "publish-runbook.md").read_text(encoding="utf-8").split())
+    assert "visibility flip" not in runbook
 
 
 def test_signed_launch_definition_pins_doctor_fallback_to_public_repo():

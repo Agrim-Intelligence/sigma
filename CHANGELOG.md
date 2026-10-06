@@ -4,6 +4,34 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+<!-- OWNER ACTION before release: replace DATE-PENDING in the 1.0.0 heading below with the release date (YYYY-MM-DD).
+     No date is invented here. tools/release_notes.py refuses this section until you do (docs/release.md, steps 1 and 7). -->
+
+## 1.0.0 — DATE-PENDING — the first public release
+
+Sigma Loop 1.0.0 is the first public release: guardrails and an overnight autopilot for an AI coding agent,
+run from your backlog on GitHub (issues and a Projects board) or from local goal files.
+
+- A seven-phase SDLC for every goal: goal, research, plan, plan-review, implement, review and retrospective.
+  Plan-review is an adversarial review of the plan before any edit.
+- In the autonomous loop the phases are checked, not just asked: `loop.py record done` and `work.py merge` refuse
+  a goal unless the action log shows research, plan, an approved plan-review bound to the plan's bytes, implement,
+  an approved review and retro (`gates.phase_record`, on in a fresh `/sigma-init`). The record proves the phases and
+  verdicts were recorded in order, not that the work was good; interactive work outside those commands is not gated.
+- `/sigma-loop` drains a backlog autonomously with fresh phase agents, one worktree, branch and verified pull request
+  per goal; `/sigma-goal` runs one goal with an approval gate at each phase boundary; `/sigma-doctor` checks the
+  setup and prints the fix; `/sigma-init` and `/sigma-setup` scaffold and adopt the project layer.
+- Work is tracked where it already lives: the `sdlc:*` label model on GitHub issues and a Projects board, plus a local
+  action log (`/sigma-log`, `/sigma-status`) and one renderer that builds every status line.
+- Supported at launch: Claude Code on Linux (Python 3.10 to 3.13) and macOS (Python 3.12), in local-goals and github
+  modes; each is a cell CI runs. Codex, Cursor and Windows are experimental.
+- Safe by default: nothing sends data off the machine, spawns a background process or consumes quota without the
+  operator opting in. Released under the MIT licence.
+
+<!-- release-notes:end -->
+
+The detailed development log of everything folded into this release follows; it is not part of the release notes.
+
 - **The default loop now records every SDLC phase, and `record done` is refused without them** (#684, class B3). A live
   run with model tiering `off` let one worker do every phase inline: no research, plan, plan-review or retro was recorded
   and the independent review lived only in prose. `phase_report.py start|end` now write phase rows to the action log,
@@ -470,8 +498,8 @@ All notable changes to Sigma are recorded here, newest first.
 - **The launch definition is recorded: what ships, to whom, on which hosts** (#330).
   `docs/launch/definition.md` and its machine-readable twin `docs/launch/definition.json`
   (`launch-definition/v1`) fix what "launch" means so every readiness threshold can point at it: a
-  fresh public snapshot repository named `Agrim-Intelligence/sigma` (this private repository
-  is not renamed and stays private; the public repository is created new, by the owner, under its
+  fresh public snapshot repository named `Agrim-Intelligence/sigmaloop` (this repository
+  is not renamed; the public repository is created new, by the owner, under its
   own name; the sequence is prepared in #397), version `1.0.0`; supported = Claude Code on
   macOS and Linux, Python 3.10-3.13, `local-goals` and `github` modes (launch-blocking
   requirements, not verified today: CI gates Ubuntu on 3.10-3.13 and macOS on 3.12 only, #338);
@@ -1343,7 +1371,7 @@ All notable changes to Sigma are recorded here, newest first.
   prints a bare `DONE` on stdout and now says `0 issues carry sdlc:goal — label one to start` on
   stderr.
 
-## 1.0.0 — 2026-09-29 — the first public release
+### Earlier internal 1.0.0 draft (dated 2026-09-29, kept as history)
 
 The first release of the public core: a gated software development lifecycle for coding agents,
 run from GitHub issues, with every phase reviewed before the next one starts.

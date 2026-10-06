@@ -37,4 +37,6 @@ def test_channel_webhook_documents_its_enforced_remote_opt_in():
 
 def test_changelog_versions_are_dated():
     headings = re.findall(r"^## \[?([0-9]+\.[0-9]+\.[0-9]+)\]?\s*(.*)$", (ROOT / "CHANGELOG.md").read_text(), re.M)
-    assert headings and all(re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) for _version, suffix in headings)
+    # The one undated form is the owner-dated placeholder on the newest heading (see test_release_consistency).
+    assert headings and all(re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) or (i == 0 and suffix.startswith("— DATE-PENDING — "))
+                            for i, (_version, suffix) in enumerate(headings))

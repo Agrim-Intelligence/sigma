@@ -1307,9 +1307,11 @@ def _ci_sentence():
 
 def _changelog_entry():
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = text.split("\n## Unreleased\n", 1)[1].split("\n## ", 1)[0]
+    # The first release section (the fold of what was Unreleased), or Unreleased itself before a fold.
+    sections = re.split(r"\n(?=## )", text)
+    unreleased = next(sec for sec in sections[1:] if "(#331, #429)" in sec)
     entries = [e for e in re.split(r"\n(?=- \*\*)", unreleased) if "(#331, #429)" in e]
-    assert len(entries) == 1, f"{len(entries)} Unreleased entries name (#331, #429)"
+    assert len(entries) == 1, f"{len(entries)} changelog entries name (#331, #429)"
     return entries[0]
 
 

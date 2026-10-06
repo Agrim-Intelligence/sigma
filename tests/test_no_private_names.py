@@ -153,7 +153,7 @@ _PATTERNS = [
     (r"sdlc-" "kit", "retired repository name"),
     # #2729 post-PR review, D12: the mechanical rebrand put the OLD personal-account owner in front
     # of the NEW repository name -- a repository that does not exist. The public one is
-    # `Agrim-Intelligence/sigma` (the one org-slug string D12 allows); this exact old-owner slug is
+    # `Agrim-Intelligence/sigmaloop` (the one org-slug string D12 allows); this exact old-owner slug is
     # a private name, whatever follows it (`.../sigma-x` is no more real).
     (r"swapnil-" "agrim/" "sigma", "retired owner slug on the public repo"),
 ]
