@@ -403,8 +403,43 @@
     "cumulative_after": 101316146,
     "checkpoint": 100000000,
     "cap": 120000000,
-    "note": "slot overhead measured to the point of writing this file; later turns, the PR reviewer and CI polling are not included"
+    "note": "slot overhead measured at filing time; the post-PR reviewer, CI polling and the rest of this slot are not included",
+    "s5_total_processed_tokens_at_filing": 33562525,
+    "cumulative_at_filing": 102995870,
+    "lesson": "A verifier costs about 405k processed tokens each (14.17M for 35), almost all cache reads re-counted every turn, against about 70k of its own output: the budget for a verify pass must be set in processed tokens per verifier, not in the verifier-reported tokens, and a per-finding verifier fleet is the expensive choice. Reviewers cost about 0.8M each."
   },
-  "filing": "pending: slot stopped at the 100M checkpoint before filing, pushing, or the post-PR review",
+  "filing": {
+    "blockers_queued_not_promoted": [
+      {
+        "issue": 713,
+        "class_": "B8",
+        "covers": [
+          "goal:F5",
+          "retro:F3"
+        ]
+      },
+      {
+        "issue": 714,
+        "class_": "B8",
+        "covers": [
+          "loop:F5"
+        ]
+      }
+    ],
+    "next": {
+      "issue": 715,
+      "covers": [
+        "goal:F2",
+        "plan-review:F2",
+        "implement:F3",
+        "implement:F4",
+        "review:F1",
+        "review:F3",
+        "review:F4",
+        "loop:F2"
+      ]
+    },
+    "dedup": "dedup.py reported no goals in the clean worktree (degraded); a gh issue search for the same terms found no duplicate"
+  },
   "not_covered": "single shallow pass per unit; recall unmeasured; reviewers medium effort requested not verified; the verifier is a model reading prose, so a DROPPED verdict is a judgement not a proof; scripts the skills drive were read only where a claim needed it"
 }
