@@ -66,7 +66,7 @@ extra only (`optional`), so `socket-mode` is not an extra of that release. (b) T
 | `PyYAML` | ==6.0.3 | MIT (`License: MIT`, classifier MIT) | `LICENSE` in the source archive, identical (same sha256) to `pyyaml-6.0.3.dist-info/licenses/LICENSE` in the macOS wheel | "Copyright (c) 2017-2021 Ingy döt Net" and "Copyright (c) 2006-2016 Kirill Simonov" | `tests/test_skill_frontmatter_yaml.py` (loaded with `pytest.importorskip`); `.github/workflows/ci.yml:60` |
 
 Runtime requirements those test tools declare, metadata only (the licence files were NOT read for these): `pluggy` ==1.6.0 MIT;
-`iniconfig` ==2.3.0 MIT; `packaging` 26.3 `Apache-2.0 OR BSD-2-Clause`; `pygments` ==2.21.0 `BSD-2-Clause`; `execnet` ==2.1.2 MIT;
+`iniconfig` ==2.3.0 MIT; `packaging` ==26.3 `Apache-2.0 OR BSD-2-Clause`; `pygments` ==2.21.0 `BSD-2-Clause`; `execnet` ==2.1.2 MIT;
 and, on older Pythons or Windows only, `exceptiongroup` ==1.3.1 MIT, `tomli` ==2.4.1 MIT, `colorama` (not queried).
 
 ### 4.3 The npm channel's full lock closure
@@ -272,7 +272,7 @@ The bare package names `sigmaloop` and `sigma-loop` were not registered on PyPI 
 
 ### 7.3 Earlier search for the bare word "Sigma" (2026-10-04, summarised, not re-run)
 
-The owner's decision of 2026-10-06 replaced the earlier working name `sigma`, so the generic search was not repeated. Its recorded findings, as
+The owner's decision of 2026-10-06 replaced the bare name "Sigma", so the generic search was not repeated. Its recorded findings, as
 read by the agent on 2026-10-04: 33,974 GitHub repositories with "sigma" in the name; three public repositories whose names are
 or begin with `sigma` in the Claude Code plugin space (3, 0 and 0 stars) and Sigma Computing's own Claude Code plugin repositories; the names
 `sigma` taken on PyPI (a numerical-methods package) and on npm (the graph library above); 46 VS Code Marketplace matches, none
