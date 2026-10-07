@@ -47,7 +47,7 @@ counterpart to the autonomous `/sigma-loop`).
    know the intended model. **`/sigma-goal` dispatches each phase as its own subagent with the resolved
    `--model` override, exactly the same mechanism `/sigma-loop` uses** — the only behavioral difference
    from `/sigma-loop` is that you approve at each gate here, instead of the loop auto-proceeding between
-   dispatches. On Codex, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc` before each dispatch and pass its exact model ID and reasoning effort as `../sigma-loop/references/running.md` describes; never pass the Claude tier as a Codex model ID. `off` resolves the versioned ordinary-work Codex default, never the parent session's model.
+   dispatches. On Codex, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` before each dispatch and pass its exact model ID and the same selected reasoning effort as `../sigma-loop/references/running.md` describes; never pass the Claude tier as a Codex model ID. `off` resolves the versioned ordinary-work Codex default, never the parent session's model.
    Use `fork_turns="none"` for each phase so it receives the goal, current
    phase, worktree and relevant artifact paths without copying this interactive session's history.
    Keep full evidence in the plan, review and verification artifacts; return a concise verdict and

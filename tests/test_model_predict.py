@@ -1263,10 +1263,36 @@ def test_codex_host_model_mapping_uses_valid_model_ids_and_effort():
         "model": "gpt-6-astra", "effort": "high"}
 
 
-def test_codex_host_model_off_uses_the_versioned_default():
+def test_codex_host_model_preserves_the_canonical_effort():
+    """Host adaptation may translate the tier to an ID, never quietly reclassify effort.
+
+    `diagnose` is intentionally sonnet/high: capability tier and reasoning effort are separate
+    selection axes.  The same portable decision must reach Claude and Codex.
+    """
+    m = _mod()
+    assert m.resolve_host_model("codex", "sonnet", effort="high") == {
+        "model": "gpt-5.6-terra", "effort": "high"}
+    assert m.main(["predict.py", "host-model", "codex", "sonnet", ".sdlc",
+                   "--effort", "high"]) == 0
+
+
+def test_resolve_profile_selects_one_tier_and_effort_for_both_hosts(tmp_path):
+    """The portable profile, not a host default, is the cross-host selection contract."""
+    m = _mod()
+    sdlc = _sdlc_cfg(tmp_path, {"model_selection": "auto"})
+    assert m.resolve_profile("diagnose the latency regression", sdlc) == {
+        "model": "sonnet", "effort": "high"}
+    assert m.resolve_host_model("codex", "sonnet", effort="high") == {
+        "model": "gpt-5.6-terra", "effort": "high"}
+
+
+def test_codex_host_model_off_uses_the_versioned_default(tmp_path):
     """Auto-selection off still needs a concrete Codex model, never the parent-session default."""
     assert _mod().resolve_host_model("codex", "off") == {
         "model": "gpt-5.6-terra", "effort": "medium"}
+    sdlc = _sdlc_cfg(tmp_path, {"model_selection": "off"})
+    assert _mod().resolve_profile("diagnose the latency regression", sdlc) == {
+        "model": "off", "effort": "medium"}
 
 
 def test_codex_host_model_mapping_refuses_unknown_tiers_and_hosts():
@@ -1430,6 +1456,11 @@ def test_codex_dispatch_docs_invoke_the_host_model_resolver():
     model_skill = (root / "sigma-model" / "SKILL.md").read_text(encoding="utf-8")
     assert "portable tier prediction is disabled" in model_skill
     assert "before every dispatched Codex phase, pass `off` to `host-model`" in model_skill
+    assert "resolve-profile" in model_skill
+    assert "canonical portable effort" in model_skill
+    step_section = running[running.index("**Per-STEP downgrade:"):]
+    assert "--effort <effort>" in step_section
+    assert "uses the selected `<effort>`, never its tier default" in running
     readme = (root.parent / "README.md").read_text(encoding="utf-8")
     assert "`predict.py host-model codex` resolves them, or the explicit `off` fallback" in readme
     progress = (root / "sigma-loop" / "references" / "progress.md").read_text(encoding="utf-8")

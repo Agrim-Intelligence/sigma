@@ -50,17 +50,14 @@ recorded. A defaulted tier matches nothing and correctly carries no signal — p
 omit it. **Per-step `resolve-step` below is UNCHANGED** — it stays prose-invoked, since a plan
 step's free text has no structured, goal-agnostic artifact code could read on its own.
 **`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A phase that silently regresses to inline breaks the maker≠checker discipline, so since #684 the gate is on the OTHER side: `loop.py record ... done` refuses a goal whose action log lacks the phases (below). Detecting the gap after the fact stays tracked in #1779. The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
-Then run **each phase as its own subagent** with that host's model override. Claude's Task tool
-accepts the ledger tier directly: pass that exact Task `model` selector to
+Then run **each phase as its own subagent** with that host's model override. Before dispatch, hold
+the canonical portable pair (`<tier-or-off>`, `<effort>`) selected for this goal; Claude's Task tool
+accepts the tier directly: pass that exact Task `model` selector to
 `phase_report.py start --requested-model <selector>` too, so the step banner can name what was
-requested. **Also pass the Task tool's own reasoning-effort parameter, mapped from the same
-tier** — low for `haiku`, medium for `sonnet`, high for `opus`, medium or high for `fable`
-(creative work) — the same mapping Codex uses below, just applied to Claude's separate `effort`
-argument instead of a model substitution. The tier alone is not enough: without this, the phase
-subagent inherits whatever effort the host defaults to rather than the one the goal earned, and
-that default runs hot. On Codex, resolve the known goal tier before every phase dispatch:
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc`.
-It prints `model=<id> effort=<effort>`; pass those exact values as the Codex subagent's `model`
+requested. **Also pass the canonical `<effort>` to Claude.** On Codex, resolve the same known tier
+without replacing its effort: `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"`.
+It prints `model=<id> effort=<effort>`; Codex uses the selected `<effort>`, never its tier default;
+pass those exact values as the Codex subagent's `model`
 and reasoning-effort arguments. Never pass an Anthropic tier string as a Codex model ID. The
 resolver refuses an unknown or malformed mapping; choose an approved Codex ID in
 `model_host_overrides.codex`, or update the plugin when the catalog changes, instead of guessing.
@@ -108,8 +105,8 @@ explicitly; resolve-step now also records the choice internally, see sigma-model
 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" model_choice --model <tier> --effort <effort>
 --phase <phase>`) — and run a MECHANICAL step (run the
 tests, a watcher/poll, lint) in a subagent at ITS cheaper tier/effort instead of the goal
-ceiling. Before a Codex step dispatch, resolve the `resolve-step` result's `<tier>` with
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc` and
+ceiling. Before a Codex step dispatch, resolve the `resolve-step` result's `<tier>` while preserving
+its `<effort>` with `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and
 pass its returned model ID and effort to Codex. On other hosts, pass the tier and, where supported,
 the resolve-step effort. For that step's `phase_report.py step` banner, pass the exact dispatched
 model ID with `--host-model <id>` instead of the ordinary `--phase-model`, as well as its portable
@@ -246,7 +243,7 @@ action-log settings are. A `model_host_overrides.codex` entry the resolver refus
 anything is written, as `resolve` does) makes the verb exit 2 with nothing recorded: fix it, re-run. On the
 post-PR cycle `work.max_review_cycles` still parks at its cap whatever the tier. **Per host:**
 Claude passes `<next>` as the Task tool's `model` (and `<e>` as its effort); Codex maps it with
-`host-model codex` as described above and uses that resolver's effort, not `<e>`. A host with no per-subagent model override (Cursor)
+`host-model codex --effort <e>` as described above and preserves `<e>`. A host with no per-subagent model override (Cursor)
 cannot re-dispatch at another tier: the verb still decides and records, and the operator switches
 the session model, or the goal is handled as at `CEILING`. The escalation is a real decision there; the re-dispatch is not enforceable. **On
 Codex, a redispatched fix or re-review also sets `fork_turns="none"`** — the default copies the
@@ -337,8 +334,8 @@ still runs either way).
 **3b. Independent slices? Run the wave — don't queue it.** Once the plan exists, if it declared
 slices in `.sdlc/plans/<goal-stem>.slices.json`, compute the dispatch plan:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/slices.py" plan .sdlc "$goal"` (on Codex add `--host codex
---goal-worktree <absolute-path> --tier <tier-or-off>` using the goal worktree from `work.py start`). Before every Codex
-slice dispatch, resolve its goal or downgraded-step tier with `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc` and pass the returned model ID and effort to the subagent. Also give `slices.py plan` that source tier as
+--goal-worktree <absolute-path> --tier <tier-or-off> --effort <effort>` using the goal worktree from `work.py start`). Before every Codex
+slice dispatch, resolve its goal or downgraded-step tier with its canonical effort: `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and pass the returned model ID and effort to the subagent. Also give `slices.py plan` that source tier as
 `--tier <tier-or-off>`: it resolves the mapping itself before printing a `dispatch: session` command, so a raw or stale model ID cannot enter its fresh interactive Codex process.
 planning when `work.enabled` is off; run that goal as one unit. Without a goal worktree and readable
 manifest, the Codex session line refuses to give a runnable command.

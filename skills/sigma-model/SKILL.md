@@ -14,18 +14,21 @@ empty path. Claude keeps its provided value.
 
 Detailed selection triggers: [selection](references/selection.md).
 
-These four tiers are shared ledger values, not universal model names. Claude's Task tool accepts
-them directly. Before every Codex dispatch, resolve the tier into its real host arguments:
+These four tiers are shared ledger values, not universal model names. Sigma first selects one
+**canonical portable effort** with the tier; Claude receives that pair directly, while Codex
+translates only the tier into a real model ID. Before every Codex dispatch, preserve the selected
+effort when resolving the host model:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc
+python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"
 ```
 
 It prints `model=<Codex model ID> effort=<low|medium|high>`. Pass those exact values to the Codex
 subagent call and pass the model ID to `phase_report.py start --host-model`. It refuses an unknown
-host, tier, or malformed configured override rather than passing a portable tier such as `sonnet`
-through as a Codex model ID. The current defaults are `haiku` → `gpt-5.6-luna`/low, `sonnet` →
-`gpt-5.6-terra`/medium, and `opus`/`fable` → `gpt-6-astra`/high. An operator can replace any
+host, tier, effort, or malformed configured override rather than passing a portable tier such as
+`sonnet` through as a Codex model ID. The current model defaults are `haiku` → `gpt-5.6-luna`,
+`sonnet` → `gpt-5.6-terra`, and `opus`/`fable` → `gpt-6-astra`; the requested effort remains the
+canonical portable effort, never the model mapping's old default. An operator can replace any
 default in `model_host_overrides.codex` with another approved Codex ID from this plugin release
 (`gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, or `gpt-6-astra`). A host catalog change
 needs a plugin update; an override never admits an arbitrary or Claude model string.
@@ -99,10 +102,17 @@ everything on the cheapest tier — including goals the router rated `opus`.
 `model:opus` label is an annotation `/sigma-triage` will display, never a setting that runs the goal
 on Opus. See [the label model](../../docs/label-model.md), §12.
 
-The loop resolves the tier with:
+The backward-compatible tier-only gesture remains:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve "<goal>" .sdlc   # prints a tier, or "off"
+```
+
+For a dispatch, use the canonical pair instead so Claude and Codex receive the same selection:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve-profile "<goal>" .sdlc
+# model=<tier-or-off> effort=<low|medium|high>
 ```
 
 For a GitHub issue number, pass its actual title and body as the first argument — **the title on
@@ -162,13 +172,15 @@ lets a **review phase run as a fresh sibling of the maker phase it checks** (`co
 — the maker is never the checker) instead of inheriting the maker's context, and it lets a mechanical
 step drop to a cheaper tier via `resolve-step`. `/sigma-goal` surfaces the recommendation and pauses
 at each gate; if an approved phase runs inline it uses the session model, while every dispatched
-Codex phase passes its tier (or `off`) to `host-model`. With `model_selection: off`, that resolver
+Codex phase passes its tier (or `off`) and the canonical effort to `host-model`. With `model_selection: off`, that resolver
 selects the versioned ordinary-work default (`sonnet` → Terra) rather than inheriting its parent
 session's arbitrary model.
 
 ## Two granularities, two axes (0.6)
 
 - `predict.py resolve '<goal>' .sdlc` — the GOAL ceiling tier (bare tier or `off`; backward-compatible).
+- `predict.py resolve-profile '<goal>' .sdlc` — the GOAL pair `model=<tier-or-off> effort=<...>`
+  used for both Claude and Codex dispatch.
 - `predict.py resolve-step '<step>' .sdlc` — the per-STEP pair `model=<tier> effort=<low|medium|high>`,
   so a mechanical step inside a hard goal (tests, watcher, lint) runs cheaper than the ceiling.
 - Both honor the same gate: `config.json` → `"model_selection": "auto"` (default `off` disables

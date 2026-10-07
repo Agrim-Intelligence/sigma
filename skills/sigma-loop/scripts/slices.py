@@ -62,13 +62,14 @@ def validate_codex_model_pair(pair):
     return {"model": model, "effort": effort}
 
 
-def resolve_codex_model(tier, sdlc_dir):
-    """Resolve a portable tier through the sibling CLI; never import a different skill's Python."""
+def resolve_codex_model(tier, sdlc_dir, *, effort=None):
+    """Resolve a portable tier through the sibling CLI, preserving an explicit effort."""
     predict_py = _HERE.parent.parent / "sigma-model" / "scripts" / "predict.py"
+    argv = [sys.executable, str(predict_py), "host-model", "codex", str(tier or ""), str(sdlc_dir)]
+    if effort is not None:
+        argv += ["--effort", str(effort)]
     try:
-        proc = subprocess.run([sys.executable, str(predict_py), "host-model", "codex",
-                               str(tier or ""), str(sdlc_dir)], capture_output=True, text=True,
-                              timeout=15)
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(f"host-model resolver could not run: {exc}") from None
     if proc.returncode != 0:
@@ -420,7 +421,7 @@ def worktree_name(goal, slice_obj):
 
 
 def session_command(goal, slice_obj, host="claude", goal_worktree=None, manifest=None,
-                    tier=None, sdlc_dir=".sdlc", model_pair=None):
+                    tier=None, effort=None, sdlc_dir=".sdlc", model_pair=None):
     """The exact line a human runs. Printed, never executed: an unattended `claude -p` is uncapped
     spend and would put a second worker on one `.sdlc`."""
     if host == "codex":
@@ -432,7 +433,8 @@ def session_command(goal, slice_obj, host="claude", goal_worktree=None, manifest
                     "slice at a time")
         try:
             if model_pair is None:
-                model_pair = resolve_codex_model(tier, sdlc_dir)
+                model_pair = (resolve_codex_model(tier, sdlc_dir, effort=effort)
+                              if effort is not None else resolve_codex_model(tier, sdlc_dir))
             else:
                 model_pair = validate_codex_model_pair(model_pair)
         except ValueError as exc:
@@ -451,7 +453,7 @@ def session_command(goal, slice_obj, host="claude", goal_worktree=None, manifest
 
 
 def render(plan, goal, host="claude", goal_worktree=None, manifest=None, tier=None,
-           sdlc_dir=".sdlc", model_pair=None):
+           effort=None, sdlc_dir=".sdlc", model_pair=None):
     """The dispatch plan a human reads before approving it, and the agent reads before acting on it.
     Every line names the one decision it carries: what runs, how, isolated or not."""
     total = sum(len(wave) for wave in plan)
@@ -478,7 +480,7 @@ def render(plan, goal, host="claude", goal_worktree=None, manifest=None, tier=No
             lines.append(f"      dispatch: {mode}   ·   {isolation}")
             if mode == SESSION:
                 lines.append("      too large for one subagent's context — start it yourself:")
-                lines.append(f"      {session_command(goal, s, host=host, goal_worktree=goal_worktree, manifest=manifest, tier=tier, sdlc_dir=sdlc_dir, model_pair=model_pair)}")
+                lines.append(f"      {session_command(goal, s, host=host, goal_worktree=goal_worktree, manifest=manifest, tier=tier, effort=effort, sdlc_dir=sdlc_dir, model_pair=model_pair)}")
         lines.append("")
     if host == "codex":
         lines += ["Codex subagents sharing a checkout run sequentially. Never dispatch a slice with",
@@ -493,7 +495,7 @@ def render(plan, goal, host="claude", goal_worktree=None, manifest=None, tier=No
 
 
 #: #541: the one flag this module's own CLI (`schedule --max N`) ever hands a real value to.
-_VALUE_FLAGS = frozenset({"max", "host", "goal-worktree", "tier"})
+_VALUE_FLAGS = frozenset({"max", "host", "goal-worktree", "tier", "effort"})
 _KNOWN_FLAGS = _VALUE_FLAGS
 
 
@@ -542,7 +544,7 @@ def _load_or_report(sdlc_dir, goal):
 
 
 USAGE = ("usage: slices.py plan <sdlc_dir> <goal> [--max N] [--host claude|codex] "
-         "[--goal-worktree PATH] [--tier haiku|sonnet|opus|fable|off] | frontier <sdlc_dir> <goal> | "
+         "[--goal-worktree PATH] [--tier haiku|sonnet|opus|fable|off] [--effort low|medium|high] | frontier <sdlc_dir> <goal> | "
          "check <sdlc_dir> <goal>")
 
 
@@ -593,12 +595,14 @@ def main(argv):
             print("slices: --host must be claude or codex", file=sys.stderr)
             return 2
         tier = flags.get("tier")
+        effort = flags.get("effort")
         model_pair = None
         if host == "codex":
             try:
                 # Validate before advisory events or a command are emitted. A corrupted override
                 # must never become an executable Codex dispatch.
-                model_pair = resolve_codex_model(tier, sdlc_dir)
+                model_pair = (resolve_codex_model(tier, sdlc_dir, effort=effort)
+                              if effort is not None else resolve_codex_model(tier, sdlc_dir))
             except ValueError as exc:
                 print(f"slices: Codex --tier could not resolve: {exc}", file=sys.stderr)
                 return 2
@@ -646,7 +650,7 @@ def main(argv):
                 except Exception:    # noqa: BLE001 - fail-open; a journal write must never break planning
                     continue
         print(render(plan, goal, host=host, goal_worktree=goal_worktree,
-                     manifest=manifest_path(sdlc_dir, goal), tier=tier, sdlc_dir=sdlc_dir,
+                     manifest=manifest_path(sdlc_dir, goal), tier=tier, effort=effort, sdlc_dir=sdlc_dir,
                      model_pair=model_pair), end="")
         return 0
 
