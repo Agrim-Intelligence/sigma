@@ -1016,6 +1016,88 @@ def test_park_that_cannot_write_its_labels_leaves_the_goal_PICKABLE_not_invisibl
     assert gh.next_pending() == "5"                   # recoverable: it gets re-picked and redone
 
 
+def _partial_park_failure_runner(labels, rest_labels_fails=False, remove_always_fails=False):
+    """#722: simulate the partial failure `_swap_labels`' docstring admits is possible -- the swap's
+    ADD (`+sdlc:parked`) commits, then its REMOVE half fails. GraphQL root mutations do not roll
+    back, so this is a real end state, not a contrivance. A mutation document carrying BOTH halves
+    applies only the add to `labels` and raises a transient 502 (so the swap's own retries also
+    fail identically); a REMOVE-ONLY document (what the repair sends) succeeds unless
+    `remove_always_fails`. `issue_reads` counts REST reads of the issue's labels."""
+    import gqlfake
+    stats = {"issue_reads": 0, "mutations": []}
+
+    def run(a):
+        doc = next((x[len("query="):] for x in a if str(x).startswith("query=")), "")
+        if len(a) >= 2 and a[0] == "api" and a[1] == "graphql" and doc.startswith("mutation"):
+            has_add, has_rm = "a: addLabelsToLabelable" in doc, "r: removeLabelsFromLabelable" in doc
+            stats["mutations"].append(("add" if has_add else "") + ("rm" if has_rm else ""))
+            if has_add and has_rm:
+                labels.add("sdlc:parked")                       # only the add half committed
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+            if has_rm and remove_always_fails:
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        if a[0] == "api" and len(a) >= 2 and a[1].startswith("repos/") and "/issues/" in a[1]:
+            stats["issue_reads"] += 1
+            if rest_labels_fails:
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+            return json.dumps({"body": "", "labels": [{"name": n} for n in labels]})
+        gql = gqlfake.swap(a, labels=labels)
+        return gql if gql is not None else ""
+    return run, stats
+
+
+def test_partial_park_failure_is_repaired_not_left_as_goal_plus_parked():
+    """#722: the add of `sdlc:parked` lands, the remove of `sdlc:goal` does not -> goal+parked, the
+    contradiction triage's hygiene bucket detects. `_offboard` must repair it itself (no human, no
+    triage plan): re-read the labels over REST, see parked present, and finish the removal."""
+    src = _mod("sources")
+    labels = {"sdlc:goal", "sdlc:in-progress"}
+    run, stats = _partial_park_failure_runner(labels)
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+    gh._LABEL_SWAP_RETRY_BASE = 0
+    gh.park("5", "deploy gate")
+    assert labels == {"sdlc:parked"}, labels
+    assert stats["mutations"][-1] == "rm", "the repair is a REMOVE-ONLY swap, never a second add-first one"
+
+
+def test_partial_park_repair_never_delists_a_goal_whose_park_marker_did_not_land():
+    """#722 / #1391 invariant: if the read shows `sdlc:parked` ABSENT, the add never landed -- removing
+    the goal label now would produce the invisible zero-marker limbo. Repair must do nothing."""
+    src = _mod("sources")
+    labels = {"sdlc:goal"}
+
+    def run(a):
+        import gqlfake
+        doc = next((x[len("query="):] for x in a if str(x).startswith("query=")), "")
+        if doc.startswith("mutation") and "a: addLabelsToLabelable" in doc:
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")        # the swap fails, nothing lands
+        # a remove-only mutation WOULD succeed -- so only the parked-present guard stands between
+        # this goal and being de-listed with no park marker
+        if a[0] == "api" and len(a) >= 2 and a[1].startswith("repos/"):
+            return json.dumps({"body": "", "labels": [{"name": n} for n in labels]})
+        gql = gqlfake.swap(a, labels=labels)
+        return gql if gql is not None else ""
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+    gh._LABEL_SWAP_RETRY_BASE = 0
+    gh.park("5", "deploy gate")
+    assert labels == {"sdlc:goal"}
+
+
+def test_partial_park_repair_is_bounded_and_never_raises():
+    """#722 RESILIENCY: a repair that cannot read, or cannot write, must not raise out of the park
+    path and must not loop -- one read, one bounded swap, then stop (hygiene still flags it)."""
+    src = _mod("sources")
+    for kwargs in ({"rest_labels_fails": True}, {"remove_always_fails": True}):
+        labels = {"sdlc:goal"}
+        run, stats = _partial_park_failure_runner(labels, **kwargs)
+        gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+        gh._LABEL_SWAP_RETRY_BASE = 0
+        gh.park("5", "deploy gate")                                # must not raise
+        assert stats["issue_reads"] == 1
+        want = 0 if kwargs.get("rest_labels_fails") else gh._LABEL_SWAP_RETRIES
+        assert stats["mutations"].count("rm") == want
+
+
 def test_park_excludes_issue_even_if_the_comment_raises():
     """F4: `_offboard` used to post the comment FIRST — a raising `issue comment` (a transient
     502/rate-limit) left the goal label untouched AND crashed the caller before the label-removal
