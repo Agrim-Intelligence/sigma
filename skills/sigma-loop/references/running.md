@@ -282,7 +282,8 @@ if you hit any of:
 - a hard checkpoint / a decision only the user can make,
 - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — NEVER
   run one unattended unless `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" spend-approval .sdlc
-  "$goal" --action "<step>"` prints `APPROVED` (needs `sigma:spend-approved=<label>`); else park. Never self-grant,
+  "$goal" --action -` (step on stdin, quoted `<<'EOF'` heredoc) prints
+  `APPROVED` (needs `sigma:spend-approved=<label>`); else park. Never self-grant,
 - a failure you cannot resolve — record THIS one as `failed` (see step 6): parked means
   "needs a human decision", failed means "needs a fix"; the queue separates the two.
 

@@ -74,7 +74,7 @@ it does not force. It parks on:
   instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions`),
   unless you opted in (`spend_approval`, off by default) and wrote a single-use
   `sigma:spend-approved=<label>` line as the first line of that goal's issue body, which
-  `loop.py spend-approval` checks, audits and then honours once (a per-use go-ahead, not a spend cap),
+  `loop.py spend-approval` checks, audits and then honours once (a per-use go-ahead, not a spend cap; the check is on who opened the issue, so any repo writer could add the marker to it),
 - a hard failure it cannot resolve — recorded as **`failed`** (needs a fix), distinct from
   parked (needs a decision), so the review queue separates the two.
 

@@ -3186,7 +3186,9 @@ class GitHubSource:
         hygiene still flags what remains) and nothing loops.
         Order note (#506 vs #1391): #506 wanted goal removal first; #1391 deliberately inverted it
         (add first, so a partial failure is visible rather than invisible). This repair is what makes
-        that visible state self-healing."""
+        that visible state self-healing.
+        Cost: the remove-only swap is GraphQL, the very budget whose exhaustion usually caused the
+        failure, so it retries with backoff (about 3.5s worst case) and may itself fail (swallowed)."""
         try:
             names = {l.get("name") if isinstance(l, dict) else l
                      for l in (self.fetch_body_labels_rest(goal).get("labels") or [])}

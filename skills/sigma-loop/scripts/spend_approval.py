@@ -46,14 +46,18 @@ failure AGENTS.md's SAFETY property exists to prevent:
   (a) It cannot stop an agent that ignores the verb. Sigma has no code gate over an agent's own
       tool calls, so a paid step run without asking is not something this file can prevent; the
       SKILL prose is the accelerator and this verb is the authority it consults.
-  (b) The author check is on who OPENED the issue, not on who last edited the body. A repo writer
-      can edit a body after it was authored; the audit comment's body hash and `updated_at` make
+  (b) The author check is on who OPENED the issue, not on who last edited the body. ANY repo
+      writer can add the marker to an issue an approver opened (in Sigma every collaborator is
+      already in the trust set, so `approvers` only NARROWS who may open one; an editor check via
+      userContentEdits is an optional follow-up, not built: it costs a GraphQL read); the audit comment's body hash and `updated_at` make
       that detectable afterwards, not impossible beforehand.
   (b2) Single-use state lives in issue comments only: whoever can delete the audit comment can
-      re-arm a label. The ledger entry is written best-effort and never consulted. A transient
+      re-arm a label, and any commenter can burn a label by posting its used-marker (deny-only). The ledger entry is written best-effort and never consulted. A transient
       retry inside `source.note` that double-posts burns the label (two used-markers) -- safe
       direction; the human writes a new one.
-  (b3) A grant that LOSES the post-write race (or whose `note` retry double-posted) leaves its
+  (b3) The post-write re-read is eventually consistent: a re-read that does not yet show our own
+      comment is DENIED although the audit comment stands (the label is burned; write a new one).
+      A grant that LOSES the post-write race (or whose `note` retry double-posted) leaves its
       "honoured" audit comment on the issue even though the answer was DENIED; the comment's
       used-marker is what burns the label. The trail over-reports rather than under-reports.
   (c) Same-identity forgery. On a host where the loop runs under the operator's own GitHub login,
@@ -135,8 +139,12 @@ def _used_count(comments, label):
 def _sanitise_action(action):
     """One line, no markup that could ping a third party or forge a marker, bounded length."""
     text = " ".join(str(action).split())
-    for junk in ("@", "<", ">", "sigma:"):
-        text = text.replace(junk, "")
+    junk = ("@", "<", ">", "[", "]", "(", ")", "#", "sigma:")
+    prev = None
+    while prev != text:            # to a fixpoint: `sigsigma:ma:` must not reassemble into a marker
+        prev = text
+        for j in junk:
+            text = text.replace(j, "")
     return text[:_ACTION_MAX]
 
 
@@ -246,7 +254,9 @@ def run_verb(sdlc_dir, goal, rest, config, source):
     """`loop.py spend-approval <dir> <goal> --action "<text>"` -> (stdout line, exit code)."""
     action = None
     if len(rest) >= 2 and rest[0] == "--action":
-        action = rest[1]
+        # `--action -` reads the step text from stdin (a quoted heredoc): the step derives from the
+        # issue, so it must never be interpolated into a shell command line (#713/#717).
+        action = sys.stdin.read(4 * _ACTION_MAX) if rest[1] == "-" else rest[1]
     out = check(sdlc_dir, goal, action, config, source)
     word = out.split(None, 1)[0] if out else "DENIED"
     return out, {"APPROVED": EXIT_APPROVED, "OFF": EXIT_OFF}.get(word, EXIT_DENIED)
