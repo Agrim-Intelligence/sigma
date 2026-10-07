@@ -384,7 +384,8 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-model", "sigma-rebase", "sigma-scope", "sigma-scope-assign", "sigma-scope-plan",
                 "sigma-setup", "sigma-setup:", "sigma-velocity",    # skill names in printed output (#523)
                 "sigma-managed-enrolled-", "sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
-                "sigma-receipt-snapshot-")
+                "sigma-receipt-snapshot-",
+                "sigma:spend-approved", "sigma:spend-approval-used")   # new with #722: no legacy spelling
 
 
 def test_every_marker_literal_is_registered_with_the_helper(legacy):

@@ -275,14 +275,15 @@ run `python3 "${CLAUDE_SKILL_DIR}/scripts/discovery.py" lane "$goal"`; in **gith
 an issue number with no frontmatter, so read the lane from Research's phase note on the issue
 timeline you already fetched. Either way an unsized goal is **`medium`** — unknown gets more rigour,
 not less. On **small**, plan in a few lines and keep the retro to one; on **large**, work the design
-out before planning and consider splitting it into several goals. **Plan-Review runs in full at every lane** — small goals are exactly
-where an unreviewed plan ships, because nobody looks twice at an obvious-seeming change.
+out before planning and consider splitting it into several goals. **Plan-Review runs in full at every lane**.
 The lane is a *starting* call: if implementation shows the goal is bigger, escalate and say so in the
 phase note. **Park instead of forcing through**
 if you hit any of:
 - a hard checkpoint / a decision only the user can make,
 - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — NEVER
-  run one unattended,
+  run one unattended unless `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" spend-approval .sdlc
+  "$goal" --action -` (step on stdin, quoted `<<'EOF'` heredoc) prints
+  `APPROVED` (needs `sigma:spend-approved=<label>`); else park. Never self-grant,
 - a failure you cannot resolve — record THIS one as `failed` (see step 6): parked means
   "needs a human decision", failed means "needs a fix"; the queue separates the two.
 
@@ -292,9 +293,7 @@ if you hit any of:
 YOUR OWN stable process id, captured once (same contract `--session-pid` already documents), not
 any individual command's own. **A nonzero exit on ANY host means task ownership was not
 established: stop this goal before `work.py start`; another live task may own its worktree** --
-before #2527 this could only happen on Codex (a mismatched thread id); it is now also the correct
-reaction on Claude, where a live, different pid already registered for this (goal, thread) refuses
-the same way. This local
+Claude refuses the same way when a live, different pid is already registered. This local
 marker file is what a second session's picker cross-checks before treating your claim as an
 abandoned one (#1197): a picker's own process always exits within moments of making a pick, long
 before your real work here starts, so nesting this call behind `work.enabled` would leave a

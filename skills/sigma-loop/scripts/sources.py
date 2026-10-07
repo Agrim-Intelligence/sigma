@@ -3141,10 +3141,12 @@ class GitHubSource:
         # #1393: ONE swap naming all four labels -- `+parked`, and `-goal`/`-in-progress`/`-blocked`
         # for whichever of them is actually present. A park is the one transition that gives up
         # MEMBERSHIP, so `goal_label` goes here and only here.
-        self._swap_labels_best_effort(
+        landed = self._swap_labels_best_effort(
             goal, add=[self.parked_label],
             remove=[self.goal_label, self.in_progress_label, self.goal_blocked_label],
             what="park")
+        if not landed:
+            self._repair_partial_park(goal)
         # #1657 follow-up (scope): routed through `note()` -- same GraphQL-retry-then-REST-fallback
         # chokepoint `note()`'s other callers already get -- rather than the bare single-shot `gh
         # issue comment` this used before. `park()`/`fail()` both land here, and this comment is
@@ -3167,6 +3169,39 @@ class GitHubSource:
         # `Parked` option falls through to exactly the historical column.
         if not self._set_board_status(goal, self.col["parked"], warn=False):
             self._set_board_status(goal, self.col["blocked"])
+
+    def _repair_partial_park(self, goal):
+        """#722: finish a park whose swap failed AFTER its add landed.
+
+        NOT atomic, and not claimed to be: `_swap_labels`' own block comment documents (proved live)
+        that GraphQL root mutations run serially and do not roll back, so `+parked` can commit while
+        `-goal` fails -- leaving goal+parked, the contradiction `triage._bucket_hygiene` detects.
+        This is the RECOVERY half: ONE read of the issue's labels over REST (a separate rate-limit
+        budget from the GraphQL one that is the usual cause of the failure), and only if
+        `parked_label` is PRESENT and a lifecycle label is still there, ONE remove-only swap (its own
+        bounded retries). Parked ABSENT means the add never landed, so the goal is still fully
+        labelled and re-pickable -- removing `goal_label` then would create #1391's invisible
+        zero-marker limbo, so nothing is touched. Remove-only is never add-first, so it cannot
+        resurrect the state it repairs. Any failure here is swallowed (never aborts the park path;
+        hygiene still flags what remains) and nothing loops.
+        Order note (#506 vs #1391): #506 wanted goal removal first; #1391 deliberately inverted it
+        (add first, so a partial failure is visible rather than invisible). This repair is what makes
+        that visible state self-healing.
+        Cost: the remove-only swap is GraphQL, the very budget whose exhaustion usually caused the
+        failure, so it retries with backoff (about 3.5s worst case) and may itself fail (swallowed)."""
+        try:
+            names = {l.get("name") if isinstance(l, dict) else l
+                     for l in (self.fetch_body_labels_rest(goal).get("labels") or [])}
+            stale = [l for l in (self.goal_label, self.in_progress_label, self.goal_blocked_label)
+                     if l in names]
+            if self.parked_label in names and stale:
+                self._swap_labels(goal, remove=stale)
+        except Exception as exc:                 # noqa: BLE001 - must never propagate from park
+            try:
+                sys.stderr.write("sigma: park repair failed for #%s (%s) — goal+parked may remain "
+                                 "until triage hygiene / a reconcile sweep corrects it\n" % (goal, exc))
+            except Exception:
+                pass
 
     def note(self, goal, text):
         """Record on the issue timeline (the audit trail): a journey-log / critical-insight comment.
@@ -3267,6 +3302,43 @@ class GitHubSource:
         if not isinstance(data, dict):
             data = {}
         return {"title": data.get("title") or "", "body": data.get("body") or ""}
+
+    def fetch_issue_for_approval(self, goal):
+        """#722 (`spend_approval.check`): body + author + `updated_at` from ONE REST read, so the
+        author check and the marker parse look at the same snapshot (no gap between two reads) and
+        no GraphQL quota is spent (see `fetch_title_body`, #1808). RAISES on a transport failure and
+        on a non-object payload -- the caller DENIES on any exception, because "could not read
+        who wrote this" must never degrade into a grant. `author` is `""` when GitHub named none."""
+        endpoint = ("repos/%s/issues/%s" % (self.repo, goal) if self.repo
+                    else "repos/{owner}/{repo}/issues/%s" % goal)
+        data = json.loads(self._run(["api", endpoint]))
+        if not isinstance(data, dict):
+            raise ValueError("fetch_issue_for_approval: expected a JSON object")
+        user = data.get("user")
+        return {"body": data.get("body") or "",
+                "author": (user.get("login") or "") if isinstance(user, dict) else "",
+                "author_association": data.get("author_association") or "",
+                "updated_at": data.get("updated_at") or ""}
+
+    def fetch_comment_bodies(self, goal):
+        """#722: EVERY comment body on the issue, over REST with `--paginate` (so a used-marker
+        past the first page cannot be missed -- a miss would fail OPEN into reusing a grant).
+        RAISES on a transport failure or an unparseable payload; the caller DENIES on any exception.
+        `gh api --paginate` prints one JSON array per page back to back, so the output is decoded
+        as a stream of documents rather than assumed to be one."""
+        endpoint = ("repos/%s/issues/%s/comments" % (self.repo, goal) if self.repo
+                    else "repos/{owner}/{repo}/issues/%s/comments" % goal)
+        raw = self._run(["api", "--paginate", endpoint]) or ""
+        dec, i, out = json.JSONDecoder(), 0, []
+        while i < len(raw):
+            if raw[i].isspace():
+                i += 1
+                continue
+            page, i = dec.raw_decode(raw, i)
+            if not isinstance(page, list):
+                raise ValueError("fetch_comment_bodies: expected a JSON array per page")
+            out.extend((c.get("body") or "") for c in page if isinstance(c, dict))
+        return out
 
     def fetch_author(self, goal):
         """#1479: the login that OPENED this issue -> a string, `""` when gh did not say.

@@ -92,8 +92,8 @@ Then repeat until the helper says stop:
    `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each, #684).
    Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
    run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
-   via its **executor**. `$goal` is a **file path** in local mode (read the file) or a **GitHub
-   issue number** in github mode (`gh issue view "$goal"` to read it).
+   via its **executor**. `$goal` is a **file path** in local mode (read it) or a **GitHub
+   issue number** in github mode (`gh issue view "$goal"`).
 
    **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
    Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a
@@ -106,7 +106,7 @@ Then repeat until the helper says stop:
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every
    dispatched phase subagent (research, plan, plan-review, implement, review, retro, and each
-   individual slice under 3b), not only Implement, and it does not travel from one dispatch prompt
+   individual slice under 3b), and it does not travel from one dispatch prompt
    to the next on its own: **say it in each one**. A phase that wants a local checkpoint leaves the
    worktree DIRTY and says so in its own handoff; it never stages or commits anything itself.
 
@@ -115,8 +115,8 @@ Then repeat until the helper says stop:
    every lane.** **Park instead of forcing through** if you hit any of:
    - a hard checkpoint / a decision only the user can make,
    - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — NEVER
-     run one unattended,
-   - a failure you cannot resolve — record THIS one as `failed` (see step 6): parked means
+     run one unattended unless `loop.py spend-approval` approves,
+   - a failure you cannot resolve — record THIS one as `failed` (step 6): parked means
      "needs a human decision", failed means "needs a fix"; the queue separates the two.
 
    **"Budget" or "tier too small" is not a park reason.** Before any park after a review send-back

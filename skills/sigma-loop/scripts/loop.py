@@ -5857,6 +5857,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> | "
          "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "precheck <dir> <goal> | "
          "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
+          "spend-approval <dir> <goal> --action \"<text>\" | "
          "mark-designed <dir> <goal> | feature-frontier <dir> <unit> | "
          "note <dir> <goal> <text> | "
          "record <dir> <goal> done|review|parked|failed [reason] | reconcile-merges <dir> | "
@@ -6282,6 +6283,16 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         print(design_check(argv[2], argv[3], config, sources.get_source(argv[2], config)))
         return 0
+    if len(argv) >= 4 and argv[1] == "spend-approval":   # #722: exempt THIS goal's park-on-spend
+        # Deliberately NOT in `_ARMS_CLAIM`: asking whether a step is approved is not "work has
+        # begun here". Fail-CLOSED: every unreadable/malformed/unauthorised path prints DENIED and
+        # exits 3 (park as before); only a fully authenticated, audited marker exits 0. See
+        # spend_approval.py's docstring for the guards and what this verb does NOT do.
+        config = state.load_config(argv[2])
+        out, code = _load("spend_approval").run_verb(
+            argv[2], argv[3], argv[4:], config, sources.get_source(argv[2], config))
+        print(out)
+        return code
     if len(argv) >= 4 and argv[1] == "mark-designed":   # #1826: goal-review's write-back for sdlc:designed
         config = state.load_config(argv[2])
         src = sources.get_source(argv[2], config)
