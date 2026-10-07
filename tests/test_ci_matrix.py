@@ -22,7 +22,7 @@ def validate_supported_matrix(text):
     assert "fail-fast: false" in text
     assert "runs-on: ${{ matrix.os }}" in text
     assert "python-version: ${{ matrix.python }}" in text
-    assert "timeout-minutes: 60" in text
+    assert "timeout-minutes: 90" in text
     assert "python-version:" not in text.split("matrix:", 1)[1].split("steps:", 1)[0]
     for os_name, python in EXPECTED_CELLS:
         expected = "- os: " + os_name + "\n            python: \"" + python + "\""

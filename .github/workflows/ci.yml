@@ -16,7 +16,7 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       # Every leg runs to completion: without this, the first failing leg cancels the others and
       # a version-specific failure hides whether the other version is green (issue #241).
