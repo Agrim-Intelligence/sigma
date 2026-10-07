@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.1 — 2026-10-07 — the opt-in spend-approval marker and the partial-park self-heal
+
 - **Spend approval (opt-in).** `loop.py spend-approval <dir> <goal> --action "<step>"` is an audited, single-use exemption from the loop's "never run an irreversible or expensive action unattended" park. It is honoured only when `spend_approval.enabled` is true (off by default), the issue's first body line is exactly `sigma:spend-approved=<label>`, the issue author is in `spend_approval.approvers` and is OWNER, MEMBER or COLLABORATOR, and an audit comment posts first; anything else parks as before. It is a per-use go-ahead, not a dollar cap, and a loop under the operator's own login could write the marker itself (the audit comment is the trace), and the author check is on who opened the issue, so any repo writer can add the marker to an approver's issue (#722).
 - **Partial park swap self-heals.** A park whose label swap added `sdlc:parked` but failed to remove `sdlc:goal` now repairs the goal+parked contradiction instead of leaving it for triage; the repair uses the same GraphQL budget whose exhaustion usually caused the failure, so expect a few seconds of backoff (#722).
 
