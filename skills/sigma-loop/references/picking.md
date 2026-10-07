@@ -79,7 +79,7 @@ one, per this section's own opening sentence; nothing here changes that.)
 
 For each goal in the batch, dispatch a **subagent** (fresh context) that runs this skill's steps 2
 through 7 for that ONE goal. Claude receives the tier you just captured as its Task `model` value.
-Before a Codex goal-slot dispatch, resolve that tier with `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc`; pass the printed `model=<id>` and `effort=<effort>` to Codex's subagent parameters. If resolution refuses, do not dispatch; select an approved current Codex ID in `model_host_overrides.codex`, or update the plugin for a changed catalog. Keep the portable tier for the ledger:
+Before a Codex goal-slot dispatch, resolve that tier with its canonical effort: `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"`; pass the printed `model=<id>` and the same `effort=<effort>` to Codex's subagent parameters. If resolution refuses, do not dispatch; select an approved current Codex ID in `model_host_overrides.codex`, or update the plugin for a changed catalog. Keep the portable tier for the ledger:
 log the dispatch with that same tier: `python3
 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" agent_dispatch --role goal-slot --model
 <tier>` — `actionlog.py` now requires `--model` for `--role goal-slot` unconditionally (#2514,

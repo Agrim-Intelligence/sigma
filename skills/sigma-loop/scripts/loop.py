@@ -5874,16 +5874,18 @@ _ESCALATE_USAGE = ("usage: loop.py escalate <dir> <goal> <current-tier> "
                     "--after plan-review|code-review|pr-review | escalate <dir> <goal> --show")
 
 
-def _codex_mapping_problem(sdlc_dir, tier):
-    """None when `predict.py host-model codex <tier>` gives a strictly valid model/effort pair, else
+def _codex_mapping_problem(sdlc_dir, tier, effort=None):
+    """None when `predict.py host-model codex <tier>` preserves a valid selected effort, else
     the reason. The same two checks `_predict_model_choice_at_pick` makes (a sibling process, never
     an import: skills do not import each other's Python), so a bad `model_host_overrides.codex`
     leaves no `model_choice` row and no floor for a tier a Codex dispatch would refuse. Fails
     CLOSED: a resolver that cannot run is a refusal, never a pass."""
     predict_py = _HERE.parent.parent / "sigma-model" / "scripts" / "predict.py"
     try:
-        host = subprocess.run([sys.executable, str(predict_py), "host-model", "codex", tier,
-                               str(sdlc_dir)], capture_output=True, text=True, timeout=15)
+        argv = [sys.executable, str(predict_py), "host-model", "codex", tier, str(sdlc_dir)]
+        if effort is not None:
+            argv += ["--effort", effort]
+        host = subprocess.run(argv, capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError) as exc:
         return f"the host-model resolver could not run: {exc}"
     if host.returncode != 0:
@@ -5977,7 +5979,7 @@ def _escalate(sdlc_dir, goal, current, rest):
         print(f"loop.py escalate: {exc}\n{_ESCALATE_USAGE}", file=sys.stderr)
         return 2
     if verdict == te.ESCALATE:
-        problem = _codex_mapping_problem(sdlc_dir, tier)     # before the floor and before any record
+        problem = _codex_mapping_problem(sdlc_dir, tier, te.EFFORT[tier])
         if problem:
             print(f"loop.py escalate: Codex host mapping refused for {tier} ({problem}); nothing "
                   f"was recorded. Fix model_host_overrides.codex in config.json and run it again.",

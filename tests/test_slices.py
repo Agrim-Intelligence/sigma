@@ -416,6 +416,20 @@ def test_codex_model_resolution_uses_the_sibling_cli_not_a_python_import(monkeyp
     assert "slices_model_predict" not in source
 
 
+def test_codex_slice_resolution_preserves_the_selected_effort(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "model=gpt-5.6-terra effort=high\n"
+        stderr = ""
+
+    monkeypatch.setattr(slices.subprocess, "run", lambda argv, **_k: calls.append(argv) or Result())
+    assert slices.resolve_codex_model("sonnet", tmp_path / ".sdlc", effort="high") == {
+        "model": "gpt-5.6-terra", "effort": "high"}
+    assert calls[0][-2:] == ["--effort", "high"]
+
+
 def test_codex_model_resolution_refuses_a_bad_cli_result(monkeypatch, tmp_path):
     class Result:
         returncode = 0

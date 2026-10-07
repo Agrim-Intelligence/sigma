@@ -139,9 +139,8 @@ Then repeat until the helper says stop:
    exception and stays in the MAIN checkout. How `<base>` resolves: `references/running.md`.
 
    **3b. Independent slices?** Run `slices.py plan .sdlc "$goal"` for a declared slices manifest;
-   on Codex add `--host codex --goal-worktree <path> --tier <tier-or-off>` for the existing goal
-   worktree; before any subagent dispatch run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py"
-   host-model codex "<tier-or-off>" .sdlc` and use its returned model ID and effort. With work off,
+   on Codex add `--host codex --goal-worktree <path> --tier <tier-or-off> --effort <effort>`; before dispatch run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py"
+   host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and use its returned pair. With work off,
    run one unit. Dispatch one wave at a time. Run Codex slices sharing a checkout
    sequentially; concurrent slices need real `isolation: worktree`. For `dispatch: session`, print
    the `claude --worktree` or Codex command and let the human start it. Never start unattended `claude -p` or

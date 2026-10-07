@@ -411,8 +411,8 @@ cache directory from another machine.
 
 Model tiers in the shared ledger are `haiku`, `sonnet`, `opus`, and `fable`. They are relative work
 tiers, not Codex model IDs. Before every Codex subagent dispatch, run
-`python3 "<absolute sigma-model skill directory>/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc`.
-Pass its exact `model=` and `effort=` values to the subagent; never pass an Anthropic tier as a
+`python3 "<absolute sigma-model skill directory>/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"`.
+Pass its exact `model=` and the same selected `effort=` value to the subagent; never pass an Anthropic tier as a
 model ID. If it refuses the mapping, do not dispatch: choose an approved current Codex model in the
 affected `model_host_overrides.codex` entry, or update the plugin for a changed host catalog, then
 rerun the resolver.

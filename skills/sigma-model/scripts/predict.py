@@ -409,11 +409,14 @@ def _validate_host_model_pair(host, tier, pair):
     return {"model": model, "effort": effort}
 
 
-def resolve_host_model(host, tier, config=None):
+def resolve_host_model(host, tier, config=None, *, effort=None):
     """Return the concrete Codex model/effort for one portable tier.
 
     Refuse rather than returning ``tier`` for an unknown host or tier: a portable label is never a
-    valid Codex model ID, and silently passing it through defeats this resolver's purpose.
+    valid Codex model ID, and silently passing it through defeats this resolver's purpose.  When
+    a caller supplies the portable selection's ``effort``, preserve it exactly: host adaptation
+    translates the model name, it does not make a second effort decision.  An override's effort
+    remains the backward-compatible default for older callers that only have a tier.
     """
     host = (host or "").strip().lower()
     tier = (tier or "").strip().lower()
@@ -447,6 +450,10 @@ def resolve_host_model(host, tier, config=None):
         _validate_host_model_pair(host, configured_tier, override)
     if tier in host_overrides:
         pair = dict(host_overrides[tier])
+    if effort is not None:
+        if effort not in _HOST_MODEL_EFFORTS:
+            raise ValueError(f"invalid {host} effort for {tier}")
+        pair["effort"] = effort
     return _validate_host_model_pair(host, tier, pair)
 
 
@@ -621,10 +628,28 @@ def resolve(goal_text, sdlc_dir=".sdlc", goal=None):
     # The portable choice becomes an advisory ledger event below.  Validate its Codex dispatch
     # mapping first so a malformed override cannot leave a false "model_choice" audit trail that
     # suggests a phase may run when its real host command must refuse.
-    resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir))
+    resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir),
+                       effort=predict_effort(goal_text))
     if goal is not None:
         _emit_model_choice(sdlc_dir, goal, tier, signal)
     return tier
+
+
+def resolve_profile(goal_text, sdlc_dir=".sdlc", goal=None):
+    """Return the single portable ``{model, effort}`` selection for either host.
+
+    The classifier owns both axes.  Claude consumes this pair directly; Codex translates only
+    ``model`` through :func:`resolve_host_model` and must be passed this exact ``effort``.  ``off``
+    preserves the existing no-auto-selection state while giving a dispatched Codex child its
+    versioned ordinary-work effort.
+    """
+    tier = resolve(goal_text, sdlc_dir, goal=goal)
+    if tier is None:
+        tier, effort = "off", _CODEX_HOST_MODELS[_CODEX_DEFAULT_TIER]["effort"]
+    else:
+        effort = predict_effort(goal_text)
+    resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir), effort=effort)
+    return {"model": tier, "effort": effort}
 
 
 def resolve_step(step_text, sdlc_dir=".sdlc", goal=None):
@@ -649,10 +674,11 @@ def resolve_step(step_text, sdlc_dir=".sdlc", goal=None):
         return None
     tier, signal, _ = predict_with_location(step_text, signal_excludes(cfg), max_tier(cfg),
                                             haiku_anywhere=True)   # #2827: step semantics kept
-    resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir))
+    effort = predict_effort(step_text)
+    resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir), effort=effort)
     if goal is not None:
         _emit_model_choice(sdlc_dir, goal, tier, signal)
-    return {"model": tier, "effort": predict_effort(step_text)}
+    return {"model": tier, "effort": effort}
 
 
 def _read(arg):
@@ -713,8 +739,9 @@ def _read_goal(arg):
 
 
 USAGE = ("usage: predict.py '<goal>' [sdlc_dir] | resolve '<goal>' [sdlc_dir] | "
+         "resolve-profile '<goal>' [sdlc_dir] | "
          "resolve-step '<step>' [sdlc_dir] [goal] | why '<goal>' [sdlc_dir] | "
-         "host-model codex <tier-or-off> [.sdlc]")
+         "host-model codex <tier-or-off> [.sdlc] [--effort low|medium|high]")
 
 
 def main(argv):
@@ -726,12 +753,31 @@ def main(argv):
         return 0
     if len(argv) >= 4 and argv[1] == "host-model":
         try:
+            tail = argv[4:]
+            effort = None
+            if "--effort" in tail:
+                i = tail.index("--effort")
+                if i + 1 >= len(tail) or tail.count("--effort") != 1:
+                    raise ValueError("host-model --effort needs one value")
+                effort = tail[i + 1]
+                del tail[i:i + 2]
+            if len(tail) > 1:
+                raise ValueError("host-model accepts one optional .sdlc directory")
             pair = resolve_host_model(argv[2], argv[3],
-                                      _host_model_cfg(argv[4] if len(argv) > 4 else ".sdlc"))
+                                      _host_model_cfg(tail[0] if tail else ".sdlc"), effort=effort)
         except ValueError as exc:
             print(f"predict.py: {exc}", file=sys.stderr)
             return 2
         print(f"model={pair['model']} effort={pair['effort']}")
+        return 0
+    if len(argv) >= 3 and argv[1] == "resolve-profile":
+        sdlc_dir = argv[3] if len(argv) > 3 else ".sdlc"
+        try:
+            profile = resolve_profile(_read_goal(argv[2]), sdlc_dir, goal=argv[2])
+        except ValueError as exc:
+            print(f"predict.py: {exc}", file=sys.stderr)
+            return 2
+        print(f"model={profile['model']} effort={profile['effort']}")
         return 0
     # resolve: config-gated tier for the loop ("off" when model_selection isn't auto).
     # Output stays a bare tier for backward compatibility with existing callers.
