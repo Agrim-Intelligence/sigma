@@ -31,8 +31,10 @@ summary counts the allow-marked lines. Fixtures that need a TOKEN-shaped value b
 fragments at run time instead -- the marker is for the rare literal that must stay literal.
 
 THE RULES (a finding's line is 0 when the rule is about the whole file).
-  * home-path: `/Users/<name>`, `/home/<name>`, the same behind WSL's `/mnt/<drive>/Users/` and
-    macOS's `/System/Volumes/Data/`, `C:\\Users\\<name>` / `C:/Users/<name>` (any case: Windows paths
+  * home-path: `/Users/<name>`, `/home/<name>`, `/var/home/<name>`, the same after a compiler
+    include flag (`-I/Users/<name>`), behind WSL's `/mnt/<drive>/Users/` and macOS's
+    `/System/Volumes/Data/`, and JSON-escaped `\\/Users\\/<name>`; `C:\\Users\\<name>` /
+    `C:/Users/<name>` (any case: Windows paths
     are case-insensitive), `~<name>/` / `~<name>` at end of line, and the encoded `-Users-<name>-`
     form agent hosts use for per-project directories, where <name> is not a placeholder (`you`,
     `me`, `user`, `USER`, `<...>`, `$USER`, `alice`, `bob`, `nosuch*`, any one-letter name, ...;
@@ -40,16 +42,19 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
   * secret shapes: ONE source of truth, `skills/sigma-loop/scripts/scrub.py`, loaded by path and
     never copied: its `SHAPE_RULES` (named there) plus the redactor-only shapes in `_SECRET_PATTERNS`
     (PEM private keys, AWS `AKIA`/`ASIA`, classic GitHub `gh[pousr]_`, JWT, bearer/basic auth),
-    named from their `[REDACTED:<name>]` label. Missing tables REFUSE (exit 2): a gate with no rules
+    including Hugging Face `hf_` tokens, named from their `[REDACTED:<name>]` label. Missing tables REFUSE (exit 2): a gate with no rules
     must not print 0 findings. PEM private keys need a real body (40+ base64 chars).
   * config-credential (the gate's own, in config-like files only -- `_is_config`: `.env*`, `.ini`,
     `.cfg`, `.conf`, `.toml`, `.yml`/`.yaml`, `.json`, `.properties`, `.tmpl`, `.npmrc`/`.pypirc`/
     `.yarnrc*`/`.netrc`, `Dockerfile*`/`*dockerfile` (incl. `ENV`/`ARG KEY value`), `.sh`/`.bash`/
-    `.zsh`): a KEY that is a whole
+    `.zsh`, or a bare file named `credentials`): a KEY that is a whole
     identifier ENDING in a credential word (`GITHUB_TOKEN`, `db.password`, `aws_secret_access_key`,
     `_authToken`, ...; `_CRED_KEY`) assigned a value, quoted or not. scrub.py's generic key:value
     redactor is NOT used here: its leading `\\b` cannot match after `_`, so it misses every
-    prefixed key. In prose and code the rule would fire on every `token: str` annotation.
+    prefixed key. In prose and code the rule would fire on ordinary typed credential annotations. A JSON
+    Docker `auths.<registry>.auth` member is also a credential when its strict base64 value decodes
+    to a nonempty `user:password` whose password passes the same real-value filter; arbitrary
+    base64, malformed JSON without such a member, and decoded text without exactly one colon stay clean.
   * key-body: a private key body that lost its header or its END (#433). Three triggers:
     (1) BLOCKS. Adjacent whole lines of 40+ base64 characters (`=` padding; outer spaces, tabs and
     a CR ignored) count when there are 3 or more with at most ONE lacking upper case, lower case or a
@@ -129,8 +134,9 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     of 3: 5.93 -> 6.61 s; `key-body` alone about 2.2x (46 -> 99 s over 134,509 files); 4 MB adversarial inputs (one hex
     line, 64-character digest lines, `0x30,` lists, `l`/`n`/`x`-led tokens, `\\n3082...` escapes) 0.18-0.52 s, all linear.
   * secret-file: a tracked path whose NAME is a credential container, whatever it holds: `id_rsa` /
-    `id_dsa` / `id_ecdsa` / `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`,
-    `*.ppk`, `.netrc` / `_netrc`, `.pgpass`, `credentials.json`, `service-account*.json`, and `.env` /
+    `id_dsa` / `id_ecdsa` / `id_ed25519` (also their `.bak` copies), `*.pem`, `*.key`, `*.p8`,
+    `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.ppk`, `.netrc` / `_netrc`, `.pgpass`,
+    `.git-credentials`, `credentials.json`, `service-account*.json`, and `.env` /
     `.env.<x>` other than an example (`.example`, `.sample`, `.template`, `.dist`, `.defaults`).
   * Post-filters (a gate's false-positive budget is not a redactor's): a credential / auth value
     must carry a digit and a letter and not be a kebab/snake identifier, a `<placeholder>`, a
@@ -145,10 +151,11 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     `ast`, never imported). No origin, or a non-GitHub one: the rule is skipped and the summary says
     so.
 
-OUT OF SCOPE -- not detected, and nothing here claims they are: URL-encoded home paths
-(`%2FUsers%2F<name>`); `/root/` and UNC `\\\\wsl$\\...\\home\\<name>` paths; a bare `<owner>/<repo>`
+OUT OF SCOPE -- not detected, and nothing here claims they are: URL encoding / URL-encoded home paths
+(`%2FUsers%2F<name>`); Cyrillic/confusable and full-width forms, zero-width splicing and line-split
+paths (no Unicode normalization or cross-line reconstruction); `/root/` and UNC `\\\\wsl$\\...\\home\\<name>` paths; a bare owner/repo `<owner>/<repo>`
 slug outside a URL (`gh repo clone <owner>/<repo>`), `<owner>.github.io`, `github.com/orgs/<owner>/`
-and a percent-encoded GitHub URL; e-mail addresses; bidi and zero-width characters (including one
+and a percent-encoded owner / percent-encoded GitHub URL; e-mail addresses; bidi and zero-width characters (including one
 spliced into a token); base64-wrapped, split or concatenated tokens; credentials made of letters
 only (the digit+letter post-filter drops them); `key: value` credentials in prose and code files
 (only quoted `key = "value"` is caught there, by scrub.py's `credential-assignment`); UTF-32 text
@@ -216,6 +223,7 @@ import ast
 import base64
 import bisect
 import importlib.util
+import json
 import os
 import pathlib
 import re
@@ -237,6 +245,9 @@ _PLACEHOLDER_USERS = {"you", "me", "user", "username", "runner", "alice", "bob",
 #: `(?<![\w.~-])` keeps a URL path (`example.com/home/x`) out; the fixed-width lookbehinds admit the
 #: two real prefixes a home directory sits under (WSL's `/mnt/<drive>`, macOS's data volume).
 _HOME = re.compile(r"(?:(?<![\w.~-])/(?:Users|home)/"
+                   r"|(?<=-I)/(?:Users|home)/"
+                   r"|(?<![\w.~-])/var/home/"
+                   r"|(?<![\w.~-])\\{1,2}/(?:Users|home)\\{1,2}/"
                    r"|(?<=/mnt/[A-Za-z])/(?i:users)/"
                    r"|(?<=/System/Volumes/Data)/(?:Users|home)/"
                    r"|(?<![\w])[A-Za-z]:(?:\\{1,2}|/)(?i:users)(?:\\{1,2}|/))"
@@ -296,8 +307,8 @@ _OPENSSH_KEY = "b3BlbnNzaC1rZXktdjEA"            # base64 of `openssh-key-v1\0`,
 _DER_PRIVATE = {(0, 0x30), (0, 0x02), (1, 0x04), (1, 0x30)}
 _GAP = 8                                         # blank / `Key: value` lines (a diff's `+` allowed) header->body
 _SECRET_FILE = re.compile(
-    r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|.+\.(?:pem|key|p12|pfx|jks|keystore|ppk)"
-    r"|[._]netrc|\.pgpass|credentials\.json|service[-_]?account.*\.json"
+    r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?(?:\.bak)?|.+\.(?:pem|key|p8|p12|pfx|jks|keystore|ppk)"
+    r"|[._]netrc|\.pgpass|\.git-credentials|credentials\.json|service[-_]?account.*\.json"
     r"|\.env(?:\.(?!(?:example|sample|template|dist|defaults)$)[^/]+)?)$")
 
 #: A kebab/snake identifier (`feature-classify-tier1`): words, each at most two trailing digits.
@@ -591,6 +602,89 @@ def _key_bodies(text):
     return sorted(set(out))
 
 
+_DOCKER_AUTH_MEMBER = re.compile(
+    r'"auths"\s*:\s*\{\s*"(?:[^"\\]|\\.)+"\s*:\s*\{\s*"auth"\s*:\s*"(?P<value>[A-Za-z0-9+/]+={0,2})"')
+
+
+def _valid_docker_auth_positions(text):
+    """Return value positions for valid JSON at ``auths.<registry>.auth``, regardless of member order."""
+    decoder = json.JSONDecoder()
+    positions = []
+
+    def skip(index):
+        while index < len(text) and text[index] in " \t\r\n":
+            index += 1
+        return index
+
+    def value(index, path):
+        index = skip(index)
+        start = index
+        if text[index:index + 1] == "{":
+            index = skip(index + 1)
+            if text[index:index + 1] == "}":
+                return index + 1
+            while True:
+                key, index = decoder.raw_decode(text, index)
+                if not isinstance(key, str):
+                    raise ValueError("object key")
+                index = skip(index)
+                if text[index:index + 1] != ":":
+                    raise ValueError("object separator")
+                index = value(index + 1, path + (key,))
+                index = skip(index)
+                if text[index:index + 1] == "}":
+                    return index + 1
+                if text[index:index + 1] != ",":
+                    raise ValueError("object terminator")
+                index = skip(index + 1)
+        if text[index:index + 1] == "[":
+            index = skip(index + 1)
+            if text[index:index + 1] == "]":
+                return index + 1
+            while True:
+                index = value(index, path + (None,))
+                index = skip(index)
+                if text[index:index + 1] == "]":
+                    return index + 1
+                if text[index:index + 1] != ",":
+                    raise ValueError("array terminator")
+                index = skip(index + 1)
+        parsed, end = decoder.raw_decode(text, index)
+        if len(path) == 3 and path[0] == "auths" and path[2] == "auth" and isinstance(parsed, str):
+            if _is_docker_credential(parsed):
+                positions.append(start)
+        return end
+
+    end = value(0, ())
+    if skip(end) != len(text):
+        raise ValueError("trailing data")
+    return positions
+
+
+def _docker_auth_positions(text):
+    """Return positions of Docker ``auths.*.auth`` values that decode to real ``user:password``.
+
+    JSON parsing keeps generic base64 out of scope.  A malformed document gets a deliberately
+    narrow textual check for ``auths.<registry>.auth`` only; decoded data never leaves this function.
+    """
+    try:
+        return _valid_docker_auth_positions(text)
+    except (TypeError, ValueError):
+        return [m.start("value") for m in _DOCKER_AUTH_MEMBER.finditer(text)
+                if _is_docker_credential(m.group("value"))]
+
+
+def _is_docker_credential(value):
+    try:
+        plain = base64.b64decode(value, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if plain.count(":") != 1:
+        return False
+    user, secret_value = plain.split(":", 1)
+    return bool(user and _is_real_value(secret_value))
+
+
 def scan_text(text, rules, owner, config=False, stats=None):
     """-> [(line number, rule name)] for one file's text. Pure; the tests drive it directly.
     `rules` is `_scrub_rules()`; `config` adds `config-credential`. `stats`, when a dict, gets
@@ -635,6 +729,8 @@ def scan_text(text, rules, owner, config=False, stats=None):
             for m in rx.finditer(text):
                 if _is_real_value(m.group(1)):
                     hit(m.start(), "config-credential")
+        for pos in _docker_auth_positions(text):
+            hit(pos, "config-credential")
     for pos in _key_bodies(text):
         hit(pos, "key-body")
     if owner:
@@ -661,7 +757,7 @@ def scan_text(text, rules, owner, config=False, stats=None):
 def _is_config(rel):
     base = rel.rsplit("/", 1)[-1]
     low = base.lower()
-    return (base.startswith((".env", ".yarnrc")) or low.endswith(CONFIG_SUFFIXES)
+    return (low == "credentials" or base.startswith((".env", ".yarnrc")) or low.endswith(CONFIG_SUFFIXES)
             or low.startswith("dockerfile") or low.endswith("dockerfile"))
 
 
@@ -719,9 +815,9 @@ def _readings(data):
 def _scan_path(rel, rules, owner, stats):
     """-> [(line, rule)] for one tracked path, including the whole-file rules (line 0)."""
     path = ROOT / rel
-    if os.path.islink(path):                # git ships the link's target PATH: scan that, never follow
-        return scan_text(os.readlink(path), rules, owner, stats=stats)
     found = [(0, "secret-file")] if _SECRET_FILE.match(rel.rsplit("/", 1)[-1]) else []
+    if os.path.islink(path):                # git ships the link's target PATH: scan that, never follow
+        return found + scan_text(os.readlink(path), rules, owner, stats=stats)
     try:
         size = path.stat().st_size
         if size > MAX_BYTES:

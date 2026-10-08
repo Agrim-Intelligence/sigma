@@ -91,8 +91,8 @@ KEY_HEADER = re.compile("-" * 5 + r"BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?" + "-
 OWNER_PLACEHOLDER = re.compile(re.escape("<" + "OWNER:"))
 #: `tools/leak_scan.py`'s `_SECRET_FILE`, same source (a test pins the two patterns equal).
 SECRET_FILE = re.compile(
-    r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|.+\.(?:pem|key|p12|pfx|jks|keystore|ppk)"
-    r"|[._]netrc|\.pgpass|credentials\.json|service[-_]?account.*\.json"
+    r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?(?:\.bak)?|.+\.(?:pem|key|p8|p12|pfx|jks|keystore|ppk)"
+    r"|[._]netrc|\.pgpass|\.git-credentials|credentials\.json|service[-_]?account.*\.json"
     r"|\.env(?:\.(?!(?:example|sample|template|dist|defaults)$)[^/]+)?)$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
