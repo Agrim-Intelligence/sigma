@@ -13,9 +13,10 @@ be verified. It never silently borrows a checkout or a Claude plugin path.
 2. Install or update Sigma **in Codex only** with `codex plugin marketplace add
    https://github.com/Agrim-Intelligence/sigma` followed by `codex plugin
    add sigmaloop@sigmaloop`. Confirm one enabled `sigmaloop@sigmaloop` entry at
-   version 1.0.0 or newer with `codex plugin list --json`. A Git install must
-   resolve to the exact cached commit reported by this inventory; a local
-   install must resolve to its recorded local path.
+   version 1.0.0 or newer with `codex plugin list --json`. For a Git marketplace,
+   the resolver checks that the marketplace checkout and versioned plugin cache
+   are clean and at the same commit (or at the inventory's SHA when supplied).
+   A direct local install must resolve to its recorded local path.
 3. Refresh the Codex standing rules with `python3
    <installed-sigma>/skills/sigma-init/scripts/sdlc_init.py . --codex` and
    inspect the resulting managed `AGENTS.md` block. This does not edit

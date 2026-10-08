@@ -200,10 +200,10 @@ codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 codex plugin add sigmaloop@sigmaloop
 ```
 
-Codex reads the same `.claude-plugin/marketplace.json`: Sigma Loop ships no other manifest. These two
-lines were last run into an isolated `CODEX_HOME` with codex-cli 0.154.0-alpha.6.2 BEFORE the plugin was
-renamed, and added and installed it under the previous id; they have not been re-run for `sigmaloop`, and a
-live Codex session was never part of a run. Then run
+Codex reads the same `.claude-plugin/marketplace.json`: Sigma Loop ships no other manifest. On
+2026-10-08 the marketplace URL and plugin id were tested in an isolated `CODEX_HOME` against the
+1.0.3 feature branch; the enabled inventory and installed skill resolved to the same clean commit.
+A full Codex goal-to-merge run has not yet been measured. Then run
 the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
 ([details](#codex-partial-live-validation)):
 

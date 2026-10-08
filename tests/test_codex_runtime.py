@@ -55,6 +55,17 @@ def _git_install(tmp_path):
     return home, plugin, skill, {"installed": [entry], "available": []}
 
 
+def _git_marketplace_install(tmp_path):
+    home, plugin, skill, inventory = _git_install(tmp_path)
+    marketplace = home / ".tmp" / "marketplaces" / "sigmaloop"
+    marketplace.parent.mkdir(parents=True)
+    subprocess.run(["git", "clone", "-q", str(plugin), str(marketplace)], check=True)
+    entry = inventory["installed"][0]
+    entry["source"] = {"source": "local", "path": str(marketplace)}
+    entry["marketplaceSource"] = {"sourceType": "git", "source": "https://example.test/sigma.git"}
+    return home, plugin, skill, marketplace, inventory
+
+
 def test_host_detection_refuses_mixed_markers_without_an_explicit_choice():
     runtime = _runtime()
     assert runtime.detect_host({"CODEX_THREAD_ID": "task"}) == "codex"
@@ -79,6 +90,29 @@ def test_git_install_is_bound_to_enabled_inventory_sha_and_current_codex_home(tm
     runtime = _runtime()
     home, _, skill, inventory = _git_install(tmp_path)
     assert runtime.resolve_install(inventory, home, floor=(1, 0, 0)) == skill
+
+
+def test_git_marketplace_local_inventory_binds_clean_matching_cached_install(tmp_path):
+    runtime = _runtime()
+    home, _, skill, marketplace, inventory = _git_marketplace_install(tmp_path)
+    assert runtime.resolve_install(inventory, home) == skill
+    (marketplace / "skills" / "sigma-loop" / "SKILL.md").write_text("tampered")
+    with pytest.raises(ValueError, match="modified|dirty"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_divergent_or_external_source(tmp_path):
+    runtime = _runtime()
+    home, _, _, marketplace, inventory = _git_marketplace_install(tmp_path)
+    (marketplace / "skills" / "sigma-loop" / "SKILL.md").write_text("new version")
+    subprocess.run(["git", "-C", str(marketplace), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(marketplace), "-c", "user.name=test", "-c",
+                    "user.email=test@example.com", "commit", "-qm", "divergent"], check=True)
+    with pytest.raises(ValueError, match="matching|commit"):
+        runtime.resolve_install(inventory, home)
+    inventory["installed"][0]["source"]["path"] = str(tmp_path / "outside")
+    with pytest.raises(ValueError, match="Codex home|marketplace"):
+        runtime.resolve_install(inventory, home)
 
 
 def test_disabled_duplicate_and_stale_codex_installs_refuse(tmp_path):

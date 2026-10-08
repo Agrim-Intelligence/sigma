@@ -64,6 +64,19 @@ def _valid_skill(root, entry):
     return skill.resolve()
 
 
+def _clean_git_head(root):
+    head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, timeout=5, check=False)
+    if head.returncode or not head.stdout.strip():
+        raise ValueError("installed Sigma Git commit is unavailable")
+    status = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
+                             "--untracked-files=all"], capture_output=True, text=True,
+                            timeout=10, check=False)
+    if status.returncode or status.stdout.strip():
+        raise ValueError("installed Sigma plugin is modified or dirty")
+    return head.stdout.strip()
+
+
 def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
     entries = [e for e in inventory.get("installed", [])
                if isinstance(e, dict) and e.get("pluginId") == "sigmaloop@sigmaloop"]
@@ -76,13 +89,24 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
         raise ValueError("enabled Sigma plugin is below required version")
     source = entry.get("source") or {}
     home = pathlib.Path(codex_home).resolve()
+    expected_sha = source.get("sha")
     if source.get("source") == "local":
         raw = source.get("path")
         if not raw:
             raise ValueError("local plugin inventory has no path")
-        return _valid_skill(pathlib.Path(raw).resolve(), entry)
-    if source.get("source") != "git" or not source.get("sha"):
+        root = pathlib.Path(raw).resolve()
+        marketplace_source = entry.get("marketplaceSource") or {}
+        if marketplace_source.get("sourceType") != "git":
+            return _valid_skill(root, entry)
+        expected_root = (home / ".tmp" / "marketplaces" / entry.get("marketplaceName", "")).resolve()
+        if root != expected_root or root == home:
+            raise ValueError("Git marketplace source is outside the current Codex home")
+        _valid_skill(root, entry)
+        expected_sha = _clean_git_head(root)
+    elif source.get("source") != "git":
         raise ValueError("Sigma plugin source cannot be bound to an installed path")
+    if not expected_sha:
+        raise ValueError("Sigma Git install has no commit")
     candidates = []
     cache = home / "plugins" / "cache"
     for root in cache.glob(f"*/sigmaloop/{entry['version']}"):
@@ -90,7 +114,7 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
             continue
         result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
                                 capture_output=True, text=True, timeout=5, check=False)
-        if result.returncode == 0 and result.stdout.strip() == source["sha"]:
+        if result.returncode == 0 and result.stdout.strip() == expected_sha:
             candidates.append(root)
     if len(candidates) != 1:
         raise ValueError("expected exactly one cached Sigma install matching enabled Git SHA")
@@ -98,11 +122,8 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
     skill = _valid_skill(root, entry)
     # HEAD alone is not a content guarantee: a cache can have tracked edits or
     # injected untracked files while still reporting the inventory's SHA.
-    status = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
-                             "--untracked-files=all"], capture_output=True, text=True,
-                            timeout=10, check=False)
-    if status.returncode or status.stdout.strip():
-        raise ValueError("cached Sigma plugin is modified or dirty relative to enabled Git SHA")
+    if _clean_git_head(root) != expected_sha:
+        raise ValueError("cached Sigma plugin commit changed during validation")
     return skill
 
 
