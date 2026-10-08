@@ -11,7 +11,7 @@ be verified. It never silently borrows a checkout or a Claude plugin path.
    stop it through its documented stop file and let it exit before continuing.
    Do not stop workers for other repositories. Keep a backup of local config.
 2. Install or update Sigma **in Codex only** with `codex plugin marketplace add
-   https://github.com/Agrim-Intelligence/sigmaloop` followed by `codex plugin
+   https://github.com/Agrim-Intelligence/sigma` followed by `codex plugin
    add sigmaloop@sigmaloop`. Confirm one enabled `sigmaloop@sigmaloop` entry at
    version 1.0.0 or newer with `codex plugin list --json`. A Git install must
    resolve to the exact cached commit reported by this inventory; a local
