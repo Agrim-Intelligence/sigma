@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -45,6 +46,8 @@ def _git_install(tmp_path):
     script = plugin / "skills" / "sigma-loop" / "scripts" / "loop.py"
     script.parent.mkdir()
     script.write_text("print('safe')\n")
+    if os.name != "nt":
+        script.chmod(0o755)
     (plugin / ".gitignore").write_text("ignored.pyc\n")
     subprocess.run(["git", "init", "-q", str(plugin)], check=True)
     subprocess.run(["git", "-C", str(plugin), "add", "."], check=True)
@@ -172,6 +175,87 @@ def test_git_marketplace_refuses_ignored_untracked_code(tmp_path):
     assert not status.stdout.strip()
     with pytest.raises(ValueError, match="untracked|content"):
         runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_replace_ref_masquerading_as_inventory_commit(tmp_path):
+    runtime = _runtime()
+    home, plugin, _, _, inventory = _git_marketplace_install(tmp_path)
+    original = inventory["installed"][0]["source"].get("sha")
+    if not original:
+        original = subprocess.run(["git", "-C", str(plugin), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+    (plugin / "skills" / "sigma-loop" / "scripts" / "loop.py").write_text("print('tampered')\n")
+    subprocess.run(["git", "-C", str(plugin), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(plugin), "-c", "user.name=test", "-c",
+                    "user.email=test@example.com", "commit", "-qm", "replacement"], check=True)
+    replacement = subprocess.run(["git", "-C", str(plugin), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+    subprocess.run(["git", "-C", str(plugin), "replace", original, replacement], check=True)
+    subprocess.run(["git", "-C", str(plugin), "update-ref", "HEAD", original], check=True)
+    assert subprocess.run(["git", "-C", str(plugin), "status", "--porcelain"],
+                          capture_output=True, text=True, check=True).stdout.strip() == ""
+    with pytest.raises(ValueError, match="modified|dirty|content|commit"):
+        runtime.resolve_install(inventory, home)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX executable mode control")
+def test_git_marketplace_refuses_hidden_executable_mode_change(tmp_path):
+    runtime = _runtime()
+    home, plugin, _, _, inventory = _git_marketplace_install(tmp_path)
+    script = "skills/sigma-loop/scripts/loop.py"
+    subprocess.run(["git", "-C", str(plugin), "update-index", "--assume-unchanged", script], check=True)
+    (plugin / script).chmod(0o644)
+    status = subprocess.run(["git", "-C", str(plugin), "status", "--porcelain"],
+                            capture_output=True, text=True, check=True)
+    assert not status.stdout.strip()
+    with pytest.raises(ValueError, match="mode|modified"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_ignores_inherited_git_directory(tmp_path, monkeypatch):
+    runtime = _runtime()
+    home, plugin, _, marketplace, inventory = _git_marketplace_install(tmp_path)
+    subprocess.run(["git", "-C", str(plugin), "-c", "user.name=test", "-c",
+                    "user.email=test@example.com", "commit", "--allow-empty", "-qm", "different HEAD"],
+                   check=True)
+    monkeypatch.setenv("GIT_DIR", str(marketplace / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(plugin))
+    with pytest.raises(ValueError, match="matching|commit"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_codex_supervisor_does_not_dirty_install_with_linux_style_pycache(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py"):
+        shutil.copy2(S / name, scripts / name)
+    entry = scripts / "supervise_daemon.py"
+    runner = ("import runpy,sys; sys.pycache_prefix=None; "
+              f"sys.argv=[{str(entry)!r},'--help']; "
+              f"runpy.run_path({str(entry)!r},run_name='__main__')")
+    env = dict(os.environ, SIGMA_HOST="codex")
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+    proc = subprocess.run([sys.executable, "-c", runner], env=env,
+                          capture_output=True, text=True, timeout=10)
+    assert proc.returncode == 0, proc.stderr
+    assert not list(scripts.rglob("__pycache__"))
+
+
+def test_claude_supervisor_keeps_historical_bytecode_behavior(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py"):
+        shutil.copy2(S / name, scripts / name)
+    entry = scripts / "supervise_daemon.py"
+    runner = ("import runpy,sys; sys.pycache_prefix=None; "
+              f"sys.argv=[{str(entry)!r},'--help']; "
+              f"runpy.run_path({str(entry)!r},run_name='__main__')")
+    env = dict(os.environ, SIGMA_HOST="claude")
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+    proc = subprocess.run([sys.executable, "-c", runner], env=env,
+                          capture_output=True, text=True, timeout=10)
+    assert proc.returncode == 0, proc.stderr
+    assert list(scripts.rglob("__pycache__"))
 
 
 def test_disabled_duplicate_and_stale_codex_installs_refuse(tmp_path):

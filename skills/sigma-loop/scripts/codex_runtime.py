@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -66,18 +67,25 @@ def _valid_skill(root, entry):
     return skill.resolve()
 
 
+def _git_env():
+    """Do not let the invoking checkout's Git environment redirect install inspection."""
+    child = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    child["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return child
+
+
 def _clean_git_head(root):
     head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                          capture_output=True, text=True, timeout=5, check=False)
+                          env=_git_env(), capture_output=True, text=True, timeout=5, check=False)
     if head.returncode or not head.stdout.strip():
         raise ValueError("installed Sigma Git commit is unavailable")
     status = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
-                             "--untracked-files=all"], capture_output=True, text=True,
+                             "--untracked-files=all"], env=_git_env(), capture_output=True, text=True,
                             timeout=10, check=False)
     if status.returncode or status.stdout.strip():
         raise ValueError("installed Sigma plugin is modified or dirty")
     tree = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "HEAD"],
-                          capture_output=True, timeout=20, check=False)
+                          env=_git_env(), capture_output=True, timeout=20, check=False)
     if tree.returncode:
         raise ValueError("installed Sigma Git tree is unavailable")
     tracked = {}
@@ -91,7 +99,7 @@ def _clean_git_head(root):
             raise ValueError("installed Sigma Git tree is malformed") from exc
         if kind != b"blob" or mode not in (b"100644", b"100755") or len(oid) != 40:
             raise ValueError("installed Sigma Git tree contains an unsupported entry")
-        tracked[os.fsdecode(raw_name)] = oid.decode("ascii")
+        tracked[os.fsdecode(raw_name)] = (oid.decode("ascii"), mode)
     observed = set()
     for parent, dirs, files in os.walk(root, followlinks=False):
         if pathlib.Path(parent) == root and ".git" in dirs:
@@ -109,10 +117,15 @@ def _clean_git_head(root):
     if observed != set(tracked):
         raise ValueError("installed Sigma plugin has missing or untracked content")
     resolved_root = root.resolve()
-    for name, oid in tracked.items():
+    if sys.platform == "win32":
+        raise ValueError("Codex Git install mode verification is unsupported on Windows")
+    for name, (oid, mode) in tracked.items():
         path = root / name
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(resolved_root):
             raise ValueError("installed Sigma plugin has unsafe or missing content")
+        executable = bool(path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
+        if executable != (mode == b"100755"):
+            raise ValueError("installed Sigma plugin has modified executable mode")
         size = path.stat().st_size
         digest = hashlib.sha1(f"blob {size}\0".encode("ascii"))
         with path.open("rb") as handle:
@@ -167,7 +180,7 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
         if not root.is_dir() or not root.resolve().is_relative_to(resolved_cache):
             continue
         result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                                capture_output=True, text=True, timeout=5, check=False)
+                                env=_git_env(), capture_output=True, text=True, timeout=5, check=False)
         if result.returncode == 0 and result.stdout.strip() == expected_sha:
             candidates.append(root)
     if len(candidates) != 1:

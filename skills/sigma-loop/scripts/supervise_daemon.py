@@ -80,6 +80,17 @@ import subprocess
 import sys
 import time
 
+if __name__ == "__main__":
+    # On hosts without an external pycache prefix, importing sibling modules
+    # otherwise dirties the verified Git install before Codex preflight runs.
+    # Keep Claude's historical import/bytecode behavior unchanged.
+    _host_hint = os.environ.get("SIGMA_HOST")
+    _codex_marker = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+    _claude_override = os.environ.get("SIGMA_CLAUDE_CMD") or os.environ.get(
+        "LOOP" + "SMITH_CLAUDE_CMD")
+    if _host_hint == "codex" or (not _host_hint and _codex_marker and not _claude_override):
+        sys.dont_write_bytecode = True
+
 
 
 def _codex_runtime():

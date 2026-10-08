@@ -19,6 +19,8 @@ be verified. It never silently borrows a checkout or a Claude plugin path.
    the resolver checks that the marketplace checkout and versioned plugin cache
    are clean and at the same commit (or at the inventory's SHA when supplied).
    A direct local install must resolve to its recorded local path.
+   Git-marketplace preflight currently refuses on Windows, where this runner
+   cannot attest Git executable-mode parity; it has been exercised on macOS.
 3. Refresh the Codex standing rules with `python3
    <installed-sigma>/skills/sigma-init/scripts/sdlc_init.py . --codex` and
    inspect the resulting managed `AGENTS.md` block. This does not edit
