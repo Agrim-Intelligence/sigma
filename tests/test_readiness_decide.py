@@ -469,7 +469,7 @@ def test_gh_failure_is_malformed_never_zero_blockers(tmp_path, capsys):
 
 # -- the shipped files and the documented gesture ---------------------------------------------
 
-def test_shipped_scorecard_is_valid_and_nothing_is_scored_yet():
+def test_shipped_scorecard_is_valid_and_no_gating_dimension_reaches_3():
     """The shipped card, validated in-process: nothing in it needs a read at main."""
     card = json.loads(SHIPPED_CARD.read_text(encoding="utf-8"))
 
@@ -477,7 +477,7 @@ def test_shipped_scorecard_is_valid_and_nothing_is_scored_yet():
         raise AssertionError(f"an unscored card needs no read at main, but {rel} was asked for")
 
     reasons, _ = dz.check_scorecard(card, no_read_at_main)
-    assert "D1 Correctness: not scored (gating; needs >= 3 with evidence)" in reasons, reasons
+    assert "D1 Correctness: score 2 < 3 (gating)" in reasons, reasons
     assert "benchmark results: not named in the scorecard" in reasons, reasons
 
 
@@ -492,7 +492,7 @@ def test_shipped_scorecard_on_a_fixture_main_is_nogo_via_the_gesture(tmp_path):
     proc, calls = _gesture(root, "--blockers-json", "blockers.json")
     lines = proc.stdout.splitlines()
     assert (proc.returncode, lines[-1:], calls) == (1, ["NO-GO"], []), (lines, proc.stderr)
-    assert "D1 Correctness: not scored (gating; needs >= 3 with evidence)" in lines, lines
+    assert "D1 Correctness: score 2 < 3 (gating)" in lines, lines
 
 
 def _rule_table(heading):
@@ -1274,7 +1274,7 @@ def test_working_tree_scorecard_and_definition_cannot_steer_the_verdict(tmp_path
     proc, _ = _gesture(root)
     lines = proc.stdout.splitlines()
     assert (proc.returncode, lines[-1:]) == (1, ["NO-GO"]), (lines, proc.stderr)
-    assert "D1 Correctness: not scored (gating; needs >= 3 with evidence)" in lines, lines
+    assert "D1 Correctness: score 2 < 3 (gating)" in lines, lines
     assert reason in lines, lines
 
 
