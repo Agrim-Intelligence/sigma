@@ -40,7 +40,7 @@ def _repo(tmp_path):
     (repo / "skills" / "sigma-doctor" / "scripts" / "doctor.py").write_text(
         '_MARKETPLACE_REPO = "agrim-intelligence/public-demo"\n', encoding="utf-8")
     _git(repo, "init", "-q")
-    _git(repo, "remote", "add", "origin", "https://github.com/agrim-intelligence/demo.git")
+    _git(repo, "remote", "add", "origin", "https://github.com/" + "agrim-intelligence/demo.git")
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
     return repo

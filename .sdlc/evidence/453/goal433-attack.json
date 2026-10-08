@@ -1,8 +1,8 @@
 {
   "schema": "sigma.goal433-attack/v3",
-  "base_revision": "6f6017e6a720997d70a01ae10612eb09c1a2a328",
+  "base_revision": "1fbbd7d005daf934fc93293d0fd05f8410a8c7be",
   "origin_owner": "Agrim-Intelligence",
-  "implementation_sha256": "3c2ef86722b247ddf341b1a16a4a08caae499d95d0f4d6e3897cd02c3f29f0ac",
+  "implementation_sha256": "a80fcca0180279e6c693314d8f77f297e4bcc74af151bcdddfd5809e18c26d35",
   "allowed_public_slug": "Agrim-Intelligence/sigma",
   "invocation": "python3 tools/goal433_attack.py --repo . --origin-owner <owner> --allowed-public-slug <slug> --json-out .sdlc/evidence/453/goal433-attack.json",
   "cases": [
