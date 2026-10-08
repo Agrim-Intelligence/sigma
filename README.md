@@ -196,7 +196,7 @@ Restart the session, then, from the root of the repository you want Sigma to wor
 ### Codex
 
 ```
-codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
+codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
 codex plugin add sigmaloop@sigmaloop
 ```
 

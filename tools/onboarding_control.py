@@ -235,11 +235,6 @@ def public_url(sigma=ROOT):
     return "https://github.com/" + repo
 
 
-def install_url(sigma, host):
-    """Codex's live marketplace is still in the sigma repository; Claude keeps its own URL."""
-    return "https://github.com/Agrim-Intelligence/sigma" if host == "codex" else public_url(sigma)
-
-
 def parse_quickstart(text, sigma=ROOT):
     """-> dict of the gestures the control runs, or raises Red("readme", ...) naming what is
     missing. Pure over README text (plus existence checks against `sigma`), so a drift control can
@@ -273,8 +268,7 @@ def parse_quickstart(text, sigma=ROOT):
     for key, prefix, verb in (("claude_install", "claude plugin", "install"),
                               ("session_install", "/plugin", "install"),
                               ("codex_install", "codex plugin", "add")):
-        want = [f"{prefix} marketplace add {install_url(sigma, 'codex' if key == 'codex_install' else 'claude')}",
-                f"{prefix} {verb} {plugin_id}"]
+        want = [f"{prefix} marketplace add {public_url(sigma)}", f"{prefix} {verb} {plugin_id}"]
         if [" ".join(l.split()) for l in out[key]] != want:
             raise Red("readme", f"the Quickstart's `{prefix}` lines are {out[key]}, not {want} "
                       "(the id must be what .claude-plugin/marketplace.json declares)")
@@ -1228,7 +1222,7 @@ def host_install(qs, sigma, root, which):
         env = dict(os.environ, HOME=str(home), CLAUDE_CONFIG_DIR=str(cfg), CODEX_HOME=str(cfg))
         rec = {"binary": binary, "steps": []}
         for line in lines:
-            argv = [binary] + [t.replace(install_url(sigma, host), str(sigma)) for t in shlex.split(line)[1:]]
+            argv = [binary] + [t.replace(public_url(sigma), str(sigma)) for t in shlex.split(line)[1:]]
             t = time.monotonic()
             proc = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=300)
             rec["steps"].append({"line": line, "rc": proc.returncode,
