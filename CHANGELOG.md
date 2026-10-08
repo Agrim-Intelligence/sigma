@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.3 — 2026-10-08 — Codex-only autonomy parity
+
 - **Codex autonomy parity (opt-in, #823).** A Codex-only supervised runner checks the enabled
   plugin's exact install, uses `codex exec --approve-for-me`, excludes duplicate Codex workers,
   bounds captured output, and handles child exit status alongside quota/stop text. Optional
