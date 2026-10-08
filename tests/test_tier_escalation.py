@@ -8,6 +8,7 @@ gesture the docs print — a guard whose documented invocation cannot fail is de
 """
 import importlib.util
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -63,6 +64,22 @@ def _events(sdlc_dir):
 
 def _trace(sdlc_dir, goal):
     return [e for e in actionlog.read_goal(sdlc_dir, goal) if e.get("kind") == "model_choice"]
+
+
+def test_codex_only_override_controls_escalation_cli(tmp_path):
+    d = _sdlc(tmp_path, model_selection="off",
+              model_selection_host_overrides={"codex": "auto"}, **RECORDING)
+    argv = [sys.executable, str(LOOP_PY), "escalate", d, "7", "haiku", "--after", "plan-review"]
+    codex_env = {**os.environ, "CODEX_THREAD_ID": "task"}
+    codex_env.pop("CLAUDECODE", None)
+    codex_env.pop("CLAUDE_CODE_SESSION_ID", None)
+    codex = subprocess.run(argv, env=codex_env, capture_output=True, text=True, timeout=60)
+    assert codex.returncode == 0 and codex.stdout.startswith("ESCALATE sonnet"), codex.stderr
+    claude_env = {**os.environ, "CLAUDECODE": "1"}
+    claude_env.pop("CODEX_THREAD_ID", None)
+    claude_env.pop("CODEX_SESSION_ID", None)
+    claude = subprocess.run(argv, env=claude_env, capture_output=True, text=True, timeout=60)
+    assert claude.returncode == 3 and claude.stdout.startswith("OFF"), claude.stderr
 
 
 # ----------------------------------------------------------------------------- the ladder

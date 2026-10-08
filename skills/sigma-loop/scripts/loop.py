@@ -31,6 +31,20 @@ def _load(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+def _host_model_config(config):
+    """Use the Codex-only model gate without mutating shared repo config."""
+    effective = dict(config)
+    env = os.environ
+    codex = (env.get("SIGMA_HOST") == "codex" or
+             (env.get("SIGMA_HOST") != "claude" and
+              (env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID")) and
+              not (env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))))
+    overrides = config.get("model_selection_host_overrides")
+    if codex and isinstance(overrides, dict) and overrides.get("codex") in ("auto", "off"):
+        effective["model_selection"] = overrides["codex"]
+    return effective
+
+
 state = _load("state")
 sources = _load("sources")          # backlog source: local files or GitHub issues (config-selected)
 legacy = _load("legacy")            # #239: markers written under the plugin's previous name
@@ -819,7 +833,7 @@ def _predict_model_choice_at_pick(sdlc_dir, source, goal, config):
     function already computed is what lets an agent read the right answer instead of recomputing a
     wrong one; see the SKILL.md paragraph this function is cited from for the corrected guidance."""
     try:
-        if (config.get("model_selection") or "off") != "auto":
+        if (_host_model_config(config).get("model_selection") or "off") != "auto":
             return
         if not ledger.journal_on(sdlc_dir, config):
             return
@@ -5922,7 +5936,8 @@ def _escalate_show(sdlc_dir, goal):
         entries = actionlog.read_goal(sdlc_dir, goal)
     except Exception:                               # noqa: BLE001 - memory is best-effort
         entries = []
-    print(te.shown_tier(state.load_config(sdlc_dir), entries, te.read_floor(path)) or "none")
+    print(te.shown_tier(_host_model_config(state.load_config(sdlc_dir)), entries,
+                        te.read_floor(path)) or "none")
     return 0
 
 
@@ -5962,7 +5977,7 @@ def _escalate(sdlc_dir, goal, current, rest):
         print(f"loop.py escalate: --after is required\n{_ESCALATE_USAGE}", file=sys.stderr)
         return 2
     te = _load("tier_escalation")
-    config = state.load_config(sdlc_dir)
+    config = _host_model_config(state.load_config(sdlc_dir))
     try:
         floor_path = _escalation_floor_path(sdlc_dir, goal)
     except ValueError as exc:

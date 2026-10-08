@@ -94,14 +94,16 @@ goals and hands off to a fresh one, so its own context never keeps growing acros
 drain; `enabled: false` opts back into the old behaviour. Goal-count limits retain their count
 throughout one session, including refills; a new session resets them. A stopped run is
 resume-safe (a budget stop, re-run, picks up
-where it left off). Run
+where it left off).
 **Overnight without babysitting:** `python3 <installed-sigma>/skills/sigma-loop/scripts/supervise_daemon.py .sdlc` wraps the
 loop in a zero-polling supervisor — blocked while a session runs, and on exit it classifies the
 tail: loop finished → stop; per-run budget → relaunch; **usage-limit exhaustion → sleeps until the
 stated reset time (+ jitter) and relaunches**; unknown crash → capped escalating backoff. Stop it
 any time with `touch .sdlc/state/supervisor.stop`. (Sleeping *machine* ≠ sleeping process — on a
-macOS laptop run it under `caffeinate -is`.) Run
-**`/sigma-status`** any time for backlog counts (pending / in-progress / done / parked / failed) + whether the
+macOS laptop run it under `caffeinate -is`.)
+For Codex, follow the [Codex-only opt-in migration](docs/codex-autonomy.md) first; it verifies the enabled
+Codex plugin and launches a fresh Codex session without changing Claude's installation.
+Run **`/sigma-status`** any time for backlog counts (pending / in-progress / done / parked / failed) + whether the
 review queue needs attention.
 
 | | `/sigma-goal` (interactive) | `/sigma-loop` (autonomous) |
@@ -198,10 +200,10 @@ codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
 codex plugin add sigmaloop@sigmaloop
 ```
 
-Codex reads the same `.claude-plugin/marketplace.json`: Sigma Loop ships no other manifest. These two
-lines were last run into an isolated `CODEX_HOME` with codex-cli 0.154.0-alpha.6.2 BEFORE the plugin was
-renamed, and added and installed it under the previous id; they have not been re-run for `sigmaloop`, and a
-live Codex session was never part of a run. Then run
+Codex reads the same `.claude-plugin/marketplace.json`: Sigma Loop ships no other manifest. On
+2026-10-08 the marketplace URL and plugin id were tested in an isolated `CODEX_HOME` against the
+1.0.3 feature branch; the enabled inventory and installed skill resolved to the same clean commit.
+A full Codex goal-to-merge run has not yet been measured. Then run
 the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the standing rules
 ([details](#codex-partial-live-validation)):
 
@@ -2271,8 +2273,9 @@ sharing a checkout run sequentially.
 The first `loop.py start` gesture succeeded in a disposable real Codex CLI session. Codex phase
 usage data was checked against real rollout records; older rollout IDs without a bounded date lookup
 report usage as unavailable. **A complete Codex goal through PR merge has not
-yet been measured**, and the Claude-specific unattended watcher and live classifier do not have a
-Codex budgeted backend. Keep them off on Codex until that backend is available.
+yet been measured**. The separate Codex supervisor is available as an opt-in
+path after the bounded smoke in [the migration guide](docs/codex-autonomy.md);
+the Claude-specific unattended watcher still has no Codex budgeted backend.
 
 ## Credits & acknowledgements
 

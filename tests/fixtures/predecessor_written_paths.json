@@ -513,6 +513,7 @@
     "skills/sigma-loop/scripts/state.py::phase_end_lock",
     "skills/sigma-loop/scripts/state.py::record_phase_end",
     "skills/sigma-loop/scripts/state.py::start_run",
+    "skills/sigma-loop/scripts/supervise_daemon.py::_codex_main",
     "skills/sigma-loop/scripts/supervise_daemon.py::main",
     "skills/sigma-loop/scripts/sync.py::_knowledge_lock",
     "skills/sigma-loop/scripts/sync.py::_publish_knowledge",
@@ -1065,6 +1066,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/supervise_daemon.py::_codex_main",
     "skills/sigma-loop/scripts/supervise_daemon.py::main"
    ]
   },
@@ -1085,6 +1087,7 @@
    "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
    "verdict": "unsampled",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/supervise_daemon.py::_codex_main",
     "skills/sigma-loop/scripts/supervise_daemon.py::main"
    ]
   },

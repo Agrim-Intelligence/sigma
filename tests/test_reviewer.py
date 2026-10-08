@@ -41,6 +41,17 @@ def test_explicit_host_beats_the_environment():
         assert got["mechanism"] == "inline"
 
 
+def test_codex_only_review_override_preserves_claude_selection():
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d, {"host": "claude", "host_overrides": {"codex": "codex"}})
+        codex = _r().resolve(base, env={"CODEX_THREAD_ID": "task"},
+                             which=lambda b: "/usr/bin/" + b)
+        claude = _r().resolve(base, env={"CLAUDECODE": "1"},
+                              which=lambda b: "/usr/bin/" + b)
+        assert codex["host"] == "codex" and codex["mechanism"] == "process"
+        assert claude["host"] == "claude" and claude["mechanism"] == "subagent"
+
+
 def test_claude_env_resolves_a_subagent():
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d, {"host": "auto"})

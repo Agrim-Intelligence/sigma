@@ -80,6 +80,29 @@ import subprocess
 import sys
 import time
 
+if __name__ == "__main__":
+    # On hosts without an external pycache prefix, importing sibling modules
+    # otherwise dirties the verified Git install before Codex preflight runs.
+    # Keep Claude's historical import/bytecode behavior unchanged.
+    _host_hint = os.environ.get("SIGMA_HOST")
+    _codex_marker = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+    # Mirror legacy.getenv's non-empty primary/retired fallback before importing
+    # siblings, which would otherwise write bytecode into a verified Codex install.
+    _claude_override = os.environ.get("SIGMA_" + "CLAUDE_CMD") or os.environ.get(
+        "LOOP" + "SMITH_CLAUDE_CMD")
+    if _host_hint == "codex" or (not _host_hint and _codex_marker and not _claude_override):
+        sys.dont_write_bytecode = True
+
+
+
+def _codex_runtime():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "codex_runtime", pathlib.Path(__file__).resolve().parent / "codex_runtime.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 def _load_legacy():
     import importlib.util
@@ -316,11 +339,191 @@ CLASSIFIER_UNAVAILABLE_FALLBACK = "action=backoff sleep=1800 reason=classifier u
 USAGE = "usage: supervise_daemon.py [sdlc_dir]"
 
 
+def _capture_codex(argv_cmd, child_env, repo, cap, final_path=None):
+    """Drain a Codex worker while retaining at most one log-cap of output in RAM.
+
+    The CLI's last-message side channel separates authored output from echoed
+    prompts and tool text. Its single transient file is capped and removed.
+    """
+    recent = bytearray()
+    total = 0
+    final_file = pathlib.Path(final_path) if final_path is not None else None
+    if final_file is not None:
+        final_file.unlink(missing_ok=True)
+    with subprocess.Popen(argv_cmd, env=child_env, cwd=repo, stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
+        while True:
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            recent.extend(chunk)
+            if len(recent) > cap:
+                del recent[:-cap]
+        exit_code = proc.wait()
+    if total > cap:
+        # The ring begins mid-stream and may begin mid-LINE. Never promote a
+        # marker substring into a fresh line-start classifier marker.
+        first_newline = recent.find(b"\n")
+        recent = recent[first_newline + 1:] if first_newline >= 0 else bytearray()
+    output = recent.decode("utf-8", errors="replace")
+    if total > cap:
+        output = f"supervisor: Codex output retained last {cap} of {total} bytes\n" + output
+    final = None
+    if final_file is not None and final_file.exists():
+        try:
+            if final_file.stat().st_size > cap:
+                raise ValueError("Codex final message exceeded capture limit")
+            final = final_file.read_text(encoding="utf-8", errors="replace") or None
+        finally:
+            final_file.unlink(missing_ok=True)
+    return output, exit_code, final
+
+
+def _codex_main(sdlc_dir, max_runs, scale, run_id):
+    """Codex-only supervised path. Claude's historical loop below is untouched."""
+    codex_runtime = _codex_runtime()
+    state = pathlib.Path(sdlc_dir) / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    try:
+        held_lock = codex_runtime.lock_file(state / "codex-supervisor.lock")
+        executable, skill = codex_runtime.installed_skill()
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        print(f"supervisor: Codex preflight refused: {exc}", file=sys.stderr)
+        return 2
+    # Keep the file descriptor alive until this function returns. The OS releases
+    # its lock after crash or kill; the file's existence is not a liveness test.
+    with held_lock:
+        child_env = codex_runtime.codex_environment({**os.environ, "SIGMA_RUN_ID": run_id})
+        repo = pathlib.Path(sdlc_dir).resolve().parent
+        log = state / "supervisor.log"
+        stopf = state / "supervisor.stop"
+        warned = set()
+        attempt = 0
+        runs = 0
+        while runs < max_runs:
+            if stopf.exists():
+                _log_and_print(log, "supervisor: stop-file present — exiting", warned)
+                return 0
+            try:
+                # The registry is a second admission layer. It also catches a
+                # pre-existing Claude worker before Codex starts, though a new
+                # Claude worker can still race because Claude does not take this lock.
+                active = subprocess.run([sys.executable, str(_HERE / "loop.py"),
+                                         "session-active", str(sdlc_dir)],
+                                        env=child_env, capture_output=True, text=True,
+                                        timeout=20, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                print(f"supervisor: session admission failed: {exc}", file=sys.stderr)
+                return 2
+            if active.returncode or active.stdout.strip() not in ("ACTIVE", "FREE"):
+                print("supervisor: session admission could not be verified: " + active.stderr,
+                      file=sys.stderr)
+                return 2
+            if active.stdout.strip() == "ACTIVE":
+                _log_and_print(log, "supervisor: another Sigma session is active — waiting", warned)
+                _pause(60 * scale)
+                continue
+            runs += 1
+            try:
+                # Revalidate on every launch: cache replacement/disablement
+                # after startup must not turn a stale path into a silent retry.
+                current_executable, current_skill = codex_runtime.installed_skill(child_env)
+                if current_executable != executable or current_skill != skill:
+                    raise ValueError("enabled Codex Sigma install changed during supervision")
+            except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+                print(f"supervisor: Codex install changed: {exc}", file=sys.stderr)
+                return 2
+            override = os.environ.get("SIGMA_CODEX_CMD")
+            final_path = state / "supervisor.agent-last"
+            if override is not None:
+                try:
+                    argv_cmd = _split_claude_cmd(override)
+                except ValueError as exc:
+                    print(f"supervisor: invalid SIGMA_CODEX_CMD: {exc}", file=sys.stderr)
+                    return 2
+                if not argv_cmd:
+                    print("supervisor: SIGMA_CODEX_CMD is empty", file=sys.stderr)
+                    return 2
+                argv_cmd.extend(["--output-last-message", str(final_path),
+                                 codex_runtime.build_codex_command(executable, repo, skill)[-1]])
+            else:
+                argv_cmd = codex_runtime.build_codex_command(executable, repo, skill, final_path)
+            _log_and_print(log, f"supervisor: Codex run #{runs + 1} — {_date_str()}", warned)
+            try:
+                output, exit_code, final = _capture_codex(
+                    argv_cmd, child_env, repo, logroll.cap_bytes(log.parent), final_path)
+            except ValueError as exc:
+                print(f"supervisor: Codex final message refused: {exc}", file=sys.stderr)
+                return 2
+            except OSError as exc:
+                output, exit_code, final = f"codex command not found: {exc}", 127, None
+            try:
+                logroll.append(log, _bounded_copy(output, logroll.cap_bytes(log.parent)))
+            except OSError as exc:
+                _warn_unwritable_once(warned, str(log), f"supervisor: cannot write {log} ({exc})")
+            if (final and "CODEX_SIGMA_SKILL_UNAVAILABLE" in
+                    {line.strip() for line in final.splitlines()}) or not skill.is_file():
+                print("supervisor: verified Sigma skill became unavailable; refusing", file=sys.stderr)
+                return 2
+            if final_path is not None and exit_code == 0 and final is None:
+                print("supervisor: Codex returned no final agent message; refusing", file=sys.stderr)
+                return 2
+            try:
+                _, post_skill = codex_runtime.installed_skill(child_env)
+                if post_skill != skill:
+                    raise ValueError("installed skill path changed")
+            except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+                print(f"supervisor: Codex install changed after run: {exc}", file=sys.stderr)
+                return 2
+            classifier = _HERE / "supervise_classify.py"
+            try:
+                tailf = state / "supervisor.tail"
+                tailf.write_text(_last_n_lines(final if final is not None else output, 50))
+                verdict_result = subprocess.run([sys.executable, str(classifier),
+                                                 str(tailf), str(attempt)],
+                                                env=child_env, capture_output=True, text=True,
+                                                timeout=20, check=False)
+                verdict = (verdict_result.stdout.strip() if verdict_result.returncode == 0
+                           else CLASSIFIER_UNAVAILABLE_FALLBACK)
+            except (OSError, subprocess.TimeoutExpired):
+                verdict = CLASSIFIER_UNAVAILABLE_FALLBACK
+            if exit_code and _parse_action(verdict) in ("done", "relaunch"):
+                verdict = "action=backoff sleep=300 reason=Codex exited nonzero despite a clean marker"
+            _log_and_print(log, f"supervisor: Codex exit={exit_code} {verdict}", warned)
+            action = _parse_action(verdict)
+            if action == "done":
+                return 0
+            attempt = 0 if action in ("relaunch", "sleep") and exit_code == 0 else attempt + 1
+            secs = extract_sleep_seconds(verdict)
+            sleep_for = (int(secs) if secs else 1800) * scale
+            if sleep_for > 0:
+                _log_and_print(log, f"supervisor: pausing {sleep_for:.1f}s", warned)
+                _pause(sleep_for)
+        _log_and_print(log, f"supervisor: max runs ({max_runs}) reached — exiting", warned)
+        return 1
+
+
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
     sdlc_dir = argv[1] if len(argv) > 1 else ".sdlc"
+
+    try:
+        # An explicit Claude command is an existing operator choice. A Codex
+        # desktop marker in the parent shell must not repurpose that command.
+        if legacy.getenv("SIGMA_CLAUDE_CMD") and not os.environ.get("SIGMA_HOST"):
+            codex_marker = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+            claude_marker = os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+            if codex_marker and claude_marker:
+                raise ValueError("both Claude and Codex host markers are present; set SIGMA_HOST")
+            host = "claude"
+        else:
+            host = _codex_runtime().detect_host()
+    except ValueError as exc:
+        print(f"supervisor: {exc}", file=sys.stderr)
+        return 2
 
     cmd = legacy.getenv("SIGMA_CLAUDE_CMD", "claude -p /sigma-loop")
 
@@ -350,6 +553,8 @@ def main(argv):
 
     run_id = os.environ.get("SIGMA_RUN_ID") or (
         f"supervise-{os.getpid()}-{int(time.time())}-{random.randint(0, 32767)}")
+    if host == "codex":
+        return _codex_main(sdlc_dir, max_runs, scale, run_id)
     # Never written to this process's own os.environ (H2 above) — built once and
     # handed explicitly to every subprocess launch below.
     child_env = {**os.environ, "SIGMA_RUN_ID": run_id}

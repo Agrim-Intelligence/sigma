@@ -87,6 +87,13 @@ def resolve(sdlc_dir, env=None, which=None):
     # contrived, since this function's own `process` output carries `command` as a list.
     review = review if isinstance(review, dict) else {}
     host = str(review.get("host") or "auto").strip()
+    codex_here = (env.get("SIGMA_HOST") == "codex" or
+                  (env.get("SIGMA_HOST") != "claude" and
+                   (env.get("CODEX_SESSION_ID") or env.get("CODEX_THREAD_ID")) and
+                   not (env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))))
+    overrides = review.get("host_overrides")
+    if codex_here and isinstance(overrides, dict) and "codex" in overrides:
+        host = str(overrides["codex"]).strip()
     command = str(review.get("command") or "").strip()
     try:
         timeout = int(review.get("timeout_seconds") or 900)
