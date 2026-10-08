@@ -70,7 +70,20 @@ the general problem, and is deliberately NOT what this is.
 
 ponytail: heuristic with a known ceiling. Upgrade path = swap `predict` for an LLM classifier behind
 the same signature if the keyword rubric ever proves too coarse; the config flag + tests stay put."""
-import re, sys, pathlib, subprocess
+import re, sys, pathlib, subprocess, os
+
+
+def _model_selection(cfg):
+    """Codex-only opt-in; the historical Claude gate remains the default."""
+    env = os.environ
+    codex = (env.get("SIGMA_HOST") == "codex" or
+             (env.get("SIGMA_HOST") != "claude" and
+              (env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID")) and
+              not (env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))))
+    overrides = cfg.get("model_selection_host_overrides")
+    if codex and isinstance(overrides, dict) and overrides.get("codex") in ("auto", "off"):
+        return overrides["codex"]
+    return cfg.get("model_selection") or "off"
 
 # Ordered high -> low; first tier whose signal appears wins (so hard beats trivial on a mixed goal).
 _PATTERNS = [
@@ -622,7 +635,7 @@ def resolve(goal_text, sdlc_dir=".sdlc", goal=None):
     taken out -- recording an excluded signal would leave a downstream model-tier metric joining on a
     reason that never applied."""
     cfg = _cfg(sdlc_dir)
-    if (cfg.get("model_selection") or "off") != "auto":
+    if _model_selection(cfg) != "auto":
         return None
     tier, signal = predict_with_reason(goal_text, signal_excludes(cfg), max_tier(cfg))
     # The portable choice becomes an advisory ledger event below.  Validate its Codex dispatch
@@ -670,7 +683,7 @@ def resolve_step(step_text, sdlc_dir=".sdlc", goal=None):
     is about, and widening the knob to a second axis on no evidence it is wrong there would be
     scope the issue does not have."""
     cfg = _cfg(sdlc_dir)
-    if (cfg.get("model_selection") or "off") != "auto":
+    if _model_selection(cfg) != "auto":
         return None
     tier, signal, _ = predict_with_location(step_text, signal_excludes(cfg), max_tier(cfg),
                                             haiku_anywhere=True)   # #2827: step semantics kept

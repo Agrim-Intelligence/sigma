@@ -4,6 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Codex autonomy parity (opt-in, #823).** A Codex-only supervised runner checks the enabled
+  plugin's exact install, uses `codex exec --approve-for-me`, excludes duplicate Codex workers,
+  bounds captured output, and handles child exit status alongside quota/stop text. Optional
+  Codex review and model-selection overrides leave Claude's existing route untouched. See
+  [the safe migration sequence](docs/codex-autonomy.md). The synthetic controls and independent
+  review passed; a full Codex goal-to-merge run and actual quota exhaustion are not yet measured.
+
 ## 1.0.2 — 2026-10-07 — a page on running the loop unattended
 
 - **Running unattended.** New `docs/running-unattended.md` records the permission setup a headless or overnight run needs, what was observed (the `$PPID` gesture is denied under `acceptEdits`), the workaround, and what is still open (#721). Documentation only; no code change since 1.0.1.

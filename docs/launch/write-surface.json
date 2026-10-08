@@ -401,6 +401,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/codex_runtime.py",
+      "function": "lock_file",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "Codex supervisor opt-in only; creates and holds one per-checkout lock file, refuses if the OS lock cannot be acquired",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/coexist.py",
       "function": "_mark",
       "rule": "fs-write",
@@ -1462,6 +1470,14 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "creates missing parent directories under .sdlc only, one level at a time, after an lstat symlink refusal (#708)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/supervise_daemon.py",
+      "function": "_codex_main",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "Codex host only; state directory creation follows explicit host selection, and supervisor log/tail writes run under the per-checkout OS lock after enabled-plugin preflight",
       "risk": "medium"
     },
     {

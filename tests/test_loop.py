@@ -2253,6 +2253,24 @@ def _model_choice_events(base):
     return [e for e in journal_events(_loop().ledger, base) if e.get("kind") == "model_choice"]
 
 
+def test_codex_only_model_override_reaches_pick_time_without_changing_claude(tmp_path, monkeypatch):
+    lp = _loop()
+    base = _model_choice_base(tmp_path, model_selection="off")
+    cfg_path = pathlib.Path(base) / "config.json"
+    cfg = json.loads(cfg_path.read_text())
+    cfg["model_selection_host_overrides"] = {"codex": "auto"}
+    cfg_path.write_text(json.dumps(cfg))
+    title = {"title": "Migrate the schema", "body": "for a new tenant"}
+    monkeypatch.setenv("CODEX_THREAD_ID", "00000000-0000-4000-8000-000000000823")
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    assert lp._next(base, _QueueWithTitleBody(["a"], title), lp.state.load_config(base)) == ("goal", "a")
+    assert len(_model_choice_events(base)) == 1
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert lp._next(base, _QueueWithTitleBody(["b"], title), lp.state.load_config(base)) == ("goal", "b")
+    assert len(_model_choice_events(base)) == 1
+
+
 def test_next_writes_a_real_model_choice_ledger_event_at_pick_time(capsys):
     """THE Definition-of-Done proof (issue #1627): a goal picked through the real `_next()`
     chokepoint writes a genuine `model_choice` ledger event with no agent told to run any command

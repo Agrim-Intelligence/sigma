@@ -1,7 +1,7 @@
 """Model auto-selection predictor (sigma-model/predict.py): a deterministic goal->tier heuristic.
 Pins each tier, the upward conflict-resolution rule, and the default so a wording change that
 silently down-tiers hard work fails here."""
-import pathlib, importlib.util
+import pathlib, importlib.util, json
 
 P = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-model" / "scripts" / "predict.py"
 
@@ -9,6 +9,22 @@ P = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-model" / 
 def _mod():
     spec = importlib.util.spec_from_file_location("predict", P)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def test_codex_model_override_routes_goal_and_step_without_changing_claude(tmp_path, monkeypatch):
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps({"model_selection": "off",
+        "model_selection_host_overrides": {"codex": "auto"}}))
+    m = _mod()
+    monkeypatch.setenv("CODEX_THREAD_ID", "task")
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    assert m.resolve("migrate the schema", str(sdlc)) == "opus"
+    assert m.resolve_step("run the tests", str(sdlc))["model"] == "sonnet"
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    assert m.resolve("migrate the schema", str(sdlc)) is None
+    assert m.resolve_step("run the tests", str(sdlc)) is None
 
 
 def test_hard_goals_get_opus():

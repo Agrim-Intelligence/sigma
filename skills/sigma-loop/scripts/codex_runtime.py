@@ -1,0 +1,154 @@
+"""Host and installed-plugin preflight for Codex's opt-in supervisor.
+
+No process is started and no cache path is trusted until the enabled Codex
+inventory, exact version, and (for Git installs) commit all agree.
+"""
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+
+
+def codex_session(env=None):
+    env = os.environ if env is None else env
+    if env.get("SIGMA_HOST") in ("codex", "claude"):
+        return env["SIGMA_HOST"] == "codex"
+    return bool(
+        env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID")) and not bool(
+        env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))
+
+
+def detect_host(env=None):
+    env = os.environ if env is None else env
+    override = env.get("SIGMA_HOST")
+    if override:
+        if override not in ("codex", "claude"):
+            raise ValueError("SIGMA_HOST must be codex or claude")
+        return override
+    codex = bool(env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID"))
+    claude = bool(env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))
+    if codex and claude:
+        raise ValueError("both Claude and Codex host markers are present; set SIGMA_HOST")
+    return "codex" if codex else "claude"
+
+
+def codex_environment(env=None):
+    child = dict(os.environ if env is None else env)
+    for key in tuple(child):
+        if key.startswith("CLAUDE"):
+            child.pop(key, None)
+    child["SIGMA_HOST"] = "codex"
+    return child
+
+
+def _version(value):
+    parts = str(value).split(".")
+    if len(parts) < 3 or not all(p.isdigit() for p in parts[:3]):
+        raise ValueError("invalid Sigma plugin version")
+    return tuple(map(int, parts[:3]))
+
+
+def _valid_skill(root, entry):
+    manifest = root / ".claude-plugin" / "plugin.json"
+    try:
+        data = json.loads(manifest.read_text())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Sigma plugin manifest unreadable: {exc}") from exc
+    if data.get("name") != "sigmaloop" or data.get("version") != entry.get("version"):
+        raise ValueError("Sigma plugin manifest does not match enabled inventory")
+    skill = root / "skills" / "sigma-loop" / "SKILL.md"
+    if not skill.is_file() or not os.access(skill, os.R_OK):
+        raise ValueError("Sigma loop skill is not readable in enabled install")
+    return skill.resolve()
+
+
+def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
+    entries = [e for e in inventory.get("installed", [])
+               if isinstance(e, dict) and e.get("pluginId") == "sigmaloop@sigmaloop"]
+    if len(entries) != 1:
+        raise ValueError("expected exactly one installed sigmaloop@sigmaloop plugin")
+    entry = entries[0]
+    if not entry.get("installed") or not entry.get("enabled"):
+        raise ValueError("Sigma plugin is not installed and enabled in Codex")
+    if _version(entry.get("version")) < tuple(floor):
+        raise ValueError("enabled Sigma plugin is below required version")
+    source = entry.get("source") or {}
+    home = pathlib.Path(codex_home).resolve()
+    if source.get("source") == "local":
+        raw = source.get("path")
+        if not raw:
+            raise ValueError("local plugin inventory has no path")
+        return _valid_skill(pathlib.Path(raw).resolve(), entry)
+    if source.get("source") != "git" or not source.get("sha"):
+        raise ValueError("Sigma plugin source cannot be bound to an installed path")
+    candidates = []
+    cache = home / "plugins" / "cache"
+    for root in cache.glob(f"*/sigmaloop/{entry['version']}"):
+        if not root.is_dir():
+            continue
+        result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=5, check=False)
+        if result.returncode == 0 and result.stdout.strip() == source["sha"]:
+            candidates.append(root)
+    if len(candidates) != 1:
+        raise ValueError("expected exactly one cached Sigma install matching enabled Git SHA")
+    root = candidates[0]
+    skill = _valid_skill(root, entry)
+    # HEAD alone is not a content guarantee: a cache can have tracked edits or
+    # injected untracked files while still reporting the inventory's SHA.
+    status = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
+                             "--untracked-files=all"], capture_output=True, text=True,
+                            timeout=10, check=False)
+    if status.returncode or status.stdout.strip():
+        raise ValueError("cached Sigma plugin is modified or dirty relative to enabled Git SHA")
+    return skill
+
+
+def installed_skill(env=None, codex_executable=None):
+    env = dict(os.environ if env is None else env)
+    executable = codex_executable or shutil.which("codex", path=env.get("PATH"))
+    if not executable:
+        raise ValueError("codex CLI is not on PATH")
+    result = subprocess.run([executable, "plugin", "list", "--json"], env=env,
+                            capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode:
+        raise ValueError(f"codex plugin list failed (exit {result.returncode})")
+    try:
+        inventory = json.loads(result.stdout)
+    except ValueError as exc:
+        raise ValueError("codex plugin inventory is not JSON") from exc
+    home = env.get("CODEX_HOME") or str(pathlib.Path.home() / ".codex")
+    return executable, resolve_install(inventory, home)
+
+
+def build_codex_command(executable, repo, skill):
+    prompt = (f"Read the installed Sigma skill at {skill} and follow it. "
+              "Pick the next eligible goal from the repository's real backlog and .sdlc state. "
+              "Run one bounded Sigma loop session, honoring its stop and safety rules. "
+              "If the skill is unavailable, say so and stop without claiming progress.")
+    return [str(executable), "exec", "--approve-for-me", "--cd", str(repo), prompt]
+
+
+def lock_file(path):
+    """Hold a process-backed nonblocking lock; caller must retain the returned fd."""
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = path.open("a+b")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            fd.seek(0)
+            if not fd.read(1):
+                fd.write(b"0")
+                fd.flush()
+            fd.seek(0)
+            msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, ImportError):
+        fd.close()
+        raise ValueError("Codex supervisor already running or OS lock unavailable")
+    return fd
