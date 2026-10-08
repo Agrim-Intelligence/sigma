@@ -337,8 +337,8 @@ def _capture_codex(argv_cmd, child_env, repo, cap):
     overlap = b""
     unavailable = False
     total = 0
-    with subprocess.Popen(argv_cmd, env=child_env, cwd=repo, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT) as proc:
+    with subprocess.Popen(argv_cmd, env=child_env, cwd=repo, stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
         while True:
             chunk = proc.stdout.read(65536)
             if not chunk:

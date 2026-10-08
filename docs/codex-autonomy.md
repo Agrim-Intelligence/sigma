@@ -54,6 +54,9 @@ because the historic Claude path does not take this new lock; do not run both
 supervisors for the same checkout at once.
 
 The supervisor's quota classifier has synthetic tests for limit text and
-reset times. An actual Codex quota exhaustion and a full Codex goal-to-merge
-run have not yet been measured. Report those limits honestly rather than
-treating the component tests as end-to-end proof.
+reset times. A read-only Codex CLI smoke on 2026-10-08 returned exit 0 and
+printed the final `LOOP STOP: backlog-empty` marker as a separate line; that
+output shape is now a test fixture. It did not run an installed Sigma loop.
+An actual Codex quota exhaustion and a full Codex goal-to-merge run have not
+yet been measured. Report those limits honestly rather than treating these
+component checks as end-to-end proof.

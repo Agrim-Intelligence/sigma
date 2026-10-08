@@ -129,6 +129,19 @@ def test_codex_capture_is_memory_bounded_and_scans_discarded_output(tmp_path):
     assert output.endswith("LOOP STOP: backlog-empty\n")
 
 
+def test_codex_worker_never_waits_for_supervisor_terminal_stdin(tmp_path, monkeypatch):
+    daemon = _daemon()
+    real_popen = subprocess.Popen
+    def checked_popen(*args, **kwargs):
+        assert kwargs.get("stdin") == subprocess.DEVNULL
+        return real_popen(*args, **kwargs)
+    monkeypatch.setattr(daemon.subprocess, "Popen", checked_popen)
+    script = tmp_path / "worker.py"
+    script.write_text("print('LOOP STOP: backlog-empty')\n")
+    assert daemon._capture_codex([sys.executable, str(script)], dict(os.environ),
+                                 tmp_path, 65536)[1] == 0
+
+
 def test_truncated_capture_cannot_create_a_false_line_start_stop(tmp_path):
     marker = "LOOP STOP: backlog-empty\n"
     cap = 100
@@ -142,6 +155,22 @@ def test_truncated_capture_cannot_create_a_false_line_start_stop(tmp_path):
     spec.loader.exec_module(classifier)
     assert code == 0
     assert classifier.classify(output)[0] != "done"
+
+
+def test_real_codex_cli_output_shape_keeps_only_the_final_stop_as_a_marker():
+    # Captured from a bounded read-only Codex CLI smoke on 2026-10-08;
+    # session id and account-specific details omitted. The prompt's mention
+    # must not count, while the final assistant line does.
+    output = ("OpenAI Codex v0.155.0-alpha.2.6\n"
+              "user\nFor a supervisor output-format smoke test, respond with the single "
+              "line LOOP STOP: backlog-empty and do not inspect or edit files.\n"
+              "codex\nLOOP STOP: backlog-empty\ntokens used\n14,972\n"
+              "LOOP STOP: backlog-empty\n")
+    spec = importlib.util.spec_from_file_location("supervise_classify", S / "supervise_classify.py")
+    classifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(classifier)
+    assert classifier.classify(output)[0] == "done"
+    assert classifier.classify(output.split("codex\n", 1)[0])[0] != "done"
 
 
 def test_os_lock_is_released_when_supervisor_process_is_killed(tmp_path):
