@@ -18,6 +18,10 @@ __pycache__/
 .sdlc/plans/scope/
 !.sdlc/research/
 !.sdlc/acceptance/
+!.sdlc/evidence/
+.sdlc/evidence/*
+!.sdlc/evidence/453/
+!.sdlc/evidence/453/goal433-attack.json
 
 # Python build and virtual-environment trees.
 .venv/

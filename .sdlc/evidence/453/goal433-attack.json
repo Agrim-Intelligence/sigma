@@ -1,0 +1,1523 @@
+{
+  "schema": "sigma.goal433-attack/v3",
+  "base_revision": "e2a1246aef3d24e039a893459c491f4b7e1bb027",
+  "origin_owner": "Agrim-Intelligence",
+  "implementation_sha256": "dc700e3be5bb25e3b309b7d7483c0cbfe993029b8cac6a2c817e38480284d6fe",
+  "allowed_public_slug": "Agrim-Intelligence/sigma",
+  "invocation": "python3 tools/goal433_attack.py --repo . --origin-owner <owner> --allowed-public-slug <slug> --json-out .sdlc/evidence/453/goal433-attack.json",
+  "cases": [
+    {
+      "id": "token/lone-64",
+      "path": "token/lone-64.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "token/two-64",
+      "path": "token/two-64.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "span/limit-non-der-slice",
+      "path": "span/limit-non-der-slice.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "span/elided",
+      "path": "span/elided.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "span/private-label0",
+      "path": "span/private-label0.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "span/private-label1",
+      "path": "span/private-label1.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "span/private-label2",
+      "path": "span/private-label2.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "public/public-key",
+      "path": "public/public-key.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "public/rsa-public-key",
+      "path": "public/rsa-public-key.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "public/certificate",
+      "path": "public/certificate.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "public/ca-bundle",
+      "path": "certs/ca-bundle.crt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "public/mime-lockfile-datauri",
+      "path": "mail.eml",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "ambiguity/hex-hashes",
+      "path": "ambiguity/hex-hashes.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "ambiguity/base64-digests",
+      "path": "ambiguity/base64-digests.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/go-backtick-cert",
+      "path": "ambiguity/ca.go",
+      "expected": [
+        "4: key-body"
+      ],
+      "observed": [
+        "4: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/py-triple-quote-cert",
+      "path": "ambiguity/ca.py",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/py-triple-quote-own-lines",
+      "path": "ambiguity/ca2.py",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "ambiguity/ssh2-continued-comment",
+      "path": "ambiguity/ssh2-continued-comment.txt",
+      "expected": [
+        "5: key-body"
+      ],
+      "observed": [
+        "5: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "boundary/tail24",
+      "path": "boundary/tail24.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "boundary/tail27",
+      "path": "boundary/tail27.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "boundary/tail40",
+      "path": "boundary/tail40.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "boundary/tail41",
+      "path": "boundary/tail41.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "boundary/three-of-36",
+      "path": "boundary/three-of-36.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "boundary/three-of-39",
+      "path": "boundary/three-of-39.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "boundary/three-of-40",
+      "path": "boundary/three-of-40.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "boundary/three-of-41",
+      "path": "boundary/three-of-41.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "tolerance/bad2-of-3-tailNone",
+      "path": "tolerance/bad2-of-3-tailNone.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "tolerance/bad2-of-12-tailNone",
+      "path": "tolerance/bad2-of-12-tailNone.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "tolerance/bad1-of-2-tail36",
+      "path": "tolerance/bad1-of-2-tail36.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "anchor/gap9",
+      "path": "anchor/gap9.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "anchor/non-armor-between",
+      "path": "anchor/non-armor-between.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "anchor/public-header",
+      "path": "anchor/public-header.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "anchor/lower-case-header",
+      "path": "anchor/lower-case-header.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-certificate",
+      "path": "der/public-certificate.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-csr",
+      "path": "der/public-csr.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-dh-params",
+      "path": "der/public-dh-params.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-ec-params-p256-explicit",
+      "path": "der/public-ec-params-p256-explicit.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-ec-params-p384-explicit",
+      "path": "der/public-ec-params-p384-explicit.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-ecdsa-sig-int32",
+      "path": "der/public-ecdsa-sig-int32.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-pkcs12",
+      "path": "der/public-pkcs12.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-pkcs7",
+      "path": "der/public-pkcs7.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-set-0x31",
+      "path": "der/public-set-0x31.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/public-spki-ec",
+      "path": "der/public-spki-ec.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der/rewrap64",
+      "path": "der/rewrap64.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der/rewrap70",
+      "path": "der/rewrap70.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der/blank-every-2-no-der",
+      "path": "der/blank-every-2-no-der.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der-carrier/embedded0",
+      "path": "der-carrier/embedded0.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der-carrier/embedded1",
+      "path": "der-carrier/embedded1.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der-carrier/embedded2",
+      "path": "der-carrier/embedded2.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der-carrier/embedded3",
+      "path": "der-carrier/embedded3.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der-carrier/embedded4",
+      "path": "der-carrier/embedded4.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "der-carrier-public/public0",
+      "path": "der-carrier-public/public0.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der-carrier-public/public1",
+      "path": "der-carrier-public/public1.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "der-carrier-public/public2",
+      "path": "der-carrier-public/public2.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "mixed/header-const-slash",
+      "path": "mixed/header-const-slash.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "mixed/header-const-sha1",
+      "path": "mixed/header-const-sha1.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "mixed/header-const-digitless",
+      "path": "mixed/header-const-digitless.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/ec24-comment",
+      "path": "narrow/ec24-comment.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/pgp24-end",
+      "path": "narrow/pgp24-end.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/ec32-comment",
+      "path": "narrow/ec32-comment.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/pgp32-end",
+      "path": "narrow/pgp32-end.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/ec39-comment",
+      "path": "narrow/ec39-comment.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/pgp39-end",
+      "path": "narrow/pgp39-end.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/der-led16",
+      "path": "narrow/der-led16.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/der-led20",
+      "path": "narrow/der-led20.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "narrow/der-led23",
+      "path": "narrow/der-led23.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "pin/p256-pkcs8-line1",
+      "path": "pin/p256-pkcs8-line1.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/padded-last-line",
+      "path": "pin/padded-last-line.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/label-lower",
+      "path": "pin/label-lower.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/label-mixed",
+      "path": "pin/label-mixed.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/marker-3-lines",
+      "path": "pin/marker-3-lines.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "pin/marker-p256-shape",
+      "path": "pin/marker-p256-shape.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "pin/marker-6-lines",
+      "path": "pin/marker-6-lines.txt",
+      "expected": [
+        "3: key-body"
+      ],
+      "observed": [
+        "3: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed25519-plus",
+      "path": "prefix/ed25519-plus.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed25519-slash",
+      "path": "prefix/ed25519-slash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed25519-dslash",
+      "path": "prefix/ed25519-dslash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed25519-dslash-sp",
+      "path": "prefix/ed25519-dslash-sp.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x25519-plus",
+      "path": "prefix/x25519-plus.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x25519-slash",
+      "path": "prefix/x25519-slash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x25519-dslash",
+      "path": "prefix/x25519-dslash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x25519-dslash-sp",
+      "path": "prefix/x25519-dslash-sp.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed448-plus",
+      "path": "prefix/ed448-plus.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed448-slash",
+      "path": "prefix/ed448-slash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed448-dslash",
+      "path": "prefix/ed448-dslash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/ed448-dslash-sp",
+      "path": "prefix/ed448-dslash-sp.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x448-plus",
+      "path": "prefix/x448-plus.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x448-slash",
+      "path": "prefix/x448-slash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x448-dslash",
+      "path": "prefix/x448-dslash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/x448-dslash-sp",
+      "path": "prefix/x448-dslash-sp.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/p224-plus",
+      "path": "prefix/p224-plus.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/p224-slash",
+      "path": "prefix/p224-slash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/p224-dslash",
+      "path": "prefix/p224-dslash.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix/p224-dslash-sp",
+      "path": "prefix/p224-dslash-sp.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "diffa/der-first-line",
+      "path": "diffa/der-first-line.txt",
+      "expected": [
+        "5: key-body"
+      ],
+      "observed": [
+        "5: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "diffa/anchor-armor",
+      "path": "diffa/anchor-armor.txt",
+      "expected": [
+        "5: key-body"
+      ],
+      "observed": [
+        "5: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "diffa/anchor-blank",
+      "path": "diffa/anchor-blank.txt",
+      "expected": [
+        "5: key-body"
+      ],
+      "observed": [
+        "5: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-limit/slash40",
+      "path": "prefix-limit/slash40.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "prefix-limit/dslash-10M",
+      "path": "prefix-limit/dslash-10M.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "prefix-limit/slash30-short-M",
+      "path": "prefix-limit/slash30-short-M.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "padding/tail27-eq",
+      "path": "padding/tail27-eq.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "padding/tail28-eq",
+      "path": "padding/tail28-eq.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "padding/three-39-eq",
+      "path": "padding/three-39-eq.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "padding/three-40-eq",
+      "path": "padding/three-40-eq.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-run/plus6-trailing-text",
+      "path": "prefix-run/plus6-trailing-text.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-run/mixed6-trailing-text",
+      "path": "prefix-run/mixed6-trailing-text.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-run/limit-plus7-trailing-text",
+      "path": "prefix-run/limit-plus7-trailing-text.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "prefix-run/limit-slash10-trailing-text",
+      "path": "prefix-run/limit-slash10-trailing-text.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "prefix-run/plus7-whole-line",
+      "path": "prefix-run/plus7-whole-line.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-run/slash10-whole-line",
+      "path": "prefix-run/slash10-whole-line.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "prefix-run/limit-plus15-24-char-line",
+      "path": "prefix-run/limit-plus15-24-char-line.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "prefix-run/plus16-24-char-line",
+      "path": "prefix-run/plus16-24-char-line.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/anchor-digest-changelog",
+      "path": "ambiguity/anchor-digest-changelog.txt",
+      "expected": [
+        "4: key-body"
+      ],
+      "observed": [
+        "4: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/anchor-digest-table",
+      "path": "ambiguity/anchor-digest-table.txt",
+      "expected": [
+        "4: key-body"
+      ],
+      "observed": [
+        "4: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/anchor-digest-diff",
+      "path": "ambiguity/anchor-digest-diff.txt",
+      "expected": [
+        "5: key-body"
+      ],
+      "observed": [
+        "5: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ambiguity/cert-added-by-a-diff",
+      "path": "ambiguity/cert-added-by-a-diff.txt",
+      "expected": [
+        "6: key-body"
+      ],
+      "observed": [
+        "6: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/indent-em-space",
+      "path": "ws-limit/indent-em-space.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/indent-ideographic-space",
+      "path": "ws-limit/indent-ideographic-space.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/indent-vt",
+      "path": "ws-limit/indent-vt.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/indent-ff",
+      "path": "ws-limit/indent-ff.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/separator-u2028",
+      "path": "ws-limit/separator-u2028.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/separator-u2029",
+      "path": "ws-limit/separator-u2029.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "ws-limit/separator-nel",
+      "path": "ws-limit/separator-nel.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/marker-p256-der-line1",
+      "path": "pin/marker-p256-der-line1.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "pin/marker-p256-der-line2",
+      "path": "pin/marker-p256-der-line2.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/marker-p256-der-line3",
+      "path": "pin/marker-p256-der-line3.txt",
+      "expected": [
+        "2: key-body"
+      ],
+      "observed": [
+        "2: key-body"
+      ],
+      "classification": "fixed-red",
+      "outcome": "red"
+    },
+    {
+      "id": "pin/gap-zero-lone-line-1",
+      "path": "pin/gap-zero-lone-line-1.txt",
+      "expected": [],
+      "observed": [],
+      "classification": "clean-control",
+      "outcome": "clean"
+    },
+    {
+      "id": "G01",
+      "path": "keys/id_rsa",
+      "expected": [
+        "keys/id_rsa: 0: secret-file"
+      ],
+      "observed": [
+        "0: secret-file"
+      ],
+      "classification": "fixed-red",
+      "boundary": "secret-file",
+      "outcome": "red"
+    },
+    {
+      "id": "G02",
+      "path": "keys/server.pem",
+      "expected": [
+        "keys/server.pem: 0: secret-file"
+      ],
+      "observed": [
+        "0: secret-file"
+      ],
+      "classification": "fixed-red",
+      "boundary": "secret-file",
+      "outcome": "red"
+    },
+    {
+      "id": "G04",
+      "path": "keys/id_rsa.bak",
+      "expected": [
+        "keys/id_rsa.bak: 0: secret-file"
+      ],
+      "observed": [
+        "0: secret-file"
+      ],
+      "classification": "fixed-red",
+      "boundary": "secret-file",
+      "outcome": "red"
+    },
+    {
+      "id": "G05",
+      "path": "keys/AuthKey.p8",
+      "expected": [
+        "keys/AuthKey.p8: 0: secret-file"
+      ],
+      "observed": [
+        "0: secret-file"
+      ],
+      "classification": "fixed-red",
+      "boundary": "secret-file",
+      "outcome": "red"
+    },
+    {
+      "id": "G06",
+      "path": "keys/.git-credentials",
+      "expected": [
+        "keys/.git-credentials: 0: secret-file"
+      ],
+      "observed": [
+        "0: secret-file"
+      ],
+      "classification": "fixed-red",
+      "boundary": "secret-file",
+      "outcome": "red"
+    },
+    {
+      "id": "G13",
+      "path": "G13.md",
+      "expected": [
+        "G13.md: 1: home-path"
+      ],
+      "observed": [
+        "1: home-path"
+      ],
+      "classification": "fixed-red",
+      "boundary": "home-path",
+      "outcome": "red"
+    },
+    {
+      "id": "G14",
+      "path": "G14.md",
+      "expected": [
+        "G14.md: 1: home-path"
+      ],
+      "observed": [
+        "1: home-path"
+      ],
+      "classification": "fixed-red",
+      "boundary": "home-path",
+      "outcome": "red"
+    },
+    {
+      "id": "G15",
+      "path": "G15.json",
+      "expected": [
+        "G15.json: 1: home-path"
+      ],
+      "observed": [
+        "1: home-path"
+      ],
+      "classification": "fixed-red",
+      "boundary": "home-path",
+      "outcome": "red"
+    },
+    {
+      "id": "G18",
+      "path": "G18.md",
+      "expected": [
+        "G18.md: 1: origin-owner-url"
+      ],
+      "observed": [
+        "1: origin-owner-url"
+      ],
+      "classification": "fixed-red",
+      "boundary": "origin-owner-url",
+      "outcome": "red"
+    },
+    {
+      "id": "H02",
+      "path": "H02.md",
+      "expected": [
+        "H02.md: 1: huggingface-token"
+      ],
+      "observed": [
+        "1: huggingface-token"
+      ],
+      "classification": "fixed-red",
+      "boundary": "huggingface-token",
+      "outcome": "red"
+    },
+    {
+      "id": "H03",
+      "path": "credentials",
+      "expected": [
+        "credentials: 1: config-credential"
+      ],
+      "observed": [
+        "1: config-credential"
+      ],
+      "classification": "fixed-red",
+      "boundary": "config-credential",
+      "outcome": "red"
+    },
+    {
+      "id": "H04",
+      "path": "config.json",
+      "expected": [
+        "config.json: 1: config-credential"
+      ],
+      "observed": [
+        "1: config-credential"
+      ],
+      "classification": "fixed-red",
+      "boundary": "config-credential",
+      "outcome": "red"
+    },
+    {
+      "id": "G09",
+      "path": "G09.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "Cyrillic/confusable",
+      "outcome": "clean"
+    },
+    {
+      "id": "G10",
+      "path": "G10.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "full-width",
+      "outcome": "clean"
+    },
+    {
+      "id": "G11",
+      "path": "G11.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "zero-width",
+      "outcome": "clean"
+    },
+    {
+      "id": "G12",
+      "path": "G12.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "line-split",
+      "outcome": "clean"
+    },
+    {
+      "id": "G16",
+      "path": "G16.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "URL encoding",
+      "outcome": "clean"
+    },
+    {
+      "id": "G17",
+      "path": "G17.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "percent-encoded owner",
+      "outcome": "clean"
+    },
+    {
+      "id": "G19",
+      "path": "G19.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "bare owner/repo",
+      "outcome": "clean"
+    },
+    {
+      "id": "G17b",
+      "path": "G17b.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "percent-encoded owner",
+      "outcome": "clean"
+    },
+    {
+      "id": "G19b",
+      "path": "G19b.md",
+      "expected": [],
+      "observed": [],
+      "classification": "documented-oos",
+      "boundary": "bare owner/repo",
+      "outcome": "clean"
+    }
+  ],
+  "totals": {
+    "attempts": 147,
+    "unclassified": 0
+  }
+}

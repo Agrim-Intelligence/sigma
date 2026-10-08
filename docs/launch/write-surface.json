@@ -2289,6 +2289,14 @@
       "risk": "high"
     },
     {
+      "path": "tools/goal433_attack.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 14,
+      "gate": "explicit evidence harness; refuses an output outside the requested repository, writes fixtures only in its TemporaryDirectory, and tests/test_goal433_attack.py verifies the documented invocation",
+      "risk": "medium"
+    },
+    {
       "path": "tools/kg_control.py",
       "function": "_repo",
       "rule": "fs-write",

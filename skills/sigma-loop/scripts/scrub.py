@@ -52,6 +52,7 @@ SHAPE_RULES = (
     ("npm-token", re.compile(r"(?<![\w-])npm_[A-Za-z0-9]{36}")),
     ("pypi-token", re.compile(r"(?<![\w-])pypi-AgE[A-Za-z0-9_-]{40,}")),
     ("gitlab-token", re.compile(r"(?<![\w-])glpat-[A-Za-z0-9_-]{20,}")),
+    ("huggingface-token", re.compile(r"(?<![\w-])hf_[A-Za-z0-9]{20,}")),
     ("slack-webhook", re.compile(r"hooks\.slack\.com/[s]ervices/(T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{16,})")),
     ("url-password", re.compile(r"(?i)\b[a-z][a-z0-9+.-]{0,31}://[^\s/:@'\"]*:([^\s/'\"]{6,})@"
                                  r"(?:[a-z0-9_.-]+\.[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9_-]+)(?![\w.-])")),
