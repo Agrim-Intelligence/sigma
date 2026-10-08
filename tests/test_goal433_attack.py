@@ -12,6 +12,8 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 HARNESS = ROOT / "tools" / "goal433_attack.py"
 OWNER = "Agrim-Intelligence"
+PUBLIC_SLUG = OWNER.lower() + "/public-demo"
+OTHER_PUBLIC_SLUG = OWNER.lower() + "/other-public"
 
 
 def _attack_module():
@@ -38,9 +40,9 @@ def _repo(tmp_path):
     for name in ("test_leak_scan.py", "test_key_body.py", "test_key_body_guards.py"):
         shutil.copy2(ROOT / "tests" / name, repo / "tests" / name)
     (repo / "skills" / "sigma-doctor" / "scripts" / "doctor.py").write_text(
-        '_MARKETPLACE_REPO = "agrim-intelligence/public-demo"\n', encoding="utf-8")
+        '_MARKETPLACE_REPO = %r\n' % PUBLIC_SLUG, encoding="utf-8")
     _git(repo, "init", "-q")
-    _git(repo, "remote", "add", "origin", "https://github.com/" + "agrim-intelligence/demo.git")
+    _git(repo, "remote", "add", "origin", "https://github.com/" + OWNER.lower() + "/demo.git")
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
     return repo
@@ -50,7 +52,7 @@ def test_attack_harness_owns_the_147_key_body_and_21_non_key_ledgers(tmp_path):
     repo = _repo(tmp_path)
     out = ".sdlc/evidence/goal433-attack.json"
     proc = subprocess.run([sys.executable, str(HARNESS), "--repo", str(repo), "--origin-owner", OWNER,
-                           "--allowed-public-slug", "agrim-intelligence/public-demo", "--json-out", out],
+                           "--allowed-public-slug", PUBLIC_SLUG, "--json-out", out],
                           text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
     evidence = json.loads((repo / out).read_text(encoding="utf-8"))
@@ -99,10 +101,10 @@ def test_attack_harness_refuses_a_public_slug_outside_the_origin_owner(tmp_path)
 def test_attack_harness_wires_the_allowed_slug_into_its_scanner_fixture(tmp_path):
     repo = _repo(tmp_path)
     proc = subprocess.run([sys.executable, str(HARNESS), "--repo", str(repo), "--origin-owner", OWNER,
-                           "--allowed-public-slug", "agrim-intelligence/other-public", "--json-out", "x.json"],
+                           "--allowed-public-slug", OTHER_PUBLIC_SLUG, "--json-out", "x.json"],
                           text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
-    assert '"allowed_public_slug": "agrim-intelligence/other-public"' in (repo / "x.json").read_text(encoding="utf-8")
+    assert ('"allowed_public_slug": "%s"' % OTHER_PUBLIC_SLUG) in (repo / "x.json").read_text(encoding="utf-8")
 
 
 def test_corrected_owner_oos_rows_interpolate_the_requested_owner():

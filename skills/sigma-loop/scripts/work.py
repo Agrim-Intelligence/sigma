@@ -3169,12 +3169,6 @@ def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None):
     """#267: gate only proof/exemption, leaving #258 and acceptance checks independent."""
     if no_tests is not None and (not isinstance(no_tests, str) or not no_tests.strip()):
         return "TEST-FIRST REFUSED: --no-tests requires a nonempty reason (nothing pushed)"
-    # A stated exception is the documented alternative to recorded test-first
-    # evidence.  It must bypass the entire test-first gate, including an old
-    # missing-evidence refusal from `done_refusal`; otherwise the advertised
-    # exception can never publish a goal that needs it.
-    if no_tests is not None:
-        return ""
     if not state.enforce_enabled(config.get("verify")):
         return ""
     refused = state.done_refusal(sdlc_dir, goal)
