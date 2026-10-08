@@ -42,6 +42,10 @@ def _git_install(tmp_path):
     manifest = plugin / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir()
     manifest.write_text(json.dumps({"name": "sigmaloop", "version": "1.0.3"}))
+    script = plugin / "skills" / "sigma-loop" / "scripts" / "loop.py"
+    script.parent.mkdir()
+    script.write_text("print('safe')\n")
+    (plugin / ".gitignore").write_text("ignored.pyc\n")
     subprocess.run(["git", "init", "-q", str(plugin)], check=True)
     subprocess.run(["git", "-C", str(plugin), "add", "."], check=True)
     subprocess.run(["git", "-C", str(plugin), "-c", "user.name=test", "-c",
@@ -84,6 +88,7 @@ def test_codex_child_cannot_inherit_claude_host_identity():
     assert "CLAUDECODE" not in child and "CLAUDE_CODE_SESSION_ID" not in child
     assert "CLAUDE_SKILL_DIR" not in child
     assert child["CODEX_HOME"] == "/new" and child["SIGMA_HOST"] == "codex"
+    assert child["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_git_install_is_bound_to_enabled_inventory_sha_and_current_codex_home(tmp_path):
@@ -112,6 +117,60 @@ def test_git_marketplace_refuses_divergent_or_external_source(tmp_path):
         runtime.resolve_install(inventory, home)
     inventory["installed"][0]["source"]["path"] = str(tmp_path / "outside")
     with pytest.raises(ValueError, match="Codex home|marketplace"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_conflicting_inventory_sha(tmp_path):
+    runtime = _runtime()
+    home, _, _, _, inventory = _git_marketplace_install(tmp_path)
+    inventory["installed"][0]["source"]["sha"] = "0" * 40
+    with pytest.raises(ValueError, match="inventory|commit"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_traversal_name_outside_codex_home(tmp_path):
+    runtime = _runtime()
+    home, plugin, _, _, inventory = _git_marketplace_install(tmp_path)
+    outside = tmp_path / "outside"
+    subprocess.run(["git", "clone", "-q", str(plugin), str(outside)], check=True)
+    inventory["installed"][0]["marketplaceName"] = "../../../outside"
+    inventory["installed"][0]["source"]["path"] = str(outside)
+    with pytest.raises(ValueError, match="Codex home|marketplace"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_cache_symlink_outside_codex_home(tmp_path):
+    runtime = _runtime()
+    home, _, _, _, inventory = _git_marketplace_install(tmp_path)
+    cache = home / "plugins" / "cache"
+    outside = tmp_path / "outside-cache"
+    cache.rename(outside)
+    cache.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="Codex home|cache"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_assume_unchanged_script_tampering(tmp_path):
+    runtime = _runtime()
+    home, plugin, _, _, inventory = _git_marketplace_install(tmp_path)
+    script = "skills/sigma-loop/scripts/loop.py"
+    subprocess.run(["git", "-C", str(plugin), "update-index", "--assume-unchanged", script], check=True)
+    (plugin / script).write_text("print('tampered')\n")
+    status = subprocess.run(["git", "-C", str(plugin), "status", "--porcelain"],
+                            capture_output=True, text=True, check=True)
+    assert not status.stdout.strip()
+    with pytest.raises(ValueError, match="modified|dirty|bytes|content"):
+        runtime.resolve_install(inventory, home)
+
+
+def test_git_marketplace_refuses_ignored_untracked_code(tmp_path):
+    runtime = _runtime()
+    home, plugin, _, _, inventory = _git_marketplace_install(tmp_path)
+    (plugin / "ignored.pyc").write_bytes(b"injected")
+    status = subprocess.run(["git", "-C", str(plugin), "status", "--porcelain"],
+                            capture_output=True, text=True, check=True)
+    assert not status.stdout.strip()
+    with pytest.raises(ValueError, match="untracked|content"):
         runtime.resolve_install(inventory, home)
 
 

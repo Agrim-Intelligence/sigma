@@ -3,6 +3,7 @@
 No process is started and no cache path is trusted until the enabled Codex
 inventory, exact version, and (for Git installs) commit all agree.
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -40,6 +41,7 @@ def codex_environment(env=None):
         if key.startswith("CLAUDE"):
             child.pop(key, None)
     child["SIGMA_HOST"] = "codex"
+    child["PYTHONDONTWRITEBYTECODE"] = "1"
     return child
 
 
@@ -74,6 +76,50 @@ def _clean_git_head(root):
                             timeout=10, check=False)
     if status.returncode or status.stdout.strip():
         raise ValueError("installed Sigma plugin is modified or dirty")
+    tree = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "HEAD"],
+                          capture_output=True, timeout=20, check=False)
+    if tree.returncode:
+        raise ValueError("installed Sigma Git tree is unavailable")
+    tracked = {}
+    for record in tree.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_name = record.split(b"\t", 1)
+            mode, kind, oid = metadata.split()
+        except ValueError as exc:
+            raise ValueError("installed Sigma Git tree is malformed") from exc
+        if kind != b"blob" or mode not in (b"100644", b"100755") or len(oid) != 40:
+            raise ValueError("installed Sigma Git tree contains an unsupported entry")
+        tracked[os.fsdecode(raw_name)] = oid.decode("ascii")
+    observed = set()
+    for parent, dirs, files in os.walk(root, followlinks=False):
+        if pathlib.Path(parent) == root and ".git" in dirs:
+            dirs.remove(".git")
+        for name in tuple(dirs):
+            path = pathlib.Path(parent) / name
+            if path.is_symlink():
+                observed.add(path.relative_to(root).as_posix())
+                dirs.remove(name)
+        for name in files:
+            path = pathlib.Path(parent) / name
+            if pathlib.Path(parent) == root and name == ".git":
+                continue
+            observed.add(path.relative_to(root).as_posix())
+    if observed != set(tracked):
+        raise ValueError("installed Sigma plugin has missing or untracked content")
+    resolved_root = root.resolve()
+    for name, oid in tracked.items():
+        path = root / name
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(resolved_root):
+            raise ValueError("installed Sigma plugin has unsafe or missing content")
+        size = path.stat().st_size
+        digest = hashlib.sha1(f"blob {size}\0".encode("ascii"))
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != oid:
+            raise ValueError("installed Sigma plugin has modified content despite a clean index")
     return head.stdout.strip()
 
 
@@ -98,19 +144,27 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
         marketplace_source = entry.get("marketplaceSource") or {}
         if marketplace_source.get("sourceType") != "git":
             return _valid_skill(root, entry)
-        expected_root = (home / ".tmp" / "marketplaces" / entry.get("marketplaceName", "")).resolve()
-        if root != expected_root or root == home:
+        if entry.get("marketplaceName") != "sigmaloop":
+            raise ValueError("unexpected Sigma marketplace name")
+        expected_root = (home / ".tmp" / "marketplaces" / "sigmaloop").resolve()
+        if root != expected_root or not root.is_relative_to(home):
             raise ValueError("Git marketplace source is outside the current Codex home")
         _valid_skill(root, entry)
-        expected_sha = _clean_git_head(root)
+        marketplace_sha = _clean_git_head(root)
+        if expected_sha and expected_sha != marketplace_sha:
+            raise ValueError("Sigma inventory commit differs from Git marketplace checkout")
+        expected_sha = marketplace_sha
     elif source.get("source") != "git":
         raise ValueError("Sigma plugin source cannot be bound to an installed path")
     if not expected_sha:
         raise ValueError("Sigma Git install has no commit")
     candidates = []
     cache = home / "plugins" / "cache"
+    resolved_cache = cache.resolve()
+    if not resolved_cache.is_relative_to(home):
+        raise ValueError("Codex plugin cache is outside the current Codex home")
     for root in cache.glob(f"*/sigmaloop/{entry['version']}"):
-        if not root.is_dir():
+        if not root.is_dir() or not root.resolve().is_relative_to(resolved_cache):
             continue
         result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
                                 capture_output=True, text=True, timeout=5, check=False)
