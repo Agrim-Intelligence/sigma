@@ -58,6 +58,11 @@ worker. A newly launched Claude worker can still race with a Codex supervisor
 because the historic Claude path does not take this new lock; do not run both
 supervisors for the same checkout at once.
 
+`SIGMA_CODEX_CMD` must accept Codex's `--output-last-message` option and write
+the final agent message there; a zero-exit worker with no final message is
+refused. That transient, size-capped message is used for stop/refusal decisions
+so echoed prompts and tool output cannot impersonate the agent's final result.
+
 The supervisor's quota classifier has synthetic tests for limit text and
 reset times. A read-only Codex CLI smoke on 2026-10-08 returned exit 0 and
 printed the final `LOOP STOP: backlog-empty` marker as a separate line; that

@@ -337,17 +337,17 @@ CLASSIFIER_UNAVAILABLE_FALLBACK = "action=backoff sleep=1800 reason=classifier u
 USAGE = "usage: supervise_daemon.py [sdlc_dir]"
 
 
-def _capture_codex(argv_cmd, child_env, repo, cap):
+def _capture_codex(argv_cmd, child_env, repo, cap, final_path=None):
     """Drain a Codex worker while retaining at most one log-cap of output in RAM.
 
-    A per-session output file would be unbounded on disk; capture_output=True
-    would be unbounded in memory. Scan every chunk for the skill refusal while
-    keeping only a capped tail for logging and the existing classifier.
+    The CLI's last-message side channel separates authored output from echoed
+    prompts and tool text. Its single transient file is capped and removed.
     """
     recent = bytearray()
-    overlap = b""
-    unavailable = False
     total = 0
+    final_file = pathlib.Path(final_path) if final_path is not None else None
+    if final_file is not None:
+        final_file.unlink(missing_ok=True)
     with subprocess.Popen(argv_cmd, env=child_env, cwd=repo, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
         while True:
@@ -355,9 +355,6 @@ def _capture_codex(argv_cmd, child_env, repo, cap):
             if not chunk:
                 break
             total += len(chunk)
-            probe = (overlap + chunk.lower())
-            unavailable |= (b"skill is unavailable" in probe or b"skill not found" in probe)
-            overlap = probe[-128:]
             recent.extend(chunk)
             if len(recent) > cap:
                 del recent[:-cap]
@@ -370,7 +367,15 @@ def _capture_codex(argv_cmd, child_env, repo, cap):
     output = recent.decode("utf-8", errors="replace")
     if total > cap:
         output = f"supervisor: Codex output retained last {cap} of {total} bytes\n" + output
-    return output, exit_code, unavailable
+    final = None
+    if final_file is not None and final_file.exists():
+        try:
+            if final_file.stat().st_size > cap:
+                raise ValueError("Codex final message exceeded capture limit")
+            final = final_file.read_text(encoding="utf-8", errors="replace") or None
+        finally:
+            final_file.unlink(missing_ok=True)
+    return output, exit_code, final
 
 
 def _codex_main(sdlc_dir, max_runs, scale, run_id):
@@ -428,6 +433,7 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
                 print(f"supervisor: Codex install changed: {exc}", file=sys.stderr)
                 return 2
             override = os.environ.get("SIGMA_CODEX_CMD")
+            final_path = state / "supervisor.agent-last"
             if override is not None:
                 try:
                     argv_cmd = _split_claude_cmd(override)
@@ -437,21 +443,29 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
                 if not argv_cmd:
                     print("supervisor: SIGMA_CODEX_CMD is empty", file=sys.stderr)
                     return 2
-                argv_cmd.append(codex_runtime.build_codex_command(executable, repo, skill)[-1])
+                argv_cmd.extend(["--output-last-message", str(final_path),
+                                 codex_runtime.build_codex_command(executable, repo, skill)[-1]])
             else:
-                argv_cmd = codex_runtime.build_codex_command(executable, repo, skill)
+                argv_cmd = codex_runtime.build_codex_command(executable, repo, skill, final_path)
             _log_and_print(log, f"supervisor: Codex run #{runs + 1} — {_date_str()}", warned)
             try:
-                output, exit_code, unavailable = _capture_codex(
-                    argv_cmd, child_env, repo, logroll.cap_bytes(log.parent))
+                output, exit_code, final = _capture_codex(
+                    argv_cmd, child_env, repo, logroll.cap_bytes(log.parent), final_path)
+            except ValueError as exc:
+                print(f"supervisor: Codex final message refused: {exc}", file=sys.stderr)
+                return 2
             except OSError as exc:
-                output, exit_code, unavailable = f"codex command not found: {exc}", 127, False
+                output, exit_code, final = f"codex command not found: {exc}", 127, None
             try:
                 logroll.append(log, _bounded_copy(output, logroll.cap_bytes(log.parent)))
             except OSError as exc:
                 _warn_unwritable_once(warned, str(log), f"supervisor: cannot write {log} ({exc})")
-            if unavailable or not skill.is_file():
+            if (final and "SIGMA_CODEX_SKILL_UNAVAILABLE" in
+                    {line.strip() for line in final.splitlines()}) or not skill.is_file():
                 print("supervisor: verified Sigma skill became unavailable; refusing", file=sys.stderr)
+                return 2
+            if final_path is not None and exit_code == 0 and final is None:
+                print("supervisor: Codex returned no final agent message; refusing", file=sys.stderr)
                 return 2
             try:
                 _, post_skill = codex_runtime.installed_skill(child_env)
@@ -463,7 +477,7 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
             classifier = _HERE / "supervise_classify.py"
             try:
                 tailf = state / "supervisor.tail"
-                tailf.write_text(_last_n_lines(output, 50))
+                tailf.write_text(_last_n_lines(final if final is not None else output, 50))
                 verdict_result = subprocess.run([sys.executable, str(classifier),
                                                  str(tailf), str(attempt)],
                                                 env=child_env, capture_output=True, text=True,

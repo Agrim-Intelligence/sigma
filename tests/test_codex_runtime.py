@@ -291,9 +291,24 @@ def test_codex_command_uses_approved_automation_mode_and_verified_skill(tmp_path
     assert str(skill) in argv[-1]
     assert "backlog" in argv[-1].lower()
     assert "--dangerously-bypass-approvals-and-sandbox" not in argv
+    assert "skill is unavailable" not in argv[-1].lower()
+    assert "SIGMA_CODEX_SKILL_UNAVAILABLE" in argv[-1]
+    with_final = runtime.build_codex_command("/usr/bin/codex", repo, skill, tmp_path / "final.txt")
+    assert with_final[-3:-1] == ["--output-last-message", str(tmp_path / "final.txt")]
 
 
-def test_codex_capture_is_memory_bounded_and_scans_discarded_output(tmp_path):
+def test_codex_echoed_prompt_does_not_claim_skill_missing(tmp_path):
+    runtime = _runtime()
+    script = tmp_path / "echo_prompt.py"
+    script.write_text("import sys\nprint('user')\nprint(sys.argv[1])\nsys.exit(1)\n")
+    skill = tmp_path / "installed" / "skills" / "sigma-loop" / "SKILL.md"
+    prompt = runtime.build_codex_command("codex", tmp_path, skill)[-1]
+    output, code, unavailable = _daemon()._capture_codex(
+        [sys.executable, str(script), prompt], dict(os.environ), tmp_path, 65536)
+    assert code == 1 and prompt in output and not unavailable
+
+
+def test_codex_capture_is_memory_bounded_without_trusting_echoed_output(tmp_path):
     script = tmp_path / "worker.py"
     script.write_text("import sys\n"
                       "sys.stdout.write('Sigma skill is unavailable\\n')\n"
@@ -301,9 +316,42 @@ def test_codex_capture_is_memory_bounded_and_scans_discarded_output(tmp_path):
                       "sys.stdout.write('\\nLOOP STOP: backlog-empty\\n')\n")
     output, code, unavailable = _daemon()._capture_codex(
         [sys.executable, str(script)], dict(os.environ), tmp_path, 65536)
-    assert code == 0 and unavailable
+    assert code == 0 and not unavailable
     assert len(output.encode()) < 66000
     assert output.endswith("LOOP STOP: backlog-empty\n")
+
+
+def test_codex_echoed_goal_title_does_not_claim_skill_missing(tmp_path):
+    script = tmp_path / "worker.py"
+    script.write_text("print('user\\nGoal title: skill not found in docs\\n"
+                      "codex\\nLOOP STOP: backlog-empty')\n")
+    output, code, unavailable = _daemon()._capture_codex(
+        [sys.executable, str(script)], dict(os.environ), tmp_path, 65536)
+    assert code == 0 and "LOOP STOP: backlog-empty" in output and not unavailable
+
+
+def test_codex_final_message_reports_true_missing_skill(tmp_path):
+    script = tmp_path / "worker.py"
+    final_path = tmp_path / "last-message.txt"
+    script.write_text("import pathlib,sys\n"
+                      "pathlib.Path(sys.argv[1]).write_text('Sigma skill is unavailable')\n"
+                      "print('user\\nGoal title: skill not found in docs')\n")
+    _, code, unavailable = _daemon()._capture_codex(
+        [sys.executable, str(script), str(final_path)], dict(os.environ),
+        tmp_path, 65536, final_path=final_path)
+    assert code == 0 and unavailable == "Sigma skill is unavailable"
+    assert not final_path.exists()
+
+
+def test_oversized_codex_final_message_is_removed_on_refusal(tmp_path):
+    script = tmp_path / "worker.py"
+    final_path = tmp_path / "last-message.txt"
+    script.write_text("import pathlib,sys\n"
+                      "pathlib.Path(sys.argv[1]).write_bytes(b'x' * 1000)\n")
+    with pytest.raises(ValueError, match="capture limit"):
+        _daemon()._capture_codex([sys.executable, str(script), str(final_path)],
+                                 dict(os.environ), tmp_path, 100, final_path=final_path)
+    assert not final_path.exists()
 
 
 def test_codex_worker_never_waits_for_supervisor_terminal_stdin(tmp_path, monkeypatch):
@@ -387,7 +435,8 @@ def test_two_codex_supervisors_cannot_launch_two_workers(tmp_path):
         " print(pathlib.Path(os.environ['FAKE_INVENTORY']).read_text()); raise SystemExit(0)\n"
         "if sys.argv[1] == 'exec':\n"
         " with pathlib.Path(os.environ['FAKE_MARKER']).open('a') as out: out.write('start\\n')\n"
-        " time.sleep(1.5); print('LOOP STOP: backlog-empty'); raise SystemExit(0)\n"
+        " time.sleep(1.5); pathlib.Path(sys.argv[sys.argv.index('--output-last-message') + 1]).write_text('LOOP STOP: backlog-empty\\n')\n"
+        " print('LOOP STOP: backlog-empty'); raise SystemExit(0)\n"
         "raise SystemExit(2)\n")
     fake.chmod(0o755)
     inv_path = tmp_path / "inventory.json"
@@ -409,6 +458,7 @@ def test_two_codex_supervisors_cannot_launch_two_workers(tmp_path):
         second = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=10)
         assert second.returncode == 2 and "already" in second.stderr.lower()
         assert first.communicate(timeout=10)[0]
+        assert first.returncode == 0
         assert marker.read_text().splitlines() == ["start"]
     finally:
         if first.poll() is None:
@@ -416,12 +466,19 @@ def test_two_codex_supervisors_cannot_launch_two_workers(tmp_path):
             first.communicate(timeout=5)
 
 
-@pytest.mark.parametrize("output,exit_code,expected", [
-    ("Sigma skill is unavailable\nLOOP STOP: backlog-empty\n", 0, 2),
-    ("LOOP STOP: backlog-empty\n", 9, 1),
-    ("usage limit reached; resets at 3:00 pm\n", 9, 1),
+@pytest.mark.parametrize("output,final,exit_code,expected", [
+    ("user\nGoal title: skill not found in docs\ncodex\nLOOP STOP: backlog-empty\n",
+     "LOOP STOP: backlog-empty\n", 0, 0),
+    ("codex\nFixed the skill not found docs error\nLOOP STOP: backlog-empty\n",
+     "Fixed the skill not found docs error\nLOOP STOP: backlog-empty\n", 0, 0),
+    ("Sigma skill is unavailable\nLOOP STOP: backlog-empty\n",
+     "SIGMA_CODEX_SKILL_UNAVAILABLE\n", 0, 2),
+    ("LOOP STOP: backlog-empty\n", "LOOP STOP: backlog-empty\n", 9, 1),
+    ("usage limit reached; resets at 3:00 pm\n", "usage limit reached; resets at 3:00 pm\n", 9, 1),
 ])
-def test_codex_exit_and_output_cannot_fake_success(tmp_path, output, exit_code, expected):
+@pytest.mark.parametrize("use_override", [False, True])
+def test_codex_exit_and_output_cannot_fake_success(tmp_path, output, final, exit_code,
+                                                   expected, use_override):
     home, _, _, inventory = _git_install(tmp_path)
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -433,6 +490,7 @@ def test_codex_exit_and_output_cannot_fake_success(tmp_path, output, exit_code, 
         " print(pathlib.Path(os.environ['FAKE_INVENTORY']).read_text()); raise SystemExit(0)\n"
         "if sys.argv[1] == 'exec':\n"
         " assert 'CLAUDECODE' not in os.environ and os.environ['SIGMA_HOST'] == 'codex'\n"
+        " pathlib.Path(sys.argv[sys.argv.index('--output-last-message') + 1]).write_text(os.environ['FAKE_FINAL'])\n"
         " print(os.environ['FAKE_OUTPUT']); raise SystemExit(int(os.environ['FAKE_EXIT']))\n"
         "raise SystemExit(2)\n")
     fake.chmod(0o755)
@@ -443,9 +501,11 @@ def test_codex_exit_and_output_cannot_fake_success(tmp_path, output, exit_code, 
     (sdlc / "config.json").write_text(json.dumps({"discovery": {"source": "local-goals"}}))
     env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
            "CODEX_HOME": str(home), "SIGMA_HOST": "codex", "CLAUDECODE": "1",
-           "FAKE_INVENTORY": str(inv_path), "FAKE_OUTPUT": output,
+           "FAKE_INVENTORY": str(inv_path), "FAKE_OUTPUT": output, "FAKE_FINAL": final,
            "FAKE_EXIT": str(exit_code), "SIGMA_SUPERVISE_MAX_RUNS": "1",
            "SIGMA_SUPERVISE_SLEEP_SCALE": "0"}
+    if use_override:
+        env["SIGMA_CODEX_CMD"] = "codex exec"
     result = subprocess.run([sys.executable, str(S / "supervise_daemon.py"), str(sdlc)],
                             env=env, capture_output=True, text=True, timeout=20)
     assert result.returncode == expected, (result.stdout, result.stderr)

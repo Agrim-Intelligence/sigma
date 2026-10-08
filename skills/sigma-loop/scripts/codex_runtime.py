@@ -211,12 +211,16 @@ def installed_skill(env=None, codex_executable=None):
     return executable, resolve_install(inventory, home)
 
 
-def build_codex_command(executable, repo, skill):
+def build_codex_command(executable, repo, skill, final_path=None):
     prompt = (f"Read the installed Sigma skill at {skill} and follow it. "
               "Pick the next eligible goal from the repository's real backlog and .sdlc state. "
               "Run one bounded Sigma loop session, honoring its stop and safety rules. "
-              "If the skill is unavailable, say so and stop without claiming progress.")
-    return [str(executable), "exec", "--approve-for-me", "--cd", str(repo), prompt]
+              "If you cannot read that file, write SIGMA_CODEX_SKILL_UNAVAILABLE as its own final line "
+              "and stop without claiming progress.")
+    command = [str(executable), "exec", "--approve-for-me", "--cd", str(repo)]
+    if final_path is not None:
+        command.extend(["--output-last-message", str(final_path)])
+    return command + [prompt]
 
 
 def lock_file(path):
