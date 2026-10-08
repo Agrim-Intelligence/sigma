@@ -1,6 +1,6 @@
 {
   "schema": "sigma.goal433-attack/v3",
-  "base_revision": "e20a22a5a23ee8f556eadfa37ff541578473344d",
+  "base_revision": "e2a1246aef3d24e039a893459c491f4b7e1bb027",
   "origin_owner": "Agrim-Intelligence",
   "implementation_sha256": "dc700e3be5bb25e3b309b7d7483c0cbfe993029b8cac6a2c817e38480284d6fe",
   "allowed_public_slug": "Agrim-Intelligence/sigma",
