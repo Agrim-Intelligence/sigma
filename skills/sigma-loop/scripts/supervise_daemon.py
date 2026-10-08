@@ -86,7 +86,9 @@ if __name__ == "__main__":
     # Keep Claude's historical import/bytecode behavior unchanged.
     _host_hint = os.environ.get("SIGMA_HOST")
     _codex_marker = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
-    _claude_override = os.environ.get("SIGMA_CLAUDE_CMD") or os.environ.get(
+    # Mirror legacy.getenv's non-empty primary/retired fallback before importing
+    # siblings, which would otherwise write bytecode into a verified Codex install.
+    _claude_override = os.environ.get("SIGMA_" + "CLAUDE_CMD") or os.environ.get(
         "LOOP" + "SMITH_CLAUDE_CMD")
     if _host_hint == "codex" or (not _host_hint and _codex_marker and not _claude_override):
         sys.dont_write_bytecode = True
@@ -460,7 +462,7 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
                 logroll.append(log, _bounded_copy(output, logroll.cap_bytes(log.parent)))
             except OSError as exc:
                 _warn_unwritable_once(warned, str(log), f"supervisor: cannot write {log} ({exc})")
-            if (final and "SIGMA_CODEX_SKILL_UNAVAILABLE" in
+            if (final and "CODEX_SIGMA_SKILL_UNAVAILABLE" in
                     {line.strip() for line in final.splitlines()}) or not skill.is_file():
                 print("supervisor: verified Sigma skill became unavailable; refusing", file=sys.stderr)
                 return 2

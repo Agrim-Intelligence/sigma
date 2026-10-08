@@ -215,7 +215,7 @@ def build_codex_command(executable, repo, skill, final_path=None):
     prompt = (f"Read the installed Sigma skill at {skill} and follow it. "
               "Pick the next eligible goal from the repository's real backlog and .sdlc state. "
               "Run one bounded Sigma loop session, honoring its stop and safety rules. "
-              "If you cannot read that file, write SIGMA_CODEX_SKILL_UNAVAILABLE as its own final line "
+              "If you cannot read that file, write CODEX_SIGMA_SKILL_UNAVAILABLE as its own final line "
               "and stop without claiming progress.")
     command = [str(executable), "exec", "--approve-for-me", "--cd", str(repo)]
     if final_path is not None:

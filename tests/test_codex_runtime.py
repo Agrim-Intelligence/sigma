@@ -292,7 +292,7 @@ def test_codex_command_uses_approved_automation_mode_and_verified_skill(tmp_path
     assert "backlog" in argv[-1].lower()
     assert "--dangerously-bypass-approvals-and-sandbox" not in argv
     assert "skill is unavailable" not in argv[-1].lower()
-    assert "SIGMA_CODEX_SKILL_UNAVAILABLE" in argv[-1]
+    assert "CODEX_SIGMA_SKILL_UNAVAILABLE" in argv[-1]
     with_final = runtime.build_codex_command("/usr/bin/codex", repo, skill, tmp_path / "final.txt")
     assert with_final[-3:-1] == ["--output-last-message", str(tmp_path / "final.txt")]
 
@@ -472,7 +472,7 @@ def test_two_codex_supervisors_cannot_launch_two_workers(tmp_path):
     ("codex\nFixed the skill not found docs error\nLOOP STOP: backlog-empty\n",
      "Fixed the skill not found docs error\nLOOP STOP: backlog-empty\n", 0, 0),
     ("Sigma skill is unavailable\nLOOP STOP: backlog-empty\n",
-     "SIGMA_CODEX_SKILL_UNAVAILABLE\n", 0, 2),
+     "CODEX_SIGMA_SKILL_UNAVAILABLE\n", 0, 2),
     ("LOOP STOP: backlog-empty\n", "LOOP STOP: backlog-empty\n", 9, 1),
     ("usage limit reached; resets at 3:00 pm\n", "usage limit reached; resets at 3:00 pm\n", 9, 1),
 ])
