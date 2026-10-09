@@ -44,6 +44,9 @@ The dossier's 95 was a grep-derived FLOOR, not a target; the ratchet counts 101.
 No `.sh` file under skills/ or hooks/ mentions `gh` at all (grep, 9 files).
 MEASURED 2026-10-09 (#895 slice 2a), via the same `scan()`: sources.py 35 -> 28 (its 7 issue reads
 moved to `gh_api.read_issue`, whose fallback argv is built inside the EXEMPT helper), TOTAL 94.
+MEASURED 2026-10-10 (#895 slice 2b), via the same `scan()`: TOTAL 94 -> 84. The 10 `issue view` reads
+moved to `gh_api.read_issue`: auto_unpark 3 -> 2, blockers 2 -> 1, promote 2 -> 1, unpark 3 -> 2,
+reconcile 4 -> 1, triage 6 -> 4, brainstorm 1 -> 0 (entry removed). Every `issue list` site is slice 2c.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -85,21 +88,20 @@ BASELINE = {
     "skills/sigma-doctor/scripts/doctor.py": 13,
     "skills/sigma-dossier/scripts/dossier.py": 1,
     "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/auto_unpark.py": 3,
-    "skills/sigma-loop/scripts/blockers.py": 2,
+    "skills/sigma-loop/scripts/auto_unpark.py": 2,
+    "skills/sigma-loop/scripts/blockers.py": 1,
     "skills/sigma-loop/scripts/cross_repo.py": 1,
     "skills/sigma-loop/scripts/feature_owner.py": 1,
     "skills/sigma-loop/scripts/ledger.py": 1,
-    "skills/sigma-loop/scripts/promote.py": 2,
-    "skills/sigma-loop/scripts/reconcile.py": 4,
+    "skills/sigma-loop/scripts/promote.py": 1,
+    "skills/sigma-loop/scripts/reconcile.py": 1,
     "skills/sigma-loop/scripts/sources.py": 28,
-    "skills/sigma-loop/scripts/triage.py": 6,
-    "skills/sigma-loop/scripts/unpark.py": 3,
+    "skills/sigma-loop/scripts/triage.py": 4,
+    "skills/sigma-loop/scripts/unpark.py": 2,
     "skills/sigma-loop/scripts/work.py": 14,
     "skills/sigma-rebase/scripts/rebase_brief.py": 1,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
     "skills/sigma-scope/scripts/assign.py": 2,
-    "skills/sigma-scope/scripts/brainstorm.py": 1,
     "skills/sigma-status/scripts/status.py": 3,
 }
 

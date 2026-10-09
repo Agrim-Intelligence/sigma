@@ -39,8 +39,9 @@ def _runner(by_label=None, views=None, fail_on=(), board_ok=True):
     """`issue list --label X` -> by_label[X]; `issue view N --json labels,state` -> views[N].
     Everything else records and succeeds. `board_ok=False` makes every `project item-edit` raise,
     which is how `_set_board_status` reports a card that did not move."""
-    calls, labels_state, gql_calls = [], set(), []
+    calls, labels_state, gql_calls, fallbacks = [], set(), [], []
     by_label, views = by_label or {}, views or {}
+    default_view = json.dumps({"labels": [], "state": "OPEN"})
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -67,10 +68,17 @@ def _runner(by_label=None, views=None, fail_on=(), board_ok=True):
             if fields.get("page", "1") != "1":
                 return "[]"
             return by_label.get(fields.get("labels"), "[]")
+        # #895: the target/blocker state read is REST first (`api repos/<o>/<r>/issues/N --method GET`),
+        # answered REST-shaped from the same gh-shape `views` (MERGED -> closed + pull_request.merged_at).
+        rest = gqlfake.rest_issue(args, lambda n, f: views.get(n, default_view))
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
-            return views.get(str(args[2]), json.dumps({"labels": [], "state": "OPEN"}))
+            fallbacks.append(list(args))      # the one fallback; REST-first tests assert this empty
+            return views.get(str(args[2]), default_view)
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
     run.gql_calls = gql_calls
     return run
 
@@ -269,20 +277,18 @@ def test_promoting_an_issue_the_next_pick_undoes_is_a_mutant_this_suite_kills(tm
 
 
 def test_reading_the_author_and_body_costs_no_extra_call(tmp_path):
-    """It rides on the `issue view` this function already makes. A second read for it would double
+    """It rides on the issue read this function already makes. A second read for it would double
     the cost of every promotion, on every repo, adopted or not. #1888 added `body` (needed to check
     every `Blocked by:` reference the issue names) the same way #1569 added `author` -- one more
     `--json` field on a call this function already makes, never a second call."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation", LABEL, author="a-stranger")})
     p.promote(_sdlc(tmp_path), _config(), ["5"], run=run)
-    views = [c for c in run.calls if c[:2] == ["issue", "view"]]
-    assert len(views) == 1
-    # `views[0]` is the WHOLE argv list, so this is list-membership (exact-element equality), not a
-    # substring check -- the `--json` value is one single element of that list.
-    # #2532: `stateReason` joined the same call for the identical reason -- MERGED/CLOSED-without-
-    # merge resolution needs it, and a second `issue view` would double the cost just like above.
-    assert "labels,state,author,body,stateReason" in views[0]
+    # #895: REST first -- ONE `api repos/acme/widget/issues/5 --method GET` carries author, body, state,
+    # stateReason and labels; no `issue view`, and no read of any other issue.
+    reads = [c for c in run.calls if gqlfake.rest_issue_target(c)]
+    assert reads == [["api", "repos/acme/widget/issues/5", "--method", "GET"]]
+    assert run.fallbacks == []
 
 
 # --------------------------------------------------------------------------- blocked-by edges (#1888)
@@ -365,7 +371,7 @@ def test_an_unreadable_blocker_refuses_rather_than_assuming_it_is_fine():
     (`test_promote_refuses_when_the_current_state_cannot_be_read`), applied consistently here."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation", body="**Blocked by:** #9\n")},
-                 fail_on=["issue view 9"])
+                 fail_on=["issues/9", "issue view 9"])
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "skipped"
     assert "#9" in result["results"][0]["detail"]
@@ -393,8 +399,8 @@ def test_no_blocker_marker_costs_nothing_extra_and_behaves_exactly_as_before():
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "promoted"
     assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
-    views = [c for c in run.calls if c[:2] == ["issue", "view"]]
-    assert len(views) == 1                        # only #5 itself -- nothing to check, nothing fetched
+    views = [c for c in run.calls if gqlfake.rest_issue_target(c)]
+    assert len(views) == 1 and run.fallbacks == []     # only #5 itself -- nothing to check, nothing fetched
 
 
 def test_demote_is_never_held_by_an_open_blocker():
@@ -659,7 +665,7 @@ def test_promote_refuses_a_closed_issue():
 def test_promote_refuses_when_the_current_state_cannot_be_read():
     """Every refusal above is a SAFETY check, and a check that fails open is not a check."""
     p = _mod("promote")
-    run = _runner(fail_on=["issue view 5"])
+    run = _runner(fail_on=["issues/5", "issue view 5"])
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "failed"
     assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
@@ -760,7 +766,7 @@ def test_cli_list_exits_nonzero_when_the_census_is_incomplete(capsys, tmp_path):
 def test_cli_apply_exits_nonzero_on_a_failed_write(capsys, tmp_path):
     p = _mod("promote")
     (tmp_path / "config.json").write_text(json.dumps(_config()))
-    run = _runner(fail_on=["issue view 5"])
+    run = _runner(fail_on=["issues/5", "issue view 5"])
     assert p.main(["promote.py", "apply", str(tmp_path), "5"], run=run) == 1
 
 
@@ -937,9 +943,10 @@ def test_apply_says_rate_limited_rather_than_unreadable_when_that_is_what_happen
     inner = _runner()
 
     def run(args):
-        if args[:2] == ["issue", "view"] and str(args[2]) == "5":
+        t = gqlfake.rest_issue_target(args)
+        if t == ("5", False) or (args[:2] == ["issue", "view"] and str(args[2]) == "5"):
             raise RuntimeError("gh issue view 5 failed: " + RATE_LIMITED)
-        if args[:2] == ["issue", "view"] and str(args[2]) == "6":
+        if t == ("6", False) or (args[:2] == ["issue", "view"] and str(args[2]) == "6"):
             raise RuntimeError("gh issue view 6 failed: Could not resolve to an issue")
         return inner(args)
     result = p.promote(".sdlc", _config(), ["5", "6"], run=run)
@@ -956,7 +963,64 @@ def test_cli_apply_exits_nonzero_when_rate_limited(tmp_path):
     inner = _runner()
 
     def run(args):
-        if args[:2] == ["issue", "view"]:
+        if args[:2] == ["issue", "view"] or gqlfake.rest_issue_target(args):
             raise RuntimeError(RATE_LIMITED)
         return inner(args)
     assert p.main(["promote.py", "apply", str(tmp_path), "5"], run=run) == 1
+
+
+# --- #895 slice 2b: the state read is REST first --------------------------------------------------
+
+
+def test_a_response_with_no_state_is_refused_not_guessed():
+    """REST answers 200 with no `state` at all: promote refuses (unreadable response), never promotes."""
+    p = _mod("promote")
+    inner = _runner(views={"5": _view("sdlc:needs-confirmation")})
+
+    def run(args):
+        if gqlfake.rest_issue_target(args) == ("5", False):
+            return json.dumps({"number": 5, "labels": [{"name": "sdlc:needs-confirmation"}], "comments": 0,
+                               "body": ""})
+        return inner(args)
+    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    assert result["results"][0]["outcome"] == "failed"
+    assert not any(str(a).startswith("query=mutation") for c in inner.gql_calls for a in c)
+    assert inner.fallbacks == []
+
+
+def test_a_blocker_with_no_state_is_unresolved():
+    p = _mod("promote")
+    inner = _runner(views={"5": _view("sdlc:needs-confirmation", body="**Blocked by:** #9\n")})
+
+    def run(args):
+        if gqlfake.rest_issue_target(args) == ("9", False):
+            return json.dumps({"number": 9, "labels": [], "comments": 0})
+        return inner(args)
+    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    assert result["results"][0]["outcome"] == "skipped"
+    assert "#9" in result["results"][0]["detail"]
+
+
+def test_a_merged_pr_blocker_reads_resolved_through_the_rest_mapping():
+    """REST says `closed` + pull_request.merged_at; the mapping turns that into MERGED, which resolves."""
+    p = _mod("promote")
+    run = _runner(views={"5": _view("sdlc:needs-confirmation", body="**Blocked by:** #9\n"),
+                         "9": _view(state="MERGED")})
+    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    assert result["results"][0]["outcome"] == "promoted", result
+    assert run.fallbacks == []
+
+
+def test_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    p = _mod("promote")
+    inner = _runner(views={"5": _view("sdlc:needs-confirmation")})
+
+    def run(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    assert result["results"][0]["outcome"] == "promoted", result
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "5"]]

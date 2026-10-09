@@ -1,9 +1,9 @@
 # Claude Code cloud sessions and GitHub GraphQL: detection and reporting only
 
-Status: slice 1 of #801 (detection and reporting) plus slice 2a of #895 (sources.py's issue READS go
-REST first). It does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
+Status: slice 1 of #801 (detection and reporting) plus slices 2a and 2b of #895 (single-issue READS go
+REST first: sources.py, then ten more `issue view` sites). It does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
-progress, not complete: slices 2b-7 (other modules' reads, writes, PRs, board) remain.
+progress, not complete: slices 2c-7 (`issue list` reads, writes, PRs, board) remain.
 
 ## What the proxy blocks
 
@@ -26,7 +26,7 @@ holds no secrets and a stale "unavailable" self-heals. `/sigma-doctor` never pro
 When the check says unavailable, `/sigma-doctor` prints one advisory row,
 `GitHub GraphQL unavailable (cloud proxy)`, marked OK (a permanent condition the user cannot fix, not a
 MISSING gap). It names the features turned off or degraded: board/Projects mirroring, `gh pr merge --auto`,
-`timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 2b-4).
+`timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 2c-4).
 
 ## REST-first issue reads (#895 slice 2a)
 
@@ -63,6 +63,29 @@ MISSING gap). It names the features turned off or degraded: board/Projects mirro
   to gh's comment `id`. Consequence: when a claimant is a GitHub App identity, `comment_watch` can surface
   its own comment as foreign. Human claimants are unaffected. Mapping comment authors is a follow-up.
 
+### Slice 2b: ten more `gh issue view` sites
+
+The same `read_issue` now serves: `auto_unpark._ref_is_open` (state, stateReason), `blockers._state`,
+`promote._read_state`, `unpark._fetch_issue`, `reconcile` (three re-reads in `apply_closed_state_actions`,
+`apply_proposal`, `apply_open_issue_promotions`), `triage._fetch_issue_state` and
+`triage._resolve_missing_picks`, and `brainstorm._fetch_issue_live`. Added mappings: `number`, `title`, and
+`state` = `MERGED` when REST says `closed` with `pull_request.merged_at` set (`gh issue view` says
+MERGED; a closed-unmerged PR stays CLOSED with no stateReason, so a merged-PR blocker reads resolved and a
+closed-unmerged one does not). Each site keeps its own `except` arm (auto_unpark: open; blockers/promote:
+refuse; reconcile: skipped "could not re-read"; triage: skip/None; unpark and brainstorm: the caller's
+arm). The first three are the `sources.GitHubSource._read_issue` path with its `sdlc_dir` breaker and log;
+`triage._resolve_missing_picks` and `brainstorm._fetch_issue_live` have no source and no `sdlc_dir`, so
+they write no breaker or log, and the injected `run` is also the fallback runner: during a REST outage
+each such call costs REST plus one fallback and a stderr line. Cost per read is one REST request (plus
+comment pages for `unpark`), the same count as one GraphQL view; not measured at scale.
+
+Live read on 2026-10-10: `gh api repos/Agrim-Intelligence/sigma/issues/928` returned `state: closed`,
+`state_reason: null`, `pull_request.merged_at: 2026-10-09T17:46:12Z`, which is the shape the MERGED
+mapping keys on. Unmeasured: a real cloud session; bot-author spelling beyond the single public sample
+(promote reads `author`); call counts at scale; comment-heavy `unpark` latency; an old closed issue whose
+REST `state_reason` is null (it would read as unresolved, the safe direction: a stale blocker would not
+auto-unpark).
+
 Unmeasured: the real 429, secondary-limit 403 and 5xx stderr text and the Go transport wording are
 inferred and tested with fixtures only; any live cloud run; live request cost. The bot spellings were
 measured on one public issue, not on this repo (it has no bot-authored issue or comment).
@@ -78,7 +101,7 @@ measured on one public issue, not on this repo (it has no bot-authored issue or 
 ## The ratchet
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
-(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a; it only goes down). Run
+(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

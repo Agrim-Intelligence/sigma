@@ -298,7 +298,7 @@ def view_issue(run, number, repo=None, comments="all"):
 
 # ---------------------------------------------------------------- gh-shape normaliser (#895)
 
-GH_FIELDS = ("state", "stateReason", "author", "closedAt", "body", "labels", "assignees", "comments")
+GH_FIELDS = ("number", "title", "state", "stateReason", "author", "closedAt", "body", "labels", "assignees", "comments")
 
 
 def _check_fields(fields):
@@ -343,8 +343,15 @@ def to_gh_shape(issue, fields):
     _check_fields(fields)
     out = {}
     for f in fields:
-        if f == "state":
-            out[f] = str(issue.get("state") or "").upper()
+        if f == "number":
+            out[f] = issue.get("number")
+        elif f == "title":
+            out[f] = issue.get("title") or ""
+        elif f == "state":
+            # REST reports a merged PR as `closed`; gh says MERGED (#895 2b). Closed-unmerged stays CLOSED.
+            pr = issue.get("pull_request")
+            merged = isinstance(pr, dict) and pr.get("merged_at")
+            out[f] = "MERGED" if merged else str(issue.get("state") or "").upper()
         elif f == "stateReason":
             out[f] = str(issue.get("state_reason") or "").upper() or None
         elif f == "author":

@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
+  `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
+  (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`
+  and `title`, and reports a merged PR (REST `closed` + `pull_request.merged_at`) as `MERGED`, so a
+  merged-PR blocker still reads resolved. `triage._resolve_missing_picks` and `brainstorm` have no
+  `sdlc_dir`, so they write no breaker or log. The direct-`gh` ratchet drops from 94 to 84 sites
+  (measured by `scan()`). Live read on 2026-10-10 of merged PR #928: `state closed`, `state_reason null`,
+  `pull_request.merged_at 2026-10-09T17:46:12Z`. Verified with injected-runner tests. Unmeasured: a real
+  cloud session, bot-author spelling beyond one public sample, call counts at scale, `unpark` latency on a
+  comment-heavy issue, and an old closed issue with a null `state_reason`.
+
 ## 1.0.5 — 2026-10-09 — REST-first issue reads, a verify fix, and faster CI
 
 - **CI runs the suite in parallel.** The one leg that runs on a PR (macOS 3.12) installs `pytest-xdist` and runs `pytest tests/ -n auto`: 21 min measured on a runner (PR #925) against 47-64 min serial. `workflow_dispatch` takes a `full` input (default true); `full=false` runs only the PR leg on any ref.

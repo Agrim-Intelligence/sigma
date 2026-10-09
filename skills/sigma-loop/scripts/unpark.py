@@ -176,10 +176,8 @@ def _park_reason(comments):
 
 
 def _fetch_issue(source, number):
-    raw = source._run(["issue", "view", str(number), *source._repo_args(),
-                       "--json", _ISSUE_FIELDS + ",comments,state"])
-    data = json.loads(raw or "{}")
-    if not isinstance(data, dict) or "state" not in data:
+    data = source._read_issue(number, _ISSUE_FIELDS.split(",") + ["comments", "state"])   # #895: REST first
+    if not data.get("state"):
         raise ValueError("could not read #%s" % number)
     return data
 

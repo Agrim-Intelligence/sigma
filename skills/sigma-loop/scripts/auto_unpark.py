@@ -228,10 +228,9 @@ def _ref_is_open(source, ref, cache):
     if ref in cache:
         return cache[ref]
     try:
-        raw = source._run(["issue", "view", ref, *source._repo_args(), "--json", "state,stateReason"])
-        data = json.loads(raw or "{}")
-        state = (data.get("state") or "").upper() if isinstance(data, dict) else ""
-        state_reason = (data.get("stateReason") or "") if isinstance(data, dict) else ""
+        data = source._read_issue(ref, ["state", "stateReason"])     # #895: REST first, GhApiError -> open
+        state = (data.get("state") or "").upper()
+        state_reason = data.get("stateReason") or ""
         # #2532: this three-way rule is now `blocker_scan.closed_state` -- extracted so `promote.py`
         # and `blockers.py` share it rather than each reinventing their own (unfixed) copy. `open`
         # is the logical negation of `closed`; the docstring above still carries the full case-by-

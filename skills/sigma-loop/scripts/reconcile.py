@@ -616,9 +616,7 @@ def apply_closed_state_actions(source, actions, apply=False):
             done.append(record)
             continue
         try:
-            raw = source._run(["issue", "view", action["issue"], *source._repo_args(),
-                               "--json", "state,labels"])
-            fresh = json.loads(raw or "{}")
+            fresh = source._read_issue(action["issue"], ["state", "labels"])    # #895: REST first
             names = _names(fresh)
             if str(fresh.get("state") or "").upper() != "CLOSED":
                 record["result"], record["error"] = "skipped", "reopened since the census"
@@ -836,9 +834,7 @@ def apply_proposal(source, proposal, apply=False):
             out.append(record)
             continue
         try:
-            raw = source._run(["issue", "view", item["issue"], *source._repo_args(),
-                               "--json", "state,labels"])
-            names = _names(json.loads(raw or "{}"))
+            names = _names(source._read_issue(item["issue"], ["state", "labels"]))    # #895: REST first
         except Exception as exc:
             record["result"], record["error"] = "skipped", "could not re-read: %s" % exc
             out.append(record)
@@ -970,9 +966,7 @@ def apply_open_issue_promotions(source, proposals, primary, goal_label, apply=Fa
             out.append(record)
             continue
         try:
-            raw = source._run(["issue", "view", issue_ref, *source._repo_args(),
-                               "--json", "state,labels"])
-            fresh = json.loads(raw or "{}")
+            fresh = source._read_issue(issue_ref, ["state", "labels"])    # #895: REST first
         except Exception as exc:
             record["result"], record["error"] = "skipped", "could not re-read: %s" % exc
             out.append(record)

@@ -3,6 +3,8 @@ responsible for and classifies each issue, rather than querying for corruption (
 an issue whose defect IS a missing label)."""
 import json, re, pathlib, importlib.util
 
+import gqlfake
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
@@ -691,13 +693,17 @@ def test_automatic_tier_respects_the_per_sweep_cap():
 
 
 def _apply_runner(state="CLOSED", labels=("sdlc:goal", "sdlc:in-progress"), swap_fails=False):
-    calls = []
+    calls, unexpected = [], []
 
     def run(args):
         calls.append(list(args))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
+        rest = gqlfake.rest_issue(args, lambda n, f: {"state": state, "labels": [{"name": x} for x in labels]})
+        if rest is not None:        # #895: the fresh re-read is REST first
+            return rest
         if args[:2] == ["issue", "view"]:
+            unexpected.append(list(args))     # the fallback is not expected on a healthy REST read
             return json.dumps({"state": state, "labels": [{"name": n} for n in labels]})
         if args[:2] == ["api", "graphql"]:
             doc = next((a[len("query="):] for a in args if str(a).startswith("query=")), "")
@@ -720,6 +726,7 @@ def _apply_runner(state="CLOSED", labels=("sdlc:goal", "sdlc:in-progress"), swap
                 return json.dumps({"data": {"repository": {"issue": {"id": "I_1"}}}})
         return ""
     run.calls = calls
+    run.unexpected = unexpected      # #895: any `issue view` (the fallback) on a healthy REST read
     return run
 
 
@@ -741,6 +748,10 @@ def test_apply_removes_the_stale_label():
     assert out[0]["result"] == "done"
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "removeLabelsFromLabelable" in docs[0]
+    # #895: the fresh re-read was ONE REST GET of the right issue; no `issue view` fallback
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+        ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.unexpected == []
 
 
 def test_apply_refuses_an_issue_reopened_since_the_census():
@@ -943,6 +954,55 @@ def test_apply_proposal_applies_an_add_and_a_remove_in_one_swap():
     assert out[0]["result"] == "done"
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "addLabelsToLabelable" in docs[0] and "removeLabels" in docs[0]
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+        ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.unexpected == []
+
+
+def test_apply_closed_state_and_proposal_skip_a_non_numeric_ref_without_any_read():
+    """#895: `_read_issue` int()s the ref; a malformed one is skipped as 'could not re-read'."""
+    rc = _mod("reconcile"); run = _apply_runner()
+    out = rc.apply_closed_state_actions(_src(run), [{"issue": "not-a-number", "remove": ["x"],
+                                                     "reason": "r"}], apply=True)
+    assert out[0]["result"] == "skipped" and "re-read" in (out[0]["error"] or "")
+    out = rc.apply_proposal(_src(run), {"proposals": [
+        {"issue": "not-a-number", "add": [], "remove": ["x"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    assert run.calls == [] or all(c[0] != "api" or not c[1].startswith("repos/") for c in run.calls)
+    assert run.unexpected == []
+
+
+def test_apply_skips_when_the_fresh_reread_fails_at_both_closed_state_and_proposal_sites():
+    """GhApiError (REST and the one fallback both fail) lands in each site's own `except Exception`."""
+    rc = _mod("reconcile"); inner = _apply_runner()
+
+    def run(args):
+        if gqlfake.rest_issue_target(args) or args[:2] == ["issue", "view"]:
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    out = rc.apply_closed_state_actions(_src(run), _action(), apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    out = rc.apply_proposal(_src(run), {"proposals": [
+        {"issue": "7", "add": [], "remove": ["sdlc:in-progress"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    assert not [a for c in inner.calls for a in c if str(a).startswith("query=mutation")]
+
+
+def test_apply_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    rc = _mod("reconcile"); inner = _apply_runner()
+
+    def run(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    src = _src(run); src._LABEL_SWAP_RETRY_BASE = 0
+    out = rc.apply_proposal(src, {"proposals": [
+        {"issue": "7", "add": [], "remove": ["sdlc:in-progress"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "done", out
+    assert [c[:3] for c in inner.calls if c[:2] == ["issue", "view"]] == [["issue", "view", "7"]]
+    assert len(inner.unexpected) == 1       # the fallback read, recorded
 
 
 def test_cli_apply_requires_a_plan(capsys):
@@ -1099,7 +1159,7 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
     variation call `apply_open_issue_promotions` directly instead (see the stale-race tests below)."""
     by_label = by_label or {}
     history = history or {}
-    calls = []
+    calls, unexpected = [], []
 
     def run(args):
         calls.append(list(args))
@@ -1109,7 +1169,12 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
             return json.dumps(by_label.get((label, state), []))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
+        rest = gqlfake.rest_issue(args, lambda n, f: {"state": fresh_state,
+                                                      "labels": [{"name": x} for x in fresh_labels]})
+        if rest is not None:        # #895: the fresh re-read is REST first
+            return rest
         if args[:2] == ["issue", "view"]:
+            unexpected.append(list(args))
             return json.dumps({"state": fresh_state, "labels": [{"name": n} for n in fresh_labels]})
         if args[:2] == ["api", "graphql"]:
             doc = next((a[len("query="):] for a in args if str(a).startswith("query=")), "")
@@ -1144,6 +1209,7 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
                 return json.dumps({"data": {"repository": {"issue": {"id": "I_1"}}}})
         return ""
     run.calls = calls
+    run.unexpected = unexpected
     return run
 
 
@@ -1464,6 +1530,8 @@ def test_open_issue_promotion_aborts_if_the_issue_closed_since_the_census():
     out = rc.apply_open_issue_promotions(src, [stale_proposal], primary, src.goal_label, apply=True)
     assert out[0]["result"] == "skipped" and "no longer open" in out[0]["error"]
     assert _mutation_docs(run) == []
+    assert run.unexpected == []              # #895: REST-first re-read, no `issue view`
+    assert ["api", "repos/acme/widget/issues/226", "--method", "GET"] in run.calls
 
 
 def test_open_issue_promotion_skips_when_the_fresh_reread_fails():
@@ -1474,8 +1542,8 @@ def test_open_issue_promotion_skips_when_the_fresh_reread_fails():
                       "evidence": "e", "winner": "sdlc:goal"}
 
     def run(args):
-        if args[:2] == ["issue", "view"]:
-            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        if args[:2] == ["issue", "view"] or gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")      # REST AND the one fallback both fail
         return ""
     src = _mod("reconcile").sources.GitHubSource(_config(), run=run)
     primary = rc._primary_labels(src, _config())

@@ -37,9 +37,12 @@ def _view(*labels, assignees=(), state="OPEN", state_reason=None):
     return json.dumps(payload)
 
 
-def _runner(views=None, fail_on=()):
-    calls, label_state, gql = [], set(), []
+def _runner(views=None, fail_on=(), raw_rest=None):
+    """`views` are gh-shape payloads; they are answered REST-shaped on `api .../issues/N` (#895).
+    `raw_rest`: {n: REST JSON string} sent verbatim (e.g. a response with no `state`)."""
+    calls, label_state, gql, fallbacks = [], set(), [], []
     views = views or {}
+    raw_rest = raw_rest or {}
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -54,13 +57,21 @@ def _runner(views=None, fail_on=()):
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
+        target = gqlfake.rest_issue_target(args)
+        if target is not None and target[0] in raw_rest:
+            return raw_rest[target[0]]
+        rest = gqlfake.rest_issue(args, lambda n, f: views.get(n, _view()))
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))      # #895: the one fallback; REST-first tests assert this empty
             return views.get(str(args[2]), _view())
         if args[:2] == ["api", "user"]:
             return "me"
         return ""
     run.calls = calls
     run.gql = gql
+    run.fallbacks = fallbacks
     return run
 
 
@@ -198,10 +209,42 @@ def test_every_refusal_names_the_route_out():
 
 def test_an_unreadable_blocker_is_reported_unresolved_never_assumed_fine():
     b = _mod("blockers")
-    run = _runner(fail_on=["issue view 7"])
+    run = _runner(fail_on=["issues/7", "issue view 7"])
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
     assert result["surfaced"] == ["7"]
     assert "could not read" in result["results"][0]["detail"]
+
+
+def test_state_reads_rest_first_and_asks_for_nothing_else():
+    """#895: one `api repos/acme/widget/issues/7 --method GET`; no `issue view`; labels/assignees mapped."""
+    b = _mod("blockers")
+    run = _runner(views={"7": _view("bug", assignees=["dana"])})
+    state = b._state(_source(b, run), "7")
+    assert state == {"labels": {"bug"}, "assignees": ["dana"], "closed": False}
+    assert [c for c in run.calls if c[0] != "project"] == [["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.fallbacks == []
+
+
+def test_a_response_with_no_state_is_refused_not_guessed():
+    b = _mod("blockers")
+    run = _runner(raw_rest={"7": json.dumps({"number": 7, "labels": [], "assignees": [], "comments": 0})})
+    assert b._state(_source(b, run), "7") is None
+    assert run.fallbacks == []
+
+
+def test_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    b = _mod("blockers")
+    inner = _runner(views={"7": _view("bug")})
+
+    def flaky(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    state = b._state(_source(b, flaky), "7")
+    assert state["labels"] == {"bug"}
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "7"]]
 
 
 def test_one_unresolvable_blocker_never_stops_the_others_being_resolved():
