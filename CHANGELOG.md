@@ -4,6 +4,10 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.5 — 2026-10-09 — REST-first issue reads, a verify fix, and faster CI
+
+- **CI runs the suite in parallel.** The one leg that runs on a PR (macOS 3.12) installs `pytest-xdist` and runs `pytest tests/ -n auto`: 21 min measured on a runner (PR #925) against 47-64 min serial. `workflow_dispatch` takes a `full` input (default true); `full=false` runs only the PR leg on any ref.
+
 - **`sources.py` issue reads go REST first (#895, slice 2a; refs #801).** The seven reads
   (`fetch_comments`, `release`, `complete`, `fetch_author`, `fetch_body_labels`,
   `fetch_comments_strict`, `append_to_body`) now call `gh_api.read_issue`: a REST GET, then at most one
