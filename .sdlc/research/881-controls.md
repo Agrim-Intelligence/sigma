@@ -107,7 +107,7 @@ Phase P5 IMPLEMENT. Goal worktree `.sdlc/work/881` (left DIRTY; nothing staged o
 ### own timeout not passed to the run (timeout=None, line `code, tail = bt._hidden_run(...)` in _runs)
 - broken by: `bt._hidden_run(tree, bundle, task, sys.executable, timeout, env)` -> `bt._hidden_run(tree, bundle, task, sys.executable, None, env)`
 - gesture `python3 evals/golden/verify.py` on planted tree, BROKEN: exit 1 (27.6s): 'RED t1 hidden-on-start: hidden tests must fail on the start tree (exit 0): 1 passed in 12.01s\ngolden: 1 task(s), 1 red'
-- test `test_a_hung_hidden_test_is_killed_and_reported` BROKEN: exit 1: E           subprocess.TimeoutExpired: Command '['/Users/swapnildubey/.sigma-venv312/bin/python', 'evals/golden/verify.py']' timed out after 120 seconds | FAILED tests/test_golden_verify.py::test_a_hung_hidden_test_is_killed_and_reported | 1 failed in 120.18s (0:02:00)
+- test `test_a_hung_hidden_test_is_killed_and_reported` BROKEN: exit 1: E           subprocess.TimeoutExpired: Command '['<venv>/bin/python', 'evals/golden/verify.py']' timed out after 120 seconds | FAILED tests/test_golden_verify.py::test_a_hung_hidden_test_is_killed_and_reported | 1 failed in 120.18s (0:02:00)
 - restored: test exit 0 (1 passed in 4.21s); gesture exit 1: 'RED t1 hidden-on-start: timeout after 2s (killed)\nRED t1 hidden-on-reference: timeout after 2s (killed)\ngolden: 1 task(s), 1 red'
 
 
@@ -118,7 +118,7 @@ Phase P5 IMPLEMENT. Goal worktree `.sdlc/work/881` (left DIRTY; nothing staged o
 - restored: test passes; gesture exit 0: `0 golden tasks found under <root> (nothing verified)`
 
 ## Registration, pin and structural controls (scratch clone `g881`, files committed there)
-- **FIXTURE_ROOTS** | planted `evals/golden/t1/hidden/files/test_x.py` importing `pytest`; removed `("evals", "golden")` from `tests/test_third_party_imports.py` | `python -m pytest tests/test_third_party_imports.py`: `1 failed, 10 passed`; `E evals/golden/t1/hidden/files/test_x.py:1: third-party import `pytest` is not in the allowlist` | with the entry: `11 passed`.
+- **FIXTURE_ROOTS** | planted a throwaway hidden test file under the golden fixture tree importing `pytest`; removed `("evals", "golden")` from `tests/test_third_party_imports.py` | `python -m pytest tests/test_third_party_imports.py`: `1 failed, 10 passed`; `E evals/golden/t1/hidden/files/test_x.py:1: third-party import `pytest` is not in the allowlist` | with the entry: `11 passed`.
 - **Pin: isolated_env** | renamed `def isolated_env(` to `isolated_env_RENAMED(` in scratch `evals/bench/arms/common.py` | `test_clean_env_chain_reaches_arms_common_isolated_env`: `AttributeError: module 'arms.common' has no attribute 'isolated_env'` | restored: 1 passed.
 - **Pin: `_run`** | renamed `def _run(` in scratch `tools/readiness/bench_tasks.py` | `test_bench_tasks_private_names_verify_uses_exist`: `bench_tasks._run is gone; evals/golden/verify.py depends on it` | restored: 1 passed.
 - **Pin: verify.py uses only pinned names** | `bt.file_sha256(path)` -> `bt.bundle_files(path)` | `test_verify_uses_only_pinned_names`: `unpinned bench_tasks names used by verify.py: ['bundle_files']` | restored: 1 passed.
