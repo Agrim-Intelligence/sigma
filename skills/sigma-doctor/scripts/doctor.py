@@ -870,15 +870,8 @@ def _open_issue_done_card(gh_cfg, run):
     cols = proj.get("columns")
     done_name = (cols.get("done") if isinstance(cols, dict) else None) or "Done"
     goal_label = gh_cfg.get("goal_label", "sdlc:goal")
-    raw_issues = run(["gh", "issue", "list", "--repo", repo, "--label", goal_label,
-                      "--state", "open", "--json", "number", "--limit", "200"])
-    if not raw_issues:
-        return None
-    try:
-        issues = json.loads(raw_issues)
-    except Exception:
-        return None
-    if not isinstance(issues, list) or not issues:
+    issues = _list(run, gh_cfg, ["number"], [goal_label], repo=repo)
+    if not issues:
         return None
     open_numbers = {i.get("number") for i in issues if isinstance(i, dict) and i.get("number") is not None}
     if not open_numbers:
@@ -1236,6 +1229,49 @@ def _gh_runner(doctor_run):
     return lambda args: doctor_run(["gh", *args])
 
 
+def _raising_gh(doctor_run):
+    """#895 slice 2c: `_gh_runner`, but a FAILED call RAISES (a `RuntimeError` carrying gh's text as
+    `.hint`) instead of returning the falsy `_RawFailure`. The REST list fetch does
+    `json.loads(raw or "[]")`, so a failure handed to it unraised would read as an EMPTY list -- a
+    success that is never classified, never falls back and never trips anything (the
+    failure-as-empty trap). Built ON TOP of `_gh_runner` so there is no second `["gh", *args]`
+    literal. A plain-string fake that returns "" for a failure is NOT a `_RawFailure`; it passes
+    through as "" and `gh_api.list_issues_gh` refuses empty output (kind other, no fallback)."""
+    runner = _gh_runner(doctor_run)
+
+    def run(args):
+        res = runner(args)
+        if isinstance(res, _RawFailure):
+            exc = RuntimeError("gh " + (args[0] if args else "") + " failed: " + (_failure_text(res)[:200] or "no output"))
+            exc.hint = _failure_text(res)
+            raise exc
+        return res
+    return run
+
+
+_LIST_FETCH = []
+
+
+def _list(run, gh_cfg, fields, labels, state="open", cap=200, sort="created", repo=None):
+    """One doctor list read through `gh_api.list_issues_gh` (REST first, ONE `gh issue list` fallback on a
+    rate limit / 5xx / transport failure, never in a cloud session). Returns the list, or `None` on ANY
+    exception, so each site keeps its old falsy -> skip arm exactly. READ-ONLY by construction: no
+    `sdlc_dir` is passed, so doctor never writes the REST breaker or the fallback log. Both legs use the
+    SAME raising wrapper. Newest created first (what `gh issue list` returned) unless `sort="updated"`.
+    Latency, derived from the 15 s per-call timeout and NOT measured: up to ~45 s per site on an outage
+    (2 REST pages + 1 fallback); the multi-state scan ~135 s."""
+    try:
+        gh_api = _load_loop_script("gh_api")
+        if not _LIST_FETCH:
+            _LIST_FETCH.append(_load_loop_script("sources").fetch_issues_rest)
+        raising = _raising_gh(run)
+        return gh_api.list_issues_gh(raising, fields, repo=repo or gh_cfg.get("repo") or None,
+                                     labels=labels, state=state, cap=cap, sort=sort,
+                                     gql_run=raising, fetch=_LIST_FETCH[0])
+    except Exception:
+        return None
+
+
 def _dependency_marker_scan(gh_cfg, bchk_cfg, run):
     """An issue with a comment matching `backlog_check._BLOCK_RE` ("blocked by #N" / "depends on #N"
     / ...) but NO matching marker in its own body is likely a human-authored dependency, left via the
@@ -1279,18 +1315,11 @@ def _dependency_marker_scan(gh_cfg, bchk_cfg, run):
     scan_cfg = _block(bchk_cfg, "doctor_scan")
     max_issues = _int_cfg(scan_cfg, "max_issues", _DEFAULT_DOCTOR_MAX_ISSUES)
     max_comments = _int_cfg(scan_cfg, "max_comments", _DEFAULT_DOCTOR_MAX_COMMENTS)
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     goal_label = gh_cfg.get("goal_label", "sdlc:goal")
-    # 200, not max_issues, for the LIST call -- see the docstring above for why.
-    raw = run(["gh", "issue", "list", *repo_args, "--label", goal_label, "--state", "open",
-               "--search", "sort:updated-desc", "--json", "number,body", "--limit", "200"])
-    if not raw:
-        return None
-    try:
-        issues = json.loads(raw)
-    except Exception:
-        return None
-    if not isinstance(issues, list):
+    # 200, not max_issues, for the LIST call -- see the docstring above for why. `updated`/desc is the
+    # REST-native form of the old `--search sort:updated-desc`; `candidates[:max_issues]` depends on it.
+    issues = _list(run, gh_cfg, ["number", "body"], [goal_label], sort="updated")
+    if issues is None:
         return None
     total = len(issues)
     candidates = [i for i in issues if not block_re.search(i.get("body") or "")][:max_issues]
@@ -1329,18 +1358,10 @@ def _blocked_label_scan(gh_cfg, run):
     nothing to flag), or `None` on any hard failure (no gh, network down, malformed/non-list JSON)
     -- `None` degrades to silent/ok, the same fail-open convention `_dependency_marker_scan` above
     uses, never a false alarm from a backlog this tool could not actually read."""
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     goal_label = gh_cfg.get("goal_label", "sdlc:goal")
     parked_label = gh_cfg.get("parked_label", "sdlc:parked")
-    raw = run(["gh", "issue", "list", *repo_args, "--label", goal_label, "--state", "open",
-               "--json", "number,labels", "--limit", "200"])
-    if not raw:
-        return None
-    try:
-        issues = json.loads(raw)
-    except Exception:
-        return None
-    if not isinstance(issues, list):
+    issues = _list(run, gh_cfg, ["number", "labels"], [goal_label])
+    if issues is None:
         return None
     flagged = []
     for i in issues:
@@ -1419,18 +1440,10 @@ def _unreachable_blocker_scan(gh_cfg, run):
 
     Fail-open, matching every other scan in this file: an unreadable/malformed response yields `[]`
     (silent), never a false alarm."""
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     blocking = gh_cfg.get("blocking_label", "sdlc:blocking")
     goal = gh_cfg.get("goal_label", "sdlc:goal")
-    raw = run(["gh", "issue", "list", *repo_args, "--label", blocking, "--state", "open",
-               "--json", "number,labels", "--limit", "200"])
-    if not raw:
-        return []
-    try:
-        issues = json.loads(raw)
-    except Exception:
-        return []
-    if not isinstance(issues, list):
+    issues = _list(run, gh_cfg, ["number", "labels"], [blocking])
+    if issues is None:
         return []
     flagged = []
     for i in issues:
@@ -1454,7 +1467,6 @@ def _orphan_in_progress_scan(gh_cfg, config, run):
 
     Fail-open, matching every other scan in this file: an unreadable/malformed response yields `[]`
     (silent), never a false alarm."""
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     in_progress = gh_cfg.get("in_progress_label", "sdlc:in-progress")
     # #1393: `goal_blocked_label` is NOT a membership label -- it is an OVERLAY, exactly like
     # `in_progress_label`. This scan is the one place the membership refactor missed, and the effect
@@ -1465,15 +1477,8 @@ def _orphan_in_progress_scan(gh_cfg, config, run):
                gh_cfg.get("parked_label", "sdlc:parked"),
                (_block(_block(config, "ledger"), "handoff").get("proposed_label")
                 or "sdlc:needs-confirmation"))
-    raw = run(["gh", "issue", "list", *repo_args, "--label", in_progress, "--state", "open",
-               "--json", "number,labels", "--limit", "200"])
-    if not raw:
-        return []
-    try:
-        issues = json.loads(raw)
-    except Exception:
-        return []
-    if not isinstance(issues, list):
+    issues = _list(run, gh_cfg, ["number", "labels"], [in_progress])
+    if issues is None:
         return []
     flagged = []
     for i in issues:
@@ -1516,7 +1521,6 @@ def _multi_state_label_scan(gh_cfg, config, run):
     `None`) even when every query failed, matching `_blocked_label_scan`'s own caller-side
     convention (`if <result>:` treats both identically, so the distinction carries no signal here
     either)."""
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     goal_label = gh_cfg.get("goal_label", "sdlc:goal")
     parked_label = gh_cfg.get("parked_label", "sdlc:parked")
     proposed_label = (_block(_block(config, "ledger"), "handoff").get("proposed_label")
@@ -1530,15 +1534,8 @@ def _multi_state_label_scan(gh_cfg, config, run):
     primary = (goal_label, parked_label, proposed_label)
     seen = {}
     for label in primary:
-        raw = run(["gh", "issue", "list", *repo_args, "--label", label, "--state", "open",
-                   "--json", "number,labels", "--limit", "200"])
-        if not raw:
-            continue
-        try:
-            issues = json.loads(raw)
-        except Exception:
-            continue
-        if not isinstance(issues, list):
+        issues = _list(run, gh_cfg, ["number", "labels"], [label])
+        if issues is None:
             continue
         for i in issues:
             if isinstance(i, dict) and "number" in i:
@@ -2510,7 +2507,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         # found nothing" and "I could not look" must never render the same.
         try:
             _rc = _load_loop_script("reconcile")
-            _cen = _rc.census(sdlc_dir, cfg, run=_gh_runner(run))
+            _cen = _rc.census(sdlc_dir, cfg, run=_raising_gh(run))   # #895 2c: an outage must not read as an empty census
         except Exception:
             _cen = None
         if _cen and not _cen.get("skipped"):

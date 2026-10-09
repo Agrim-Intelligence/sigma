@@ -1,9 +1,9 @@
 # Claude Code cloud sessions and GitHub GraphQL: detection and reporting only
 
-Status: slice 1 of #801 (detection and reporting) plus slices 2a and 2b of #895 (single-issue READS go
-REST first: sources.py, then ten more `issue view` sites). It does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
+Status: slice 1 of #801 (detection and reporting) plus slices 2a, 2b and 2c of #895 (single-issue READS go
+REST first: sources.py, then ten more `issue view` sites; then ten `issue list` sites). It does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
-progress, not complete: slices 2c-7 (`issue list` reads, writes, PRs, board) remain.
+progress, not complete: slices 3-7 (writes, PRs, board) remain.
 
 ## What the proxy blocks
 
@@ -26,7 +26,7 @@ holds no secrets and a stale "unavailable" self-heals. `/sigma-doctor` never pro
 When the check says unavailable, `/sigma-doctor` prints one advisory row,
 `GitHub GraphQL unavailable (cloud proxy)`, marked OK (a permanent condition the user cannot fix, not a
 MISSING gap). It names the features turned off or degraded: board/Projects mirroring, `gh pr merge --auto`,
-`timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 2c-4).
+`timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 3-4).
 
 ## REST-first issue reads (#895 slice 2a)
 
@@ -90,9 +90,41 @@ Unmeasured: the real 429, secondary-limit 403 and 5xx stderr text and the Go tra
 inferred and tested with fixtures only; any live cloud run; live request cost. The bot spellings were
 measured on one public issue, not on this repo (it has no bot-authored issue or comment).
 
+### Slice 2c: ten `gh issue list` sites
+
+`gh_api.list_issues_gh(run, fields, ...)` pages `gh api repos/{o}/{r}/issues` (GET, 100 per page) and
+returns rows in `gh issue list --json` shape; on a rate limit, 5xx or transport failure it makes ONE
+`gh issue list` fallback (never in a cloud session or with `SIGMA_GH_GRAPHQL=off`, never on a client
+error, proxy block, empty or malformed output, or a page that is not a JSON list). The breaker and
+fallback log are the ones `read_issue` uses (`op: issue_list`, `number: null`), written only when an
+`sdlc_dir` exists. Sites: `auto_unpark` (the parked/blocked loop and the `sdlc:blocking` read; any error
+keeps `complete=False` / `set()`, so a failed read never removes labels), `reconcile` census,
+`assign._active_members` (a non-list page now lands in its "could not rank active repo members" arm), and
+six `doctor` scans. `status.py:174` stays direct by design, and the `issue edit` in `assign.py` is a write.
+
+Direction rule: `gh issue list` is newest-created-first, so every site asks `sort=created&direction=desc`
+(a board over its cap keeps its NEWEST rows); `doctor._dependency_marker_scan` asks `updated`/`desc`
+(its `max_issues` slice depends on it). Other orders are refused with a ValueError, because the fallback
+argv cannot express them. Doctor stays READ-ONLY: it passes no `sdlc_dir`, so it writes no
+breaker or log state even after a fallback-class failure; its runner never raises (a failure is a falsy
+`_RawFailure`), so a raising wrapper built on `_gh_runner` turns it into an exception and the census
+read is routed through it too, otherwise an outage would read as an empty board.
+
+Cost, DERIVED and not measured: a list is `ceil(n/100)` REST requests instead of one GraphQL search (REST's
+issues endpoint also returns pull requests, which are dropped client-side, so a label-less read such as
+assign's `--state all` sample of 50 can take `ceil((issues + PRs)/50)` requests on a PR-heavy repo). Because the
+breaker is shared, one rate-limited census tick (up to 50 pages) can count toward its 3-failure threshold and
+turn REST single-issue reads off for the cooldown (300 s default). A
+5000-cap board read (auto_unpark, reconcile's per-tick census) is up to 50 sequential requests, to be
+compared with `SIGMA_WATCH_CALL_TIMEOUT` (120 s); doctor worst case is ~45 s per site and ~135 s for the
+multi-state scan (from the 15 s per-call timeout; before ~15 s per site). Unmeasured: a real Claude Code
+cloud session; real request counts and latency for a 5000-cap board; doctor latency; that gh's default
+newest-created order still holds (assumed, not re-verified); the GraphQL points saved (#1829's ~2600 per
+search, not re-measured here); label names containing a comma (cannot be sent; `sdlc:*` never do).
+
 ## What this does NOT do
 
-- Only `read_issue` (above) is wired to callers; the other REST helper ops have none yet, and nothing
+- Only `read_issue` and `list_issues_gh` (above) are wired to callers; the other REST helper ops have none yet, and nothing
   in the product exercises the probe or the cache.
 - `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
 - `create_issue` in `gh_api.py` bypasses the feature-label refusal in `GitHubSource._run`; the migration
@@ -101,7 +133,7 @@ measured on one public issue, not on this repo (it has no bot-authored issue or 
 ## The ratchet
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
-(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b; it only goes down). Run
+(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

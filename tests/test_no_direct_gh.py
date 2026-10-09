@@ -47,6 +47,11 @@ moved to `gh_api.read_issue`, whose fallback argv is built inside the EXEMPT hel
 MEASURED 2026-10-10 (#895 slice 2b), via the same `scan()`: TOTAL 94 -> 84. The 10 `issue view` reads
 moved to `gh_api.read_issue`: auto_unpark 3 -> 2, blockers 2 -> 1, promote 2 -> 1, unpark 3 -> 2,
 reconcile 4 -> 1, triage 6 -> 4, brainstorm 1 -> 0 (entry removed). Every `issue list` site is slice 2c.
+MEASURED 2026-10-10 (#895 slice 2c), via the same `scan()` (printed, not typed): TOTAL 84 -> 74. The 10
+`issue list` list-literal sites moved to `gh_api.list_issues_gh` (whose fallback argv is built inside the
+EXEMPT helper): auto_unpark 2 -> 0 and reconcile 1 -> 0 (entries removed), doctor 13 -> 7, assign 2 -> 1
+(the remaining one is the `issue edit` write). status.py keeps its 3 by design. doctor.py's raising
+wrapper is built on `_gh_runner`, so it adds no `["gh", *args]` literal.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -85,23 +90,21 @@ GENERIC_INVOCATION = "python -m pytest tests/test_no_direct_gh.py"
 BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
-    "skills/sigma-doctor/scripts/doctor.py": 13,
+    "skills/sigma-doctor/scripts/doctor.py": 7,
     "skills/sigma-dossier/scripts/dossier.py": 1,
     "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/auto_unpark.py": 2,
     "skills/sigma-loop/scripts/blockers.py": 1,
     "skills/sigma-loop/scripts/cross_repo.py": 1,
     "skills/sigma-loop/scripts/feature_owner.py": 1,
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/promote.py": 1,
-    "skills/sigma-loop/scripts/reconcile.py": 1,
     "skills/sigma-loop/scripts/sources.py": 28,
     "skills/sigma-loop/scripts/triage.py": 4,
     "skills/sigma-loop/scripts/unpark.py": 2,
     "skills/sigma-loop/scripts/work.py": 14,
     "skills/sigma-rebase/scripts/rebase_brief.py": 1,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
-    "skills/sigma-scope/scripts/assign.py": 2,
+    "skills/sigma-scope/scripts/assign.py": 1,
     "skills/sigma-status/scripts/status.py": 3,
 }
 

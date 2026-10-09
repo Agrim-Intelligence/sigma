@@ -21,24 +21,46 @@ def _issue(number, *labels, state="OPEN"):
     return {"number": number, "state": state, "labels": [{"name": n} for n in labels]}
 
 
+def _rest(issue):
+    """gh-shape census row -> the REST issues-list row the REST leg reads (#895 2c)."""
+    out = dict(issue)
+    out["state"] = str(issue.get("state") or "OPEN").lower()
+    out["closed_at"] = out.pop("closedAt", None)
+    return out
+
+
 def _runner(by_label=None, fail_labels=(), bad_json_labels=()):
-    """Fake `gh` runner answering `issue list --label X --state Y` from `by_label[(X, Y)]`."""
+    """Fake `gh` runner answering the census's list reads from `by_label[(X, Y)]`. #895 2c: BOTH shapes
+    -- the REST issues-list GET (first leg) and the one `issue list` fallback (`run.fallbacks`). A label
+    in `fail_labels` fails on BOTH legs with an HTTP 502 (so the fallback is exercised and fails too)."""
     by_label = by_label or {}
-    calls = []
+    calls, fallbacks = [], []
 
     def run(args):
         calls.append(list(args))
+        params = gqlfake.rest_list_params(args)
+        if params is not None:
+            label, state = params.get("labels"), params.get("state", "open")
+            if label in fail_labels:
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+            if label in bad_json_labels:
+                return "not json"
+            return gqlfake.rest_list(args, [_rest(i) for i in by_label.get((label, state), [])])
         if args[:2] != ["issue", "list"]:
             return ""
+        fallbacks.append(list(args))
         label = args[args.index("--label") + 1] if "--label" in args else None
         state = args[args.index("--state") + 1] if "--state" in args else "open"
         if label in fail_labels:
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        if label in bad_json_labels:
-            return "not json"
         return json.dumps(by_label.get((label, state), []))
     run.calls = calls
+    run.fallbacks = fallbacks
     return run
+
+
+def rest_list_calls(run):
+    return [c for c in run.calls if gqlfake.rest_list_params(c) is not None]
 
 
 def _src(run):
@@ -336,8 +358,8 @@ def test_e3_does_not_query_the_same_label_twice_when_two_config_keys_collide():
     cfg = dict(_config(), ledger={"handoff": {"proposed_label": "sdlc:parked"}})
     run = _runner()
     rc.census(".sdlc", cfg, run=run)
-    closed = [c[c.index("--label") + 1] for c in run.calls
-              if "--label" in c and c[c.index("--state") + 1] == "closed"]
+    closed = [gqlfake.rest_list_params(c)["labels"] for c in rest_list_calls(run)
+              if gqlfake.rest_list_params(c).get("labels") and gqlfake.rest_list_params(c)["state"] == "closed"]
     assert len(closed) == len(set(closed)), closed
     assert "sdlc:parked" in closed
 
@@ -416,7 +438,8 @@ def test_census_is_read_only():
                    ("sdlc:needs-triage", "open"): [_issue(2, "sdlc:goal", "sdlc:needs-triage")]})
     result = rc.census(".sdlc", _config(), run=run)
     assert result["issues"].get(rc.NEEDS_TRIAGE) == [2]
-    assert all(c[:2] == ["issue", "list"] for c in run.calls), run.calls
+    assert run.calls and all(gqlfake.rest_list_params(c) is not None for c in run.calls), run.calls
+    assert run.fallbacks == []
 
 
 def test_census_is_a_no_op_outside_github_mode():
@@ -458,7 +481,7 @@ def test_render_distinguishes_clean_from_could_not_read():
 
 def test_cli_census_verb_is_wired_through_main(tmp_path, monkeypatch):
     rc = _mod("reconcile")
-    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if a[:2] == ["issue", "list"] else "")
+    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if gqlfake.rest_list_params(a) is not None else "")
     base = tmp_path / ".sdlc"; base.mkdir()
     (base / "config.json").write_text(json.dumps(_config()))
     assert rc.main(["reconcile.py", "census", str(base)]) == 0
@@ -832,7 +855,7 @@ def test_sweep_is_a_no_op_outside_github_mode():
 
 def test_cli_sweep_verb_is_wired_and_dry_runs_by_default(tmp_path, monkeypatch, capsys):
     rc = _mod("reconcile")
-    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if a[:2] == ["issue", "list"] else "")
+    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if gqlfake.rest_list_params(a) is not None else "")
     base = tmp_path / ".sdlc"; base.mkdir()
     (base / "config.json").write_text(json.dumps(_config()))
     assert rc.main(["reconcile.py", "sweep", str(base)]) == 0
@@ -1163,10 +1186,12 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
 
     def run(args):
         calls.append(list(args))
+        params = gqlfake.rest_list_params(args)
+        if params is not None:      # #895 2c: the census list read is REST first
+            return gqlfake.rest_list(args, [_rest(i) for i in by_label.get((params.get("labels"), params.get("state", "open")), [])])
         if args[:2] == ["issue", "list"]:
-            label = args[args.index("--label") + 1] if "--label" in args else None
-            state = args[args.index("--state") + 1] if "--state" in args else "open"
-            return json.dumps(by_label.get((label, state), []))
+            unexpected.append(list(args))
+            return json.dumps(by_label.get((None, "open"), []))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
         rest = gqlfake.rest_issue(args, lambda n, f: {"state": fresh_state,
@@ -1608,3 +1633,78 @@ def test_recompute_winner_treats_a_fresh_ambiguous_result_as_not_goal_label():
     primary = ("sdlc:goal", "sdlc:parked", "sdlc:needs-confirmation")
     events = [_ev(1000, "add", "sdlc:goal"), _ev(1004, "add", "sdlc:parked")]   # 4s apart
     assert rc._recompute_winner(rc.MULTI_LABEL, primary, set(), events) is None
+
+
+# --- #895 slice 2c: the census list read is REST first (gh_api.list_issues_gh) -------------------
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def gh_env(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+
+def test_census_requests_rest_newest_first_and_never_falls_back_when_healthy(gh_env):
+    rc = _mod("reconcile")
+    run = _runner({("sdlc:goal", "open"): [_issue(2, "sdlc:goal"), _issue(1, "sdlc:goal")]})
+    result = rc.census(".sdlc", _config(), run=run)
+    assert result["complete"] is True and run.fallbacks == []
+    p = gqlfake.rest_list_params(next(c for c in rest_list_calls(run) if "labels=sdlc:goal" in c))
+    assert p["sort"] == "created" and p["direction"] == "desc" and p["per_page"] == "100"
+
+
+def test_census_fail_labels_exercises_the_one_fallback_then_reports_incomplete(gh_env):
+    """A 502 is fallback-class: the REST read is followed by EXACTLY ONE `issue list`, which also fails,
+    so the label reads `([], False, False)` and the census is incomplete (not silently empty)."""
+    rc = _mod("reconcile")
+    run = _runner(fail_labels={"sdlc:parked"})
+    result = rc.census(".sdlc", _config(), run=run)
+    assert result["complete"] is False and result["failed"] and any("sdlc:parked" in f for f in result["failed"])
+    parked_fb = [c for c in run.fallbacks if "sdlc:parked" in c]
+    assert len(parked_fb) == len([c for c in rest_list_calls(run) if "labels=sdlc:parked" in c]) >= 1
+    assert all(len([a for a in c if a == "sdlc:parked"]) == 1 for c in parked_fb)
+
+
+def test_census_malformed_json_never_falls_back(gh_env):
+    rc = _mod("reconcile")
+    run = _runner(bad_json_labels={"sdlc:goal"})
+    assert rc.census(".sdlc", _config(), run=run)["complete"] is False
+    assert not [c for c in run.fallbacks if "sdlc:goal" in c]
+
+
+def test_census_keeps_closed_at_and_state_through_the_adapter(gh_env):
+    rc = _mod("reconcile")
+    row = _closed(7, "sdlc:goal")
+    run = _runner({("sdlc:goal", "closed"): [row]})
+    issues, ok, truncated = rc._fetch_by_label(_src(run), "sdlc:goal", "closed")
+    assert ok and not truncated and issues[0]["state"] == "CLOSED" and issues[0]["closedAt"] == row["closedAt"]
+
+
+def test_census_in_a_cloud_session_does_not_fall_back(monkeypatch):
+    rc = _mod("reconcile")
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    run = _runner(fail_labels={"sdlc:goal"})
+    assert rc._fetch_by_label(_src(run), "sdlc:goal") == ([], False, False)
+    assert run.fallbacks == []
+
+
+def test_census_non_list_page_is_a_failed_read_without_fallback(gh_env):
+    rc = _mod("reconcile")
+    run = _runner()
+    base = run
+    def dict_run(args):
+        return '{"oops": 1}' if gqlfake.rest_list_params(args) is not None else base(args)
+    dict_run.calls = base.calls
+    assert rc._fetch_by_label(_src(dict_run), "sdlc:goal") == ([], False, False)
+    assert base.fallbacks == []
+
+
+def test_one_failed_label_read_calls_the_fallback_argv_exactly_once(gh_env):
+    rc = _mod("reconcile")
+    run = _runner(fail_labels={"sdlc:parked"})
+    assert rc._fetch_by_label(_src(run), "sdlc:parked") == ([], False, False)
+    assert len(rest_list_calls(run)) == 1
+    assert run.fallbacks == [["issue", "list", "--repo", "acme/widget", "--label", "sdlc:parked",
+                              "--state", "open", "--json", "number,labels,state,closedAt", "--limit", "5000"]]

@@ -43,7 +43,11 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
+        params = gqlfake.rest_list_params(args)
+        if params is not None:      # #895 2c: the list read is REST first
+            return by_label.get(params.get("labels"), "[]")
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
+            fallbacks.append(list(args))      # the one `issue list` fallback; REST-first tests assert this empty
             label = args[args.index("--label") + 1] if "--label" in args else None
             return by_label.get(label, "[]")
         # #895: issue reads are REST first; answered REST-shaped (issue + comments pages) from the same
@@ -315,7 +319,7 @@ def test_list_is_oldest_first_and_names_the_scope():
 
 def test_list_reports_incomplete_rather_than_empty_when_a_query_fails():
     u = _mod("unpark")
-    run = _runner(fail_on=["--label sdlc:parked"])
+    run = _runner(fail_on=["labels=sdlc:parked"])
     result = u.list_parked(".sdlc", _config(), run=run)
     assert result["complete"] is False
     assert any("incomplete" in n for n in result["degraded"])

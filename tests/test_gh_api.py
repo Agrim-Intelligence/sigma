@@ -749,3 +749,272 @@ def test_failures_wrap_without_retry_and_unparseable_json_raises():
 def test_only_the_probe_mentions_graphql():
     src = (S / "gh_api.py").read_text()
     assert src.count('"graphql"') == 1
+
+
+# ---------------------------------------------------------------- list_issues_gh (#895 slice 2c)
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake  # noqa: E402
+
+
+class ListFake:
+    """REST issues-list GET via gqlfake.rest_list + the one `issue list` fallback. `fail` is raised on
+    every REST call (or a list of replies, one per REST call); `gql` is the fallback reply."""
+
+    def __init__(self, items=(), fail=None, gql=None, rest_raw=None):
+        self.items, self.fail, self.gql, self.rest_raw = list(items), fail, gql, rest_raw
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "issue":
+            if isinstance(self.gql, Exception):
+                raise self.gql
+            return self.gql if self.gql is not None else "[]"
+        if self.fail is not None:
+            raise self.fail
+        if self.rest_raw is not None:
+            return self.rest_raw
+        out = gqlfake.rest_list(args, self.items)
+        assert out is not None, args
+        return out
+
+    def rest_calls(self):
+        return [c for c in self.calls if c[0] == "api"]
+
+    def gql_calls(self):
+        return [c for c in self.calls if c[0] == "issue"]
+
+
+def _params(call):
+    return dict(a.split("=", 1) for a in call if "=" in a and not a.startswith("repos/"))
+
+
+def test_list_issues_gh_rest_success_in_gh_shape():
+    g = _mod("gh_api")
+    run = ListFake([gqlfake.rest_item(3, ["sdlc:goal"], body="b3"), gqlfake.rest_item(2, ["x"]),
+                    {"number": 9, "pull_request": {}, "state": "open", "labels": []}])
+    out = g.list_issues_gh(run, ["number", "labels", "state", "body"], repo="o/r", labels=["sdlc:goal"], env={})
+    assert out == [{"number": 3, "labels": [{"name": "sdlc:goal"}], "state": "OPEN", "body": "b3"}]
+    assert run.gql_calls() == [] and len(run.rest_calls()) == 1
+    c = run.rest_calls()[0]
+    assert c[:4] == ["api", "repos/o/r/issues", "--method", "GET"]
+    assert _params(c)["labels"] == "sdlc:goal" and _params(c)["state"] == "open"
+
+
+def test_list_issues_gh_labels_and_and_no_label_omitted():
+    g = _mod("gh_api")
+    run = ListFake([gqlfake.rest_item(1, ["a", "b"]), gqlfake.rest_item(2, ["a"])])
+    assert [i["number"] for i in g.list_issues_gh(run, ["number"], labels=["a", "b"], env={})] == [1]
+    assert _params(run.calls[0])["labels"] == "a,b"
+    run = ListFake([gqlfake.rest_item(1)])
+    g.list_issues_gh(run, ["number"], env={})
+    assert "labels" not in _params(run.calls[0]) and run.calls[0][1] == "repos/{owner}/{repo}/issues"
+
+
+def test_list_issues_gh_pages_stop_at_short_page_and_cap_is_honoured():
+    g = _mod("gh_api")
+    run = ListFake([gqlfake.rest_item(i) for i in range(250, 0, -1)])
+    out = g.list_issues_gh(run, ["number"], cap=1000, env={})
+    assert len(out) == 250 and len(run.rest_calls()) == 3
+    run = ListFake([gqlfake.rest_item(i) for i in range(250, 0, -1)])
+    out = g.list_issues_gh(run, ["number"], cap=120, env={})
+    assert len(out) == 120 and out[0]["number"] == 250      # newest first, and the cap keeps the NEWEST
+
+
+def test_list_issues_gh_order_is_requested_and_unexpressible_orders_refused():
+    g = _mod("gh_api")
+    run = ListFake([gqlfake.rest_item(1)])
+    g.list_issues_gh(run, ["number"], env={})
+    assert _params(run.calls[0])["sort"] == "created" and _params(run.calls[0])["direction"] == "desc"
+    run = ListFake([gqlfake.rest_item(1)])
+    g.list_issues_gh(run, ["number"], sort="updated", env={})
+    assert _params(run.calls[0])["sort"] == "updated" and _params(run.calls[0])["direction"] == "desc"
+    for sort in ("created", "updated"):
+        run = ListFake()
+        with pytest.raises(ValueError):
+            g.list_issues_gh(run, ["number"], sort=sort, direction="asc", env={})
+        assert run.calls == []
+    with pytest.raises(ValueError):
+        g.list_issues_gh(ListFake(), ["number"], sort="comments", env={})
+
+
+def test_list_issues_gh_refuses_unmappable_fields_before_any_call():
+    g = _mod("gh_api")
+    for bad in (["bogus"], ["comments"]):
+        run = ListFake()
+        with pytest.raises(ValueError):
+            g.list_issues_gh(run, bad, env={})
+        assert run.calls == []
+
+
+@pytest.mark.parametrize("raw", ['{"not": "a list"}', "", "   ", "not json", "null", '"x"'],
+                         ids=["dict", "empty", "blank", "malformed", "null", "string"])
+def test_list_issues_gh_bad_page_is_kind_other_with_no_fallback(raw):
+    g = _mod("gh_api")
+    run = ListFake(rest_raw=raw)
+    with pytest.raises(g.GhApiError) as ei:
+        g.list_issues_gh(run, ["number"], env={})
+    assert ei.value.kind == "other" and run.gql_calls() == [] and len(run.rest_calls()) == 1
+
+
+def test_list_issues_gh_bad_second_page_discards_and_never_falls_back():
+    g = _mod("gh_api")
+    seen = []
+
+    def run(args):
+        seen.append(args)
+        if args[0] == "issue":
+            return "[]"
+        return json.dumps([gqlfake.rest_item(i) for i in range(100)]) if _params(args)["page"] == "1" else "{}"
+
+    with pytest.raises(g.GhApiError):
+        g.list_issues_gh(run, ["number"], cap=1000, env={})
+    assert [c[0] for c in seen] == ["api", "api"]
+
+
+def _fallback_argv(labels=("sdlc:goal",), state="open", fields="number,labels", cap=200, updated=False, repo="o/r"):
+    argv = ["issue", "list", "--repo", repo]
+    for l in labels:
+        argv += ["--label", l]
+    argv += ["--state", state, "--json", fields, "--limit", str(cap)]
+    return argv + (["--search", "sort:updated-desc"] if updated else [])
+
+
+@pytest.mark.parametrize("hint", [t[1] for t in TRANSIENT], ids=[t[0] for t in TRANSIENT])
+def test_list_issues_gh_falls_back_exactly_once_on_transient(hint):
+    g = _mod("gh_api")
+    run = ListFake(fail=_err(hint), gql='[{"number": 5, "labels": [], "extra": 1}]')
+    out = g.list_issues_gh(run, ["number", "labels"], repo="o/r", labels=["sdlc:goal"], env={})
+    assert out == [{"number": 5, "labels": []}]
+    assert run.gql_calls() == [_fallback_argv()] and len(run.rest_calls()) == 1
+
+
+def test_list_issues_gh_fallback_argv_shapes():
+    g = _mod("gh_api")
+    run = ListFake(fail=_err(RATE), gql="[]")
+    g.list_issues_gh(run, ["number"], labels=["a", "b"], state="all", cap=5000, env={})
+    assert run.gql_calls() == [["issue", "list", "--label", "a", "--label", "b", "--state", "all",
+                                "--json", "number", "--limit", "5000"]]
+    run = ListFake(fail=_err(RATE), gql="[]")
+    g.list_issues_gh(run, ["number", "body"], repo="o/r", labels=["g"], sort="updated", env={})
+    assert run.gql_calls() == [_fallback_argv(("g",), fields="number,body", updated=True)]
+
+
+@pytest.mark.parametrize("hint", [c[1] for c in CLIENT], ids=[c[0] for c in CLIENT])
+def test_list_issues_gh_never_falls_back_on_client_errors(hint):
+    g = _mod("gh_api")
+    run = ListFake(fail=_err(hint))
+    with pytest.raises(g.GhApiError):
+        g.list_issues_gh(run, ["number"], env={})
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("hint", [PROXY + " (HTTP 429)", PROXY + " (HTTP 502)"], ids=["proxy-429", "proxy-502"])
+def test_list_issues_gh_never_falls_back_on_proxy_block(hint):
+    g = _mod("gh_api")
+    run = ListFake(fail=_err(hint))
+    with pytest.raises(g.GhApiError) as ei:
+        g.list_issues_gh(run, ["number"], env={})
+    assert run.gql_calls() == [] and ei.value.kind == "proxy"
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}],
+                         ids=["cloud", "override-off"])
+def test_list_issues_gh_skips_fallback_when_graphql_unavailable(env):
+    g = _mod("gh_api")
+    run = ListFake(fail=_err(RATE))
+    with pytest.raises(g.GhApiError) as ei:
+        g.list_issues_gh(run, ["number"], env=env)
+    assert run.gql_calls() == [] and ei.value.kind == "rate_limit"
+
+
+def test_list_issues_gh_fallback_failure_or_non_list_is_an_error_with_no_second_call():
+    g = _mod("gh_api")
+    run = ListFake(fail=_err("gh: Server Error (HTTP 502)"), gql=_err("gh: Server Error (HTTP 503)", text="x failed"))
+    with pytest.raises(g.GhApiError) as ei:
+        g.list_issues_gh(run, ["number"], env={})
+    assert len(run.rest_calls()) == 1 and len(run.gql_calls()) == 1 and ei.value.kind == "server"
+    for raw in ('{"a": 1}', "", "<html>"):
+        run = ListFake(fail=_err(RATE), gql=raw)
+        with pytest.raises(g.GhApiError) as ei:
+            g.list_issues_gh(run, ["number"], env={})
+        assert len(run.gql_calls()) == 1 and len(run.rest_calls()) == 1 and ei.value.kind == "other"
+
+
+def test_list_issues_gh_fallback_goes_through_the_gate_with_the_given_gql_run():
+    g = _mod("gh_api")
+    rest = ListFake(fail=_err(RATE))
+    gql = ListFake(gql='[{"number": 1}]')
+    assert g.list_issues_gh(rest, ["number"], gql_run=gql, env={}) == [{"number": 1}]
+    assert rest.gql_calls() == [] and len(gql.gql_calls()) == 1
+
+
+def test_list_issues_gh_breaker_is_shared_with_read_issue_and_log_is_bounded(tmp_path):
+    g = _mod("gh_api")
+    for i in range(2):
+        g.list_issues_gh(ListFake(fail=_err("gh: Server Error (HTTP 502)")), ["number"], env={}, sdlc_dir=tmp_path,
+                         now=1000.0 + i)
+    g.read_issue(RestFake(fail=_err("gh: Server Error (HTTP 502)")), 7, ["state"], "o/r", env={}, sdlc_dir=tmp_path,
+                 now=1002.0)
+    b = _breaker(tmp_path)
+    assert b["consecutive"] == 3 and b["opened_at"] == 1002.0
+    run = ListFake(gql="[]")
+    g.list_issues_gh(run, ["number"], env={}, sdlc_dir=tmp_path, now=1003.0)
+    assert run.rest_calls() == [] and len(run.gql_calls()) == 1          # breaker open: list skips REST too
+    entries = json.loads((tmp_path / "state" / "gh-fallback.json").read_text())
+    assert [e["op"] for e in entries[:2]] == ["issue_list", "issue_list"] and entries[2]["op"] == "issue_read"
+    assert entries[0]["number"] is None and set(entries[0]) == {"ts", "op", "number", "kind", "status", "fell_back", "why"}
+
+
+def test_list_issues_gh_stderr_lines_for_a_list_op_do_not_crash(tmp_path, capsys):
+    """number is None for a list: the shared stderr text must not %d it."""
+    g = _mod("gh_api")
+    g.list_issues_gh(ListFake(fail=_err("gh: Server Error (HTTP 502)")), ["number"], env={}, sdlc_dir=tmp_path, now=1.0)
+    err = capsys.readouterr().err
+    assert "fell back to gh issue list once" in err and "issue list failed (server, HTTP 502)" in err
+    for i in range(2):
+        g.list_issues_gh(ListFake(fail=_err("gh: Server Error (HTTP 502)")), ["number"], env={}, sdlc_dir=tmp_path,
+                         now=2.0 + i)
+    err = capsys.readouterr().err
+    assert "breaker open for 300s" in err and "reads use gh issue list" in err
+
+
+def test_list_issues_gh_rest_success_resets_breaker(tmp_path):
+    g = _mod("gh_api")
+    g.list_issues_gh(ListFake(fail=_err(RATE)), ["number"], env={}, sdlc_dir=tmp_path, now=1.0)
+    g.list_issues_gh(ListFake([gqlfake.rest_item(1)]), ["number"], env={}, sdlc_dir=tmp_path, now=2.0)
+    assert _breaker(tmp_path)["consecutive"] == 0
+
+
+def test_list_issues_gh_no_sdlc_dir_never_writes(tmp_path, monkeypatch):
+    g = _mod("gh_api")
+    monkeypatch.chdir(tmp_path)
+    for _ in range(4):
+        g.list_issues_gh(ListFake(fail=_err(RATE)), ["number"], env={}, now=1.0)
+    assert list(tmp_path.rglob("*")) == []
+
+
+def test_list_fallback_argv_is_built_only_in_gh_api():
+    assert '"issue", "list"' in (S / "gh_api.py").read_text()
+
+
+def test_github_source_list_issues_rest_first_with_shared_breaker(tmp_path, monkeypatch):
+    """#895 2c step 4: `GitHubSource._list_issues` mirrors `_read_issue`: its own `_run`, its repo, its
+    sdlc_dir (breaker + log written there), newest first."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    sources = _mod("sources")
+    run = ListFake([gqlfake.rest_item(2, ["sdlc:goal"]), gqlfake.rest_item(1, ["sdlc:goal"])])
+    gh = sources.GitHubSource({"discovery": {"source": "github", "github": {"repo": "acme/widget"}}}, run=run,
+                              sdlc_dir=str(tmp_path))
+    assert [i["number"] for i in gh._list_issues(["number"], labels=["sdlc:goal"])] == [2, 1]
+    c = run.rest_calls()[0]
+    assert c[1] == "repos/acme/widget/issues" and _params(c)["direction"] == "desc"
+    run.items, run.fail = [], _err("gh: Server Error (HTTP 502)")
+    run.gql = "[]"
+    assert gh._list_issues(["number"], labels=["sdlc:goal"]) == []
+    assert run.gql_calls() == [["issue", "list", "--repo", "acme/widget", "--label", "sdlc:goal", "--state", "open",
+                                "--json", "number", "--limit", "5000"]]
+    assert _breaker(tmp_path)["consecutive"] == 1
+    assert json.loads((tmp_path / "state" / "gh-fallback.json").read_text())[0]["op"] == "issue_list"

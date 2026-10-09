@@ -49,6 +49,10 @@ there is still no retry loop. Bot spellings, measured once on a public bot-filed
 on 2026-10-09: issue author gh "app/github-actions" vs REST "github-actions[bot]" (mapped); comment
 author gh "github-actions" vs REST "github-actions[bot]" (not mapped yet).
 
+REST-FIRST LISTS, `list_issues_gh` (#895 slice 2c): the same policy for `gh issue list` (paged REST
+list, ONE `gh issue list` fallback built in `_list_fallback`, the shared `_rest_first` breaker and log).
+Newest-created-first by default to match gh; only `created`/`desc` and `updated`/`desc` are accepted.
+
 KNOWN BYPASS (R5): `create_issue` is a plain REST create. It does NOT carry the feature-label refusal
 that lives in `GitHubSource._run`. Migration slice 3 MUST preserve that refusal before any caller
 moves onto it. `merge_pr` has no auto-merge (REST has none; documented, not emulated).
@@ -447,9 +451,25 @@ def read_issue(run, number, fields, repo=None, *, gql_run=None, env=None, sdlc_d
     each fallback-class event. Without `sdlc_dir` nothing is written. See module doc."""
     fields = list(fields)
     _check_fields(fields)
+    gql_run = gql_run or run
+
+    def rest():
+        return to_gh_shape(view_issue(run, number, repo, comments=(
+            "none" if "comments" not in fields else comment_limit or "all")), fields)
+
+    return _rest_first("issue_read", number, "issue #%d read" % number, "gh issue view", rest,
+                       lambda rest_err: _fallback(gql_run, number, fields, repo, rest_err),
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+def _rest_first(op, number, what, cmd, rest, fallback, *, env=None, sdlc_dir=None, now=None):
+    """The shared REST-then-ONE-fallback policy of `read_issue` and `list_issues_gh`. `rest()` returns the
+    result or raises GhApiError; `fallback(rest_err)` is the ONE `gh` call (rest_err is None when the
+    breaker is open and REST was skipped). Only a FALLBACK_KINDS failure falls back, and only while
+    `graphql_available(env)` says so; the breaker, its stderr lines and the bounded log are shared by
+    every op (`op` and `number` only label the log entry; `what`/`cmd` word the stderr lines)."""
     env = os.environ if env is None else env
     now = time.time() if now is None else now
-    gql_run = gql_run or run
     cooldown = _cooldown(env)
     paths = _vet(sdlc_dir, create=False) if sdlc_dir else None
     breaker = _read_json(paths[_BREAKER_REL], dict) if paths else {}
@@ -460,7 +480,7 @@ def read_issue(run, number, fields, repo=None, *, gql_run=None, env=None, sdlc_d
         if paths is None:
             return
         entries = _read_json(paths[_LOG_REL], list)
-        entries.append({"ts": now, "op": "issue_read", "number": number, "kind": kind,
+        entries.append({"ts": now, "op": op, "number": number, "kind": kind,
                         "status": status, "fell_back": fell_back, "why": why})
         _save(sdlc_dir, _LOG_REL, entries[-FALLBACK_LOG_CAP:])
 
@@ -468,10 +488,9 @@ def read_issue(run, number, fields, repo=None, *, gql_run=None, env=None, sdlc_d
         fallback_ok = graphql_available(env)["available"]
         if fallback_ok:
             log(breaker.get("last_kind"), None, True, "breaker open")
-            return _fallback(gql_run, number, fields, repo, None)
+            return fallback(None)
     try:
-        shaped = to_gh_shape(view_issue(run, number, repo, comments=(
-            "none" if "comments" not in fields else comment_limit or "all")), fields)
+        shaped = rest()
     except GhApiError as exc:
         if exc.kind not in FALLBACK_KINDS:
             raise
@@ -491,18 +510,18 @@ def read_issue(run, number, fields, repo=None, *, gql_run=None, env=None, sdlc_d
     if fallback_ok is None:
         fallback_ok = graphql_available(env)["available"]
     newly_open = paths is not None and consecutive >= BREAKER_THRESHOLD and not was_open
-    head = "sigma: gh REST issue #%d read failed (%s, HTTP %s); " % (number, rest_err.kind, rest_err.status)
+    head = "sigma: gh REST %s failed (%s, HTTP %s); " % (what, rest_err.kind, rest_err.status)
     if newly_open:
         print(head + "breaker open for %ds: REST failing%s" % (
-            cooldown, ", reads use gh issue view" if fallback_ok else " (no fallback in this session)"),
+            cooldown, ", reads use %s" % cmd if fallback_ok else " (no fallback in this session)"),
             file=sys.stderr)
     elif fallback_ok:
-        print(head + "fell back to gh issue view once", file=sys.stderr)
+        print(head + "fell back to %s once" % cmd, file=sys.stderr)
     if not fallback_ok:
         log(rest_err.kind, rest_err.status, False, "fallback unavailable")
         raise rest_err
     log(rest_err.kind, rest_err.status, True, "rest failed")
-    return _fallback(gql_run, number, fields, repo, rest_err)
+    return fallback(rest_err)
 
 
 def _fallback(gql_run, number, fields, repo, rest_err):
@@ -524,6 +543,88 @@ def _fallback(gql_run, number, fields, repo, rest_err):
     if not isinstance(data, dict):
         data = {}
     return {k: data[k] for k in fields if k in data}
+
+
+LIST_ORDERS = {("created", "desc"), ("updated", "desc")}      # the only orders the fallback argv can express
+
+
+def list_issues_gh(run, fields, *, repo=None, labels=(), state="open", cap=200, sort="created",
+                   direction="desc", gql_run=None, fetch=None, env=None, sdlc_dir=None, now=None):
+    """#895 slice 2c: issues in `gh issue list --json <fields>` shape, REST first (paged
+    `gh api repos/{o}/{r}/issues` GET through `fetch`, default `sources.fetch_issues_rest`), then at
+    most ONE `gh issue list` fallback on a FALLBACK_KINDS failure while `graphql_available(env)` says
+    so (the one place this module builds an `issue list` argv). Breaker and log are `_rest_first`'s,
+    shared with `read_issue`, and exist only when `sdlc_dir` is given.
+
+    ORDER: `gh issue list` is newest-created-first, so the default is `created`/`desc` (NOT
+    `fetch_issues_rest`'s asc): a board over `cap` must return its NEWEST rows. Only `created`/`desc`
+    and `updated`/`desc` are accepted (the fallback is `--search sort:updated-desc` for the latter);
+    anything else raises ValueError before any call rather than fall back in a different order.
+    `comments` is refused: the REST list carries a count, not the comments.
+
+    Every REST page must be a non-empty JSON list; empty output, malformed JSON or a non-list page is
+    GhApiError(kind "other"): never a fallback and never an empty result, so a failure cannot read as
+    an empty board. All failures raise GhApiError (an Exception)."""
+    fields = list(fields)
+    _check_fields(fields)
+    if "comments" in fields:
+        raise ValueError("gh_api.list_issues_gh: the REST list has no comment bodies; use read_issue")
+    if (sort, direction) not in LIST_ORDERS:
+        raise ValueError("gh_api.list_issues_gh: order %s/%s cannot be expressed by the gh fallback; allowed: %s"
+                         % (sort, direction, ", ".join("%s/%s" % o for o in sorted(LIST_ORDERS))))
+    labels = list(labels)
+    gql_run = gql_run or run
+    fetch = fetch or _list_fetch()
+
+    def checked(args):
+        raw = _call(run, args)
+        try:
+            page = json.loads(raw) if str(raw or "").strip() else None
+        except (ValueError, TypeError) as exc:
+            raise GhApiError("unparseable gh api output for %s: %s" % (args[1], str(raw)[:120])) from exc
+        if not isinstance(page, list):
+            raise GhApiError("gh api %s returned %s, not a JSON list" % (args[1], type(page).__name__))
+        return raw
+
+    def rest():
+        try:
+            items = fetch(checked, repo, labels, cap, state=state, sort=sort, direction=direction)
+        except GhApiError:
+            raise
+        except Exception as exc:                      # noqa: BLE001 - classify like every REST failure
+            status, kind = classify(exc)
+            raise GhApiError(str(exc), getattr(exc, "hint", None), status, kind) from exc
+        return [to_gh_shape(i, fields) for i in items]
+
+    return _rest_first("issue_list", None, "issue list", "gh issue list", rest,
+                       lambda rest_err: _list_fallback(gql_run, fields, repo, labels, state, cap, sort, rest_err),
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+def _list_fallback(gql_run, fields, repo, labels, state, cap, sort, rest_err):
+    """ONE `gh issue list`. Unlike `_fallback` (a view degrades to {} like the old parsers), a list that
+    is not a JSON list is an error: an empty board must never be invented from garbage."""
+    argv = ["issue", "list", *(["--repo", repo] if repo else [])]
+    for name in labels:
+        argv += ["--label", name]
+    argv += ["--state", state, "--json", ",".join(fields), "--limit", str(cap)]
+    if sort == "updated":
+        argv += ["--search", "sort:updated-desc"]
+    try:
+        raw = _call(gql_run, argv)
+    except GhApiError as fb:
+        if rest_err is None:
+            raise
+        raise GhApiError("gh REST issue list failed (%s); fallback gh issue list also failed: %s"
+                         % (rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                         rest_err.kind) from fb
+    try:
+        data = json.loads(raw) if str(raw or "").strip() else None
+    except ValueError:
+        data = None
+    if not isinstance(data, list):
+        raise GhApiError("gh issue list returned no JSON list")
+    return [{k: it[k] for k in fields if k in it} if isinstance(it, dict) else it for it in data]
 
 
 def comment_issue(run, number, body, repo=None):

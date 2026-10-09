@@ -4,6 +4,18 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Ten `gh issue list` reads go REST first (#895, slice 2c; refs #801).** New `gh_api.list_issues_gh`: a
+  paged REST list (newest created first, like `gh issue list`), then at most one `gh issue list` fallback
+  on rate limit, 5xx or transport errors, never in a cloud session, never on client errors or a bad page
+  (empty, malformed or non-list output is an error, not an empty board). Sites: `auto_unpark` (2),
+  `reconcile` census, `assign._active_members`, `doctor` (6, plus its census read); each keeps its fail-open
+  arm, and a failed `auto_unpark` read still can never remove a label. Breaker and log are shared with
+  `read_issue` when an `sdlc_dir` exists (so a rate-limited census can open the breaker for single-issue reads); doctor stays read-only and writes neither. The direct-`gh` ratchet
+  drops from 84 to 74 sites (measured by `scan()`). Verified with injected-runner tests only. Unmeasured: a
+  real cloud session; a 5000-cap board read is up to 50 sequential REST requests per read and per
+  reconcile census tick (derived, not measured, against `SIGMA_WATCH_CALL_TIMEOUT` 120 s); doctor latency
+  (~45 s per site, ~135 s multi-state, derived from the 15 s timeout); gh's newest-created default order
+  (assumed, not re-verified); GraphQL points saved (#1829's figure, not re-measured).
 - **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
   `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
   (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`

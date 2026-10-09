@@ -1,22 +1,29 @@
-# #895 slice 2b retro (P7, advisory)
+# #895 slice 2c retro (P7 RETRO, advisory)
 
-Grade: achieved (done_when met; two control gestures and several items below are weaker or unmeasured than the plan implied).
+## What went to plan
+- All 10 `gh issue list` sites moved to `gh_api.list_issues_gh` (REST first, one fallback, none in a cloud session).
+- `read_issue`'s breaker/log/fallback body was factored into `_rest_first`, with the existing test_gh_api tests passing.
+- Ratchet baseline lowered 84 -> 74. 27 deliberate-break controls were run red then green (895-controls.md).
+- Diff: 18 files, +1404/-319, one PR, no out-of-scope writes.
 
-## Outcome vs plan
-- (1) `scan()` total re-run in the worktree: 84 (was 94); `tests/test_no_direct_gh.py` 29 passed with the lowered BASELINE. Met.
-- (3) All 9 files green, re-run here with `$HOME/.sigma-venv312/bin/python -m pytest -q tests/test_<f>.py`: gh_api 93, no_direct_gh 29, auto_unpark 9, blockers 88, promote 42, unpark 70, reconcile 49, triage 117, brainstorm 278 (order of the output lines mapped by position; counts differ from file order, treat as 9 green files, not per-file attribution). Met.
-- (2) merged-PR blocker RESOLVED: carried by `to_gh_shape` `merged_at` -> `MERGED` plus REST-shaped fixtures in the three `closed_state` sites; I did not re-run control C1 myself.
-- (4) CHANGELOG states the live PR #928 read (state closed, merged_at set) and names five unmeasured items. Matches plan.
-- Diff: 22 files, 8 source files touched lightly (5-13 lines each), no except-arm changed.
+## What review caught
+- Plan-review 1: doctor `sdlc_dir` contradiction (breaker/log sharing needs a dir doctor may not have).
+- Plan-review 2: empty output read as an empty list (an outage would look like an empty census); the fetch re-exec.
+- Code review: the non-blocking cost wording was wrong; the breaker is shared across read_issue and list calls.
+- Review-fix controls 26 and 27 cover the comment tail bound and the `#42` ref form.
 
 ## Residual debt
-- Slice 2c: `issue list` literals remain (grep of `"issue", "list"` under skills/ shows 11 hits, not classified here) plus `fetch_issues_rest` adapters, status.py:174 fallback.
-- Control C4 gesture is inadequate: `gql_run=None` cannot fail, because `read_issue` does `gql_run = gql_run or run` (gh_api.py:452), so the fallback still reaches the same injected `run`. A valid control must pass a DIFFERENT sentinel runner as `gql_run` (or drop the pass-through and assert the fallback argv hit a distinct recorder). Plan text should not be trusted for C4.
-- Same-shape concern for C2: a one-character path change is only red if every site test asserts `unexpected == []`; not re-verified by me.
-- Injected-run sites (triage:1549, brainstorm:178) write no breaker or log: during a REST outage each pays REST + one fallback every call. Named in plan; not measured.
-- Unmeasured (carried from plan): real cloud session, bot-author spelling beyond one sample, call counts at 10x/100x (reconcile is linear in actions; 5000/h ceiling), `unpark` latency on comment-heavy issues, old closed issue with null `state_reason`, REST on transferred/deleted issues.
+- `status.py:174` stays on `gh issue list` by design (out of scope).
+- `_LIST_FETCH` is a module-level cache, and doctor reloads gh_api on every call.
+- Assign on PR-heavy repos: REST /issues includes PRs, so the request ceiling is higher (cap 200 can need more pages).
+- Census wording in docs/doctor should state what was measured, not "complete".
 
-## Lessons proposed (for a human; none applied)
-1. In plans, each "break it once" control must state why the broken form can differ from the working form; flag defaulting params (`x or y`) that make a nulling control a no-op.
-2. A site-migration slice should keep one shared fake-REST helper (tests/gqlfake.py was edited) so fakes never grow a gh-shaped fixture again.
-3. Consider a ratchet check that the baseline equals `scan()` exactly, not only "not over", so a later slice cannot hide slack.
+## Lessons
+- Fake runners that return empty make fail-open tests pass for the wrong reason. Assert the REST argv was actually requested.
+- Classify at the call seam. Do not infer failure from output shape.
+
+## Honesty
+- Cloud-session behaviour is unmeasured; only the fake-runner path was exercised.
+- The full-suite result comes from the implementer only and has not been independently re-run.
+
+grade: partial

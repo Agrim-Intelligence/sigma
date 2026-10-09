@@ -175,3 +175,61 @@ def rest_issue(args, view):
     if state == "MERGED":      # REST says a merged PR is `closed` + pull_request.merged_at (#895 2b)
         out["pull_request"] = {"merged_at": "2026-10-09T00:00:00Z"}
     return json.dumps(out)
+
+
+# ---------------------------------------------------------------- #895 slice 2c: REST-first issue LISTS
+# `gh_api.list_issues_gh` asks REST first: `api repos/<o>/<r>/issues --method GET -f labels=.. -f
+# state=.. -f sort=.. -f direction=.. -f per_page=.. -f page=..`. A fake written for the old
+# `gh issue list` argv answers it here from REST-shaped items. A mis-keyed fake would otherwise pass
+# vacuously through the sites' fail-open arms ("" or a raise both read as failed/empty), so every site
+# test ALSO asserts the REST list call was actually recorded (`rest_list_calls(run)`), which goes red
+# when the fake stops matching the argv (control C9).
+
+_REST_LIST_RE = re.compile(r"repos/[^/]+/[^/]+/issues")
+
+
+def rest_list_params(args):
+    """-> dict of the `-f k=v` fields for a REST issues-LIST GET argv, else None."""
+    args = [str(a) for a in args]
+    if len(args) < 4 or args[0] != "api" or args[2:4] != ["--method", "GET"] or not _REST_LIST_RE.fullmatch(args[1]):
+        return None
+    params = {}
+    for i, a in enumerate(args):
+        if a == "-f" and i + 1 < len(args) and "=" in args[i + 1]:
+            k, v = args[i + 1].split("=", 1)
+            params[k] = v
+    return params
+
+
+def _item_labels(it):
+    return {(l.get("name") if isinstance(l, dict) else l) for l in (it.get("labels") or [])}
+
+
+def rest_list(args, items):
+    """Answer a REST issues-list GET from `items` (REST-shaped dicts, NEWEST FIRST). Honours
+    `labels=` (AND), `state=`, `direction=` (asc reverses), `per_page=`/`page=`. `items` may be a
+    callable `(params) -> list` for a test that wants to decide itself. Returns a JSON string, or
+    None when `args` is not such a read (the caller then falls through to its own handling)."""
+    params = rest_list_params(args)
+    if params is None:
+        return None
+    rows = items(params) if callable(items) else list(items)
+    if not callable(items):
+        want = {l for l in params.get("labels", "").split(",") if l}
+        state = params.get("state", "open")
+        rows = [r for r in rows if want <= _item_labels(r)
+                and (state == "all" or str(r.get("state", "open")).lower() == state)]
+        if params.get("direction") == "asc":
+            rows = rows[::-1]
+    per = int(params.get("per_page", 30))
+    page = int(params.get("page", 1))
+    return json.dumps(rows[(page - 1) * per:page * per])
+
+
+def rest_item(number, labels=(), state="open", body="", title=None, **kw):
+    """One REST-shaped issue for `rest_list` (labels as dicts with `name`, state lowercase)."""
+    d = {"number": number, "title": title if title is not None else "T%d" % number, "state": state,
+         "labels": [{"name": l} for l in labels], "assignees": [], "body": body, "closed_at": None,
+         "user": {"login": "alice", "type": "User"}}
+    d.update(kw)
+    return d

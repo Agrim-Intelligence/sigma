@@ -162,10 +162,9 @@ def _fetch_by_label(source, label, state="open"):
     different remedies (wait for `gh` to recover / raise `GitHubSource._BOARD_ITEM_LIMIT`), and a
     refusal that names the wrong one is the same defect this issue is about."""
     try:
-        raw = source._run(["issue", "list", *source._repo_args(), "--label", label,
-                           "--state", state, "--json", "number,labels,state,closedAt",
-                           "--limit", str(source._BOARD_ITEM_LIMIT)])
-        issues = json.loads(raw or "[]")
+        # #895 slice 2c: REST first, newest first (what `gh issue list` returned, so a board over the
+        # ceiling still reads its NEWEST rows), ONE `gh issue list` fallback -- see sources._list_issues
+        issues = source._list_issues(["number", "labels", "state", "closedAt"], labels=[label], state=state)
     except Exception:
         return [], False, False
     if not isinstance(issues, list):
