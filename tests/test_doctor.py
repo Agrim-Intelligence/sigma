@@ -229,6 +229,24 @@ def test_real_run_bounds_a_hung_github_project_graphql_call(monkeypatch):
     assert "timed out" in result.raw.lower()
 
 
+def test_real_run_bounds_a_hung_github_issue_list_call(monkeypatch):
+    """A stalled GitHub backlog scan must also degrade instead of hanging doctor."""
+    d = _doc()
+    calls = []
+
+    def hung(argv, **kwargs):
+        calls.append((argv, kwargs))
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    monkeypatch.setattr(d.subprocess, "run", hung)
+    result = d._real_run(["gh", "issue", "list", "--repo", "acme/widget"])
+
+    assert calls[0][1]["timeout"] == 2
+    assert not result
+    assert "timed out" in result.raw.lower()
+
+
 def test_real_run_keeps_local_doctor_probes_uncapped(monkeypatch):
     """The Project API cap must not reclassify a slow local diagnostic as a missing tool."""
     d = _doc()
