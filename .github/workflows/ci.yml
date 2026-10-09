@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Run every leg (true), or only the leg a PR runs (false)"
+        type: boolean
+        default: true
   schedule:
     - cron: "17 5 * * 1"  # weekly full matrix
 
@@ -22,7 +27,7 @@ jobs:
     # weekly (schedule) and on demand (workflow_dispatch). Ceiling: an Ubuntu or older-Python
     # break is found by the weekly run, up to a week after the merge that caused it.
     env:
-      FULL: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || matrix.pr || false }}
+      FULL: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || matrix.pr || false }}
     strategy:
       # Every leg runs to completion: without this, the first failing leg cancels the others and
       # a version-specific failure hides whether the other version is green (issue #241).
