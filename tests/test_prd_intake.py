@@ -108,7 +108,7 @@ def _plan(tmp_path, outcomes, prd=None, capsys=None, sdlc=None):
     prd = prd or _prd(tmp_path)
     sdlc = sdlc or _sdlc(tmp_path)
     rc = intake.main(["intake.py", "plan", "--prd", str(prd), "--answers",
-                      str(_write(tmp_path, outcomes)), "--sdlc-dir", str(sdlc)])
+                      str(_write(tmp_path, outcomes)), "--dir", str(sdlc)])
     return intake, rc, sdlc
 
 
@@ -479,7 +479,7 @@ def test_symlink_into_repo_code_refused(tmp_path, capsys, monkeypatch):
 
 
 def test_repo_prd_from_non_repo_cwd_and_sdlc_refused(tmp_path, capsys, monkeypatch):
-    """CR1-1: cwd and --sdlc-dir are both outside any repo; the absolute --prd points into one."""
+    """CR1-1: cwd and --dir are both outside any repo; the absolute --prd points into one."""
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / "skills").mkdir()
@@ -490,7 +490,7 @@ def test_repo_prd_from_non_repo_cwd_and_sdlc_refused(tmp_path, capsys, monkeypat
     monkeypatch.chdir(elsewhere)
     for target in (repo / "skills" / "secret.md", repo / "mod.py"):
         rc = _intake().main(["intake.py", "plan", "--prd", str(target), "--answers", "a.json",
-                             "--sdlc-dir", str(elsewhere / ".sdlc")])
+                             "--dir", str(elsewhere / ".sdlc")])
         assert rc == 2 and _refusal(capsys)[1] == "repo-source", target
 
 
@@ -500,7 +500,7 @@ def test_real_repo_file_from_non_repo_cwd_refused(tmp_path, capsys, monkeypatch)
     monkeypatch.chdir(elsewhere)
     rc = _intake().main(["intake.py", "plan", "--prd",
                          str(INTAKE / "intake.py"), "--answers", "a.json",
-                         "--sdlc-dir", str(elsewhere / ".sdlc")])
+                         "--dir", str(elsewhere / ".sdlc")])
     assert rc == 2 and _refusal(capsys)[1] == "repo-source"
 
 
@@ -515,7 +515,7 @@ def test_install_root_guards_without_git(tmp_path, capsys, monkeypatch):
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     rc = intake.main(["intake.py", "plan", "--prd", str(plugin / "skills" / "x.md"),
-                      "--answers", "a.json", "--sdlc-dir", str(elsewhere / ".sdlc")])
+                      "--answers", "a.json", "--dir", str(elsewhere / ".sdlc")])
     assert rc == 2 and _refusal(capsys)[1] == "repo-source"
 
 
@@ -667,7 +667,7 @@ def test_replan_new_answers_fresh_resume(tmp_path, capsys):
     o2["answers"]["who"] = "Team leads only."
     _write(tmp_path, [o2])
     assert intake.main(["intake.py", "plan", "--prd", str(tmp_path / "prd" / "messy.md"),
-                        "--answers", str(tmp_path / "answers.json"), "--sdlc-dir",
+                        "--answers", str(tmp_path / "answers.json"), "--dir",
                         str(sdlc)]) == 0
     capsys.readouterr()
     assert intake._plan_key(plan) != old_key              # same path, new bytes, new key

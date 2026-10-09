@@ -62,7 +62,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/intake.py plan --prd skills/sigma-loop/scrip
 ```
 
 The allow-list covers every path under every root that applies, tracked or not: the repo of the current
-directory, of `--sdlc-dir`, of the PRD file itself, and the plugin install directory of this script. Outside a git
+directory, of `--dir`, of the PRD file itself, and the plugin install directory of this script. Outside a git
 repo the current directory is the root. Every `--prd`, anywhere, must also be a `.md` or `.txt` file
 (`prd-not-text-doc`), so a credentials file cannot be quoted into an issue body.
 

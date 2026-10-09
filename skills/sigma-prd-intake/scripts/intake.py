@@ -7,7 +7,7 @@ validates that every answer carries a quote that really is in the PRD, hashes th
 PRD-section -> Dossier mapping, and files one Dossier per business outcome through `dossier.file`,
 then ONE umbrella ticket listing them. It never rejects a PRD for its format.
 
-    python3 intake.py plan --prd <file> --answers <answers.json> [--sdlc-dir .sdlc]
+    python3 intake.py plan --prd <file> --answers <answers.json> [--dir .sdlc]
     python3 intake.py file --plan <.sdlc/intake/<sha12>.json> [--dry-run] [--status]
 
 Limits, stated: the quote check proves a quote EXISTS in the PRD, not that it SUPPORTS the answer
@@ -82,7 +82,7 @@ def _in_code_dir(rel):
 
 
 def check_prd_path(arg, cwd, sdlc_dir):
-    """AC-4: no repository source file may be the PRD. Roots are every repo the cwd, --sdlc-dir,
+    """AC-4: no repository source file may be the PRD. Roots are every repo the cwd, --dir,
     the PRD itself or this script's install lives in; the allow-list applies under ALL of them
     (stricter, never looser). The .md/.txt allow-list applies to every path, in a repo or not."""
     p = pathlib.Path(arg).resolve()
@@ -209,10 +209,10 @@ def _args(tail, flags, switches=()):
 
 
 def cmd_plan(tail):
-    a = _args(tail, ("--prd", "--answers", "--sdlc-dir"))
+    a = _args(tail, ("--prd", "--answers", "--dir"))
     if "--prd" not in a or "--answers" not in a:
         raise Refused("usage", "plan needs --prd and --answers")
-    sdlc = pathlib.Path(a.get("--sdlc-dir", ".sdlc"))
+    sdlc = pathlib.Path(a.get("--dir", ".sdlc"))
     prd = check_prd_path(a["--prd"], os.getcwd(), sdlc)
     if not prd.is_file():
         raise Refused("prd-unreadable", "%s is not a readable file" % a["--prd"])
@@ -273,7 +273,7 @@ def _umbrella_body(prd, filed):
 
 
 def cmd_file(tail, run=None):
-    a = _args(tail, ("--plan", "--sdlc-dir"), ("--dry-run", "--status"))
+    a = _args(tail, ("--plan", "--dir"), ("--dry-run", "--status"))
     if "--plan" not in a:
         raise Refused("usage", "file needs --plan")
     plan_path = pathlib.Path(a["--plan"])
@@ -282,7 +282,7 @@ def cmd_file(tail, run=None):
         prd, outcomes = plan["prd"], plan["outcomes"]
     except Exception as exc:                                  # noqa: BLE001
         raise Refused("plan-unreadable", "%s: %s" % (plan_path, exc))
-    sdlc = pathlib.Path(a.get("--sdlc-dir") or plan_path.resolve().parent.parent)
+    sdlc = pathlib.Path(a.get("--dir") or plan_path.resolve().parent.parent)
     record_path = plan_path.parent / (_plan_key(plan_path) + ".filed.json")
     record = _load_record(record_path)
     filed = dict(record.get("dossiers") or {})
@@ -336,7 +336,7 @@ def cmd_file(tail, run=None):
     return 0
 
 
-_USAGE = ("usage: intake.py plan --prd <file> --answers <answers.json> [--sdlc-dir .sdlc]\n"
+_USAGE = ("usage: intake.py plan --prd <file> --answers <answers.json> [--dir .sdlc]\n"
           "       intake.py file --plan <plan.json> [--dry-run] [--status]")
 
 
