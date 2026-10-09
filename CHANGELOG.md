@@ -14,7 +14,7 @@ All notable changes to Sigma are recorded here, newest first.
   reads every page instead of one `gh` call. The direct-`gh` ratchet drops from 101 to 94 sites
   (sources.py 35 -> 28, measured by `scan()`). Verified with injected-runner tests only. Unmeasured:
   real 429/403/5xx and transport stderr wording (inferred), any live cloud run, and live request
-  cost. Measured once on smanwatkarcodes/skills-introduction-to-git#1 on 2026-10-09: issue author gh
+  cost. Measured once on a public bot-filed GitHub Skills exercise issue on 2026-10-09: issue author gh
   `app/github-actions` vs REST `github-actions[bot]` (mapped); comment author gh `github-actions` vs
   REST `github-actions[bot]` (not mapped yet); REST comment `node_id` equals gh's comment `id`.
 

@@ -45,7 +45,7 @@ REST-FIRST READS, `read_issue` (#895): REST, then at most ONE `gh issue view` fa
 place this module builds an `issue view` argv) on `rate_limit`/`server`/`transport` only, and only
 while `graphql_available(env)` says so. A breaker and a bounded fallback log live under
 `<sdlc_dir>/state/` (both #708-vetted) when an `sdlc_dir` is passed. One fallback is not a retry:
-there is still no retry loop. Bot spellings, measured once on smanwatkarcodes/skills-introduction-to-git#1
+there is still no retry loop. Bot spellings, measured once on a public bot-filed GitHub Skills exercise issue
 on 2026-10-09: issue author gh "app/github-actions" vs REST "github-actions[bot]" (mapped); comment
 author gh "github-actions" vs REST "github-actions[bot]" (not mapped yet).
 
@@ -309,7 +309,7 @@ def _check_fields(fields):
 
 def _login(user):
     """ISSUE author only: a REST Bot `<slug>[bot]` reads as `app/<slug>`, which is what
-    `gh issue view --json author` shows. Measured once on smanwatkarcodes/skills-introduction-to-git#1
+    `gh issue view --json author` shows. Measured once on a public bot-filed GitHub Skills exercise issue
     on 2026-10-09: REST "github-actions[bot]", gh "app/github-actions"."""
     if not isinstance(user, dict):
         return None
@@ -323,7 +323,7 @@ def _comment(c):
     # Comment authors are NOT bot-mapped yet (plan B3): gh shows a bare `<slug>`, REST `<slug>[bot]`
     # ("github-actions" vs "github-actions[bot]"); mapping them is a follow-up. `id` is node_id ==
     # the GraphQL id (REST node_id "IC_kwDOVCU5ZM8AAAABamNa1g" == gh id), so dedup by id survives a
-    # REST/fallback switch. Both measured once on smanwatkarcodes/skills-introduction-to-git#1, 2026-10-09.
+    # REST/fallback switch. Both measured once on a public bot-filed GitHub Skills exercise issue, 2026-10-09.
     # `authorAssociation` is emitted only when REST sent it, so `trusted_marker_comments`' "no
     # association, cannot judge trust" refusal still fires on a payload that lacks it.
     c = c if isinstance(c, dict) else {}

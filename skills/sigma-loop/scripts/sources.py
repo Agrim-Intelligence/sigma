@@ -851,7 +851,7 @@ def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
     integer (verified live against a real repo: `gh issue view <n> --json comments`). The REST path
     emits the comment's `node_id`, which equals that id, so dedup survives a REST/fallback switch.
     A bot comment author reads `<slug>[bot]` over REST but a bare `<slug>` on the fallback
-    (unmapped, follow-up). Both measured once on smanwatkarcodes/skills-introduction-to-git#1 on
+    (unmapped, follow-up). Both measured once on a public bot-filed GitHub Skills exercise issue on
     2026-10-09: REST `node_id` "IC_kwDOVCU5ZM8AAAABamNa1g" == gh `id` "IC_kwDOVCU5ZM8AAAABamNa1g";
     REST comment user "github-actions[bot]", gh comment author "github-actions". Ordering for
     "new vs. seen" is therefore by `created_at` (ISO-8601, always present, string-sortable); identity
@@ -3358,7 +3358,7 @@ class GitHubSource:
         `issues/N` first via `_read_issue` (fallback: one `gh issue view --json author`), both
         through this source's own `_run` chokepoint, so `feature_owner.gate_at_pick` is exercised by
         the same recording fakes as every mutating call in this file. A Bot author reads `app/<slug>`
-        on both paths (measured once on smanwatkarcodes/skills-introduction-to-git#1, 2026-10-09:
+        on both paths (measured once on a public bot-filed GitHub Skills exercise issue, 2026-10-09:
         REST "github-actions[bot]", gh "app/github-actions").
 
         RAISES GhApiError on a failed read and on a non-dict REST payload (both take the caller's

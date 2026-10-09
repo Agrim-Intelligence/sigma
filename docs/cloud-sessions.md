@@ -57,7 +57,7 @@ MISSING gap). It names the features turned off or degraded: board/Projects mirro
 - Shape: REST `state`/`state_reason` are upper-cased; comment `id` is `node_id`, equal to the GraphQL id,
   so dedup survives a REST/fallback switch. A REST Bot issue author `<slug>[bot]` reads `app/<slug>`, as
   gh shows it. Comment authors are NOT mapped yet: gh spells a bot comment author as the bare `<slug>`
-  while REST says `<slug>[bot]`. Measured once on smanwatkarcodes/skills-introduction-to-git#1 on
+  while REST says `<slug>[bot]`. Measured once on a public bot-filed GitHub Skills exercise issue on
   2026-10-09: issue author gh `app/github-actions`, REST `github-actions[bot]`; comment author gh
   `github-actions`, REST `github-actions[bot]`; REST comment `node_id` `IC_kwDOVCU5ZM8AAAABamNa1g` equal
   to gh's comment `id`. Consequence: when a claimant is a GitHub App identity, `comment_watch` can surface
