@@ -145,6 +145,14 @@ watcher looks stale, dead, or has never run, pointing at `/sigma-doctor`. This i
 layered on top of the existing `_ensure_watcher` restart mechanism** — it narrows the detection
 gap, not the restart path.
 
+## Direct `gh` call sites are ratcheted
+
+New `gh issue|pr|project|label` call sites do not go in new places: `tests/test_no_direct_gh.py` is a
+ratchet (`skills/sigma-loop/scripts/gh_api.py` is the helper; the baseline only goes down). Run
+`$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
+(generic form: `python -m pytest tests/test_no_direct_gh.py`); the shapes it cannot see are listed in
+[cloud sessions](docs/cloud-sessions.md). Cloud sessions: detection and reporting only, see that page.
+
 ## Output
 
 Read [the output contract](docs/output-contract.md) before your first status

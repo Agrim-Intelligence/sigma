@@ -112,3 +112,41 @@ def test_never_raises_on_a_non_string_input():
     gh_session = _mod("gh_session")
     assert gh_session.proxy_session_block(12345) is None
     assert gh_session.proxy_session_block(["not", "a", "string"]) is None
+
+
+# --- #801 slice 1: the THIRD shape (GraphQL not available from Claude Code sessions) -------------
+#: Wording taken from issue #801's text, NOT captured from a live cloud session (unverified).
+SHAPE_GRAPHQL_UNAVAILABLE = (
+    "HTTP 403: GitHub GraphQL is not available from Claude Code sessions (https://api.github.com/graphql)"
+)
+
+
+def test_graphql_unavailable_recognizes_the_third_shape_any_case():
+    gh_session = _mod("gh_session")
+    assert gh_session.graphql_unavailable(SHAPE_GRAPHQL_UNAVAILABLE) is True
+    assert gh_session.graphql_unavailable(SHAPE_GRAPHQL_UNAVAILABLE.upper()) is True
+    assert gh_session.graphql_unavailable(SHAPE_GRAPHQL_UNAVAILABLE.lower()) is True
+
+
+def test_graphql_unavailable_false_on_other_shapes_and_real_errors():
+    gh_session = _mod("gh_session")
+    for text in (SHAPE_GRAPHQL, SHAPE_APP, "",
+                 "You are not logged into any GitHub hosts. Run gh auth login to authenticate.",
+                 "HTTP 403: API rate limit exceeded", "Bad credentials"):
+        assert gh_session.graphql_unavailable(text) is False, text
+
+
+def test_graphql_unavailable_never_raises_on_non_str():
+    gh_session = _mod("gh_session")
+    for value in (None, 0, b"x", object(), ["a"]):
+        assert gh_session.graphql_unavailable(value) is False
+
+
+def test_third_shape_does_not_change_proxy_session_block():
+    """R3/R8 bidirectional: the third shape is NOT folded into proxy_session_block (callers see
+    exactly what they saw before), and shapes 1/2 still return REMEDIATION."""
+    gh_session = _mod("gh_session")
+    assert gh_session.proxy_session_block(SHAPE_GRAPHQL_UNAVAILABLE) is None
+    assert gh_session.proxy_session_block(SHAPE_GRAPHQL) == gh_session.REMEDIATION
+    assert gh_session.proxy_session_block(SHAPE_APP) == gh_session.REMEDIATION
+    assert not hasattr(gh_session, "GRAPHQL_REMEDIATION")

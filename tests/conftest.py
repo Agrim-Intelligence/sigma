@@ -169,3 +169,11 @@ def _no_host_plugin_inventory(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(empty / "claude"))
     monkeypatch.setenv("CODEX_HOME", str(empty / "codex"))
     monkeypatch.delenv("SIGMA_ALLOW_COEXIST", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_graphql_capability_env(monkeypatch):
+    """#801: a cloud/CI shell that exports CLAUDE_CODE_REMOTE or SIGMA_GH_GRAPHQL must not add a
+    capability row to (or otherwise perturb) unrelated tests. Tests that want the signal set it."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)

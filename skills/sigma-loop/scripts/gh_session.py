@@ -47,6 +47,12 @@ docstring's own reasoning applies here at least as strongly: a doctor-local copy
 drift from work.py/sources.py's copy as the proxy's wording changes, and the drift's failure mode is
 exactly the one this fix exists to close (a diagnosis that quietly stops firing, or fires on the wrong
 thing) — not a cosmetic inconsistency. Zero deps.
+
+THE THIRD SHAPE (#801 slice 1). Issue #801 reports a third, different block: HTTP 403 "GitHub GraphQL
+is not available from Claude Code sessions". That wording is taken from the issue text, NOT captured
+from a live cloud session (unverified). `graphql_unavailable` recognises it; it is deliberately NOT
+folded into `proxy_session_block` / `REMEDIATION` (so every existing caller sees exactly what it saw
+before) and is not yet wired into any caller — that is a migration follow-up.
 """
 
 _SESSION_BLOCK_MARKERS = (
@@ -76,3 +82,18 @@ def proxy_session_block(text):
     except Exception:                            # noqa: BLE001 - a can't-tell must never crash a caller
         return None
     return REMEDIATION if any(marker in haystack for marker in _SESSION_BLOCK_MARKERS) else None
+
+
+_GRAPHQL_UNAVAILABLE_MARKERS = (
+    "github graphql is not available from claude code sessions",   # #801's quoted 403 wording
+)
+
+
+def graphql_unavailable(text):
+    """True when `text` (a failed `gh` call's output) looks like the third shape: GitHub GraphQL is
+    not served to this Claude Code session. Never raises; a non-str (or unconvertible) value reads as
+    False. Independent of `proxy_session_block`, which is unchanged."""
+    if not isinstance(text, str):
+        return False
+    haystack = text.lower()
+    return any(marker in haystack for marker in _GRAPHQL_UNAVAILABLE_MARKERS)

@@ -4,6 +4,12 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **GitHub GraphQL capability check, detection and reporting only (#801, slice 1).** New
+  `gh_api.py` (capability check plus a REST issue/PR helper nothing calls yet), a third proxy shape in
+  `gh_session.graphql_unavailable`, an advisory `/sigma-doctor` row naming the features turned off, and
+  a no-new-direct-`gh` ratchet test. No caller is migrated and cloud-session support is not claimed;
+  migration is in follow-ups. See [cloud sessions](docs/cloud-sessions.md).
+
 ## 1.0.3 — 2026-10-08 — Codex-only autonomy parity
 
 - **Codex autonomy parity (opt-in, #823).** A Codex-only supervised runner checks the enabled
