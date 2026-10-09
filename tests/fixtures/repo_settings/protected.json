@@ -44,32 +44,12 @@
         "url": "https://api.github.com/repos/example-org/example-repo/branches/main/protection/required_status_checks",
         "strict": false,
         "contexts": [
-          "test (ubuntu-latest, 3.10)",
-          "test (ubuntu-latest, 3.11)",
-          "test (ubuntu-latest, 3.12)",
-          "test (ubuntu-latest, 3.13)",
-          "test (macos-latest, 3.12)"
+          "test"
         ],
         "contexts_url": "https://api.github.com/repos/example-org/example-repo/branches/main/protection/required_status_checks/contexts",
         "checks": [
           {
-            "context": "test (ubuntu-latest, 3.10)",
-            "app_id": null
-          },
-          {
-            "context": "test (ubuntu-latest, 3.11)",
-            "app_id": null
-          },
-          {
-            "context": "test (ubuntu-latest, 3.12)",
-            "app_id": null
-          },
-          {
-            "context": "test (ubuntu-latest, 3.13)",
-            "app_id": null
-          },
-          {
-            "context": "test (macos-latest, 3.12)",
+            "context": "test",
             "app_id": null
           }
         ]

@@ -62,17 +62,14 @@ the next one. `work.py merge` already rebases a pull request that GitHub reports
 
 ## The required check names
 
-CI reports one check per matrix leg of `.github/workflows/ci.yml` (job `test`, no job `name:`, so GitHub names it
-`test (<os>, <python>)`). These are the five launch-supported cells of `definition.md`; the Windows workflow is
-an experimental cell and is not required. `tests/test_repo_settings_doc.py` derives the names from the workflow
+CI requires ONE check: job `test` of `.github/workflows/ci.yml` (no job `name:`, no matrix, so GitHub names it
+`test`). It runs a subset of the suite on macOS with Python 3.12 for pull requests and merges to main. The five
+launch-supported cells of `definition.md` run the full suite in job `full`, nightly and on demand; that job is not
+required, so a break only it can see is found up to a day after the merge. The Windows workflow is an experimental cell and is not required. `tests/test_repo_settings_doc.py` derives the names from the workflow
 and fails if this list and the workflow disagree.
 
 <!-- required-checks:begin -->
-- `test (ubuntu-latest, 3.10)`
-- `test (ubuntu-latest, 3.11)`
-- `test (ubuntu-latest, 3.12)`
-- `test (ubuntu-latest, 3.13)`
-- `test (macos-latest, 3.12)`
+- `test`
 <!-- required-checks:end -->
 
 A check name only exists on GitHub after it has run once, and GitHub accepts a required name it has never seen.
@@ -91,7 +88,7 @@ The request body is the REST "Update branch protection" body: `required_status_c
 `null` for the last two means "none".
 
 ```sh
-echo '{"required_status_checks":{"strict":false,"contexts":["test (ubuntu-latest, 3.10)","test (ubuntu-latest, 3.11)","test (ubuntu-latest, 3.12)","test (ubuntu-latest, 3.13)","test (macos-latest, 3.12)"]},"enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}' | gh api -X PUT repos/OWNER/NAME/branches/main/protection --input -
+echo '{"required_status_checks":{"strict":false,"contexts":["test"]},"enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"allow_deletions":false}' | gh api -X PUT repos/OWNER/NAME/branches/main/protection --input -
 ```
 
 ### 2. Auto-merge allowed

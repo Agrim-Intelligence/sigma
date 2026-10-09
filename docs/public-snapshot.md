@@ -306,8 +306,8 @@ Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a lo
    git -C "$OUT" push "https://github.com/$PUBLIC_REPO.git" main
    ```
 
-4. Wait for CI on every leg, then verify read-only (`--branch` names the branch holding the export,
-   default `main`; `--legs` the expected number of CI jobs, default 5, the `ci.yml` matrix). It checks the one commit, that no other branch
+4. Run Actions > CI > Run workflow on the pushed commit (a push alone runs only the one-job subset), wait for CI on every leg, then verify read-only (`--branch` names the branch holding the export,
+   default `main`; `--legs` the expected number of CI jobs, default 5, the `full` job's matrix in `ci.yml`). It checks the one commit, that no other branch
    or tag exists, the CI legs and that the tree id equals the report's:
 
    ```sh
