@@ -18,6 +18,8 @@ All notable changes to Sigma are recorded here, newest first.
   `app/github-actions` vs REST `github-actions[bot]` (mapped); comment author gh `github-actions` vs
   REST `github-actions[bot]` (not mapped yet); REST comment `node_id` equals gh's comment `id`.
 
+- **Verify no longer fails a plan that selects a whole test file containing an expected failure.** The planned-tests check required every selected test to print `PASSED`, so a single `XFAIL` made `loop.py verify` exit 1 with "planned tests did not all pass" while the suite was green, and the resulting plan edit voided plan-review. `XFAIL`/`XPASS` now count as accounted for; `SKIPPED` still does not, and the error names the first unaccounted tests.
+
 ## 1.0.4 — 2026-10-09 — GitHub GraphQL capability check (cloud sessions, slice 1)
 
 - **GitHub GraphQL capability check, detection and reporting only (#801, slice 1).** New

@@ -61,6 +61,18 @@ def test_never_red_is_refused(case):
     assert 'red' in refusal(case, proof)
 
 
+def test_xfail_planned_node_does_not_block_green(case):
+    """A whole-file selector with an expected-failure test is still green: pytest exits 0 and the
+    xfail node is accounted for, not `passed`. Skips stay unproven."""
+    other = NODE.replace('test_a', 'test_b')
+    case[2].write_text('# Plan\n\n## Tests\n- `tests/test_x.py`\n')   # whole-file selector
+    out = f'PASSED {NODE}\nXFAIL {other} - known defect\n'
+    proof = observe(case, out, 0, (NODE, other))
+    assert proof['passed'] is True and proof['error'] == ''
+    skipped = observe(case, f'PASSED {NODE}\nSKIPPED [1] x.py:1: why\n', 0, (NODE, other))
+    assert skipped['passed'] is False and other in skipped['error']
+
+
 def test_matching_assertion_then_green_is_accepted(case):
     red = observe(case, f'FAILED {NODE} - assert False\n', 1)
     assert red['passed'] is False

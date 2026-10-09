@@ -153,11 +153,15 @@ def observe(sdlc_dir, goal, root, plan, run=None):
         summaries = re.split(r"^=+ short test summary info =+\s*$", proc.stdout, flags=re.M)
         summary = summaries[-1] if len(summaries) > 1 else ""
         failed = set()
+        # An expected failure (XFAIL/XPASS) ran and behaved as declared, so it is accounted for; a
+        # whole-file selector over a file with one used to fail every verify. SKIPPED proves nothing.
+        accounted = set()
         for line in summary.splitlines():
-            if line.startswith('PASSED '):
-                node = line[len('PASSED '):].strip()
+            if line.startswith(('PASSED ', 'XFAIL ', 'XPASS ')):
+                kind, _, rest = line.partition(' ')
+                node = rest.partition(' - ')[0].strip() if kind != 'PASSED' else rest.strip()
                 if node in hashes:
-                    passed.add(node)
+                    (passed if kind == 'PASSED' else accounted).add(node)
             elif line.startswith('FAILED '):
                 node, sep, reason = line[len('FAILED '):].partition(' - ')
                 if node in hashes:
@@ -173,10 +177,13 @@ def observe(sdlc_dir, goal, root, plan, run=None):
                          w.source_hash(w.test_source(node, root=root)),
                          detail='planned pytest assertion', provenance=PROVENANCE,
                          file_hash=hashes[node], observed_at=completed)
+        missing = sorted(set(nodes) - passed - accounted)
         return {'provenance': PROVENANCE, 'plan_sha256': plan_hash, 'selectors': scope,
                 'nodes': hashes, 'started_at': started, 'completed_at': completed,
-                'passed': proc.returncode == 0 and passed == set(nodes),
-                'exit': proc.returncode, 'error': '' if passed == set(nodes) else 'planned tests did not all pass'}
+                'passed': proc.returncode == 0 and not missing,
+                'exit': proc.returncode,
+                'error': '' if not missing else 'planned tests did not all pass: %d not PASSED/XFAIL (first: %s)' % (
+                    len(missing), ', '.join(missing[:3]))}
     except (OSError, ValueError, TypeError) as exc:
         return {'passed': False, 'error': str(exc)}
 
