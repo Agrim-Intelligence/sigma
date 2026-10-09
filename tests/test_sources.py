@@ -2,6 +2,7 @@
 GitHubSource talks to GitHub only through an injectable runner, so these tests are hermetic —
 no network, no `gh` required."""
 import json, pathlib, importlib.util, re, tempfile
+import pytest
 
 import gqlfake
 
@@ -56,6 +57,10 @@ def _recording_runner(by_subcommand=None):
         if gql is not None:
             return gql
         calls.append(list(args))
+        if "rest" in by_subcommand:      # #895: a gh-shape dict answering gh_api.read_issue's REST GETs
+            rest = gqlfake.rest_issue(args, lambda n, f: by_subcommand["rest"])
+            if rest is not None:
+                return rest
         return by_subcommand.get(_issues_verb(args), "")
     run.calls = calls
     run.labels = labels
@@ -1517,11 +1522,10 @@ def test_github_append_to_body_appends_without_overwriting():
     existing body, never replace it -- `gh issue edit --body` overwrites wholesale, so the current
     body has to be read first."""
     src = _mod("sources")
-    run = _recording_runner({"view": "Existing body text."})
+    run = _recording_runner({"rest": {"body": "Existing body text."}})
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
     gh.append_to_body("5", "**Blocked by:** #61")
-    flat = [" ".join(c) for c in run.calls]
-    assert any("issue view 5" in c and "--json body" in c and "--repo o/r" in c for c in flat)
+    assert ["api", "repos/o/r/issues/5", "--method", "GET"] in run.calls    # #895: REST first
     edit_call = next(c for c in run.calls if c[0] == "issue" and c[1] == "edit")
     body = edit_call[edit_call.index("--body") + 1]
     assert body == "Existing body text.\n\n**Blocked by:** #61\n"
@@ -1529,7 +1533,7 @@ def test_github_append_to_body_appends_without_overwriting():
 
 def test_github_append_to_body_handles_an_empty_body():
     src = _mod("sources")
-    run = _recording_runner({"view": ""})
+    run = _recording_runner({"rest": {"body": None}})       # REST sends null for an empty body
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
     gh.append_to_body("5", "**Blocked by:** #61")
     edit_call = next(c for c in run.calls if c[0] == "issue" and c[1] == "edit")
@@ -1850,22 +1854,47 @@ def test_fetch_comments_shapes_id_author_body_created_at():
         {"id": "IC_2", "author": {"login": "bob"}, "body": "second", "createdAt": "2026-08-02T00:00:00Z"},
         {"id": "IC_1", "author": {"login": "amy"}, "body": "first", "createdAt": "2026-08-01T00:00:00Z"},
     ]}
-    run = _recording_runner({"view": json.dumps(payload)})
+    run = _recording_runner({"rest": payload})
     out = src.fetch_comments({}, "5", run=run)
     assert out == [
         {"id": "IC_1", "author": "amy", "body": "first", "created_at": "2026-08-01T00:00:00Z", "association": ""},
         {"id": "IC_2", "author": "bob", "body": "second", "created_at": "2026-08-02T00:00:00Z", "association": ""},
     ]
-    assert any("issue view 5" in " ".join(c) and "--json comments" in " ".join(c) for c in run.calls)
+    assert run.calls[0] == ["api", "repos/{owner}/{repo}/issues/5", "--method", "GET"]     # #895: REST
+    assert run.calls[1][:2] == ["api", "repos/{owner}/{repo}/issues/5/comments"]
 
 
 def test_fetch_comments_respects_limit_keeping_the_most_recent():
     src = _mod("sources")
     comments = [{"id": f"IC_{i}", "author": {"login": "amy"}, "body": str(i),
                 "createdAt": f"2026-08-0{i}T00:00:00Z"} for i in range(1, 6)]   # 5 comments, days 1..5
-    run = _recording_runner({"view": json.dumps({"comments": comments})})
+    run = _recording_runner({"rest": {"comments": comments}})
     out = src.fetch_comments({}, "5", run=run, limit=2)
     assert [c["id"] for c in out] == ["IC_4", "IC_5"]   # the 2 newest, still oldest-first between them
+
+
+def test_fetch_comments_limit_reads_only_the_tail_pages():
+    """#895 review finding 2: on a 250-comment issue, limit=k fetches the issue GET plus only the
+    comment pages holding the newest k (<= 3 requests), not all 3 pages + the issue."""
+    src = _mod("sources")
+    comments = [{"id": f"IC_{i}", "author": {"login": "amy"}, "body": str(i),
+                 "createdAt": f"2026-08-01T00:{i // 60:02d}:{i % 60:02d}Z"} for i in range(250)]
+    run = _recording_runner({"rest": {"comments": comments}})
+    out = src.fetch_comments({}, "5", run=run, limit=10)
+    assert [c["id"] for c in out] == [f"IC_{i}" for i in range(240, 250)]
+    assert len(run.calls) <= 3, run.calls
+    assert not any("page=1" in map(str, c) for c in run.calls), run.calls   # the oldest page is never read
+
+
+def test_fetch_comments_accepts_a_hash_prefixed_ref():
+    """#895 review finding 4: `#42` reaches the REST path as issue 42, as `gh` used to accept it."""
+    src = _mod("sources")
+    run = _recording_runner({"rest": {"comments": []}})
+    src.fetch_comments({}, "#42", run=run)
+    assert run.calls[0] == ["api", "repos/{owner}/{repo}/issues/42", "--method", "GET"]
+    run2 = _recording_runner({"rest": {"comments": []}})
+    src.GitHubSource({"discovery": {"source": "github"}}, run=run2)._read_issue("#42", ["comments"])
+    assert run2.calls[0][1] == "repos/{owner}/{repo}/issues/42"
 
 
 def test_fetch_comments_fails_open_on_gh_error_bad_json_and_non_dict_payload():
@@ -1881,12 +1910,12 @@ def test_fetch_comments_fails_open_on_gh_error_bad_json_and_non_dict_payload():
 
 def test_fetch_comments_passes_repo_flag_when_configured():
     src = _mod("sources")
-    run = _recording_runner({"view": json.dumps({"comments": []})})
+    run = _recording_runner({"rest": {"comments": []}})
     src.fetch_comments({"discovery": {"github": {"repo": "o/r"}}}, "5", run=run)
-    assert any("--repo o/r" in " ".join(c) for c in run.calls)
-    run2 = _recording_runner({"view": json.dumps({"comments": []})})
+    assert run.calls[0][1] == "repos/o/r/issues/5"
+    run2 = _recording_runner({"rest": {"comments": []}})
     src.fetch_comments({}, "5", run=run2)
-    assert not any("--repo" in " ".join(c) for c in run2.calls)
+    assert run2.calls[0][1] == "repos/{owner}/{repo}/issues/5"
 
 
 def test_fetch_comments_maps_a_missing_id_to_empty_string():
@@ -1897,7 +1926,7 @@ def test_fetch_comments_maps_a_missing_id_to_empty_string():
     in this PR since another PR relies on it unchanged."""
     src = _mod("sources")
     payload = {"comments": [{"author": {"login": "amy"}, "body": "no id here", "createdAt": "2026-08-01T00:00:00Z"}]}
-    run = _recording_runner({"view": json.dumps(payload)})
+    run = _recording_runner({"rest": payload})
     out = src.fetch_comments({}, "5", run=run)
     assert out == [{"id": "", "author": "amy", "body": "no id here", "created_at": "2026-08-01T00:00:00Z", "association": ""}]
 
@@ -2385,8 +2414,9 @@ def test_github_release_no_op_returns_false_and_clears_an_earlier_release_warnin
 
     def run(a):
         verb = _issues_verb(a)
-        if verb == "view":
-            return json.dumps({"state": "CLOSED" if state["closed"] else "OPEN", "labels": []})
+        rest = gqlfake.rest_issue(a, lambda n, f: {"state": "CLOSED" if state["closed"] else "OPEN", "labels": []})
+        if rest is not None:
+            return rest
         if verb == "edit" and "--remove-label" in a:
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
         return ""
@@ -2508,7 +2538,7 @@ def test_github_release_label_failure_leaves_the_audit_comment_body_untouched():
 
 def test_github_release_returns_true_when_it_actually_releases():
     src = _mod("sources")
-    run = _recording_runner({"view": json.dumps({"state": "OPEN", "labels": []})})
+    run = _recording_runner({"rest": {"state": "OPEN", "labels": []}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     assert gh.release("42", "claimed but never dispatched") is True
 
@@ -2518,7 +2548,7 @@ def test_github_release_refuses_when_the_issue_is_already_closed():
     in-progress label and posted the "claimed but not started" comment regardless. The new probe
     (mirrors complete()'s own #505 already-closed check) must stop all three mutations."""
     src = _mod("sources")
-    run = _recording_runner({"view": json.dumps({"state": "CLOSED", "labels": []})})
+    run = _recording_runner({"rest": {"state": "CLOSED", "labels": []}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     result = gh.release("42", "stale cleanup sweep")
 
@@ -2533,8 +2563,7 @@ def test_github_release_refuses_when_the_issue_carries_the_parked_label():
     (`_offboard` gives park() and fail() the identical `parked_label`, distinguished only by
     comment text), so one label check on the probe's `labels` covers both terminal outcomes."""
     src = _mod("sources")
-    run = _recording_runner({"view": json.dumps(
-        {"state": "OPEN", "labels": [{"name": "sdlc:parked"}, {"name": "sdlc:goal"}]})})
+    run = _recording_runner({"rest": {"state": "OPEN", "labels": [{"name": "sdlc:parked"}, {"name": "sdlc:goal"}]}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     result = gh.release("42", "stale cleanup sweep")
 
@@ -2550,17 +2579,18 @@ def test_github_release_falls_back_to_releasing_when_the_state_probe_fails(capsy
     src = _mod("sources")
 
     def run(a):
-        verb = _issues_verb(a)
-        if verb == "view":
+        if gqlfake.is_issue_read(a):      # #895: the REST probe AND its one fallback both fail
             raise RuntimeError("gh: HTTP 503 Service Unavailable")
         return ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     result = gh.release("42", "skipped this run")   # must not raise
     assert result is True
-    # The probe is not one of the two calls release() surfaces: a probe failure is still silent.
+    # The probe is not one of the two calls release() surfaces: release() itself stays silent. The
+    # one line gh_api.read_issue prints for a fallback-class REST failure (#895) is the only output.
     assert gh.release_warnings() == []
-    assert capsys.readouterr().err == ""
+    err = capsys.readouterr().err.splitlines()
+    assert [l for l in err if not l.startswith("sigma: gh REST issue #42 read failed")] == []
 
 
 # --- #505: complete()'s completion comment must post even when the issue is already closed ---
@@ -2574,7 +2604,7 @@ def test_complete_still_uses_combined_close_when_issue_open():
     """When the state-probe finds the issue still OPEN, complete() keeps today's single combined
     'issue close --comment' call -- no standalone fallback needed."""
     src = _mod("sources")
-    run = _recording_runner({"view": "OPEN\n"})
+    run = _recording_runner({"rest": {"state": "OPEN"}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.complete("42")
 
@@ -2594,7 +2624,7 @@ def test_complete_posts_comment_via_fallback_when_already_closed():
     Non-vacuous: confirmed to FAIL against the pre-fix code (issue close was called
     unconditionally and no standalone comment call existed) before the fix was applied."""
     src = _mod("sources")
-    run = _recording_runner({"view": "CLOSED\n"})
+    run = _recording_runner({"rest": {"state": "CLOSED"}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.complete("42")
 
@@ -2614,8 +2644,9 @@ def test_complete_survives_fallback_comment_failure_when_already_closed():
 
     def run(a):
         verb = _issues_verb(a)
-        if verb == "view":
-            return "CLOSED\n"
+        rest = gqlfake.rest_issue(a, lambda n, f: {"state": "CLOSED"})      # #895: REST state probe
+        if rest is not None:
+            return rest
         if verb == "comment":
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
         return ""
@@ -2641,8 +2672,9 @@ def test_complete_falls_back_to_rest_when_the_already_closed_comment_hits_exhaus
     def run(a):
         calls.append(a)
         verb = _issues_verb(a)
-        if verb == "view":
-            return "CLOSED\n"
+        rest = gqlfake.rest_issue(a, lambda n, f: {"state": "CLOSED"})      # #895: REST state probe
+        if rest is not None:
+            return rest
         if verb == "comment":
             raise RuntimeError("GraphQL: API rate limit exceeded for installation ID 123. (addComment)")
         return ""
@@ -2703,8 +2735,7 @@ def test_complete_falls_back_to_combined_call_when_state_probe_fails():
 
     def run(a):
         calls.append(list(a))
-        verb = _issues_verb(a)
-        if verb == "view":
+        if gqlfake.is_issue_read(a):      # #895: the REST probe AND its one fallback both fail
             raise RuntimeError("gh: HTTP 503 Service Unavailable")
         return ""
 
@@ -2732,7 +2763,7 @@ def test_complete_removes_in_progress_label_even_when_already_closed():
     (unlike #505's own tests) -- the two existing test suites' blind spots don't overlap, so this
     combined case was previously untested by either."""
     src = _mod("sources")
-    run = _recording_runner({"view": "CLOSED\n"})
+    run = _recording_runner({"rest": {"state": "CLOSED"}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.complete("42")
 
@@ -2887,11 +2918,19 @@ def _recording_runner_by_json(by_json=None):
     and fetch_comments_strict both issue an `issue view ... --json <fields>` call, so the plain
     args[1]-keyed _recording_runner above cannot tell them apart (#522 review, test-infra note). A
     canned value that is an Exception INSTANCE is raised instead of returned, for transport-failure
-    tests."""
+    tests.
+
+    #895: the REST issue read (no `--json`) answers a 502, so every test on this runner drives the
+    ONE-call `gh issue view` FALLBACK path and its payload checks. REST-path cases use
+    `_recording_runner({"rest": ...})`."""
     calls = []
     by_json = by_json or {}
     def run(args):
         calls.append(list(args))
+        if gqlfake.rest_issue_target(args) is not None:
+            exc = RuntimeError("gh api failed")
+            exc.hint = "gh: Server Error (HTTP 502)"
+            raise exc
         key = args[args.index("--json") + 1] if "--json" in args else None
         val = by_json.get(key, "")
         if isinstance(val, Exception):
@@ -2919,7 +2958,7 @@ def test_github_fetch_comments_strict_raises_on_transport_failure():
     try:
         gh.fetch_comments_strict("42")
         assert False, "expected an exception -- a transport failure must never degrade to empty here"
-    except RuntimeError as exc:
+    except Exception as exc:          # #895: GhApiError naming both the REST and the fallback failure
         assert "not authenticated" in str(exc)
 
 
@@ -4602,3 +4641,134 @@ def test_312_the_backlog_itself_still_retries_an_empty_read(monkeypatch):
                           run=run)
     assert gh.next_pending() is None
     assert len(run.calls) == gh._BACKLOG_READ_RETRIES
+
+
+# --- #895 slice 2a: the 7 issue reads go REST first; one `gh issue view` fallback per call ---------
+
+def _rest_429_then_view(view_out):
+    """REST issue reads answer a 429 (fallback-class); the ONE fallback `issue view` answers
+    `view_out` in the old gh shape. Everything else returns ""."""
+    calls = []
+
+    def run(a):
+        gql = _gql_swap(a, calls=calls)
+        if gql is not None:
+            return gql
+        calls.append(list(a))
+        if gqlfake.rest_issue_target(a) is not None:
+            exc = RuntimeError("gh api failed")
+            exc.hint = "gh: API rate limit exceeded for user ID 1. (HTTP 429)"
+            raise exc
+        if a[:2] == ["issue", "view"]:
+            return view_out
+        return ""
+    run.calls = calls
+    return run
+
+
+def _gh(run):
+    return _mod("sources").GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+
+
+def _views(run):
+    return [c for c in run.calls if c[:2] == ["issue", "view"]]
+
+
+def test_release_fallback_branch_reads_old_shape():
+    run = _rest_429_then_view(json.dumps({"state": "CLOSED", "labels": []}))
+    assert _gh(run).release("42", "x") is False
+    assert _views(run) == [["issue", "view", "42", "--repo", "o/r", "--json", "state,labels"]]
+
+
+def test_complete_fallback_branch_reads_old_shape():
+    run = _rest_429_then_view(json.dumps({"state": "CLOSED"}))
+    gh = _gh(run)
+    gh._NOTE_RETRY_BASE = 0
+    gh.complete("42")
+    assert not any(len(c) > 1 and c[1] == "close" for c in run.calls)
+    assert _views(run) == [["issue", "view", "42", "--repo", "o/r", "--json", "state"]]
+
+
+def test_fetch_author_fallback_branch_reads_old_shape():
+    run = _rest_429_then_view(json.dumps({"author": {"login": "app/sigma-bot"}}))
+    assert _gh(run).fetch_author("42") == "app/sigma-bot"
+    assert len(_views(run)) == 1
+
+
+def test_fetch_author_rest_maps_bot_author():
+    """#895 step 9 (measured once): a REST Bot `x[bot]` reads `app/x`, as gh shows it."""
+    run = _recording_runner({"rest": {"author": {"login": "app/sigma-bot"}}})   # fake converts to x[bot]/Bot
+    assert _gh(run).fetch_author("42") == "app/sigma-bot"
+    assert not any(c[:2] == ["issue", "view"] for c in run.calls)
+
+
+def test_fetch_body_labels_fallback_branch_reads_old_shape():
+    run = _rest_429_then_view(json.dumps({"body": "B", "labels": [{"name": "feature:x"}]}))
+    assert _gh(run).fetch_body_labels("42") == {"body": "B", "labels": [{"name": "feature:x"}]}
+    assert len(_views(run)) == 1
+
+
+def test_append_to_body_fallback_branch_reads_old_shape():
+    run = _rest_429_then_view(json.dumps({"body": "Old"}))
+    _gh(run).append_to_body("42", "M")
+    edit = next(c for c in run.calls if c[:2] == ["issue", "edit"])
+    assert edit[edit.index("--body") + 1] == "Old\n\nM\n"
+
+
+@pytest.mark.parametrize("view_out", ["not json", "[]", "{}"])
+def test_append_to_body_never_blanks_the_body_on_a_degraded_read(view_out):
+    """The `["body"]` subscript is data-loss protection: a degraded fallback read raises BEFORE
+    `issue edit`, so a malformed read can never replace a real body with only the marker."""
+    run = _rest_429_then_view(view_out)
+    with pytest.raises(KeyError):
+        _gh(run).append_to_body("42", "M")
+    assert not any(c[:2] == ["issue", "edit"] for c in run.calls)
+
+
+def test_append_to_body_never_blanks_the_body_on_a_rest_payload_without_body():
+    def run(a):
+        run.calls.append(list(a))
+        if gqlfake.rest_issue_target(a) is not None:
+            return json.dumps({"number": 42, "state": "open", "comments": 0})     # no `body` key
+        return ""
+    run.calls = []
+    with pytest.raises(Exception):
+        _gh(run).append_to_body("42", "M")
+    assert not any(c[:2] == ["issue", "edit"] for c in run.calls)
+
+
+def test_fetch_comments_fallback_branch_reads_old_shape():
+    payload = {"comments": [{"id": "IC_1", "author": {"login": "amy"}, "body": "b",
+                             "createdAt": "2026-08-01T00:00:00Z", "authorAssociation": "OWNER"}]}
+    run = _rest_429_then_view(json.dumps(payload))
+    out = _mod("sources").fetch_comments({}, "5", run=run)
+    assert out == [{"id": "IC_1", "author": "amy", "body": "b", "created_at": "2026-08-01T00:00:00Z",
+                    "association": "OWNER"}]
+    assert len(_views(run)) == 1
+
+
+def test_fetch_comments_strict_reads_past_100():
+    """#895 plan Revision 1: the strict reader reads EVERY comment page (paged by the issue's own
+    count), so a marker in comment 120 is never truncated away."""
+    comments = [{"id": "IC_%d" % i, "author": {"login": "amy"}, "body": "c%d" % i,
+                 "createdAt": "2026-08-01T00:%02d:%02dZ" % (i // 60, i % 60), "authorAssociation": "OWNER"}
+                for i in range(150)]
+    run = _recording_runner({"rest": {"comments": comments, "labels": [{"name": "area:x"}]}})
+    out = _gh(run).fetch_comments_strict("42")
+    assert len(out["comments"]) == 150 and out["comments"][-1]["body"] == "c149"
+    assert out["labels"] == [{"name": "area:x"}]
+    assert not any(c[:2] == ["issue", "view"] for c in run.calls)
+
+
+def test_fetch_comments_strict_raises_on_malformed_rest_page():
+    """#895 plan Revision 1 item 2: a null REST comments page raises (no fallback, no `or []`)."""
+    def run(a):
+        run.calls.append(list(a))
+        t = gqlfake.rest_issue_target(a)
+        if t is not None:
+            return "null" if t[1] else json.dumps({"number": 42, "state": "open", "body": "", "comments": 3})
+        return ""
+    run.calls = []
+    with pytest.raises(Exception):
+        _gh(run).fetch_comments_strict("42")
+    assert not any(c[:2] == ["issue", "view"] for c in run.calls)

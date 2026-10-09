@@ -115,9 +115,9 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
         if gql is not None:
             return gql
         calls.append(list(args))
-        if args[:2] == ["issue", "view"]:
-            n = str(args[2])
-            fields = (args[args.index("--json") + 1] if "--json" in args else "").split(",")
+
+        def view(n, fields):
+            n = str(n)
             out = {}
             if "title" in fields:
                 out["title"] = "goal %s" % n
@@ -127,7 +127,13 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
                 out["labels"] = [{"name": x} for x in sorted(live.get(n, ()))]
             if "comments" in fields:
                 out["comments"] = []
-            return json.dumps(out)
+            return out
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
+        if args[:2] == ["issue", "view"]:
+            return json.dumps(view(args[2], (args[args.index("--json") + 1] if "--json" in args else "").split(",")))
         if args[:2] == ["issue", "create"]:
             body = args[args.index("--body") + 1]
             labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
@@ -388,7 +394,7 @@ def test_an_unreadable_parent_files_the_issue_with_no_unit(tmp_path):
     """`fetch_body_labels` RAISES on a transport failure by design. A blip must degrade to
     today's behaviour, not lose the follow-up."""
     run = _runner({"42": {"body": _DECLARES, "labels": {"sdlc:goal", _LABEL}}},
-                  fail_on=("issue view 42",))
+                  fail_on=("issue view 42", "repos/o/r/issues/42 "))     # #895: REST-first read, then fallback
     report = _track(tmp_path, run)
     assert report["issue"] == _FILED and report["unit"] is None
     assert any("42" in w for w in report["warnings"]), report["warnings"]

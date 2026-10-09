@@ -15,6 +15,7 @@ import sys
 import threading
 
 
+import gqlfake
 import test_decompose_check as tdc
 import test_work as tw
 
@@ -42,9 +43,15 @@ def _comment(i, body, association, login="someone"):
 
 
 def _comments_run(comments):
+    def view(n, fields):
+        return {"comments": comments, "labels": []}
+
     def run(args):
+        rest = gqlfake.rest_issue(args, view)  # REST-first read (#895); `issue view` is the fallback
+        if rest is not None:
+            return rest
         assert args[:2] == ["issue", "view"], args
-        return json.dumps({"comments": comments, "labels": []})
+        return json.dumps(view(args[2], None))
     return run
 
 

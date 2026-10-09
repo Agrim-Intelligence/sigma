@@ -5,6 +5,8 @@ import base64, json, os, pathlib, importlib.util, shutil, stat, subprocess, sys,
 
 import pytest
 
+import gqlfake
+
 D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 
 
@@ -2442,6 +2444,11 @@ def _dm_run(issues, comments=None, view_calls=None):
             if view_calls is not None:
                 view_calls.append(list(args))
             return json.dumps({"comments": comments})
+        t = gqlfake.rest_issue_target(args[1:])      # #895: fetch_comments reads REST first
+        if t is not None:
+            if view_calls is not None and not t[1]:  # one issue read per issue, comment pages aside
+                view_calls.append(list(args))
+            return gqlfake.rest_issue(args[1:], lambda n, f: {"comments": comments})
         return ""
     return run
 

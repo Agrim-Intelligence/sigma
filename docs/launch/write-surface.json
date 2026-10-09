@@ -709,7 +709,7 @@
       "function": "_default_run",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "no caller wired in slice 1; helper ops run only when a caller invokes them",
+      "gate": "write ops have no caller (slices 3-7); the only wired caller is read_issue (#895), which issues GET reads and one gh issue view fallback",
       "risk": "low"
     },
     {
@@ -717,7 +717,7 @@
       "function": "_write_cache",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "probe cache only; cache_dir injected, unwired in slice 1",
+      "gate": "probe cache (cache_dir injected, unwired) and read_issue's breaker/fallback log under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
       "risk": "low"
     },
     {
@@ -725,7 +725,7 @@
       "function": "_write_cache",
       "rule": "fs-write",
       "count": 2,
-      "gate": "probe cache only; cache_dir injected, unwired in slice 1",
+      "gate": "probe cache (cache_dir injected, unwired) and read_issue's breaker/fallback log under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
       "risk": "low"
     },
     {

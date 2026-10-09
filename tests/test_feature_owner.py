@@ -1360,17 +1360,34 @@ def test_the_author_is_read_from_the_author_field():
     """WHO OPENED IT, never who it was handed to. An assignee is somebody the work was given to;
     the rule is about who created it."""
     sources = _load("sources")
+    # #895: REST first -- the issue's author is REST's `user`, never `assignee`/`assignees`.
     gh = sources.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}},
-                              run=lambda args: json.dumps({"author": {"login": "wrote-it"},
-                                                           "assignee": {"login": "assigned-to"}}))
+                              run=lambda args: json.dumps({"user": {"login": "wrote-it", "type": "User"},
+                                                           "assignee": {"login": "assigned-to"},
+                                                           "assignees": [{"login": "assigned-to"}],
+                                                           "body": "", "comments": 0}))
     assert gh.fetch_author("42") == "wrote-it"
+
+
+def _rest_429_then(view_out):
+    def run(args):
+        if args[0] == "api":
+            exc = RuntimeError("gh api failed")
+            exc.hint = "gh: API rate limit exceeded (HTTP 429)"
+            raise exc
+        return view_out
+    return run
 
 
 def test_an_author_gh_did_not_name_degrades_rather_than_raising():
     sources = _load("sources")
-    gh = sources.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}},
-                              run=lambda args: "not json")
+    cfg = {"discovery": {"source": "github", "github": {"repo": "o/r"}}}
+    # REST answered with no `user` (a deleted account): degrades to "".
+    gh = sources.GitHubSource(cfg, run=lambda args: json.dumps({"user": None, "body": "", "comments": 0}))
     assert gh.fetch_author("42") == ""
+    # #895: malformed JSON still degrades on the one-call `gh issue view` fallback path.
+    assert sources.GitHubSource(cfg, run=_rest_429_then("not json")).fetch_author("42") == ""
+    assert sources.GitHubSource(cfg, run=_rest_429_then("{}")).fetch_author("42") == ""
 
 
 def test_section_fifteen_describes_the_cross_repo_hazard_and_the_real_remedy():

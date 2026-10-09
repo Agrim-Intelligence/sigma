@@ -75,6 +75,12 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
             # data no test using this simpler, non-label-aware fixture actually intends to supply.
             label = args[args.index("--label") + 1] if "--label" in args else None
             return "[]" if label == "sdlc:blocking" else parked
+        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
+            {"id": f"c{i}", "author": {"login": "x"}, "body": b,
+             "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
+            for i, b in enumerate(comments.get(n, []))]})
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
@@ -222,6 +228,11 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
             label = args[args.index("--label") + 1] if "--label" in args else None
             return by_label.get(label, "[]")
+        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
+            {"id": f"c{i}", "author": {"login": "x"}, "body": b, "createdAt": "2026-01-01T00:00:00Z"}
+            for i, b in enumerate(comments.get(n, []))]})
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
