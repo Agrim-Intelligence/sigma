@@ -4,6 +4,10 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.5 — 2026-10-09 — verify no longer fails on expected failures
+
+- **CI runs the suite in parallel.** The one leg that runs on a PR (macOS 3.12) installs `pytest-xdist` and runs `pytest tests/ -n auto`: 21 min measured on a runner (PR #925) against 47-64 min serial. Check names and required contexts are unchanged.
+
 - **Verify no longer fails a plan that selects a whole test file containing an expected failure.** The planned-tests check required every selected test to print `PASSED`, so a single `XFAIL` made `loop.py verify` exit 1 with "planned tests did not all pass" while the suite was green, and the resulting plan edit voided plan-review. `XFAIL`/`XPASS` now count as accounted for; `SKIPPED` still does not, and the error names the first unaccounted tests.
 
 ## 1.0.4 — 2026-10-09 — GitHub GraphQL capability check (cloud sessions, slice 1)
