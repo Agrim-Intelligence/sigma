@@ -1034,6 +1034,29 @@ def _load_loop_script(name):
     return m
 
 
+def _graphql_capability_rows(base, cfg, env=None):
+    """#801 slice 1: ONE advisory row when GitHub GraphQL looks unavailable (Claude Code cloud proxy).
+
+    DETECTION AND REPORTING ONLY. `ok=True` and hand-built (not `_chk`, which drops `fix` text when
+    ok): in a cloud session this is a permanent condition the user cannot "fix", and `main()` counts
+    `not ok` as MISSING. Appears only on a positive signal (env/override), so ordinary runs are
+    unchanged. `probe=False` always: doctor is a report, never a network caller here. Fail-open: a
+    load or runtime failure yields no row rather than a crash. Reads `os.environ` unless `env` given."""
+    try:
+        res = _load_loop_script("gh_api").graphql_available(
+            env=os.environ if env is None else env, probe=False)
+    except Exception:                        # noqa: BLE001 - a check that cannot run says nothing
+        return []
+    if res.get("available"):
+        return []
+    return [{"name": "GitHub GraphQL unavailable (cloud proxy)", "ok": True,
+             "fix": ("source=%s (%s). Features turned off or degraded while GraphQL is blocked: "
+                     "board/Projects mirroring, gh pr merge --auto, timelineItems (blocker/dependency "
+                     "edges), gh issue|pr via GraphQL until migrated (#801 slices 2-4). This is "
+                     "detection only; REST migration is in progress, not complete. Override with "
+                     "SIGMA_GH_GRAPHQL=on|off." % (res.get("source"), res.get("reason")))}]
+
+
 def _awaiting_merge_row(sdlc_dir, now=None):
     """#255 LIVENESS: one row for every goal awaiting a merge. A goal that waits reports no error,
     ever -- an armed auto-merge whose required check failed never lands, a PR that can no longer be
@@ -2374,6 +2397,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # later regression is visible. Each fix comes from the FAILING check: gh absent says install it.
     if _block(cfg, "work").get("enabled") or disc.get("source") == "github":
         out.extend(_preflight_rows(base, cfg, run, which, injected, cheap_only))
+        out.extend(_graphql_capability_rows(base, cfg))     # #801: advisory, detection only
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):

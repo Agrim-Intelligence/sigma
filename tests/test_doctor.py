@@ -7120,3 +7120,82 @@ def test_no_hook_path_row_unless_the_key_is_stale(tmp_path, value, make_dir):
     """No key, the adopter's own directory under that name, or any other value: no row at all."""
     base = _hooks_repo(tmp_path, value, make_dir)
     assert _HOOKS_ROW not in _by_name(_doc().check(base, run=_runner()))
+
+
+# --- #801 slice 1: advisory GraphQL-capability row (detection and reporting only) ----------------
+
+GQL_ROW = "GitHub GraphQL unavailable (cloud proxy)"
+
+
+def test_graphql_row_appears_in_cloud_env_as_advisory_ok_true(tmp_path, monkeypatch):
+    d = _doc()
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    checks = d.check(base, run=_pf_fake())
+    row = _by_name(checks)[GQL_ROW]
+    assert row["ok"] is True                         # advisory: not a MISSING gap the user can fix
+    for text in ("board/Projects mirroring", "gh pr merge --auto", "timelineItems (blocker/dependency edges)",
+                 "gh issue|pr via GraphQL until migrated (#801 slices 2-4)",
+                 "detection only; REST migration is in progress, not complete", "SIGMA_GH_GRAPHQL"):
+        assert text in row["fix"], text
+    assert row not in [c for c in checks if not c["ok"]]
+
+
+def test_graphql_row_is_printed_by_the_check_command(tmp_path, monkeypatch, capsys):
+    d = _doc()
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "1")
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    orig = d.check
+    monkeypatch.setattr(d, "check", lambda sdlc_dir=".sdlc": orig(sdlc_dir, run=_pf_fake()))
+    d.main(["doctor.py", "check", base])
+    out = capsys.readouterr().out
+    assert GQL_ROW in out and "board/Projects mirroring" in out    # hand-built ok=True fix text is printed
+
+
+def test_graphql_row_absent_when_no_cloud_signal(tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    assert GQL_ROW not in _by_name(d.check(base, run=_pf_fake()))
+
+
+def test_graphql_row_override_off_names_the_source(tmp_path, monkeypatch):
+    d = _doc()
+    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    row = _by_name(d.check(base, run=_pf_fake()))[GQL_ROW]
+    assert row["ok"] is True and "override" in row["fix"]
+
+
+def test_graphql_row_absent_when_neither_work_nor_github(tmp_path, monkeypatch):
+    d = _doc()
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    base = _sdlc(tmp_path, {"work": {"enabled": False}})
+    assert GQL_ROW not in _by_name(d.check(base, run=_pf_fake()))
+
+
+def test_graphql_row_changes_nothing_else_and_never_runs_graphql(tmp_path, monkeypatch):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    calls = []
+    fake = _pf_fake()
+
+    def run(args):
+        calls.append(list(args))
+        return fake(args)
+    before = {c["name"] for c in d.check(base, run=run)}
+    calls_before = list(calls)
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    calls.clear()
+    after = {c["name"] for c in d.check(base, run=run)}
+    assert after - before == {GQL_ROW} and before <= after
+    assert calls == calls_before        # the capability row adds NO `run` call (no probe, no graphql)
+
+
+def test_graphql_row_load_failure_is_fail_open(tmp_path, monkeypatch):
+    d = _doc()
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    real = d._load_loop_script
+    monkeypatch.setattr(d, "_load_loop_script",
+                        lambda n: (_ for _ in ()).throw(OSError("x")) if n == "gh_api" else real(n))
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    assert GQL_ROW not in _by_name(d.check(base, run=_pf_fake()))

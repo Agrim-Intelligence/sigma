@@ -705,6 +705,30 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
+      "function": "_default_run",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "no caller wired in slice 1; helper ops run only when a caller invokes them",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
+      "function": "_write_cache",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "probe cache only; cache_dir injected, unwired in slice 1",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
+      "function": "_write_cache",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "probe cache only; cache_dir injected, unwired in slice 1",
+      "risk": "low"
+    },
+    {
       "path": "skills/sigma-loop/scripts/goal_state_prune.py",
       "function": "sweep",
       "rule": "fs-remove",
