@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.4 — 2026-10-09 — GitHub GraphQL capability check (cloud sessions, slice 1)
+
 - **GitHub GraphQL capability check, detection and reporting only (#801, slice 1).** New
   `gh_api.py` (capability check plus a REST issue/PR helper nothing calls yet), a third proxy shape in
   `gh_session.graphql_unavailable`, an advisory `/sigma-doctor` row naming the features turned off, and
