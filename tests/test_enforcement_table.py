@@ -383,7 +383,7 @@ def test_readme_defaults_match_the_template():
         assert "null" in rows_[0], rows_[0]
     budget = [l for l in text.splitlines() if l.startswith("| `budget.max_iterations`")]
     assert len(budget) == 1, budget
-    for needle in ("480", "500,000", "20"):
+    for needle in ("480", "100,000,000", "20"):
         assert needle in budget[0], (needle, budget[0])
     assert "Everything optional ships OFF" not in text
     assert "won't ship work that fights your strategy" not in text
