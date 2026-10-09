@@ -193,6 +193,62 @@ def test_real_run_returns_a_raw_failure_carrying_the_real_stderr(tmp_path):
     assert "boom" in result.raw
 
 
+def test_real_run_bounds_a_hung_github_project_call_from_the_operator_timeout(monkeypatch):
+    """A stalled Project API read must degrade to a falsy timeout result, never hang doctor."""
+    d = _doc()
+    calls = []
+
+    def hung(argv, **kwargs):
+        calls.append((argv, kwargs))
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    monkeypatch.setattr(d.subprocess, "run", hung)
+    result = d._real_run(["gh", "project", "item-list", "17", "--owner", "acme"])
+
+    assert calls[0][1]["timeout"] == 2
+    assert not result
+    assert "timed out" in result.raw.lower()
+
+
+def test_real_run_bounds_a_hung_github_project_graphql_call(monkeypatch):
+    """ProjectV2 workflow reads share the same finite board-call budget."""
+    d = _doc()
+    calls = []
+
+    def hung(argv, **kwargs):
+        calls.append((argv, kwargs))
+        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    monkeypatch.setattr(d.subprocess, "run", hung)
+    result = d._real_run(["gh", "api", "graphql", "-f", "query={ viewer { projectsV2 { nodes { id } } } }"])
+
+    assert calls[0][1]["timeout"] == 2
+    assert not result
+    assert "timed out" in result.raw.lower()
+
+
+def test_real_run_keeps_local_doctor_probes_uncapped(monkeypatch):
+    """The Project API cap must not reclassify a slow local diagnostic as a missing tool."""
+    d = _doc()
+    calls = []
+
+    class Completed:
+        returncode = 0
+        stdout = "installed\n"
+        stderr = ""
+
+    def local(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return Completed()
+
+    monkeypatch.setenv("SIGMA_WATCH_CALL_TIMEOUT", "2")
+    monkeypatch.setattr(d.subprocess, "run", local)
+    assert d._real_run(["codex", "plugin", "list", "--json"]) == "installed\n"
+    assert "timeout" not in calls[0][1]
+
+
 def test_flags_missing_kg_builder():
     d = _doc()
     with tempfile.TemporaryDirectory() as t:
