@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -19,7 +17,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    # pull_request and push to main run only the leg marked `pr: true`; every other leg still
+    # pull_request runs only the leg marked `pr: true`; every other leg still
     # reports (so the check names exist) but skips all steps in seconds. The full matrix runs
     # weekly (schedule) and on demand (workflow_dispatch). Ceiling: an Ubuntu or older-Python
     # break is found by the weekly run, up to a week after the merge that caused it.
@@ -56,10 +54,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - if: ${{ env.FULL == 'true' }}
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest pytest-xdist
       - name: pytest
         if: ${{ env.FULL == 'true' }}
-        run: python -m pytest tests/ -rs -q
+        run: python -m pytest tests/ -rs -q -n auto
       - name: no retired skill prefix left in any tracked path or file (#523)
         if: ${{ !cancelled() && env.FULL == 'true' }}
         run: python3 tools/rename_check.py
