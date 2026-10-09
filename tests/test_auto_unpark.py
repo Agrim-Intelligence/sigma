@@ -52,6 +52,7 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
     state_reasons = state_reasons or {}
     comments = comments or {}
     labels = set()
+    fallbacks = []
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -75,13 +76,17 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
             # data no test using this simpler, non-label-aware fixture actually intends to supply.
             label = args[args.index("--label") + 1] if "--label" in args else None
             return "[]" if label == "sdlc:blocking" else parked
-        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
-            {"id": f"c{i}", "author": {"login": "x"}, "body": b,
-             "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
-            for i, b in enumerate(comments.get(n, []))]})
+        rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: issue reads are REST first
+            "state": states.get(n, "OPEN"),
+            "stateReason": state_reasons.get(n, "COMPLETED" if states.get(n) == "CLOSED" else ""),
+            "comments": [
+                {"id": f"c{i}", "author": {"login": "x"}, "body": b,
+                 "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
+                for i, b in enumerate(comments.get(n, []))]})
         if rest is not None:
             return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))     # #895: the ONE fallback; a REST-first test asserts this empty
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
             if json_field.startswith("state"):
@@ -98,6 +103,7 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
             return "{}"
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
     return run
 
 
@@ -206,6 +212,7 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
     comments = comments or {}
 
     labels = set()
+    fallbacks = []
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -228,12 +235,16 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
             label = args[args.index("--label") + 1] if "--label" in args else None
             return by_label.get(label, "[]")
-        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
-            {"id": f"c{i}", "author": {"login": "x"}, "body": b, "createdAt": "2026-01-01T00:00:00Z"}
-            for i, b in enumerate(comments.get(n, []))]})
+        rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: issue reads are REST first
+            "state": states.get(n, "OPEN"),
+            "stateReason": state_reasons.get(n, "COMPLETED" if states.get(n) == "CLOSED" else ""),
+            "comments": [
+                {"id": f"c{i}", "author": {"login": "x"}, "body": b, "createdAt": "2026-01-01T00:00:00Z"}
+                for i, b in enumerate(comments.get(n, []))]})
         if rest is not None:
             return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))     # #895: the ONE fallback; a REST-first test asserts this empty
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
             if json_field.startswith("state"):
@@ -249,6 +260,7 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
             return "{}"
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
     return run
 
 
@@ -376,8 +388,35 @@ def test_ref_is_open_fails_closed_true_on_gh_error():
     """Unreadable blocker state -> treated as still open (the safe direction): a write this sweep
     can't easily undo must never fire on data it could not confirm."""
     au = _mod("auto_unpark")
-    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issue view 7"]))
-    assert au._ref_is_open(source, "7", {}) is True
+    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issues/7", "issue view 7"]))
+    assert au._ref_is_open(source, "7", {}) is True      # GhApiError reaches the site's own arm
+
+
+def test_ref_is_open_reads_rest_first_and_never_asks_for_anything_else():
+    """#895: the read is `api repos/<o>/<r>/issues/7 --method GET`; no `issue view`, no other argv."""
+    au = _mod("auto_unpark")
+    run = _sweep_runner(states={"7": "CLOSED"})
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._ref_is_open(source, "7", {}) is False
+    assert run.calls == [["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.fallbacks == []
+
+
+def test_ref_is_open_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    au = _mod("auto_unpark")
+    run = _sweep_runner(states={"7": "CLOSED"}, fail_on=["issues/7"])
+    # fail_on raises a plain error (kind other, no fallback); a 502 text is what earns the one fallback
+    inner = run
+
+    def flaky(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    source = au.sources.GitHubSource(_config(), run=flaky)
+    assert au._ref_is_open(source, "7", {}) is False
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "7"]]
 
 
 def test_ref_is_open_memoizes_across_calls_in_the_same_cache():
@@ -387,8 +426,9 @@ def test_ref_is_open_memoizes_across_calls_in_the_same_cache():
     cache = {}
     au._ref_is_open(source, "7", cache)
     au._ref_is_open(source, "7", cache)
-    view_calls = [c for c in run.calls if c[:2] == ["issue", "view"]]
+    view_calls = [c for c in run.calls if gqlfake.rest_issue_target(c) == ("7", False)]
     assert len(view_calls) == 1
+    assert not [c for c in run.calls if c[:2] == ["issue", "view"]]     # no fallback, no unexpected argv
 
 
 # --------------------------------------------------------------------------- compute_unpark_actions
@@ -1121,10 +1161,10 @@ def _view_wrapper(run, number, labels, assignees, state):
     """`blockers._state` reads `issue view <n> --json labels,assignees,state`; the sweep fixtures
     answer `--json state,stateReason` only, so this layers the one extra shape on top."""
     def _run(args):
-        if (len(args) >= 3 and args[0] == "issue" and args[1] == "view" and str(args[2]) == number
-                and "--json" in args and "labels" in args[args.index("--json") + 1]):
-            return json.dumps({"labels": [{"name": l} for l in labels],
-                               "assignees": [{"login": a} for a in assignees], "state": state})
+        if gqlfake.rest_issue_target(args) == (number, False):       # #895: REST first
+            return gqlfake.rest_issue(args, lambda n, f: {
+                "labels": [{"name": l} for l in labels],
+                "assignees": [{"login": a} for a in assignees], "state": state})
         return run(args)
     return _run
 
@@ -1187,9 +1227,8 @@ def test_an_unreadable_blocker_degrades_to_the_blocking_label_alone():
     original = src._run
 
     def _run(args):
-        if (len(args) >= 3 and args[0] == "issue" and args[1] == "view" and str(args[2]) == "7"
-                and "--json" in args and "labels" in args[args.index("--json") + 1]):
-            raise RuntimeError("gh: 502")
+        if gqlfake.rest_issue_target(args) == ("7", False) or args[:2] == ["issue", "view"]:
+            raise RuntimeError("gh: 502")      # REST 5xx, and the one fallback fails too
         return original(args)
     src._run = _run
     actions = au.compute_blocking_actions(".sdlc", _config(), src,

@@ -164,9 +164,14 @@ def rest_issue(args, view):
     if t[1]:
         page = int(next(a for a in args if str(a).startswith("page="))[5:])
         return json.dumps([_rest_comment(c, i) for i, c in enumerate(comments)][(page - 1) * 100:page * 100])
-    return json.dumps({
-        "number": int(t[0]), "state": str(full.get("state") or "OPEN").lower(),
+    state = str(full.get("state") or "OPEN").upper()
+    out = {
+        "number": int(t[0]), "title": full.get("title"),
+        "state": "closed" if state == "MERGED" else state.lower(),
         "state_reason": (full.get("stateReason") or "").lower() or None,
         "user": _rest_user(full.get("author")), "body": full.get("body"),
         "labels": full.get("labels") or [], "assignees": full.get("assignees") or [],
-        "closed_at": full.get("closedAt"), "comments": len(comments)})
+        "closed_at": full.get("closedAt"), "comments": len(comments)}
+    if state == "MERGED":      # REST says a merged PR is `closed` + pull_request.merged_at (#895 2b)
+        out["pull_request"] = {"merged_at": "2026-10-09T00:00:00Z"}
+    return json.dumps(out)

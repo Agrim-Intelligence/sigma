@@ -27,7 +27,7 @@ def _view(number=5, title="A goal", body="", labels=("sdlc:parked",), comments=(
 
 
 def _runner(views=None, by_label=None, states=None, fail_on=()):
-    calls, label_state, gql_calls = [], set(), []
+    calls, label_state, gql_calls, fallbacks = [], set(), [], []
     views, by_label, states = views or {}, by_label or {}, states or {}
 
     def run(args):
@@ -46,7 +46,17 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
             label = args[args.index("--label") + 1] if "--label" in args else None
             return by_label.get(label, "[]")
+        # #895: issue reads are REST first; answered REST-shaped (issue + comments pages) from the same
+        # gh-shape `views` / `states`, a `states` entry winning exactly as the old `--json state` branch did.
+        def _gh_shape(n, _f):
+            if n in states:
+                return {"state": states[n], "stateReason": "COMPLETED" if states[n] == "CLOSED" else ""}
+            return views.get(n, _view(number=int(n)))
+        rest = gqlfake.rest_issue(args, _gh_shape)
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))      # the one fallback; REST-first tests assert this empty
             n = str(args[2])
             field = args[args.index("--json") + 1] if "--json" in args else ""
             if field.startswith("state"):
@@ -57,6 +67,7 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         return ""
     run.calls = calls
     run.gql_calls = gql_calls
+    run.fallbacks = fallbacks
     return run
 
 
@@ -399,9 +410,60 @@ def test_cli_list_and_brief_render_and_exit_zero(tmp_path, capsys):
 def test_cli_brief_refuses_an_unreadable_issue_without_a_traceback(tmp_path, capsys):
     u = _mod("unpark")
     (tmp_path / "config.json").write_text(json.dumps(_config()))
-    run = _runner(fail_on=["issue view 5"])
+    run = _runner(fail_on=["issues/5", "issue view 5"])
     assert u.main(["unpark.py", "brief", str(tmp_path), "5"], run=run) == 1
     assert "could not read #5" in capsys.readouterr().err
+
+
+def test_resolve_refuses_when_the_issue_cannot_be_read():
+    """GhApiError (REST and the one fallback fail) reaches resolve()'s own arm: failed, nothing written."""
+    u = _mod("unpark")
+    run = _runner(fail_on=["issues/5", "issue view 5"])
+    out = u.resolve(".sdlc", _config(), 5, {}, "unpark", run=run)
+    assert out["outcome"] == "failed" and "could not read the current state of #5" in out["detail"]
+    assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
+
+
+def test_fetch_issue_reads_rest_first_issue_and_comments_and_nothing_else():
+    """#895: `_fetch_issue` has no except of its own; it asks `api .../issues/5` then its comments page."""
+    u = _mod("unpark")
+    run = _runner(views={"5": _view(comments=[_park("changes requested")])})
+    source = _mod("sources").GitHubSource(_config(), run=run)
+    data = u._fetch_issue(source, 5)
+    assert data["number"] == 5 and data["state"] == "OPEN" and len(data["comments"]) == 1
+    reads = [c for c in run.calls if c[0] == "api"]
+    assert [c[1] for c in reads] == ["repos/acme/widget/issues/5", "repos/acme/widget/issues/5/comments"]
+    assert run.fallbacks == []
+
+
+def test_fetch_issue_lets_a_ghapierror_reach_the_callers_except():
+    """No except in `_fetch_issue`: the CALLER's arm (brief/resolve) must see the typed error."""
+    u = _mod("unpark")
+    src = _mod("sources")
+    gh_api = src.gh_api
+    run = _runner(fail_on=["issues/5", "issue view 5"])
+    source = src.GitHubSource(_config(), run=run)
+    try:
+        u._fetch_issue(source, 5)
+    except gh_api.GhApiError:
+        pass
+    else:
+        raise AssertionError("expected GhApiError to propagate")
+
+
+def test_fetch_issue_rest_5xx_falls_back_once(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    u = _mod("unpark")
+    inner = _runner(views={"5": _view(comments=[_park("x")])})
+
+    def run(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    data = u._fetch_issue(_mod("sources").GitHubSource(_config(), run=run), 5)
+    assert data["state"] == "OPEN"
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "5"]]
 
 
 def test_cli_resolve_end_to_end(tmp_path, capsys):

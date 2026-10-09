@@ -443,7 +443,23 @@ def test_to_gh_shape_fields():
     assert g.to_gh_shape(_rest_issue(), ["stateReason"]) == {"stateReason": None}
     assert g.to_gh_shape(_rest_issue(body=None), ["body"]) == {"body": ""}
     with pytest.raises(ValueError):
-        g.to_gh_shape(_rest_issue(), ["title"])
+        g.to_gh_shape(_rest_issue(), ["bogus"])
+
+
+def test_to_gh_shape_number_and_title():
+    g = _mod("gh_api")
+    assert g.to_gh_shape(_rest_issue(n=12, title="T"), ["number", "title"]) == {"number": 12, "title": "T"}
+    assert g.to_gh_shape(_rest_issue(title=None), ["title"]) == {"title": ""}
+
+
+def test_to_gh_shape_merged_pr_reads_merged():
+    """REST reports a merged PR as `closed` + pull_request.merged_at; gh says MERGED (#895 2b)."""
+    g = _mod("gh_api")
+    merged = _rest_issue(state="closed", pull_request={"merged_at": "2026-10-09T00:00:00Z"})
+    assert g.to_gh_shape(merged, ["state"]) == {"state": "MERGED"}
+    unmerged = _rest_issue(state="closed", pull_request={"merged_at": None})
+    assert g.to_gh_shape(unmerged, ["state", "stateReason"]) == {"state": "CLOSED", "stateReason": None}
+    assert g.to_gh_shape(_rest_issue(state="closed"), ["state"]) == {"state": "CLOSED"}
 
 
 def test_to_gh_shape_refuses_missing_body():

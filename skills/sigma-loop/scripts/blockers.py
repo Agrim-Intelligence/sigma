@@ -44,7 +44,7 @@ WHAT THIS MODULE WILL NOT DO:
     it cannot be "lost as an orphan", and adopting it would put Sigma to work on somebody
     else's backlog.
 """
-import json, pathlib, sys, importlib.util
+import pathlib, sys, importlib.util
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -169,10 +169,8 @@ def _state(source, number):
     merge (also a PR) does NOT; an ordinary closed ISSUE still does. The one shared implementation
     of this rule, also used by `promote.py` and `auto_unpark.py`'s own `_ref_is_open`."""
     try:
-        raw = source._run(["issue", "view", str(number), *source._repo_args(),
-                           "--json", "labels,assignees,state,stateReason"])
-        data = json.loads(raw or "{}")
-        if not isinstance(data, dict) or "state" not in data:
+        data = source._read_issue(number, ["labels", "assignees", "state", "stateReason"])   # #895: REST first
+        if not data.get("state"):
             return None
         return {"labels": {(l.get("name") or "") for l in (data.get("labels") or [])},
                 "assignees": [(a.get("login") or "") for a in (data.get("assignees") or [])],
