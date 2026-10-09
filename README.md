@@ -8,7 +8,7 @@ Sigma Loop does not report usage data. Its measured egress behavior, opt-in inte
 
 To remove Sigma Loop from a repository, follow the read-only verified [uninstall guide](docs/uninstall.md).
 
-CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. Windows verification remains an on-demand experimental workflow.
+CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. Pull requests and merges to main run only the macOS leg; every leg runs weekly and on demand (Actions > CI > Run workflow). Windows verification remains an on-demand experimental workflow.
 
 **Guardrails + an overnight autopilot for your AI coding agent — one that plans before it codes, has every plan reviewed against your strategy, and gets sharper every run.**
 
