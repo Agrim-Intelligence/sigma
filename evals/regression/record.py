@@ -162,6 +162,37 @@ def _stream(source, present, reason=None, **fields):
 # --------------------------------------------------------------------------- goal and files
 
 
+def _stem_of(name):
+    """Goal stem of a plan/research file name: sibling suffix stripped, numeric `<n>-slug` -> `<n>`."""
+    stem = name[:-3] if name.endswith(".md") else name
+    for suf in SIBLING_SUFFIXES:
+        if stem.endswith(suf) and len(stem) > len(suf):
+            stem = stem[:-len(suf)]
+            break
+    m = re.match(r"^(\d+)-", stem)
+    return m.group(1) if m else stem
+
+
+def _fallback_stems(sdlc):
+    """Goal stems found when no action log names one: journal `goal` fields, plans/ and research/
+    file names, state/verify/*.json. Only STEM_RE-safe stems count."""
+    found = set()
+    events = sdlc / "events"
+    for f in (sorted(events.glob("*.jsonl")) if events.is_dir() else []):
+        for row in _read_jsonl(f)[0]:
+            g = row.get("goal")
+            if isinstance(g, (str, int)) and not isinstance(g, bool):
+                found.add(str(g))
+    for sub in ("plans", "research"):
+        d = sdlc / sub
+        for p in (sorted(d.glob("*.md")) if d.is_dir() else []):
+            found.add(_stem_of(p.name))
+    d = sdlc / "state" / "verify"
+    for p in (sorted(d.glob("*.json")) if d.is_dir() else []):
+        found.add(p.stem)
+    return sorted(s for s in found if STEM_RE.match(s))
+
+
 def find_goal(sdlc, goal):
     if goal:
         if not STEM_RE.match(goal):
@@ -170,9 +201,14 @@ def find_goal(sdlc, goal):
     stems = sorted(p.stem for p in (sdlc / "state" / "log").glob("*.jsonl")) if (sdlc / "state" / "log").is_dir() else []
     if len(stems) == 1:
         return stems[0]
+    if stems:
+        raise Refusal("several goals under state/log (%s); pass --goal <stem>" % ", ".join(stems))
+    stems = _fallback_stems(sdlc)
+    if len(stems) == 1:
+        return stems[0]
     if not stems:
-        raise Refusal("no goal found under state/log; pass --goal <stem>")
-    raise Refusal("several goals under state/log (%s); pass --goal <stem>" % ", ".join(stems))
+        raise Refusal("no goal found under state/log, events, plans, research or state/verify; pass --goal <stem>")
+    raise Refusal("several goals found without an action log (%s); pass --goal <stem>" % ", ".join(stems))
 
 
 def phase_doc(sdlc, sub, stem):
@@ -185,7 +221,10 @@ def phase_doc(sdlc, sub, stem):
     source = "%s/%s.md" % (sub, stem)
     if not base.is_dir():
         return None, "no %s directory" % sub, source
-    hit = _load_scripts("review_context").phase_doc_file(sdlc, stem, sub)
+    try:
+        hit = _load_scripts("review_context").phase_doc_file(sdlc, stem, sub)
+    except Exception as exc:                            # noqa: BLE001 - an absent stream, not a crash
+        return None, "resolver unavailable: %s" % type(exc).__name__, source
     if hit is None:
         return None, "no file matches", source
     if not (stem.isdigit() and hit.name != stem + ".md" and hit.stem.endswith(SIBLING_SUFFIXES)):

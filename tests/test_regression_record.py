@@ -562,3 +562,61 @@ def test_absent_plan_source_is_clean_string(tmp_path):
     proc, rec = _build(tmp_path)
     assert proc.returncode == 0, proc.stderr
     assert rec["streams"]["plan"]["source"] == "plans/874.md"
+
+
+# ----- goal discovery with NO --goal and NO action log (AC-5 on the documented gesture)
+
+
+def test_no_goal_anywhere_refuses_exit_2(tmp_path):
+    # Design: an empty .sdlc has no stem in the log, journal, plans, research or verify, so there is
+    # nothing to build a record for: refuse (exit 2), do not invent a goal.
+    _sdlc(tmp_path)
+    proc, _ = _build(tmp_path, goal=None)
+    assert proc.returncode == 2 and proc.stdout == "" and "--goal" in proc.stderr
+    assert not (tmp_path / "run" / "record.json").exists()
+
+
+def test_journal_only_run_builds_without_goal_flag(tmp_path):
+    sdlc = _sdlc(tmp_path)
+    _journal(sdlc, [{"kind": "phase", "phase": "implement", "event": "end"}])
+    proc, rec = _build(tmp_path, goal=None)
+    assert proc.returncode == 0, proc.stderr
+    assert rec["goal"] == "874"
+    assert rec["streams"]["action_log"]["present"] is False
+    assert rec["streams"]["journal"]["present"] is True
+
+
+def test_plan_only_run_builds_without_goal_flag(tmp_path):
+    sdlc = _sdlc(tmp_path)
+    (sdlc / "plans").mkdir()
+    (sdlc / "plans" / "874-some-slug.md").write_text("plan\n")
+    (sdlc / "research").mkdir()
+    (sdlc / "research" / "874-controls.md").write_text("sibling\n")
+    proc, rec = _build(tmp_path, goal=None)
+    assert proc.returncode == 0, proc.stderr
+    assert rec["goal"] == "874"
+    assert rec["streams"]["action_log"]["present"] is False
+    assert rec["streams"]["plan"]["present"] is True
+    assert rec["streams"]["research"]["present"] is False
+
+
+def test_several_stems_without_log_refuses_exit_2(tmp_path):
+    sdlc = _sdlc(tmp_path)
+    _journal(sdlc, [{"kind": "phase", "phase": "plan", "event": "end"}], goal="874")
+    (sdlc / "plans").mkdir()
+    (sdlc / "plans" / "875.md").write_text("other goal\n")
+    proc, _ = _build(tmp_path, goal=None)
+    assert proc.returncode == 2 and proc.stdout == "" and "--goal" in proc.stderr
+    assert not (tmp_path / "run" / "record.json").exists()
+
+
+def test_phase_doc_resolver_load_failure_is_an_absent_stream(tmp_path, monkeypatch):
+    sdlc = _sdlc(tmp_path)
+    (sdlc / "plans").mkdir()
+    (sdlc / "plans" / "874.md").write_text("plan\n")
+
+    def boom(name):
+        raise ImportError("resolver gone")
+    monkeypatch.setattr(record, "_load_scripts", boom)
+    path, reason, source = record.phase_doc(sdlc, "plans", "874")
+    assert path is None and "resolver unavailable" in reason and source == "plans/874.md"

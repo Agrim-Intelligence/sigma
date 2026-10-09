@@ -54,3 +54,38 @@ documented `record.py build <run_dir>` subprocess.
 | C15 | old pattern-string `source` | `test_absent_plan_source_is_clean_string` | FAIL: source was the `plans/874[-*].md` pattern |
 
 Result: old behaviour `3 failed, 27 passed`; restored `30 passed`.
+
+## Code-review fix 2: goal discovery with no `--goal` and no action log
+
+Blocking finding: `record.py build <run_dir>` (no `--goal`) refused with "no goal found under state/log"
+whenever the action log was absent, contradicting AC-5. Fix: `find_goal` keeps the action-log result when
+it names exactly one goal (several still refuse); with no log stems it falls back to the stems found in
+journal `goal` fields, `plans/` and `research/` file names (sibling suffix stripped, numeric `<n>-slug` to
+`<n>`) and `state/verify/*.json`. Exactly one stem builds; none anywhere, or several, refuse (exit 2).
+`phase_doc` also turns a failed lazy load of `review_context` into an absent stream with reason
+`resolver unavailable: <ExceptionType>`.
+
+Gesture: `python3 -m pytest tests/test_regression_record.py`; the new goal tests run
+`record.py build <run_dir>` as a subprocess with NO `--goal`.
+
+| Test | Against the pre-fix `find_goal`/`phase_doc` |
+|---|---|
+| `test_journal_only_run_builds_without_goal_flag` | RED: exit 2, refused |
+| `test_plan_only_run_builds_without_goal_flag` | RED: exit 2, refused |
+| `test_phase_doc_resolver_load_failure_is_an_absent_stream` | RED: ImportError escaped |
+| `test_no_goal_anywhere_refuses_exit_2` | green before and after: a guard that the fallback does not invent a goal (design: none anywhere refuses) |
+| `test_several_stems_without_log_refuses_exit_2` | green before and after: a guard that the fallback does not pick one of several |
+
+Planned-test red proof re-established for the new file hash (35 collected nodes in
+`tests/test_regression_record.py`), using `red_green.observe` with `record.py` temporarily broken and
+restored byte-for-byte after each run (`cmp` identical):
+- `main()` stubbed to `return 1`: 33 nodes red;
+- `INTERNAL` replaced by an equal copy (identity): `test_internal_kinds_imported_not_copied` red;
+- resolver fallback made to return reason `boom`: `test_phase_doc_resolver_load_failure_is_an_absent_stream` red;
+- `read_commit_order` stubbed absent: `test_commit_order_absent_when_remote_missing` red;
+- `marker_in_store` forced `None`: `test_review_evidence_marker_found_in_store` red;
+- build timestamp field added: `test_two_builds_are_byte_identical` red.
+The stub-main run alone left four nodes without an assertion red (those four failed with TypeError or
+ImportError); the three targeted breaks above closed them. `red_green.refusal` then returned empty for all
+35 nodes, and the restored file observed green (exit 0, 35 nodes). Result: `tests/test_regression_record.py`
+35 passed; `tests/test_write_surface.py` and `tests/test_import_boundary.py` pass (87 passed together).
