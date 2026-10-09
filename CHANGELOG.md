@@ -16,6 +16,12 @@ All notable changes to Sigma are recorded here, newest first.
   reconcile census tick (derived, not measured, against `SIGMA_WATCH_CALL_TIMEOUT` 120 s); doctor latency
   (~45 s per site, ~135 s multi-state, derived from the 15 s timeout); gh's newest-created default order
   (assumed, not re-verified); GraphQL points saved (#1829's figure, not re-measured).
+- **Regression record builder (#874, slice 1 of #870).** `python3 evals/regression/record.py build <run_dir>` writes one
+  `sigma.regression-run/v1` JSON record from a run's plan, research, plan-review verdict, verify state, journal, action log,
+  review evidence, commit order and per-phase tokens. Action-log rows are filtered by the plugin's own `actionlog.INTERNAL_KINDS`
+  (imported, never copied); each stream carries `source` and `present`, and a run directory with absent streams still builds.
+  Phase ends are recorded as `call-existence` evidence only, and the record says so. Nothing is posted or run against a
+  model; read cost is linear in journal and log size and was not benchmarked.
 - **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
   `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
   (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`
