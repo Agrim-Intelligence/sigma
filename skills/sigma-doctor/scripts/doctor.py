@@ -48,15 +48,12 @@ def _failure_text(result):
 
 
 def _real_run(args):
-    # `/sigma-doctor` reaches GitHub Projects only because this repository opted into github
-    # discovery, but an unavailable Projects API must not turn that diagnostic into an
-    # unbounded session start. Reuse init's derived network budget so the two entry points
-    # cannot disagree. Local diagnostics intentionally retain their existing uncapped behavior.
+    # `/sigma-doctor` reaches GitHub only because this repository opted into github discovery,
+    # but an unavailable API must not turn that diagnostic into an unbounded session start.
+    # Reuse init's derived network budget so the two entry points cannot disagree. Local
+    # diagnostics intentionally retain their existing uncapped behavior.
     timeout = None
-    project_graphql = (list(args[:3]) == ["gh", "api", "graphql"] and
-                       any("project" in str(part).lower() and "v2" in str(part).lower()
-                           for part in args[3:]))
-    if list(args[:2]) == ["gh", "project"] or project_graphql:
+    if args and args[0] == "gh":
         try:
             timeout = _load_init_script("preflight").network_timeout()
         except Exception:  # the doctor still needs a finite bound if its sibling cannot load
