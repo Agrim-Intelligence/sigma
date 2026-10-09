@@ -1318,6 +1318,16 @@ class GitHubSource:
         return gh_api.read_issue(self._run, int(str(goal).lstrip("#")), fields, self.repo or None, gql_run=self._run,
                                  sdlc_dir=self.sdlc_dir, comment_limit=comment_limit)
 
+    def _list_issues(self, fields, labels=(), state="open", cap=None, sort="created", direction="desc"):
+        """#895 slice 2c: issues in `gh issue list --json <fields>` shape, REST first through
+        `gh_api.list_issues_gh`, with at most ONE `gh issue list` fallback (rate limit / 5xx / transport,
+        never in a cloud session). Both calls go through `self._run`. Newest first unless `sort` is
+        `updated`; the breaker/log are shared with `_read_issue` (`self.sdlc_dir`). Raises GhApiError."""
+        return gh_api.list_issues_gh(self._run, fields, repo=self.repo or None, labels=labels, state=state,
+                                     cap=self._BOARD_ITEM_LIMIT if cap is None else cap, sort=sort,
+                                     direction=direction, gql_run=self._run, fetch=fetch_issues_rest,
+                                     sdlc_dir=self.sdlc_dir)
+
     # --- #1391 step 1: the atomic-ish label swap primitive ---------------------------------------
     # Every lifecycle transition today spends 3-5 SEPARATE `gh issue edit` calls on one issue's label
     # set, each in its own `try/except: pass` (see `_offboard` below). Measured: that is a 2^3 lattice
