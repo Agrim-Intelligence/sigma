@@ -4,6 +4,14 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
+  shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
+  a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);
+  silent, vague or contradictory answers become `open_` questions; a repository source file is
+  refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
+  fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
+  so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+
 ## 1.0.5 — 2026-10-09 — REST-first issue reads, a verify fix, and faster CI
 
 - **CI runs the suite in parallel.** The one leg that runs on a PR (macOS 3.12) installs `pytest-xdist` and runs `pytest tests/ -n auto`: 21 min measured on a runner (PR #925) against 47-64 min serial. `workflow_dispatch` takes a `full` input (default true); `full=false` runs only the PR leg on any ref.

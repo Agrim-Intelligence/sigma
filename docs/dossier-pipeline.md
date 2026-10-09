@@ -271,6 +271,33 @@ the way `unpark.py` does.
 
 ---
 
+### 4f. Stage 0: the PRD door (`sigma-prd-intake`)
+
+A PRD file of any shape (no headings, no EARS, no ids) enters here instead of the interview. The
+scope-to-goals compile is not the route for a PRD: it produces slices that skip the Business tier,
+so a PRD takes this door and arrives as Dossiers. The model drafts, per business outcome, answers
+over the same fixed bank, each with a verbatim PRD quote; `skills/sigma-prd-intake/scripts/intake.py`
+is the deterministic half:
+
+- **Cite or refuse.** Every non-empty answer needs a quote of at least 20 characters that is a
+  substring of the PRD (whitespace-normalised). The check proves the quote EXISTS, not that it
+  SUPPORTS the answer; a human reads the printed `PRD section -> Dossier title -> answer ids` table.
+- **Gaps become `open_`.** A silent, vague or contradicted answer is not written as a bank answer:
+  the slot holds a visible placeholder and a paired `open_<id>` entry (with its question and the
+  quote) is recorded, which Stage 1 carries into Doubts. That carry-over is prose, not code (D-5).
+- **No code reading.** A repository source file is refused as the PRD (`REFUSED [repo-source]`);
+  this constrains the adapter, not the model. The guard roots at the repo of the cwd, of
+  the state-directory flag, of the PRD path and of the plugin itself, and any `--prd` must be a markdown or
+  plain-text file (`prd-not-text-doc`). Only bank ids and `followup_*` count as cited answers.
+- **Known limit: duplicate on a crash.** `file` creates each ticket before `.filed.json` records it
+  (the umbrella too); a crash in that gap refiles a duplicate on resume. The lever is
+  `intake.py file --plan P --status` (lists recorded numbers); a human closes the duplicate.
+- **Provenance.** Each Dossier carries a `### Source` block (path, sha256, section, per-answer
+  cites) after the `dossier-qa` fence, then one `epic`-labelled umbrella (never `sdlc:goal`) lists
+  every Dossier. Design runs on the output unchanged; `sdlc:designed` stays goal-review's alone.
+
+Deferred, stated: stdin and issue-number PRDs, and the fast lane for clean PRDs.
+
 ## 5. Stage 1 — the design pass (`sigma-goal-design`)
 
 **In:** an approved Dossier, or a goal the retrofit gate flagged. **Out:** `.sdlc/design/<n>.md`,

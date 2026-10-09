@@ -259,6 +259,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/worktree_prune.py | _atomic_write | fs-write | 2 | the sweep's own state only (state/worktree-prune/<goal>.json journal and state/worktree-prune-seen.json); tmp file then os.replace, under the sweep flock (#465) | low |
 | skills/sigma-loop/scripts/worktree_prune.py | _drop_journal | fs-remove | 1 | unlinks only state/worktree-prune/<goal>.json, the sweep's own journal, under the sweep flock; missing_ok (#465) | low |
 | skills/sigma-loop/scripts/worktree_prune.py | _heal | fs-rmtree | 1 | debris of the sweep's OWN interrupted removal only: a journal exists whose record, branch, path and HEAD still match, the path is exactly <project root>/<worktree_dir>/<goal> and not a symlink, git no longer registers it, and every remaining entry is regenerable or byte-identical to the blob at that path in the journalled HEAD (read in the main repo; a foreign file keeps it); re-checked immediately before the delete; under the sweep flock (#465) | high |
+| skills/sigma-prd-intake/scripts/intake.py | _write_json | fs-remove | 1 | ungated | high |
+| skills/sigma-prd-intake/scripts/intake.py | _write_json | fs-write | 2 | ungated | medium |
 | skills/sigma-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
 | skills/sigma-rebase/scripts/conflict_walk.py | _resolve_to_stage | git-destructive | 1 | ungated | high |
 | skills/sigma-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
