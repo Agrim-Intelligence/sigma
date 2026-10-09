@@ -2,6 +2,8 @@ import importlib.util
 import json
 import pathlib
 
+import gqlfake
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
@@ -53,12 +55,15 @@ def _runner(by_goal):
     comments` call (args[2]) -- comment_watch.py polls several issues in one tick, each needing its
     own canned answer. A value that is an Exception instance is raised instead of returned, so a
     single-issue `gh` failure can be simulated without affecting the others."""
-    def run(args):
-        goal = args[2]
+    def view(goal, fields):
         payload = by_goal.get(goal, [])
         if isinstance(payload, Exception):
             raise payload
-        return json.dumps({"comments": payload})
+        return {"comments": payload}
+
+    def run(args):
+        rest = gqlfake.rest_issue(args, view)  # REST-first read (#895); `issue view` is the fallback
+        return rest if rest is not None else json.dumps(view(args[2], None))
     return run
 
 

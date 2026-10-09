@@ -106,3 +106,67 @@ def labels_in(args):
         return []
     by_id = {v: k for k, v in _GQL_LABEL_IDS.items()}
     return [by_id[i] for i in re.findall(r'"(L_\d+)"', doc) if i in by_id]
+
+
+# ---------------------------------------------------------------- #895: REST-first issue reads
+# `gh_api.read_issue` (sources.py's issue reads since #895) asks REST first:
+# `api repos/<o>/<r>/issues/<n> --method GET`, then `.../comments` pages. A fake written for the old
+# `gh issue view --json <fields>` argv answers it here from the SAME gh-shape dict it already builds,
+# converted to REST shape (state lower, author -> user, comments -> count + pages). The fake's own
+# `issue view` branch stays: it is now the one-call fallback path.
+
+ALL_FIELDS = ("state", "stateReason", "author", "closedAt", "body", "labels", "assignees", "comments")
+_REST_ISSUE_RE = re.compile(r"repos/[^/]+/[^/]+/issues/(\d+)(/comments)?")
+
+
+def rest_issue_target(args):
+    """-> (number str, is_comments_page) for gh_api.read_issue's REST GET argv, else None."""
+    args = [str(a) for a in args]
+    if len(args) < 4 or args[0] != "api" or args[2:4] != ["--method", "GET"]:
+        return None
+    m = _REST_ISSUE_RE.fullmatch(args[1])
+    return (m.group(1), bool(m.group(2))) if m else None
+
+
+def is_issue_read(args):
+    """One issue READ on either path: `issue view` (fallback) or the REST issue GET (not a page)."""
+    t = rest_issue_target(args)
+    return (len(args) >= 2 and list(args[:2]) == ["issue", "view"]) or (t is not None and not t[1])
+
+
+def _rest_user(author):
+    login = (author or {}).get("login") if isinstance(author, dict) else None
+    if login is None:
+        return None
+    if login.startswith("app/"):
+        return {"login": login[4:] + "[bot]", "type": "Bot"}
+    return {"login": login, "type": "User"}
+
+
+def _rest_comment(c, i):
+    out = {"id": None, "node_id": c.get("id"), "user": _rest_user(c.get("author")), "body": c.get("body"),
+           "created_at": c.get("createdAt")}
+    if "authorAssociation" in c:
+        out["author_association"] = c["authorAssociation"]
+    return out
+
+
+def rest_issue(args, view):
+    """Answer a REST issue GET / comments page from `view(number, fields)` -> the gh-shape dict (or
+    JSON string) the fake returns for `issue view`. None when `args` is not such a read. A gh dict
+    with no `body` key answers `body: null` (an empty body), never an absent key."""
+    t = rest_issue_target(args)
+    if t is None:
+        return None
+    full = view(t[0], list(ALL_FIELDS))
+    full = json.loads(full) if isinstance(full, str) else (full or {})
+    comments = [c if isinstance(c, dict) else {} for c in (full.get("comments") or [])]
+    if t[1]:
+        page = int(next(a for a in args if str(a).startswith("page="))[5:])
+        return json.dumps([_rest_comment(c, i) for i, c in enumerate(comments)][(page - 1) * 100:page * 100])
+    return json.dumps({
+        "number": int(t[0]), "state": str(full.get("state") or "OPEN").lower(),
+        "state_reason": (full.get("stateReason") or "").lower() or None,
+        "user": _rest_user(full.get("author")), "body": full.get("body"),
+        "labels": full.get("labels") or [], "assignees": full.get("assignees") or [],
+        "closed_at": full.get("closedAt"), "comments": len(comments)})

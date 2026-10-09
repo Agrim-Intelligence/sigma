@@ -385,3 +385,33 @@ def test_concurrent_first_use_never_fails_the_state_lock(tmp_path):
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert not errors, errors
+
+
+@pytest.mark.parametrize("target", ["gh-rest-breaker.json", "gh-fallback.json", "gh-rest-breaker.json.tmp",
+                                    "gh-fallback.json.tmp", "state"])
+def test_gh_breaker_and_fallback_log_refuse_symlinks(tmp_path, capsys, target):
+    """#895 x #708: gh_api.read_issue's breaker and fallback log (and their .tmp names, and the state
+    dir itself) never write through a committed symlink; the read still returns via the fallback."""
+    sdlc, victim = _symlink_setup(tmp_path)
+    outside = tmp_path.parent / (tmp_path.name + "-outdir")
+    outside.mkdir()
+    if target == "state":
+        import shutil
+        shutil.rmtree(sdlc / "state")
+        (sdlc / "state").symlink_to(outside)
+    else:
+        (sdlc / "state" / target).symlink_to(victim)
+    g = _mod("gh_api")
+
+    def run(args):
+        if args[0] == "issue":
+            return '{"state": "OPEN"}'
+        exc = RuntimeError("gh api failed")
+        exc.hint = "gh: API rate limit exceeded (HTTP 429)"
+        raise exc
+
+    for i in range(4):
+        assert g.read_issue(run, 7, ["state"], "o/r", env={}, sdlc_dir=sdlc, now=1.0 + i) == {"state": "OPEN"}
+    assert victim.read_text() == "PRECIOUS"
+    assert list(outside.iterdir()) == []
+    assert "REFUSED" in capsys.readouterr().err

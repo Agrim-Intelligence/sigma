@@ -62,6 +62,11 @@ def _runner(labels=(), comments=(), absent=()):
         if gql is not None:
             return gql
         calls.append(list(args))
+        rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: sources' issue reads are REST first
+            "comments": [{"body": c} for c in comments], "labels": [{"name": n} for n in sorted(live)],
+            "body": ""})
+        if rest is not None:
+            return rest
         if len(args) >= 2 and args[0] == "issue" and args[1] == "view":
             fields = (args[args.index("--json") + 1] if "--json" in args else "").split(",")
             out = {}

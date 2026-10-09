@@ -177,3 +177,4 @@ def _hermetic_graphql_capability_env(monkeypatch):
     capability row to (or otherwise perturb) unrelated tests. Tests that want the signal set it."""
     monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
     monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    monkeypatch.delenv("SIGMA_GH_BREAKER_COOLDOWN", raising=False)   # #895: gh_api.read_issue's breaker

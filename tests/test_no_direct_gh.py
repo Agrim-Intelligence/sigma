@@ -42,6 +42,8 @@ MEASURED 2026-10-09 (#801 slice 1), via `scan()` over the worktree: TOTAL 101 si
 skills/ + hooks/, 21 of which have sites; measured once on one machine, not a ceiling guarantee).
 The dossier's 95 was a grep-derived FLOOR, not a target; the ratchet counts 101.
 No `.sh` file under skills/ or hooks/ mentions `gh` at all (grep, 9 files).
+MEASURED 2026-10-09 (#895 slice 2a), via the same `scan()`: sources.py 35 -> 28 (its 7 issue reads
+moved to `gh_api.read_issue`, whose fallback argv is built inside the EXEMPT helper), TOTAL 94.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -90,7 +92,7 @@ BASELINE = {
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/promote.py": 2,
     "skills/sigma-loop/scripts/reconcile.py": 4,
-    "skills/sigma-loop/scripts/sources.py": 35,
+    "skills/sigma-loop/scripts/sources.py": 28,
     "skills/sigma-loop/scripts/triage.py": 6,
     "skills/sigma-loop/scripts/unpark.py": 3,
     "skills/sigma-loop/scripts/work.py": 14,

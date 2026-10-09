@@ -1,6 +1,7 @@
 """Pre-work backlog cross-check engine (backlog_check.py, slice 0.9.21): LLM-free TF-IDF retrieval +
 explicit `#N` graph + ledger signals over the board mirror / local goals. Hermetic, deterministic, $0."""
 import hashlib, json, pathlib, importlib.util, tempfile, calendar, time, subprocess
+import gqlfake
 
 from skill_corpus import skill_corpus
 
@@ -235,6 +236,9 @@ def _comment_runner(comments_by_issue):
 
     def run(args):
         calls.append(list(args))
+        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": comments_by_issue.get(n, [])})   # #895
+        if rest is not None:
+            return rest
         n = args[2] if len(args) > 2 else None
         return json.dumps({"comments": comments_by_issue.get(n, [])})
 

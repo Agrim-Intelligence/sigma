@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`sources.py` issue reads go REST first (#895, slice 2a; refs #801).** The seven reads
+  (`fetch_comments`, `release`, `complete`, `fetch_author`, `fetch_body_labels`,
+  `fetch_comments_strict`, `append_to_body`) now call `gh_api.read_issue`: a REST GET, then at most one
+  `gh issue view` fallback on rate limit, 5xx or transport errors, never on client errors, a proxy
+  block, or in a cloud session. A breaker (`.sdlc/state/gh-rest-breaker.json`, 3 failures, 300 s
+  cool-down via `SIGMA_GH_BREAKER_COOLDOWN`) and a 200-entry fallback log (`gh-fallback.json`, no error
+  text) are written only with an `sdlc_dir` and are #708 symlink-vetted. The strict comment read now
+  reads every page instead of one `gh` call. The direct-`gh` ratchet drops from 101 to 94 sites
+  (sources.py 35 -> 28, measured by `scan()`). Verified with injected-runner tests only. Unmeasured:
+  real 429/403/5xx and transport stderr wording (inferred), any live cloud run, and live request
+  cost. Measured once on smanwatkarcodes/skills-introduction-to-git#1 on 2026-10-09: issue author gh
+  `app/github-actions` vs REST `github-actions[bot]` (mapped); comment author gh `github-actions` vs
+  REST `github-actions[bot]` (not mapped yet); REST comment `node_id` equals gh's comment `id`.
+
 ## 1.0.4 — 2026-10-09 — GitHub GraphQL capability check (cloud sessions, slice 1)
 
 - **GitHub GraphQL capability check, detection and reporting only (#801, slice 1).** New

@@ -77,6 +77,16 @@ def _gh(issues, calls=None):
         if gql is not None:
             return gql
         calls.append(args)
+
+        def view(n, _fields):
+            for i in issues:
+                if str(i["number"]) == str(n):
+                    return {"state": "OPEN", "body": i.get("body") or "", "labels": i["labels"]}
+            return {}
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
         is_rest = _is_rest_issues_call(args)
         verb = "list" if is_rest else (args[1] if len(args) > 1 else args[0])
         if verb == "list":
@@ -104,11 +114,7 @@ def _gh(issues, calls=None):
                     if all(w in [l["name"] for l in i["labels"]] for w in wanted)]
             return json.dumps([{k: v for k, v in i.items() if k in fields} for i in hits])
         if verb == "view":
-            for i in issues:
-                if str(i["number"]) == str(args[2]):
-                    return json.dumps({"state": "OPEN", "body": i.get("body") or "",
-                                       "labels": i["labels"]})
-            return "{}"
+            return json.dumps(view(args[2], None))
         return ""
 
     run.calls = calls
@@ -236,7 +242,7 @@ def test_a_member_whose_declaration_cannot_be_re_read_is_not_claimed():
         inner = _gh(issues, calls)
 
         def run(args):
-            if list(args)[0:2] == ["issue", "view"]:
+            if gqlfake.is_issue_read(args):              # #895: REST-first read and its fallback
                 raise RuntimeError("HTTP 502 (fake)")
             return inner(args)
         return run
