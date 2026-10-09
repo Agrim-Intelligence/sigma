@@ -72,6 +72,9 @@ jobs:
       - name: quality gate (Tier-1 behavioral drift vs baseline)
         if: ${{ env.FULL == 'true' }}
         run: python3 evals/run.py
+      - name: golden tasks verify
+        if: ${{ env.FULL == 'true' }}
+        run: python3 evals/golden/verify.py
       - name: decision gate
         if: ${{ env.FULL == 'true' }}
         run: |

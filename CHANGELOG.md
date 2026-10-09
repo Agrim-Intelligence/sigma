@@ -15,6 +15,8 @@ All notable changes to Sigma are recorded here, newest first.
   cloud session, bot-author spelling beyond one public sample, call counts at scale, `unpark` latency on a
   comment-heavy issue, and an old closed issue with a null `state_reason`.
 
+- **`python3 evals/golden/verify.py` (#881, slice 1 of #873).** Checks every golden task under `evals/golden/` (hashes, origin, hidden tests red on the start tree and green on the reference, reference diff against `allowed_paths.json`, optional naive patch). No tasks ship yet: with none it exits 0 and says `nothing verified`. CI runs it after the quality gate.
+
 ## 1.0.5 — 2026-10-09 — REST-first issue reads, a verify fix, and faster CI
 
 - **CI runs the suite in parallel.** The one leg that runs on a PR (macOS 3.12) installs `pytest-xdist` and runs `pytest tests/ -n auto`: 21 min measured on a runner (PR #925) against 47-64 min serial. `workflow_dispatch` takes a `full` input (default true); `full=false` runs only the PR leg on any ref.
