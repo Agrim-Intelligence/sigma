@@ -2708,7 +2708,7 @@ def test_r4_review_decision_read_argv_is_unchanged(tmp_path):
     d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
     run = _runner(_review(decision="APPROVED"))
     assert work.review_gate(d, _APPROVAL, g, run=run) == (True, "")
-    assert "gh pr view 7 --json reviewDecision,latestReviews" in run.calls
+    assert "gh pr view 7 --json reviewDecision" in run.calls
 
 
 def test_r4_approval_parks_when_the_review_decision_read_is_blocked(tmp_path):
@@ -4765,29 +4765,32 @@ def test_cli_root_works_with_the_feature_off(tmp_path, capsys):
 
 
 def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_authors=(), pr_author=None,
-            associations=(), pr_get=True):
+            associations=(), pr_get=True, reviews=None):
     """Handlers for the review gate: the marker scan (#895 4a-1: now the REST `issues/7/comments` page
     plus the REST `pulls/7` read for the PR author, both via `_comments`), the `--json
-    reviewDecision,latestReviews` read, and the GraphQL thread count. Ordered so the specific
+    reviewDecision` read (#895 4a-2 PR B: the CHANGES_REQUESTED half is the REST `pulls/7/reviews` page, built
+    from `changes_by` logins or from raw `reviews` `(login, STATE)` tuples), and the GraphQL thread count. Ordered so the specific
     `reviewDecision` match wins over a generic `pr view` handler that also matches that line. `comment_authors` pairs positionally with `comments` (missing entries ->
     None, same as a real comment with no readable author); `pr_author` is the PR's own login (#821:
     unset in every pre-existing caller, so `same_author` computes False there — None != None is
     False by design in `_comment_directive` — leaving their behavior byte-identical)."""
-    reviews = json.dumps({"reviewDecision": decision,
-                          "latestReviews": [{"state": "CHANGES_REQUESTED", "author": {"login": u}}
-                                            for u in changes_by]})
+    decision_json = json.dumps({"reviewDecision": decision})
+    review_page = prfake.rest_reviews(reviews if reviews is not None
+                                      else [(u, "CHANGES_REQUESTED") for u in changes_by])
     threads = json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {
         "nodes": [{"isResolved": False}] * unresolved}}}}})
     authors = list(comment_authors) + [None] * (len(comments) - len(comment_authors))
     assoc = list(associations) + ["OWNER"] * (len(comments) - len(associations))   # #635: trusted unless a test says otherwise
     rows = [{"body": b, "author": {"login": a}, "authorAssociation": x}
             for b, a, x in zip(comments, authors, assoc)]
-    return _comments(rows, pr_author, pr_get) + [("reviewDecision", reviews),
+    return _comments(rows, pr_author, pr_get) + [(REVIEWS_GET, review_page), ("reviewDecision", decision_json),
                                          ("nameWithOwner", "acme/app"), ("graphql", threads)]
 
 
 #: #895 4a-1: the substring of gh_api's REST comment-page read for PR 7.
 COMMENTS_GET = prfake.comments_get(7)
+#: #895 4a-2 PR B: ... and of its REST review-page read (no overlap with PR_GET `pulls/7 --method GET`).
+REVIEWS_GET = prfake.reviews_get(7)
 
 
 def _comments(rows, pr_author=None, pr_get=True):
@@ -4897,18 +4900,90 @@ def test_review_gate_approval_mode_fails_closed_on_an_unreadable_decision(tmp_pa
     failed. Approval is a positive requirement, so an unknown decision parks."""
     cfg = {"work": {"enabled": True, "require_review": "approval"}}
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner(_comments([], "bot") + [
+    run = _runner(_comments([], "bot") + [(REVIEWS_GET, "[]"),
                    ("reviewDecision", RuntimeError("gh boom"))])
     ok, why = work.review_gate(d, cfg, g, run=run)
     assert ok is False and "review decision" in why
 
 
-def test_review_gate_fails_open_on_a_read_error(tmp_path):
+def test_review_gate_changes_mode_goes_on_to_the_threads_when_only_the_decision_is_unreadable(tmp_path):
+    """#895 4a-2 PR B, behaviour change 2: the unreadable `reviewDecision` (GraphQL) no longer returns pass in
+    `changes` mode and skips `_unresolved_threads`; the REST review check already ran, the thread check still
+    runs (and fails open internally). Was `..._fails_open_on_a_read_error` (returned (True, "") untouched)."""
     cfg = {"work": {"enabled": True, "require_review": "changes"}}
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner(_comments([], "bot") + [
-                   ("reviewDecision", RuntimeError("gh boom"))])         # #635: comments readable, decision not
-    assert work.review_gate(d, cfg, g, run=run) == (True, "")           # other gates still hold
+    boom = [("reviewDecision", RuntimeError("gh boom"))]
+    assert work.review_gate(d, cfg, g, run=_runner(_comments([], "bot") + [(REVIEWS_GET, "[]")] + boom)) == (True, "")
+    run = _runner(_comments([], "bot") + [(REVIEWS_GET, "[]")] + boom
+                  + [("nameWithOwner", "acme/app"), ("graphql", json.dumps({"data": {"repository": {
+                      "pullRequest": {"reviewThreads": {"nodes": [{"isResolved": False}] * 2}}}}}))])
+    ok, why = work.review_gate(d, cfg, g, run=run)
+    assert ok is False and "2 unresolved review thread" in why
+
+
+@pytest.mark.parametrize("mode", ["changes", "approval"])
+def test_review_gate_fails_closed_on_an_unreadable_reviews_read_in_every_mode(tmp_path, mode):
+    """#895 4a-2 PR B, behaviour change 1: an unreadable REST review list (a malformed reply here, so no
+    fallback) parks in `changes` mode too -- it used to fail open on the combined read."""
+    cfg = {"work": {"enabled": True, "require_review": mode}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    for bad in (RuntimeError("gh boom"), "not json", '{"message": "x"}'):
+        run = _runner(_comments([], "bot") + [(REVIEWS_GET, bad)] + _review(decision="APPROVED"))
+        ok, why = work.review_gate(d, cfg, g, run=run)
+        assert ok is False and "could not read PR #7's reviews" in why, (bad, why)
+
+
+def test_review_gate_cr_then_a_later_comment_from_the_same_reviewer_still_blocks(tmp_path):
+    """Behaviour change 3: stricter than `latestReviews`, which keeps only the reviewer's last review."""
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    history = [("Bo", "CHANGES_REQUESTED"), ("bo", "COMMENTED")]
+    ok, why = work.review_gate(d, cfg, g, run=_runner(_review(reviews=history)))
+    assert ok is False and "changes requested by Bo" in why
+    history = [("bo", "CHANGES_REQUESTED"), ("bo", "APPROVED")]
+    assert work.review_gate(d, cfg, g, run=_runner(_review(reviews=history))) == (True, "")
+
+
+def test_review_gate_decision_alone_can_still_request_changes(tmp_path):
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    ok, why = work.review_gate(d, cfg, g, run=_runner(_review(decision="CHANGES_REQUESTED")))
+    assert ok is False and "changes requested by a reviewer" in why
+
+
+def test_review_gate_reviews_fall_back_to_gh_pr_view_reviews_once(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False); monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    fb = prfake.gh_reviews([("bo", "CHANGES_REQUESTED"), ("bo", "COMMENTED")])
+    run = _runner(_comments([], "bot") + [(REVIEWS_GET, RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                                          ("--json reviews", fb)] + _review(decision=None))
+    ok, why = work.review_gate(d, cfg, g, run=run)
+    assert ok is False and "changes requested by bo" in why
+    assert run.calls.count("gh pr view 7 --json reviews") == 1
+
+
+@pytest.mark.parametrize("env", ["CLAUDE_CODE_REMOTE", "SIGMA_GH_GRAPHQL"])
+def test_review_gate_approval_parks_without_graphql_and_never_makes_the_decision_call(tmp_path, monkeypatch, env):
+    """KNOWN LIMITATION, documented: approval mode with GraphQL unavailable parks even with a `sigma:approve`
+    comment (as before: the decision read failed). The residual `reviewDecision` call is not even attempted."""
+    monkeypatch.setenv(env, "true" if env == "CLAUDE_CODE_REMOTE" else "off")
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision="APPROVED", comments=["sigma:approve"], comment_authors=["x"]))
+    ok, why = work.review_gate(d, _APPROVAL, g, run=run)
+    assert ok is False and "review decision" in why and "GraphQL" in why
+    assert not any("reviewDecision" in c for c in run.calls)
+
+
+def test_review_gate_changes_mode_in_cloud_still_reads_reviews_over_rest_and_passes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    run = _runner(_review(decision=None))
+    assert work.review_gate(d, cfg, g, run=run) == (True, "")
+    assert any("pulls/7/reviews" in c for c in run.calls) and not any("reviewDecision" in c for c in run.calls)
+    run = _runner(_review(changes_by=["bo"]))
+    assert work.review_gate(d, cfg, g, run=run)[0] is False
 
 
 def test_merge_parks_when_a_review_requests_changes(tmp_path):
@@ -4999,7 +5074,7 @@ def test_every_non_trusted_association_is_ignored(assoc, tmp_path):
 
 def test_a_marker_comment_with_no_association_field_at_all_parks(tmp_path):
     d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
-    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "x"}}], "bot") + [("reviewDecision", json.dumps({"reviewDecision": None, "latestReviews": []})),
+    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "x"}}], "bot") + [(REVIEWS_GET, "[]"), ("reviewDecision", json.dumps({"reviewDecision": None})),
                    ("nameWithOwner", "a/b"), ("graphql", "{}")])
     ok, why = work.review_gate(d, _APPROVAL, g, run=run)
     assert ok is False and "could not read" in why
@@ -8644,6 +8719,31 @@ def test_a_bare_emit_token_file_is_refused_without_the_core_naming_any_product()
 # at all (a "Design #N" meta-issue, and the Dossier local-only route).
 
 
+@pytest.fixture
+def design_fallback(monkeypatch, tmp_path):
+    """#895 4a-2 PR B: the legacy design-PR tests answer `gh pr list` from a fake. The design read is REST first, so
+    this drives it down its ONE fallback: every `gh api` call raises a 502 (server class, falls back), the
+    `gh pr list` argv is answered by the fake, and the fallback validates the same row shapes. The cwd moves to
+    `tmp_path` because these tests pass the literal ".sdlc", and a fallback-class failure writes its breaker and
+    log under `<sdlc_dir>/state/` -- never into the repo checkout (see the isolation control below)."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    real = work._pr_api_run
+
+    def adapt(run, cwd):
+        inner = real(run, cwd)
+
+        def r(args):
+            if args[0] == "api":
+                err = RuntimeError("gh: Server Error (HTTP 502)")
+                err.hint = "gh: Server Error (HTTP 502)"
+                raise err
+            return inner(args)
+        return r
+    monkeypatch.setattr(work, "_pr_api_run", adapt)
+
+
 def _design_pr_spy(calls, replies=None):
     """A `run` stand-in that records every call and answers `gh pr list` from a queue of canned
     JSON replies (default: one empty list, i.e. "no open PR"). Non-`gh pr list` calls (the actual
@@ -8677,6 +8777,8 @@ def _valid_design_row(**overrides):
     row = {
         "number": 42,
         "url": "https://x/42",
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
         "isCrossRepository": False,
         "headRefName": "sdlc/9",
         "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
@@ -8689,6 +8791,7 @@ def _valid_design_row(**overrides):
     return row
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_merges_an_open_mergeable_pr():
     lp = work
     calls = []
@@ -8699,6 +8802,7 @@ def test_merge_design_merges_an_open_mergeable_pr():
     assert merge_calls and merge_calls[0][1] == ["gh", "pr", "merge", "42", "--squash"]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_reports_conflicts_without_attempting_a_merge():
     calls = []
     pr = json.dumps([_valid_design_row(mergeable="CONFLICTING", mergeStateStatus="DIRTY")])
@@ -8707,6 +8811,7 @@ def test_merge_design_reports_conflicts_without_attempting_a_merge():
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_and_close_design_never_echo_a_raw_gh_exception_into_their_result():
     """The self-caught phantom-blocker risk (confirm.md:112-113): a `gh` failure whose own message
     contains a trigger word + `#N` must never appear verbatim in the returned string, since that
@@ -8724,13 +8829,15 @@ def test_merge_design_and_close_design_never_echo_a_raw_gh_exception_into_their_
     assert poison not in c and c.startswith("could not close PR #42")
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_is_a_clean_noop_with_no_open_pr():
     calls = []
     result = work.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls))   # default: "[]"
     assert result == "no open design PR found -- nothing to land"
-    assert len(calls) == 1                                   # only the lookup, no mutation
+    assert [c[1][:3] for c in calls if c[1][0] == "gh"] == [["gh", "pr", "list"]]   # only the lookup, no mutation
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_uses_the_configured_merge_method():
     calls = []
     pr = json.dumps([_valid_design_row(number=5, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
@@ -8740,6 +8847,7 @@ def test_merge_design_uses_the_configured_merge_method():
     assert merge_calls[0][1] == ["gh", "pr", "merge", "5", "--rebase"]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_derives_the_branch_from_configured_branch_prefix():
     calls = []
     cfg = {"work": {"enabled": True, "branch_prefix": "goal/"}}
@@ -8749,22 +8857,26 @@ def test_merge_design_derives_the_branch_from_configured_branch_prefix():
     assert list_calls[0][1][list_calls[0][1].index("--head") + 1] == "goal/9"
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_never_raises_on_an_unreadable_gh_reply():
     def _raise(cwd, argv):
         raise RuntimeError("network is down")
     assert "could not" in work.merge_design(".sdlc", ON, "9", run=_raise)
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_treats_blank_stdout_as_an_error_not_an_empty_list():
     """Round 2 finding 1's own repro: blank stdout on an exit-0 `gh pr list` reply (the #78
     proxy-injection shape `_run`'s own docstring documents, work.py:293-311) must be reported as
-    unparseable, never silently coerced into 'confirmed no PR'."""
+    unparseable, never silently coerced into 'confirmed no PR'. (#895 PR B: the refusal now happens inside
+    `gh_api.open_prs_for_head_gh`'s fallback, so the caller sees the generic could-not-look-up phrase.)"""
     def _blank(cwd, argv):
         return ""
     pr, err = work._find_design_pr(".sdlc", ON, "9", _blank)
-    assert pr is None and err and "could not parse" in err
+    assert pr is None and err and "could not look up" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_on_more_than_one_open_pr_rather_than_guessing():
     two = json.dumps([_valid_design_row(number=1), _valid_design_row(number=2)])
     def _two(cwd, argv):
@@ -8784,6 +8896,7 @@ def test_find_design_pr_refuses_on_more_than_one_open_pr_rather_than_guessing():
     assert "guess" in c and not [c2 for c2 in calls if c2[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_closes_an_open_pr_with_the_given_comment():
     calls = []
     pr = json.dumps([_valid_design_row(number=7)])
@@ -8794,19 +8907,22 @@ def test_close_design_closes_an_open_pr_with_the_given_comment():
     assert close_calls[0][1] == ["gh", "pr", "close", "7", "--comment", "goal-review: REJECTED"]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_is_a_clean_noop_with_no_open_pr():
     calls = []
     result = work.close_design(".sdlc", ON, "9", run=_design_pr_spy(calls))
     assert result == "no open design PR found -- nothing to close"
-    assert len(calls) == 1
+    assert [c[1][:3] for c in calls if c[1][0] == "gh"] == [["gh", "pr", "list"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_never_raises_on_an_unreadable_gh_reply():
     def _raise(cwd, argv):
         raise RuntimeError("network is down")
     assert "could not" in work.close_design(".sdlc", ON, "9", run=_raise)
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_runs_regardless_of_work_enabled():
     """Closing is the risk-reducing direction -- round 1 finding 6's fix, preserved through the
     round-2 redesign."""
@@ -8817,6 +8933,7 @@ def test_close_design_runs_regardless_of_work_enabled():
     assert result == "closed PR #7"
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_refuses_when_work_is_disabled():
     """The DELIBERATE asymmetry (round 2 finding 3): merging is gated behind `work.enabled`,
     closing is not. Must refuse cleanly, never silently, and never attempt a `gh` call at all."""
@@ -8827,6 +8944,7 @@ def test_merge_design_refuses_when_work_is_disabled():
     assert calls == []                                        # not even the lookup ran
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_cli_dispatches_outside_the_generic_commands_gate(tmp_path, capsys,
                                                                         monkeypatch):
     d = _sdlc(tmp_path, DESIGN_ALWAYS)
@@ -8838,6 +8956,7 @@ def test_merge_design_cli_dispatches_outside_the_generic_commands_gate(tmp_path,
     assert "merged PR #3" in capsys.readouterr().out
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_cli_dispatches_with_an_optional_comment_flag(tmp_path, capsys, monkeypatch):
     d = _sdlc(tmp_path, ON)
     pr = json.dumps([_valid_design_row(number=3)])
@@ -8850,6 +8969,7 @@ def test_close_design_cli_dispatches_with_an_optional_comment_flag(tmp_path, cap
     assert "--comment" in close_calls[0][1]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_retries_once_on_a_transient_gh_failure():
     """`_retry_gh`'s one-retry contract (round 2 finding 2)."""
     attempts = {"n": 0}
@@ -8866,6 +8986,7 @@ def test_merge_design_retries_once_on_a_transient_gh_failure():
     assert attempts["n"] == 2                                 # exactly one retry, not more
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_gives_up_after_two_failures():
     pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     def _always_fails(cwd, argv):
@@ -8876,6 +8997,7 @@ def test_merge_design_gives_up_after_two_failures():
     assert "could not merge" in result
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_reports_success_when_a_retry_error_actually_landed():
     """Code review, #2482: `gh pr merge` is NOT idempotent -- if the first attempt landed on
     GitHub's own side but the response never reached this process, `_retry_gh`'s second attempt
@@ -8893,6 +9015,7 @@ def test_merge_design_reports_success_when_a_retry_error_actually_landed():
     assert result == "merged PR #8 (confirmed on re-check after a retry error)"
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_still_reports_failure_when_the_retry_error_was_a_genuine_failure():
     """The other half: if the re-check STILL finds the PR open, the merge genuinely never landed
     -- must not be misread as success just because a re-check happened."""
@@ -8905,6 +9028,7 @@ def test_merge_design_still_reports_failure_when_the_retry_error_was_a_genuine_f
     assert "could not merge" in result
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_reports_success_when_a_retry_error_actually_landed():
     """Mirrors merge_design's own re-check-before-reporting-failure fix, for close."""
     calls = {"list": 0}
@@ -8918,6 +9042,7 @@ def test_close_design_reports_success_when_a_retry_error_actually_landed():
     assert result == "closed PR #7 (confirmed on re-check after a retry error)"
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_gracefully_on_non_dict_rows():
     """Code review, #2482: a garbled reply can parse as valid JSON while still being e.g. [1, 2]
     -- every element must be validated as a dict, or `_find_design_pr`'s own stated "(pr_row,
@@ -8927,12 +9052,13 @@ def test_find_design_pr_refuses_gracefully_on_non_dict_rows():
     def _garbled(cwd, argv):
         return "[1, 2]"
     pr, err = work._find_design_pr(".sdlc", ON, "9", _garbled)
-    assert pr is None and err and "unexpected" in err
+    assert pr is None and err and "could not look up" in err
     # and the two real callers must not raise either -- err is truthy, so both report it plainly
     assert work.merge_design(".sdlc", ON, "9", run=_garbled) == "could not check for a design PR: " + err
     assert work.close_design(".sdlc", ON, "9", run=_garbled) == "could not check for a design PR: " + err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_polls_a_bounded_number_of_times_on_unknown_mergeability():
     unknown = json.dumps([_valid_design_row(number=9, mergeable="UNKNOWN",
                                              mergeStateStatus="UNKNOWN")])
@@ -8944,6 +9070,7 @@ def test_merge_design_polls_a_bounded_number_of_times_on_unknown_mergeability():
     assert result == "merged PR #9"
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_proceeds_when_mergeability_stays_unknown():
     """A `mergeStateStatus` that never resolves past UNKNOWN still merges rather than parking
     forever -- the plan's own stated tradeoff (a design PR has no CI to wait on)."""
@@ -8960,6 +9087,7 @@ def test_merge_design_proceeds_when_mergeability_stays_unknown():
 # files (or none at all), must never be treated as "this goal's own design PR" -----------------
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_isCrossRepository_is_missing_or_non_boolean():
     """A fully valid row (round 5 finding 1: BOTH design artifacts present, unlike rev 5's
     own version of this test) with isCrossRepository simply absent -- if this row lacked the
@@ -8969,11 +9097,16 @@ def test_find_design_pr_refuses_when_isCrossRepository_is_missing_or_non_boolean
     row = _valid_design_row()
     del row["isCrossRepository"]
     malformed = json.dumps([row])
+    # #895 PR B: gh_api's fallback refuses a row lacking a requested key before the identity check sees it
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: malformed)
     assert pr is None
-    assert err and "isCrossRepository is missing or not a boolean" in err
+    assert err and "could not look up" in err
+    # the identity check's own arm is still reached when the key is present but not a bool (next test)
+    assert work._is_this_goals_design_pr(row, "9", "sdlc/9")[1].endswith(
+        "isCrossRepository is missing or not a boolean")
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_isCrossRepository_is_present_but_not_a_boolean():
     for bad_value in ("false", 0):
         malformed = json.dumps([_valid_design_row(isCrossRepository=bad_value)])
@@ -8982,6 +9115,7 @@ def test_find_design_pr_refuses_when_isCrossRepository_is_present_but_not_a_bool
         assert err and "isCrossRepository is missing or not a boolean" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_fork_pr_sharing_the_branch_name():
     """The fork fixture is `_valid_design_row(isCrossRepository=True)` -- otherwise a
     byte-for-byte valid same-repo row -- so a pass here can only mean check 1 itself fired,
@@ -8992,6 +9126,7 @@ def test_find_design_pr_refuses_a_fork_pr_sharing_the_branch_name():
     assert err and "cross-repository (fork) PR" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_still_finds_a_same_repo_design_pr_despite_a_same_named_fork():
     mixed = json.dumps([
         _valid_design_row(number=43, isCrossRepository=True),
@@ -9002,6 +9137,7 @@ def test_find_design_pr_still_finds_a_same_repo_design_pr_despite_a_same_named_f
     assert pr is not None and pr["number"] == 42
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_both_act_on_the_same_repo_pr_never_the_fork(
         tmp_path, capsys, monkeypatch):
     """Round 5 finding 2: item 4's non-vacuity partner proved this at the `_find_design_pr`
@@ -9036,14 +9172,16 @@ def test_close_design_and_merge_design_cli_both_act_on_the_same_repo_pr_never_th
     assert not any(c[1][3] == "43" for c in close_calls)
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_the_gh_reply_hits_the_page_limit():
     full_page = json.dumps([_valid_design_row(isCrossRepository=True, number=i + 1)
                              for i in range(work.DESIGN_PR_LIMIT)])
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: full_page)
-    assert pr is None
-    assert err and "limit" in err.lower()
+    assert pr is None                       # refused inside gh_api (the same len >= limit rule, both paths)
+    assert err and "could not look up" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_still_finds_the_real_design_pr_behind_several_same_named_forks():
     forks = [_valid_design_row(isCrossRepository=True, number=100 + i) for i in range(5)]
     real = _valid_design_row(number=7)
@@ -9053,6 +9191,7 @@ def test_find_design_pr_still_finds_the_real_design_pr_behind_several_same_named
     assert pr is not None and pr["number"] == 7
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_same_repo_pr_whose_headRefName_does_not_match():
     """Round 5 finding 1: this row is otherwise fully valid (both artifacts present), so a
     pass here can only mean check 2 itself fired -- not a fall-through to some other check."""
@@ -9062,6 +9201,7 @@ def test_find_design_pr_refuses_a_same_repo_pr_whose_headRefName_does_not_match(
     assert err and "headRefName does not match" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_finds_a_genuine_same_repo_design_pr():
     """PARTNER, not red-first: passes unchanged against BOTH today's shipped code and item 26's
     -- a genuine vacuous positive (TDD cannot make an already-passing test go red). Its detection
@@ -9071,6 +9211,7 @@ def test_find_design_pr_finds_a_genuine_same_repo_design_pr():
     assert err is None and pr is not None and pr["number"] == 42
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_pr_that_touches_files_outside_sdlc_design():
     """Carries BOTH of this goal's own design artifacts (conditions 4-5 hold) plus one
     unrelated code file -- isolates condition 6's own failure from the missing-brief control
@@ -9083,6 +9224,7 @@ def test_find_design_pr_refuses_a_pr_that_touches_files_outside_sdlc_design():
     assert err and "touches file(s) outside its own design artifacts" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_pr_that_never_touches_its_own_design_md():
     """Touching only the in-brief sibling -- never <n>.md itself. Conditions 5-6 would both
     hold if reached, isolating condition 4's own failure from item 12 (condition 5) and item
@@ -9093,6 +9235,7 @@ def test_find_design_pr_refuses_a_pr_that_never_touches_its_own_design_md():
     assert err and "does not touch its own design.md" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_pr_that_touches_only_its_own_design_md():
     """The `<n>-in-brief.md` sibling is a REQUIRED part of the same commit
     (skills/sigma-goal-design/references/writing-the-artifact.md ~:90), not an optional
@@ -9104,6 +9247,7 @@ def test_find_design_pr_refuses_a_pr_that_touches_only_its_own_design_md():
     assert err and "does not include its own in-brief" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_pr_that_also_carries_another_goals_design_files():
     """Carries BOTH of this goal's own design artifacts (conditions 4-5 hold) but an
     unrelated goal's design file rides along too -- isolates condition 6 from condition 4,
@@ -9115,6 +9259,7 @@ def test_find_design_pr_refuses_a_pr_that_also_carries_another_goals_design_file
     assert err and "touches file(s) outside its own design artifacts" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_the_files_list_looks_truncated():
     truncated = json.dumps([_valid_design_row(files=[{"path": ".sdlc/design/9.md"}],
                                                 changedFiles=5)])
@@ -9123,6 +9268,7 @@ def test_find_design_pr_refuses_when_the_files_list_looks_truncated():
     assert err and "files/changedFiles reply is malformed or incomplete" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_a_files_entry_is_not_a_well_formed_dict():
     bad = json.dumps([_valid_design_row(files=[".sdlc/design/9.md"], changedFiles=1)])
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: bad)
@@ -9130,6 +9276,7 @@ def test_find_design_pr_refuses_when_a_files_entry_is_not_a_well_formed_dict():
     assert err and "files/changedFiles reply is malformed or incomplete" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_a_files_path_is_not_a_string():
     """Asserts the SPECIFIC reason class, not just the PR number: with the type-check block
     removed, `paths = {9}` (an int, not a string) still fails the LATER own-`.md` check --
@@ -9142,6 +9289,7 @@ def test_find_design_pr_refuses_when_a_files_path_is_not_a_string():
     assert err and "files/changedFiles reply is malformed or incomplete" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_changedFiles_is_not_an_int():
     bad = json.dumps([_valid_design_row(changedFiles="1")])
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: bad)
@@ -9149,6 +9297,7 @@ def test_find_design_pr_refuses_when_changedFiles_is_not_an_int():
     assert err and "files/changedFiles reply is malformed or incomplete" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_when_changedFiles_is_a_boolean():
     """`paths=[".../9.md"]` alone would make `changedFiles` default to 1 -- overriding it to
     `True` on top is what makes `len(files) != changed` numerically AGREE (`1 != True` is
@@ -9160,6 +9309,7 @@ def test_find_design_pr_refuses_when_changedFiles_is_a_boolean():
     assert err and "files/changedFiles reply is malformed or incomplete" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_boolean_pr_number_even_on_an_otherwise_valid_row():
     """A FULLY VALID row in every other respect (same-repo, correct branch, both design
     artifacts, well-typed `changedFiles`) with `number: True` as its ONLY defect, so a pass
@@ -9172,6 +9322,7 @@ def test_find_design_pr_refuses_a_boolean_pr_number_even_on_an_otherwise_valid_r
     assert "True" not in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_both_refuse_a_row_with_a_boolean_pr_number(
         tmp_path, capsys, monkeypatch):
     d = _sdlc(tmp_path, ON)
@@ -9196,18 +9347,24 @@ def test_close_design_and_merge_design_cli_both_refuse_a_row_with_a_boolean_pr_n
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_requests_every_field_and_limit_the_identity_check_needs():
+    seen = []
+
     def _strict(cwd, argv):
-        assert argv[:3] == ["gh", "pr", "list"], argv
+        if argv[:3] != ["gh", "pr", "list"]:
+            return ""                                  # the local `git remote get-url` slug read
+        seen.append(argv)
         fields = set(argv[argv.index("--json") + 1].split(","))
         for required in ("isCrossRepository", "headRefName", "files", "changedFiles"):
             assert required in fields, f"missing {required!r} in --json {fields}"
         assert argv[argv.index("--limit") + 1] == "30", argv
         return json.dumps([_valid_design_row()])
     pr, err = work._find_design_pr(".sdlc", ON, "9", _strict)
-    assert err is None and pr is not None and pr["number"] == 42
+    assert err is None and pr is not None and pr["number"] == 42 and len(seen) == 1
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_both_refuse_a_fork_pr(tmp_path, capsys, monkeypatch):
     d = _sdlc(tmp_path, ON)
     fork = json.dumps([_valid_design_row(isCrossRepository=True)])
@@ -9230,6 +9387,7 @@ def test_close_design_and_merge_design_cli_both_refuse_a_fork_pr(tmp_path, capsy
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_both_refuse_a_code_shaped_pr(tmp_path, capsys,
                                                                          monkeypatch):
     d = _sdlc(tmp_path, ON)
@@ -9255,6 +9413,7 @@ def test_close_design_and_merge_design_cli_both_refuse_a_code_shaped_pr(tmp_path
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_path(
         tmp_path, capsys, monkeypatch):
     """Round 5 finding 3: reaches the file-PATH (check-6) refusal specifically -- correct
@@ -9288,6 +9447,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_pat
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
         tmp_path, capsys, monkeypatch):
     """Round 5 finding 3's second case: both own artifacts present, no extra file -- ONLY the
@@ -9317,6 +9477,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
     assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_find_design_pr_refuses_a_padded_reply_with_a_duplicate_path():
     """`9.md`, `9-in-brief.md`, `9.md` with changedFiles 3 passes the length-agreement check and
     would collapse into the valid two-file SET -- the duplicate-path check must refuse it first."""
@@ -9328,6 +9489,7 @@ def test_find_design_pr_refuses_a_padded_reply_with_a_duplicate_path():
     assert err and "lists a path more than once" in err
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
     """A fork sharing the branch name existing on the RE-CHECK proves nothing about whether
     OUR merge landed -- must not be read as the "(None, None) == gone" success shape. The
@@ -9346,6 +9508,7 @@ def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_fork_
     assert "confirmed on re-check" not in result
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
     calls = {"list": 0}
     pr = json.dumps([_valid_design_row(number=7)])
@@ -9360,6 +9523,7 @@ def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_fork_
     assert "confirmed on re-check" not in result
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
     calls = {"list": 0}
     pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE",
@@ -9377,6 +9541,7 @@ def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_
     assert "confirmed on re-check" not in result
 
 
+@pytest.mark.usefixtures("design_fallback")
 def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
     calls = {"list": 0}
     pr = json.dumps([_valid_design_row(number=7)])
@@ -9391,6 +9556,171 @@ def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_code_
     result = work.close_design(".sdlc", ON, "9", run=_run)
     assert "could not close" in result
     assert "confirmed on re-check" not in result
+
+
+# --- #895 4a-2 PR B: the design-PR list goes REST first (list + pulls/N + pulls/N/files) -----------------
+# Every fixture derives from `prfake.design_pull` / `design_handlers` with ONE deviation. The legacy tests
+# above reach the same identity check through the fallback (`design_fallback`); these drive the REST path.
+
+DESIGN_LIST = prfake.PULLS_LIST
+
+
+@pytest.fixture
+def design_rest(monkeypatch, tmp_path):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    monkeypatch.chdir(tmp_path)                       # the literal ".sdlc" below never touches the repo
+
+
+def _design_run(prs, *extra, slug=True):
+    handlers = list(extra) + prfake.design_handlers(prs) + [("pr merge", ""), ("pr close", "")]
+    if not slug:
+        handlers.insert(0, ("remote get-url", ""))
+    return _runner(handlers)
+
+
+def test_rest_design_finds_merges_and_names_the_head_owner_from_the_slug(design_rest):
+    run = _design_run([{"number": 42}])
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == "merged PR #42"
+    listing = [c for c in run.calls if DESIGN_LIST in c]
+    assert listing == ["gh api repos/acme/app/pulls?head=acme:sdlc%2F9&state=open&per_page=30 --method GET"]
+    assert not any("{owner}" in c for c in run.calls)
+    assert not any(c.startswith("gh pr list") for c in run.calls)
+
+
+def test_rest_design_without_a_slug_uses_ghs_owner_placeholder(design_rest):
+    """MEASURED: `{owner}` expands INSIDE the query string from the cwd's remote. Only used when the slug is unknown."""
+    run = _design_run([{"number": 42}], slug=False)
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert err is None and pr["number"] == 42
+    assert [c for c in run.calls if DESIGN_LIST in c] == [
+        "gh api repos/{owner}/{repo}/pulls?head={owner}:sdlc%2F9&state=open&per_page=30 --method GET"]
+
+
+def test_rest_design_enriches_every_field_the_callers_read(design_rest):
+    run = _design_run([{"number": 42, "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert err is None
+    assert pr == {"number": 42, "url": "https://x/42", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
+                  "isCrossRepository": False, "headRefName": "sdlc/9",
+                  "files": [{"path": p} for p in prfake.DESIGN_PATHS], "changedFiles": 2}
+    # 1 list + (pull + files) per row: the documented 1 + 2N cost
+    assert len([c for c in run.calls if c.startswith("gh api")]) == 3
+
+
+def test_rest_design_unknown_mergeability_polls_then_merges(design_rest):
+    unknown = _design_run([{"number": 42, "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}])
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=unknown, sleep=NOSLEEP) == "merged PR #42"
+    assert len([c for c in unknown.calls if DESIGN_LIST in c]) == 3        # the bounded poll
+
+
+def test_rest_design_a_short_files_page_is_a_mismatch_the_identity_check_refuses(design_rest):
+    run = _design_run([{"number": 42, "changed": 150, "files": prfake.rest_files(prfake.DESIGN_PATHS)}])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert pr is None and "files/changedFiles reply is malformed or incomplete" in err
+
+
+def test_rest_design_refuses_a_fork_and_a_wrong_branch_and_foreign_files(design_rest):
+    for dev, phrase in (({"cross": True}, "cross-repository (fork) PR"),
+                        ({"paths": prfake.DESIGN_PATHS + ("work.py",)}, "outside its own design artifacts")):
+        pr, err = work._find_design_pr(".sdlc", ON, "9", _design_run([{"number": 42, **dev}]))
+        assert pr is None and phrase in err
+    wrong = _runner([(DESIGN_LIST, json.dumps([{"number": 42}])),
+                     (prfake.pull_get(42), json.dumps(prfake.design_pull(branch="sdlc/999"))),
+                     (prfake.files_get(42), prfake.rest_files(prfake.DESIGN_PATHS))])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", wrong)
+    assert pr is None and "headRefName does not match" in err
+
+
+def test_rest_design_a_full_list_page_raises_and_is_never_a_lookup_answer(design_rest):
+    prs = [{"number": 100 + i} for i in range(work.DESIGN_PR_LIMIT)]
+    run = _design_run(prs)
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert pr is None and err and "could not look up" in err
+    assert not any("pulls/100" in c for c in run.calls)                     # refused before any detail read
+    assert not any(c.startswith("gh pr list") for c in run.calls)           # kind other: no fallback
+
+
+def test_work_keeps_its_own_page_limit_guard_whatever_gh_api_returns(design_rest, monkeypatch):
+    full = [_valid_design_row(number=i + 1, isCrossRepository=True) for i in range(work.DESIGN_PR_LIMIT)]
+    monkeypatch.setattr(work.gh_api, "open_prs_for_head_gh", lambda *a, **k: full)
+    pr, err = work._find_design_pr(".sdlc", ON, "9", _runner([]))
+    assert pr is None and "limit" in err.lower()
+
+
+@pytest.mark.parametrize("body", ["", "null", "{}", '{"message": "Not Found"}', "<html>", "[1, 2]", "garbage"],
+                         ids=["blank", "null", "dict", "message", "html", "non-dict-rows", "garbage"])
+def test_rest_design_a_malformed_list_reply_is_never_none_none(design_rest, body):
+    run = _runner([(DESIGN_LIST, body)])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert (pr, err) != (None, None) and pr is None and err
+    assert not any(c.startswith("gh pr list") for c in run.calls)           # kind other never falls back
+
+
+@pytest.mark.parametrize("detail", [
+    ("pull", "[]"), ("pull", "null"), ("pull", json.dumps({**prfake.design_pull(), "number": 43})),
+    ("pull", json.dumps({**prfake.design_pull(), "changed_files": None})),
+    ("pull", json.dumps({**prfake.design_pull(), "changed_files": True})),
+    ("pull", json.dumps({**prfake.design_pull(), "mergeable_state": "weird"})),
+    ("files", "{}"), ("files", "null"), ("files", json.dumps([{"path": "x"}])), ("files", json.dumps(["x"]))],
+    ids=["pull-list", "pull-null", "pull-other-number", "no-changed-files", "bool-changed-files",
+         "odd-state", "files-dict", "files-null", "files-no-filename", "files-str-row"])
+def test_rest_design_a_malformed_detail_reply_is_an_error_never_a_match(design_rest, detail):
+    which, body = detail
+    handlers = prfake.design_handlers([{"number": 42}])
+    target = prfake.pull_get(42) if which == "pull" else prfake.files_get(42)
+    handlers = [(t, body if t == target else r) for t, r in handlers]
+    pr, err = work._find_design_pr(".sdlc", ON, "9", _runner(handlers))
+    assert pr is None and err and "could not look up" in err
+
+
+def test_rest_design_a_genuine_empty_list_is_none_none(design_rest):
+    run = _runner([(DESIGN_LIST, "[]")])
+    assert work._find_design_pr(".sdlc", ON, "9", run) == (None, None)
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run) == "no open design PR found -- nothing to land"
+    assert work.close_design(".sdlc", ON, "9", run=run) == "no open design PR found -- nothing to close"
+
+
+_FALLBACK_ROW = json.dumps([_valid_design_row()])
+
+
+def test_rest_design_a_502_falls_back_to_gh_pr_list_exactly_once(design_rest):
+    run = _runner([(DESIGN_LIST, RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                   ("gh pr list", _FALLBACK_ROW)])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert err is None and pr["number"] == 42
+    fb = [c for c in run.calls if c.startswith("gh pr list")]
+    assert fb == ["gh pr list --repo acme/app --head sdlc/9 --state open --limit 30 --json "
+                  "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"]
+
+
+@pytest.mark.parametrize("fail", [RuntimeError("gh api: gh: Not Found (HTTP 404)"),
+                                  RuntimeError("gh api: gh: Resource not accessible by integration (HTTP 403)")],
+                         ids=["404", "permission-403"])
+def test_rest_design_client_errors_never_fall_back(design_rest, fail):
+    run = _runner([(DESIGN_LIST, fail), ("gh pr list", _FALLBACK_ROW)])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert pr is None and err and not any(c.startswith("gh pr list") for c in run.calls)
+
+
+def test_rest_design_in_a_cloud_session_never_falls_back(design_rest, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    run = _runner([(DESIGN_LIST, RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                   ("gh pr list", _FALLBACK_ROW)])
+    pr, err = work._find_design_pr(".sdlc", ON, "9", run)
+    assert pr is None and err and not any(c.startswith("gh pr list") for c in run.calls)
+
+
+def test_design_fallback_state_never_lands_in_the_repo_checkout(design_fallback):
+    """CONTROL (C11): a fallback-class failure through the literal ".sdlc" writes the breaker and log under
+    `<sdlc_dir>/state/`. The fixture moves the cwd to tmp_path, so the repo checkout's own state dir is untouched."""
+    repo_state = ROOT / ".sdlc" / "state"
+    before = {p.name: p.stat().st_mtime_ns for p in repo_state.glob("gh-*.json")} if repo_state.is_dir() else {}
+    pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: json.dumps([_valid_design_row()]))
+    assert err is None
+    assert pathlib.Path(".sdlc/state/gh-fallback.json").is_file()           # it WAS written, in tmp_path
+    after = {p.name: p.stat().st_mtime_ns for p in repo_state.glob("gh-*.json")} if repo_state.is_dir() else {}
+    assert after == before
 
 
 # --- Review round 4 (author-blind Claude subagent, generation 44420a5f at 55e2d183) -------------------

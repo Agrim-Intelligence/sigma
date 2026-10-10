@@ -2434,3 +2434,497 @@ def test_cloud_sessions_doc_has_a_row_for_every_4a2_field():
     for prefix in ("| `mergeable` |", "| `mergeStateStatus` |", "| `statusCheckRollup` CheckRun |",
                    "| `statusCheckRollup` StatusContext |"):
         assert any(r.startswith(prefix) for r in rows), "4a-2 section has no table row %r" % prefix
+
+
+# ================================================================ #895 4a-2 PR B: reviews and the design-PR list
+
+import prfake                                              # noqa: E402 - the shared REST body builders
+
+_GM = []
+
+
+def _gm():
+    """ONE gh_api module for this section: `_prs`/`_cr` and the test body must share GhApiError's class."""
+    if not _GM:
+        _GM.append(_mod("gh_api"))
+    return _GM[0]
+
+
+class RvFake:
+    """Routes `pulls/<n>/reviews` pages (`pages`: page number -> raw body or Exception; else `rows`
+    sliced 100 at a time), the failure to raise on every REST call (`fail`), and the `pr view` fallback."""
+
+    def __init__(self, rows=(), pages=None, fail=None, gql=None):
+        self.rows, self.pages, self.fail, self.gql, self.calls = list(rows), pages or {}, fail, gql, []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "pr":
+            if isinstance(self.gql, Exception):
+                raise self.gql
+            return self.gql if self.gql is not None else "{}"
+        if self.fail is not None:
+            raise self.fail
+        page = int([a for a in args if a.startswith("page=")][0][5:])
+        if page in self.pages:
+            if isinstance(self.pages[page], Exception):
+                raise self.pages[page]
+            return self.pages[page]
+        return json.dumps(self.rows[(page - 1) * 100:page * 100])
+
+    def rest_calls(self):
+        return [c for c in self.calls if c[0] == "api"]
+
+    def gql_calls(self):
+        return [c for c in self.calls if c[0] == "pr"]
+
+
+def _rv(rows):
+    """`(login, STATE)` tuples -> REST review rows (ids and submitted_at ascend)."""
+    return json.loads(prfake.rest_reviews(rows))
+
+
+def _cr(*rows, **kw):
+    g = _gm()
+    return g.pr_changes_requested(RvFake(rows=_rv(rows)), 7, "o/r", env=kw.pop("env", {}), **kw)
+
+
+@pytest.mark.parametrize("history,expected", [
+    ([("bo", "CHANGES_REQUESTED")], ["bo"]),
+    ([("bo", "CHANGES_REQUESTED"), ("bo", "COMMENTED")], ["bo"]),            # C1: a later comment never clears
+    ([("bo", "CHANGES_REQUESTED"), ("bo", "APPROVED")], []),
+    ([("bo", "APPROVED"), ("bo", "CHANGES_REQUESTED")], ["bo"]),
+    ([("bo", "DISMISSED")], []),                                              # a lone dismissed CR reads DISMISSED
+    ([("bo", "CHANGES_REQUESTED"), ("bo", "CHANGES_REQUESTED"), ("bo", "DISMISSED")], ["bo"]),   # earlier CR stands
+    ([("bo", "PENDING")], []),
+    ([("bo", "CHANGES_REQUESTED"), ("bo", "PENDING")], ["bo"]),
+    ([("Bo", "CHANGES_REQUESTED"), ("bo", "APPROVED")], []),                  # the key is the lower-cased login
+    ([("bo", "CHANGES_REQUESTED"), ("al", "APPROVED"), ("cy", "CHANGES_REQUESTED")], ["bo", "cy"]),
+    ([("x[bot]", "CHANGES_REQUESTED")], ["x[bot]"]),                          # bot logins are raw REST
+    ([], []),
+], ids=["cr", "cr-comment", "cr-approve", "approve-cr", "lone-dismissed", "cr-cr-dismissed", "pending",
+        "cr-pending", "case", "two", "bot", "none"])
+def test_pr_changes_requested_reducer_semantics(history, expected):
+    assert _cr(*history) == expected
+
+
+def test_pr_changes_requested_one_ghost_can_never_clear_anothers_request():
+    """C6: a null `user` (deleted account) is keyed by the review's own id, never by None."""
+    out = _cr((None, "CHANGES_REQUESTED"), (None, "APPROVED"))
+    assert out == ["(deleted user)"]
+    assert _cr((None, "CHANGES_REQUESTED"), (None, "CHANGES_REQUESTED")) == ["(deleted user)"] * 2
+    g = _gm()
+    rows = _rv([("x", "CHANGES_REQUESTED"), ("x", "APPROVED")])
+    rows[0]["user"] = {"login": ""}; rows[1]["user"] = {}
+    assert g.pr_changes_requested(RvFake(rows=rows), 7, "o/r", env={}) == ["(unknown user)"]
+    rows[0]["user"] = {"login": 5}; rows[1]["user"] = "x"
+    assert g.pr_changes_requested(RvFake(rows=rows), 7, "o/r", env={}) == ["(unknown user)"]
+
+
+def test_pr_changes_requested_orders_by_submitted_at_then_id_not_by_page_order():
+    g = _gm()
+    rows = _rv([("bo", "CHANGES_REQUESTED"), ("bo", "APPROVED")])
+    assert g.pr_changes_requested(RvFake(rows=list(reversed(rows))), 7, "o/r", env={}) == []
+    same_second = _rv([("bo", "CHANGES_REQUESTED"), ("bo", "APPROVED")])
+    for r in same_second:
+        r["submitted_at"] = "2026-01-01T00:00:00Z"
+    assert g.pr_changes_requested(RvFake(rows=list(reversed(same_second))), 7, "o/r", env={}) == []
+
+
+@pytest.mark.parametrize("deviation", [{"submitted_at": None}, {"submitted_at": ""}, {"submitted_at": 5},
+                                       {"id": None}, {"id": True}, {"id": "9"}, {"id": 1.5}],
+                         ids=["at-null", "at-empty", "at-int", "id-null", "id-bool", "id-str", "id-float"])
+def test_pr_changes_requested_a_decisive_row_without_order_keys_raises(deviation):
+    g = _gm()
+    rows = _rv([("bo", "CHANGES_REQUESTED")])
+    rows[0].update(deviation)
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(RvFake(rows=rows), 7, "o/r", env={})
+    assert ei.value.kind == "other"
+
+
+def test_pr_changes_requested_an_ignored_state_needs_no_order_keys():
+    g = _gm()
+    rows = _rv([("bo", "PENDING"), ("bo", "COMMENTED")])
+    for r in rows:
+        r["submitted_at"] = None
+    assert g.pr_changes_requested(RvFake(rows=rows), 7, "o/r", env={}) == []
+
+
+@pytest.mark.parametrize("state", ["APPROVE", "approved", "Changes_Requested", "", None, 3, ["APPROVED"], "STALE"])
+def test_pr_changes_requested_an_unrecognised_state_raises(state):
+    """C3: a new GitHub state must fail loudly, never be read as 'not a request for changes'."""
+    g = _gm()
+    rows = _rv([("bo", "APPROVED")])
+    rows[0]["state"] = state
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(RvFake(rows=rows), 7, "o/r", env={})
+    assert ei.value.kind == "other"
+
+
+def test_pr_changes_requested_argv_and_paging():
+    g = _gm()
+    run = RvFake(rows=_rv([("bo", "COMMENTED")] * 150))
+    assert g.pr_changes_requested(run, 7, "o/r", env={}) == []
+    assert run.rest_calls() == [
+        ["api", "repos/o/r/pulls/7/reviews", "--method", "GET", "-f", "per_page=100", "-f", "page=1"],
+        ["api", "repos/o/r/pulls/7/reviews", "--method", "GET", "-f", "per_page=100", "-f", "page=2"]]
+    run = RvFake(rows=_rv([("bo", "COMMENTED")] * 100) * 1)
+    run.rows = run.rows[:100]
+    g.pr_changes_requested(run, 7, env={})                 # exactly 100: page 2 is asked and comes back empty
+    assert len(run.rest_calls()) == 2 and run.rest_calls()[0][1] == "repos/{owner}/{repo}/pulls/7/reviews"
+
+
+def test_pr_changes_requested_a_full_page_at_the_cap_raises_never_truncates():
+    """C2: 1000 reviews fill all 10 pages; the CR hiding on page 11 must not read as 'none'."""
+    g = _gm()
+    run = RvFake(rows=_rv([("bo", "COMMENTED")] * 1000))
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(run, 7, "o/r", env={})
+    assert "cap" in str(ei.value) and ei.value.kind == "other" and len(run.rest_calls()) == g.REVIEW_PAGE_CAP == 10
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("raw", ["", "null", "{}", '{"message": "x"}', "[1]", "<html>", '["x"]'],
+                         ids=["blank", "null", "dict", "message", "non-dict-row", "garbage", "str-row"])
+def test_pr_changes_requested_a_malformed_page_raises(raw):
+    g = _gm()
+    run = RvFake(pages={1: raw})
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(run, 7, "o/r", env={})
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+GOOD_HISTORY = [("bo", "CHANGES_REQUESTED"), ("al", "APPROVED"), ("bo", "COMMENTED"), (None, "CHANGES_REQUESTED"),
+                ("Cy", "CHANGES_REQUESTED"), ("cy", "DISMISSED"), ("di", "PENDING"), (None, "APPROVED")]
+
+
+@pytest.mark.parametrize("hint", [t[1] for t in TRANSIENT], ids=[t[0] for t in TRANSIENT])
+def test_pr_changes_requested_falls_back_once_and_the_two_paths_agree(hint):
+    """PARITY: the SAME history through the REST reducer and the `gh pr view --json reviews` reducer."""
+    g = _gm()
+    rest = g.pr_changes_requested(RvFake(rows=_rv(GOOD_HISTORY)), 7, "o/r", env={})
+    run = RvFake(fail=_err(hint), gql=prfake.gh_reviews(GOOD_HISTORY))
+    fb = g.pr_changes_requested(run, 7, "o/r", env={})
+    assert fb == rest == sorted(["(deleted user)", "bo", "Cy"])
+    assert run.gql_calls() == [["pr", "view", "7", "--repo", "o/r", "--json", "reviews"]]
+
+
+@pytest.mark.parametrize("gql", [
+    json.dumps({"reviews": [{"author": {"login": "bo"}, "state": "CHANGES_REQUESTED", "submittedAt": "t"}] * 100}),
+    json.dumps({"reviews": {}}), json.dumps({"reviews": None}), json.dumps({}), "", "<html>", "[]",
+    json.dumps({"reviews": [{"state": "CHANGES_REQUESTED", "submittedAt": "t"}]}),
+    json.dumps({"reviews": [{"author": None, "state": "CHANGES_REQUESTED"}]}),
+    json.dumps({"reviews": [{"author": None, "submittedAt": None}]}),
+    json.dumps({"reviews": [{"author": None, "state": "WEIRD", "submittedAt": None}]}),
+    json.dumps({"reviews": ["x"]})],
+    ids=["100-rows", "dict", "null", "no-key", "blank", "garbage", "list", "no-author", "no-submittedAt",
+         "no-state", "unknown-state", "str-row"])
+def test_pr_changes_requested_a_malformed_fallback_raises(gql):
+    g = _gm()
+    run = RvFake(fail=_err(RATE), gql=gql)
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(run, 7, "o/r", env={})
+    assert ei.value.kind not in g.FALLBACK_KINDS and len(run.gql_calls()) == 1
+
+
+def test_pr_changes_requested_fallback_ghosts_are_keyed_per_row():
+    g = _gm()
+    gql = json.dumps({"reviews": [{"author": None, "state": "CHANGES_REQUESTED", "submittedAt": None},
+                                  {"author": None, "state": "APPROVED", "submittedAt": None},
+                                  {"author": {"login": ""}, "state": "CHANGES_REQUESTED", "submittedAt": None}]})
+    assert g.pr_changes_requested(RvFake(fail=_err(RATE), gql=gql), 7, "o/r", env={}) == [
+        "(deleted user)", "(unknown user)"]
+    assert g.pr_changes_requested(RvFake(fail=_err(RATE), gql=json.dumps({"reviews": []})), 7, env={}) == []
+
+
+@pytest.mark.parametrize("hint", [c[1] for c in CLIENT] + [PROXY + " (HTTP 502)"],
+                         ids=[c[0] for c in CLIENT] + ["proxy"])
+def test_pr_changes_requested_never_falls_back_on_client_errors_or_proxy(hint):
+    g = _gm()
+    run = RvFake(fail=_err(hint), gql=prfake.gh_reviews([]))
+    with pytest.raises(g.GhApiError):
+        g.pr_changes_requested(run, 7, "o/r", env={})
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}], ids=["cloud", "off"])
+def test_pr_changes_requested_no_fallback_when_graphql_is_unavailable(env):
+    g = _gm()
+    run = RvFake(fail=_err(RATE), gql=prfake.gh_reviews([]))
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_changes_requested(run, 7, "o/r", env=env)
+    assert run.gql_calls() == [] and ei.value.kind == "rate_limit"
+
+
+def test_pr_changes_requested_second_page_429_is_one_fallback_never_half_rest():
+    g = _gm()
+    run = RvFake(rows=_rv([("bo", "COMMENTED")] * 150), pages={2: _err(RATE)}, gql=prfake.gh_reviews([("bo", "CHANGES_REQUESTED")]))
+    assert g.pr_changes_requested(run, 7, "o/r", env={}) == ["bo"]
+    assert len(run.rest_calls()) == 2 and len(run.gql_calls()) == 1
+
+
+def test_pr_changes_requested_breaker_open_skips_rest_and_logs_the_op(tmp_path):
+    g = _gm()
+    d = str(tmp_path / ".sdlc")
+    for _ in range(g.BREAKER_THRESHOLD):
+        g.pr_changes_requested(RvFake(fail=_err(RATE), gql=prfake.gh_reviews([])), 7, "o/r", env={}, sdlc_dir=d, now=1000.0)
+    run = RvFake(rows=[], gql=prfake.gh_reviews([("bo", "CHANGES_REQUESTED")]))
+    assert g.pr_changes_requested(run, 7, "o/r", env={}, sdlc_dir=d, now=1001.0) == ["bo"]
+    assert run.rest_calls() == []
+    log = json.loads((tmp_path / ".sdlc" / "state" / "gh-fallback.json").read_text())
+    assert {e["op"] for e in log} == {"pr_reviews_read"}
+
+
+# ---- open_prs_for_head_gh ------------------------------------------------------------------------------
+
+class ListRestFake:
+    """The REST design read: the list, per-PR `pulls/<n>` and `pulls/<n>/files`, `fail` on EVERY REST call,
+    `gql` for the `pr list` fallback. Bodies are raw strings (or Exceptions to raise) keyed by route."""
+
+    def __init__(self, prs=({"number": 42},), list_raw=None, pull_raw=None, files_raw=None, fail=None, gql=None):
+        handlers = prfake.design_handlers(list(prs))
+        self.list_raw = list_raw if list_raw is not None else handlers[0][1]
+        self.pull_raw, self.files_raw = pull_raw or {}, files_raw or {}
+        self.pulls = {t: r for t, r in handlers[1:]}
+        self.fail, self.gql, self.calls = fail, gql, []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "pr":
+            if isinstance(self.gql, Exception):
+                raise self.gql
+            return self.gql if self.gql is not None else "[]"
+        if self.fail is not None:
+            raise self.fail
+        line = " ".join(args)
+        if "pulls?head=" in line:
+            body = self.list_raw
+        else:
+            body = next(r for t, r in self.pulls.items() if t in line)
+        if isinstance(body, Exception):
+            raise body
+        return body
+
+    def rest_calls(self):
+        return [c for c in self.calls if c[0] == "api"]
+
+    def gql_calls(self):
+        return [c for c in self.calls if c[0] == "pr"]
+
+
+FIELDS = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"
+
+
+def _prs(run, **kw):
+    g = _gm()
+    return g.open_prs_for_head_gh(run, kw.pop("branch", "sdlc/9"), kw.pop("limit", 30), kw.pop("repo", "o/r"),
+                                  env=kw.pop("env", {}), **kw)
+
+
+def test_open_prs_for_head_gh_lists_then_reads_each_pull_and_its_files():
+    run = ListRestFake()
+    assert _prs(run) == [{"number": 42, "url": "https://x/42", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+                          "isCrossRepository": False, "headRefName": "sdlc/9",
+                          "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
+                          "changedFiles": 2}]
+    assert run.calls == [
+        ["api", "repos/o/r/pulls?head=o:sdlc%2F9&state=open&per_page=30", "--method", "GET"],
+        ["api", "repos/o/r/pulls/42", "--method", "GET"],
+        ["api", "repos/o/r/pulls/42/files", "--method", "GET", "-f", "per_page=100", "-f", "page=1"]]
+
+
+def test_open_prs_for_head_gh_with_and_without_repo_the_owner_placeholder_is_only_the_no_repo_form():
+    """`{owner}` expands INSIDE the query string from the cwd (MEASURED); with a repo it is never sent."""
+    with_repo, without = ListRestFake(), ListRestFake()
+    _prs(with_repo)
+    _prs(without, repo=None)
+    assert not any("{owner}" in a for c in with_repo.calls for a in c)
+    assert without.calls[0][1] == "repos/{owner}/{repo}/pulls?head={owner}:sdlc%2F9&state=open&per_page=30"
+    assert without.calls[1][1] == "repos/{owner}/{repo}/pulls/42"
+
+
+def test_open_prs_for_head_gh_quotes_a_hostile_branch_into_one_query_value():
+    run = ListRestFake(list_raw="[]")
+    _prs(run, branch="a&b#c d/e?f=g")
+    path = run.calls[0][1]
+    assert path.endswith("?head=o:a%26b%23c%20d%2Fe%3Ff%3Dg&state=open&per_page=30") and path.count("&") == 2
+
+
+def test_open_pr_for_branch_gh_quotes_special_characters_in_the_branch():
+    g = _gm()
+    run = PrFake(rows=[])
+    g.open_pr_for_branch_gh(run, "x&y#z w/v", OPEN_FIELDS, "acme/app", env={})
+    assert run.calls[0][1] == "repos/acme/app/pulls?head=acme:x%26y%23z%20w/v&state=open&per_page=1"
+
+
+def test_check_run_and_status_error_messages_truncate_the_row_not_the_tuple():
+    g = _gm()
+    for fn in (g._check_run_row, g._status_row):
+        with pytest.raises(g.GhApiError) as ei:
+            fn("x" * 500)
+        assert len(str(ei.value)) < 200 and "x" * 130 not in str(ei.value)
+
+
+def test_open_prs_for_head_gh_a_genuine_empty_list_is_empty_and_costs_one_call():
+    run = ListRestFake(list_raw="[]")
+    assert _prs(run) == [] and len(run.calls) == 1
+
+
+@pytest.mark.parametrize("raw", ["", "null", "{}", '{"message": "x"}', "[1]", "<html>", '["x"]'],
+                         ids=["blank", "null", "dict", "message", "non-dict-row", "garbage", "str-row"])
+def test_open_prs_for_head_gh_a_non_list_reply_raises_and_never_means_no_pr(raw):
+    """C5: nothing but a genuine JSON `[]` is an empty answer."""
+    g = _gm()
+    run = ListRestFake(list_raw=raw)
+    with pytest.raises(g.GhApiError) as ei:
+        _prs(run)
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+def test_open_prs_for_head_gh_a_list_at_the_limit_raises_on_both_paths():
+    """C4: a full page may hide the real PR."""
+    g = _gm()
+    for limit in (1, 3):
+        run = ListRestFake(prs=[{"number": 100 + i} for i in range(limit)], list_raw=None)
+        with pytest.raises(g.GhApiError) as ei:
+            _prs(run, limit=limit)
+        assert "limit" in str(ei.value) and ei.value.kind == "other" and len(run.rest_calls()) == 1
+        rows = [json.loads(prfake.rest_pull())] * limit
+        fb = [dict(zip(FIELDS.split(","), [1] * 8)) for _ in range(limit)]
+        run = ListRestFake(fail=_err(RATE), gql=json.dumps(fb))
+        with pytest.raises(g.GhApiError):
+            _prs(run, limit=limit)
+        assert len(run.gql_calls()) == 1
+    run = ListRestFake(prs=[{"number": 1}, {"number": 2}])
+    assert [r["number"] for r in _prs(run, limit=3)] == [1, 2]
+
+
+def test_open_prs_for_head_gh_cost_is_one_plus_two_per_row():
+    run = ListRestFake(prs=[{"number": 1}, {"number": 2}, {"number": 3}])
+    _prs(run)
+    assert len(run.rest_calls()) == 1 + 2 * 3
+
+
+@pytest.mark.parametrize("deviation", [
+    {"number": "7"}, {"number": True}, {"number": None}, {"number": 7.0}], ids=["str", "bool", "none", "float"])
+def test_open_prs_for_head_gh_a_list_row_number_must_be_an_int(deviation):
+    g = _gm()
+    run = ListRestFake(list_raw=json.dumps([deviation]))
+    with pytest.raises(g.GhApiError) as ei:
+        _prs(run)
+    assert ei.value.kind == "other" and len(run.rest_calls()) == 1
+
+
+def _pull(**kw):
+    d = prfake.design_pull()
+    d.update(kw)
+    return json.dumps(d)
+
+
+@pytest.mark.parametrize("which,raw", [
+    ("pull", "[]"), ("pull", "null"), ("pull", _pull(number=43)), ("pull", _pull(changed_files=None)),
+    ("pull", _pull(changed_files=True)), ("pull", _pull(changed_files="2")), ("pull", _pull(html_url=None)),
+    ("pull", _pull(mergeable_state="odd")), ("pull", _pull(mergeable="yes")),
+    ("pull", json.dumps({k: v for k, v in prfake.design_pull().items() if k != "mergeable"})),
+    ("files", "{}"), ("files", "null"), ("files", ""), ("files", json.dumps([{"path": "x"}])),
+    ("files", json.dumps([{"filename": 3}])), ("files", json.dumps(["x"]))],
+    ids=["pull-list", "pull-null", "pull-other-number", "changed-null", "changed-bool", "changed-str",
+         "no-url", "odd-state", "mergeable-str", "no-mergeable", "files-dict", "files-null", "files-blank",
+         "files-no-filename", "files-int-filename", "files-str-row"])
+def test_open_prs_for_head_gh_a_malformed_detail_raises(which, raw):
+    g = _gm()
+    target = prfake.pull_get(42) if which == "pull" else prfake.files_get(42)
+    run = ListRestFake()
+    run.pulls = {t: (raw if t == target else r) for t, r in run.pulls.items()}
+    with pytest.raises(g.GhApiError) as ei:
+        _prs(run)
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+def test_open_prs_for_head_gh_a_deleted_fork_reads_as_cross_repository_and_a_short_page_as_a_mismatch():
+    run = ListRestFake(prs=[{"number": 42, "cross": None}])
+    assert _prs(run)[0]["isCrossRepository"] is True
+    run = ListRestFake(prs=[{"number": 42, "changed": 150}])
+    row = _prs(run)[0]
+    assert row["changedFiles"] == 150 and len(row["files"]) == 2         # distinct: the caller refuses it
+
+
+def test_open_prs_for_head_gh_argument_refusals_before_any_call():
+    g = _gm()
+    for limit in (0, -1, 101, True, "30", None):
+        run = ListRestFake()
+        with pytest.raises(ValueError):
+            g.open_prs_for_head_gh(run, "b", limit, "o/r", env={})
+        assert run.calls == []
+    for repo in ("noslash", "", 3):
+        with pytest.raises(ValueError):
+            g.open_prs_for_head_gh(ListRestFake(), "b", 30, repo, env={})
+
+
+@pytest.mark.parametrize("hint", [t[1] for t in TRANSIENT], ids=[t[0] for t in TRANSIENT])
+def test_open_prs_for_head_gh_falls_back_once_with_the_same_row_shape(hint):
+    row = {"number": 42, "url": "u", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
+           "isCrossRepository": False, "headRefName": "sdlc/9", "files": [{"path": "a"}], "changedFiles": 1,
+           "extra": "dropped"}
+    run = ListRestFake(fail=_err(hint), gql=json.dumps([row]))
+    out = _prs(run)
+    assert out == [{k: v for k, v in row.items() if k != "extra"}]
+    assert run.gql_calls() == [["pr", "list", "--repo", "o/r", "--head", "sdlc/9", "--state", "open",
+                                "--limit", "30", "--json", FIELDS]]
+    assert len(run.rest_calls()) == 1
+    run = ListRestFake(fail=_err(RATE), gql="[]")
+    assert _prs(run, repo=None) == []
+    assert run.gql_calls()[0][:3] == ["pr", "list", "--head"]               # no --repo when none is known
+
+
+@pytest.mark.parametrize("gql", ["", "  ", "null", "{}", "<html>", "[1]", '["x"]',
+                                 json.dumps([{"number": 1}])],
+                         ids=["blank", "spaces", "null", "dict", "garbage", "int-row", "str-row", "missing-keys"])
+def test_open_prs_for_head_gh_a_malformed_fallback_raises_while_a_real_empty_list_does_not(gql):
+    """C5, fallback half: BLANK output raises (it is never 'no PR'); `[]` is the genuine empty answer."""
+    g = _gm()
+    with pytest.raises(g.GhApiError) as ei:
+        _prs(ListRestFake(fail=_err(RATE), gql=gql))
+    assert ei.value.kind not in g.FALLBACK_KINDS
+
+
+@pytest.mark.parametrize("hint", [c[1] for c in CLIENT] + [PROXY + " (HTTP 502)"],
+                         ids=[c[0] for c in CLIENT] + ["proxy"])
+def test_open_prs_for_head_gh_never_falls_back_on_client_errors_or_proxy(hint):
+    g = _gm()
+    run = ListRestFake(fail=_err(hint), gql="[]")
+    with pytest.raises(g.GhApiError):
+        _prs(run)
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}], ids=["cloud", "off"])
+def test_open_prs_for_head_gh_no_fallback_when_graphql_is_unavailable(env):
+    g = _gm()
+    run = ListRestFake(fail=_err("gh: Server Error (HTTP 502)"), gql="[]")
+    with pytest.raises(g.GhApiError):
+        _prs(run, env=env)
+    assert run.gql_calls() == []
+
+
+def test_open_prs_for_head_gh_exactly_one_fallback_and_its_failure_propagates():
+    g = _gm()
+    run = ListRestFake(fail=_err("gh: Server Error (HTTP 502)"), gql=_err("gh: Server Error (HTTP 503)", text="x"))
+    with pytest.raises(g.GhApiError):
+        _prs(run)
+    assert len(run.gql_calls()) == 1
+
+
+def test_open_prs_for_head_gh_a_detail_429_after_a_good_list_is_one_fallback_never_half_rest():
+    run = ListRestFake(prs=[{"number": 1}, {"number": 2}],
+                       pull_raw=None, gql="[]")
+    run.pulls[prfake.pull_get(2)] = _err(RATE)
+    assert _prs(run) == [] and len(run.gql_calls()) == 1
+
+
+def test_pr_b_fallback_argv_is_built_only_in_gh_api_and_the_ops_are_labelled():
+    text = (S / "gh_api.py").read_text()
+    assert '["pr", "list", *_repo_flag(repo), "--head", branch,' in text
+    assert '"pr_list_read"' in text and '"pr_reviews_read"' in text
+    assert "(r,)[:120]" not in text

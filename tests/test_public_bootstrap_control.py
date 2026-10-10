@@ -618,6 +618,10 @@ def cmd_api(state, argv, pos, flags, multi):
         # empty set, and must never be read.
         emit({"total_count": 0, "check_runs": []} if m.group(1) == "check-runs"
              else {"total_count": 0, "state": "pending", "statuses": []}, flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/pulls/(\d+)/reviews$" % re.escape(repo), endpoint)
+    if m and method == "GET":
+        # #895 4a-2 PR B: the review gate's REST reviews read. This fixture has no reviewers: one empty page.
+        emit([], flags.get("jq"), argv); return
     m = re.match(r"^repos/%s/pulls/(\d+)$" % re.escape(repo), endpoint)
     if m and method in ("", "GET"):
         number = m.group(1)

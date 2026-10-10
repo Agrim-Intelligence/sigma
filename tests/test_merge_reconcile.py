@@ -435,7 +435,8 @@ def _merge_runner(comments):
         ("viewerPermission", "ADMIN"),
         (prfake.comments_get(7), prfake.rest_comments([{"body": c, "author": {"login": "bot"},
                                                         "authorAssociation": "OWNER"} for c in comments])),
-        ("reviewDecision,latestReviews", json.dumps({"reviewDecision": None, "latestReviews": []})),
+        (prfake.reviews_get(7), "[]"),                  # #895 4a-2 PR B: the REST review list
+        ("--json reviewDecision", json.dumps({"reviewDecision": None})),
         ("nameWithOwner", "acme/app"),
         ("graphql", json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}})),
         ("rev-parse HEAD", "b" * 40),

@@ -94,6 +94,19 @@ with ONE `gh pr list` fallback (built here). `statusCheckRollup` stays refused b
 moved: the review gate's `reviewDecision` read (GraphQL-only by decision: REST cannot derive APPROVED)
 and `_unresolved_threads` (REST has no `isResolved`). See docs/cloud-sessions.md, "Merge-gate and
 landing-PR reads (#895 slice 4a-2, PR A)".
+
+PR READS (#895 slice 4a-2, PR B): `open_prs_for_head_gh` (op `pr_list_read`) is the design-PR list: ONE
+`pulls?head=<owner>:<branch>&state=open&per_page=<limit>`, then per row `pulls/N` plus ONE `pulls/N/files`
+(cost 1 + 2N), rows in `gh pr list --json` shape; a list of `limit` rows or more, a non-list body (empty output
+included) or a malformed detail raises, only a genuine `[]` is empty; ONE `gh pr list --head` fallback, which
+applies the same `len >= limit` and key checks. `pr_changes_requested` (op `pr_reviews_read`) is the review
+gate's CHANGES_REQUESTED half: `pulls/N/reviews` (REVIEW_PAGE_CAP 10 pages, a full page at the cap raises),
+ONE shared reducer (APPROVED and CHANGES_REQUESTED decide; COMMENTED, PENDING, DISMISSED are ignored; any other
+state raises; key = lower-cased login, a null or login-less user is keyed by its own id), ONE `gh pr view --json
+reviews` fallback. MEASURED: `{owner}` expands inside the query string from the cwd, and list rows carry null
+`mergeable`/`changed_files` (so `pulls/N` is mandatory). Everything else (review and files shapes, ordering,
+DISMISSED, the 429 body, a cloud run, latency) is DERIVED or UNMEASURED. See docs/cloud-sessions.md,
+"Design-PR list and review-gate reads (#895 slice 4a-2, PR B)".
 """
 import importlib.util
 import json
@@ -985,7 +998,8 @@ def merge_pr(run, number, merge_method="squash", sha=None, repo=None):
 # CLOSED whitelist: exactly the fields the migrated PR read sites request (4a-1: work.py merge_rights,
 # _comment_directive, post_review, _open_pr_refusal, _pr_merged; doctor._stray_commits_after_merge;
 # rebase_brief.pr_description; 4a-2: work.gate and doctor._landing_pr_unverifiable add `mergeable` and
-# `mergeStateStatus`). Anything else (statusCheckRollup -- served only by pr_check_rollup_gh --,
+# `mergeStateStatus`; PR B's `open_prs_for_head_gh` / `pr_changes_requested` have their own row builders and
+# add none). Anything else (statusCheckRollup -- served only by pr_check_rollup_gh --,
 # reviewDecision, latestReviews, files, ...) raises ValueError before any call, so a later slice cannot
 # silently get a wrong mapping. The 4a-1 mappings are DERIVED from GitHub's documented REST shapes,
 # UNMEASURED against live `gh pr view`; the 4a-2 ones are partly MEASURED (docs/cloud-sessions.md).
@@ -1254,7 +1268,7 @@ def _check_run_row(r):
     `completed` with no conclusion RAISES: `work._check_verdict` reads empty conclusion + COMPLETED as ok,
     so passing it through would turn "unknown" into a pass."""
     if not isinstance(r, dict) or not isinstance(r.get("name"), str) or not isinstance(r.get("status"), str):
-        raise GhApiError("malformed REST check run: %r" % (r,)[:120])
+        raise GhApiError("malformed REST check run: %s" % repr(r)[:120])
     conclusion = r.get("conclusion")
     if conclusion is not None and not isinstance(conclusion, str):
         raise GhApiError("malformed REST check run %r: conclusion %r" % (r["name"], conclusion))
@@ -1267,7 +1281,7 @@ def _check_run_row(r):
 
 def _status_row(r):
     if not isinstance(r, dict) or not isinstance(r.get("context"), str) or not isinstance(r.get("state"), str):
-        raise GhApiError("malformed REST commit status: %r" % (r,)[:120])
+        raise GhApiError("malformed REST commit status: %s" % repr(r)[:120])
     return {"__typename": "StatusContext", "context": r["context"], "state": r["state"].upper(),
             "targetUrl": r.get("target_url")}
 
@@ -1359,4 +1373,214 @@ def open_pr_for_branch_gh(run, branch, fields, repo, *, gql_run=None, env=None, 
         return {k: rows[0][k] for k in fields}
 
     return _rest_first("pr_open_branch_read", None, "open-PR-by-branch read", "gh pr list", rest, fallback,
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+
+# ---------------------------------------------------------------- design-PR list and review reads (#895 4a-2, PR B)
+
+REVIEW_PAGE_CAP = 10                # x 100 = 1000 reviews; a FULL page at the cap RAISES (never truncates)
+_REVIEW_DECISIVE = ("APPROVED", "CHANGES_REQUESTED")
+_REVIEW_IGNORED = ("COMMENTED", "PENDING", "DISMISSED")
+_GHOST = {"deleted": "(deleted user)", "unknown": "(unknown user)"}
+
+
+def _review_state(state, where):
+    if not isinstance(state, str) or state not in _REVIEW_DECISIVE + _REVIEW_IGNORED:
+        raise GhApiError("%s: unrecognised review state %r; refusing to guess" % (where, state))
+    return state
+
+
+def _latest_changes_requested(ordered):
+    """THE ONE REDUCER (REST and fallback share it). `ordered` = [(key, name, state)] in review order,
+    decisive rows only. The LAST row per key decides; the logins whose last row is CHANGES_REQUESTED."""
+    last = {}
+    for key, name, state in ordered:
+        last[key] = (name, state)
+    return sorted(name for name, state in last.values() if state == "CHANGES_REQUESTED")
+
+
+def _rest_review_rows(run, number, repo):
+    got = []
+    for page in range(1, REVIEW_PAGE_CAP + 1):
+        rows = _json(run, ["api", _endpoint(repo, "pulls/%d/reviews" % number), "--method", "GET",
+                           "-f", "per_page=100", "-f", "page=%d" % page])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise GhApiError("malformed REST reviews page %d for PR #%d" % (page, number))
+        got.extend(rows)
+        if len(rows) < 100:
+            return got
+    raise GhApiError("PR #%d review list exceeds the cap (%d pages x 100); refusing to read a truncated list"
+                     % (number, REVIEW_PAGE_CAP))
+
+
+def _rest_changes_requested(rows, number):
+    """REST rows -> logins whose latest decisive review is CHANGES_REQUESTED. Only APPROVED and
+    CHANGES_REQUESTED decide; COMMENTED, PENDING and DISMISSED are accepted and ignored (GitHub rewrites a
+    dismissed review's OWN row to DISMISSED, so a lone dismissed CR clears and a CR followed by a dismissed
+    later CR still stands). Order is (submitted_at, id); a decisive row lacking either raises. A null or
+    login-less `user` is keyed by the review's own id, so one ghost can never clear another's request."""
+    where = "PR #%d reviews" % number
+    decisive = []
+    for r in rows:
+        state = _review_state(r.get("state"), where)
+        if state not in _REVIEW_DECISIVE:
+            continue
+        at, rid = r.get("submitted_at"), r.get("id")
+        if not isinstance(at, str) or not at or not isinstance(rid, int) or isinstance(rid, bool):
+            raise GhApiError("%s: decisive review without a str submitted_at and int id" % where)
+        user = r.get("user")
+        login = user.get("login") if isinstance(user, dict) else None
+        if isinstance(login, str) and login:
+            key, name = ("login", login.lower()), login
+        else:
+            key, name = ("id", rid), _GHOST["deleted" if user is None else "unknown"]
+        decisive.append((at, rid, key, name, state))
+    decisive.sort(key=lambda t: (t[0], t[1]))
+    return _latest_changes_requested([(k, n, s) for _, _, k, n, s in decisive])
+
+
+def _fallback_changes_requested(rows, number):
+    """`gh pr view --json reviews` rows (list order = review order) -> the same reducer."""
+    where = "PR #%d reviews (gh pr view)" % number
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise GhApiError("%s: no JSON list of objects" % where)
+    if len(rows) >= 100:
+        raise GhApiError("%s: %d rows reach gh's 100-review window; refusing a possibly truncated list"
+                         % (where, len(rows)))
+    ordered = []
+    for i, r in enumerate(rows):
+        missing = [k for k in ("author", "state", "submittedAt") if k not in r]
+        if missing:
+            raise GhApiError("%s: row %d lacks %s" % (where, i, ",".join(missing)))
+        state = _review_state(r["state"], where)
+        if state not in _REVIEW_DECISIVE:
+            continue
+        author = r["author"]
+        login = author.get("login") if isinstance(author, dict) else None
+        if isinstance(login, str) and login:
+            key, name = ("login", login.lower()), login
+        else:
+            key, name = ("row", i), _GHOST["deleted" if author is None else "unknown"]
+        ordered.append((key, name, state))
+    return _latest_changes_requested(ordered)
+
+
+def pr_changes_requested(run, number, repo=None, *, gql_run=None, env=None, sdlc_dir=None, now=None):
+    """Logins whose LATEST decisive review of PR `number` is CHANGES_REQUESTED, sorted (#895 4a-2 PR B, the
+    review gate's `latestReviews` half). REST: `GET pulls/N/reviews` 100 per page, REVIEW_PAGE_CAP pages, a
+    FULL page at the cap raises, a non-list page or non-object row raises; the reducer is
+    `_rest_changes_requested` (read its docstring for the state semantics). Cost `floor(n/100) + 1` calls.
+    Fallback: ONE `gh pr view N --json reviews` (all reviews; `latestReviews` is NOT used because it omits
+    a CHANGES_REQUESTED followed by a COMMENTED), through `_rest_first` (op `pr_reviews_read`), run through the
+    SAME reducer in list order; a reply with 100 or more rows, a non-list `reviews` or a row missing
+    `author`/`state`/`submittedAt` raises. Shapes, ordering and DISMISSED are DERIVED from GitHub's docs,
+    UNMEASURED against live GitHub."""
+    n = int(str(number))
+    gql_run = gql_run or run
+
+    def rest():
+        return _rest_changes_requested(_rest_review_rows(run, n, repo), n)
+
+    def fallback(rest_err):
+        data = _pr_fallback(gql_run, str(n), ["reviews"], repo, rest_err)
+        return _fallback_changes_requested(data["reviews"], n)
+
+    return _rest_first("pr_reviews_read", n, "PR #%d reviews read" % n, "gh pr view", rest, fallback,
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+DESIGN_PR_JSON = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"
+
+
+def _design_row(run, n, repo):
+    pull = view_pr(run, n, repo)
+    if not isinstance(pull, dict) or pull.get("number") != n:
+        raise _bad_pr("pulls/%d answered for another pull request" % n)
+    files = _json(run, ["api", _endpoint(repo, "pulls/%d/files" % n), "--method", "GET",
+                        "-f", "per_page=100", "-f", "page=1"])
+    if not isinstance(files, list) or not all(isinstance(f, dict) and isinstance(f.get("filename"), str)
+                                              for f in files):
+        raise GhApiError("malformed REST files page for PR #%d" % n)
+    changed = pull.get("changed_files")
+    if not isinstance(changed, int) or isinstance(changed, bool):
+        raise _bad_pr("changed_files %r" % (changed,))
+    url = pull.get("html_url")
+    if not isinstance(url, str):
+        raise _bad_pr("html_url %r" % (url,))
+    mergeable, state = _mergeability(pull)
+    head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
+    ref = head.get("ref")
+    return {"number": n, "url": url, "mergeable": mergeable, "mergeStateStatus": state,
+            "isCrossRepository": _cross_repo(pull), "headRefName": ref if isinstance(ref, str) else "",
+            "files": [{"path": f["filename"]} for f in files], "changedFiles": changed}
+
+
+def open_prs_for_head_gh(run, branch, limit, repo=None, *, gql_run=None, env=None, sdlc_dir=None, now=None):
+    """Open PRs whose head is `branch`, in `gh pr list --json DESIGN_PR_JSON` row shape (#895 4a-2 PR B, the
+    design-PR list). REST: ONE `GET pulls?head=<owner>:<branch>&state=open&per_page=<limit>` (`<owner>` from
+    `repo` when given, else gh's `{owner}` placeholder, which gh expands inside the query string from the cwd's
+    remote, MEASURED), then per row `pulls/N` (number, url, mergeable, state, fork, head ref,
+    `changed_files`; list rows carry null mergeable and changed_files, MEASURED) and ONE
+    `pulls/N/files?per_page=100`. Cost 1 + 2N calls, N <= limit - 1. A short files page yields a
+    files/changedFiles mismatch the caller's identity check refuses. A list of `limit` or more rows RAISES
+    (a possibly truncated page), as does a non-list body (empty output included), a non-object row or a
+    malformed detail: only a genuine JSON `[]` returns `[]`. Fallback: ONE `gh pr list [--repo R] --head
+    <branch> --state open --limit <limit> --json ...` through `_rest_first` (op `pr_list_read`), blank or
+    non-list output, a row missing a key, or `limit` or more rows raises. Known divergence: `head=<owner>:`
+    hides a fork PR from another owner (DERIVED)."""
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 100:
+        raise ValueError("gh_api.open_prs_for_head_gh needs 1 <= limit <= 100, got %r" % (limit,))
+    if repo is not None and (not isinstance(repo, str) or "/" not in repo):
+        raise ValueError("gh_api.open_prs_for_head_gh needs repo='owner/name' or None, got %r" % (repo,))
+    gql_run = gql_run or run
+    owner = repo.split("/", 1)[0] if repo else "{owner}"
+    path = "%s?head=%s:%s&state=open&per_page=%d" % (
+        _endpoint(repo, "pulls"), owner, urllib.parse.quote(branch, safe=""), limit)
+    keys = DESIGN_PR_JSON.split(",")
+
+    def too_many(n):
+        return GhApiError("%d open PRs on %s reach the %d-row lookup limit; refusing a possibly truncated list"
+                          % (n, branch, limit))
+
+    def rest():
+        rows = _json(run, ["api", path, "--method", "GET"])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise GhApiError("gh api pulls?head= returned %s, not a JSON list of objects" % type(rows).__name__)
+        if len(rows) >= limit:
+            raise too_many(len(rows))
+        out = []
+        for r in rows:
+            n = r.get("number")
+            if not isinstance(n, int) or isinstance(n, bool):
+                raise _bad_pr("list row number %r" % (n,))
+            out.append(_design_row(run, n, repo))
+        return out
+
+    def fallback(rest_err):
+        try:
+            raw = _call(gql_run, ["pr", "list", *_repo_flag(repo), "--head", branch, "--state", "open",
+                                  "--limit", str(limit), "--json", DESIGN_PR_JSON])
+        except GhApiError as fb:
+            if rest_err is None:
+                raise
+            raise GhApiError("gh REST read of the open PRs for %s failed (%s); fallback gh pr list also failed: %s"
+                             % (branch, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                             rest_err.kind) from fb
+        try:
+            rows = json.loads(raw) if raw and raw.strip() else None
+        except ValueError:
+            rows = None
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise GhApiError("fallback gh pr list --head %s returned no JSON list; refusing to read it as no PR"
+                             % branch)
+        if len(rows) >= limit:
+            raise too_many(len(rows))
+        for r in rows:
+            missing = [k for k in keys if k not in r]
+            if missing:
+                raise GhApiError("fallback gh pr list --head %s row lacks %s" % (branch, ",".join(missing)))
+        return [{k: r[k] for k in keys} for r in rows]
+
+    return _rest_first("pr_list_read", None, "design-PR list read", "gh pr list", rest, fallback,
                        env=env, sdlc_dir=sdlc_dir, now=now)
