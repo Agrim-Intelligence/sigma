@@ -2275,11 +2275,11 @@ def _execute_action(source, action):
     gh-call-mapping. Raises on failure; `apply_actions` is what catches it."""
     kind, issue, detail = action["action"], action["issue"], action["detail"]
     if kind == "assign":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--add-assignee", detail])
+        source._issue_add_assignees(issue, detail)      # REST first (#895 slice 3a)
     elif kind == "add-label":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--add-label", detail])
+        source._issue_add_labels(issue, [detail])         # REST; non-feature labels mint (D3)
     elif kind == "remove-label":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--remove-label", detail])
+        source._issue_remove_label(issue, detail)
     elif kind == "swap-label":
         # #1392: ONE atomic lifecycle transition, replacing the add-label/remove-label PAIR this
         # module used to emit for an unpark. That pair is the same non-atomic write #1391 step 2

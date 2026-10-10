@@ -100,7 +100,7 @@ fallback log are the ones `read_issue` uses (`op: issue_list`, `number: null`), 
 `sdlc_dir` exists. Sites: `auto_unpark` (the parked/blocked loop and the `sdlc:blocking` read; any error
 keeps `complete=False` / `set()`, so a failed read never removes labels), `reconcile` census,
 `assign._active_members` (a non-list page now lands in its "could not rank active repo members" arm), and
-six `doctor` scans. `status.py:174` stays direct by design, and the `issue edit` in `assign.py` is a write.
+six `doctor` scans. `status.py:174` stays direct by design, and the `issue edit` in `assign.py` was a write (moved in slice 3a).
 
 Direction rule: `gh issue list` is newest-created-first, so every site asks `sort=created&direction=desc`
 (a board over its cap keeps its NEWEST rows); `doctor._dependency_marker_scan` asks `updated`/`desc`
@@ -122,25 +122,99 @@ cloud session; real request counts and latency for a 5000-cap board; doctor late
 newest-created order still holds (assumed, not re-verified); the GraphQL points saved (#1829's ~2600 per
 search, not re-measured here); label names containing a comma (cannot be sent; `sdlc:*` never do).
 
+## Write operations (#895 slice 3a)
+
+Seventeen issue WRITE list-literal sites moved from `gh issue ...` argv to REST helpers in `gh_api.py`
+(`comment_issue`, `create_issue`, `edit_issue(body=)`, `close_issue`, `add_labels`, `remove_label`,
+`add_assignees`), reached only through `GitHubSource._issue_*` wrappers. Callers: dossier and blockers
+(comment, failure swallowed as before), promote and unpark (comment, body edit), assign and triage
+(assignee, add/remove label), and in `sources.py` `release`, `complete`, `append_to_body`,
+`create_dependency` and the priority-label mirror. Every caller keeps its own `except` arm, return value
+and message.
+
+Fallback policy, one table in code (`gh_api.WRITE_POLICY`, read by `_write_fallback_ok`; the cases below
+are its ids and `test_cloud_sessions_doc_lists_every_write_policy_case` fails if one is missing here). A REST
+write falls back to the matching `gh issue ...` at most ONCE and is never retried; the fallback's own error
+propagates. Idempotent writes are `add_labels`, `remove_label`, `close_issue`, `edit_issue(body=)` and
+`add_assignees`; non-idempotent are `comment_issue` and `create_issue`.
+
+| case id | meaning | falls back (idempotent) | falls back (comment, create) |
+|---|---|---|---|
+| `primary_rate_limit` | HTTP 429, or 403 whose gh stderr says rate limit and not secondary/abuse | yes | yes |
+| `secondary_rate_limit` | 403 or 429 whose stderr says secondary or abuse | no | no |
+| `server_5xx` | HTTP 500-599: the write may have committed | yes | no |
+| `transport_ambiguous` | timeout or connection failure after the request was sent | no | no |
+| `auth_401` | HTTP 401 | no | no |
+| `not_found_404` | HTTP 404 | no | no |
+| `invalid_422` | HTTP 422, a dropped assignee, a team slug | no | no |
+| `permission_403` | HTTP 403 that is not a rate limit | no | no |
+| `proxy_block` | cloud proxy / GraphQL-unavailable text | no | no |
+| `refused` | the feature-label guard (`GhApiError(kind="refused")`) | no | no |
+| `other_unparsed` | anything else, a malformed 2xx body, a failure with no gh stderr | no | no |
+
+No fallback at all in a cloud session or with `SIGMA_GH_GRAPHQL=off`. Classification of a write reads the
+structured status and gh stderr (`.hint`) ONLY, never `str(exc)` (which embeds argv and so the comment or
+issue BODY): a body saying "rate limit" or "timeout" is never read as a fallback-eligible failure. The
+secondary-limit and 429 wording is INFERRED from documented GitHub behaviour, not captured live. Write
+fallbacks share the bounded `state/gh-fallback.json` log with reads (cap 200, no text, argv or body), so a
+write burst can push read entries out; writes never open, close or consult the read breaker.
+
+Feature labels. `create_issue` and `add_labels` refuse any `feature:*` label (`kind="refused"`, before any
+call) unless the caller verified it exists. `GitHubSource` does that check with one REST `GET labels/<name>`
+per feature label (404 means absent; a failed lookup also refuses, fail closed) and makes zero write calls
+on refusal. Label MINTING for other labels: REST `POST /issues` and `POST /labels` create a missing label
+where `gh` failed, so `priority:P*` (always the canonical `priority_prefix + canon`) and triage's
+arbitrary `add-label` can now mint a colourless label. That divergence is accepted and pinned by tests,
+not fixed here. `create_dependency` and triage still run `label create` first.
+
+REST-vs-gh differences handled: `add_assignees` resolves `@me` with one `GET user` (if that fails, for
+example a 403 under an Actions `GITHUB_TOKEN`, nothing is sent and `gh` is NOT tried; the caller leaves the
+issue unassigned and says why), refuses a team slug before any call, and raises if the response does not
+list every requested login (REST silently drops unassignable users). `remove_label` still treats a 404 as
+a no-op but matches only the structured 404 status; the blind spot that a vanished ISSUE is swallowed like
+an absent label stays, and `release()` still surfaces a vanished issue through its following comment.
+
+Atomicity. No lifecycle label swap is in this slice: promote, park, unpark, in-progress and complete
+transitions stay on the one aliased GraphQL document (`_swap_labels`), so a cloud session still cannot do
+them (owner decision D-4, #801). The priority-label mirror changed from one unordered `gh issue edit
+--add-label ... --remove-label ...` to the add first, then one remove per stale label, SEQUENTIALLY. It is
+NOT atomic: a failed remove leaves two priority labels. Self-heal is narrow because the loop takes the
+minimum-rank (highest-priority) label: after a demotion a failed remove is retried (the field and label
+disagree), but after a promotion the stale lower label is never removed by the loop. It is visible and
+does not change ordering. `PUT /labels` is not used.
+
+Deferred, still open on #895: `note()` (already REST as its last resort, with the owner-accepted
+duplicate-on-retry ruling that this policy contradicts), every `label create`, lifecycle label swaps, the
+D-4 REST swap, board and project writes, PR writes.
+
+UNMEASURED, not claimed: REST label auto-create on `POST /issues` and `POST /labels`; that a primary
+rate-limit rejection (including 429) never partially executes a write; exact 404 bodies ("label not on
+issue" versus "issue missing"); the secondary-limit wording; REST assignee drop behaviour and the cost of
+`GET user`; per-write request counts and latency compared with `gh issue ...`; any real Claude Code cloud
+session.
+
 ## What this does NOT do
 
-- Only `read_issue` and `list_issues_gh` (above) are wired to callers; the other REST helper ops have none yet, and nothing
-  in the product exercises the probe or the cache.
+- `read_issue`, `list_issues_gh` and the seven issue write helpers (above) are wired to callers; the other REST helper ops
+  (PR and project ops) have none yet, and nothing in the product exercises the probe or the cache.
 - `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
-- `create_issue` in `gh_api.py` bypasses the feature-label refusal in `GitHubSource._run`; the migration
-  slice that moves callers onto it must preserve that refusal first.
+- `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
+  carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
+  check (layer 2). A direct caller of the helper that passes `feature_labels_exist=True` without checking bypasses both.
 
 ## The ratchet
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
-(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c; it only goes down). Run
+(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls
 (`"issue view".split()`); argv built incrementally (`args += [...]`, `.append`, `.extend`); lists whose first
 element is a variable; positional-string wrapper calls (`_gh("issue", "view")`); skill prose (`.md`, `.tmpl`);
 and shell scripts (`skills/**/*.sh`, `hooks/*.sh`; 9 files, none mentions `gh` today, nothing keeps it so).
-So it guarantees "no new list-literal gh call", not "no new gh call".
+So it guarantees "no new list-literal gh call", not "no new gh call". It also cannot see a REST write added
+through a `gh_api` helper, and `docs/launch/write-surface.json` (scanner blind spot, same reason) records only the
+helper's `_default_run`; `tests/test_issue_creation_boundary.py` pins the callers of the create helper.
 
 ## Follow-ups
 

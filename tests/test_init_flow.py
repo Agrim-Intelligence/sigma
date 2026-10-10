@@ -157,6 +157,28 @@ if argv[:2] == ["issue", "close"]:
 if argv and argv[0] == "api":
     endpoint = argv[1].replace("{owner}/{repo}", repo).split("?")[0]
     method = (flag(argv, "--method") or flag(argv, "-X") or "GET").upper()
+    mw = re.fullmatch(r"repos/%s/issues/(\d+)(?:/(comments|labels)(?:/(.+))?)?" % re.escape(repo), endpoint)
+    if mw and method != "GET" and mw.group(1) in s["issues"]:
+        # #895 slice 3a: the REST issue WRITES (comment / close / label add+remove).
+        i, f = s["issues"][mw.group(1)], fields(argv)
+        if mw.group(2) == "comments" and method == "POST":
+            s.setdefault("comments", []).append(["api", endpoint, f.get("body", "")])
+        elif mw.group(2) is None and method == "PATCH":
+            if f.get("state") == "closed":
+                i["state"] = "closed"
+            if "body" in f:
+                i["body"] = f["body"]
+        elif mw.group(2) == "labels" and method == "POST":
+            for a, b in zip(argv, argv[1:]):
+                if a == "-f" and b.startswith("labels[]=") and b[9:] not in i["labels"]:
+                    i["labels"].append(b[9:])
+        elif mw.group(2) == "labels" and method == "DELETE" and mw.group(3):
+            from urllib.parse import unquote
+            if unquote(mw.group(3)) in i["labels"]:
+                i["labels"].remove(unquote(mw.group(3)))
+        else:
+            unhandled(argv, "unmodelled REST issue write")
+        save(s); print("{}"); sys.exit(0)
     if endpoint == "graphql" or method != "GET":
         unhandled(argv, "only REST GETs are modelled for api")
     if endpoint == "user":

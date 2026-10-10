@@ -460,7 +460,7 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
 
 def _comment(source, number, text):
     try:
-        source._run(["issue", "comment", str(number), *source._repo_args(), "--body", text])
+        source._issue_comment(number, text)             # REST first through gh_api (#895 slice 3a)
     except Exception:                                   # noqa: BLE001 - audit trail is best-effort
         pass
 
@@ -470,8 +470,7 @@ def _append_block(source, number, body, block):
     carries the same text, so nothing is lost -- but the body is the copy the next agent actually
     reads, and silently not having it is how a goal gets re-parked for the reason just answered."""
     try:
-        source._run(["issue", "edit", str(number), *source._repo_args(),
-                     "--body", _replace_block(body, block)])
+        source._issue_edit_body(number, _replace_block(body, block))   # REST first (#895 3a)
         return True
     except Exception as exc:                            # noqa: BLE001
         try:

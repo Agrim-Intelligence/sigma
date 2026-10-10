@@ -87,6 +87,11 @@ class FakeSource:
     def _repo_args(self):
         return ["--repo", self.repo]
 
+    def _issue_add_assignees(self, number, assignees):
+        """#895 slice 3a: the REST wrapper; the fake records the legacy-shaped call through `_run`."""
+        for a in ([assignees] if isinstance(assignees, str) else assignees):
+            self._run(["issue", "edit", str(number), *self._repo_args(), "--add-assignee", a])
+
     def note(self, issue, text):
         self.notes.append((str(issue), text))
 
@@ -898,3 +903,28 @@ def test_start_now_self_with_no_assignee_writes_a_plan_file_without_at_none(tmp_
     content = pathlib.Path(result["plan_file"]).read_text(encoding="utf-8")
     assert "@None" not in content
     assert "unassigned" in content.lower()
+
+
+def test_apply_assignment_goes_rest_and_keeps_the_warning_string_on_failure():
+    """#895 slice 3a, against a REAL GitHubSource: the assignment is a REST POST /assignees; a dropped
+    (non-assignable) login raises inside `gh_api` and surfaces as the unchanged per-issue warning."""
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import gqlfake
+    sources = _mod("sources", LOOP)
+    seen = []
+
+    def run(args):
+        seen.append(list(args))
+        out = gqlfake.rest_write(args, assignable={"bo"})
+        assert out is not None, args
+        return out
+
+    src = sources.GitHubSource(GITHUB_CONFIG, run=run)
+    assigned, warnings = assign._apply_assignment(src, [201], "bo")
+    assert assigned == [201] and warnings == []
+    assert seen[0][:4] == ["api", "repos/acme/widgets/issues/201/assignees", "--method", "POST"]
+    assigned, warnings = assign._apply_assignment(src, [202], "ghost")
+    assert assigned == [] and len(warnings) == 1
+    assert warnings[0].startswith("could not assign @ghost to #202: ")
+    assert not any(c[0] == "issue" for c in seen)                    # no gh issue edit anywhere

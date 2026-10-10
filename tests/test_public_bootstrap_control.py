@@ -131,6 +131,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 STATE_PATH = os.environ["FAKE_GH_STATE"]
 LOG_PATH = os.environ["FAKE_GH_LOG"]
@@ -597,6 +598,75 @@ def cmd_api(state, argv, pos, flags, multi):
         if issue is not None and fields.get("state") == "closed":
             issue["state"] = "closed"
         save_state(state); return
+    # #895: the REST write endpoints the migrated sites use (gh_api.py).
+    def _rest_fields():
+        out, lists = {}, {}
+        for item in multi.get("f", []):
+            k, _, v = item.partition("=")
+            if k.endswith("[]"):
+                lists.setdefault(k[:-2], []).append(v)
+            else:
+                out[k] = v
+        return out, lists
+    if endpoint == "repos/%s/issues" % repo and method == "POST":
+        fields, lists = _rest_fields()
+        wanted = lists.get("labels", [])
+        for l in wanted:
+            if l not in state["labels"]:
+                sys.stderr.write("HTTP 422: Validation Failed (label %r not found)\n" % l); sys.exit(1)
+        number = str(state["issue_seq"]); state["issue_seq"] += 1
+        state["issues"][number] = {"labels": wanted, "state": "open", "title": fields.get("title", ""),
+                                    "body": fields.get("body", ""), "assignees": []}
+        save_state(state)
+        emit(issue_rest_obj(state, number), flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/comments$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        fields, _ = _rest_fields()
+        issue.setdefault("comments", []).append(fields.get("body", ""))
+        save_state(state)
+        emit({"body": fields.get("body", "")}, flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/labels$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        _, lists = _rest_fields()
+        for l in lists.get("labels", []):
+            if l not in state["labels"]:
+                sys.stderr.write("HTTP 422: Validation Failed (label %r not found)\n" % l); sys.exit(1)
+            if l not in issue["labels"]:
+                issue["labels"].append(l)
+        save_state(state)
+        emit([{"name": l} for l in issue["labels"]], flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/labels/(.+)$" % re.escape(repo), endpoint)
+    if m and method == "DELETE":
+        issue = state["issues"].get(m.group(1))
+        name = urllib.parse.unquote(m.group(2))
+        if issue is None or name not in issue["labels"]:
+            sys.stderr.write("HTTP 404: Label does not exist\n"); sys.exit(1)
+        issue["labels"].remove(name)
+        save_state(state)
+        emit([{"name": l} for l in issue["labels"]], flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/assignees$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        _, lists = _rest_fields()
+        for a in lists.get("assignees", []):
+            if a not in issue.setdefault("assignees", []):
+                issue["assignees"].append(a)
+        save_state(state)
+        emit(issue_rest_obj(state, m.group(1)), flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/labels/(.+)$" % re.escape(repo), endpoint)
+    if m and method in ("", "GET"):
+        name = urllib.parse.unquote(m.group(1))
+        if name not in state["labels"]:
+            sys.stderr.write("HTTP 404: Not Found (label %r)\n" % name); sys.exit(1)
+        emit({"name": name, "color": state["labels"][name].get("color", "")}, flags.get("jq"), argv); return
     if endpoint == "repos/%s/issues" % repo:
         fields = {}
         for item in multi.get("f", []):

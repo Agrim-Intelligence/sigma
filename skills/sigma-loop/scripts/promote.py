@@ -623,9 +623,8 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
             detail += ("; the label landed but the board card did not move to %r — move it by hand "
                        "if this repo picks from the board" % column)
         try:
-            source._run(["issue", "comment", n, *source._repo_args(), "--body",
-                         (DEMOTE_COMMENT.format(proposed=proposed) if demote
-                          else PROMOTE_COMMENT.format(goal=goal))])
+            source._issue_comment(n, (DEMOTE_COMMENT.format(proposed=proposed) if demote
+                                      else PROMOTE_COMMENT.format(goal=goal)))   # REST first (#895 3a)
         except Exception:                               # noqa: BLE001 - audit trail is best-effort
             pass
         out["results"].append({"number": n, "outcome": verb, "detail": detail})

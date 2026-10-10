@@ -71,12 +71,16 @@ class _LabelStore(object):
         self.labels = dict(labels or {})
         self.calls = []
         self._respond = respond or (lambda args: "")
+        self.create_number = None
 
     def __call__(self, args):
         args = [str(a) for a in args]
         gql = gqlfake.swap(args, labels=set(), calls=self.calls, repo_args=("--repo", "acme/widget"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):      # #895 slice 3a: issue create/labels go REST; shim re-records
+            return gqlfake.rest_write(args, calls=self.calls, repo_args=("--repo", "acme/widget"),
+                                      create_number=self.create_number)
         self.calls.append(list(args))
         if args[:2] == ["label", "create"]:
             name = args[2]
@@ -105,6 +109,7 @@ def test_create_dependency_leaves_an_existing_label_at_its_own_colour():
     store = _LabelStore({"priority:P1": "d93f0b", "priority:P2": "fbca04"},
                         respond=lambda a: "https://github.com/acme/widget/issues/7"
                                           if a[:2] == ["issue", "create"] else "")
+    store.create_number = 7
     number = _github(store).create_dependency("t", "b", None, labels=["priority:P1"])
 
     assert store.labels["priority:P1"] == "d93f0b", (

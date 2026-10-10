@@ -27,7 +27,7 @@ def _view(number=5, title="A goal", body="", labels=("sdlc:parked",), comments=(
 
 
 def _runner(views=None, by_label=None, states=None, fail_on=()):
-    calls, label_state, gql_calls, fallbacks = [], set(), [], []
+    calls, label_state, gql_calls, fallbacks, rest_writes = [], set(), [], [], []
     views, by_label, states = views or {}, by_label or {}, states or {}
 
     def run(args):
@@ -40,6 +40,9 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         if gql is not None:
             gql_calls.append(list(args))
             return gql
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
@@ -72,6 +75,7 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
     run.calls = calls
     run.gql_calls = gql_calls
     run.fallbacks = fallbacks
+    run.rest_writes = rest_writes
     return run
 
 
@@ -290,7 +294,7 @@ def test_a_failed_body_write_still_leaves_the_answers_on_the_issue(capsys):
     """The comment carries the same text, so nothing is lost -- but the body is the copy that gets
     read, and silently not having it is how a goal is re-parked for the reason just answered."""
     u = _mod("unpark")
-    run = _runner(views={"5": _view(comments=[_park("x")])}, fail_on=["issue edit 5 "])
+    run = _runner(views={"5": _view(comments=[_park("x")])}, fail_on=["issues/5 --method PATCH"])
     result = u.resolve(".sdlc", _config(), 5, {"decision": "start it again"}, "unpark", run=run)
     assert result["outcome"] == "unparked"
     assert any(c[:2] == ["issue", "comment"] for c in run.calls)
@@ -646,3 +650,24 @@ def test_the_keep_parked_marker_quotes_the_substantive_answer_not_the_routing_on
     comment = next(c[c.index("--body") + 1] for c in run.calls if c[:2] == ["issue", "comment"])
     assert au.KEEP_PARKED_MARKER in comment
     assert "wait for the pricing call" in comment
+
+
+def test_comment_and_body_append_are_rest_writes_with_swallow_and_false_semantics():
+    """#895 slice 3a: the comment is a REST POST, the body append a REST PATCH (raw `-f body=`); a failing
+    comment is swallowed, a failing PATCH writes ONE stderr line and returns False."""
+    u = _mod("unpark")
+    run = _runner()
+    src = _mod("sources").GitHubSource(_config(), run=run)
+    u._comment(src, 5, "hello")
+    assert u._append_block(src, 5, "old", "BLOCK") is True
+    assert [(c[1], c[3]) for c in run.rest_writes] == [
+        ("repos/acme/widget/issues/5/comments", "POST"), ("repos/acme/widget/issues/5", "PATCH")]
+    assert "body=" in " ".join(run.rest_writes[1]) and "-F" not in run.rest_writes[1]
+    bad = _runner(fail_on=["issues/5/comments", "issues/5 --method PATCH"])
+    bsrc = _mod("sources").GitHubSource(_config(), run=bad)
+    u._comment(bsrc, 5, "hello")                                     # swallowed
+    import io, contextlib
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert u._append_block(bsrc, 5, "old", "BLOCK") is False
+    assert err.getvalue().count("\n") == 1 and "could not write them into the body" in err.getvalue()

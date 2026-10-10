@@ -303,7 +303,7 @@ def _route(sdlc_dir, config, goal, ref, state, run):
 
 def _comment(source, number, text):
     try:
-        source._run(["issue", "comment", str(number), *source._repo_args(), "--body", text])
+        source._issue_comment(number, text)             # REST first through gh_api (#895 slice 3a)
     except Exception:                                   # noqa: BLE001 - audit trail is best-effort
         pass
 
