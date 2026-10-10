@@ -432,7 +432,7 @@ def _merge_runner(comments):
         (prfake.pull_get(7), prfake.rest_pull(author="bot", headRefOid="b" * 40)),
         (prfake.check_runs_get("b" * 40), prfake.rest_check_runs([])),
         (prfake.status_get("b" * 40), prfake.rest_statuses([])),
-        ("viewerPermission", "ADMIN"),
+        ("--jq .permissions", json.dumps({"admin": True, "maintain": True, "push": True, "triage": True, "pull": True})),
         (prfake.comments_get(7), prfake.rest_comments([{"body": c, "author": {"login": "bot"},
                                                         "authorAssociation": "OWNER"} for c in comments])),
         (prfake.reviews_get(7), "[]"),                  # #895 4a-2 PR B: the REST review list

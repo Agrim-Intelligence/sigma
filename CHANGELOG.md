@@ -4,6 +4,20 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
+  `CLAUDE_CODE_REMOTE` merge are REST: `merge_rights` reads `GET repos/{owner}/{repo}` `.permissions` (fails closed
+  on a missing, malformed or all-false object), `protection()` unions classic protection with
+  `rules/branches/<base>` rulesets (a repo enforcing only through rulesets no longer reads as "not protected"),
+  and `post_review` posts its comment with `gh_api.comment_pr` (`POST issues/N/comments`; ONE `gh pr comment`
+  fallback on a primary rate limit only, never in a cloud session). STILL NOT possible in a cloud
+  session: unresolved review threads can not be read (without GraphQL the review gate makes one REST read of the PR's line
+  comments: none => proceed, any or unreadable => refuses; with GraphQL nothing changes), `require_review: approval`
+  (`reviewDecision` unreadable, parks), the `--auto` arm (a check pending after 450s parks), and `merge_design`,
+  `close_design`, `verify_merge.py` stay GraphQL. `protection()` cannot see bypass actors (it can over-report "enforces"), `evaluate`-mode rulesets,
+  merge queue, deployments/workflows/signatures/thread resolution, or more than 100 rules. UNMEASURED live: the
+  cloud token receiving `permissions`, and the rules read, comment POST and PUT through the proxy. Ratchet
+  (printed `scan()`): work.py 6 -> 5, TOTAL 46 -> 45. Write-surface: `comment_pr` and `merge_pr_gh` join the
+  scanner's REST-write set; `post_review` and `merge` get `gh-api-write` rows. Details: `docs/cloud-sessions.md`.
 - **The code-goal merge goes REST first (#895, slice 4b-1; refs #895).** `work.merge()`'s direct merge is now
   `gh_api.merge_pr_gh`: REST `PUT pulls/N/merge` with `merge_method` and the vetted head as `sha` (was `gh pr merge
   N --<m> --match-head-commit SHA`), with ONE `gh pr merge` fallback on a primary rate limit only, and only while

@@ -842,8 +842,8 @@ def _repo_flag(repo):
 def _write(op, number, cmd, rest, fb_argv, idempotent, fallback_run, run, env, sdlc_dir, now):
     """Common wiring of one write op: `rest()` then (per WRITE_POLICY) ONE `gh issue ...` through
     `fallback_run` (default: the same `run`)."""
-    verb = op.replace("issue_", "").replace("_", " ")
-    return _rest_write(op, number, "issue %s%s" % ("#%s " % number if number is not None else "", verb),
+    noun, verb = ("PR", op[3:]) if op.startswith("pr_") else ("issue", op.replace("issue_", ""))
+    return _rest_write(op, number, "%s %s%s" % (noun, "#%s " % number if number is not None else "", verb.replace("_", " ")),
                        cmd, rest, lambda: _call(fallback_run or run, fb_argv),
                        idempotent=idempotent, env=env, sdlc_dir=sdlc_dir, now=now)
 
@@ -854,6 +854,26 @@ def comment_issue(run, number, body, repo=None, *, fallback_run=None, env=None, 
                   lambda: _json(run, ["api", _endpoint(repo, "issues/%d/comments" % number), "--method", "POST",
                                       "-f", "body=%s" % body]),
                   ["issue", "comment", str(number), *_repo_flag(repo), "--body", body], False,
+                  fallback_run, run, env, sdlc_dir, now)
+
+
+def comment_pr(run, number, body, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """POST a PR comment (`issues/N/comments` serves PRs too) -> its URL string, "" when the reply names neither
+    `html_url` nor a numeric `id` (the caller parks: the receipt cannot be confirmed). Same WRITE policy as
+    `comment_issue` (NOT idempotent); the ONE fallback is `gh pr comment N --body` (GraphQL; built here so the
+    ratchet never sees the literal) and returns gh's stdout. #895 slice 4b-2."""
+    def rest():
+        got = _json(run, ["api", _endpoint(repo, "issues/%d/comments" % number), "--method", "POST",
+                          "-f", "body=%s" % body])
+        if not isinstance(got, dict):
+            return ""
+        if isinstance(got.get("html_url"), str) and got["html_url"]:
+            return got["html_url"]
+        cid = got.get("id")
+        return "#issuecomment-%d" % cid if isinstance(cid, int) and not isinstance(cid, bool) else ""
+
+    return _write("pr_comment", number, "gh pr comment", rest,
+                  ["pr", "comment", str(number), *_repo_flag(repo), "--body", body], False,
                   fallback_run, run, env, sdlc_dir, now)
 
 

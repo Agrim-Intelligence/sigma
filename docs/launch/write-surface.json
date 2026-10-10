@@ -2242,6 +2242,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
+      "function": "merge",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
       "function": "merge_design",
       "rule": "gh-pr",
       "count": 1,
@@ -2251,9 +2259,9 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "post_review",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "evidence-bound to this goal's review generation and head; one non-idempotent REST comment POST via gh_api.comment_pr (ONE `gh pr comment` fallback only on a primary rate limit while GraphQL is available); an ambiguous outcome parks and reconciles by the immutable marker, never re-posts (#895 slice 4b-2)",
       "risk": "medium"
     },
     {

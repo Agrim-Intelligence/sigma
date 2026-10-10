@@ -56,7 +56,7 @@ def _rest_verb(token):                # `-X DELETE`, `--method=DELETE`, `-XDELET
 
 
 _GH_API_WRITES = {"comment_issue", "add_labels", "remove_label", "create_issue", "close_issue", "edit_issue", "add_assignees",
-                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft"}
+                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh"}
 
 
 def _is_gh_api_write_call(func):
@@ -85,6 +85,10 @@ def _metadata(path, function, rule):
             ("ungated", "high"),
         ("skills/sigma-loop/scripts/work.py", "merge", "gh-pr"):
             ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high"),
+        ("skills/sigma-loop/scripts/work.py", "post_review", "gh-api-write"):
+            ("evidence-bound to this goal's review generation and head; one non-idempotent REST comment POST via gh_api.comment_pr (ONE `gh pr comment` fallback only on a primary rate limit while GraphQL is available); an ambiguous outcome parks and reconciles by the immutable marker, never re-posts (#895 slice 4b-2)", "medium"),
+        ("skills/sigma-loop/scripts/work.py", "merge", "gh-api-write"):
+            ('work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2', "high"),
         ("skills/sigma-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
         ("skills/sigma-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
