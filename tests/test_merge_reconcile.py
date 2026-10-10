@@ -10,6 +10,8 @@ import tempfile
 
 import pytest
 
+import prfake          # #895 4a-1: REST bodies for the migrated PR reads
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
@@ -45,9 +47,13 @@ class FakeGh:
             st = self.prs.get(n, RuntimeError("HTTP 404"))
             if isinstance(st, Exception):
                 raise st
+            # #895 4a-1: the same REST body answers `pr_landing_state` and gh_api's migrated reads
+            # (_open_pr_refusal / _pr_merged), so it carries `auto_merge` and head/base too.
             return json.dumps({"number": int(n), "state": "closed" if st != "open" else "open",
                                "merged": st == "merged",
-                               "merged_at": "2026-01-02T00:00:00.000Z" if st == "merged" else None})
+                               "merged_at": "2026-01-02T00:00:00.000Z" if st == "merged" else None,
+                               "auto_merge": None, "head": {"sha": "b" * 40, "ref": "sdlc/x"},
+                               "base": {"ref": "main", "repo": {"full_name": "acme/app"}}})
         if "pr view" in line:
             st = self.prs.get(line.split("pr view", 1)[1].split()[0], "open")
             return json.dumps({"state": {"open": "OPEN", "merged": "MERGED"}.get(st, "CLOSED"),
@@ -420,18 +426,18 @@ def _merge_ready(w, st, d, config):
 
 
 def _merge_runner(comments):
-    view = json.dumps({"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-                       "statusCheckRollup": [], "headRefOid": "b" * 40, "state": "OPEN"})
     handlers = [
-        ("isCrossRepository", json.dumps({"isCrossRepository": False})),
+        # #895 4a-1: merge_rights and the marker scan read REST (`pulls/7 --method GET`, `issues/7/comments`);
+        # #895 4a-2: the gate reads the same pull (CLEAN by prfake's default) plus the rollup for its head.
+        (prfake.pull_get(7), prfake.rest_pull(author="bot", headRefOid="b" * 40)),
+        (prfake.check_runs_get("b" * 40), prfake.rest_check_runs([])),
+        (prfake.status_get("b" * 40), prfake.rest_statuses([])),
         ("viewerPermission", "ADMIN"),
-        ("comments,author", json.dumps({"author": {"login": "bot"},
-                                        "comments": [{"body": c, "author": {"login": "bot"}, "authorAssociation": "OWNER"}
-                                                     for c in comments]})),
+        (prfake.comments_get(7), prfake.rest_comments([{"body": c, "author": {"login": "bot"},
+                                                        "authorAssociation": "OWNER"} for c in comments])),
         ("reviewDecision,latestReviews", json.dumps({"reviewDecision": None, "latestReviews": []})),
         ("nameWithOwner", "acme/app"),
         ("graphql", json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}})),
-        ("pr view", view),
         ("rev-parse HEAD", "b" * 40),
     ]
     calls = []
@@ -671,8 +677,8 @@ def test_255_6_finish_refuses_a_goal_awaiting_merge_even_when_its_pr_is_armed():
         _awaiting(lp, base, [("0001", "7")])
 
         def armed(cwd, argv):
-            if "pr view" in " ".join(argv):
-                return json.dumps({"state": "OPEN", "autoMergeRequest": {"enabledAt": "x"}})
+            if prfake.is_pr_get(argv, 7):          # #895 4a-1: _open_pr_refusal reads REST
+                return prfake.rest_pull(state="OPEN", autoMergeRequest={"enabled_by": {"login": "x"}})
             return ""
         out = lp.work.finish(base, WORK_ON, "0001", run=armed)
         assert out.startswith("kept ") and "awaiting merge" in out, out

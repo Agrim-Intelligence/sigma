@@ -728,7 +728,10 @@ def test_a_swept_goals_record_is_still_cleared_by_finish_and_locked_trees_are_ke
                          capture_output=True, text=True, env=p.env(), timeout=120)
     assert fin.returncode == 0, fin.stderr
     assert not p.record(91).exists()                             # the later `done`/finish still clears it
-    assert git(p.proj, "rev-parse", "--verify", "refs/heads/sdlc/91").returncode == 0
+    # #895 4a-1: finish's `_pr_merged` now reads REST `pulls/<n>`, which this fake answers (merged, head
+    # matching), so a positively confirmed MERGED PR's branch is deleted -- before, its `gh pr view` read
+    # hit the fake's GraphQL exit 1 and the branch was kept only because MERGED could not be confirmed.
+    assert git(p.proj, "rev-parse", "--verify", "refs/heads/sdlc/91", check=False).returncode != 0
 
 
 def _start(p, env=None):

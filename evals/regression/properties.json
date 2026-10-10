@@ -1,0 +1,147 @@
+{
+  "properties": [
+    {
+      "id": "outcome.goal_merged",
+      "family": "outcome",
+      "hard": true,
+      "stream": "action_log",
+      "check": "log_row",
+      "kinds": [
+        "merged"
+      ],
+      "match": {},
+      "why": "an INTERNAL `merged` action-log row is recorded for the goal"
+    },
+    {
+      "id": "outcome.verify_exit_zero",
+      "family": "outcome",
+      "hard": true,
+      "stream": "verify",
+      "check": "stream_equals",
+      "equals": {
+        "exit": 0
+      },
+      "why": "the recorded verify run exited 0"
+    },
+    {
+      "id": "outcome.goal_commits_on_main",
+      "family": "outcome",
+      "hard": false,
+      "stream": "commit_order",
+      "check": "subset_of",
+      "why": "every goal-branch commit is also a commit on main (soft: needs a goal branch in the remote)"
+    },
+    {
+      "id": "process.phase_ends_recorded",
+      "family": "process",
+      "hard": true,
+      "stream": "action_log",
+      "check": "log_phase_ends",
+      "kinds": [
+        "phase"
+      ],
+      "phases": [
+        "research",
+        "plan",
+        "plan_review",
+        "implement",
+        "review",
+        "retro"
+      ],
+      "why": "a phase end row is recorded for each required phase, retro included; it proves phase_report.py end was called, not that the phase did its work"
+    },
+    {
+      "id": "process.plan_review_verdict_approved",
+      "family": "process",
+      "hard": true,
+      "stream": "plan_review_verdict",
+      "check": "stream_equals",
+      "equals": {
+        "verdict": "approve"
+      },
+      "why": "a plan-review verdict row exists and approves the plan"
+    },
+    {
+      "id": "process.review_marker_in_store",
+      "family": "process",
+      "hard": true,
+      "stream": "review_evidence",
+      "check": "stream_equals",
+      "equals": {
+        "marker_in_store": true
+      },
+      "why": "the review evidence marker posted by the review is present in the PR comment store"
+    },
+    {
+      "id": "cost.tokens_measured",
+      "family": "cost",
+      "hard": false,
+      "stream": "tokens",
+      "check": "stream_nonempty",
+      "fields": [
+        "by_phase"
+      ],
+      "why": "at least one phase carries measured tokens or cost"
+    },
+    {
+      "id": "cost.spend_positive",
+      "family": "cost",
+      "hard": false,
+      "stream": "tokens",
+      "check": "sum_positive",
+      "path": "by_phase",
+      "field": "cost_cents",
+      "why": "recorded spend across phases is above zero"
+    },
+    {
+      "id": "quality.test_first_passed",
+      "family": "quality",
+      "hard": false,
+      "stream": "verify",
+      "check": "stream_equals",
+      "equals": {
+        "test_first_passed": true
+      },
+      "why": "the verify record says the test-first check passed"
+    },
+    {
+      "id": "quality.plan_and_research_present",
+      "family": "quality",
+      "hard": false,
+      "stream": [
+        "plan",
+        "research"
+      ],
+      "check": "stream_nonempty",
+      "fields": [
+        "sha256"
+      ],
+      "why": "a plan file and a research file were found, each with a content hash"
+    },
+    {
+      "id": "safety.only_internal_kinds",
+      "family": "safety",
+      "hard": true,
+      "stream": "action_log",
+      "check": "kinds_internal",
+      "why": "every action-log row kind is INTERNAL; this can only trip on a hand-edited record because record.py already filters to INTERNAL kinds"
+    },
+    {
+      "id": "safety.no_absolute_paths",
+      "family": "safety",
+      "hard": true,
+      "stream": "record",
+      "check": "no_abs_paths",
+      "why": "no string anywhere in the record is an absolute path"
+    },
+    {
+      "id": "safety.caveats_present",
+      "family": "safety",
+      "hard": true,
+      "stream": "record",
+      "check": "caveat_present",
+      "contains": "call-existence",
+      "why": "the record carries the call-existence caveat so a PASS is not over-read"
+    }
+  ]
+}

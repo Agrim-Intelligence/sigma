@@ -1,9 +1,12 @@
 # Claude Code cloud sessions and GitHub GraphQL: detection and reporting only
 
 Status: slice 1 of #801 (detection and reporting) plus slices 2a, 2b and 2c of #895 (single-issue READS go
-REST first: sources.py, then ten more `issue view` sites; then ten `issue list` sites). It does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
+REST first: sources.py, then ten more `issue view` sites; then ten `issue list` sites), slice 3a (issue
+WRITES), slice 4a-1 (seven PR READS) and slice 4a-2 PR A (the merge gate and doctor's landing-PR row). It
+does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
-progress, not complete: slices 3-7 (writes, PRs, board) remain.
+progress, not complete: the remaining PR reads (4a-2 PR B: the design-PR list and the review gate's
+`latestReviews`; later the sibling list), PR writes (4b/4c) and the board remain.
 
 ## What the proxy blocks
 
@@ -193,10 +196,191 @@ issue" versus "issue missing"); the secondary-limit wording; REST assignee drop 
 `GET user`; per-write request counts and latency compared with `gh issue ...`; any real Claude Code cloud
 session.
 
+## PR reads (#895 slice 4a-1)
+
+Seven `gh pr view` READ sites now go REST first through two `gh_api` helpers:
+
+- `gh_api.view_pr_gh(run, number, fields, ...)`: `work.merge_rights` (fork check), `work._comment_directive`
+  (the review gate's `sigma:` marker scan), `work.post_review` (stale-evidence head check),
+  `work._open_pr_refusal` and `work._pr_merged` (both in `finish`), and `rebase_brief.pr_description`.
+- `gh_api.pr_for_branch_gh(run, branch, fields, repo, ...)`: `doctor._stray_commits_after_merge` (a PR looked
+  up BY BRANCH).
+
+Policy: REST first (`GET repos/{owner}/{repo}/pulls/<n>`, plus comment pages only when `comments` is asked
+for), then at most ONE `gh pr view` fallback built inside `gh_api`, on a rate limit, 5xx or transport failure
+only, never in a cloud session or with `SIGMA_GH_GRAPHQL=off`, never retried. It is `read_issue`'s machinery:
+issue reads and PR reads open and reset ONE breaker (`.sdlc/state/gh-rest-breaker.json`) and share the
+200-entry fallback log (`op: pr_read` / `pr_branch_read`), so a burst of PR failures can turn REST issue
+reads off for the cooldown too. Breaker and log are written only where the caller passes an `sdlc_dir`:
+`merge_rights`, `post_review`, `_open_pr_refusal` and `_pr_merged` do; `_comment_directive` (no `sdlc_dir`
+in scope), doctor (read-only) and rebase_brief do not. Each caller keeps its posture on the REST path AND
+the fallback path: `merge_rights`, `_comment_directive` and `_pr_merged` fail CLOSED (no merge, park, "not
+merged"), `post_review` parks, `_open_pr_refusal`, doctor and rebase_brief fail OPEN. The fallback rule that
+makes this true: a `gh pr view` that exits 0 with empty output, non-JSON, a non-object, or an object missing
+any requested field RAISES `GhApiError` (kind `other`, never retried) -- it is never read as an empty PR,
+because `{}` would mean "not a fork" (a merge) and "no comments" (a skipped `sigma:block`). The one stated
+loosening stays: a REST pull with no `auto_merge` key makes `_open_pr_refusal` fail open. A `run(cwd, argv)` caller is adapted so that only
+gh's detail (never argv) is classified: a repo named `timeout-svc` does not read as a transport failure.
+
+Parity of the rows below is UNMEASURED against live gh: they are DERIVED from GitHub's documented REST
+shapes and from reading the callers; no REST-vs-`gh pr view` comparison was run for them. `PR_FIELDS` is a
+CLOSED whitelist: any other field is refused with a ValueError before any call. Slice 4a-2 (next section)
+added `mergeable` and `mergeStateStatus`, partly MEASURED; `statusCheckRollup`, `reviewDecision`,
+`latestReviews`, `files` and the rest are still refused by `view_pr_gh`.
+
+| gh field | REST source | rule |
+|---|---|---|
+| `number` | `number` | an int; anything else is an error |
+| `title` | `title` | null reads "" |
+| `body` | `body` | null reads ""; an ABSENT key is an error |
+| `state` | `state`, `merged`, `merged_at` | `merged: true` or a non-empty `merged_at` is MERGED; else `open` OPEN, `closed` CLOSED; anything else (or absent) is an error, never a guess |
+| `headRefOid` | `head.sha` | missing reads "" (the callers' stale-PARK / no-anchor arms fire) |
+| `headRefName` | `head.ref` | missing reads "" |
+| `mergedAt` | `merged_at` | passthrough |
+| `closedAt` | `closed_at` | passthrough |
+| `autoMergeRequest` | `auto_merge` | null or object passes through; an ABSENT key is an error |
+| `isCrossRepository` | `head.repo`, `base.repo` | a null `head.repo` (deleted fork) is TRUE; else the two `full_name`s compared case-insensitively; a missing `head`/`base`/`base.repo` is an error; unknown never reads FALSE |
+| `author` | `user.login` | the raw REST login, NOT bot-mapped; no `user` reads `{"login": ""}` |
+| `comments` | `issues/<n>/comments` pages | `{id, author, body, createdAt}`, plus `authorAssociation` ONLY when REST sent `author_association` (so the "no association" park still fires) |
+
+Named differences, all UNMEASURED:
+
+- Bot login spelling: REST says `<slug>[bot]` where gh says `app/<slug>`. `_comment_directive` compares the
+  PR author with each commenter, and on the REST path both sides are REST (`x[bot]` == `x[bot]`); on a
+  fallback both sides are gh-native. The two spellings are never compared with each other. An empty REST
+  author login is treated as unknown (no `same_author`).
+- `_open_pr_refusal` (R7): a REST body with NO `auto_merge` key is an error, so `finish` fails OPEN (does
+  not refuse) on that reply where `gh pr view` would have read "not armed" and refused. A documented minor
+  loosening on a malformed response GitHub is not known to send; the behaviour is otherwise the same, not
+  byte-for-byte proven.
+- `--head` fork visibility (doctor): `gh pr view <branch>` resolves a PR across forks; REST
+  `pulls?head=<owner>:<branch>&state=all&sort=created&direction=desc&per_page=30` sees same-owner heads
+  only, so a fork PR on a same-named branch is invisible (no alarm; the check is a fail-open diagnostic).
+  No client-side scan of every open PR. gh's "open PR first, else most recent" preference is ASSUMED
+  (open row first, else newest); more than 30 PRs for one head reads the 30 newest only. An empty list is
+  "no PR"; a failed or non-list read is an error, never "no PR".
+- Comments cost: today one GraphQL call; now `1 + (floor(n/100) + 1)` REST calls for a PR with n comments
+  (stop at the first short page): 10 comments = 2, 1000 comments = 12. The page cap is 30 (3000 comments):
+  if page 30 comes back full the read RAISES and the review gate parks; a truncated list could hide a
+  trusted `sigma:block`. 100x a typical PR is therefore capped at 31 calls, then a park.
+- REST call counts per read (derived): `merge_rights` 1, `post_review` 1, `_open_pr_refusal` 1,
+  `_pr_merged` 1, `pr_description` 1, doctor 1, `_comment_directive` 2 or more (above), each against one
+  GraphQL call before; all draw on the REST `core` pool (5000/h) that every other REST read shares. Not
+  measured at scale.
+- The GraphQL review-thread read (`_unresolved_threads`) stays GraphQL; with GraphQL unavailable its
+  existing fail-open turns the thread check off silently. That gap is unchanged here.
+
+## Merge-gate and landing-PR reads (#895 slice 4a-2, PR A)
+
+Two more PR read sites go REST first, each keeping its posture: `work.gate()` (R1, the merge gate) fails
+CLOSED, doctor's landing-PR row (R10, `_landing_pr_unverifiable`) fails OPEN.
+
+- `gate()` reads `gh_api.view_pr_gh(..., ["mergeable", "mergeStateStatus", "headRefOid"])` (one
+  `pulls/<n>` GET) on each attempt of its UNKNOWN loop, then, once the loop settles and the pull reported a
+  head, `gh_api.pr_check_rollup_gh(..., sha=<that head>)` before the local-head read.
+- Doctor reads `gh_api.open_pr_for_branch_gh(run, "feature/<unit>", ["number", "mergeable", "headRefOid"],
+  repo)` and, ONLY when the PR is CONFLICTING, `pr_check_rollup_gh` for its head. Any failure of either
+  read is None (no alarm): an unread rollup is never treated as an empty one. No `sdlc_dir`: doctor never
+  writes the breaker or the fallback log. `mergeStateStatus` is no longer fetched (it was unused).
+
+| gh field | REST source | rule | evidence |
+|---|---|---|---|
+| `mergeable` | `pulls/<n> .mergeable` | `true` MERGEABLE, `false` CONFLICTING, `null` UNKNOWN; an ABSENT key or any other type (the string `"true"` included) is an error. A `mergeable_state` of `unknown` makes it UNKNOWN whatever `mergeable` says, so the gate's UNKNOWN retry runs and the park reads "mergeability unknown" | `true` and `null` MEASURED (orchestrator parity, 25 PRs of this repo); `false` NOT observed (no conflicted PR in the sample), DERIVED |
+| `mergeStateStatus` | `.mergeable_state` | accepted only as a string exactly in `clean, dirty, unstable, blocked, behind, draft, has_hooks, unknown` (lower-case), emitted upper-cased; absent, null, non-string, upper-case (`"CLEAN"`) or any other word is an error, never a default. A null `mergeable` forces UNKNOWN. Never CLEAN or BEHIND by default: CLEAN merges, BEHIND force-push-rebases | `blocked` and `unknown` MEASURED (same sample); the other six DERIVED from GitHub's docs |
+| `statusCheckRollup` CheckRun | `commits/<sha>/check-runs` (default `filter=latest`) | `{__typename: CheckRun, name, status: UPPER, conclusion: UPPER or "" when null, detailsUrl: details_url}`; a row that is not an object, a non-string `name` / `status`, a `conclusion` that is neither a string nor null, or `completed` with a null or empty conclusion is an error (`work._check_verdict` reads empty conclusion + COMPLETED as ok) | name and state set MEASURED equal on 25/25 PRs; `detailsUrl == details_url` on 2 PRs / 7 runs; in-progress / null-conclusion shape UNMEASURED |
+| `statusCheckRollup` StatusContext | `commits/<sha>/status .statuses[]` | `{__typename: StatusContext, context, state: UPPER, targetUrl: target_url}`; `statuses` absent or not a list is an error; the combined `.state` is never read (an empty set reports `pending`, MEASURED) | `context` / `state` / `targetUrl` MEASURED equal on 2 kubernetes/kubernetes PRs (21 and 13 statuses); this repo has none |
+| `headRefOid` | `.head.sha` | unchanged from 4a-1: missing reads "" and the gate parks `_PARK_NO_REMOTE_HEAD` without a rollup read | 4a-1 |
+
+Rollup rules (`pr_check_rollup_gh`): the sha must be 40 lower-case hex, else ValueError before any call (a
+branch name or "" can never be queried; a SHA-256 repository's 64-hex head is refused too, so the gate parks
+unreadable there although `work.py` accepts 64-hex heads elsewhere: UNMEASURED, fails closed). Check runs
+then statuses (gh's order; `ci_repair` takes the first failing), 100 per page, paged by each page's own
+`total_count`: a short page while fewer rows than `total_count` were fetched, or `CHECK_RUN_PAGE_CAP` (10
+pages, 1000 runs) / `STATUS_PAGE_CAP` (5 pages, 500 statuses) reached below `total_count`, RAISES. A missing
+failing check never reads as green. Paging is not atomic across pages (a run created between pages can
+shift the set), so consumers re-read the rollup every pending round. The read is all-or-nothing: a 429 on page 2 after a good page 1 is one
+fallback, never half REST. Fallback: ONE `gh pr view <n> --json statusCheckRollup,headRefOid` on a rate
+limit / 5xx / transport failure, never in a cloud session or with `SIGMA_GH_GRAPHQL=off`, never on
+401/404/422/permission-403/proxy, accepted only when its `headRefOid` equals the sha asked for and the rollup
+is a list (else an error): a rollup for another head is never attached.
+
+Open-PR-by-branch rules (`open_pr_for_branch_gh`): `repo` (`owner/name`) is required; ONE
+`pulls?head=<owner>:<branch>&state=open&per_page=1` with `<owner>` taken from `repo` (gh's `{owner}` does
+expand in a query string, MEASURED, but from the process cwd's remote, which may not be `repo`), then one
+`pulls/<n>` read (list rows carry `mergeable: null` and no `mergeable_state`, MEASURED). A non-list body or a
+row `number` that is not an int is an error, never "no PR". Fallback: ONE `gh pr list --repo R --head
+<branch> --state open --limit 1 --json <fields>`; a row missing a requested key is an error. Named
+difference (DERIVED, not re-measured): `gh pr list --head X` matches any owner, `head=<owner>:X` same-owner
+heads only, so a fork landing PR is invisible to the advisory row (no alarm).
+
+When the gate reads the rollup (D4): AFTER the UNKNOWN loop settles, once per pending round, only for a
+non-empty head, for exactly the `headRefOid` the stale-head check then compares with local HEAD, and BEFORE
+the local-head read, so every `data` the gate returns from that point on carries the four keys
+`_behind_transient`, `normalise_ci_rollup`, `_ci_failed_check` and `ci_repair` read. On the
+`_PARK_NO_REMOTE_HEAD` and "could not read" paths it carries fewer (no rollup, or `{}`), which those
+consumers already tolerate. Two-read window (named, not new): REST reads the pull, then the checks, non-
+atomically; a push in between leaves the rollup describing the older, compared head, and the merge itself is
+guarded by `--match-head-commit` (slice 4b, unchanged).
+
+Rollup retry: the rollup read is retried on the pull read's budget (`UNKNOWN_ATTEMPTS` 4, backoff 3 s
+doubling), but ONLY for a transient failure (`gh_api.FALLBACK_KINDS`: rate limit, 5xx, transport). In a
+cloud session there is no fallback, so without it one 502 on check-runs would park the goal (parking strips
+`sdlc:goal`). A deterministic failure (a permission 403, a malformed or truncated page, a refused sha) parks
+at once instead of sleeping ~21 s for the same answer.
+
+Verdict precedence (changed, stated): before, one atomic read could never be "pull readable, rollup not".
+Now a rollup still unreadable after its retries PRECEDES and HIDES STALE HEAD, an unreadable or empty local
+head, UNKNOWN, CONFLICTING and BEHIND: the gate returns `could not read PR state (...)` with `{}`. It still
+fails closed (a park, never a merge), but a BEHIND PR then parks instead of rebasing, and a stale head reads
+as unreadable rather than STALE HEAD. Likewise a push between the pull read and a fallback rollup read (the
+fallback answers for a newer `headRefOid` than the one asked for) parks "could not read PR state", not
+STALE HEAD. Only `_PARK_NO_REMOTE_HEAD` (no head, no rollup read) is unaffected.
+
+Costs (DERIVED from the call shapes; nothing timed): a clean gate round is 3 REST calls (pull, check-runs,
+status) against 1 GraphQL call before; +1 per UNKNOWN retry; a rollup is `ceil(runs/100) +
+ceil(statuses/100)`, 15 at the caps. Worst `merge()`: 11 rounds x (<= 4 pull reads + 2) = 66 calls against 44;
+about 230 worst-case merges per hour on one 5,000/h token (a documented limit, UNMEASURED). With the breaker
+OPEN, both the pull read and the rollup read go straight to their GraphQL fallback: 2 GraphQL calls per round,
+not 1, i.e. up to twice today's GraphQL cost while the breaker is open. Doctor: 2 calls per open unit, 4 for
+a conflicted PR, against 1; 100 open units is about 200 calls per on-demand run.
+
+Token permission (DERIVED from GitHub's docs): check-runs needs `checks:read` on a fine-grained token or a
+GitHub App. A permission 403 never falls back, so on such a token the gate parks unreadable and doctor's row
+says nothing.
+
+R4, the review gate, decided and NOT changed here: under `require_review: approval` it keeps ONE
+`gh pr view <n> --json reviewDecision,latestReviews` read, because REST cannot derive APPROVED /
+REVIEW_REQUIRED (MEASURED: the branch-protection endpoint 404s, and rulesets are invisible to it). That read
+is GraphQL-only and fails CLOSED when GraphQL is unavailable, so in a cloud session approval mode parks,
+never passes. UNCHANGED blind spot, stated honestly: under `require_review: changes` a failed
+`reviewDecision,latestReviews` read already returns "pass" (`work.py` review_gate), which skips the
+CHANGES_REQUESTED check AND `_unresolved_threads`, so in a cloud session a native "Request changes" review
+and unresolved threads are invisible to the gate; only a `sigma:block` comment, read over REST, still blocks.
+PR B's `latestReviews` move narrows this. `_unresolved_threads` stays GraphQL (REST has no `isResolved`).
+
+MEASURED: the orchestrator's live parity run on 25 PRs of this repository (`mergeable` agreed 25/25,
+values `true` and `null` only; `mergeable_state` `blocked` and `unknown` only; check-run name / state set
+25/25; `detailsUrl == details_url` on 2 PRs / 7 runs) and research's kubernetes/kubernetes run (2 PRs, 21 and
+13 statuses, `context` / `state` / `targetUrl` equal). UNMEASURED: `mergeable: false` (a conflicted PR) and
+six of the eight `mergeable_state` values; the in-progress / null-conclusion check-run shape; the first-GET
+`mergeable: null` rate on open PRs; the real 429 body; REST vs GraphQL latency; any cloud-session run; a
+GraphQL-fallback read and a REST read mixing shapes across consecutive gate rounds; the `checks:read` 403;
+the 64-hex sha refusal. Also UNMEASURED and a known divergence: GraphQL's `statusCheckRollup` can carry
+EXPECTED contexts (required status contexts not yet reported), while REST `commits/<sha>/status` never
+returns them, so a BLOCKED PR waiting only on such a context parks "not safe to merge (BLOCKED)" instead of
+waiting and arming `--auto`. That fails closed.
+
+Remaining PR sites, still direct `gh pr` and still open on #895 (counts from the ratchet's `scan()`):
+work.py 8 (R4 `reviewDecision`, R5 the sibling list, R9 the design-PR list, and writes W1-W5 including
+`--auto`), doctor 5 (all non-PR sites), verify_merge 3 (`pr ready|create|merge`). Next: PR B (R9, R4's
+`latestReviews` half), then R5; PR writes are slices 4b/4c.
+
 ## What this does NOT do
 
-- `read_issue`, `list_issues_gh` and the seven issue write helpers (above) are wired to callers; the other REST helper ops
-  (PR and project ops) have none yet, and nothing in the product exercises the probe or the cache.
+- `read_issue`, `list_issues_gh`, the seven issue write helpers and the four PR read helpers (`view_pr_gh`,
+  `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, above) are wired to callers; PR WRITES
+  are not, the raw `create_pr`
+  / `merge_pr` and the project ops have no caller, and nothing in the product exercises the probe or the cache.
 - `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
 - `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
   carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
@@ -205,7 +389,8 @@ session.
 ## The ratchet
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
-(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a; it only goes down). Run
+(baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
+50 after slice 4a-1, 48 after slice 4a-2 PR A; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

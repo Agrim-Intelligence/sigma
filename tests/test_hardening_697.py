@@ -179,8 +179,7 @@ def test_merge_passes_match_head_commit_on_the_direct_merge_and_the_arm(tmp_path
     d = tw._sdlc(tmp_path)
     goal = tw._started(d)
     tw._evidence(d, goal)
-    run = tw._runner(tw._rights() + tw._protected(checks=("ci",), reviews=1)
-                     + [("pr view", tw._view())])
+    run = tw._runner(tw._view() + tw._perm() + tw._protected(checks=("ci",), reviews=1))
     out = work.merge(d, tw.GUARDED, goal, run=run, sleep=tw.NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert f"gh pr merge 7 --squash --match-head-commit {sha}" in run.calls
@@ -188,8 +187,8 @@ def test_merge_passes_match_head_commit_on_the_direct_merge_and_the_arm(tmp_path
     d = tw._sdlc(tmp_path / "arm")
     goal = tw._started(d)
     tw._evidence(d, goal)
-    run = tw._runner(tw._rights() + tw._protected(checks=("ci", "slow")) + tw._auto_merge_allowed(True)
-                     + [("pr view", tw._mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = tw._runner(tw._mixed(("ci", "SUCCESS"), ("slow", "")) + tw._perm() + tw._protected(checks=("ci", "slow"))
+                     + tw._auto_merge_allowed(True))
     out = work.merge(d, tw.GUARDED, goal, run=run, sleep=tw.NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert f"gh pr merge 7 --auto --squash --match-head-commit {sha}" in run.calls
@@ -366,8 +365,7 @@ def test_merge_parks_instead_of_passing_an_empty_head_commit(tmp_path, monkeypat
     d = tw._sdlc(tmp_path)
     goal = tw._started(d)
     tw._evidence(d, goal)
-    run = tw._runner(tw._rights() + tw._protected(checks=("ci",), reviews=1)
-                     + [("pr view", tw._view())])
+    run = tw._runner(tw._view() + tw._perm() + tw._protected(checks=("ci",), reviews=1))
     real_gate = work.gate
 
     def gate_without_head(*args, **kwargs):

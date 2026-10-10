@@ -386,7 +386,8 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-managed-enrolled-", "sigma-demo", "sigma-dossier", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
                 "sigma-receipt-snapshot-",
                 "sigma:spend-approved", "sigma:spend-approval-used",   # new with #722: no legacy spelling
-                "sigma-resolution")   # new with #945: a commit-body trailer key, lowercase, no legacy spelling
+                "sigma-resolution",   # new with #945: a commit-body trailer key, lowercase, no legacy spelling
+                "sigma-claim:")   # new with #858: no legacy spelling
 
 
 def test_every_marker_literal_is_registered_with_the_helper(legacy):

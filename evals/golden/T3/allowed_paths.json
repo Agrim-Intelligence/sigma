@@ -1,0 +1,11 @@
+[
+  "README.md",
+  "docs/rates.md",
+  "docs/tariffs.md",
+  "config/shipping.json",
+  "shipping/__init__.py",
+  "shipping/rates.py",
+  "shipping/config.py",
+  "shipping/cart.py",
+  "shipping/cli.py"
+]

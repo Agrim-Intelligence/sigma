@@ -142,6 +142,59 @@ All notable changes to Sigma are recorded here, newest first.
   refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
   fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
   so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+- **The merge gate and doctor's landing-PR row go REST first (#895, slice 4a-2 PR A; refs #801).**
+  `work.gate()` (R1) now reads `gh_api.view_pr_gh` with two new whitelisted fields, `mergeable` and
+  `mergeStateStatus`, then the new `gh_api.pr_check_rollup_gh` (check-runs, then commit statuses) for exactly
+  the pull's own head; doctor's `_landing_pr_unverifiable` (R10) uses the new `gh_api.open_pr_for_branch_gh`
+  and reads the rollup only for a CONFLICTING PR. One GraphQL fallback each (`gh pr view` / `gh pr list`,
+  built inside `gh_api`), on a rate limit, 5xx or transport failure only, never in a cloud session. Fail
+  closed: an absent or unrecognised `mergeable` / `mergeable_state` is an error, never CLEAN or BEHIND (BEHIND
+  force-push-rebases); `mergeable_state: unknown` reads UNKNOWN; a completed check run with no conclusion, a
+  truncated page (paged by `total_count`, capped at 10 / 5 pages) and a missing `statuses` list are errors; a
+  fallback rollup for another head is refused. The gate keeps its posture (park), doctor its (no alarm; an
+  unread rollup is never an empty one). The rollup read is retried on the gate's UNKNOWN budget for
+  transient failures only, so one 502 in a cloud session does not park, while a permission 403 parks at once.
+  Stated precedence change: a rollup still unreadable after its retries parks `could not read PR state` and
+  hides STALE HEAD, UNKNOWN, CONFLICTING and BEHIND (a BEHIND PR then parks instead of rebasing; still fail
+  closed). Costs (derived, not timed): 3 REST calls per clean gate round against 1 GraphQL call; with the
+  breaker open, 2 GraphQL calls per round, not 1; doctor 2 calls per open unit, 4 if conflicted. MEASURED:
+  orchestrator parity on 25 PRs (`mergeable` true/null and `mergeable_state` blocked/unknown agree 25/25;
+  check-run names/states 25/25; `detailsUrl` on 2 PRs / 7 runs) and kubernetes/kubernetes statuses (2 PRs).
+  UNMEASURED: `mergeable: false`, six `mergeable_state` values, the in-progress check-run shape, the first-GET
+  null rate on open PRs, a real 429, latency, any cloud-session run, shape mixing across rounds, the
+  `checks:read` 403, and GraphQL's EXPECTED contexts (required status contexts not yet reported), which REST
+  `commits/<sha>/status` never returns, so a BLOCKED PR waiting only on one parks instead of arming (fails
+  closed). R4 decided, not changed: under `require_review: approval` the `gh pr view --json
+  reviewDecision,latestReviews` read stays (REST cannot derive APPROVED, MEASURED), so approval mode parks in a
+  cloud session, never passes; under `changes` a failed read still passes and skips the CHANGES_REQUESTED and
+  unresolved-thread checks (unchanged blind spot; only a `sigma:block` comment still blocks there). Ratchet
+  50 -> 48 by the printed `scan()` (work.py 9 -> 8, doctor 6 -> 5). Remaining on #895: PR B (R9 design-PR
+  list, R4's `latestReviews` half), then R5; `_unresolved_threads` stays GraphQL; PR writes are 4b/4c.
+  Verified with injected-runner tests only; no live GitHub or cloud-session run.
+- **Seven PR READ sites go REST first (#895, slice 4a-1; refs #801).** New `gh_api.view_pr_gh` (a REST
+  `pulls/<n>` read, plus paged `issues/<n>/comments` for the marker scan) and `gh_api.pr_for_branch_gh` (one
+  REST `pulls?head=<owner>:<branch>` read) replace `gh pr view` in `work.merge_rights`,
+  `work._comment_directive`, `work.post_review`, `work._open_pr_refusal`, `work._pr_merged`,
+  `doctor._stray_commits_after_merge` and `rebase_brief.pr_description`. Same fallback policy as the issue
+  reads: at most one `gh pr view` fallback, only on a rate limit, 5xx or transport failure, never in a cloud
+  session or with `SIGMA_GH_GRAPHQL=off`, never retried; issue and PR reads share one breaker and one
+  bounded log. Each site keeps its posture on the REST and the fallback path alike: merge rights, the
+  marker scan and `_pr_merged` fail closed, `post_review` parks, `_open_pr_refusal`, doctor and rebase_brief
+  fail open. A fallback `gh pr view` that exits 0 with empty, non-JSON, non-object output, or an object
+  missing a requested field, raises (never reads as an empty PR, which would mean "not a fork" and "no
+  comments"). The field mapping is a closed
+  whitelist (an unmapped field is refused before any call); a deleted fork reads as cross-repo; a comment
+  list over 3000 raises and parks rather than truncate. Parity is UNMEASURED against live gh (the mapping is
+  derived from GitHub's documented shapes). Named differences: the marker scan costs `2 + floor(n/100)` REST
+  calls (was one GraphQL call); bot logins stay REST-spelled `x[bot]` on both sides of the same-author
+  comparison; doctor's `head=<owner>:` lookup cannot see a fork PR on a same-named branch and assumes gh's
+  open-first preference; a REST pull with no `auto_merge` key makes `finish`'s open-PR refusal fail open (a
+  minor loosening on a reply GitHub is not known to send). The direct-`gh` ratchet drops from 57 to 50 sites
+  (measured by `scan()`: work.py 14 -> 9, doctor 7 -> 6, rebase_brief 1 -> 0; the two small adapters that wrap `gh api` use a `_GH` alias, which the ratchet's rule 3 does not count by construction, so counted by intent the total is 52). Still open on #895
+  after this slice: `reviewDecision` (R4), the sibling and design-PR lists (R5, R9), every PR write (W1-W8,
+  including `--auto`) and the GraphQL review-thread read (the merge gate R1 and doctor's landing-PR list R10
+  moved in slice 4a-2 PR A, above). Verified with injected-runner
+  tests only; no live GitHub or cloud-session run.
 - **Seventeen issue WRITE sites go REST first (#895, slice 3a; refs #801).** Comment, create, edit body, close,
   add/remove label and add-assignee now call new `gh_api` helpers (`comment_issue`, `create_issue`,
   `edit_issue`, `close_issue`, `add_labels`, `remove_label`, `add_assignees`) through `GitHubSource._issue_*`
@@ -182,6 +235,15 @@ All notable changes to Sigma are recorded here, newest first.
   reconcile census tick (derived, not measured, against `SIGMA_WATCH_CALL_TIMEOUT` 120 s); doctor latency
   (~45 s per site, ~135 s multi-state, derived from the 15 s timeout); gh's newest-created default order
   (assumed, not re-verified); GraphQL points saved (#1829's figure, not re-measured).
+- **Regression checker (#877, slice 2 of #870).** `python3 evals/regression/check.py <record> <properties.json>` reads one
+  `record.py` record and prints `PASS`, `FAIL` or `NOT EVALUABLE` per property (outcome, process, cost, quality, safety
+  families, listed in `evals/regression/properties.json`). Exit 0 when every property passes (a soft `NOT EVALUABLE` is
+  allowed); exit 1 on any `FAIL` or any hard property whose source stream is absent; exit 2 refuses a broken input
+  (unreadable or malformed record, wrong schema, malformed property list) so it is never read as a regression. Process
+  properties read INTERNAL action-log rows only; a property naming an agent-writable kind is refused. One recorded run and
+  three mutated copies (plan-review verdict, one phase end, review marker each dropped) are committed under
+  `evals/regression/fixtures/` as controls of the checker itself. Honest limit: the evidence is call-existence from a
+  synthetic run, nothing here was measured against a live run.
 - **Regression record builder (#874, slice 1 of #870).** `python3 evals/regression/record.py build <run_dir>` writes one
   `sigma.regression-run/v1` JSON record from a run's plan, research, plan-review verdict, verify state, journal, action log,
   review evidence, commit order and per-phase tokens. Action-log rows are filtered by the plugin's own `actionlog.INTERNAL_KINDS`

@@ -89,6 +89,8 @@ import tokenize
 import types
 import importlib.util
 
+import prfake          # #895 4a-1: REST bodies for the migrated PR reads
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 DEFINE_SCRIPTS = ROOT / "skills" / "sigma-define" / "scripts"
@@ -488,19 +490,19 @@ def _started(sdlc_dir, goal="0001-x.md", pr="7", base="main"):
 
 
 def _pr_state(state="OPEN", auto_merge=False):
-    return json.dumps({"state": state,
-                       "autoMergeRequest": ({"mergeMethod": "SQUASH"} if auto_merge else None)})
+    """#895 4a-1: the REST `pulls/7` body `_open_pr_refusal` / `_pr_merged` now read (via gh_api)."""
+    return prfake.rest_pull(state=state, autoMergeRequest=({"merge_method": "squash"} if auto_merge else None))
 
 
 def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), head=HEAD_SHA):
-    return json.dumps({"mergeable": mergeable, "mergeStateStatus": status, "headRefOid": head,
-                       "statusCheckRollup": [{"name": n, "conclusion": c} for n, c in checks]})
+    """#895 4a-2: the gate's REST reads (pull, check-runs, status) as one handler list; its pull body also
+    answers merge_rights' fork read, so it goes FIRST and stands beside `_perm()`, never `_rights()`."""
+    return prfake.gate_handlers(prfake.rest_pull(mergeable=mergeable, mergeStateStatus=status, headRefOid=head),
+                                checks, (), head)
 
 
-def _rights(cross=False, perm="ADMIN"):
-    return [("isCrossRepository", json.dumps({"isCrossRepository": cross})),
-            ("viewerPermission", perm),
-            ("nameWithOwner", "acme/app")]
+def _perm(perm="ADMIN"):
+    return [("viewerPermission", perm), ("nameWithOwner", "acme/app")]
 
 
 def _default_branch(name="main"):
@@ -530,7 +532,7 @@ def test_finish_never_names_the_feature_branch_when_the_goal_declared_a_unit(tmp
     deleted -- `finish()` never even reads or names `base` anywhere."""
     d = _sdlc(tmp_path)
     goal = _started(d, base=_UNIT_BRANCH)
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(prfake.pull_get(7), _pr_state("MERGED"))])
     out = work.finish(d, ON, goal, run=run)
     # existing behavior untouched: the goal's own branch really is deleted, both sides --
     # otherwise the assertion below would pass vacuously (nothing delete-shaped ran at all).
@@ -549,7 +551,7 @@ def test_merge_never_deletes_the_feature_branch_base_after_a_direct_landing(tmp_
     d = _sdlc(tmp_path)
     goal = _started(d, base=_UNIT_BRANCH)
     _evidence(d, goal)
-    run = _runner(_rights() + _default_branch("main") + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _default_branch("main"))
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
     # existing behavior untouched: the goal's own branch really is deleted.

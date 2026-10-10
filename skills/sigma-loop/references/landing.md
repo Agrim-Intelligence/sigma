@@ -207,7 +207,7 @@ BEHIND-rebase is in play. `gate()` only READS GitHub's state while it polls; it 
 So if the host cuts the call short anyway, nothing was recorded as merged or armed — just re-run
 `work.py merge .sdlc "$goal"` (idempotent: it re-reads live state, not a stale local guess), or
 read `gh pr view <PR> --json mergeable,mergeStateStatus,statusCheckRollup` yourself first if you
-want to see exactly where GitHub's own read stood before deciding.
+want to see exactly where GitHub's own read stood before deciding. No GraphQL: REST reads in docs/cloud-sessions.md.
 
 The gate is clean **and** safe: it needs THIS run's passing verify evidence *and* GitHub's
 `mergeable` + `mergeStateStatus CLEAN`, **plus — with `require_review` on — the review verdict you

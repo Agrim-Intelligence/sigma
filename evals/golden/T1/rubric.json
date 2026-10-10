@@ -1,0 +1,6 @@
+{"criteria": [
+  "Empty input returns an empty list instead of raising.",
+  "Intervals that touch at one point are merged into one.",
+  "A nested interval never shortens the interval that contains it.",
+  "The caller's list is left unchanged and the result is a new list of tuples."
+]}

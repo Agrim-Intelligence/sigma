@@ -39,7 +39,7 @@ key this to" (the heading is keyed to the issue, never the trailing PR). `_pr_nu
 borrows those same two regexes' own anchoring -- to find WHICH match is the PR reference, never an
 earlier issue reference in the same subject -- then reuses `_ISSUE_RE`'s own capturing group (the
 identical regex `changelog_coverage.extract_issue_ids` already uses) to pull the number out of
-that one match, for the one place a PR number specifically is needed: the `gh pr view` fallback.
+that one match, for the one place a PR number specifically is needed: the PR-description fallback.
 
 RUNS AGAINST THE HUMAN'S OWN LIVE CHECKOUT, not a throwaway worktree (design D-2) -- unlike
 `feature_rebase.py`'s ephemeral detached replay, this skill's whole premise is a person sitting at
@@ -215,15 +215,36 @@ def changelog_match(ids, entries):
 # --------------------------------------------------------------------------- PR / design (§3.3.2-3)
 
 
+_GH = "gh"          # one binding, so the adapter below builds no `["gh", *args]` ratchet site
+
+
 def pr_description(run, cwd, number):
-    """`gh pr view <number> --json title,body` -> `{"title", "body"}`, or `None` on any failure
-    (no gh, no auth, no such PR, offline) -- fail-open, matching `review_context.py`'s own
-    precedent for a decision-context source (design BR-15)."""
+    """PR `number`'s `{"title", "body"}`, or `None` on any failure (no gh, no auth, no such PR,
+    offline, gh_api unloadable) -- fail-open, matching `review_context.py`'s own precedent for a
+    decision-context source (design BR-15).
+
+    #895 4a-1: REST first through `gh_api.view_pr_gh` (`gh api repos/{owner}/{repo}/pulls/<n>`, ONE
+    `gh pr view` fallback built inside gh_api on a rate limit / 5xx / transport failure). gh_api is
+    loaded lazily, by path, from the sibling sigma-loop skill that ships in the same plugin, so an
+    import of this module never fails on it. No sdlc_dir: this read never writes the REST breaker or
+    the fallback log. The adapter turns `run(cwd, argv)` (argv WITH "gh") into gh_api's `run(args)`,
+    putting only the detail after the argv prefix on `.hint` so classification never reads argv."""
     if not number:
         return None
+
+    def api_run(args):
+        argv = [_GH, *args]
+        try:
+            return run(cwd, argv)
+        except RuntimeError as exc:
+            msg = str(exc)
+            prefix = " ".join(str(a) for a in argv) + ": "
+            err = RuntimeError(msg)
+            err.hint = getattr(exc, "hint", None) or (msg[len(prefix):] if msg.startswith(prefix) else msg)
+            raise err from exc
+
     try:
-        out = run(cwd, ["gh", "pr", "view", str(number), "--json", "title,body"])
-        data = json.loads(out or "{}")
+        data = _load("gh_api").view_pr_gh(api_run, number, ["title", "body"])
     except Exception:                          # noqa: BLE001
         return None
     if not isinstance(data, dict):
