@@ -9,6 +9,15 @@ All notable changes to Sigma are recorded here, newest first.
   enforcement table). It refuses a landing while another repository's half of the unit has not landed,
   and when the lookup cannot answer. Read-only, inert while the upkeep gate is closed, and nothing
   calls it yet.
+- **Upkeep part B, slice 4: the stamp and the resolution record (#945).** A new library,
+  `feature_upkeep_resolution.py`, with no caller yet. The stamp is one lowercase body trailer
+  (`sigma-resolution: <level> <run id>`) built after a blank line so the pull-request arrival
+  classifier still reads the title, and it carries no number, no closing keyword and no registered
+  marker. The stamping commit is made at the stop with the original author name, email and date
+  kept (a plain commit loses them; an authorship comparison refuses it), and `rebase --continue`
+  keeps it unchanged. Measured: the continuation runs only two commit hooks and never signs, and
+  the engine commit runs the same two. The record store is atomic, refuses symlinks and is pruned
+  by age; one unaddressed ledger note and an optional finding comment follow. Off by default.
 - **Upkeep part B, slice 2: a heading-aware CHANGELOG union, off by default (#943).** `work.py` gains
   `_union_headed`, a sibling of `_union_diff3` (left byte-identical): on a conflict where both sides
   only inserted, an entry added under `## Unreleased` stays under it when the base side cut a version

@@ -70,6 +70,7 @@ LIBRARY_ONLY = {
     "codex_runtime",
     "feature_upkeep_drift",
     "feature_upkeep_state",
+    "feature_upkeep_resolution",
 }
 
 
