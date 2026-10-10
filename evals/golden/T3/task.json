@@ -1,0 +1,28 @@
+{
+  "id": "T3",
+  "kind": "refactor",
+  "origin": "planned",
+  "prompt": "Rename the function calc_rate to quote_rate, the configuration key rate_table to tariff_table, and the documentation page docs/rates.md to docs/tariffs.md, updating every first-party caller, the configuration file and the README link. Keep vendored and generated code as they are.\n\nMake the change in this repository.",
+  "visible_command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "tests"
+  ],
+  "hidden_sha256": {
+    "files/test_hidden_rename.py": "bdb95b9939ef4fe818a0500cacdfe3b160d9ade262b354d0f1cdedd7bc3d63c4",
+    "naive/config/shipping.json": "a2fa2c79c4f26c7776f6e52bc959558851bd718537af283fe0a64546de227fec",
+    "naive/docs/rates.md": "c19514c8ba2e8104c0b5fdd6f5ab1c0a15ae557b38963ac421e9b98f8e66ddd6",
+    "naive/generated/rate_schema.py": "81a9aa212f4a215b7c8ea7b12a7bd02f194fd9742d113051d0284a8816407a98",
+    "naive/shipping/__init__.py": "5a7a139b1a1281a820d579ae5f0d82d39c97442300d00240faffc48157d1b0b3",
+    "naive/shipping/_vendor/legacy_rates.py": "726723f2d9ac41e984d3ee6c374e5da1cc3c0830c8e60cd488b5eae2d35a0d8f",
+    "naive/shipping/cart.py": "d40a846586c2a8c3b8f431ee53f054dc8a164db9e3164403d20a2c1724d70e96",
+    "naive/shipping/cli.py": "79e6f851b72bf843a800a9b08fdea411720f7436b96d3b12155bc4613efd84b1",
+    "naive/shipping/compat.py": "afa1fb84a84b9973a09df842006bedd11589927fac33c8ede036cbb3ac39e235",
+    "naive/shipping/config.py": "e0d725421e3008b87ae0ee5261eba37cd86a0a87bf9bae4215651de7fb840884",
+    "naive/shipping/rates.py": "3e357b3b665fe36428bbedc8f909910d03b01671ef7b831daf50eb61272b2787",
+    "verify.json": "b1e7a450b6966a576f31b62a0e8bfebc1d60f95ad73c511b413b485c3ec64f03"
+  },
+  "trap": true
+}

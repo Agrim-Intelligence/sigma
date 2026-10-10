@@ -1,0 +1,7 @@
+{
+  "currency": "EUR",
+  "tariff_table": {
+    "ground": [4.0, 0.5],
+    "air": [9.0, 1.25]
+  }
+}

@@ -123,8 +123,8 @@ must build and put first on that PATH; the harness does not enforce it.
 
 ## Golden tasks
 
-`evals/golden/` holds small, self-checking tasks (slice 1 of epic #873 ships the verifier; the tasks land in
-later slices). It has nothing to do with `contract/golden/`, which is a different thing (the golden config and
+`evals/golden/` holds small, self-checking tasks (slice 1 of epic #873 ships the verifier; `T3`, a multi-file refactor
+with a decoy vendored file and a generated file, is the first shipped task, and T1 and T2 follow in their own slices). It has nothing to do with `contract/golden/`, which is a different thing (the golden config and
 goal frontmatter the contract tests read). One gesture, no flags:
 
 ```bash
@@ -154,7 +154,7 @@ Exit codes: 0 all green; 1 any red line; 2 unreadable or invalid input (bad JSON
 verified)`: that is not a pass, and a directory without `task.json` is red, never skipped. Unix only: it
 refuses on Windows (exit 2). Each hidden run has a 120 s ceiling (a hung-test limit, not a measured time);
 the whole process group is killed and the run is reported red `timeout`. `SIGMA_GOLDEN_TIMEOUT` (1 to 600
-seconds) overrides it and exists for the tests only. Controls: `python3 -m pytest tests/test_golden_verify.py -q`.
+seconds) overrides it and exists for the tests only. Controls: `python3 -m pytest tests/test_golden_verify.py tests/test_golden_t3.py -q`.
 
 Measured wall time (macOS, `/usr/bin/time -p`, five runs each, one planted task with a naive patch, so 3 pytest
 runs): 0.45 / 0.47 / 0.65 s (min / median / max) under the Python 3.12 venv; 3.42 / 3.77 / 3.94 s under the

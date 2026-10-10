@@ -1,0 +1,8 @@
+{
+  "criteria": [
+    "Renames calc_rate to quote_rate at the definition, the package export and every first-party call site.",
+    "Renames the rate_table configuration key to tariff_table in the config file and its reader, and moves docs/rates.md to docs/tariffs.md with the README link and the page text updated.",
+    "Leaves the vendored legacy calculator, the generated schema file and the compatibility shim exactly as they are, although they contain the same names."
+  ],
+  "trap": "The vendored file, the generated file and the shim that imports the vendored function all contain calc_rate and rate_table. A global find-and-replace edits them and breaks the vendored and generated contracts; the old docs page must also be removed, not just edited."
+}
