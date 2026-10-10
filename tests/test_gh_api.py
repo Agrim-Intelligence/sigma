@@ -1,7 +1,9 @@
-"""#801 slice 1 + #895 slice 2a: skills/sigma-loop/scripts/gh_api.py -- GraphQL capability check, REST
-helper ops, and the REST-first `read_issue` policy (classification, normaliser, breaker, fallback log).
+"""#801 slice 1 + #895 slices 2a-4a-1: skills/sigma-loop/scripts/gh_api.py -- GraphQL capability check, REST
+helper ops, and the REST-first `read_issue` policy (classification, normaliser, breaker, fallback log),
+the issue list/write helpers, and the PR read helpers `view_pr_gh` / `pr_for_branch_gh` (#895 4a-1:
+closed field whitelist, converter table, capped comment paging, shared breaker).
 
-Only `read_issue` has product callers (sources.py); no claim is made that /sigma-loop works in a Claude
+No claim is made that /sigma-loop works in a Claude
 Code cloud session (unmeasured). Every test injects a fake `run` that
 follows the sources convention: args WITHOUT a leading "gh", returns stdout str, RAISES on failure.
 """
@@ -1579,3 +1581,411 @@ def test_add_assignees_get_user_5xx_follows_the_idempotent_table():
     g.add_assignees(run, 7, ["@me"], repo="o/r", env={})
     assert [c for c in run.calls if c[0] == "issue"] == [
         ["issue", "edit", "7", "--repo", "o/r", "--add-assignee", "@me"]]
+
+
+# ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)
+
+def _rest_pull(n=7, state="open", merged=False, merged_at=None, head_full="o/r", base_full="o/r", **kw):
+    d = {"number": n, "title": "T", "body": "B", "state": state, "merged": merged, "merged_at": merged_at,
+         "closed_at": None, "auto_merge": None, "user": {"login": "alice", "type": "User"},
+         "head": {"sha": "a" * 40, "ref": "sdlc/7", "repo": {"full_name": head_full}},
+         "base": {"ref": "main", "repo": {"full_name": base_full}}}
+    d.update(kw)
+    return d
+
+
+def _drop(d, *path):
+    """A deep copy of `d` with the key at `path` removed (absent, not null)."""
+    d = json.loads(json.dumps(d))
+    cur = d
+    for k in path[:-1]:
+        cur = cur[k]
+    del cur[path[-1]]
+    return d
+
+
+PR_SHAPE_ROWS = [
+    ("state-open", _rest_pull(), ["state"], {"state": "OPEN"}),
+    ("state-closed", _rest_pull(state="closed"), ["state"], {"state": "CLOSED"}),
+    ("state-closed-merged-at", _rest_pull(state="closed", merged_at="2026-01-02T00:00:00Z"), ["state"],
+     {"state": "MERGED"}),
+    ("state-merged-true", _rest_pull(state="closed", merged=True), ["state"], {"state": "MERGED"}),
+    ("head-sha", _rest_pull(), ["headRefOid", "headRefName"], {"headRefOid": "a" * 40, "headRefName": "sdlc/7"}),
+    ("head-sha-missing", _drop(_rest_pull(), "head", "sha"), ["headRefOid"], {"headRefOid": ""}),
+    ("auto-merge-null", _rest_pull(), ["autoMergeRequest"], {"autoMergeRequest": None}),
+    ("auto-merge-object", _rest_pull(auto_merge={"merge_method": "squash"}), ["autoMergeRequest"],
+     {"autoMergeRequest": {"merge_method": "squash"}}),
+    ("cross-same-repo", _rest_pull(), ["isCrossRepository"], {"isCrossRepository": False}),
+    ("cross-fork", _rest_pull(head_full="fork/r"), ["isCrossRepository"], {"isCrossRepository": True}),
+    ("cross-case-same-repo", _rest_pull(head_full="O/R"), ["isCrossRepository"], {"isCrossRepository": False}),
+    ("cross-deleted-fork", _rest_pull(head={"sha": "a" * 40, "ref": "x", "repo": None}), ["isCrossRepository"],
+     {"isCrossRepository": True}),
+    ("author-bot-stays-bracketed", _rest_pull(user={"login": "sigma[bot]", "type": "Bot"}), ["author"],
+     {"author": {"login": "sigma[bot]"}}),
+    ("author-missing", _drop(_rest_pull(), "user"), ["author"], {"author": {"login": ""}}),
+    ("body-null", _rest_pull(body=None), ["body", "title"], {"body": "", "title": "T"}),
+    ("dates", _rest_pull(merged_at="m", closed_at="c"), ["mergedAt", "closedAt", "number"],
+     {"mergedAt": "m", "closedAt": "c", "number": 7}),
+]
+
+
+@pytest.mark.parametrize("pull,fields,expected", [r[1:] for r in PR_SHAPE_ROWS], ids=[r[0] for r in PR_SHAPE_ROWS])
+def test_to_gh_pr_shape_table(pull, fields, expected):
+    g = _mod("gh_api")
+    assert g.to_gh_pr_shape(pull, fields) == expected
+
+
+PR_SHAPE_ERRORS = [
+    ("state-missing", _drop(_rest_pull(), "state"), ["state"]),
+    ("state-weird", _rest_pull(state="weird"), ["state"]),
+    ("auto-merge-absent", _drop(_rest_pull(), "auto_merge"), ["autoMergeRequest"]),
+    ("base-repo-missing", _drop(_rest_pull(), "base", "repo"), ["isCrossRepository"]),
+    ("head-missing", _drop(_rest_pull(), "head"), ["isCrossRepository"]),
+    ("body-absent", _drop(_rest_pull(), "body"), ["body"]),
+    ("number-not-int", _rest_pull(n="7"), ["number"]),
+    ("number-bool", _rest_pull(n=True), ["number"]),
+    ("non-dict", [1], ["number"]),
+]
+
+
+@pytest.mark.parametrize("pull,fields", [r[1:] for r in PR_SHAPE_ERRORS], ids=[r[0] for r in PR_SHAPE_ERRORS])
+def test_to_gh_pr_shape_malformed_raises(pull, fields):
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError):
+        g.to_gh_pr_shape(pull, fields)
+
+
+@pytest.mark.parametrize("field", ["mergeable", "statusCheckRollup", "reviewDecision", "mergeStateStatus", "bogus"])
+def test_pr_fields_whitelist_is_closed(field):
+    g = _mod("gh_api")
+    assert field not in g.PR_FIELDS
+    with pytest.raises(ValueError):
+        g.to_gh_pr_shape(_rest_pull(), [field])
+    run = Fake("{}")
+    with pytest.raises(ValueError):
+        g.view_pr_gh(run, 7, ["state", field], env={})
+    assert run.calls == []                                   # refused before any call
+
+
+def test_pr_fields_is_exactly_what_the_seven_sites_request():
+    g = _mod("gh_api")
+    assert g.PR_FIELDS == ("number", "title", "body", "state", "headRefOid", "headRefName", "mergedAt",
+                           "closedAt", "autoMergeRequest", "isCrossRepository", "author", "comments")
+
+
+class PrFake:
+    """Routes the PR REST argv: `pulls/<n>` (the pull), `issues/<n>/comments` pages, `pulls?head=` (list),
+    and the `pr view` fallback."""
+
+    def __init__(self, pull=None, comments=(), fail=None, gql=None, pages=None, rows=None, pull_raw=None):
+        self.pull = pull if pull is not None else _rest_pull()
+        self.comments, self.fail, self.gql = list(comments), fail, gql
+        self.pages_raw, self.rows, self.pull_raw = pages or {}, rows, pull_raw
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "pr":
+            if isinstance(self.gql, Exception):
+                raise self.gql
+            return self.gql if self.gql is not None else '{"state": "OPEN"}'
+        if self.fail is not None:
+            raise self.fail
+        if args[1].endswith("/comments"):
+            page = int([a for a in args if a.startswith("page=")][0][5:])
+            if page in self.pages_raw:
+                return self.pages_raw[page]
+            return json.dumps(self.comments[(page - 1) * 100:page * 100])
+        if "pulls?" in args[1]:
+            return self.rows if isinstance(self.rows, str) else json.dumps(self.rows or [])
+        return self.pull_raw if self.pull_raw is not None else json.dumps(self.pull)
+
+    def gql_calls(self):
+        return [c for c in self.calls if c[0] == "pr"]
+
+    def rest_calls(self):
+        return [c for c in self.calls if c[0] == "api"]
+
+    def page_calls(self):
+        return [c for c in self.calls if c[0] == "api" and c[1].endswith("/comments")]
+
+
+def _pr_comment(i, login=None, assoc="OWNER"):
+    c = {"id": 2000 + i, "node_id": "IC_%d" % i, "user": {"login": login or "u%d" % i, "type": "User"},
+         "body": "c%d" % i, "created_at": "2026-01-01T00:%02d:%02dZ" % (i // 60 % 60, i % 60)}
+    if assoc is not None:
+        c["author_association"] = assoc
+    return c
+
+
+def test_pr_comments_single_short_page():
+    g = _mod("gh_api")
+    run = PrFake(comments=[_pr_comment(i) for i in range(3)])
+    rows = g.pr_comments(run, 7, "o/r")
+    assert [r["body"] for r in rows] == ["c0", "c1", "c2"]
+    assert run.calls == [["api", "repos/o/r/issues/7/comments", "--method", "GET", "-f", "per_page=100",
+                          "-f", "page=1"]]
+
+
+def test_pr_comments_full_page_then_short_page_is_two_calls_in_order():
+    g = _mod("gh_api")
+    run = PrFake(comments=[_pr_comment(i) for i in range(130)])
+    rows = g.pr_comments(run, 7)
+    assert len(rows) == 130 and [r["body"] for r in rows] == ["c%d" % i for i in range(130)]
+    assert len(run.page_calls()) == 2 and run.calls[0][1] == "repos/{owner}/{repo}/issues/7/comments"
+
+
+def test_pr_comments_cap_raises_kind_other_never_truncates():
+    g = _mod("gh_api")
+    run = PrFake(comments=[_pr_comment(i) for i in range(300)])
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_comments(run, 7, page_cap=3)
+    assert ei.value.kind == "other" and "cap" in str(ei.value) and len(run.page_calls()) == 3
+    assert g.PR_COMMENT_PAGE_CAP == 30
+
+
+@pytest.mark.parametrize("raw", ['{"a": 1}', "null", '[1]', '["x"]'], ids=["dict", "null", "int-row", "str-row"])
+def test_pr_comments_malformed_page_or_row_raises(raw):
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError):
+        g.pr_comments(PrFake(pages={1: raw}), 7)
+
+
+def test_pr_comment_without_association_has_no_authorassociation_key():
+    g = _mod("gh_api")
+    run = PrFake(comments=[_pr_comment(0, assoc=None), _pr_comment(1)])
+    out = g.view_pr_gh(run, 7, ["comments", "author"], "o/r", env={})
+    assert "authorAssociation" not in out["comments"][0]
+    assert out["comments"][1]["authorAssociation"] == "OWNER"
+    assert out["author"] == {"login": "alice"}
+    assert [c[1] for c in run.rest_calls()] == ["repos/o/r/pulls/7", "repos/o/r/issues/7/comments"]
+
+
+def test_view_pr_gh_rest_first_success_and_no_comment_read_unless_asked():
+    g = _mod("gh_api")
+    run = PrFake()
+    assert g.view_pr_gh(run, "7", ["state", "autoMergeRequest"], env={}) == {"state": "OPEN", "autoMergeRequest": None}
+    assert run.calls == [["api", "repos/{owner}/{repo}/pulls/7", "--method", "GET"]]
+
+
+def test_view_pr_gh_non_numeric_number_is_value_error():
+    g = _mod("gh_api")
+    run = PrFake()
+    with pytest.raises(ValueError):
+        g.view_pr_gh(run, "seven", ["state"], env={})
+    assert run.calls == []
+
+
+@pytest.mark.parametrize("hint", [t[1] for t in TRANSIENT], ids=[t[0] for t in TRANSIENT])
+def test_view_pr_gh_falls_back_once_on_transient(hint):
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(hint), gql='{"state": "MERGED", "number": 7, "extra": 1}')
+    assert g.view_pr_gh(run, 7, ["state", "number"], "o/r", env={}) == {"state": "MERGED", "number": 7}
+    assert run.gql_calls() == [["pr", "view", "7", "--repo", "o/r", "--json", "state,number"]]
+
+
+def test_view_pr_gh_fallback_argv_without_repo():
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(RATE))
+    g.view_pr_gh(run, 7, ["state"], env={})
+    assert run.gql_calls() == [["pr", "view", "7", "--json", "state"]]
+
+
+@pytest.mark.parametrize("hint", [c[1] for c in CLIENT] + [PROXY + " (HTTP 502)"],
+                         ids=[c[0] for c in CLIENT] + ["proxy"])
+def test_view_pr_gh_never_falls_back_on_client_errors_or_proxy(hint):
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(hint))
+    with pytest.raises(g.GhApiError):
+        g.view_pr_gh(run, 7, ["state"], "o/r", env={})
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}],
+                         ids=["cloud", "override-off"])
+def test_view_pr_gh_no_fallback_when_graphql_unavailable(env):
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(RATE))
+    with pytest.raises(g.GhApiError) as ei:
+        g.view_pr_gh(run, 7, ["state"], "o/r", env=env)
+    assert run.gql_calls() == [] and ei.value.kind == "rate_limit"
+
+
+def test_view_pr_gh_exactly_one_fallback_and_its_failure_propagates():
+    g = _mod("gh_api")
+    run = PrFake(fail=_err("gh: Server Error (HTTP 502)"), gql=_err("gh: Server Error (HTTP 503)", text="gh pr view failed"))
+    with pytest.raises(g.GhApiError) as ei:
+        g.view_pr_gh(run, 7, ["state"], "o/r", env={})
+    assert len(run.rest_calls()) == 1 and len(run.gql_calls()) == 1
+    assert "502" in str(ei.value) and "503" in str(ei.value)
+
+
+_GARBAGE_FALLBACK = ["", "   ", "<html>", "[1]", "null", "{}", '{"number": 7}']
+
+
+@pytest.mark.parametrize("gql", _GARBAGE_FALLBACK,
+                         ids=["empty", "blank", "non-json", "list", "null", "empty-object", "field-missing"])
+def test_view_pr_gh_fallback_malformed_output_raises_never_degrades(gql):
+    """#895 B1: a fallback that exits 0 with nothing usable is "could not read", never `{}` -- `{}` reads
+    as "not a fork" (merge_rights would merge) and "no comments" (the review gate would skip a block).
+    Kind is `other`, outside FALLBACK_KINDS, so nothing retries it."""
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(RATE), gql=gql)
+    with pytest.raises(g.GhApiError) as ei:
+        g.view_pr_gh(run, 7, ["state", "number"], env={})
+    assert ei.value.kind not in g.FALLBACK_KINDS and len(run.gql_calls()) == 1
+
+
+def test_view_pr_gh_breaker_open_fallback_only_path_also_raises_on_garbage(tmp_path):
+    """REST is skipped while the breaker is open, so the fallback is the ONLY read: still no `{}`."""
+    g = _mod("gh_api")
+    for i in range(3):
+        g.view_pr_gh(PrFake(fail=_err("gh: Server Error (HTTP 502)")), 7, ["state"], "o/r", env={},
+                     sdlc_dir=tmp_path, now=1000.0 + i)
+    run = PrFake(gql="")
+    with pytest.raises(g.GhApiError):
+        g.view_pr_gh(run, 7, ["state"], "o/r", env={}, sdlc_dir=tmp_path, now=1003.0)
+    assert run.rest_calls() == [] and len(run.gql_calls()) == 1
+
+
+def test_pr_for_branch_gh_fallback_malformed_output_raises():
+    g = _mod("gh_api")
+    for gql in ("", "<html>", "[1]", '{"state": "MERGED"}'):
+        with pytest.raises(g.GhApiError):
+            g.pr_for_branch_gh(PrFake(fail=_err(RATE), gql=gql), "feat/x", ["state", "number"], "o/r", env={})
+
+
+def test_view_pr_gh_classifies_on_the_hint_only():
+    g = _mod("gh_api")
+    # no hint, argv in str(exc) names a repo `timeout-svc`, real detail is a 404: no fallback
+    exc = RuntimeError("gh api repos/acme/timeout-svc/pulls/7 --method GET failed: gh: Not Found (HTTP 404)")
+    run = PrFake(fail=exc)
+    with pytest.raises(g.GhApiError) as ei:
+        g.view_pr_gh(run, 7, ["state"], env={})
+    assert ei.value.kind == "not_found" and run.gql_calls() == []
+    run = PrFake(fail=_err("gh: Validation Failed (HTTP 422)",
+                           text="gh api repos/acme/timeout-svc/pulls/7 failed: timeout"))
+    with pytest.raises(g.GhApiError):
+        g.view_pr_gh(run, 7, ["state"], env={})
+    assert run.gql_calls() == []
+
+
+def test_view_pr_gh_malformed_pull_is_kind_other_no_fallback():
+    g = _mod("gh_api")
+    for raw in ("[1]", "null", "<html>"):
+        run = PrFake(pull_raw=raw)
+        with pytest.raises(g.GhApiError) as ei:
+            g.view_pr_gh(run, 7, ["state"], env={})
+        assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+def test_pr_and_issue_reads_share_one_breaker(tmp_path):
+    g = _mod("gh_api")
+    for i in range(3):
+        g.view_pr_gh(PrFake(fail=_err("gh: Server Error (HTTP 502)")), 7, ["state"], "o/r", env={},
+                     sdlc_dir=tmp_path, now=1000.0 + i)
+    b = _breaker(tmp_path)
+    assert b["consecutive"] == 3 and b["last_kind"] == "server"
+    log = json.loads((tmp_path / "state" / "gh-fallback.json").read_text())
+    assert {e["op"] for e in log} == {"pr_read"}
+    issue_run = RestFake()
+    g.read_issue(issue_run, 7, ["state"], "o/r", env={}, sdlc_dir=tmp_path, now=1003.0)
+    assert issue_run.rest_calls() == [] and len(issue_run.gql_calls()) == 1      # the PR failures opened it
+
+
+def test_view_pr_gh_no_sdlc_dir_never_writes(tmp_path, monkeypatch):
+    g = _mod("gh_api")
+    monkeypatch.chdir(tmp_path)
+    for _ in range(4):
+        g.view_pr_gh(PrFake(fail=_err(RATE)), 7, ["state"], "o/r", env={}, now=1.0)
+    assert list(tmp_path.rglob("*")) == []
+
+
+def _row(n, state="closed", merged_at=None, created="2026-01-01T00:00:00Z", sha=None):
+    return {"number": n, "state": state, "merged_at": merged_at, "closed_at": "c%d" % n, "created_at": created,
+            "title": "t", "body": "b", "user": {"login": "alice"},
+            "head": {"sha": sha or ("%d" % n) * 40, "ref": "feat/x", "repo": {"full_name": "o/r"}},
+            "base": {"ref": "main", "repo": {"full_name": "o/r"}}}
+
+
+BRANCH_FIELDS = ["state", "mergedAt", "closedAt", "headRefOid", "headRefName", "number"]
+
+
+def test_pr_for_branch_gh_argv_and_requires_a_slash_repo():
+    g = _mod("gh_api")
+    run = PrFake(rows=[_row(5, merged_at="m5")])
+    g.pr_for_branch_gh(run, "feat/x y", BRANCH_FIELDS, "acme/r", env={})
+    assert run.calls == [["api", "repos/acme/r/pulls?head=acme:feat/x%20y&state=all&sort=created"
+                                 "&direction=desc&per_page=30", "--method", "GET"]]
+    for bad in (None, "", "noslash"):
+        with pytest.raises(ValueError):
+            g.pr_for_branch_gh(PrFake(), "b", BRANCH_FIELDS, bad, env={})
+
+
+def test_pr_for_branch_gh_open_row_beats_a_newer_merged_row():
+    g = _mod("gh_api")
+    run = PrFake(rows=[_row(9, merged_at="m9"), _row(4, state="open")])
+    assert g.pr_for_branch_gh(run, "feat/x", BRANCH_FIELDS, "o/r", env={})["number"] == 4
+
+
+def test_pr_for_branch_gh_no_open_row_takes_the_newest_and_shapes_it():
+    g = _mod("gh_api")
+    run = PrFake(rows=[_row(9, merged_at="m9"), _row(4)])
+    assert g.pr_for_branch_gh(run, "feat/x", BRANCH_FIELDS, "o/r", env={}) == {
+        "state": "MERGED", "mergedAt": "m9", "closedAt": "c9", "headRefOid": "9" * 40,
+        "headRefName": "feat/x", "number": 9}
+    run = PrFake(rows=[_row(4)])
+    assert g.pr_for_branch_gh(run, "feat/x", ["state"], "o/r", env={}) == {"state": "CLOSED"}
+
+
+def test_pr_for_branch_gh_empty_list_is_none():
+    g = _mod("gh_api")
+    assert g.pr_for_branch_gh(PrFake(rows=[]), "feat/x", BRANCH_FIELDS, "o/r", env={}) is None
+
+
+@pytest.mark.parametrize("raw", ["", "null", '{"message": "x"}', "[1]", "<html>"],
+                         ids=["empty", "null", "dict", "non-dict-row", "garbage"])
+def test_pr_for_branch_gh_non_list_body_raises(raw):
+    g = _mod("gh_api")
+    run = PrFake(rows=raw)
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_for_branch_gh(run, "feat/x", BRANCH_FIELDS, "o/r", env={})
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+@pytest.mark.parametrize("field", ["isCrossRepository", "autoMergeRequest", "comments"])
+def test_pr_for_branch_gh_refuses_fields_the_list_cannot_answer(field):
+    g = _mod("gh_api")
+    run = PrFake()
+    with pytest.raises(ValueError):
+        g.pr_for_branch_gh(run, "feat/x", ["state", field], "o/r", env={})
+    assert run.calls == []
+
+
+def test_pr_for_branch_gh_fallback_argv_and_rules():
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(RATE), gql='{"state": "MERGED", "number": 3}')
+    assert g.pr_for_branch_gh(run, "feat/x", ["state", "number"], "o/r", env={}) == {"state": "MERGED", "number": 3}
+    assert run.gql_calls() == [["pr", "view", "feat/x", "--repo", "o/r", "--json", "state,number"]]
+    run = PrFake(fail=_err("gh: Not Found (HTTP 404)"))
+    with pytest.raises(g.GhApiError):
+        g.pr_for_branch_gh(run, "feat/x", ["state"], "o/r", env={})
+    assert run.gql_calls() == []
+    run = PrFake(fail=_err(RATE))
+    with pytest.raises(g.GhApiError):
+        g.pr_for_branch_gh(run, "feat/x", ["state"], "o/r", env={"CLAUDE_CODE_REMOTE": "1"})
+    assert run.gql_calls() == []
+
+
+def test_pr_fallback_argv_is_built_only_in_gh_api():
+    assert '"pr", "view"' in (S / "gh_api.py").read_text()
+
+
+def test_cloud_sessions_doc_names_every_pr_field():
+    g = _mod("gh_api")
+    doc = (S.parent.parent.parent / "docs" / "cloud-sessions.md").read_text(encoding="utf-8")
+    start = doc.index("## PR reads (#895 slice 4a-1)")
+    end = doc.find("\n## ", start + 1)
+    section = doc[start:end if end != -1 else len(doc)]
+    missing = [f for f in g.PR_FIELDS if "`%s`" % f not in section]
+    assert not missing, "docs/cloud-sessions.md PR-reads section does not name: %r" % missing

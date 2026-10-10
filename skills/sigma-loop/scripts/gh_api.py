@@ -2,8 +2,8 @@
 
 HONESTY FIRST. Slice 1 of #801 was DETECTION AND REPORTING ONLY. Slice 2a of #895 wires ONE op,
 `read_issue`, into `sources.py`'s seven issue reads; slice 3a adds the issue WRITE ops (see WRITES);
-`create_pr`/`view_pr`/`merge_pr` still have no caller (`work.py` and the other modules keep their
-direct `gh issue|pr` calls). The cache/probe path is not
+slice 4a-1 adds seven PR READS (see PR READS); `create_pr`/`merge_pr` still have no caller (`work.py`
+and the other modules keep their remaining direct `gh issue|pr` calls). The cache/probe path is not
 exercised by any shipped caller (`doctor` always passes `probe=False`; `read_issue` checks env only),
 and nothing here is evidence that /sigma-loop works in a Claude Code cloud session -- that is
 unmeasured. The 403 wording the probe recognises comes from issue #801's text, not from a captured
@@ -62,8 +62,21 @@ Classification reads gh's stderr (`.hint`) and the cause chain only, never `str(
 INFERRED, not captured live. FEATURE LABELS (was KNOWN BYPASS R5): REST would mint a missing `feature:*`
 label, so `create_issue` and `add_labels` raise `GhApiError(kind="refused")` before any call (layer 1)
 unless the caller passes `feature_labels_exist=True` after `label_exists` (layer 2, in GitHubSource).
-Non-feature labels ARE auto-created by REST (UNMEASURED, documented GitHub behaviour). `create_pr`,
-`view_pr`, `merge_pr` still have no caller. `merge_pr` has no auto-merge (REST has none; not emulated).
+Non-feature labels ARE auto-created by REST (UNMEASURED, documented GitHub behaviour). `create_pr` and
+`merge_pr` still have no caller. `merge_pr` has no auto-merge (REST has none; not emulated).
+
+PR READS (#895 slice 4a-1): `view_pr_gh` (REST `view_pr`, so `view_pr` now has a caller, plus
+`pr_comments` when `comments` is asked for) and `pr_for_branch_gh` (one `pulls?head=<owner>:<branch>`
+read) return the `gh pr view --json` shape for the CLOSED whitelist `PR_FIELDS` (anything else is
+ValueError before any call), with ONE `gh pr view` fallback built in `_pr_fallback`, through `_rest_first`:
+issue and PR reads share ONE breaker and ONE bounded log. Every field mapping is DERIVED from GitHub's
+documented shapes, UNMEASURED against live gh: state MERGED from `merged`/`merged_at`, an unknown state is
+an error; a missing `head.sha` reads ""; an ABSENT `auto_merge` key is an error; `isCrossRepository` is TRUE
+for a null `head.repo` and never FALSE when unknown; `author` is the raw REST login (`x[bot]`, not mapped);
+`authorAssociation` only when REST sent it. Comments cost `floor(n/100) + 1` page calls and a FULL page at
+`PR_COMMENT_PAGE_CAP` (30, 3000 comments) raises. `pr_for_branch_gh` sees same-owner heads only (a fork PR
+on a same-named branch is invisible), assumes gh's open-first preference, reads the 30 newest, and treats
+a non-list body as an error, never "no PR". See docs/cloud-sessions.md, "PR reads (#895 slice 4a-1)".
 """
 import importlib.util
 import json
@@ -948,3 +961,212 @@ def merge_pr(run, number, merge_method="squash", sha=None, repo=None):
     if sha:
         args += ["-f", "sha=%s" % sha]
     return _json(run, args)
+
+
+# ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)
+
+# CLOSED whitelist: exactly the fields the seven migrated PR read sites request (work.py merge_rights,
+# _comment_directive, post_review, _open_pr_refusal, _pr_merged; doctor._stray_commits_after_merge;
+# rebase_brief.pr_description). Anything else (mergeable, statusCheckRollup, reviewDecision,
+# mergeStateStatus, ...) raises ValueError before any call, so a later slice cannot silently get a
+# wrong mapping. Every mapping below is DERIVED from GitHub's documented REST shapes, UNMEASURED
+# against live `gh pr view` (docs/cloud-sessions.md, "PR reads (#895 slice 4a-1)").
+PR_FIELDS = ("number", "title", "body", "state", "headRefOid", "headRefName", "mergedAt", "closedAt",
+             "autoMergeRequest", "isCrossRepository", "author", "comments")
+PR_COMMENT_PAGE_CAP = 30            # x 100 per page = 3000 comments; a FULL last page RAISES (never truncates)
+_BRANCH_UNSUPPORTED = ("isCrossRepository", "autoMergeRequest", "comments")
+
+
+def _check_pr_fields(fields):
+    unknown = [f for f in fields if f not in PR_FIELDS]
+    if unknown:
+        raise ValueError("gh_api: no REST mapping for PR field(s) %s" % ", ".join(unknown))
+
+
+def _bad_pr(what):
+    return GhApiError("malformed REST pull request: %s" % what)
+
+
+def _pr_state(pr):
+    # `merged` is absent from list rows, so MERGED also comes from a truthy `merged_at`.
+    if pr.get("merged") is True or pr.get("merged_at"):
+        return "MERGED"
+    state = pr.get("state")
+    if state == "open":
+        return "OPEN"
+    if state == "closed":
+        return "CLOSED"
+    raise _bad_pr("state %r" % (state,))              # never a guess
+
+
+def _cross_repo(pr):
+    """Unknown biases to TRUE (a fork, no merge) or to an error, never to FALSE."""
+    head, base = pr.get("head"), pr.get("base")
+    if not isinstance(head, dict) or not isinstance(base, dict):
+        raise _bad_pr("no head/base object")
+    base_repo = base.get("repo")
+    base_name = base_repo.get("full_name") if isinstance(base_repo, dict) else None
+    if not isinstance(base_name, str) or not base_name:
+        raise _bad_pr("no base.repo.full_name")
+    head_repo = head.get("repo")
+    if not isinstance(head_repo, dict):
+        return True                                   # null head repo: the fork was deleted
+    head_name = head_repo.get("full_name")
+    if not isinstance(head_name, str) or not head_name:
+        return True
+    return head_name.lower() != base_name.lower()
+
+
+def to_gh_pr_shape(pr, fields, comments=None):
+    """REST pull (or a `pulls?head=` list row) -> the `gh pr view --json <fields>` shape, requested keys
+    only. `comments` is the raw REST issue-comment list (`pr_comments`). See PR_FIELDS and the module doc
+    for every rule; a field outside PR_FIELDS is ValueError, a malformed payload GhApiError (kind other)."""
+    fields = list(fields)
+    _check_pr_fields(fields)
+    if not isinstance(pr, dict):
+        raise _bad_pr("body is %s, not an object" % type(pr).__name__)
+    head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
+    out = {}
+    for f in fields:
+        if f == "number":
+            n = pr.get("number")
+            if not isinstance(n, int) or isinstance(n, bool):
+                raise _bad_pr("number %r" % (n,))
+            out[f] = n
+        elif f == "title":
+            out[f] = pr.get("title") or ""
+        elif f == "body":
+            if "body" not in pr:
+                raise _bad_pr("no body key")
+            out[f] = pr["body"] or ""
+        elif f == "state":
+            out[f] = _pr_state(pr)
+        elif f == "headRefOid":
+            sha = head.get("sha")
+            out[f] = sha if isinstance(sha, str) else ""      # "" -> the callers' park / no-anchor arms
+        elif f == "headRefName":
+            ref = head.get("ref")
+            out[f] = ref if isinstance(ref, str) else ""
+        elif f == "mergedAt":
+            out[f] = pr.get("merged_at")
+        elif f == "closedAt":
+            out[f] = pr.get("closed_at")
+        elif f == "autoMergeRequest":
+            # An ABSENT key raises (never read as null = "not armed"). GitHub always sends it (documented,
+            # UNMEASURED); the consequence for _open_pr_refusal (R7) is a fail-OPEN on a malformed reply.
+            if "auto_merge" not in pr:
+                raise _bad_pr("no auto_merge key")
+            out[f] = pr["auto_merge"]
+        elif f == "isCrossRepository":
+            out[f] = _cross_repo(pr)
+        elif f == "author":
+            # Raw REST login, NOT bot-mapped (unlike the issue converter's `app/x`): _comment_directive
+            # compares the PR author with comment authors, and both come from REST (`x[bot]` == `x[bot]`).
+            user = pr.get("user")
+            out[f] = {"login": (user.get("login") or "") if isinstance(user, dict) else ""}
+        elif f == "comments":
+            out[f] = [_comment(c) for c in comments or []]
+    return out
+
+
+def pr_comments(run, number, repo=None, page_cap=PR_COMMENT_PAGE_CAP):
+    """A PR's plain (issue) comments, oldest first (REST default order, kept): `GET issues/{n}/comments`,
+    100 per page, stop at the first short page. Cost `floor(n/100) + 1` calls (1000 comments = 11). If page
+    `page_cap` comes back FULL, raise GhApiError(kind other): a fail-closed reader (the review gate) must
+    not act on a truncated list that may hide a trusted `sigma:block`, and kind other never falls back.
+    A non-list page or a non-object row raises too."""
+    got = []
+    for page in range(1, page_cap + 1):
+        rows = _json(run, ["api", _endpoint(repo, "issues/%d/comments" % number), "--method", "GET",
+                           "-f", "per_page=100", "-f", "page=%d" % page])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise GhApiError("malformed REST comments page %d for PR #%d" % (page, number))
+        got.extend(rows)
+        if len(rows) < 100:
+            return got
+    raise GhApiError("PR #%d comment list exceeds the cap (%d pages x 100); refusing to read a truncated list"
+                     % (number, page_cap))
+
+
+def view_pr_gh(run, number, fields, repo=None, *, gql_run=None, env=None, sdlc_dir=None, now=None):
+    """One PR in `gh pr view <n> --json <fields>` shape: REST first (`GET pulls/{n}`, plus `pr_comments`
+    only when `comments` is requested), then at most ONE `gh pr view` fallback via `_rest_first` -- the
+    SAME breaker, bounded log and rules as `read_issue` (rate_limit / server / transport only, only while
+    `graphql_available(env)` says so, never retried). Issue and PR reads share ONE breaker and log.
+    `number` is coerced with int(str(.)) (ValueError when not numeric); an unmapped field is ValueError;
+    both before any call."""
+    fields = list(fields)
+    _check_pr_fields(fields)
+    n = int(str(number))
+    gql_run = gql_run or run
+
+    def rest():
+        pr = view_pr(run, n, repo)
+        comments = pr_comments(run, n, repo) if "comments" in fields else None
+        return to_gh_pr_shape(pr, fields, comments)
+
+    return _rest_first("pr_read", n, "PR #%d read" % n, "gh pr view", rest,
+                       lambda rest_err: _pr_fallback(gql_run, str(n), fields, repo, rest_err),
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+def pr_for_branch_gh(run, branch, fields, repo, *, gql_run=None, env=None, sdlc_dir=None, now=None):
+    """`gh pr view <branch> --repo R --json <fields>` shape, REST first: ONE
+    `GET repos/R/pulls?head=<owner>:<branch>&state=all&sort=created&direction=desc&per_page=30`, no
+    paging. The first OPEN row wins, else the newest row; zero rows -> None. `repo` (owner/name) is
+    required. Named differences from gh, all UNMEASURED: `head=<owner>:` sees same-owner heads only (a
+    fork PR on a same-named branch is invisible); gh's open-then-newest preference is assumed; more than
+    30 PRs for one head -> the 30 newest. A non-list body (including empty output) or a non-object row
+    raises GhApiError (kind other, no fallback): a failure must never read as "no PR". Fallback: ONE
+    `gh pr view <branch> --repo R` through `_rest_first` (op `pr_branch_read`)."""
+    fields = list(fields)
+    _check_pr_fields(fields)
+    refused = [f for f in fields if f in _BRANCH_UNSUPPORTED]
+    if refused:
+        raise ValueError("gh_api.pr_for_branch_gh: the pulls list cannot answer %s; use view_pr_gh"
+                         % ", ".join(refused))
+    if not isinstance(repo, str) or "/" not in repo:
+        raise ValueError("gh_api.pr_for_branch_gh needs repo='owner/name', got %r" % (repo,))
+    gql_run = gql_run or run
+    path = "repos/%s/pulls?head=%s:%s&state=all&sort=created&direction=desc&per_page=30" % (
+        repo, repo.split("/", 1)[0], urllib.parse.quote(branch))
+
+    def rest():
+        rows = _json(run, ["api", path, "--method", "GET"])
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise GhApiError("gh api pulls?head= returned %s, not a JSON list of objects" % type(rows).__name__)
+        if not rows:
+            return None
+        row = next((r for r in rows if r.get("state") == "open"), rows[0])
+        return to_gh_pr_shape(row, fields)
+
+    return _rest_first("pr_branch_read", None, "PR-by-branch read", "gh pr view", rest,
+                       lambda rest_err: _pr_fallback(gql_run, branch, fields, repo, rest_err),
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+def _pr_fallback(gql_run, ref, fields, repo, rest_err):
+    """ONE `gh pr view <number|branch>` (the one place this module builds a `pr view` argv), filtered to
+    `fields`. #895 B1: output that exits 0 but is empty, not JSON, not an object, or lacks ANY requested
+    field RAISES GhApiError (kind other, so nothing retries it) -- it never degrades to {}. `{}` read as
+    "not a fork" in `merge_rights` (fail-OPEN to a merge) and "no comments" in `_comment_directive`
+    (a trusted block silently skipped); "could not read" must reach each caller as a failure, where its
+    own except decides the posture (fail-closed callers park/refuse, fail-open callers return None).
+    `gh pr view --json` emits every requested key (null when unset), so a missing key is malformed."""
+    try:
+        raw = _call(gql_run, ["pr", "view", ref, *_repo_flag(repo), "--json", ",".join(fields)])
+    except GhApiError as fb:
+        if rest_err is None:
+            raise
+        raise GhApiError("gh REST read of PR %s failed (%s); fallback gh pr view also failed: %s"
+                         % (ref, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                         rest_err.kind) from fb
+    try:
+        data = json.loads(raw) if raw and raw.strip() else None
+    except ValueError:
+        data = None
+    missing = [k for k in fields if k not in data] if isinstance(data, dict) else list(fields)
+    if missing:
+        raise GhApiError("fallback gh pr view %s returned no usable JSON object (missing %s); "
+                         "refusing to read it as an empty PR" % (ref, ",".join(missing)))
+    return {k: data[k] for k in fields}

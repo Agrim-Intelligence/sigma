@@ -295,6 +295,48 @@ def test_commit_context_prefers_the_changelog_heading_match(tmp_path):
     assert ctx == {"source": "changelog", "detail": "### fix(x): something real (#2294)"}
 
 
+def _is_pr_get(argv):
+    return argv[:2] == ["gh", "api"] and "/pulls/" in str(argv[2])
+
+
+def test_pr_description_rest_first_fail_open_rows(monkeypatch):
+    """#895 4a-1: `pr_description` goes through `gh_api.view_pr_gh` (REST first). Any failure is None
+    (fail-open): an error, a non-object body, an unloadable gh_api; title/body are coerced to str."""
+    m = _mod()
+    ok = lambda c, argv: '{"number": 5, "title": null, "body": "b"}'
+    assert m.pr_description(ok, ".", 5) == {"title": "", "body": "b"}
+    for body in ("[1]", "null", "garbage"):
+        assert m.pr_description(lambda c, argv, body=body: body, ".", 5) is None
+
+    def boom(c, argv):
+        raise RuntimeError(" ".join(argv) + ": gh: Not Found (HTTP 404)")
+    assert m.pr_description(boom, ".", 5) is None
+    assert m.pr_description(ok, ".", None) is None
+
+    def unloadable(name, directory=None):
+        raise ImportError("gh_api missing")
+    monkeypatch.setattr(m, "_load", unloadable)
+    assert m.pr_description(ok, ".", 5) is None
+
+
+def test_pr_description_garbage_fallback_is_still_none(monkeypatch):
+    """#895 B1: REST 502, then a `gh pr view` fallback exiting 0 with garbage now RAISES inside gh_api;
+    `pr_description` stays fail-open (None), exactly as before."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    m = _mod()
+    for garbage in ("", "<html>", "[1]", '{"title": "t"}'):
+        seen = []
+
+        def run(c, argv, garbage=garbage):
+            seen.append(argv)
+            if _is_pr_get(argv):
+                raise RuntimeError(" ".join(argv) + ": gh: Server Error (HTTP 502)")
+            return garbage
+        assert m.pr_description(run, ".", 5) is None
+        assert any(a[1:3] == ["pr", "view"] for a in seen)
+
+
 def test_commit_context_falls_back_to_the_pr_description_via_gh(tmp_path):
     m = _mod()
     world = World(tmp_path).build()
@@ -304,16 +346,16 @@ def test_commit_context_falls_back_to_the_pr_description_via_gh(tmp_path):
     calls = []
 
     def fake_run(c, argv):
-        if argv[:3] == ["gh", "pr", "view"]:
+        if _is_pr_get(argv):                   # #895 4a-1: REST `gh api repos/{owner}/{repo}/pulls/<n>`
             calls.append(argv)
-            return '{"title": "Fix the union rescue", "body": "because X"}'
+            return '{"number": 2299, "title": "Fix the union rescue", "body": "because X"}'
         return _run(c, argv)
 
     ctx = m.commit_context(fake_run, cwd, "deadbeef", "fix: something (#2294) (#2299)", [], base_ref)
     assert ctx["source"] == "pr"
     assert "Fix the union rescue" in ctx["detail"]
     assert len(calls) == 1
-    assert calls[0][3] == "2299"               # the TRAILING (PR) number, never the issue
+    assert calls[0] == ["gh", "api", "repos/{owner}/{repo}/pulls/2299", "--method", "GET"]   # TRAILING (PR) number
 
 
 def test_commit_context_falls_back_to_a_linked_design_doc(tmp_path):
@@ -331,7 +373,7 @@ def test_commit_context_falls_back_to_a_linked_design_doc(tmp_path):
     base_ref = "origin/%s" % BASE
 
     def no_gh(c, argv):
-        if argv[:3] == ["gh", "pr", "view"]:
+        if _is_pr_get(argv) or argv[:3] == ["gh", "pr", "view"]:
             raise RuntimeError("no gh available")
         return _run(c, argv)
 
@@ -347,7 +389,7 @@ def test_commit_context_is_an_honest_floor_never_a_fabrication_or_a_silent_empty
     base_ref = "origin/%s" % BASE
 
     def no_gh(c, argv):
-        if argv[:3] == ["gh", "pr", "view"]:
+        if _is_pr_get(argv) or argv[:3] == ["gh", "pr", "view"]:
             raise RuntimeError("no gh available")
         return _run(c, argv)
 

@@ -704,8 +704,9 @@ def _stray_commits_after_merge(gh_cfg, repo_root, run, sdlc_dir=None):
         repo's `feature/dangling-completion` -- see `_open_unit_branch`) -- that branch is a
         long-lived integration branch expected to keep collecting merged goal PRs after its own
         historical completion PR into the default branch, so "stray" does not apply to it at all;
-      - no PR found for this branch (exit 1, "no pull requests found for branch ...", live-verified)
-        -- not every branch has one;
+      - no PR found for this branch (an empty REST `pulls?head=` list since #895 4a-1; before it,
+        `gh pr view` exit 1 "no pull requests found for branch ...", live-verified) -- not every
+        branch has one; an unreadable PR read is the same quiet arm;
       - PR `state` is anything other than MERGED/CLOSED (OPEN, live-verified, or malformed) -- still
         in progress, nothing stray is even possible yet;
       - `headRefOid` missing from the PR's own JSON -- defensive: no anchor to compute a count from;
@@ -742,14 +743,21 @@ def _stray_commits_after_merge(gh_cfg, repo_root, run, sdlc_dir=None):
         return None                            # the healthy resting state
     if _open_unit_branch(sdlc_dir, branch):
         return None                            # a live unit's own integration branch -- see `_open_unit_branch`
-    raw_pr = run(["gh", "pr", "view", branch, "--repo", repo, "--json",
-                  "state,mergedAt,closedAt,headRefOid,headRefName,number"])
-    if not raw_pr:
-        return None                            # no PR exists for this branch
+    # #895 4a-1: REST first via `gh_api.pr_for_branch_gh` (ONE `pulls?head=<owner>:<branch>` read, open row
+    # first else newest; ONE `gh pr view <branch>` fallback inside gh_api). `_raising_gh` (built on
+    # `_gh_runner`, no new `["gh", *args]` literal) turns a failed call into a raise, so a failure never
+    # reads as "no PR". No sdlc_dir: doctor never writes the REST breaker or fallback log. Named
+    # difference, UNMEASURED: `head=<owner>:` sees same-owner heads only, so a fork PR on a same-named
+    # branch is invisible (no alarm: this is a fail-open diagnostic).
     try:
-        data = json.loads(raw_pr)
+        raising = _raising_gh(run)
+        data = _load_loop_script("gh_api").pr_for_branch_gh(
+            raising, branch, ["state", "mergedAt", "closedAt", "headRefOid", "headRefName", "number"], repo,
+            gql_run=raising)
     except Exception:
-        return None
+        return None                            # unreadable -- can't tell is never an alarm
+    if not isinstance(data, dict):
+        return None                            # no PR exists for this branch (or a fallback that said nothing)
     state = str(data.get("state") or "").upper()
     if state not in ("MERGED", "CLOSED"):
         return None                            # OPEN, or an unexpected shape -- either way, no verdict

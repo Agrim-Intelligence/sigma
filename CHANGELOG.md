@@ -11,6 +11,29 @@ All notable changes to Sigma are recorded here, newest first.
   refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
   fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
   so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+- **Seven PR READ sites go REST first (#895, slice 4a-1; refs #801).** New `gh_api.view_pr_gh` (a REST
+  `pulls/<n>` read, plus paged `issues/<n>/comments` for the marker scan) and `gh_api.pr_for_branch_gh` (one
+  REST `pulls?head=<owner>:<branch>` read) replace `gh pr view` in `work.merge_rights`,
+  `work._comment_directive`, `work.post_review`, `work._open_pr_refusal`, `work._pr_merged`,
+  `doctor._stray_commits_after_merge` and `rebase_brief.pr_description`. Same fallback policy as the issue
+  reads: at most one `gh pr view` fallback, only on a rate limit, 5xx or transport failure, never in a cloud
+  session or with `SIGMA_GH_GRAPHQL=off`, never retried; issue and PR reads share one breaker and one
+  bounded log. Each site keeps its posture on the REST and the fallback path alike: merge rights, the
+  marker scan and `_pr_merged` fail closed, `post_review` parks, `_open_pr_refusal`, doctor and rebase_brief
+  fail open. A fallback `gh pr view` that exits 0 with empty, non-JSON, non-object output, or an object
+  missing a requested field, raises (never reads as an empty PR, which would mean "not a fork" and "no
+  comments"). The field mapping is a closed
+  whitelist (an unmapped field is refused before any call); a deleted fork reads as cross-repo; a comment
+  list over 3000 raises and parks rather than truncate. Parity is UNMEASURED against live gh (the mapping is
+  derived from GitHub's documented shapes). Named differences: the marker scan costs `2 + floor(n/100)` REST
+  calls (was one GraphQL call); bot logins stay REST-spelled `x[bot]` on both sides of the same-author
+  comparison; doctor's `head=<owner>:` lookup cannot see a fork PR on a same-named branch and assumes gh's
+  open-first preference; a REST pull with no `auto_merge` key makes `finish`'s open-PR refusal fail open (a
+  minor loosening on a reply GitHub is not known to send). The direct-`gh` ratchet drops from 57 to 50 sites
+  (measured by `scan()`: work.py 14 -> 9, doctor 7 -> 6, rebase_brief 1 -> 0; the two small adapters that wrap `gh api` use a `_GH` alias, which the ratchet's rule 3 does not count by construction, so counted by intent the total is 52). Still open on #895: the merge
+  gate (R1), `reviewDecision` (R4), the sibling and design-PR lists (R5, R9), doctor's landing-PR list (R10),
+  every PR write (W1-W8, including `--auto`) and the GraphQL review-thread read. Verified with injected-runner
+  tests only; no live GitHub or cloud-session run.
 - **Seventeen issue WRITE sites go REST first (#895, slice 3a; refs #801).** Comment, create, edit body, close,
   add/remove label and add-assignee now call new `gh_api` helpers (`comment_issue`, `create_issue`,
   `edit_issue`, `close_issue`, `add_labels`, `remove_label`, `add_assignees`) through `GitHubSource._issue_*`
