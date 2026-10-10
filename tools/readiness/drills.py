@@ -154,16 +154,25 @@ def _load_onboarding_control(sigma: Path):
     return module
 
 
+def _replace_once(text, anchor, replacement):
+    """`text.replace(anchor, replacement)` that RAISES unless the anchor occurs exactly once (#895 4b-1):
+    an anchor that drifted out of the public fake must not silently disarm a D1 kill seam."""
+    found = text.count(anchor)
+    if found != 1:
+        raise UsageError("readiness fake anchor matched %d times (want 1): %r" % (found, anchor[:80]))
+    return text.replace(anchor, replacement, 1)
+
+
 def _checkpoint_fake_body(control, sigma: Path):
     """Return the public fake gh with only the three D1 test seams inserted."""
     fake = control._fake_gh_body(sigma)
     hook = '''\nimport pathlib\nimport time\ndef _readiness_checkpoint(name):\n    if name == os.environ.get("READINESS_CHECKPOINT"):\n        pathlib.Path(os.environ["READINESS_READY"]).write_text(json.dumps({"checkpoint": name, "entered_at_ns": time.monotonic_ns()}))\n        while True:\n            time.sleep(1)\n'''
-    fake = fake.replace('UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n',
-                        'UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n' + hook)
-    fake = fake.replace('        git(state, "update-ref", base_ref, head_sha)\n',
-                        '        _readiness_checkpoint("pre_write")\n        git(state, "update-ref", base_ref, head_sha)\n')
-    fake = fake.replace('        save_state(state)\n        print("Merged pull request #%s" % number)\n        return\n',
-                        '        save_state(state)\n        _readiness_checkpoint("durable_remote_update")\n        print("Merged pull request #%s" % number, flush=True)\n        _readiness_checkpoint("post_response_before_ack")\n        return\n', 1)
+    fake = _replace_once(fake, 'UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n',
+                         'UNHANDLED_PATH = os.environ["FAKE_GH_UNHANDLED"]\n' + hook)
+    fake = _replace_once(fake, '        git(state, "update-ref", base_ref, head_sha)\n',
+                         '        _readiness_checkpoint("pre_write")\n        git(state, "update-ref", base_ref, head_sha)\n')
+    fake = _replace_once(fake, '        save_state(state)\n        print(reply)\n        return\n',
+                         '        save_state(state)\n        _readiness_checkpoint("durable_remote_update")\n        print(reply, flush=True)\n        _readiness_checkpoint("post_response_before_ack")\n        return\n')
     # ``work.py merge`` closes an issue and posts its audit note after a direct
     # merge.  The public onboarding fake predates that direct-merge path, so
     # extend this *copy* narrowly instead of letting a real gh binary leak in.
@@ -171,15 +180,13 @@ def _checkpoint_fake_body(control, sigma: Path):
     if m and method in ("", "POST"):
         save_state(state); return
 '''
-    fake = fake.replace('    if endpoint == "repos/%s/issues" % repo:\n', comments + '    if endpoint == "repos/%s/issues" % repo:\n')
+    fake = _replace_once(fake, '    if endpoint == "repos/%s/issues" % repo:\n', comments + '    if endpoint == "repos/%s/issues" % repo:\n')
     # The public onboarding fake is sufficient for the open-goal queue, where
     # every listed issue is open.  D2's real board-mirror refresh additionally
     # reads recently closed issues; preserve their true state in this private
     # copy so the recovery receipt cannot label a closed card as open.
-    fake = fake.replace('out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],',
-                        'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],')
-    fake = fake.replace('out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],\n+                        "assignees":',
-                        'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],\n+                        "assignees":')
+    fake = _replace_once(fake, 'out.append({"number": int(number), "state": "open", "labels": [{"name": l} for l in issue["labels"]],',
+                         'out.append({"number": int(number), "state": issue["state"], "labels": [{"name": l} for l in issue["labels"]],')
     # The public control intentionally models no Projects v2 surface.  These
     # drills need a configured board whose card is genuinely changed by
     # Sigma's normal source writer, so install the smallest stateful extension
@@ -256,7 +263,7 @@ def cmd_project(state, argv, pos, flags):
         save_state(state); return
     unhandled(argv, "unmodeled readiness project subcommand")
 '''
-    fake = fake.replace('\n\nif __name__ == "__main__":\n', board + '\n\nif __name__ == "__main__":\n')
+    fake = _replace_once(fake, '\n\nif __name__ == "__main__":\n', board + '\n\nif __name__ == "__main__":\n')
     return fake
 
 
@@ -455,8 +462,10 @@ def _kill_after_fixture_merge(fixture):
     """Kill the real ``work.py merge`` parent after fake remote success, before acknowledgement.
 
     A disposable ``sitecustomize`` wrapper stops the *parent* immediately
-    after its ``subprocess.run(["gh", "pr", "merge", ...])`` has returned
-    success.  Unlike a fake-gh-side barrier, the fake process has exited and
+    after its merge call has returned success: since #895 slice 4b-1 that is the REST
+    ``gh api .../pulls/N/merge --method PUT`` (matched exactly: ``gh api``, an endpoint ending
+    ``/pulls/<n>/merge``, ``--method PUT``; a looser ``gh api`` match would fire on the first gate
+    read and move the seam), and still ``gh pr merge`` for the CLI fallback.  Unlike a fake-gh-side barrier, the fake process has exited and
     work.py has received the successful result before the parent pauses.  The
     next work.py statement would start local acknowledgement (branch/issue/
     receipt writes), so SIGKILL here is the specified lost-ack seam.
@@ -465,13 +474,20 @@ def _kill_after_fixture_merge(fixture):
     hook_dir.mkdir()
     ready = fixture["root"] / "parent-post-success.json"
     hook_dir.joinpath("sitecustomize.py").write_text(
-        "import json, os, pathlib, subprocess, time\n"
+        "import json, os, pathlib, re, subprocess, time\n"
         "_run = subprocess.run\n"
+        "def _is_merge(argv):\n"
+        "    argv = [str(a) for a in argv]\n"
+        "    if argv[:3] == ['gh', 'pr', 'merge']:\n"
+        "        return True\n"
+        "    return (argv[:2] == ['gh', 'api'] and len(argv) > 2\n"
+        "            and re.search(r'/pulls/\\d+/merge$', argv[2]) is not None\n"
+        "            and any(argv[i:i + 2] == ['--method', 'PUT'] for i in range(len(argv))))\n"
         "def _wrapped(*args, **kwargs):\n"
         "    result = _run(*args, **kwargs)\n"
         "    argv = args[0] if args else kwargs.get('args', [])\n"
         "    if (os.environ.get('READINESS_PARENT_POST_SUCCESS_READY') and result.returncode == 0\n"
-        "            and list(argv)[:3] == ['gh', 'pr', 'merge']):\n"
+        "            and _is_merge(argv)):\n"
         "        pathlib.Path(os.environ['READINESS_PARENT_POST_SUCCESS_READY']).write_text(\n"
         "            json.dumps({'pid': os.getpid(), 'fake_gh_returned_success': True}))\n"
         "        while True: time.sleep(1)\n"

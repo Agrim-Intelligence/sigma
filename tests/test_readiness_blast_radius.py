@@ -86,6 +86,12 @@ def ZERO():
     return "0" * 40
 
 
+MERGE_PUT_REC = {"event": "subprocess.Popen", "program": "gh", "noun": "api", "action": "x", "method": "PUT",
+                 "endpoint": "repos/{owner}/{repo}/pulls/5/merge", "repo": "{owner}/{repo}", "args": ["api", "x"]}
+MERGE_CLI_REC = {"event": "subprocess.Popen", "program": "gh", "noun": "pr", "action": "merge", "number": "5",
+                 "args": ["pr", "merge"]}
+
+
 def capture(run, **over):
     """The launches of a clean run, as the audit hook records them."""
     rec = [
@@ -102,8 +108,8 @@ def capture(run, **over):
         {"event": "subprocess.Popen", "program": "gh", "noun": "pr", "action": "view", "args": ["pr", "view"]},
     ]
     if run == "always":
-        rec += [{"event": "subprocess.Popen", "program": "gh", "noun": "pr", "action": "merge", "number": "5",
-                 "args": ["pr", "merge"]},
+        # #895 4b-1: the code-goal merge is the REST PUT now (`gh pr merge` only as the rate-limit fallback)
+        rec += [MERGE_PUT_REC,
                 {"event": "subprocess.Popen", "program": "gh", "noun": "api", "action": "x", "method": "DELETE",
                  "endpoint": "repos/{owner}/{repo}/git/refs/heads/sdlc/4", "repo": "{owner}/{repo}",
                  "args": ["api", "x"]}]
@@ -319,7 +325,7 @@ def test_a5_catches_a_push_delete_a_colon_refspec_and_a_gh_api_delete():
 
 
 def test_a5_fails_when_the_capture_lacks_the_launches_the_run_implies(tmp_path):
-    cap = [r for r in capture("always") if r.get("action") != "merge"]
+    cap = [r for r in capture("always") if r is not MERGE_PUT_REC]
     rc, res = run_assert(tmp_path, "always", clean("always"), cap=cap)
     assert "A5" in failed(res) and "WITNESS" in res["A5"]["detail"]
     (tmp_path / "x").mkdir()
@@ -328,6 +334,26 @@ def test_a5_fails_when_the_capture_lacks_the_launches_the_run_implies(tmp_path):
     (tmp_path / "y").mkdir()
     rc, res = run_assert(tmp_path / "y", "off", clean("off"), cap=capture("always"))   # a merge in an `off` run
     assert "A5" in failed(res)
+
+
+def test_a5_the_rest_merge_put_is_a_merge_launch_both_ways(tmp_path):
+    """#895 4b-1: a REST `PUT pulls/N/merge` witnesses an `always` run and is a violation in an `off` run,
+    exactly like the `gh pr merge` it replaced (which still counts: the CLI fallback)."""
+    rc, res = run_assert(tmp_path, "always", clean("always"))
+    assert "A5" not in failed(res), res["A5"]["detail"]
+    (tmp_path / "x").mkdir()
+    off_put = capture("off") + [MERGE_PUT_REC]
+    rc, res = run_assert(tmp_path / "x", "off", clean("off"), cap=off_put)
+    assert "A5" in failed(res) and "run off but the capture holds a merge" in res["A5"]["detail"]
+    (tmp_path / "y").mkdir()
+    cli = [MERGE_CLI_REC if r is MERGE_PUT_REC else r for r in capture("always")]
+    rc, res = run_assert(tmp_path / "y", "always", clean("always"), cap=cli)
+    assert "A5" not in failed(res), res["A5"]["detail"]
+    (tmp_path / "z").mkdir()
+    get = [dict(r, method="GET", endpoint="repos/{owner}/{repo}/pulls/5") if r is MERGE_PUT_REC else r
+           for r in capture("always")]
+    rc, res = run_assert(tmp_path / "z", "always", clean("always"), cap=get)
+    assert "A5" in failed(res) and "WITNESS" in res["A5"]["detail"]          # a read is not a merge
 
 
 def _inventory_without(tmp_path, rule):
