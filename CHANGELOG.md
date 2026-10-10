@@ -4,7 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-## 1.1.0 — 2026-10-10 — branch upkeep (opt-in; off by default)
+## 1.0.6 — 2026-10-10 — branch upkeep (opt-in; off by default)
 
 - **Upkeep part B, slice 10: Level 2 end to end against a fake (#951).** A new library, `feature_upkeep_level2.py`, runs eligibility and limits (protected paths, structural and merge-commit stops, file, hunk, line, stop and attempt limits), a plain export of the stopped tree, the capped resolver through the launcher, an engine-side write-back that refuses leftover markers, the level-2 stamp, the existing proof gate, the reviewer, and the existing atomic backup push; attempts and charges are recorded. Off by default and reachable only with the upkeep gate open, `conflicts.resolve` set to `agent` and a plan factory the shipped engine does not set, so with the gate closed every existing path is unchanged. The chat `--rebase` prompt and unit-lock bound change under the gate only (provisional). No real model call was made: every test drives a fake executable, the model flags beyond the confirmed table stay UNVERIFIED, and the limits are provisional and unmeasured.
 - Upkeep part C, slice 10: chat `--unsafe-merge` routes through the landing engine and the unit approval when unit upkeep is on, records the requester and maps every engine outcome to a reply; closed gate unchanged; threat-model row TM-14 rewritten (#939).
