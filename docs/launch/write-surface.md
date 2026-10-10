@@ -57,6 +57,7 @@ SCANNER BLIND SPOT (#895 slice 3a): the scan counts only literal `gh ...` argv. 
 | skills/sigma-loop/scripts/backlog_check.py | _dense_channel | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/channel_notify.py | _real_post | network-post | 1 | http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery | high |
 | skills/sigma-loop/scripts/channel_notify.py | _save_cursor | fs-write | 2 | ungated | medium |
+| skills/sigma-loop/scripts/claim_refs.py | _push | git-push | 1 | library only: called solely by the claim verbs (create, renew, reclaim, delete), always through the explicit --force-with-lease=<ref>:<expected> form on refs/sigma/claims/ (never a plain force); no caller exists in this slice; slice 3 gates it on claims.mode=git | high |
 | skills/sigma-loop/scripts/coexist.py | _mark | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/coexist.py | backup_features | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/coexist.py | backup_features | fs-rmtree | 1 | ungated | high |
