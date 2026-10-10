@@ -9,6 +9,11 @@ All notable changes to Sigma are recorded here, newest first.
   enforcement table). It refuses a landing while another repository's half of the unit has not landed,
   and when the lookup cannot answer. Read-only, inert while the upkeep gate is closed, and nothing
   calls it yet.
+- **Upkeep part B, slice 3: the proof gate's checks (#944).** A new library, `conflict_proof.py`, holds the checks that
+  decide whether a machine-resolved unit rebase can be trusted, as pure functions that each return named refusals:
+  a scoped conflict-marker and whitespace scan, a stage-0 baseline and per-path line-multiset comparison, commit
+  pairing by stop record and authorship key that parks on ambiguity, and a fail-closed Python test counter. Nothing
+  calls it yet, so nothing changes while the upkeep gate is closed.
 - **Upkeep part B, slice 4: the stamp and the resolution record (#945).** A new library,
   `feature_upkeep_resolution.py`, with no caller yet. The stamp is one lowercase body trailer
   (`sigma-resolution: <level> <run id>`) built after a blank line so the pull-request arrival
