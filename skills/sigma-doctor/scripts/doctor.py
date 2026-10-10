@@ -3,7 +3,7 @@
 -> gh auth + project scope; KG enabled -> the builder; vision-first -> the north-star; always -> the
 .sdlc layer — and report each check with the exact one-line fix. The command runner is injectable so
 the logic is hermetically testable. Zero-dep."""
-import sys, json, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
+import sys, json, math, time, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")   # doesn't garble to '?' or
@@ -72,6 +72,21 @@ def _real_run(args):
         return _RawFailure(f"{command}: timed out after {timeout:g}s")
     except Exception as exc:
         return _RawFailure(str(exc))
+
+
+def _bounded_run(args, timeout=None):
+    """`_real_run`'s return contract (the output text, or a `_RawFailure` carrying it), with a time limit on EVERY
+    command, local or not. `_real_run` leaves local probes uncapped on purpose (a slow local diagnostic must never be
+    reclassified as a missing tool), so a caller that cannot afford to hang on a wedged binary calls this instead: the
+    upkeep readiness rows of a later slice. Built on init's runner, which stops the whole process tree on an overrun
+    and returns 124; the limit is the fleet's per-call bound unless the caller passes one. Never raises."""
+    try:
+        preflight = _load_init_script("preflight")
+        limit = preflight.call_timeout() if timeout is None else timeout
+        code, text = preflight.real_runner([str(a) for a in args], timeout=limit)
+    except Exception as exc:
+        return _RawFailure("%s: the bounded probe could not run (%s)" % (args[0] if args else "", exc))
+    return text if code == 0 else _RawFailure(text)
 
 
 def _cfg(sdlc_dir):
@@ -1056,8 +1071,9 @@ def _graphql_capability_rows(base, cfg, env=None):
     return [{"name": "GitHub GraphQL unavailable (cloud proxy)", "ok": True,
              "fix": ("source=%s (%s). Features turned off or degraded while GraphQL is blocked: "
                      "board/Projects mirroring, gh pr merge --auto, timelineItems (blocker/dependency "
-                     "edges), gh issue|pr via GraphQL until migrated (#801 slices 2-4). This is "
-                     "detection only; REST migration is in progress, not complete. Override with "
+                     "edges), gh issue|pr via GraphQL until migrated (#801 slices 2-4). Unit landing "
+                     "uses REST only: draft readiness (gh pr ready) and merge-queue landing are "
+                     "unavailable here. This is detection only; REST migration is in progress, not complete. Override with "
                      "SIGMA_GH_GRAPHQL=on|off." % (res.get("source"), res.get("reason")))}]
 
 
@@ -1174,6 +1190,97 @@ def _preflight_fix(check):
                                    ("meanwhile: " + check["meanwhile"]) if check.get("meanwhile")
                                    else "") if x)
     return head + (f" ({tail})" if tail else "")
+
+
+def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
+    """The background upkeep scheduler's liveness and readiness rows (never a pass for something that did not run). Silent
+    unless the opt-in block is on or invalid, decided by the gate's own reader, not by looking for the block here. The git
+    floor goes through the init preflight (gated by `git_floor=True`) and is skipped under `cheap_only`, as every probe is."""
+    try:
+        sched = _load_loop_script("feature_upkeep_sched")
+        if not sched.project_open(cfg):
+            return []
+        rows = [_chk(f"{label}: {detail}", ok, "see docs/branching-model.md for the opt-in and the stop file")
+                for label, ok, detail in sched.health(cfg, base, now)]
+        if not cheap_only:
+            pf = _load_init_script("preflight")
+            runner = None
+            if injected:
+                def runner(argv, cwd=None, timeout=None):
+                    res = run(list(argv))
+                    return (0, str(res)) if res else (1, _failure_text(res))
+            checks = pf.preflight(str(base.parent), cfg, runner=runner, which=which, network=False, deep=False, git_floor=True)
+            for c in checks:
+                if c["id"] == "git-floor" and c["ok"] is not None:
+                    rows.append(_chk(f"{c['name']}: {c.get('detail') or ''}", c["ok"] is True, _preflight_fix(c)))
+        return rows
+    except Exception:                       # noqa: BLE001 - a row that cannot be built says so; it is never an all-clear
+        return [_chk("upkeep scheduler rows could not be built", False, "run /sigma-doctor again; see the loop scripts")]
+
+
+RESOLVER_PROBE_SECONDS = 5.0          # PROVISIONAL: a version probe on a healthy binary answers in well under a second
+
+
+def _resolver_rows(base, cfg, which, cheap_only, now=None):
+    """Resolver and reviewer readiness rows for the bounded conflict resolver (upkeep part B). EMPTY unless the upkeep
+    gate (read through its one reader, never the raw block) is open and `conflicts.resolve` is `agent`: a closed gate
+    leaves the doctor output byte-identical. Probes are bounded (`_bounded_run`, a short limit) and skipped under
+    `cheap_only`; no model is ever run. UNVERIFIED: the resolver CLI's `--version` flag was not run against a real
+    binary. The plugin-list calls elsewhere in this file stay unbounded and are NOT extended (D-25). Never raises."""
+    try:
+        gate = _load_loop_script("feature_upkeep")
+        reading = gate.read(cfg)
+        if not reading.enabled or reading.problems or reading.settings.get("conflicts.resolve") != "agent":
+            return []
+        launcher = _load_loop_script("feature_upkeep_launcher")
+        review = _load_loop_script("feature_upkeep_review")
+        resolution = _load_loop_script("feature_upkeep_resolution")
+        settings = reading.settings
+        now = int(time.time() if now is None else now)
+        rows = []
+        binary = (which or shutil.which)("claude")
+        if not binary:
+            rows.append(_chk("resolver cli: not found on PATH", False, "install the host CLI the resolver launches"))
+        elif cheap_only:
+            rows.append(_chk("resolver cli: present (not probed under cheap_only)", True, ""))
+        else:
+            res = _bounded_run([binary, "--version"], timeout=RESOLVER_PROBE_SECONDS)
+            rows.append(_chk("resolver cli: " + ("answers a version probe" if res else "did not answer a bounded version probe"),
+                             bool(res), "check the CLI runs by hand; the probe is limited to %gs" % RESOLVER_PROBE_SECONDS))
+        unverified = list(getattr(launcher, "UNVERIFIED_FLAGS", ()))
+        rows.append(_chk("resolver flags: %d design flags UNVERIFIED (refused until probed)" % len(unverified) if unverified
+                         else "resolver flags: all design flags confirmed", not unverified,
+                         "the resolver stays closed until the launch flags are probed against the real CLI"))
+        placeholder = launcher.PLACEHOLDER_MODEL
+        models = set(launcher.CATALOG.values())
+        rows.append(_chk("resolver model: " + ("catalog holds only the placeholder id" if models <= {placeholder}
+                                              else "a non-placeholder id is in the catalog"),
+                         not models <= {placeholder}, "supply a validated model id override"))
+        caps = [k for k in gate.SCHEMA if ("usd" in k or "spend" in k)]
+        finite = bool(caps) and all(isinstance(settings.get(k), (int, float)) and not isinstance(settings.get(k), bool)
+                                    and math.isfinite(settings[k]) and settings[k] > 0 for k in caps)
+        rows.append(_chk("resolver spend: " + ("finite caps configured" if finite else "no finite spend cap in the upkeep settings"),
+                         finite, "the launcher refuses a launch without finite per-run, per-machine and team caps"))
+        store = pathlib.Path(base).joinpath(*review.STORE_REL.split("/"))
+        shape_ok = not os.path.lexists(store) or (store.is_dir() and not store.is_symlink())
+        rows.append(_chk("reviewer store: " + ("usable" if shape_ok else "exists but is not a plain directory"), shape_ok,
+                         "remove the stray file at the reviewer store path so it can be created"))
+        records = []
+        rstore = pathlib.Path(base).joinpath(*resolution.STORE_REL.split("/"))
+        try:
+            records = [e.stat().st_mtime for e in os.scandir(rstore) if e.name.endswith(resolution.SUFFIX) and e.is_file()]
+        except OSError:
+            records = []
+        if records:
+            oldest = max(0, int(now - min(records)))
+            horizon = int(settings.get("backup.keep_days", 14)) * 86400   # PROVISIONAL: the prune horizon
+            ok = oldest <= horizon
+            rows.append(_chk("resolution age: %d record(s), oldest %ds old" % (len(records), oldest) + ("" if ok else
+                             " (older than the prune horizon: the prune may not be running)"), ok,
+                             "review the open resolution records; the prune is not removing them"))
+        return rows
+    except Exception:                       # noqa: BLE001 - a row that cannot be built says so; it is never an all-clear
+        return [_chk("resolver readiness rows could not be built", False, "run /sigma-doctor again; see the loop scripts")]
 
 
 def _preflight_rows(base, cfg, run, which, injected, cheap_only):
@@ -2378,6 +2485,27 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             "commits -- see docs/branching-model.md §3b for the resolution, or set "
             '`work.rebase_upkeep: "off"` while it stands.'))
 
+    # #936: a unit landing left pending (upkeep part C). Gated on the upkeep block and read-only: a closed gate
+    # emits nothing, so a project without the block sees an unchanged check list.
+    try:
+        import time as _t
+        landing_row = _load_loop_script("feature_upkeep_landing").doctor_row(base, cfg, int(_t.time()))
+    except Exception:                     # noqa: BLE001 - a doctor row never crashes the doctor
+        landing_row = None
+    if landing_row:
+        out.append(_chk(landing_row["name"], landing_row["ok"], landing_row["fix"]))
+
+    # Part B, level 3: a unit whose rebase was PARKED on a conflict nobody resolved. Its own marker file and its own
+    # wording -- never the would-drop row above, which would call a park "N tracked paths removed". Emitted only when a
+    # park is on record (the marker exists only when the upkeep gate was open), so a project that never opted in sees
+    # nothing, and the row names how long it has been waiting: age is the tell, not an error state.
+    for branch, files, at, age in _rebase_parks(base, _block(cfg, "work")):
+        out.append(_chk(
+            f"rebase upkeep of {branch} not parked", False,
+            f"parked since {at} ({age}) on a conflict in {files} file(s); nothing was pushed and the unit stays behind "
+            "its base until a person resolves it -- the finding filed for it carries a brief. A later clean pass "
+            "clears this row and closes the finding."))
+
     # A shared site-packages holds one slot per import name. A local `pip install [-e] <path>` bakes
     # that path in permanently, so on a machine running several worktrees of the same repo (this
     # project's own normal working style), whichever worktree last ran that command silently wins
@@ -2406,6 +2534,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     if _block(cfg, "work").get("enabled") or disc.get("source") == "github":
         out.extend(_preflight_rows(base, cfg, run, which, injected, cheap_only))
         out.extend(_graphql_capability_rows(base, cfg))     # #801: advisory, detection only
+    out.extend(_upkeep_rows(base, cfg, run, which, injected, cheap_only))
+    out.extend(_resolver_rows(base, cfg, which, cheap_only))
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):
@@ -4476,6 +4606,47 @@ def _rebase_blocks(base, wk=None):
                           ", ".join((got.get("dropped") or [])[:3]), str(got.get("at") or "?")))
         except Exception:                 # noqa: BLE001 - a doctor row never crashes the doctor
             found.append((path.name, 0, "marker unreadable", "?"))
+    return found
+
+
+_REBASE_PARKED_SUFFIX = ".rebase-parked.json"
+
+
+def _age_text(at):
+    """`3d 4h` / `5h` / `12m` for an ISO UTC stamp, or `age unknown`. Total."""
+    import calendar
+    import time as _time
+    try:
+        seconds = max(0, int(_time.time() - calendar.timegm(_time.strptime(str(at), "%Y-%m-%dT%H:%M:%SZ"))))
+    except Exception:                     # noqa: BLE001
+        return "age unknown"
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    return (f"{days}d {hours}h" if days else f"{hours}h" if hours else f"{rest // 60}m")
+
+
+def _rebase_parks(base, wk=None):
+    """[(branch, files, at, age)] for every unit whose rebase is PARKED (part B, level 3) -- the markers
+    `feature_rebase` writes on a park and removes on the next clean pass. Same posture as `_rebase_blocks`: read-only,
+    total, nothing while `work.rebase_upkeep` is off, nothing for a closed or unregistered unit, an unreadable marker
+    still reported."""
+    found = []
+    if _upkeep_off(wk):
+        return found
+    try:
+        paths = sorted((pathlib.Path(base) / "state" / "features").glob("*" + _REBASE_PARKED_SUFFIX))
+    except OSError:
+        return found
+    for path in paths:
+        try:
+            got = json.loads(path.read_text(encoding="utf-8"))
+            unit = str(got.get("unit") or path.name[:-len(_REBASE_PARKED_SUFFIX)])
+            if not _unit_can_be_upkept(base, unit):
+                continue
+            at = str(got.get("at") or "?")
+            found.append((str(got.get("branch") or path.name), int(got.get("files") or 0), at, _age_text(at)))
+        except Exception:                 # noqa: BLE001 - a doctor row never crashes the doctor
+            found.append((path.name, 0, "?", "age unknown"))
     return found
 
 

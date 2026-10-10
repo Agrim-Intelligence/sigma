@@ -248,6 +248,12 @@ ENFORCEMENT_GATES = (
      "settings": ("work.rebase_upkeep",),
      "mechanism": "refuses to resume an existing worktree that is stale against its base, first "
                   "moving the goal out of the claimed state so the refusal leaves nothing to un-park"},
+    {"control": "Cross-repo unit: other half must have landed", "function": "unit_sibling_guard",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("upkeep.enabled",), "settings": (),
+     "mechanism": "refuses a user-requested landing of a unit onto main while another repository's half of "
+                  "the same unit has not landed, and when the unit-keyed lookup cannot answer; reads the "
+                  "landing records and the feature registry, writes nothing",
+     "condition": "inert while the upkeep gate is closed"},
     {"control": "`finish` refused while the PR is open", "function": "_open_pr_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py finish` (worktree removal) while the goal's PR is still open, "
@@ -1923,6 +1929,62 @@ def _feature_rebase():
     return _FEATURE_REBASE
 
 
+_FEATURE_UPKEEP = None
+_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def _feature_upkeep():
+    global _FEATURE_UPKEEP
+    if _FEATURE_UPKEEP is None:
+        _FEATURE_UPKEEP = _load("feature_upkeep")
+    return _FEATURE_UPKEEP
+
+
+def _cut_tip_fields(config, run, path, remote, base):
+    """The goal record's cut-from tip, as the extra keys to save: `{"cut_tip": <sha>}` or `{}`.
+
+    Only under the upkeep opt-in, and only for a goal cut from a unit branch. The gate is asked FIRST, so a closed gate
+    makes no call at all and the record is byte-identical to before. A tip that cannot be read records nothing (the goal
+    then replays the legacy way)."""
+    if not (isinstance(base, str) and base.startswith(features.BRANCH_PREFIX)):
+        return {}
+    if not _feature_upkeep().enabled(config):
+        return {}
+    try:
+        tip = str(run(path, ["git", "rev-parse", f"{remote}/{base}"]) or "").strip()
+    except Exception:                       # noqa: BLE001 - no record is the legacy path, never a failed pick
+        return {}
+    return {"cut_tip": tip} if _SHA_RE.match(tip) else {}
+
+
+def _rebase_argv(config, run, path, remote, base, rec):
+    """The `git rebase` argv `rebase()` runs. Legacy (replay on `<remote>/<base>`) unless the upkeep opt-in is open AND the
+    record holds the tip the goal was cut from AND that tip is still in the goal's history: then `--onto <new unit tip>
+    <cut tip>` replays only the goal's own commits, which a unit rewritten by the upkeep pass would otherwise conflict with."""
+    plain = ["git", "rebase", "--autostash", f"{remote}/{base}"]
+    cut = rec.get("cut_tip")
+    if not (isinstance(cut, str) and _SHA_RE.match(cut) and _feature_upkeep().enabled(config)):
+        return plain
+    try:
+        run(path, ["git", "merge-base", "--is-ancestor", cut, "HEAD"])
+    except Exception:                       # noqa: BLE001 - a stale or foreign tip: the legacy path
+        return plain
+    return ["git", "rebase", "--autostash", "--onto", f"{remote}/{base}", cut]
+
+
+def _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base):
+    """After a goal rebase landed on `<remote>/<base>`: the goal now sits on that tip, so it is the new cut tip. Only for a
+    goal that has a record, only under the opt-in. Never raises."""
+    if not rec.get("cut_tip"):
+        return
+    fields = _cut_tip_fields(config, run, path, remote, base)
+    if fields:
+        try:
+            _save(sdlc_dir, goal, dict(rec, **fields))
+        except Exception:                   # noqa: BLE001 - a stale record only costs the legacy path next time
+            pass
+
+
 def _sync_registry(sdlc_dir, config, goal, unit, run, base_root, remote):
     """#1473: record this goal under its unit and reconcile `.sdlc/features/` against real branches.
 
@@ -2387,6 +2449,8 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     # which #1572 clears on reattach on purpose.
     saved = {"worktree": str(path), "branch": branch, "base": base,
              "base_resolved": base_resolved, "remote": s["remote"], "pr": ""}
+    if not reattached:                      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
+        saved.update(_cut_tip_fields(config, run, path, s["remote"], base))
     carried = (rec or {}).get("stale_resume_releases")
     if carried is not None:
         saved["stale_resume_releases"] = carried
@@ -3922,7 +3986,94 @@ def _union_diff3(text):
     return "\n".join(out), True
 
 
-def _try_union_changelog(path, run):
+_HEAD_UNRELEASED = "## Unreleased"
+_HEAD_VERSION_RE = re.compile(r"^## \d+\.\d+\.\d+(?: [\u2014-] .*)?$")
+_LINK_FOOTER_RE = re.compile(r"^\[[^\]]+\]: ")
+
+
+def _union_headed(text):
+    """Heading-aware sibling of `_union_diff3`: (resolved, True) or (None, False), the same contract.
+
+    Same proof of losslessness (every hunk is a pure two-sided insertion, empty diff3 base) and the same
+    de-duplication, but the unit's lines are placed under the section the unit's base had them under. On
+    the release-cut shape the base side (ours) inserts a version heading at the very point the unit
+    (theirs) inserts an entry under `## Unreleased`; `_union_diff3` writes ours then theirs, which files
+    the entry under the version just cut. Here, when the hunk sits under `## Unreleased` and ours carries
+    a heading, theirs goes above ours' first heading. The non-blank lines of the result are the same
+    multiset as `_union_diff3`'s, so placement changes and nothing else does.
+
+    A shape it does not recognise parks (returns False) instead of guessing: any `## ` line that is not
+    `## Unreleased` or `## X.Y.Z` with an optional dash suffix, a link-footer line, a heading on the
+    unit's side, a heading in ours with no known section above the hunk, or ours' heading under a
+    version section. A hunk whose ours side has no heading keeps the legacy order."""
+    out, lines, i, hunks, section = [], text.split("\n"), 0, 0, None
+    while i < len(lines):
+        if not lines[i].startswith(_D3_OURS):
+            if lines[i].startswith("## "):
+                section = lines[i]
+            out.append(lines[i]); i += 1; continue
+        hunks += 1
+        i += 1
+        ours = []
+        while i < len(lines) and not lines[i].startswith(_D3_BASE):
+            if lines[i] == _D3_THEIRS or lines[i].startswith(_D3_END):
+                return None, False
+            ours.append(lines[i]); i += 1
+        if i >= len(lines):
+            return None, False
+        i += 1
+        base = []
+        while i < len(lines) and lines[i] != _D3_THEIRS:
+            base.append(lines[i]); i += 1
+        if i >= len(lines) or base:
+            return None, False
+        i += 1
+        theirs = []
+        while i < len(lines) and not lines[i].startswith(_D3_END):
+            theirs.append(lines[i]); i += 1
+        if i >= len(lines):
+            return None, False
+        i += 1
+        side_heads = [ln for ln in ours + theirs if ln.startswith("## ")]
+        if any(ln != _HEAD_UNRELEASED and not _HEAD_VERSION_RE.match(ln) for ln in side_heads):
+            return None, False
+        if any(_LINK_FOOTER_RE.match(ln) for ln in ours + theirs):
+            return None, False
+        if theirs == ours:
+            out.extend(ours)
+        elif any(ln.startswith("## ") for ln in theirs):
+            return None, False
+        else:
+            cut = next((n for n, ln in enumerate(ours) if ln.startswith("## ")), None)
+            if cut is None:
+                out.extend(ours); out.extend(theirs)
+            elif section != _HEAD_UNRELEASED:
+                return None, False
+            else:
+                tail = theirs if not theirs or not theirs[-1].strip() else theirs + [""]
+                out.extend(ours[:cut]); out.extend(tail); out.extend(ours[cut:])
+        for ln in reversed(out):
+            if ln.startswith("## "):
+                section = ln
+                break
+    if not hunks:
+        return None, False
+    return "\n".join(out), True
+
+
+def _union_for(config):
+    """The union `rebase` hands `_union_rescue`: the heading-aware one only while part A's gate is open and
+    `conflicts.resolve` is mechanical or agent, else the legacy `_union_diff3` (so a closed gate, a broken
+    config or a module that will not load leaves every caller byte-identical)."""
+    try:
+        if _load("feature_upkeep").conflict_level(config) in ("mechanical", "agent"):
+            return _union_headed
+    except Exception:                       # noqa: BLE001 - any doubt keeps the legacy path
+        pass
+    return _union_diff3
+
+
+def _try_union_changelog(path, run, union=_union_diff3):
     """True only when a CHANGELOG-ONLY, provably-lossless conflict was resolved and staged."""
     try:
         unmerged = [ln.strip() for ln in
@@ -3945,7 +4096,7 @@ def _try_union_changelog(path, run):
     try:
         run(path, ["git", "checkout", "--merge", "--conflict=diff3", "--", _CHANGELOG])
         target = pathlib.Path(path) / _CHANGELOG
-        resolved, ok = _union_diff3(target.read_text(encoding="utf-8"))
+        resolved, ok = union(target.read_text(encoding="utf-8"))
         if not ok:
             return False
         target.write_text(resolved, encoding="utf-8")
@@ -3955,10 +4106,10 @@ def _try_union_changelog(path, run):
     return True
 
 
-def _union_rescue(path, run):
+def _union_rescue(path, run, union=_union_diff3):
     """True only when the WHOLE rebase completed through union-merged CHANGELOG conflicts."""
     for _ in range(UNION_ROUNDS):
-        if not _try_union_changelog(path, run):
+        if not _try_union_changelog(path, run, union):
             return False
         try:
             # `core.editor=true` is not a nicety: `rebase --continue` opens an editor for the
@@ -4003,18 +4154,19 @@ def rebase(sdlc_dir, config, goal, run=None):
     run(path, ["git", "fetch", remote, base])
     pre_rebase_head = run(path, ["git", "rev-parse", "HEAD"])
     try:
-        run(path, ["git", "rebase", "--autostash", f"{remote}/{base}"])
+        run(path, _rebase_argv(config, run, path, remote, base, rec))
     except Exception as exc:                # noqa: BLE001 - conflict is an outcome to report, not a crash
         # ONE narrow exception to "any failure aborts": a CHANGELOG.md conflict where BOTH sides
         # only inserted (see `_union_diff3`). That shape is mechanical and lossless, and it is the
         # single most frequent conflict in this repo. Everything else still aborts.
-        if _union_rescue(path, run):
+        if _union_rescue(path, run, _union_for(config)):
             refused = (_replay_would_lose(path, run, pre_rebase_head, f"{remote}/{base}",
                                           rec["branch"])
                        or _push_refused(path, rec["branch"]))
             if refused:
                 return refused
             run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
+            _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
             return "rebased (CHANGELOG union-merged)"
         try:
             run(path, ["git", "rebase", "--abort"])
@@ -4068,6 +4220,7 @@ def rebase(sdlc_dir, config, goal, run=None):
     if refused:
         return refused
     run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
+    _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
     return "rebased"
 
 
@@ -5515,6 +5668,28 @@ def _sibling_gate(sdlc_dir, config, goal, run, sleep):
             continue                        # re-READ, never re-judge: the answer is what may change
         waited = PENDING_ATTEMPTS * PENDING_INTERVAL
         return False, "%s after %ss — %s" % (SIBLING_PENDING_PREFIX, waited, "; ".join(waiting))
+
+
+def unit_sibling_guard(sdlc_dir, config, unit, here, landed=None):
+    """(ok, reason) -- refuse landing one half of a cross-repo unit while the other half has not landed.
+
+    The unit-keyed counterpart of `sibling_gate` (which is keyed by a goal and stays unwired and exempt): the landing
+    engine has a unit and no goal id. `here` is this repository's `owner/name`; `landed(repo, branch)` is the
+    engine's measurement of whether a sibling's unit branch has landed, and only the boolean `True` passes.
+
+    Inert while the upkeep gate is closed: `(True, "")` with no read. Open, it FAILS CLOSED ON ERROR and not on
+    absence -- see `cross_repo.unit_sibling_check`. NEVER RAISES: anything unexpected is a refusal naming itself."""
+    try:
+        if not _load("feature_upkeep").enabled(config if isinstance(config, dict) else {}):
+            return True, ""
+        if not isinstance(unit, str) or not unit.strip():
+            return False, "cross-repo unit check: %r is not a unit name" % (unit,)
+        if not isinstance(here, str) or not here.strip():
+            return False, "cross-repo unit `%s`: this repository's name is unknown, so the other half cannot be told" % unit
+        return _load("cross_repo").unit_sibling_check(sdlc_dir, unit, here, landed=landed)
+    except Exception as exc:                # noqa: BLE001 - "never raises" has to be total
+        return False, ("cross-repo unit check could not run (%s) -- refusing rather than reporting a pair that "
+                       "nothing measured" % type(exc).__name__)
 
 
 def _auto_merge_allowed(rec, run):

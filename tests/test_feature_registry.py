@@ -1380,10 +1380,16 @@ _FOLDS = {
     ("feature_rebase", "lock_path"),          # #1577 — the upkeep lock
     ("feature_rebase", "filed_path"),         # #1577 — the "already filed this conflict" marker
     ("feature_rebase", "blocked_path"),       # #144 — the "upkeep is refusing" marker the doctor reads
+    ("feature_rebase", "parked_path"),        # #946 — the "upkeep parked this unit's conflict" marker the doctor reads
     ("feature_rebase", "ack_path"),           # #2756 — the sanctioned-exit ack file
+    ("feature_rebase", "runtime_ack_path"),
     ("feature_propagate", "sibling_path"),    # #1672 — a shard path in ANOTHER repo
     ("feature_rebase", "worktree_path"),      # #1673 — the throwaway upkeep checkout
     ("feature_doc", "doc_path"),              # #1673 — the `<name>.md` page a person opens
+    ("feature_upkeep_state", "unit_state_path"),    # #919 — the per-unit upkeep state file
+    ("feature_upkeep_resolution", "store_path"),            # #945 — the per-resolution record, unit folded after the name guard
+    ("feature_upkeep_landing", "record_path"),              # #936 — the pending-landing record, unit folded after the name guard
+    ("feature_land_approval", "approval_path"),  # #933 — the unit approval record and its single-use marker
 }
 
 #: Derived keys that do NOT fold — A RECORD OF OPEN DEFECTS, never a design decision. When one is
@@ -1416,17 +1422,52 @@ _DOES_NOT_FOLD = set()
 #: vocabulary. It is deliberately NOT an auto-classifier -- run the other way it would have declared
 #: all four mutants above benign, since none of them names any of those either.
 _NO_UNIT_NAME = {
+    ("feature_backup", "_load"),              # the sibling importer, once per module
     ("feature_propagate", "_symlink_guard"),  # #708: loads state.py by path; no unit name involved
     ("feature_sync", "_symlink_guard"),
     ("feature_doc", "_load"),                 # the sibling importer, once per module
     ("feature_frontier", "_load"),
     ("feature_labels", "_load"),
+    ("feature_land_approval", "_load"),
+    ("feature_land", "_load"),                # #937: the sibling importer; no unit name reaches it
+    ("feature_land", "_default_record"),      # #938: builds the sibling script path; the unit is not an argument
+    ("feature_land", "record"),               # #938: the same path, inside the closure
+    ("feature_land_merge", "_load"),          # #938: the sibling importer; no unit name reaches it
     ("feature_owner", "_load"),
     ("feature_propagate", "_load"),
     ("feature_rebase", "_load"),
+    ("feature_rebase", "_describe_stop"),     # #946: joins the throwaway worktree path and a conflicted file; no unit name
+    ("feature_rebase", "read_text"),          # #946: the nested reader inside it
+    ("feature_park", "_load"),                # #946: the sibling importer
+    ("feature_upkeep_prove", "_sibling"),
+    ("feature_upkeep_prove", "_one_stop"),
+    ("feature_upkeep_prove", "resolve_stops"),
     ("feature_registry", "_load"),
     ("feature_stamp", "_load"),
     ("feature_sync", "_load"),
+    ("feature_upkeep_drift", "_load"),        # #919: the sibling importer, once per module
+    ("feature_upkeep_pass", "_sibling"),      # #922: the sibling importer, once per module
+    ("feature_upkeep_state", "_load"),        # #919: the sibling importer, once per module
+    ("feature_upkeep_resolution", "_load"),           # #945: the sibling importer, once per module
+    ("feature_upkeep_resolution", "prune"),   # #945: a directory sweep keyed by age; no unit name reaches it
+    ("feature_upkeep_landing", "_load"),      # #936: the sibling importer, once per module
+    ("feature_upkeep_landing", "prune"),      # #936: a directory sweep keyed by age; no unit name reaches it
+    ("feature_upkeep_landing", "pending"),    # #936: a read-only listing of the whole store; no unit name reaches it
+    ("feature_upkeep_level2", "_sibling"),   # #951: the Level 2 library; the importer, no unit name
+    ("feature_upkeep_level2", "eligibility"),   # #951: reads the stopped worktree only; no unit name
+    ("feature_upkeep_level2", "export_tree"),   # #951: copies the stopped tree into a directory the caller chose; no unit name
+    ("feature_upkeep_level2", "resolve_stop"),   # #951: the unit name reaches the attempt store only through store_path, which refuses a bad name and folds the rest
+    ("feature_upkeep_level2", "resolve_stops"),   # #951: the same; the resolver directory comes from the caller's root
+    ("feature_upkeep_review", "_sibling"),   # #950: the reviewer route; the importer, no unit name
+    ("feature_upkeep_review", "write_manifest"),   # #950: the unit name reaches it only through store_dir, which refuses a bad name and folds the rest
+    ("feature_upkeep_launcher", "_acquire_lock"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "_run"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "_sibling"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "_spend_path"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "build_env"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "entry_limit"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "make_scratch"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
+    ("feature_upkeep_launcher", "refuse_ancestors"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
     ("feature_propagate", "record_path"),     # keyed by GOAL, not by unit
     ("feature_rebase", "rebase_stopped"),     # takes a path that is already built
     # #278: keyed by a git BRANCH name (which may be a goal's `sdlc/<n>`), never a unit name; its
@@ -1633,7 +1674,8 @@ def test_every_classified_unit_address_still_folds_the_way_it_is_recorded(tmp_pa
     builders = _address_builders()
     root = str(tmp_path / ".sdlc")
     (tmp_path / ".sdlc" / "features").mkdir(parents=True)
-    first = {"features_dir": pathlib.Path(root) / "features", "sdlc_dir": root}
+    first = {"features_dir": pathlib.Path(root) / "features", "sdlc_dir": root, "run_id": "0123456789ab",
+             "slug": "owner/repo", "head": "a" * 40}   # #933: the unit approval path also keys on slug and head
 
     def address(fn, unit):
         params = list(inspect.signature(fn).parameters)
@@ -1665,8 +1707,9 @@ def test_nothing_declared_free_of_unit_names_touches_the_unit_name_vocabulary(tm
     Membership of that set cannot be measured (see its own comment), so what is measured instead is
     the thing a wrong answer leaves behind: a function that really handles a unit name has to guard
     it, fold it, or build its address, and all four of those are spelled with the names below.
-    Measured over the tree as it stands, this separates the two groups exactly — 7 of 7 folded
-    builders name at least one, 13 of 13 declared unit-name-free name none.
+    Measured over the tree as it stands, this separates the two groups exactly — every folded
+    builder names at least one, and every one declared unit-name-free names none. (The sets above
+    are the count: prose counts of them went stale as members were added, so none is repeated here.)
 
     ONE WAY ONLY, AND THAT IS THE WHOLE DESIGN. Run the other way, as an auto-classifier, it would
     have waved through every one of the four keys #1674's discovery was written to catch: none of
@@ -1809,6 +1852,10 @@ _REGISTRY_WRITE_CALLERS = {
 #: primitive -- i.e. could write `features/units/*.json` or `features/index.json` without the
 #: registry. Each is said here to be one that does not, or does so under a rule of its own.
 _REGISTRY_ADJACENT_WRITERS = {
+    "feature_rebase": "names the registry files only to read the unit record's tip fields; its writes are the leased push "
+                      "of a branch and the per-unit state under `state/upkeep/`, never a unit or index record",
+    "feature_upkeep_pass": "reads the unit record for its tips; writes only the per-unit upkeep state and the acks "
+                           "file under `state/upkeep/`, never a unit or index record",
     "migrate": "the converter: refuses a legacy delta record (names `repair`), converts the index "
                "only once no record is left in the previous schema, under the unit's lock",
     "coexist": "reads `features/` once to take the one-time backup; writes only under "

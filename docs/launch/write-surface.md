@@ -2,8 +2,12 @@
 
 The `check` command ratchets tracked Python and shell write sites. Control: in a temporary tracked shell file add `gh label delete legacy`, run `python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json`, and see it fail as a new `gh-label` site; remove the line before the green run.
 
+SCANNER BLIND SPOT (#895 slice 3a): the scan counts only literal `gh ...` argv. An issue write migrated onto `skills/sigma-loop/scripts/gh_api.py` (comment, create, edit body, close, add/remove label, add assignee over `gh api`) leaves its old row and shows up only as a call to a `gh_api` helper, so a NEW REST write added through a helper is not seen by `check`. The only recorded REST-write row is gh_api.py `_default_run`, whose gate names the write helpers that now have callers. Rows for the 17 migrated sites were removed from this table; `sources.py` `create_dependency` keeps its `gh-label` and `fs-write` rows (the `label create` step stays). `tests/test_issue_creation_boundary.py` additionally pins the callers of the create helper.
+LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the scanner's `gh_api` write-helper set, so the first caller gets its own row; until then the `_default_run` row's gate text names them (explicit merge method, repository and 40-hex head pin validated before any call; no auto-merge, no admin flag, no branch-delete option; no caller yet), and `tests/test_write_surface.py` pins those words because the ratchet checks presence, not text.
+
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
+| .sdlc/research/292-benchmark.py | main | git-ref-write | 1 | research benchmark script, run by hand against a temporary scratch repository it creates and removes; the update-ref only points a remote-tracking name inside that scratch repository | high |
 | evals/bench/arms/common.py | isolated_env | fs-write | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root | medium |
 | evals/bench/arms/common.py | remove_tree | fs-rmtree | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only a run, attempt or workdir child directory it was handed | high |
 | evals/bench/arms/matched.py | _replace_tree | fs-remove | 1 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; replaces only the arm's own run workdir | high |
@@ -81,17 +85,22 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/feature_propagate.py | _store | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | granted verdict | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | work.rebase_upkeep | high |
+| skills/sigma-loop/scripts/feature_rebase.py | _clear_parked | fs-remove | 1 | upkeep.enabled | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _drop_worktree | fs-rmtree | 1 | work.rebase_upkeep | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _drop_worktree | git-destructive | 1 | work.rebase_upkeep | high |
+| skills/sigma-loop/scripts/feature_rebase.py | _forget | fs-write | 1 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _mark_blocked | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/sigma-loop/scripts/feature_rebase.py | _mark_parked | fs-write | 2 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _pushed | git-destructive | 1 | work.rebase_upkeep | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _pushed | git-push | 1 | work.rebase_upkeep | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _rebase_feature | fs-write | 1 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _remember | fs-write | 2 | work.rebase_upkeep | medium |
+| skills/sigma-loop/scripts/feature_rebase.py | _settle_parks | gh-api-write | 2 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _upkeep | fs-write | 1 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | ack | fs-write | 2 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | mark_push_refused | fs-write | 2 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | push_refused | fs-remove | 1 | work.rebase_upkeep | high |
+| skills/sigma-loop/scripts/feature_rebase.py | _write_runtime_acks | fs-write | 2 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_registry.py | _atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
@@ -235,7 +244,7 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/work.py | _delete_remote_branch | gh-api-write | 1 | work.enabled; merged PR cleanup; non-empty goal prefix; never base/default branch | high |
 | skills/sigma-loop/scripts/work.py | _repair_review_post_effects | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/work.py | _save | fs-write | 2 | ungated | medium |
-| skills/sigma-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | ungated | medium |
+| skills/sigma-loop/scripts/work.py | _try_union_changelog | fs-write | 1 | CHANGELOG-only provably lossless conflicts; the heading-aware placement runs only under upkeep.enabled with conflicts.resolve mechanical or agent, else the legacy union | medium |
 | skills/sigma-loop/scripts/work.py | _write_merge_delivery | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/work.py | _write_merge_delivery | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/work.py | close_design | gh-pr | 1 | ungated | high |

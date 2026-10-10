@@ -463,6 +463,9 @@
    "reason": "Directory creation only; the files inside carry their own entries.",
    "verdict": "directory",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/feature_upkeep_launcher.py::_acquire_lock",
+    "skills/sigma-loop/scripts/feature_upkeep_launcher.py::reserve_machine",
+    "skills/sigma-loop/scripts/feature_upkeep_launcher.py::settle_machine",
     "skills/sigma-init/scripts/init_flow.py::main",
     "skills/sigma-init/scripts/sdlc_init.py::main",
     "skills/sigma-init/scripts/setup_wizard.py::_write_cache",
@@ -1294,6 +1297,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::_rerecord_cut_tip",
     "skills/sigma-loop/scripts/work.py::_save",
     "skills/sigma-loop/scripts/work.py::_stale_resume_refusal",
     "skills/sigma-loop/scripts/work.py::ci_repair",
@@ -1316,6 +1320,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
+    "skills/sigma-loop/scripts/work.py::_rerecord_cut_tip",
     "skills/sigma-loop/scripts/work.py::_save",
     "skills/sigma-loop/scripts/work.py::_stale_resume_refusal",
     "skills/sigma-loop/scripts/work.py::ci_repair",

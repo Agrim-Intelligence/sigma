@@ -56,13 +56,31 @@ MAX_WORKERS = 8
 
 REASON = "library, loaded by path; no CLI"
 LIBRARY_ONLY = {
+    "feature_backup",
     "setup_wizard", "wizard_actions", "actionlog", "blocker_scan", "blockers", "breaker",
     "decompose_goal", "design_goal", "diff_revert", "feature_classify", "feature_doc", "legacy",
-    "feature_judge", "feature_labels", "feature_registry", "feature_stamp", "features",
+    "feature_judge", "feature_labels", "feature_registry", "feature_stamp", "feature_upkeep", "features",
     "flake_check", "frontmatter", "gh_api", "gh_session", "goal_size", "mutation",
     "scrub", "sources", "state", "tamper_scan", "timing_store", "watch_classify", "witness",
+    "bounded_run",
+    "feature_landed",
+    "feature_land_merge",
+    "conflict_state",
+    "feature_park",
+    "feature_upkeep_prove",
+    "conflict_proof",
+    "unattended_git",
     "merge_queue", "tier_escalation", "board_spec", "red_green", "shell_policy", "logroll",
     "codex_runtime", "claim_refs",
+    "feature_upkeep_drift",
+    "feature_upkeep_state",
+    "feature_upkeep_resolution",
+    "feature_upkeep_landing",
+    "feature_upkeep_pass",
+    "feature_upkeep_launcher",
+    "feature_upkeep_review",
+    "feature_upkeep_level2",
+    "feature_upkeep_sched",
 }
 
 

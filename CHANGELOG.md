@@ -29,6 +29,140 @@ All notable changes to Sigma are recorded here, newest first.
   `record.py` now records the plan-review gate's `pass`/`warn` as `approve` (`block` and unknown words verbatim;
   owner ruling 2026-10-10). The fake gh now models a field-only `POST` to issue comments. Measured on one macOS machine:
   the variant alone about 35 s, the whole plain gesture about 125 s; no CI figure.
+
+## 1.0.6 — 2026-10-10 — branch upkeep (opt-in; off by default)
+
+- **Upkeep part B, slice 10: Level 2 end to end against a fake (#951).** A new library, `feature_upkeep_level2.py`, runs eligibility and limits (protected paths, structural and merge-commit stops, file, hunk, line, stop and attempt limits), a plain export of the stopped tree, the capped resolver through the launcher, an engine-side write-back that refuses leftover markers, the level-2 stamp, the existing proof gate, the reviewer, and the existing atomic backup push; attempts and charges are recorded. Off by default and reachable only with the upkeep gate open, `conflicts.resolve` set to `agent` and a plan factory the shipped engine does not set, so with the gate closed every existing path is unchanged. The chat `--rebase` prompt and unit-lock bound change under the gate only (provisional). No real model call was made: every test drives a fake executable, the model flags beyond the confirmed table stay UNVERIFIED, and the limits are provisional and unmeasured.
+- Upkeep part C, slice 10: chat `--unsafe-merge` routes through the landing engine and the unit approval when unit upkeep is on, records the requester and maps every engine outcome to a reply; closed gate unchanged; threat-model row TM-14 rewritten (#939).
+- **Upkeep part B, slice 9: the independent reviewer route (#950).** A new library, `feature_upkeep_review.py`, with no caller yet and off by default. It runs a second headless session through the resolver launcher with a brief of base, ours, theirs and resolved contents and no resolver transcript, refuses the inline and subagent mechanisms, accepts only a strict verdict object (anything else, an unreadable reply and a timeout are block), neutralises the reasons, runs the leak gate over the brief, writes a write-once manifest under its own unit-keyed store with a pruner, and rejects a verdict when the tree moved. It can only add a refusal. The route is labelled verified false; it was run only against a fake command, never the real one.
+- **Upkeep part B, slice 8: the resolver launcher (#949).** A new library, `feature_upkeep_launcher.py`, with no caller yet and off by default. It runs one capped headless session with an environment built from nothing, the prompt on stdin, only confirmed flags (the rest are labelled UNVERIFIED and refused), a group kill at the wall clock, a before-and-after hash of the directory, and charging: a normal run its metered cost, a killed or unmetered run the full per-run cap. Tested only against a fake executable; no real model call was made. `bounded_run.run_group` gains an optional `stdin_path`; the model SDK module joins the no-network list.
+- Upkeep part A, slice 6 wiring: the pass re-reads tips, uses the engine runner and hooks policy, writes acks, limits re-anchoring, skips deleted goal branches and writes the ledger note (#1016).
+- Upkeep part A, slice 8: user documentation and config reference for the scheduler, backups, restore and prune, the opt-in audit across every entry point, and one recorded local end-to-end run on a scratch bare remote (#924).
+- Upkeep part A, slice 7: the scheduler, the detached bounded job, outcome notes and the doctor rows (#923).
+- Upkeep part C, slice 5: read-back classifier and pending-landing record (#936).
+- Upkeep part C, slice 8: the landing engine's front half, `feature_land.py land <unit>`, ends in a rehearsal and never merges (#937).
+- Upkeep part C, slice 8: `feature_land_approval.peek` checks a unit approval without consuming it (#937).
+- Upkeep part C, slice 8: the PR-creating writer and the scratch-worktree removal are registered in the write surface (#937).
+- Upkeep part C, slice 9: the landing engine's back half, `feature_land_merge.py`, behind the upkeep gate and the explicit `--merge` flag: the guard as the last gate, a pending record before the call, a head-pinned merge, a read-back, record once and a branch-existence check; `verify_merge.py` maps engine outcomes only while the gate is open (#938).
+- **Upkeep part B, slice 5: a changelog-only unit conflict is resolved by the heading-aware union (#947).** Behind the
+  existing upkeep opt-in and `conflicts.resolve` set to `mechanical` or `agent` only, and with no model call. A unit rebase
+  that stops on a conflict in the changelog alone is resolved, checked (no edit outside the file, no new marker or
+  whitespace finding, every original commit accounted for, then the verify command), stamped with the original author kept,
+  continued with repository hooks pointed away, and pushed only through the one atomic backup push; any refused check parks the
+  unit instead, and a resolved replay is never pushed without a backup ref. After the push the acks of the original commits
+  are recomputed for the replayed ones into a per-machine runtime file the ack reader unions in (the tracked store is never
+  edited), the resolution record and ledger note are written, and a prior finding gets the record before it is closed. The
+  guard budget refusal now names `SIGMA_WATCH_CALL_TIMEOUT` and its current value as the operator's lever. With the opt-in
+  closed every existing path is unchanged.
+
+- **Upkeep part B, slice 6: unit conflicts are parked, with one capped finding per conflict (#946).** Behind the
+  existing upkeep opt-in only. A unit rebase that stops on a conflict nobody resolves now ends with the new `parked`
+  outcome: nothing is pushed, a capped brief (files, commits, bytes and time; no network call; marker strings and kit paths
+  neutralised) is rendered before the scratch worktree is dropped, and one finding is filed per conflict rather than per
+  branch tip. The filing helper gains a no-goal path with a scoped idempotency key that looks up no unit from a goal, makes
+  no metered classification, writes an unaddressed ledger note and tells no owner. The filed store keeps park slots as a
+  record with issue number and a reused flag, a later clean pass comments then closes the finding through `gh_api`
+  (never a reused one, never one a live slot still points at), and the doctor shows an age row from the park's own marker.
+  With the opt-in closed every existing path is unchanged.
+
+- Upkeep part C, slice 3: test substrate for REST merges (#935).
+- **Upkeep part A, slice 6: the pass under the opt-in (#922).** Behind `upkeep.enabled` only; closed means
+  every path is unchanged. The pass module gains the engine runner settings (no prompt, no editor, no ref
+  updates by rebase, no signing, per-verb timeouts), the hooks policy (off for replays and clean pushes, on
+  after a resolved conflict), the tip re-read with at most two restarts, the per-machine acks file, the
+  re-anchor limit, the skip reason for a goal branch deleted after its pull request merged, and unaddressed
+  ledger notes written in-process. A goal cut from a unit branch records the tip it was cut from, and a goal
+  rebase replays with `--onto` from that tip (goals without a record replay the old way). The attended
+  rebase door takes the unit lock in its caller and pushes with a lease on the exact tip it saw. With the
+  gate open, picking such a goal makes one extra read.
+- **Upkeep part C, slice 7: cross-repo unit check (#934).** A unit-keyed sibling lookup
+  (`cross_repo.unit_sibling_check`) and its guard (`work.unit_sibling_guard`, registered in the
+  enforcement table). It refuses a landing while another repository's half of the unit has not landed,
+  and when the lookup cannot answer. Read-only, inert while the upkeep gate is closed, and nothing
+  calls it yet.
+- **Upkeep part B, slice 3: the proof gate's checks (#944).** A new library, `conflict_proof.py`, holds the checks that
+  decide whether a machine-resolved unit rebase can be trusted, as pure functions that each return named refusals:
+  a scoped conflict-marker and whitespace scan, a stage-0 baseline and per-path line-multiset comparison, commit
+  pairing by stop record and authorship key that parks on ambiguity, and a fail-closed Python test counter. Nothing
+  calls it yet, so nothing changes while the upkeep gate is closed.
+- **Upkeep part B, slice 4: the stamp and the resolution record (#945).** A new library,
+  `feature_upkeep_resolution.py`, with no caller yet. The stamp is one lowercase body trailer
+  (`sigma-resolution: <level> <run id>`) built after a blank line so the pull-request arrival
+  classifier still reads the title, and it carries no number, no closing keyword and no registered
+  marker. The stamping commit is made at the stop with the original author name, email and date
+  kept (a plain commit loses them; an authorship comparison refuses it), and `rebase --continue`
+  keeps it unchanged. Measured: the continuation runs only two commit hooks and never signs, and
+  the engine commit runs the same two. The record store is atomic, refuses symlinks and is pruned
+  by age; one unaddressed ledger note and an optional finding comment follow. Off by default.
+- **Upkeep part B, slice 2: a heading-aware CHANGELOG union, off by default (#943).** `work.py` gains
+  `_union_headed`, a sibling of `_union_diff3` (left byte-identical): on a conflict where both sides
+  only inserted, an entry added under `## Unreleased` stays under it when the base side cut a version
+  heading at the same point, instead of landing under the version just cut. Every other shape (a
+  bracketed or unknown heading, a link footer, a heading on the unit's side) parks as before.
+  `work.rebase` reads the upkeep gate and passes the sibling to `_union_rescue` only while
+  `upkeep.enabled` is true and `conflicts.resolve` is `mechanical` or `agent`; with the gate closed the
+  in-pass goal replay, `ensure_fresh` and the merge gate's BEHIND remedy behave exactly as before.
+- **Upkeep part A, slice 3: drift measure, per-unit state and the due rule (#919).** Two new
+  library modules, `feature_upkeep_drift.py` and `feature_upkeep_state.py`. The first counts
+  pull-request arrivals on a base branch and on a feature branch by author date over a bounded
+  first-parent walk, derives the drift threshold from the window and burst rates and clamps it, and
+  answers UNKNOWN, never zero, when the walk cap is hit, git fails, the repository is shallow or
+  commits exist but none classify. The second keeps one atomically written state file per unit
+  (unreadable state reads as overdue) and the due rule: a cooldown since the last attempt, a backstop
+  since the last success and a longer backstop for dormant units; an attempt that cannot be recorded
+  never starts a pass. Both take the settings of the upkeep gate, a growth disposition records the
+  retention rule for the new store, and nothing calls them yet, so there is no behaviour change.
+- **Receipt-key parity under the upkeep gate (#932, upkeep part C, slice 4).** One owner-id rule, the unit's
+  branch, through a new shared helper in merge_observation.py. While the upkeep gate is open the
+  unit-completion observer keys a landing by the branch like the rebase landing helper, so one landing
+  is recorded once; a landing already recorded under the bare unit key keeps that key. With the gate
+  closed nothing changes.
+- **Shared "landed" predicate (#930, upkeep part C, slice 1).** New feature_landed.py: one function that says whether a
+  unit's tip is landed on a base, as a structured verdict (LANDED, NOT_LANDED or UNKNOWN, with how, the base sha, the
+  pull request and the merged head). Ancestry is checked first through an exit-code-preserving bounded runner, then a
+  separate head-aware merged-pull-request read (paged, bounded, truncation never read as "none"); anything it cannot
+  prove is UNKNOWN. Also a repository-slug helper that checks the remote names the same repository. The drift watcher
+  adds an optional landed field only while the upkeep gate is open; with the gate closed nothing changes.
+- **GitHub write plumbing in gh_api (#931, upkeep part C, slice 2).** New REST-only helpers with no caller yet: a pinned merge that requires an explicit method, repository and 40-hex head pin, commit parents, branch rules, repository settings, a typed non-draft pull request create, and a bounded runner that keeps the exit code and failure class. The landing writer joins the receipt allowlist; the doctor row and the cloud-sessions page name the degraded features. Inert unless the upkeep gate is open.
+
+
+
+- **Backup refs for a rewritten unit tip: create, restore, prune (#921, upkeep part A, slice 5).** With
+  `upkeep.enabled` true, the pick-time rebase pass now keeps the old tip of a unit branch as
+  `refs/sigma/backup/<unit>/<UTC stamp>` in the same atomic push as the leased update (both refs land or neither; a
+  name collision is refused, and a unit name over 220 bytes is refused as `name-too-long` before the replay). With it
+  off the push is byte for byte what it was. New `feature_backup.py` also holds a `restore` command, leased on the tip
+  you state, and a `prune` command that keeps the newest 5 backups per unit and removes only those older than 14 days,
+  by exact prefix, with the `--delete` flag and one lease per ref; both are `feature_rebase.py` verbs behind the gate
+  (exit 3 while it is closed). `backup.former_prefixes` is a new key that ships empty. The never-delete guard pins the
+  two new sites, the write-surface inventory gains four rows, and the deletion rule (section 13b of the branching
+  model), the README and the enforcement table carry the exception. Nothing prunes by itself yet.
+- **Shared verify runner and unattended git runner (#920, upkeep part A, slice 4).** New bounded_run.py:
+  a command run in a process group of its own under a wall-clock budget, the whole group stopped
+  (SIGTERM, then SIGKILL) on overrun or when a stop file appears, a lifeline that stops the tree if the
+  caller itself is killed, bounded output, a distinct no-command outcome, and a refusal unless the checkout
+  is a scratch worktree with the git-local shell-command trust. New unattended_git.py: the rebase engine's
+  runner contract with no prompts, editor or askpass helper, signing off, a hooks policy, a fetch that
+  leaves the fetch record alone and starts no maintenance, and a required time limit per git verb. The
+  doctor gains a bounded local-probe helper. Nothing calls any of it yet and `feature_sync._run` and the
+  doctor's `_real_run` are unchanged, so there is no behaviour change.
+- **Never-delete guard and write-surface ratchet widened ahead of backup refs (#918, upkeep part A,
+  slice 2).** The guard now also flags `git push -d`, colon-empty and backup-namespace refspecs, a
+  REST `DELETE` in any spelling, `update-ref -d`/`--delete` and `gh_api` delete helpers, and its
+  exact-site pin grows by one reviewed site (`gh_api.py` `remove_label`, a label delete). The
+  write-surface scanner now classes a push-scoped `--delete`, colon-empty or forced refspec as
+  destructive and sees `update-ref --delete`, `--method=DELETE`/`-XDELETE` and the `gh_api` write
+  helpers by name. One pinned sentence states what the guard enforces about `refs/sigma/backup/`.
+  No inventory row changes and no runtime behaviour changes; nothing calls the new rules yet.
+- **Upkeep gate, off by default (#917, upkeep part A, slice 1).** New `feature_upkeep.py`: the one
+  total reader of a new `upkeep` config block (it never raises, `enabled` must be the JSON boolean
+  `true`, and any invalid key closes the whole block), a machine opt-in variable `SIGMA_UPKEEP_JOB`
+  (exactly `1`, plus `ledger.enabled`), and an entry-point decorator. The shipped config template
+  gains a disabled `upkeep` block with notes, and a recording-trap test proves that while the gate
+  is closed nothing is spawned, fetched, sent to a model or written. Nothing calls the gate yet, so
+  there is no behaviour change; existing projects do not receive the block, and the pick-time switch
+  `work.rebase_upkeep` is untouched.
+
 - **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
   shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
   a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);

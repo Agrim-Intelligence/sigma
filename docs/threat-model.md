@@ -50,7 +50,7 @@ and E (elevation of privilege).
 | TM-11 | T6 | Managed-policy deletion (T) | Removing the file makes an enrolled checkout read as unadopted. | `skills/sigma-loop/scripts/managed_settings.py:237` refuses an enrolled checkout whose file is gone, via markers outside the file. Residual: a checkout writer who also deletes the markers or runs `unenroll` is not bound (README, Managed settings) | med | — |
 | TM-12 | T6 | Direct-edit bypass (T) | A local sentinel bypasses a hard plan gate when the key is not organization-locked. | `docs/enforcement.md:54` | med | — |
 | TM-13 | T7 | Unbounded model spend (D) | A spawned model process spends beyond a sensible per-invocation budget. | `skills/sigma-loop/scripts/feature_judge.py:167` | low | — |
-| TM-14 | T7 | Unsafe Slack merge (E) | `--unsafe-merge` removes interactive confirmation from a merge request. | `skills/sigma-loop/scripts/slack_commands_listen.py:1353` | med | — |
+| TM-14 | T7 | Unsafe Slack merge (E) | `--unsafe-merge` removes interactive confirmation from a merge request. With unit upkeep off, a non-bot message in the authorized channel lands the unit with no approval; with it on, chat landing goes through the landing engine and needs the same local single-use unit approval, bound to the verified head, and the requester id is recorded. Residual: authority is channel membership alone, and an approval made locally cannot be tied to the person who then types the command. | `skills/sigma-loop/scripts/slack_commands_listen.py:1564` | med | — |
 
 ## Operational reading
 
@@ -81,3 +81,17 @@ whose repository configuration you have not reviewed.
 the same Git-local setting only after the operator confirms or supplies the
 command. They refuse to enable a command outside a Git worktree. `decline` and
 initial scaffolding never grant it.
+
+## The conflict resolver session
+
+The upkeep conflict resolver (`conflicts.resolve: agent`) is a deliberate, capped, opt-in headless model session, launched
+by `skills/sigma-loop/scripts/feature_upkeep_launcher.py`. It is off by default and the library is imported by nothing
+while the gate is closed. Its confinement: the environment is built from nothing (no repository-location variables, no
+inherited credential; a credential is passed only when the operator names one, and only to the realpath-verified binary);
+the prompt goes on stdin with untrusted text in nonce-delimited blocks; the directory must not sit under an ancestor holding
+an instruction file and must be outside the real home and the repository; the process group is killed at a wall-clock cap;
+every file in the directory is hashed before and after, and any change outside the conflicted set discards the result and
+still charges it. A killed or unmetered run is charged the full per-run cap. Only flags in the launcher's confirmed-flag
+table are passed; every other design flag is UNVERIFIED and refused. The team spend ceiling is eventually consistent (N
+clones can overshoot by up to N - 1 times the per-run cap). Nothing here was run against the real command line: the
+transcript location and format are UNVERIFIED, and an unreadable transcript is charged the cap.

@@ -71,7 +71,10 @@ it does not force. It parks on:
 
 - a hard checkpoint / a decision only you can make,
 - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — its
-  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions`),
+  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions`;
+  that advice is about the agent, and two things Sigma's own code does are outside it because each is bounded by
+  construction: the lease-protected force-push of a unit branch, and, only once you enable upkeep, the removal of old
+  backup refs under Sigma's own backup namespace; see `docs/branching-model.md` section 13b),
   unless you opted in (`spend_approval`, off by default) and wrote a single-use
   `sigma:spend-approved=<label>` line as the first line of that goal's issue body, which
   `loop.py spend-approval` checks, audits and then honours once (a per-use go-ahead, not a spend cap; the check is on who opened the issue, so any repo writer could add the marker to it),
@@ -467,6 +470,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `ledger: {"enabled": true}` | unset (`null`, reads as off; `/sigma-setup` writes `true`) | the committed team ledger — claims and outcomes recorded per author, plus cross-area hand-off |
 | `ledger.watch.interval_seconds` | 900 | how often `watch_daemon.py` pulls the ledger ops branch and refreshes the inbox |
 | `ledger.publish_on_write` | on | a ledger write you TYPE (`ledger.py append`, `handoff.py open`/`track`/`ack`) publishes itself, and says on stderr whether the team can see it — set `false` to keep the push local and leave it to the watcher |
+| `upkeep: {"enabled": true}` | off (the block is scaffolded with `enabled` false; an existing adopter copies it in) | keeps the old tip of a rewritten unit branch as a backup ref, adds the restore and prune commands, and with `ledger.enabled` and `SIGMA_UPKEEP_JOB=1` on one machine lets the ledger watcher start one bounded maintenance pass per tick. Not yet run against a hosting service; see `docs/branching-model.md` |
 | `action_log: {"enabled": true}` | on | a full local, gitignored trace of loop activity per goal (`.sdlc/state/log/<goal>.jsonl`) — read via the `sigma-log` skill; never touches the shared ledger either direction |
 | `agent_watch: {"enabled": true}` | off | background-agent-death watch — a claimed goal's registered pid confirmed dead notifies (email if `notify.email` is also configured, else always a ledger note); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check |
 | `comment_watch: {"enabled": true}` | off | in-flight comment watch — a new comment on a claimed issue notifies the claimant via a ledger note (self-comments suppressed); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check, and github discovery (comments aren't a concept for local goal files) |

@@ -27,7 +27,8 @@ _release_spec.loader.exec_module(release_manifest)
 
 _PARENT = ("schema_version", "ownership_key", "canonical_repository_id", "owner_kind", "owner_id",
            "goal", "head_ref", "base_ref", "pr_number", "pr_node_id", "creating_writer", "pr_created_at")
-_WRITERS = ("work.pr", "unit_completion._draft", "verify_merge.ensure_landing_pr")
+_WRITERS = ("work.pr", "unit_completion._draft", "verify_merge.ensure_landing_pr",
+            "verify_merge.land_unit")
 
 
 def canonical_json(value):
@@ -40,6 +41,16 @@ def ownership_key(facts):
     if not all(isinstance(part, str) and part for part in parts):
         raise ValueError("receipt ownership facts are required")
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def landing_owner_id(branch):
+    """The ONE owner-id rule for a unit landing receipt: the unit's branch (`feature/<unit>`), never the bare unit
+    name. Both landing observers (the rebase landing helper and unit completion) must key one PR identically, or one
+    landing is recorded twice. Chosen as the branch form because `verify_merge`'s persisted parent receipt path
+    and its test pin are already keyed that way."""
+    if not isinstance(branch, str) or not branch:
+        raise ValueError("a unit landing owner id needs the unit branch")
+    return branch
 
 
 def parent_receipt(facts):
