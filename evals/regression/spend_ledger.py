@@ -130,7 +130,9 @@ Controls (each broken on purpose and seen red on exactly these gestures; any Pyt
     python3.12 -m pytest tests/test_regression_ledger.py::test_every_write_under_evals_regression_is_documented -q
     python3.12 -m pytest tests/test_regression_ledger.py::test_whatever_reserve_accepts_the_next_reserve_reads_back_valid -q
     python3.12 -m pytest tests/test_regression_ledger.py::test_duplicate_or_settled_run_id_refused_before_writing -q
-    python3.12 -m pytest tests/test_regression_ledger.py::test_signal_around_lock_acquire_and_release_does_not_leak_the_lock -q
+    python3.12 -m pytest tests/test_regression_ledger.py::test_signals_are_blocked_and_lock_held_at_the_acquire_and_release_seams -q
+    python3.12 -m pytest tests/test_regression_ledger.py::test_handler_running_inside_the_critical_section_releases_the_lock -q
+    (the real-signal test_smoke_signal_around_lock_acquire_and_release_does_not_leak_the_lock is a timing-dependent smoke test)
     python3.12 -m pytest tests/test_regression_ledger.py::test_signal_after_settle_before_handlers_restored_still_exits_128_plus_signum -q
 """
 import contextlib

@@ -58,3 +58,16 @@ deeply nested line (`test_corrupt_line_fails_closed[deeply-nested-json]`) | `exc
 settle id validation (`test_settle_refuses_malformed_reservation_before_writing`) | the reservation-id check in `settle` replaced by `if False:` | 1 failed (DID NOT RAISE) | 109 passed
 
 Accepted residuals documented in the module docstring (Recovery): lock held to exit on a signal just before the release mask; custom handler left installed on a signal between `signal.signal()` and storing the previous handler. Both fail closed; neither has a test.
+
+## Deterministic signal-window controls (replacing the timing-dependent system of record)
+
+Nodes (tests/test_regression_ledger.py): test_signals_are_blocked_and_lock_held_at_the_acquire_and_release_seams,
+test_handler_running_inside_the_critical_section_releases_the_lock[reserve-locked|reserve-written].
+The real-signal test is now test_smoke_signal_around_lock_acquire_and_release_does_not_leak_the_lock (labelled smoke).
+
+Each broken in evals/regression/spend_ledger.py, run with
+`python -m pytest tests/test_regression_ledger.py::<node> -q`, seen RED, then restored byte-for-byte (cmp against a saved copy):
+- acquire-side `_block_signals()` replaced by `None`: seams test RED (mask assertion at lock-acquired).
+- release-side `_block_signals()` replaced by `None`: seams test RED.
+- `os.close(fd)` in `_locked` removed: both handler-inside params RED (lock still held) and the seams test RED.
+Stability: ledger file alone 30/30 green; 10/10 green with `-n 4` while a second `-n 4` pytest ran concurrently (112 passed each).

@@ -250,8 +250,75 @@ def _lock_is_free(tmp_path):
         os.close(fd)
 
 
+def _mask_now():
+    return signal.pthread_sigmask(signal.SIG_BLOCK, [])         # an empty block set only READS the mask
+
+
+def _with_hook(hook):
+    ledger._hook_in_critical_section = hook
+
+
+def test_signals_are_blocked_and_lock_held_at_the_acquire_and_release_seams(tmp_path):
+    """System of record (deterministic, no signal is sent): at `lock-acquired` and `lock-releasing`
+    SIGTERM and SIGHUP are blocked on this thread and the flock is still held; at `reserve-locked` the
+    caller's mask is back; after reserve the prior mask (a non-default one) is restored and the lock free."""
+    prior = {signal.SIGUSR1}
+    old = signal.pthread_sigmask(signal.SIG_SETMASK, prior)
+    seen = {}
+
+    def hook(name):
+        seen[name] = (_mask_now(), _lock_is_free(tmp_path))
+    _with_hook(hook)
+    try:
+        res = _led(tmp_path).reserve("1", now=MAR)
+        after = _mask_now()
+    finally:
+        _with_hook(None)
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
+    assert isinstance(res, ledger.Reservation)
+    both = {signal.SIGTERM, signal.SIGHUP}
+    for stage in ("lock-acquired", "lock-releasing"):
+        mask, free = seen[stage]
+        assert both <= set(mask), stage                         # blocked: a signal cannot land mid-window
+        assert free is False, stage                             # and the lock really is held right now
+    mask, free = seen["reserve-locked"]
+    assert not (both & set(mask)) and free is False             # unblocked inside the body, lock held
+    assert set(after) == prior                                  # restored to the PRIOR mask, not cleared
+    assert _lock_is_free(tmp_path)
+
+
+@pytest.mark.parametrize("stage", ["reserve-locked", "reserve-written"])
+def test_handler_running_inside_the_critical_section_releases_the_lock(tmp_path, stage):
+    """System of record (deterministic): the hook raises LedgerSignal at the stage, which is exactly what
+    the installed handler does when a signal lands there. No signal is sent."""
+    old = signal.pthread_sigmask(signal.SIG_SETMASK, set())
+
+    def hook(name):
+        if name == stage:
+            raise ledger.LedgerSignal(signal.SIGTERM)
+    _with_hook(hook)
+    try:
+        with pytest.raises(ledger.LedgerSignal):
+            _led(tmp_path).reserve("1", run_id=ID_A, now=MAR)
+        after = _mask_now()
+    finally:
+        _with_hook(None)
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
+    assert _lock_is_free(tmp_path)                              # the fd was closed on the way out
+    assert not ({signal.SIGTERM, signal.SIGHUP} & set(after))   # and the mask is not left blocked
+    kinds = [(r["kind"], r.get("reason")) for r in _rows(tmp_path)]
+    if stage == "reserve-locked":
+        assert kinds == []                                      # nothing was written before the signal
+    else:                                                       # durable open is settled at full belt
+        assert kinds == [("open", None), ("settle", "signal")]
+        assert Decimal(_rows(tmp_path)[1]["spent"]) == Decimal("1")
+
+
 @pytest.mark.parametrize("stage", ["lock-acquired", "lock-releasing"])
-def test_signal_around_lock_acquire_and_release_does_not_leak_the_lock(tmp_path, stage):
+def test_smoke_signal_around_lock_acquire_and_release_does_not_leak_the_lock(tmp_path, stage):
+    """SMOKE test: timing-dependent real-signal delivery; the deterministic seam tests
+    (test_signals_are_blocked_and_lock_held_at_the_acquire_and_release_seams and
+    test_handler_running_inside_the_critical_section_releases_the_lock) are the system of record."""
     def raiser(signum, frame):
         raise ledger.LedgerSignal(signum)
     old = signal.signal(signal.SIGTERM, raiser)
