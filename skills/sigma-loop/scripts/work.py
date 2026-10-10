@@ -231,8 +231,10 @@ ENFORCEMENT_GATES = (
     {"control": "Dirty root checkout refuses `start`", "function": "_dirty_root_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py start` while the root checkout carries tracked, uncommitted "
-                  "edits -- the sign that something edited the base branch directly instead of a "
-                  "worktree"},
+                  "edits on `work.base` -- the sign that something edited the base branch directly "
+                  "instead of a worktree; a registry shard or page under `.sdlc/features/` is "
+                  "tolerated only when its bytes and its committed version are both in Sigma's own "
+                  "recorded write chain (#954), so a human's edit there still refuses"},
     {"control": "Resume refused: ledger claim held by a live sibling",
      "function": "_resume_blocked_by_a_live_sibling", "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "ledger.enabled"), "settings": (),
@@ -1720,6 +1722,27 @@ def _feature_registry():
     return _FEATURE_REGISTRY
 
 
+#: #954: the two modules the dirty-root guard needs only when EVERY tracked edit in root is a
+#: registry file -- `feature_doc` for the page path's own builder, `feature_provenance` for the proof.
+#: Lazy and cached for `_feature_registry`'s reason: a clean root, or any other dirt, never loads them.
+_FEATURE_DOC = None
+_FEATURE_PROVENANCE = None
+
+
+def _feature_doc():
+    global _FEATURE_DOC
+    if _FEATURE_DOC is None:
+        _FEATURE_DOC = _load("feature_doc")
+    return _FEATURE_DOC
+
+
+def _feature_provenance():
+    global _FEATURE_PROVENANCE
+    if _FEATURE_PROVENANCE is None:
+        _FEATURE_PROVENANCE = _load("feature_provenance")
+    return _FEATURE_PROVENANCE
+
+
 def _adopted(sdlc_dir):
     """Did THIS project adopt the branching model? -> `.sdlc/features/` exists. One `stat` (#1571).
 
@@ -2227,16 +2250,29 @@ def _reattach_base(sdlc_dir, config, goal, run, base_root, s, branch, base, base
         f"answer for this one.")
 
 
-def _dirty_root_refusal(base_root, s, run):
+def _dirty_root_refusal(base_root, s, run, sdlc_dir=None):
     """None when the root checkout is safe to build a goal's worktree on top of; otherwise the
     complete `REFUSED — ...` string for `start()` to return verbatim.
 
     `commit()`'s `git add -A` only ever runs with `cwd=<worktree>` (see
     test_commit_only_ever_touches_this_goals_worktree), so it structurally cannot see dirt sitting
     in the ROOT checkout instead. Tracked, uncommitted edits there — on the branch `work.base`
-    names, the one every goal's worktree is cut FROM — can only mean an edit landed straight in
+    names, the one every goal's worktree is cut FROM — are the sign that an edit landed straight in
     root instead of a worktree (#2014): the exact mistake AGENTS.md's "nobody commits directly to a
     feature branch" section exists to prevent, one level up, on the integration branch itself.
+
+    ONE KIND OF TRACKED ROOT DIRT IS SIGMA'S OWN (#954). Every pick's registry sync rewrites
+    `.sdlc/features/units/<unit>.json` and `.sdlc/features/<unit>.md` IN ROOT, and nothing commits
+    them (branching-model §15) -- so once a human has committed the registry, the next start used to
+    refuse on the write the previous one made. When EVERY tracked dirty line is such a file, ONE more
+    read (`git status --porcelain=v2 --untracked-files=no -- <sdlc>/features`) lets each be checked
+    against its provenance chain (`feature_provenance`): a file is tolerated only when its bytes AND
+    its committed version are both in Sigma's own recorded write chain, the committed one first, on a
+    worktree-only modification with no mode change. A human's edit there, an edit Sigma then wrote
+    over, a staged file, `index.json`, `rebase-acks/`, or anything unproven still refuses -- and the
+    refusal now names each file. Every path is derived from ONE resolution of `sdlc_dir`, so the
+    documented `work.py start .sdlc <goal>` (a relative `.sdlc`, passed raw by `main`) gets the same
+    answer as an absolute path.
 
     NARROW ON PURPOSE. Untracked scratch (`??` in `git status --porcelain`) is never touched here —
     only lines that are NOT `??` count as dirt. And this only ever fires on `s["base"]` itself: a
@@ -2246,9 +2282,13 @@ def _dirty_root_refusal(base_root, s, run):
     HEAD as base would degrade this into "any tracked dirt anywhere refuses", which is not what
     #2014 asks for, so the check is off entirely (zero git calls) until a base is set.
 
-    FAILS OPEN on any git error (no repo, git not installed, ...) — same posture as the
-    issue-declaration read a few lines below: a transport/environment problem must not become a
-    NEW way for `start()` to raise."""
+    COST: a clean root pays the one `status` it always did; dirt outside the registry pays the same
+    two calls as before; registry-only dirt pays one more, regardless of how many files.
+
+    FAILS OPEN on any git error in the first two reads (no repo, git not installed, ...) — same
+    posture as the issue-declaration read a few lines below: a transport/environment problem must not
+    become a NEW way for `start()` to raise. The porcelain v2 read fails CLOSED instead: it only ever
+    runs on dirt that already refuses, so its failure is today's refusal, never a new way through."""
     base = (s.get("base") or "").strip()
     if not base:
         return None
@@ -2265,14 +2305,122 @@ def _dirty_root_refusal(base_root, s, run):
         return None
     if branch != base:
         return None
-    return (f"REFUSED — the root checkout at {base_root} is on {base!r}, its own configured base, "
-            f"with {len(tracked)} tracked file(s) modified and not committed. `work.py` only ever "
-            f"edits inside a goal's own worktree, so this can only be an edit that landed straight "
-            f"in this checkout instead of one. Clean it up by hand: `git -C {base_root} stash push "
-            f"-u` shelves it without losing it (never `reset --hard` / `clean -f`) — then decide "
-            f"whether it's real work that deserves its own branch. Confirm `git -C {base_root} "
-            f"status --porcelain` is empty, then re-run `work.py start` for this goal; nothing here "
-            f"has been touched.")
+    # ONE resolution of `.sdlc` (#954 D7): `base_root` already carries it (`project_root` resolves),
+    # and every registry path below is derived from this, never from the raw argument again.
+    sdlc = pathlib.Path(sdlc_dir).resolve() if sdlc_dir is not None else None
+    paths = _dirty_root_paths(tracked)
+    try:
+        unproven = _dirty_root_unproven(base_root, sdlc, paths, run)
+    except Exception:                      # noqa: BLE001 - an unprovable root refuses, as it always did
+        unproven = paths
+    if not unproven:
+        return None
+    return _dirty_root_message(base_root, base, sdlc, unproven)
+
+
+#: The most paths a refusal names before it says "and N more": a root with hundreds of dirty files
+#: still gets a one-line refusal.
+_DIRTY_ROOT_LISTED = 10
+
+
+def _dirty_root_paths(lines):
+    """The path of each `git status --porcelain` line, parsed for `_run`'s strip (#954, BR-9).
+
+    `_run` returns `stdout.strip()`, so a FIRST line ` M <path>` arrives as `M <path>`: a fixed
+    `line[3:]` would cut the path's own first character. A well-formed line has a space at index 2;
+    a line that lost its leading space has one at index 1. Anything else is kept whole, which is never
+    a registry path, so a misparse can only refuse."""
+    paths = []
+    for line in lines:
+        if len(line) > 3 and line[2] == " ":
+            paths.append(line[3:])
+        elif len(line) > 2 and line[1] == " ":
+            paths.append(line[2:])
+        else:
+            paths.append(line)
+    return paths
+
+
+def _dirty_root_registry_file(base_root, features_dir, rel):
+    """Is `rel` (porcelain's root-relative path) a registry shard or page under `features_dir`?
+
+    Asked through the registry's OWN builders (`unit_path`, `doc_path`), never a literal, so the
+    answer cannot drift from where Sigma writes. `index.json`, `rebase-acks/` and anything a builder
+    rejects as a unit name are not."""
+    target = base_root / rel
+    stem = pathlib.PurePosixPath(rel).stem
+    for build in (_feature_registry().unit_path, _feature_doc().doc_path):
+        try:
+            if build(features_dir, stem) == target:
+                return True
+        except ValueError:                 # not a unit name, so not a file Sigma writes
+            continue
+    return False
+
+
+def _dirty_root_unproven(base_root, sdlc, paths, run):
+    """-> the dirty `paths` this start cannot prove are Sigma's own registry writes; [] lets it go.
+
+    Leaves WITHOUT another git call -- returning every path, today's refusal -- unless the project
+    adopted `.sdlc/features/` and every path is a registry shard or page. Then ONE porcelain v2 read,
+    pathspec-limited, and an entry is exempt only when all of these hold: kind `1`; XY `.M` (a
+    worktree-only change: X `.` also means the index equals HEAD, so `hH` IS the committed version);
+    `mI == mW` (no mode change); a registry file; and `feature_provenance.proven` on HEAD's id.
+    Renames, copies and unmerged entries are never kind `1`, and the proof reads a regular file only.
+    The start goes ahead only when every v1 path is exempt AND no v2 entry is not: two reads a moment
+    apart that disagree refuse."""
+    if sdlc is None or not _adopted(sdlc):
+        return paths
+    features_dir = _feature_registry().registry_dir(sdlc)
+    if not all(_dirty_root_registry_file(base_root, features_dir, p) for p in paths):
+        return paths
+    try:
+        features_rel = features_dir.relative_to(base_root).as_posix()
+        status = run(base_root, ["git", "status", "--porcelain=v2", "--untracked-files=no", "--",
+                                 features_rel])
+    except Exception:                      # noqa: BLE001 - fail closed: this dirt refused before
+        return paths
+    exempt, foreign = set(), []
+    for line in status.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split(" ", 8)
+        if (len(fields) == 9 and fields[0] == "1" and fields[1] == ".M" and fields[4] == fields[5]
+                and _dirty_root_registry_file(base_root, features_dir, fields[8])
+                and _feature_provenance().proven(features_dir, base_root / fields[8], fields[6],
+                                                 compact=True)):
+            exempt.add(fields[8])
+        else:
+            foreign.append(fields[8] if len(fields) == 9 else line)
+    unproven = [p for p in paths if p not in exempt]
+    return unproven + [f for f in foreign if f not in unproven]
+
+
+def _dirty_root_message(base_root, base, sdlc, unproven):
+    """The refusal: every path it could not prove (at most `_DIRTY_ROOT_LISTED`), and for registry
+    files the §15 commit gesture, verbatim and runnable."""
+    shown = ", ".join(f"`{p}`" for p in unproven[:_DIRTY_ROOT_LISTED])
+    if len(unproven) > _DIRTY_ROOT_LISTED:
+        shown += f" and {len(unproven) - _DIRTY_ROOT_LISTED} more"
+    root = shlex.quote(str(base_root))
+    text = (f"REFUSED — the root checkout at {base_root} is on {base!r}, its own configured base, "
+            f"with {len(unproven)} tracked file(s) modified and not committed: {shown}. `work.py` "
+            f"only ever edits inside a goal's own worktree, except the registry files its pick-time "
+            f"sync writes here -- and those are tolerated only when it can prove the bytes are its "
+            f"own (#954).")
+    try:
+        features_rel = _feature_registry().registry_dir(sdlc).relative_to(base_root).as_posix()
+    except Exception:                      # noqa: BLE001 - no registry here: no registry advice
+        features_rel = None
+    if features_rel and any(p.startswith(features_rel + "/") for p in unproven):
+        text += (f" The `{features_rel}/` file(s) above could not be proved to be Sigma's own write "
+                 f"-- a hand edit, an edit Sigma then wrote over, a staged or mode change, or a "
+                 f"record lost since (docs/branching-model.md §15). If they are what the registry "
+                 f"should say, commit them: `git -C {root} add {features_rel} && git -C {root} "
+                 f"commit -m \"registry: record unit membership\"`.")
+    return text + (f" Look first with `git -C {root} diff`; commit what is real, or move it to its "
+                   f"own branch (never `reset --hard` / `clean -f`), then re-run `work.py start` "
+                   f"for this goal. Nothing here has been touched.")
 
 
 def _missing_remote_message(sdlc_dir, base_root, remote, run, error):
@@ -2340,15 +2488,16 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
 
     CHECKED SECOND, before even the resume record (#2014): `_dirty_root_refusal` asks whether the
     ROOT checkout itself — not this goal's worktree — is sitting on `work.base` with tracked,
-    uncommitted edits. That state can only mean someone edited straight in root instead of cutting a
-    worktree first, on every path this function has (fresh cut or resume alike), so it is asked
-    before either is chosen."""
+    uncommitted edits. Apart from the registry files a previous pick's sync wrote there, which it
+    tolerates only when it can prove them Sigma's own (#954), that state means someone edited
+    straight in root instead of cutting a worktree first, on every path this function has (fresh cut
+    or resume alike), so it is asked before either is chosen."""
     reason = state.unsafe_goal_reason(stem(goal))
     if reason:
         raise ValueError(f"unsafe goal {goal!r} for work.start: {reason}")
     run = run or _run
     s, base_root = settings(config), project_root(sdlc_dir)
-    dirty_root = _dirty_root_refusal(base_root, s, run)
+    dirty_root = _dirty_root_refusal(base_root, s, run, sdlc_dir=sdlc_dir)
     if dirty_root:
         return dirty_root
     rec = _record(sdlc_dir, goal)

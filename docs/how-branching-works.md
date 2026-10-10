@@ -130,7 +130,9 @@ row, with the unit of cost named per row.
 ## Stage 3 — the goal starts: base, registry, upkeep, then the cut
 
 `work.start()` does these in a fixed order before your worktree exists, and each has a section of
-its own:
+its own. The root checkout is checked first — tracked edits on the base refuse the start, except
+registry files Sigma can show it wrote itself
+([§15](branching-model.md#15-honest-limitations-and-the-gaps-that-are-deliberate)):
 
 1. **the base is resolved** — three lines of precedence, from your issue's declaration down to the
    old behaviour ([§6](branching-model.md#6-base-resolution)). Two conditions decide whether the

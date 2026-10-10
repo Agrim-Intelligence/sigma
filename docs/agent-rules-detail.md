@@ -95,6 +95,10 @@ issue declares one, how a goal's base is resolved from it, and what `.sdlc/featu
   passes the **whole** entry, never a delta. Never hand-edit inside the managed block of
   `.sdlc/features/<name>.md` — it is regenerated, and the edit is reported to its owner. Write
   below the end marker.
+- Never `git stash` the root checkout to get past a dirty-root refusal (17 unpopped stashes buried
+  real work, #954). The refusal names each file. Commit registry files with `git add .sdlc/features
+  && git commit` ([branching-model §15](branching-model.md#15-honest-limitations-and-the-gaps-that-are-deliberate)),
+  and move any other edit to its own branch.
 - **Unit attachment is not a manual convention to remember — with `discovery.no_dangling_goal.
   enabled: true`, Sigma itself attaches one, every time, whether or not the person filing the
   issue ever ran `/sigma-define`.** This is deliberate: `/sigma-define`/`declare()` is the human path

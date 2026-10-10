@@ -1872,6 +1872,12 @@ _REGISTRY_ADJACENT_WRITERS = {
     "loop": "stats `features/index.json` before `feature_registry.guard_sheet`, which writes only "
             "the recovery copy under `state/backup/`",
     "slack_commands_listen": "writes only its own heartbeat/pid files; 'units' is prose",
+    # #954: names `units` only to RECOGNISE a shard path it was handed (already built and folded by
+    # `unit_path`); the one file it writes is its own chain record under `state/features/provenance/`.
+    # The registry file itself is still replaced by the chokepoint's own `os.replace`, inside
+    # `feature_provenance.recorded`.
+    "feature_provenance": "writes only its own chain records under `state/features/provenance/`; "
+                          "names `units` to recognise a shard path, never to write one",
 }
 
 _WRITE_PRIMITIVE = re.compile(

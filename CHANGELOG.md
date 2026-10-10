@@ -297,6 +297,27 @@ All notable changes to Sigma are recorded here, newest first.
   (imported, never copied); each stream carries `source` and `present`, and a run directory with absent streams still builds.
   Phase ends are recorded as `call-existence` evidence only, and the record says so. Nothing is posted or run against a
   model; read cost is linear in journal and log size and was not benchmarked.
+- **`work.py start` no longer refuses on the registry files its own sync wrote (#954).** Once the
+  registry is committed (branching-model §14), every pick rewrites `.sdlc/features/units/<unit>.json`
+  and `<unit>.md` in the root checkout, and the next start refused on that dirt and suggested
+  `git stash`. Every shard and page write now records a provenance chain in gitignored
+  `.sdlc/state/features/provenance/` (git blob ids, written under a per-file lock before the
+  replace), and the dirty-root guard exempts a registry file only when its bytes and its committed
+  version are both in that chain, the committed one first. Hand edits, an edit Sigma then wrote over,
+  staged files, mode changes, `index.json` and anything unproven still refuse, and the refusal now
+  names each file (up to 10), prints §15's commit gesture, and no longer suggests `git stash`.
+  Cost: one extra `git status --porcelain=v2 --untracked-files=no -- .sdlc/features` only when every
+  tracked root edit is a registry file, nothing on a clean root (§6e's 4 and 17 are unchanged);
+  measured 33.4 ms against 44.5 ms for the existing v1 status (median of 7, 1,236 tracked files,
+  macOS, git 2.46.2). A registry write costs about 0.8 ms more with a short chain and about 4.3 ms
+  at the 256-entry cap (median and mean of 300 writes, macOS APFS); a guard check with 20 and 200
+  dirty, proven shards took 110 ms and 335 ms. Limits: a root already dirty from an earlier version
+  refuses once until committed; `core.autocrlf`/clean filters, SHA-256 repositories and a `.sdlc`
+  below the git toplevel get no exemption; with no `fcntl` a lost chain entry costs a spurious
+  refusal. Verified with real-git tests (the issue's repro, the documented relative `.sdlc` CLI
+  gesture, two deterministic concurrency seams and a multi-process smoke run), each seen red against
+  the old code or a weakened build. Not measured: Windows, and a live multi-slot loop on an adopter.
+
 - **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
   `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
   (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`

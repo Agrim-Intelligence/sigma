@@ -621,7 +621,10 @@ config-pinned reader rather than the injected runner, so the measurement records
 on every start whether or not `.sdlc/features/` exists — so it fires before either project in this
 diff has a chance to differ, and correctly never appears as a row above (it did not exist before
 this branching model either, but it is not a cost the model *added*, so a row here would misstate
-what a reader is being asked to budget FOR). The *considered* rows are counted the same way at each gate's own entry point
+what a reader is being asked to budget FOR). That guard makes one more read only when **every**
+tracked edit on the base is a registry shard or page: a `git status --porcelain=v2
+--untracked-files=no -- .sdlc/features`, to prove them Sigma's own (#954, §15). A clean root pays
+nothing for it and the measured start above runs on one, so neither number moves. The *considered* rows are counted the same way at each gate's own entry point
 (`feature_labels.attach_at_pick`, `feature_propagate.gate_at_pick`, `feature_owner.gate_at_pick`,
 `cross_repo.check_at_pick`), each run twice — with the directory and without it — which is how the
 last column was decided rather than assumed. A conditional row carries its condition instead of a
@@ -930,6 +933,32 @@ cannot see a clobber that arrives after it looked. So the pass **re-reads at the
 > re-read is invisible to this process, and no lock-free scheme on POSIX can see it. That is a reason
 > to have the lock, not a reason to pretend the fallback is one.
 
+**The provenance chain (#954): how a later start tells Sigma's own registry dirt from a human's.**
+Every shard and page write also extends that file's chain at
+`.sdlc/state/features/provenance/<units/x.json | x.md>.chain.json` (gitignored state, never a
+tracked file): an ordered list of git blob ids, each consecutive pair one Sigma write — the bytes it
+replaced, then the bytes it wrote. A write whose pre-image is in the chain truncates after it and
+appends; one whose pre-image is not (a human's bytes, a lost record) resets the chain to
+`[pre, post]`. The dirty-root guard (§15) tolerates a dirty registry file only when its current bytes
+are in the chain **and** its committed version sits earlier in it.
+
+- **Order, under one leaf lock per file.** The writer reads the pre-image, records, and only then
+  replaces the file, all under that file's own `flock` (taken after the unit lock, never before it).
+  The guard reads the file's bytes **before** the chain. So a concurrent slot that sees the new bytes
+  always finds them recorded, and old bytes stay in the chain: concurrent starts in one root do not
+  refuse one another over each other's registry writes. Pinned by two deterministic in-process seam
+  tests and one multi-process smoke run (#954).
+- **Fail-open cost: a spurious refusal, never a hidden edit.** With no `fcntl` (Windows), a
+  filesystem that cannot flock, or a holder wedged for 10 s, the chain's read-modify-write is
+  unserialised and can lose an entry; a record that cannot be written at all costs one stderr line.
+  Either way the file is refused until committed — every entry is a Sigma post-image or a pre-image
+  read from disk, so nothing is ever trusted that Sigma did not see.
+- **Bounded.** A chain holds at most 256 entries and always keeps its first, which is the HEAD of
+  §14's normal flow (the first write committed once and never again). When a human commits
+  mid-chain, the first start that proves the file compacts the chain to begin at that commit, so the
+  cap only evicts a HEAD after more than 255 writes to one file with no check between — one refusal,
+  fail closed.
+
 ### 8f. What a pick actually does to the registry
 
 On every goal pick, before the fetch that cuts the worktree:
@@ -937,6 +966,9 @@ On every goal pick, before the fetch that cuts the worktree:
 1. **record the goal** under the unit its issue declared, for this repo;
 2. **cross-check** what the registry claims against the branches that actually exist;
 3. **regenerate** the managed block in `<name>.md` (§9).
+
+Every shard and page write among those also extends that file's provenance chain (§8e), which is
+what lets the next start tell Sigma's dirt from a human's (§15).
 
 It runs **before** the `git fetch`, deliberately: a brand-new unit has no branch yet, and that fetch
 correctly fails closed on exactly that — so a sync placed after it would miss the first goal of every
@@ -1896,7 +1928,8 @@ Two things about it that are easy to get wrong:
   and in no one else's; the directory becomes real for everybody the moment the first pick writes
   `units/<name>.json` and `<name>.md` into it **and you commit them** (§8a — the registry is a
   committed backup and is deliberately not gitignored). A clone taken before that commit is
-  unadopted again, and its picks will say so.
+  unadopted again, and its picks will say so. Until you commit later picks' writes too, the next
+  `work.py start` tolerates that dirt only where it can prove the bytes are Sigma's own (§15).
 - **Creating it is what makes the registry half live**, and the registry half is not yet ready for
   first adoption — the composition defects tracked in **#1564** are inert only for as long as this
   directory is absent, which is why nothing in the kit creates it and why **#1576** is deliberately
@@ -2095,6 +2128,22 @@ Two things about it that are easy to get wrong:
   small addition — several goals picked concurrently share ONE root checkout, `feature_sync`'s
   `flock` (§8e) serialises only the JSON write, and nothing here serialises the `git commit` that
   would have to wrap it, so building that safely is undesigned rather than merely undone.
+  **That dirt no longer stops the next start (#954).** `work.py start` refuses tracked edits in the
+  root checkout on `work.base` (§6e), and a registry shard or page is the one exception: it is
+  tolerated only when its current bytes can be reached from its committed bytes by a run of Sigma's
+  own recorded writes, with no foreign bytes on disk between them (the provenance chain, §8e), on a
+  worktree-only modification with no mode change. A human action whose result is byte-identical to a
+  state Sigma itself produced cannot be told apart from Sigma, and is treated as Sigma's — it adds no
+  human-authored bytes. **Still refused:** a hand edit (inside the managed block or below it), an
+  edit Sigma then wrote over (its pre-image is not in the chain, so HEAD is not either), a staged
+  file, a mode change, `index.json`, `rebase-acks/`, and anything `migrate.py --apply`,
+  `feature_sync.py fold`/`recover` or `feature_rebase.py ack` wrote — those bypass the recorded
+  write. **Limits:** no exemption under `core.autocrlf` or a clean filter, in a SHA-256 repository,
+  or with `.sdlc` below the git toplevel (each is today's refusal); a root already dirty from a
+  version before this one refuses once, until committed; and with no `fcntl` (Windows) a lost chain
+  entry costs a spurious refusal. The refusal names every file it could not prove and prints this
+  section's gesture verbatim — `git -C <root> add .sdlc/features && git -C <root> commit -m
+  "registry: record unit membership"` — after you have looked at `git -C <root> diff`.
 - **The never-create guarantee is verb-shaped** (§7). Four other `gh` routes could mint a label;
   none appears in this tree.
 - **Adoption is not uniform: the label half is not gated on `.sdlc/features/`, deliberately**
