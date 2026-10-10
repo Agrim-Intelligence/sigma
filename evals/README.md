@@ -192,9 +192,15 @@ relative to the repo root and may not be absolute or contain `..`. Exit 1 on any
 python3 evals/skills/smoke.py --root <skills> --cards-dir <cards>
 ```
 
-The bare form with no flags reads the real `skills/` and the real `evals/skills/cards/`. No real
-cards exist yet, so it stays red until slice 3 writes them, and the runner is deliberately NOT part of
-the `pytest tests/` gate until then. Not measured: behaviour on the real tree.
+The bare form with no flags reads the real `skills/` and the real `evals/skills/cards/`. Slice 2 (#1045) wrote
+a card for every skill that has a `scripts/*.py` or `scripts/*.sh` file (derived from disk, by
+`tests/test_skill_smoke.py`, never typed); the bare form stays red for the prose-only skills (`skill <name>: no card`)
+until slice 3, so it is deliberately NOT part of the `pytest tests/` gate yet. A card is `exercised` only when every
+gesture on it has a passing fixture, otherwise `pinned` (a verbatim gate) or `described`. A gesture's `--help`
+behaviour is not repeated in cards: it is held by `test_every_script_answers_help_without_side_effects` (`*.py`) and
+`test_shell_scripts_have_a_help_handler` (`*.sh`, grep only) in `tests/test_script_help.py`. A card's `agent`
+producer means `SKILL.md` tells the agent to write the file and no script does. Not measured: the full runner's wall
+time on the real tree.
 
 ## Phase context budget — instruction bill by agent
 

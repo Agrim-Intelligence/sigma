@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-log",
+  "kind": "pinned",
+  "gates": [
+    "not written freehand"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-log/scripts/log.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/state/log/*.jsonl",
+      "producer": "skills/sigma-loop/scripts/actionlog.py"
+    }
+  ]
+}

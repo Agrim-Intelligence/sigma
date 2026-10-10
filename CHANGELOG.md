@@ -14,6 +14,12 @@ All notable changes to Sigma are recorded here, newest first.
   New `landing_preflight.py` library, plus read-only `gh_api.ruleset` and `gh_api.org_ruleset`. Commands starting with
   `cd`, variables, `~`, command substitution or shell wrappers are never checked. **Not seen live:** the real GitHub
   reply shape is faked in tests from the documented fields.
+- **Per-skill smoke cards for the script-bearing skills (#1045, slice 2 of #1043).** New `evals/skills/cards/<skill>.json`
+  for every skill with a `scripts/*.py|sh` file; `library` stems across them equal `test_script_help.LIBRARY_ONLY`. Only
+  skills whose every gesture has a passing read-only fixture are `exercised`; the rest are `pinned` (a verbatim
+  `SKILL.md` gate) and artifact producers are an existing script or `agent`. The bare `python3 evals/skills/smoke.py`
+  stays red for prose-only skills until slice 3 and is not a test gate.
+
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
   line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under

@@ -1,0 +1,479 @@
+{
+  "skill": "sigma-loop",
+  "kind": "pinned",
+  "gates": [
+    "(deploy, delete, overwrite, spend, migrate) \u2014 NEVER"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-loop/scripts/acceptance.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/actionlog.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/agent_watch.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/auto_unpark.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autowatch.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/backlog_check.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/blocker_scan.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/blockers.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/bounded_run.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/breaker.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/channel_notify.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/claim_refs.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/codex_runtime.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/coexist.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/comment_watch.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/conflict_proof.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/conflict_state.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/cross_repo.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_tier.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decompose_goal.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/design_goal.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/diff_revert.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/discovery-scan.sh",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/discovery.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_tick.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_watch.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_backup.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_classify.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_doc.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_frontier.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_judge.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_labels.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_land.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_land_approval.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_land_merge.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_landed.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_owner.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_park.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_propagate.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_rebase.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_registry.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_stamp.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_sync.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_drift.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_job.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_landing.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_launcher.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_level2.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_pass.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_prove.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_resolution.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_review.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_sched.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_state.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/features.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/flake_check.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/frontmatter.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_session.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_size.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_state_prune.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/handoff.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/legacy.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/liveness_prune.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/logroll.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/loop.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/managed_settings.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/merge_observation.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/mirror.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/mutation.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/north_star.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/orchestrator_context_report.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/owners.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/phase_gate.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/phase_report.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/pipeline.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/promote.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reconcile.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reconcile_tick.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/red_green.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/release_manifest.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/render.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/retention.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/review_context.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reviewer.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/risk-detect.sh",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_with_timeout.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/scrub.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/shell_policy.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/slack_client.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/slack_commands_listen.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/slices.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sources.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_approval.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/state.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/stopfiles.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/supervise_classify.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/supervise_daemon.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/tamper_scan.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/tier_escalation.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/timing_store.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/triage.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/unattended_git.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/unit_completion.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/unpark.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/upstream.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/watch.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/watch_classify.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/watch_daemon.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/witness.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/worktree_prune.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/state/review-queue.md",
+      "producer": "skills/sigma-loop/scripts/state.py"
+    },
+    {
+      "path": ".sdlc/plans/<goal-stem>.md",
+      "producer": "agent"
+    }
+  ]
+}

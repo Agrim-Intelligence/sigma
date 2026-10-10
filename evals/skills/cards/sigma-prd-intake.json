@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-prd-intake",
+  "kind": "pinned",
+  "gates": [
+    "Do not read source files or grep the repository."
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-prd-intake/scripts/intake.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/intake/<sha12>.json",
+      "producer": "skills/sigma-prd-intake/scripts/intake.py"
+    }
+  ]
+}

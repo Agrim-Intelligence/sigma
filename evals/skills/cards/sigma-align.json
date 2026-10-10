@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-align",
+  "kind": "pinned",
+  "gates": [
+    "It produces a report and lets the user pick the reconciliation direction"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-align/scripts/alignment-collect.sh",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/knowledge/align/<UTC-date>.md",
+      "producer": "agent"
+    }
+  ]
+}
