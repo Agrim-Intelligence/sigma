@@ -132,7 +132,7 @@ def gen_npm(rng):
 
 
 def gen_pypi(rng):
-    return "py" + "pi-AgE" + _f(rng, 50)
+    return "pypi-" + "Ag" + "E" +_f(rng, 50)
 
 
 def gen_gitlab(rng):
