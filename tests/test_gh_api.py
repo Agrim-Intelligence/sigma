@@ -3292,3 +3292,77 @@ def test_pr_b_fallback_argv_is_built_only_in_gh_api_and_the_ops_are_labelled():
     assert '["pr", "list", *_repo_flag(repo), "--head", branch,' in text
     assert '"pr_list_read"' in text and '"pr_reviews_read"' in text
     assert "(r,)[:120]" not in text
+
+
+# ---------------------------------------------------------------- comment_pr (#895 slice 4b-2)
+
+class PrWFake(WFake):
+    """Like WFake, but the fallback is the `pr comment ...` argv."""
+
+    def __init__(self, rest_exc=None, rest_ok='{"id": 5, "html_url": "https://github.com/o/r/pull/7#issuecomment-5"}'):
+        super().__init__(rest_exc=rest_exc, rest_ok=rest_ok)
+
+    def __call__(self, args):
+        if args[0] == "pr":
+            self.calls.append(list(args))
+            return "https://github.com/o/r/pull/7#issuecomment-9\n"
+        return super().__call__(args)
+
+    def pr_fb(self):
+        return [c for c in self.calls if c[0] == "pr"]
+
+
+def test_comment_pr_posts_over_rest_and_returns_the_url():
+    g = _mod("gh_api")
+    run = PrWFake()
+    assert g.comment_pr(run, 7, "hello", repo="o/r", env={}) == "https://github.com/o/r/pull/7#issuecomment-5"
+    assert run.calls == [["api", "repos/o/r/issues/7/comments", "--method", "POST", "-f", "body=hello"]]
+
+
+def test_comment_pr_placeholder_repo_when_none_given():
+    g = _mod("gh_api")
+    run = PrWFake()
+    g.comment_pr(run, 7, "x", env={})
+    assert run.calls[0][1] == "repos/{owner}/{repo}/issues/7/comments"
+
+
+def test_comment_pr_url_is_derived_from_id_when_html_url_is_absent_and_empty_when_neither():
+    g = _mod("gh_api")
+    out = g.comment_pr(PrWFake(rest_ok='{"id": 12}'), 7, "x", repo="o/r", env={})
+    assert out.endswith("#issuecomment-12")
+    assert g.comment_pr(PrWFake(rest_ok="{}"), 7, "x", repo="o/r", env={}) == ""
+    assert g.comment_pr(PrWFake(rest_ok='{"id": true}'), 7, "x", repo="o/r", env={}) == ""
+    assert g.comment_pr(PrWFake(rest_ok='[1]'), 7, "x", repo="o/r", env={}) == ""
+
+
+def test_comment_pr_primary_rate_limit_falls_back_once_to_pr_comment():
+    g = _mod("gh_api")
+    run = PrWFake(rest_exc=_he("gh: API rate limit exceeded (HTTP 429)"))
+    out = g.comment_pr(run, 7, "hello", repo="o/r", env={})
+    assert run.pr_fb() == [["pr", "comment", "7", "--repo", "o/r", "--body", "hello"]]
+    assert len(run.rest()) == 1 and "issuecomment-9" in out
+
+
+@pytest.mark.parametrize("hint,cause", [
+    ("gh: Server Error (HTTP 502)", None),
+    ("gh: request failed", subprocess.TimeoutExpired(["gh"], 120)),
+    ("gh: You have exceeded a secondary rate limit (HTTP 403)", None),
+    ("gh: Validation Failed (HTTP 422)", None),
+    ("gh: Resource not accessible by integration (HTTP 403)", None),
+    (GQL_TEXT, None),
+])
+def test_comment_pr_never_falls_back_unless_primary_rate_limit(hint, cause):
+    g = _mod("gh_api")
+    run = PrWFake(rest_exc=_he(hint, cause))
+    with pytest.raises(Exception):
+        g.comment_pr(run, 7, "x", repo="o/r", env={})
+    assert run.pr_fb() == [] and len(run.calls) == 1
+
+
+def test_comment_pr_primary_rate_limit_in_a_cloud_session_makes_zero_fallback_calls():
+    g = _mod("gh_api")
+    for env in ({"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}):
+        run = PrWFake(rest_exc=_he("gh: API rate limit exceeded (HTTP 429)"))
+        with pytest.raises(Exception):
+            g.comment_pr(run, 7, "x", repo="o/r", env=env)
+        assert run.pr_fb() == [] and len(run.calls) == 1

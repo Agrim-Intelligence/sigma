@@ -54,6 +54,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     import sys as _sys  # doesn't garble to '?' or crash on a non-UTF-8 console (the Windows cp1252
@@ -3650,6 +3651,28 @@ def _read_rollup(api, pr, head, sdlc_dir, sleep):
             sleep(UNKNOWN_BACKOFF * (2 ** attempt))
 
 
+#: REST `permissions` keys, highest first, mapped to the GraphQL `viewerPermission` words `_CAN_MERGE` uses.
+_PERMISSION_KEYS = (("admin", "ADMIN"), ("maintain", "MAINTAIN"), ("push", "WRITE"), ("triage", "TRIAGE"),
+                    ("pull", "READ"))
+
+
+def _viewer_permission(run, cwd):
+    """The viewer's highest repo permission over REST (`GET repos/{owner}/{repo}` `.permissions`; #895 4b-2,
+    GraphQL `viewerPermission` is unreachable from a cloud session). Looks ONLY at the five known keys; a
+    known key whose value is not a bool, a non-object reply, or no key true RAISES (-> merge_rights'
+    "could not determine"): fail CLOSED is structural. UNMEASURED: whether a cloud token receives it."""
+    perms = json.loads(run(cwd, ["gh", "api", "repos/{owner}/{repo}", "--jq", ".permissions"]) or "null")
+    if not isinstance(perms, dict):
+        raise ValueError("no `permissions` object in the repo reply")
+    for key, _ in _PERMISSION_KEYS:
+        if key in perms and not isinstance(perms[key], bool):
+            raise ValueError(f"`permissions.{key}` is not a boolean")
+    for key, word in _PERMISSION_KEYS:
+        if perms.get(key) is True:
+            return word
+    raise ValueError("`permissions` grants nothing")
+
+
 def merge_rights(sdlc_dir, config, goal, run=None):
     """(may_merge, why_not) — PERMISSION, which is never a preference.
 
@@ -3669,13 +3692,36 @@ def merge_rights(sdlc_dir, config, goal, run=None):
                                     sdlc_dir=sdlc_dir)
         if pr_data.get("isCrossRepository"):
             return False, "fork PR — the upstream maintainer merges"
-        perm = run(rec["worktree"], ["gh", "repo", "view", "--json", "viewerPermission",
-                                     "--jq", ".viewerPermission"])
+        perm = _viewer_permission(run, rec["worktree"])
     except Exception as exc:                # noqa: BLE001 - unknown rights must never merge
         return False, f"could not determine merge rights ({exc})"
     if perm not in _CAN_MERGE:
         return False, f"{(perm or 'no').lower()} access on this repo — a maintainer merges"
     return True, ""
+
+
+def _ruleset_requirements(text):
+    """(contexts, reviews) a `GET rules/branches/<base>` reply REQUIRES: `required_status_checks` rules'
+    non-empty-string `context`s and the largest `pull_request` `required_approving_review_count` (int >= 0,
+    never a bool). Anything else -- non-JSON, a non-list, non-dict items, missing keys, bad types --
+    contributes nothing: it never raises and never invents a requirement."""
+    contexts, reviews = set(), 0
+    try:
+        rules = json.loads(text or "null")
+    except ValueError:
+        return contexts, reviews
+    for rule in rules if isinstance(rules, list) else ():
+        params = rule.get("parameters") if isinstance(rule, dict) else None
+        if not isinstance(params, dict):
+            continue
+        if rule.get("type") == "required_status_checks" and isinstance(params.get("required_status_checks"), list):
+            contexts |= {c["context"] for c in params["required_status_checks"]
+                         if isinstance(c, dict) and isinstance(c.get("context"), str) and c["context"]}
+        elif rule.get("type") == "pull_request":
+            n = params.get("required_approving_review_count")
+            if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+                reviews = max(reviews, n)
+    return contexts, reviews
 
 
 def protection(sdlc_dir, config, goal, run=None):
@@ -3684,15 +3730,24 @@ def protection(sdlc_dir, config, goal, run=None):
     The distinction the first version of this file got wrong: it asked whether a check had RUN, but
     a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
     only that GitHub was never asked to object. A 404 from the protection API is the honest signal
-    that nothing but this loop's own verify stands between the branch and the base."""
+    that nothing but this loop's own verify stands between the branch and the base.
+
+    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
+    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each read is
+    independent -- one failing or malformed contributes nothing, never a crash or an invented requirement.
+    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
+    OVER-report "enforces"; gate() and local verify still apply),
+    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
+    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
+    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction: the caller
+    then parks or warns, it never merges on a requirement it could not see)."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     base = rec["base"]
+    classic_ok, checks, reviews = False, set(), 0
     try:
-        repo = run(rec["worktree"], ["gh", "repo", "view", "--json", "nameWithOwner",
-                                     "--jq", ".nameWithOwner"])
         data = json.loads(run(rec["worktree"], ["gh", "api",
-                                                f"repos/{repo}/branches/{base}/protection"]) or "{}")
+                                                f"repos/{{owner}}/{{repo}}/branches/{base}/protection"]) or "{}")
         # Code-review audit (#254 finding 1): `data` is only guaranteed a dict on the happy path --
         # valid-but-non-object JSON (`null`, `[]`, `42`) would otherwise make `.get()` raise
         # AttributeError OUTSIDE this try/except, the same shape done_refusal() had to guard
@@ -3700,14 +3755,26 @@ def protection(sdlc_dir, config, goal, run=None):
         # its `pr_data.get(...)`), so any such reply collapses into the same except below as every
         # other unreadable-response case.
         required = data.get("required_status_checks") or {}
-        checks = required.get("contexts") or required.get("checks") or []
-        reviews = (data.get("required_pull_request_reviews") or {}).get(
-            "required_approving_review_count") or 0
+        listed = required.get("contexts") or required.get("checks") or []
+        checks = {c if isinstance(c, str) else c.get("context") for c in listed
+                  if isinstance(c, str) or isinstance(c, dict)}
+        checks -= {None, ""}
+        n = (data.get("required_pull_request_reviews") or {}).get("required_approving_review_count")
+        reviews = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
+        classic_ok = True
     except Exception:                       # noqa: BLE001 - 404 "Branch not protected" is the common case
-        return False, f"`{base}` is not protected — nothing is enforced on merge"
+        pass
+    try:
+        rule_checks, rule_reviews = _ruleset_requirements(run(rec["worktree"], [
+            "gh", "api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"]))
+        checks, reviews = checks | rule_checks, max(reviews, rule_reviews)
+    except Exception:                       # noqa: BLE001 - an unreadable rules list contributes nothing
+        pass
     bits = ([f"{len(checks)} required check{'' if len(checks) == 1 else 's'}"] if checks else []) + \
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
     if not bits:
+        if not classic_ok:
+            return False, f"`{base}` is not protected — nothing is enforced on merge"
         return False, f"`{base}` is protected but requires no checks or reviews"
     return True, f"`{base}` enforces " + " + ".join(bits)
 
@@ -5167,6 +5234,25 @@ def _comment_directive(rec, run):
     return directive, same_author
 
 
+def _threads_unprovable(rec, run):
+    """None when PR line comments are provably absent (ONE REST read returned an EMPTY JSON list => no review
+    threads => 0 unresolved); else a refusal string. Used only when GraphQL is unavailable, where the thread
+    read cannot be made: fail CLOSED on any comment, unreadable, non-JSON or non-list reply, or exception."""
+    try:
+        got = json.loads(run(rec["worktree"], ["gh", "api",
+                                               f"repos/{{owner}}/{{repo}}/pulls/{rec['pr']}/comments?per_page=1"]))
+        if isinstance(got, list) and not got:
+            return None
+    except Exception as exc:                    # noqa: BLE001 - fail CLOSED
+        print(f"work: review_gate: line-comment read failed: {exc}", file=sys.stderr)
+    else:
+        print(f"work: review_gate: PR #{rec['pr']} line comments present or unreadable; GraphQL unavailable",
+              file=sys.stderr)
+    return (f"PR #{rec['pr']} has review line comments (or they could not be read) and GraphQL is unavailable, "
+            "so whether their threads are resolved cannot be checked -- resolve/confirm them by hand and "
+            "merge, or re-run where GraphQL works")
+
+
 def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     """(ok, verdict) — the REAL review gate, independent of branch protection.
 
@@ -5190,7 +5276,8 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     skipped when GraphQL is unavailable: `approval` then parks (even with a `sigma:approve` comment, a known
     limitation), `changes` goes on to the thread check with the decision unknown. A CHANGES_REQUESTED followed
     by a COMMENTED from the same reviewer still blocks (stricter than `latestReviews`). Unresolved-thread
-    count errors stay open.
+    count errors stay open when GraphQL is available; without it the thread check is one REST read of the
+    PR's line comments (none => pass, any or unreadable => refuse).
 
     `mode` (#1774) overrides the local `review_mode(config)` read, and is how an Org's locked
     ceiling reaches this gate: `merge()` resolves it through `effective_review_mode` first and
@@ -5250,7 +5337,13 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
                        "re-queue the issue once `gh` works")
     if decision == "CHANGES_REQUESTED":
         return False, f"changes requested by a reviewer on PR #{rec['pr']} — address them, then re-queue the issue"
-    unresolved = _unresolved_threads(rec, run)
+    if not gh_api.graphql_available()["available"]:
+        refusal = _threads_unprovable(rec, run)
+        if refusal:
+            return False, refusal
+        unresolved = 0
+    else:
+        unresolved = _unresolved_threads(rec, run)
     if unresolved:
         return False, (f"{unresolved} unresolved review thread(s) on PR #{rec['pr']} — "
                        "resolve them, then re-queue the issue")
@@ -6356,7 +6449,10 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
     except Exception as exc:  # noqa: BLE001 - leave any incomplete local repair retryable
         return "PARK: review post reconciliation failed (%s)" % exc
     try:
-        comment_output = run(rec["worktree"], ["gh", "pr", "comment", str(rec["pr"]), "--body", body])
+        # #895 4b-2: REST POST (GraphQL-free), ONE `gh pr comment` fallback only on a primary rate limit while
+        # GraphQL is available; the URL (or "") is the receipt source below.
+        comment_output = gh_api.comment_pr(_pr_api_run(run, rec["worktree"]), int(rec["pr"]), body,
+                                           fallback_run=_pr_api_run(run, rec["worktree"]), sdlc_dir=sdlc_dir)
     except Exception as exc:                # noqa: BLE001 - report, never traceback at the loop
         # Dispatch may have reached GitHub; only reconcile-review-post may inspect the marker.
         return f"PARK: remote comment outcome ambiguous ({exc})"

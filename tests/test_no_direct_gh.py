@@ -82,6 +82,11 @@ MEASURED 2026-10-10 (#895 slice 4b-1), via the same `scan()` (PRINTED, not typed
 `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge` with `sha`; its ONE `gh pr merge` fallback argv is built inside
 the EXEMPT helper). Still in work.py: the `--auto` arm (REST has no auto-merge), reviewDecision, R5 sibling
 list, post_review `pr comment`, merge_design `pr merge`, close_design `pr close`; verify_merge 3.
+MEASURED 2026-10-11 (#895 slice 4b-2), via the same `scan()` (PRINTED, not typed): TOTAL 46 -> 45, work.py
+6 -> 5. `post_review`'s `gh pr comment` moved to `gh_api.comment_pr` (REST `POST issues/N/comments`; its ONE
+`gh pr comment` fallback argv is built inside the EXEMPT helper). The `gh repo view` and `gh api` literals of
+`merge_rights` / `protection` were never counted, so that part moves nothing. Still in work.py: the `--auto`
+arm, reviewDecision, R5 sibling list, merge_design `pr merge`, close_design `pr close`; verify_merge 3.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -127,7 +132,7 @@ BASELINE = {
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/sources.py": 20,
     "skills/sigma-loop/scripts/triage.py": 1,
-    "skills/sigma-loop/scripts/work.py": 6,
+    "skills/sigma-loop/scripts/work.py": 5,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
     "skills/sigma-status/scripts/status.py": 3,
 }

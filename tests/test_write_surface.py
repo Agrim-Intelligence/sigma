@@ -253,6 +253,21 @@ def test_931_gh_api_landing_write_helpers_are_seen_and_read_helpers_are_not(tmp_
     assert [(r["function"], r["rule"], r["count"]) for r in rows] == [("land", "gh-api-write", 2)]
 
 
+def test_895_4b2_pr_comment_and_merge_helpers_are_seen_and_the_work_rows_are_pinned(tmp_path):
+    mod = _module()
+    for name in ("comment_pr", "merge_pr_gh"):
+        assert name in mod._GH_API_WRITES
+    source = tmp_path / "caller.py"
+    source.write_text('import gh_api\n\ndef land():\n    gh_api.comment_pr(run, 7, "b")\n'
+                      '    gh_api.merge_pr_gh(run, 7, "squash", "x")\n')
+    assert [(r["function"], r["rule"], r["count"]) for r in mod.scan_paths(tmp_path, [source])] == \
+        [("land", "gh-api-write", 2)]
+    inv = json.loads((ROOT / "docs" / "launch" / "write-surface.json").read_text())["entries"]
+    work = {(e["function"], e["rule"]) for e in inv if e["path"] == "skills/sigma-loop/scripts/work.py"}
+    assert ("post_review", "gh-api-write") in work and ("merge", "gh-api-write") in work
+    assert ("post_review", "gh-pr") not in work          # the `gh pr comment` literal is gone (the ratchet's fallback lives in gh_api)
+
+
 def test_931_gh_api_runner_inventory_gate_text_is_pinned():
     # The ratchet checks presence and a non-empty gate, not the words; this pins the words (D-19).
     inv = json.loads((ROOT / "docs" / "launch" / "write-surface.json").read_text())["entries"]

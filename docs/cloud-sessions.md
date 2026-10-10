@@ -453,13 +453,9 @@ documented 22.5-minute worst case does not move. Liveness cost: an UNSTABLE PR w
 required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
 byte-identical to before.
 
-A REAL CLOUD SESSION STILL CANNOT MERGE. `merge()` first calls `merge_rights`, whose permission read is `gh repo
-view --json viewerPermission` (GraphQL), and `protection()` reads `gh repo view --json nameWithOwner`. Under
-`CLAUDE_CODE_REMOTE` the first is refused by the proxy and `merge()` returns `PR #N opened -- could not determine
-merge rights (...)` (routes to `record review`); nothing merges. So the REST merge and the no-GraphQL park above
-are reachable today only where GraphQL works, `SIGMA_GH_GRAPHQL=off` being the way to exercise those branches.
-The tests that fake `viewerPermission` under `CLAUDE_CODE_REMOTE` are structural checks of the
-`graphql_available()` branch, not cloud checks; one test pins the real cloud outcome without that fake.
+Since slice 4b-2 the permission and protection reads that used to stop a cloud merge before this PUT are REST too
+(next section); what a cloud session still cannot do is stated there. Under `SIGMA_GH_GRAPHQL=off` the
+`graphql_available()` branches above are exercised without a cloud session.
 
 Cost (Scalability): 1 REST PUT per landing (was 1 GraphQL `gh pr merge`), + at most 1 CLI fallback, + at most 3
 REST reads on an unknown outcome: a hard ceiling of 5 GitHub calls for the landing step, independent of repo
@@ -467,8 +463,7 @@ size, per goal with no shared lock, so 10x/100x merges scale linearly against th
 token, documented, UNMEASURED here). The PUT and the reads have no per-call timeout of their own (`_run` sets
 none; existing ceiling).
 
-Deferred to slice 4b-2: the `merge_rights` permission read and `protection()`'s `nameWithOwner` read (first),
-`post_review`'s `gh pr comment`, `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`, and
+Still deferred after 4b-2 (all GraphQL): `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`, and
 `skills/sigma-rebase/scripts/verify_merge.py` (ready/create/merge). `reviewDecision` stays GraphQL by decision;
 R5 `pr list --head` stays. The `--auto` arm stays GraphQL (REST has none).
 
@@ -477,14 +472,67 @@ body shape, the 405/409 statuses and bodies, the 429 body, CLI `--match-head-com
 the merge-queue behaviour of the CLI fallback, and real merge latency all come from GitHub's docs or from fakes.
 Tests use injected runners and the fake gh only.
 
+## Cloud merge (#895 slice 4b-2)
+
+Three GraphQL reads stood between a cloud session and the REST PUT above. All three now go over REST
+(`Refs #895`; the ratchet moves work.py 6 -> 5, TOTAL 46 -> 45, from the `post_review` literal only):
+
+- `merge_rights`: `gh api repos/{owner}/{repo} --jq .permissions` (was `gh repo view --json viewerPermission`).
+  The highest true of `admin`/`maintain`/`push`/`triage`/`pull` maps to ADMIN/MAINTAIN/WRITE/TRIAGE/READ; only
+  the first three may merge. Fails CLOSED: a missing/null/empty/all-false `permissions`, a known key that is not
+  a bool, non-JSON or any exception returns `could not determine merge rights (...)` (routes to `record review`).
+  An unknown extra key is ignored.
+- `protection()`: classic `branches/<base>/protection` UNION `rules/branches/<base>?per_page=100` (rulesets);
+  the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
+  count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
+  invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
+  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here), used to read as
+  "not protected"; it now reads as enforcing.
+- `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
+  `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
+  The comment URL (or `#issuecomment-<id>`) is the receipt source; a reply naming neither parks with the existing
+  "ID could not be confirmed" line. Any other failure keeps `PARK: remote comment outcome ambiguous` and the marker
+  reconcile; no retry and no GraphQL after an ambiguous failure.
+
+What a cloud session still CANNOT enforce or do after this slice (exact, none of it new):
+
+- Unresolved review threads cannot be read (`_unresolved_threads` is GraphQL). With GraphQL unavailable the review
+  gate instead makes ONE REST read of the PR's line comments (`pulls/N/comments?per_page=1`): an empty list means
+  no threads, so the merge may proceed; any comment, or an unreadable reply, REFUSES the merge (fail closed; hand
+  resolve and merge, or re-run where GraphQL works). With GraphQL available nothing changes: `_unresolved_threads`
+  runs and still fails open on a read error.
+- `reviewDecision` is unreadable, so `require_review: approval` parks in a cloud session; `changes` mode works from
+  the REST `pulls/N/reviews` list and the `sigma:` comments (now postable).
+- The `--auto` arm is unavailable: a required check still pending after the 450s wait parks.
+- Deferred and still GraphQL: `merge_design`, `close_design`, `verify_merge.py`.
+
+What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
+OVER-report "enforces", the same blind spot classic `enforce_admins: false` has; gate() and local verify still apply), `evaluate`-mode rulesets (documented as not listed; UNMEASURED), merge queue, required
+deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
+overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
+
+MEASURED locally 2026-10-11 against Agrim-Intelligence/sigma: `GET repos/Agrim-Intelligence/sigma` returns
+`permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
+(`required_approving_review_count` 1) and a `required_status_checks` rule (context `test`); classic protection is a
+404; both `sdlc%2F895` and `sdlc/895` are accepted by `rules/branches/`.
+
+UNMEASURED: that a cloud session's token receives `permissions` on `GET repos/{o}/{r}`; the rules read, the comment
+POST and the merge PUT through the cloud proxy. Tests use injected runners and the fake gh; one end-to-end test
+runs `merge()` with every GraphQL-shaped argv raising and the REST line-comment read serving `[]`; its twin serves one
+line comment and asserts the refusal and no PUT.
+
+Cost: net 0 calls per merge (+1 REST rules read, -1 `nameWithOwner`, -1 `viewerPermission`), all REST core, per
+goal, no shared lock. `post_review`: 1 REST POST (was 1 GraphQL) + at most 1 CLI fallback.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
   `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, `open_prs_for_head_gh`,
-  `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge is
-  (`merge_pr_gh`, slice 4b-1), the raw `create_pr` and the project ops have no caller, and nothing in the product
+  `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge (`merge_pr_gh`, slice 4b-1) and the review comment
+  (`comment_pr`, slice 4b-2) are, the raw `create_pr` and the project ops have no caller, and nothing in the product
   exercises the probe or the cache.
-- `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
+- `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated; see the
+  cloud-merge section above for the exact remaining gaps.
 - `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
   carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
   check (layer 2). A direct caller of the helper that passes `feature_labels_exist=True` without checking bypasses both.
@@ -493,7 +541,7 @@ Tests use injected runners and the fake gh only.
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls
