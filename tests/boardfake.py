@@ -315,6 +315,11 @@ class GitHub:
     def _rest(self, a):
         full = a[1] if a[1] != "--paginate" else a[2]
         path, _, query = full.partition("?")
+        if "--jq" not in a and "--method" in a and gqlfake.is_issue_write(a):
+            # #895 slice 3a: REST-first issue WRITES; re-recorded as legacy `issue ...` calls.
+            return gqlfake.rest_write(a, calls=self.calls,
+                                      repo_args=("--repo", "%s/%s" % (self.owner, self.repo)),
+                                      me=self.viewer or "someone")
         per = int(re.search(r"per_page=(\d+)", query).group(1)) if "per_page=" in query else 30
         if path == "user":
             if self.viewer is None:

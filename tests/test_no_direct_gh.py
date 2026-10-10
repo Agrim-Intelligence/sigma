@@ -52,6 +52,11 @@ MEASURED 2026-10-10 (#895 slice 2c), via the same `scan()` (printed, not typed):
 EXEMPT helper): auto_unpark 2 -> 0 and reconcile 1 -> 0 (entries removed), doctor 13 -> 7, assign 2 -> 1
 (the remaining one is the `issue edit` write). status.py keeps its 3 by design. doctor.py's raising
 wrapper is built on `_gh_runner`, so it adds no `["gh", *args]` literal.
+MEASURED 2026-10-10 (#895 slice 3a), via the same `scan()` (printed, not typed): TOTAL 74 -> 57. The 17 issue
+WRITE list-literal sites (comment, create, edit body, close, add/remove label, add-assignee) moved to the
+`gh_api` REST write helpers, whose fallback argv is built inside the EXEMPT helper: dossier, blockers,
+promote, unpark and assign entries removed (1, 1, 1, 2, 1 -> 0), triage 4 -> 1 (the `label create` stays),
+sources 28 -> 20. Still open on #895: note(), every `label create`, lifecycle label swaps, PR/project writes.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -91,20 +96,15 @@ BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
     "skills/sigma-doctor/scripts/doctor.py": 7,
-    "skills/sigma-dossier/scripts/dossier.py": 1,
     "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/blockers.py": 1,
     "skills/sigma-loop/scripts/cross_repo.py": 1,
     "skills/sigma-loop/scripts/feature_owner.py": 1,
     "skills/sigma-loop/scripts/ledger.py": 1,
-    "skills/sigma-loop/scripts/promote.py": 1,
-    "skills/sigma-loop/scripts/sources.py": 28,
-    "skills/sigma-loop/scripts/triage.py": 4,
-    "skills/sigma-loop/scripts/unpark.py": 2,
+    "skills/sigma-loop/scripts/sources.py": 20,
+    "skills/sigma-loop/scripts/triage.py": 1,
     "skills/sigma-loop/scripts/work.py": 14,
     "skills/sigma-rebase/scripts/rebase_brief.py": 1,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
-    "skills/sigma-scope/scripts/assign.py": 1,
     "skills/sigma-status/scripts/status.py": 3,
 }
 

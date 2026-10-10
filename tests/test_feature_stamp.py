@@ -114,7 +114,8 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
         gql = gqlfake.swap(args, labels=target, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
-        calls.append(list(args))
+        if not gqlfake.is_issue_write(args):
+            calls.append(list(args))
 
         def view(n, fields):
             n = str(n)
@@ -134,6 +135,22 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
             return rest
         if args[:2] == ["issue", "view"]:
             return json.dumps(view(args[2], (args[args.index("--json") + 1] if "--json" in args else "").split(",")))
+        if gqlfake.is_issue_write(args):          # #895 slice 3a: REST writes -> re-recorded legacy-shaped
+            legacy = []
+            out = gqlfake.rest_write(args, calls=legacy, repo_args=("--repo", "o/r"),
+                                     create_number=number)
+            calls.extend(legacy)
+            if gqlfake.rest_write_target(args)[1] == "create":
+                args = legacy[0]
+                body = args[args.index("--body") + 1]
+                labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
+                created.append({"title": args[args.index("--title") + 1], "body": body,
+                                "labels": list(labels)})
+                if create_returns is not None:
+                    return "{}"             # no usable number came back
+                bodies[str(number)] = body
+                live[str(number)] = set(labels)
+            return out
         if args[:2] == ["issue", "create"]:
             body = args[args.index("--body") + 1]
             labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]

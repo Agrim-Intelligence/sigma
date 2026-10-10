@@ -40,7 +40,7 @@ def _view(*labels, assignees=(), state="OPEN", state_reason=None):
 def _runner(views=None, fail_on=(), raw_rest=None):
     """`views` are gh-shape payloads; they are answered REST-shaped on `api .../issues/N` (#895).
     `raw_rest`: {n: REST JSON string} sent verbatim (e.g. a response with no `state`)."""
-    calls, label_state, gql, fallbacks = [], set(), [], []
+    calls, label_state, gql, fallbacks, rest_writes = [], set(), [], [], []
     views = views or {}
     raw_rest = raw_rest or {}
 
@@ -54,6 +54,9 @@ def _runner(views=None, fail_on=(), raw_rest=None):
         if answered is not None:
             gql.append(list(args))
             return answered
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
@@ -72,6 +75,7 @@ def _runner(views=None, fail_on=(), raw_rest=None):
     run.calls = calls
     run.gql = gql
     run.fallbacks = fallbacks
+    run.rest_writes = rest_writes
     return run
 
 
@@ -315,7 +319,7 @@ def test_routing_survives_a_ledger_that_is_switched_off():
 def test_a_failed_comment_never_undoes_a_landed_resolution():
     b = _mod("blockers")
     run = _runner(views={"7": _view("sdlc:needs-confirmation", "sdlc:followup")},
-                  fail_on=["issue comment"])
+                  fail_on=["issues/7/comments"])
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
     assert result["results"][0]["verdict"] == b.PROMOTED and result["results"][0]["acted"] is True
 
@@ -504,3 +508,15 @@ def test_resolve_correctly_handles_a_merged_pr_via_the_park_resume_path():
     # outcome a genuinely-closed issue blocker already gets (mirrors the module's own
     # test_the_deadlock_is_closed_end_to_end shape for a PROMOTED verdict).
     assert result["resolved"] == ["7"] and result["surfaced"] == []
+
+
+def test_the_routing_comment_is_a_rest_post_and_its_failure_is_swallowed():
+    """#895 slice 3a: the comment goes through `gh_api` REST, not `gh issue comment`; a failing POST is
+    swallowed (best-effort audit trail) and the ROUTED verdict still stands."""
+    b = _mod("blockers")
+    run = _runner(views={"7": _view(assignees=["someone-else"])})
+    b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
+    assert [c[1] for c in run.rest_writes] == ["repos/acme/widget/issues/7/comments"]
+    bad = _runner(views={"7": _view(assignees=["someone-else"])}, fail_on=["issues/7/comments"])
+    result = b.resolve(".sdlc", _config(), _source(b, bad), "42", ["7"], run=bad)
+    assert result["results"][0]["verdict"] == b.ROUTED and result["results"][0]["acted"] is True

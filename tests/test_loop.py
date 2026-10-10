@@ -1,5 +1,8 @@
 import hashlib, json, os, pathlib, importlib.util, tempfile, subprocess, sys, time, shlex, re
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake as _gqlfake
+
 import pytest
 from journal_events import journal_events
 
@@ -2616,13 +2619,19 @@ def _in_progress_gh_run(issues, calls=None):
             return json.dumps(issues)
         if verb == "view":
             return json.dumps({"state": "OPEN", "labels": issues[0]["labels"]})
+        legacy = _gqlfake.legacy_of(args)       # #895 slice 3a: release()'s REST writes -> legacy records
+        if legacy:
+            calls.pop()
+            calls.extend(legacy)
+            args = legacy[0]
+            verb = args[1]
         if verb == "edit" and "--remove-label" in args:
             number = args[2]
             label = args[args.index("--remove-label") + 1]
             for issue in issues:
                 if str(issue.get("number")) == str(number):
                     issue["labels"] = [l for l in issue["labels"] if l.get("name") != label]
-        return ""
+        return "[]" if legacy else ""
     run.calls = calls
     return run
 

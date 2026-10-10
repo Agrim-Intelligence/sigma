@@ -39,7 +39,7 @@ def _runner(by_label=None, views=None, fail_on=(), board_ok=True):
     """`issue list --label X` -> by_label[X]; `issue view N --json labels,state` -> views[N].
     Everything else records and succeeds. `board_ok=False` makes every `project item-edit` raise,
     which is how `_set_board_status` reports a card that did not move."""
-    calls, labels_state, gql_calls, fallbacks = [], set(), [], []
+    calls, labels_state, gql_calls, fallbacks, rest_writes = [], set(), [], [], []
     by_label, views = by_label or {}, views or {}
     default_view = json.dumps({"labels": [], "state": "OPEN"})
 
@@ -53,6 +53,9 @@ def _runner(by_label=None, views=None, fail_on=(), board_ok=True):
         if gql is not None:
             gql_calls.append(list(args))
             return gql
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         calls.append(list(args))
         if args[0] == "project":
             if not board_ok:
@@ -80,6 +83,7 @@ def _runner(by_label=None, views=None, fail_on=(), board_ok=True):
     run.calls = calls
     run.fallbacks = fallbacks
     run.gql_calls = gql_calls
+    run.rest_writes = rest_writes
     return run
 
 
@@ -747,7 +751,7 @@ def test_promote_leaves_an_audit_comment_that_cannot_read_as_a_blocker():
 
 def test_a_failed_audit_comment_never_undoes_a_landed_promotion():
     p = _mod("promote")
-    run = _runner(views={"5": _view("sdlc:needs-confirmation")}, fail_on=["issue comment"])
+    run = _runner(views={"5": _view("sdlc:needs-confirmation")}, fail_on=["issues/5/comments"])
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "promoted"
 
@@ -1024,3 +1028,14 @@ def test_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "promoted", result
     assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "5"]]
+
+
+def test_the_audit_comment_is_a_rest_post_not_gh_issue_comment():
+    """#895 slice 3a: promote's comment goes through `gh_api` REST; the failure arm stays a swallow."""
+    p = _mod("promote")
+    run = _runner(views={"5": _view("sdlc:needs-confirmation")})
+    p.promote(".sdlc", _config(), ["5"], run=run)
+    assert [c[1] for c in run.rest_writes] == ["repos/acme/widget/issues/5/comments"]
+    bad = _runner(views={"5": _view("sdlc:needs-confirmation")}, fail_on=["issues/5/comments"])
+    res = p.promote(".sdlc", _config(), ["5"], run=bad)
+    assert res["results"][0]["outcome"] == "promoted"

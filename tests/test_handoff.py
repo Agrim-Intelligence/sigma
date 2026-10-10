@@ -1593,36 +1593,108 @@ def _github_source(recorder):
         run=recorder)
 
 
-def test_create_dependency_sends_assignee_goal_label_and_extras():
-    calls = []
+def _rest_recorder(fail=None, create_number=61, missing=(), assignable=None, me="octocat"):
+    """A `gh` runner answering the REST issue writes via the `gqlfake.rest_write` shim (#895 slice 3a).
+    `calls`: legacy-shaped `issue ...` records plus any non-REST argv (`label create`); `rest`: raw
+    REST write argvs; `fail(args)` -> an exception to raise for that argv, else None."""
+    import gqlfake
+    calls, rest = [], []
 
     def recorder(args):
-        calls.append(args)
-        return "https://github.com/acme/widget/issues/61" if args[:2] == ["issue", "create"] else ""
+        exc = fail(args) if fail else None
+        if exc is not None:
+            raise exc
+        if gqlfake.is_issue_write(args):
+            rest.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"),
+                                      create_number=create_number, missing_labels=missing,
+                                      assignable=assignable, me=me)
+        calls.append(list(args))
+        return ""
+    recorder.calls, recorder.rest = calls, rest
+    return recorder
 
-    number = _github_source(recorder).create_dependency(
+
+def _err(text, status=None):
+    exc = RuntimeError(text)
+    exc.hint = text if status is None else "%s (HTTP %d)" % (text, status)
+    return exc
+
+
+def test_create_dependency_sends_assignee_goal_label_and_extras():
+    rec = _rest_recorder()
+    number = _github_source(rec).create_dependency(
         "[engine] dependency", "body", "eng-owner", labels=["sdlc:dependency", "priority:P0"])
     assert number == "61"
-    create = next(c for c in calls if c[:2] == ["issue", "create"])
+    assert rec.rest[0][:4] == ["api", "repos/acme/widget/issues", "--method", "POST"]      # REST create
+    create = next(c for c in rec.calls if c[:2] == ["issue", "create"])
     assert "--assignee" not in create                        # create is always unassigned (F14 round 2)
     assert create.count("--label") == 3                      # goal label + the two extras
     assert "sdlc:goal" in create and "priority:P0" in create
-    edit = next(c for c in calls if c[:2] == ["issue", "edit"])
+    edit = next(c for c in rec.calls if c[:2] == ["issue", "edit"])
     assert edit[2] == "61" and "--add-assignee" in edit
     assert edit[edit.index("--add-assignee") + 1] == "eng-owner"
+    # the label pre-step precedes the REST create (D3): REST never meets an absent non-feature label
+    first_create = next(i for i, c in enumerate(rec.calls) if c[:2] == ["issue", "create"])
+    assert [c[:2] for c in rec.calls[:first_create]].count(["label", "create"]) >= 2
+
+
+def test_create_dependency_number_is_the_rest_number_and_none_when_absent_or_not_an_int():
+    src = _mod("sources")
+    gh = _github_source(lambda a: "")
+    for resp, want in (({"number": 61}, "61"), ({}, None), ({"number": "61"}, None),
+                       ({"number": True}, None), ("https://github.com/acme/widget/issues/9\n", "9"),
+                       ("", None)):
+        gh._issue_create = lambda t, b, l, _r=resp: _r
+        assert gh._create_issue("t", "b", []) == want, resp
 
 
 def test_create_dependency_returns_none_when_gh_says_nothing():
-    assert _github_source(lambda args: "").create_dependency("t", "b", "who") is None
+    assert _github_source(lambda args: "{}").create_dependency("t", "b", "who") is None
 
 
 def test_create_dependency_tolerates_a_label_that_cannot_be_created():
-    def recorder(args):
-        if args[:2] == ["label", "create"]:
-            raise RuntimeError("insufficient scope")
-        return "https://github.com/acme/widget/issues/7"
+    """The `label create` pre-step failing (swallowed) lets REST mint the NON-feature label: the create
+    still goes through and returns the REST number (D3, accepted divergence; UNMEASURED on a live repo)."""
+    rec = _rest_recorder(create_number=7,
+                         fail=lambda a: _err("insufficient scope") if a[:2] == ["label", "create"] else None)
+    assert _github_source(rec).create_dependency("t", "b", "who", labels=["x"]) == "7"
+    assert any(c[:2] == ["issue", "create"] and "x" in c for c in rec.calls)
 
-    assert _github_source(recorder).create_dependency("t", "b", "who", labels=["x"]) == "7"
+
+def test_feature_label_create_refused_without_rest_write():
+    """Layer 2: a `feature:*` label that does not exist is refused BEFORE the REST create -- the only
+    call made is the existence GET (a read); and a feature label that DOES exist is attached."""
+    rec = _rest_recorder(missing={"feature:voice"})
+    with pytest.raises(RuntimeError, match="refusing to create the label"):
+        _github_source(rec).create_dependency("t", "b", None, labels=["feature:voice"])
+    assert not any(c[0:2] == ["api", "repos/acme/widget/issues"] for c in rec.rest)
+    assert rec.rest == [] or all("--method" in c and c[c.index("--method") + 1] == "GET" for c in rec.rest) or \
+        not any(c[c.index("--method") + 1] in ("POST", "PATCH", "DELETE") for c in rec.rest)
+    ok = _rest_recorder(create_number=5)
+    assert _github_source(ok).create_dependency("t", "b", None, labels=["feature:voice"]) == "5"
+
+
+def test_create_dependency_5xx_makes_exactly_one_create_call():
+    """A 5xx / timeout on the create is ambiguous (it may have committed): NO gh fallback, NO retry --
+    exactly one create call, and the error raises."""
+    for status in (502, 503):
+        rec = _rest_recorder(fail=lambda a, _s=status: _err("gh: Server Error", _s)
+                             if a[:2] == ["api", "repos/acme/widget/issues"] and a[3] == "POST" else None)
+        with pytest.raises(Exception, match="Server Error"):
+            _github_source(rec).create_dependency("t", "b", "who")
+        assert not any(c[:2] == ["issue", "create"] for c in rec.calls)      # no gh fallback
+    attempts = []
+
+    def rec2(a):
+        if a[:2] == ["api", "repos/acme/widget/issues"] and a[3] == "POST":
+            attempts.append(list(a))
+            raise _err("gh: Server Error", 502)
+        return ""
+
+    with pytest.raises(Exception):
+        _github_source(rec2).create_dependency("t", "b", "who")
+    assert len(attempts) == 1                                                  # not retried
 
 
 # ------------------------------------------------------------- F14/#338: rejected-assignee fallback
@@ -1637,42 +1709,52 @@ def test_create_dependency_never_creates_a_duplicate_issue_when_the_assignee_is_
     now issues exactly ONE `issue create` call ever, always unassigned, and assigns as a separate
     step against the now-known issue number -- there is structurally no way for two issues to exist,
     and a rejected assignee just leaves the one issue unassigned with an explanatory comment."""
-    calls = []
-
-    def recorder(args):
-        calls.append(args)
-        if args[:2] == ["issue", "create"]:
-            return "https://github.com/acme/widget/issues/61"
-        if args[:2] == ["issue", "edit"] and "--add-assignee" in args:
-            raise RuntimeError("gh issue edit 61 failed: 'org/eng-team' is not a user")
-        return ""
-
-    src = _github_source(recorder)
-    number = src.create_dependency("t", "b", "org/eng-team")
+    rec = _rest_recorder()
+    src = _github_source(rec)
+    number = src.create_dependency("t", "b", "org/eng-team")     # a team slug: refused before any call
     assert number == "61"
     assert src.last_assignee_applied is False
-    creates = [c for c in calls if c[:2] == ["issue", "create"]]
+    creates = [c for c in rec.calls if c[:2] == ["issue", "create"]]
     assert len(creates) == 1, f"expected exactly one issue ever created, got {len(creates)}: {creates}"
     assert "--assignee" not in creates[0]                       # never combined with create
-    edit = next(c for c in calls if c[:2] == ["issue", "edit"])
-    assert edit[2] == "61" and "--add-assignee" in edit
-    comment = next(c for c in calls if c[:2] == ["issue", "comment"])
+    assert not any(c[c.index("--method") + 1] == "POST" and c[1].endswith("/assignees") for c in rec.rest)
+    comment = next(c for c in rec.calls if c[:2] == ["issue", "comment"])
     assert comment[2] == "61" and "org/eng-team" in " ".join(comment)
+
+
+def test_a_dropped_assignee_leaves_the_issue_unassigned_with_the_real_reason_in_the_comment():
+    """REST silently ignores a non-assignable login; `add_assignees` verifies the response, raises, and
+    create_dependency posts the 'Could not assign' note -- no duplicate issue, flag False."""
+    rec = _rest_recorder(assignable={"someone-else"})
+    src = _github_source(rec)
+    assert src.create_dependency("t", "b", "ghost") == "61"
+    assert src.last_assignee_applied is False
+    note = next(c for c in rec.calls if c[:2] == ["issue", "comment"])[-1]
+    assert "Could not assign @ghost" in note and len([c for c in rec.calls if c[:2] == ["issue", "create"]]) == 1
+
+
+def test_get_user_403_for_me_leaves_unassigned_posts_the_403_and_never_posts_assignees():
+    """D4 `@me`: the `GET user` lookup is permission-denied (Actions GITHUB_TOKEN) -> nothing is sent,
+    no gh fallback (permission 403 never falls back), the comment names the real 403."""
+    rec = _rest_recorder(fail=lambda a: _err("gh: Resource not accessible by integration", 403)
+                         if a[:2] == ["api", "user"] else None)
+    src = _github_source(rec)
+    assert src.create_dependency("t", "b", "@me") == "61"
+    assert src.last_assignee_applied is False
+    assert not any(c[1].endswith("/assignees") for c in rec.rest)
+    assert not any(c[:2] == ["issue", "edit"] for c in rec.calls)               # no gh fallback
+    note = next(c for c in rec.calls if c[:2] == ["issue", "comment"])[-1]
+    assert "403" in note
 
 
 def test_create_dependency_with_no_owner_never_posts_an_assignment_note():
     """No assignee was ever attempted, so there is nothing to apologise for -- the note is specific
     to a REJECTED assignee, not a general "how did this issue get made" disclosure."""
-    calls = []
-
-    def recorder(args):
-        calls.append(args)
-        return "https://github.com/acme/widget/issues/61" if args[:2] == ["issue", "create"] else ""
-
-    src = _github_source(recorder)
+    rec = _rest_recorder()
+    src = _github_source(rec)
     assert src.create_dependency("t", "b", None) == "61"
     assert src.last_assignee_applied is False
-    assert not any(c[:2] == ["issue", "comment"] for c in calls)
+    assert not any(c[:2] == ["issue", "comment"] for c in rec.calls)
 
 
 def test_create_dependency_still_raises_when_issue_create_itself_fails():
@@ -1680,13 +1762,10 @@ def test_create_dependency_still_raises_when_issue_create_itself_fails():
     create` call must still surface -- create_dependency never wraps that call in its own
     try/except, so this has always been the behavior; pinned explicitly so a future change to the
     assignment step can't accidentally start swallowing it too."""
-    def recorder(args):
-        if args[:2] == ["issue", "create"]:
-            raise RuntimeError("gh: not authenticated")
-        return ""
-
-    with pytest.raises(RuntimeError, match="not authenticated"):
-        _github_source(recorder).create_dependency("t", "b", "eng-owner")
+    rec = _rest_recorder(fail=lambda a: _err("gh: not authenticated", 401)
+                         if a[:2] == ["api", "repos/acme/widget/issues"] and a[3] == "POST" else None)
+    with pytest.raises(Exception, match="not authenticated"):
+        _github_source(rec).create_dependency("t", "b", "eng-owner")
 
 
 def test_create_dependency_note_uses_the_short_hint_not_the_whole_failed_command():
@@ -1695,22 +1774,18 @@ def test_create_dependency_note_uses_the_short_hint_not_the_whole_failed_command
     -- 'gh issue edit 61 --repo ... --add-assignee org/eng-team failed: <hint>' -- not just the
     reason. _run_gh now attaches the short reason alone as exc.hint; the note must use that, not
     str(exc), whenever it's available."""
-    calls = []
-
-    def recorder(args):
-        calls.append(args)
-        if args[:2] == ["issue", "create"]:
-            return "https://github.com/acme/widget/issues/61"
-        if args[:2] == ["issue", "edit"] and "--add-assignee" in args:
-            hint = "could not add assignees to issue: 'org/eng-team' is not an assignable user"
+    def failing(args):
+        if args[1].endswith("/assignees"):
+            hint = "could not add assignees to issue: 'eng-team' is not an assignable user"
             exc = RuntimeError("gh " + " ".join(args) + " failed: " + hint)
             exc.hint = hint
-            raise exc
-        return ""
+            return exc
+        return None
 
-    number = _github_source(recorder).create_dependency("[engine] dep", "body", "org/eng-team")
+    rec = _rest_recorder(fail=lambda a: failing(a) if a[:1] == ["api"] and len(a) > 1 else None)
+    number = _github_source(rec).create_dependency("[engine] dep", "body", "eng-team")
     assert number == "61"
-    comment = next(c for c in calls if c[:2] == ["issue", "comment"])
+    comment = next(c for c in rec.calls if c[:2] == ["issue", "comment"])
     note = comment[-1]
     assert "is not an assignable user" in note                  # the real, short reason survives
     assert "--repo" not in note and "issue edit" not in note    # the reconstructed command does not

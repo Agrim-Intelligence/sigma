@@ -2929,7 +2929,7 @@ def _enact_runner(views=None, fail_on=()):
     contains one of `fail_on`'s substrings, in which case it raises -- the mechanism the
     partial-failure tests need. `run.calls` is the full call log, same convention as
     `_recording_runner`."""
-    calls, fallbacks = [], []
+    calls, fallbacks, rest_writes = [], [], []
     views = views or {}
     labels = set()
     def run(args):
@@ -2945,6 +2945,9 @@ def _enact_runner(views=None, fail_on=()):
         gql = gqlfake.swap(args, labels=labels, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"), labels=labels)
         calls.append(list(args))
         # #895: the per-issue state read is REST first; the gh-shape `views` are answered REST-shaped.
         rest = gqlfake.rest_issue(args, lambda n, f: views.get(n, _view_json()))
@@ -2957,6 +2960,7 @@ def _enact_runner(views=None, fail_on=()):
     run.calls = calls
     run.fallbacks = fallbacks
     run.labels = labels
+    run.rest_writes = rest_writes
     return run
 
 
@@ -3357,7 +3361,7 @@ def test_apply_actions_apply_executes_and_marks_done():
 
 def test_apply_actions_partial_failure_isolates_and_continues():
     triage = _mod("triage")
-    run = _enact_runner(fail_on=["--add-label priority:P1"])
+    run = _enact_runner(fail_on=["labels[]=priority:P1"])
     source = triage.sources.GitHubSource(_enact_config(), run=run)
     actions = [
         {"action": "add-label", "issue": "12", "detail": "sdlc:goal", "result": None, "error": None},
@@ -3600,7 +3604,7 @@ def test_enact_cmd_nonzero_exit_when_an_action_fails(tmp_path):
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(_plan(picked=[_picked_item(10, priority="P1")])))
     config = _enact_config()
-    run = _enact_runner(views={"10": _view_json()}, fail_on=["--add-label priority:P1"])
+    run = _enact_runner(views={"10": _view_json()}, fail_on=["labels[]=priority:P1"])
     rc = triage.enact_cmd(str(tmp_path), config, ["--plan", str(plan_path), "--apply"], run=run)
     assert rc == 1
 
@@ -3770,3 +3774,46 @@ def test_a_scalar_gates_parent_does_not_crash_the_context_bucket(tmp_path):
     for value in (True, "on", []):
         out = triage._bucket_context("/nonexistent", {"gates": value})
         assert out["gates"] == {"hard_plan_gate": False, "stop_gate": False}, value
+
+
+# ----------------------------------------------------------------- #895 slice 3a: the three issue writes are REST
+
+def _act(kind, issue, detail):
+    return {"action": kind, "issue": issue, "detail": detail, "result": None, "error": None}
+
+
+def test_assign_add_label_remove_label_go_rest_not_gh_issue_edit():
+    triage = _mod("triage")
+    run = _enact_runner()
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("assign", "10", "dana"), _act("add-label", "10", "sdlc:goal"),
+                                        _act("remove-label", "10", "sdlc:parked")], True)
+    assert [a["result"] for a in out] == ["done"] * 3
+    assert [(c[1], c[3]) for c in run.rest_writes] == [
+        ("repos/acme/widget/issues/10/assignees", "POST"), ("repos/acme/widget/issues/10/labels", "POST"),
+        ("repos/acme/widget/issues/10/labels/sdlc%3Aparked", "DELETE")]
+
+
+def test_a_failed_rest_write_is_still_a_failed_result_carrying_the_rest_error():
+    """The RAISE contract: `_execute_action` raises, `apply_actions` turns it into result=failed and
+    carries the error text, then continues with the next action."""
+    triage = _mod("triage")
+    run = _enact_runner(fail_on=["issues/10/assignees"])
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("assign", "10", "dana"), _act("add-label", "10", "sdlc:goal")], True)
+    assert [a["result"] for a in out] == ["failed", "done"]
+    assert "issues/10/assignees" in out[0]["error"]
+
+
+def test_an_arbitrary_label_is_minted_by_rest_a_documented_divergence_from_gh():
+    """D3: `gh issue edit --add-label X` FAILS on an absent label; REST POST /labels creates it. The
+    triage add-label of a non-feature label does no existence lookup (accepted, documented, UNMEASURED
+    on a live repo); a feature label still goes through the layer-2 lookup."""
+    triage = _mod("triage")
+    run = _enact_runner()
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("add-label", "10", "made-up-label")], True)
+    assert out[0]["result"] == "done"
+    assert [c[1] for c in run.rest_writes] == ["repos/acme/widget/issues/10/labels"]
+    assert not any("/labels/" in c[1] and "--method" in c and c[c.index("--method") + 1] == "GET"
+                   for c in run.rest_writes)

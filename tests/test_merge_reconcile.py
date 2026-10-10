@@ -857,10 +857,10 @@ def test_324_complete_cost_names_issue_graphql_in_both_public_docs():
     src = _load("sources").GitHubSource({"discovery": {"github": {"repo": "o/r"}}}, run=run)
     src.complete("1")
     # #895: the state probe is REST (`api repos/o/r/issues/1 --method GET`), no `issue view` for it.
-    assert len([c for c in calls if c[:2] == ["api", "repos/o/r/issues/1"]]) == 1, calls
+    assert len([c for c in calls if c[:2] == ["api", "repos/o/r/issues/1"] and "GET" in c]) == 1, calls
     assert [c for c in calls if c[:2] == ["issue", "view"] and "state" in c] == [], calls
     assert len([c for c in calls if c[:2] == ["api", "graphql"]]) == 3, calls
-    assert len(calls) == 5, calls  # state + close + id + label ids + label mutation, no board
+    assert len(calls) == 6, calls  # state + comment + close (REST, #895) + id + label ids + label mutation, no board
     root = S.parents[2]
     for path in (root / "README.md", S.parent / "references" / "landing.md"):
         assert "REST issue state probe" in path.read_text(), path

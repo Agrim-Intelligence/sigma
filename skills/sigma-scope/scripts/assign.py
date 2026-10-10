@@ -301,19 +301,18 @@ def _nodes_from_plan(plan, report):
 
 
 def _apply_assignment(source, issue_numbers, assignee):
-    """Best-effort `--add-assignee` against each ALREADY-CREATED issue, one `gh` call per issue --
-    see the module docstring's ASSIGNMENT-ON-AN-EXISTING-ISSUE section for why this reuses
-    `source._run`/`source._repo_args()` directly rather than adding a new `sources.py` method.
+    """Best-effort assignment against each ALREADY-CREATED issue, one REST call per issue
+    (`source._issue_add_assignees`, #895 slice 3a; the module docstring's ASSIGNMENT-ON-AN-EXISTING-ISSUE
+    section predates it and describes the old `source._run` reuse).
     Per-issue try/except (one failure never stops the rest); never raises. A github-incapable
-    `source` (no `_run`/`_repo_args` -- e.g. `LocalSource`) degrades to a single warning and assigns
+    `source` (no `_issue_add_assignees` -- e.g. `LocalSource`) degrades to a single warning and assigns
     nothing, matching `_active_members`'s own github-only posture."""
-    if not (hasattr(source, "_run") and hasattr(source, "_repo_args")):
-        return [], ["assignment needs github discovery mode -- source has no _run/_repo_args"]
+    if not hasattr(source, "_issue_add_assignees"):
+        return [], ["assignment needs github discovery mode -- source has no _issue_add_assignees"]
     assigned, warnings = [], []
     for number in issue_numbers:
         try:
-            source._run(["issue", "edit", str(number), *source._repo_args(),
-                        "--add-assignee", assignee])
+            source._issue_add_assignees(number, assignee)       # REST first through gh_api (#895 3a)
             assigned.append(number)
         except Exception as exc:                                    # noqa: BLE001 - best-effort
             warnings.append(f"could not assign @{assignee} to #{number}: {exc}")
