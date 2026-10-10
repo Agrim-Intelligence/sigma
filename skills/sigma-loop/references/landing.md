@@ -205,11 +205,7 @@ head settle. The safe minimum is that full worst case, **~1,350,000ms (22.5 minu
 default like 600000ms (10 minutes) covers only the ordinary pending path and is NOT enough once a
 BEHIND-rebase is in play. `gate()` only READS GitHub's state while it polls; it mutates nothing.
 So if the host cuts the call short while it polls, nothing was recorded as merged or armed — just re-run
-`work.py merge .sdlc "$goal"` (idempotent: it re-reads live state, not a stale local guess). A cut DURING the
-merge call itself (the REST `PUT pulls/N/merge`, #895 slice 4b-1) also leaves nothing recorded locally, but
-the PR may or may not have merged: run `loop.py record .sdlc "$goal" review` (awaiting merge; the
-merge-reconcile pass records `done` once a REST read shows it merged, and `record done` stays refused until
-then). Do NOT re-run `work.py merge` for that case: how it reads an already-merged PR is unmeasured and may park it. Or
+`work.py merge .sdlc "$goal"` (idempotent). A cut DURING the merge call itself may have landed: run `loop.py record .sdlc "$goal" review`, never re-run merge. Or
 read `gh pr view <PR> --json mergeable,mergeStateStatus,statusCheckRollup` yourself first if you
 want to see exactly where GitHub's own read stood before deciding. No GraphQL: REST reads in docs/cloud-sessions.md.
 
@@ -220,16 +216,7 @@ unresolved thread). **The review gate runs on every `auto_merge` policy, `off` i
 under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge
 instead of being invisible, and a clean PR's line says `review gate passed (require_review: …)`
 before it is left for a human. It rebases once if the PR is `BEHIND`. It then **lands the PR
-directly** over REST (`PUT pulls/N/merge` carrying the vetted head `sha`; one `gh pr merge` fallback on a
-primary rate limit only, #895 slice 4b-1) — arming GitHub's own `--auto` is reserved for the one case a direct
-merge would be refused right now (a required check that hasn't answered yet, and only when the
-repo's own `allow_auto_merge` setting actually permits arming, and only where GraphQL is available: `--auto`
-is GraphQL, so without it the still-pending check PARKS after gate()'s own wait, adding no wait of its own);
-every other clean-and-safe or
-arm-worthy case merges directly instead of waiting on an async arm, which is what makes landing
-possible at all on a repo with `allow_auto_merge` disabled outright. A merge call whose outcome is unknown
-(5xx, timeout, a reply without `merged: true`) is never re-sent: it is read back over REST and lands, parks,
-or is left awaiting merge (below). The worst case above is unchanged by this.
+directly** over REST (`PUT pulls/N/merge` with the vetted `sha`; one `gh pr merge` fallback on a primary rate limit only) — `--auto` only for a pending required check, and only with GraphQL.
 
 **Done means merged.** A goal is `done` only once its PR has merged; until then it is `review`
 (awaiting merge): the issue stays **open**, keeps `sdlc:goal` and the claim's `sdlc:in-progress`, and
@@ -267,13 +254,8 @@ pass records the `done` later — see below.
   line never claims the request is what closed the issue. If it instead ends `… — but could not
   close #N (…)`, the merge still LANDED and `record done` remains right: `source.complete()` retries
   the close, and parks the goal instead of silently losing the record if that retry fails too.
-- `merge outcome unknown for PR #N (…) -- NOT retried and NOT sent via GraphQL; leaving PR #N awaiting
-  merge …` → **`record review`**. The merge call failed in a way that may still have landed and up to three
-  REST reads did not show it merged. NOT a park: the merge-reconcile pass records `done` if it landed, and
-  doctor's stuck-merge alarm names it (after 3 days) if it never does. Never re-run the merge by hand around it.
-- `PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL; re-run
-  work.py merge once they finish` → `record parked` like any `PARK:` (a session without GraphQL cannot arm
-  `--auto`; re-run merge once the checks answer).
+- `merge outcome unknown for PR #N (…)` → **`record review`**.
+- `PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL …` → `record parked`.
 - `PR #N opened — …` → **`record review`**. The open-source path: a fork PR, or a repo you only have
   read access to, can never be merged by you. The loop has done everything it can, and nothing here
   wants a human's decision — but the goal is not done until the upstream merge lands.
