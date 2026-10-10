@@ -128,7 +128,8 @@ def run_job(config, sdlc_dir, root, unit, run_id, cap, *, environ=None, command=
         outcome, tip = "failed", None                     # what a crash inside this block leaves behind
         try:
             argv = command or [sys.executable, "-I", str(pathlib.Path(__file__).resolve()), "--engine", "--sdlc", str(sdlc_dir),
-                               "--root", str(root), "--unit", unit]
+                               "--root", str(root), "--unit", unit,
+                               "--run-id", str(run_id), "--cap", str(cap)]
             stop = EitherStop(sched.path_of(sdlc_dir, sched.STOP_REL), sched.path_of(sdlc_dir, sched.WATCH_STOP_REL))
             result = bounded.run_group(argv, root, cap, env=bounded.unattended_env(environ), stop_path=stop, merge=False,
                                        clock=beat or BeatingClock(lambda: _touch(beat_path), base=clock))
@@ -155,7 +156,7 @@ def run_engine(config, sdlc_dir, root, unit, *, environ=None, upkeep=None):
     return line
 
 
-def main(argv=None):
+def build_parser():
     parser = argparse.ArgumentParser(prog="feature_upkeep_job.py", description="The detached, bounded upkeep job (started by "
                                      "the scheduler; not meant to be run by hand).")
     parser.add_argument("--sdlc", required=True)
@@ -164,7 +165,11 @@ def main(argv=None):
     parser.add_argument("--run-id", default="")
     parser.add_argument("--cap", type=float, required=True)
     parser.add_argument("--engine", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     try:
         config = json.loads(pathlib.Path(args.sdlc).joinpath("config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
