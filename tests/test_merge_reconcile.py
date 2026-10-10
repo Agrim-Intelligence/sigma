@@ -426,18 +426,18 @@ def _merge_ready(w, st, d, config):
 
 
 def _merge_runner(comments):
-    view = json.dumps({"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-                       "statusCheckRollup": [], "headRefOid": "b" * 40, "state": "OPEN"})
     handlers = [
-        # #895 4a-1: merge_rights and the marker scan read REST (`pulls/7 --method GET`, `issues/7/comments`).
+        # #895 4a-1: merge_rights and the marker scan read REST (`pulls/7 --method GET`, `issues/7/comments`);
+        # #895 4a-2: the gate reads the same pull (CLEAN by prfake's default) plus the rollup for its head.
         (prfake.pull_get(7), prfake.rest_pull(author="bot", headRefOid="b" * 40)),
+        (prfake.check_runs_get("b" * 40), prfake.rest_check_runs([])),
+        (prfake.status_get("b" * 40), prfake.rest_statuses([])),
         ("viewerPermission", "ADMIN"),
         (prfake.comments_get(7), prfake.rest_comments([{"body": c, "author": {"login": "bot"},
                                                         "authorAssociation": "OWNER"} for c in comments])),
         ("reviewDecision,latestReviews", json.dumps({"reviewDecision": None, "latestReviews": []})),
         ("nameWithOwner", "acme/app"),
         ("graphql", json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}})),
-        ("pr view", view),
         ("rev-parse HEAD", "b" * 40),
     ]
     calls = []

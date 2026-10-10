@@ -35,13 +35,29 @@ def is_pr_get(argv, n=7):
     return pull_get(n) in line
 
 
+def check_runs_get(sha=HEAD):
+    """The substring identifying gh_api's REST check-runs read for commit `sha` (#895 4a-2)."""
+    return "commits/%s/check-runs --method GET" % sha
+
+
+def status_get(sha=HEAD):
+    """The substring identifying gh_api's REST combined-status read for commit `sha` (#895 4a-2)."""
+    return "commits/%s/status --method GET" % sha
+
+
+_MERGEABLE = {"MERGEABLE": True, "CONFLICTING": False, "UNKNOWN": None}
+
+
 def rest_pull(number=7, state="OPEN", autoMergeRequest=None, isCrossRepository=False, headRefOid=HEAD,
               headRefName="sdlc/7", title="", body="", author="sigma", mergedAt=None, closedAt=None,
-              **extra):
+              mergeable="MERGEABLE", mergeStateStatus="CLEAN", **extra):
     """A REST pull body from gh-shaped inputs, as a JSON string. `state` OPEN / CLOSED / MERGED map to
     REST `state` + `merged` + `merged_at`; any other value is passed through lowercased (a malformed
     state the converter must refuse). `isCrossRepository=None` models a deleted fork (`head.repo`
-    null). `author=None` omits `user`. Any value may be `ABSENT` to drop its key; `extra` overrides
+    null). `author=None` omits `user`. `mergeable` MERGEABLE / CONFLICTING / UNKNOWN map to REST
+    true / false / null (any other value passes through raw) and `mergeStateStatus` is lower-cased into
+    `mergeable_state` (#895 4a-2); the defaults make every body a valid CLEAN gate read too, so ONE body
+    serves merge_rights and the gate. Any value may be `ABSENT` to drop its key; `extra` overrides
     or adds raw REST keys."""
     s = str(state).upper()
     merged = s == "MERGED"
@@ -61,6 +77,9 @@ def rest_pull(number=7, state="OPEN", autoMergeRequest=None, isCrossRepository=F
         "user": {"login": author, "type": "User"} if author is not None else None,
         "head": {"sha": headRefOid, "ref": headRefName, "repo": head_repo},
         "base": {"ref": "main", "repo": {"full_name": BASE_REPO, "node_id": "R_1"}},
+        "mergeable": _MERGEABLE.get(mergeable, mergeable),
+        "mergeable_state": (mergeStateStatus.lower() if isinstance(mergeStateStatus, str)
+                            else mergeStateStatus),
     }
     d.update(extra)
     for k in [k for k, v in d.items() if v is ABSENT]:
@@ -84,3 +103,32 @@ def rest_comments(rows):
             c["author_association"] = r["authorAssociation"]
         out.append(c)
     return json.dumps(out)
+
+
+def rest_check_runs(pairs, total=None):
+    """gh-shaped `(name, conclusion)` pairs -> one REST check-runs page (JSON string). Conclusion "" means
+    still running: `in_progress` with a null conclusion; anything else is `completed` with that
+    conclusion lower-cased. `total` overrides `total_count` (a truncated page)."""
+    runs = []
+    for i, (name, conclusion) in enumerate(pairs):
+        runs.append({"id": 900 + i, "name": name,
+                     "status": "completed" if conclusion else "in_progress",
+                     "conclusion": conclusion.lower() if conclusion else None,
+                     "details_url": "https://github.com/acme/app/runs/%d" % (900 + i)})
+    return json.dumps({"total_count": len(runs) if total is None else total, "check_runs": runs})
+
+
+def rest_statuses(rows, total=None):
+    """gh-shaped `(context, state)` pairs -> one REST combined-status page (JSON string). The combined
+    `state` is set to "pending" on purpose: the reader must never use it."""
+    statuses = [{"id": 800 + i, "context": c, "state": st.lower(), "target_url": "https://ci.example/%d" % i}
+                for i, (c, st) in enumerate(rows)]
+    return json.dumps({"state": "pending", "total_count": len(statuses) if total is None else total,
+                       "statuses": statuses})
+
+
+def gate_handlers(pull, checks=(), statuses=(), head=HEAD):
+    """The three `_runner` handlers one settled gate round reads, in order: the pull, then the check runs
+    and statuses for `head` (which must be the pull's own head.sha)."""
+    return [(pull_get(7), pull), (check_runs_get(head), rest_check_runs(checks)),
+            (status_get(head), rest_statuses(statuses))]

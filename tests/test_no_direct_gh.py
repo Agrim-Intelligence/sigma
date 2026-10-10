@@ -64,6 +64,13 @@ post_review, _open_pr_refusal, _pr_merged), doctor 7 -> 6 (_stray_commits_after_
 1 -> 0 (pr_description; entry removed). The adapters bind `_GH = "gh"` once, so they add no
 `["gh", *args]` site. Still open on #895 (PR): work.py R1 merge gate, R4 reviewDecision, R5 sibling list,
 R9 design-PR list, W1-W5 writes; doctor R10 (plus 5 non-PR); verify_merge 3 (ready/create/merge).
+MEASURED 2026-10-10 (#895 slice 4a-2 PR A), via the same `scan()` (printed, not typed): TOTAL 50 -> 48.
+The merge gate R1 (`gh pr view --json mergeable,mergeStateStatus,statusCheckRollup,headRefOid`) moved to
+`gh_api.view_pr_gh` + `gh_api.pr_check_rollup_gh`, and doctor's landing-PR row R10 (`gh pr list --head
+feature/<unit>`) to `gh_api.open_pr_for_branch_gh` + `pr_check_rollup_gh` (fallback argv built inside the
+EXEMPT helper): work.py 9 -> 8, doctor 6 -> 5. Still open on #895 (PR): work.py R4 reviewDecision (its
+`reviewDecision` half stays GraphQL by decision), R5 sibling list, R9 design-PR list, W1-W5 writes;
+verify_merge 3 (ready/create/merge).
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -102,14 +109,14 @@ GENERIC_INVOCATION = "python -m pytest tests/test_no_direct_gh.py"
 BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
-    "skills/sigma-doctor/scripts/doctor.py": 6,
+    "skills/sigma-doctor/scripts/doctor.py": 5,
     "skills/sigma-init/scripts/board_setup.py": 1,
     "skills/sigma-loop/scripts/cross_repo.py": 1,
     "skills/sigma-loop/scripts/feature_owner.py": 1,
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/sources.py": 20,
     "skills/sigma-loop/scripts/triage.py": 1,
-    "skills/sigma-loop/scripts/work.py": 9,
+    "skills/sigma-loop/scripts/work.py": 8,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
     "skills/sigma-status/scripts/status.py": 3,
 }
@@ -175,15 +182,17 @@ def test_no_stale_baseline_entry():
 
 
 def test_pr_view_fallback_argv_lives_only_in_gh_api():
-    """#895 4a-1: the seven migrated PR reads' `pr view` argv is built ONLY inside gh_api (its one
-    fallback). The migrated callers carry none; work.py keeps exactly its two unmigrated `gh pr view`
-    reads (R1 the merge gate, R4 reviewDecision), so a migrated site cannot quietly come back."""
+    """#895 4a-1/4a-2: the migrated PR reads' `pr view` / `pr list` argv is built ONLY inside gh_api (its
+    one fallback each). The migrated callers carry none; work.py keeps exactly ONE unmigrated `gh pr view`
+    read (R4 reviewDecision, GraphQL-only by decision), so a migrated site cannot quietly come back."""
     helper = (ROOT / "skills/sigma-loop/scripts/gh_api.py").read_text(encoding="utf-8")
     assert '["pr", "view", ref,' in helper
+    assert '["pr", "list", "--repo", repo,' in helper
     for rel in ("skills/sigma-rebase/scripts/rebase_brief.py", "skills/sigma-doctor/scripts/doctor.py"):
-        assert '"pr", "view"' not in (ROOT / rel).read_text(encoding="utf-8"), rel
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        assert '"pr", "view"' not in text and '"pr", "list"' not in text, rel
     work = (ROOT / "skills/sigma-loop/scripts/work.py").read_text(encoding="utf-8")
-    assert work.count('"gh", "pr", "view"') == 2
+    assert work.count('"gh", "pr", "view"') == 1
 
 
 def test_exempt_is_exactly_the_helper_and_it_exists():

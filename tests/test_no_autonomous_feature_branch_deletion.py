@@ -403,14 +403,14 @@ def _pr_state(state="OPEN", auto_merge=False):
 
 
 def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), head=HEAD_SHA):
-    return json.dumps({"mergeable": mergeable, "mergeStateStatus": status, "headRefOid": head,
-                       "statusCheckRollup": [{"name": n, "conclusion": c} for n, c in checks]})
+    """#895 4a-2: the gate's REST reads (pull, check-runs, status) as one handler list; its pull body also
+    answers merge_rights' fork read, so it goes FIRST and stands beside `_perm()`, never `_rights()`."""
+    return prfake.gate_handlers(prfake.rest_pull(mergeable=mergeable, mergeStateStatus=status, headRefOid=head),
+                                checks, (), head)
 
 
-def _rights(cross=False, perm="ADMIN"):
-    return [(prfake.pull_get(7), prfake.rest_pull(isCrossRepository=cross)),   # #895 4a-1: REST fork read
-            ("viewerPermission", perm),
-            ("nameWithOwner", "acme/app")]
+def _perm(perm="ADMIN"):
+    return [("viewerPermission", perm), ("nameWithOwner", "acme/app")]
 
 
 def _default_branch(name="main"):
@@ -457,7 +457,7 @@ def test_merge_never_deletes_the_feature_branch_base_after_a_direct_landing(tmp_
     d = _sdlc(tmp_path)
     goal = _started(d, base=_UNIT_BRANCH)
     _evidence(d, goal)
-    run = _runner(_rights() + _default_branch("main") + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _default_branch("main"))
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
     # existing behavior untouched: the goal's own branch really is deleted.
