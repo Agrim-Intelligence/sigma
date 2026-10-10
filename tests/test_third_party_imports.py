@@ -50,7 +50,7 @@ pytestmark = pytest.mark.skipif(not hasattr(sys, "stdlib_module_names"), reason=
 STDLIB_ON_NEWER_PYTHON = frozenset({"tomllib"})
 STDLIB = frozenset(sys.stdlib_module_names) | STDLIB_ON_NEWER_PYTHON
 
-FIXTURE_ROOTS = (("evals", "bench", "tasks"), ("examples",))
+FIXTURE_ROOTS = (("evals", "bench", "tasks"), ("evals", "golden"), ("examples",))
 
 
 def _is_shipped(rel: str) -> bool:

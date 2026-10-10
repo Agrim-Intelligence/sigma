@@ -104,6 +104,9 @@ jobs:
         run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
       - name: quality gate (Tier-1 behavioral drift vs baseline)
         run: python3 evals/run.py
+      - name: golden tasks verify
+        if: ${{ env.FULL == 'true' }}
+        run: python3 evals/golden/verify.py
       - name: decision gate
         run: |
           python3 hooks/decision_gate.py validate .
