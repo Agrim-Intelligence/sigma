@@ -19,6 +19,9 @@ def test_codex_model_override_routes_goal_and_step_without_changing_claude(tmp_p
     m = _mod()
     monkeypatch.setenv("CODEX_THREAD_ID", "task")
     monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("SIGMA_HOST", raising=False)
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     assert m.resolve("migrate the schema", str(sdlc)) == "opus"
     assert m.resolve_step("run the tests", str(sdlc))["model"] == "sonnet"
     monkeypatch.delenv("CODEX_THREAD_ID")
