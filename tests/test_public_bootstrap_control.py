@@ -282,6 +282,8 @@ def pr_rest_obj(state, number):
         "head": {"ref": pr["head"], "sha": head_sha,
                  "repo": {"full_name": state["repo"], "node_id": "R_%s" % name}},
         "base": {"ref": pr["base"], "repo": {"full_name": state["repo"], "node_id": "R_%s" % name}},
+        # #895 4a-2: the merge gate's REST read. Same answer `pr_obj` gives gh: MERGEABLE + CLEAN.
+        "mergeable": True, "mergeable_state": "clean",
     }
 
 
@@ -609,6 +611,13 @@ def cmd_api(state, argv, pos, flags, multi):
         head = m.group(1)
         matches = [pr_obj(state, n) for n, pr in state["prs"].items() if pr["head"] == head]
         emit(matches, flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/commits/[0-9a-f]{40}/(check-runs|status)$" % re.escape(repo), endpoint)
+    if m and method == "GET":
+        # #895 4a-2: the gate's rollup reads for the pull's head. This fixture has no CI, exactly as
+        # `pr_obj`'s empty `statusCheckRollup`; the combined `state` is `pending` like real GitHub's
+        # empty set, and must never be read.
+        emit({"total_count": 0, "check_runs": []} if m.group(1) == "check-runs"
+             else {"total_count": 0, "state": "pending", "statuses": []}, flags.get("jq"), argv); return
     m = re.match(r"^repos/%s/pulls/(\d+)$" % re.escape(repo), endpoint)
     if m and method in ("", "GET"):
         number = m.group(1)

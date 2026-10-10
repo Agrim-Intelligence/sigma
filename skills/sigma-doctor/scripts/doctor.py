@@ -607,31 +607,34 @@ def _landing_pr_unverifiable(run, repo, unit):
     ordinary MERGEABLE branch that simply has no CI wired up at all (also an empty rollup, but not
     this issue's shape -- `mergeable` is what tells the two empty-rollup cases apart).
 
-    ONE `gh pr list` call, matching this file's own single-argument, never-raising `run`
-    convention throughout -- NOT `unit_completion._landing_pull_requests` (a different, two-
-    argument, RAISING convention this file does not share, see `_gh_runner`'s own docstring for
-    why the two must never be handed to each other directly). `--repo repo` is required: every
-    real precedent for this exact `gh pr list --head ... --json mergeable,...,statusCheckRollup`
-    shape in this codebase passes it explicitly (`work.py`'s `SIBLING_PR_FIELDS` sibling-gate
-    call, and `_stray_commits_after_merge` below, this function's own integration precedent) --
-    `_real_run` sets no `cwd=`, so a bare `--head` with no `--repo` would depend entirely on
-    `gh`'s own remote-inference from whatever directory the doctor.py PROCESS happens to run in,
-    unverified by anything in `check()`."""
+    REST first (#895 slice 4a-2), through `gh_api` over `_raising_gh(run)` -- this file's
+    single-argument `run`, adapted so a failed call RAISES instead of reading as empty -- NOT
+    `unit_completion._landing_pull_requests` (a different, two-argument convention, see
+    `_gh_runner`'s own docstring). `gh_api.open_pr_for_branch_gh` reads the open PR for
+    `feature/<unit>` (one `pulls?head=<owner>:<branch>` list call plus one `pulls/<n>` read; ONE
+    `gh pr list` fallback on a transient failure, never in a cloud session). `repo` is required: the
+    owner in the head filter comes from it, never from gh's `{owner}`, which expands from the
+    doctor PROCESS's cwd remote (`_real_run` sets no `cwd=`). Only a CONFLICTING PR pays for the
+    rollup (`gh_api.pr_check_rollup_gh` for its head: check-runs then statuses): 2 calls per open
+    unit, 4 for a conflicted one. No `sdlc_dir`: doctor never writes the REST breaker or its log.
+    Fail OPEN throughout (an advisory row): ANY failure -- including a rollup that could not be
+    read completely -- is None, never `[]`, because an unread rollup read as empty would raise a
+    false UNVERIFIABLE alarm."""
     branch = "feature/" + unit
-    raw = run(["gh", "pr", "list", "--repo", repo, "--head", branch, "--state", "open",
-              "--limit", "1", "--json", "number,mergeable,mergeStateStatus,statusCheckRollup"])
-    if not raw:
-        return None                              # can't tell (or none open) -- no false alarm
+    raising = _raising_gh(run)
     try:
-        rows = json.loads(raw)
-    except Exception:
+        gh = _load_loop_script("gh_api")
+        pr = gh.open_pr_for_branch_gh(raising, branch, ["number", "mergeable", "headRefOid"], repo,
+                                      gql_run=raising)
+    except Exception:                            # noqa: BLE001 - can't tell (or none open) -- no false alarm
         return None
-    if not isinstance(rows, list) or not rows:
-        return None
-    pr = rows[0]
     if not isinstance(pr, dict) or pr.get("mergeable") != "CONFLICTING":
         return None
-    if pr.get("statusCheckRollup"):
+    try:
+        rollup = gh.pr_check_rollup_gh(raising, pr["number"], pr["headRefOid"], repo, gql_run=raising)
+    except Exception:                            # noqa: BLE001 - an unread rollup is not an empty one
+        return None
+    if rollup:
         return None                              # conflicted but checks DID run -- a rarer, different shape
     return (f"unit {unit!r}'s landing PR #{pr.get('number')} is UNVERIFIABLE, not merely "
             f"unchecked — GitHub could not build a merge ref for it (conflicted with its "

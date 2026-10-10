@@ -4098,7 +4098,9 @@ def test_check_does_not_surface_stray_commits_for_a_registered_open_unit_branch(
             return "feature/widget\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if _is_pulls_by_head(a):
+        # The STRAY-commits lookup (`state=all`) must not run. #895 4a-2: the landing-PR row's own
+        # `pulls?head=...&state=open&per_page=1` read is a different check that DOES run for an open unit.
+        if _is_pulls_by_head(a) and "&state=all&" in a[2]:
             raise _MustNotCall(f"must not look up a PR for an exempt unit branch: {a}")
         return ""
 
@@ -6706,58 +6708,82 @@ def _open_unit(sdlc_dir, name, open_=True):
                    "tracking_issue": None, "repos": {}})
 
 
-def _pr_row(mergeable="MERGEABLE", rollup=None, number=42):
-    return json.dumps([{"number": number, "mergeable": mergeable,
-                        "mergeStateStatus": "CLEAN" if mergeable == "MERGEABLE" else "DIRTY",
-                        "statusCheckRollup": rollup if rollup is not None else []}])
+_REST_MERGEABLE = {"MERGEABLE": (True, "clean"), "CONFLICTING": (False, "dirty"), "UNKNOWN": (None, "unknown")}
+
+
+def _pr_rest(mergeable="MERGEABLE", rollup=None, number=42, head="a" * 40, rows=None, runs_raw=None,
+             status_raw=None, calls=None):
+    """#895 4a-2: doctor's landing-PR row reads REST -- the `pulls?head=` list (per_page=1), the pull
+    (`mergeable` / `mergeable_state`, which list rows lack), and only for a conflicted PR the rollup for
+    its head (`commits/<sha>/check-runs`, `/status`). gh-shaped inputs: `rollup` is a list of CheckRun
+    entries (`name`, `conclusion` or `status`); `*_raw` replaces that read's body verbatim."""
+    rollup = rollup if rollup is not None else []
+    m, st = _REST_MERGEABLE[mergeable]
+    runs = [{"name": c["name"], "status": "completed" if c.get("conclusion") else (c.get("status") or "queued").lower(),
+             "conclusion": (c.get("conclusion") or "").lower() or None} for c in rollup]
+
+    def run(a):
+        if calls is not None:
+            calls.append(a)
+        if a[:2] != ["gh", "api"]:
+            return ""
+        ep = a[2]
+        if "/pulls?head=" in ep:
+            return json.dumps(rows if rows is not None else [{"number": number, "mergeable": None}])
+        if ep.endswith("/pulls/%d" % number):
+            return json.dumps({"number": number, "state": "open", "mergeable": m, "mergeable_state": st,
+                               "head": {"sha": head, "ref": "feature/x"}})
+        if ep.endswith("/check-runs"):
+            return runs_raw if runs_raw is not None else json.dumps({"total_count": len(runs), "check_runs": runs})
+        if ep.endswith("/status"):
+            return status_raw if status_raw is not None else json.dumps(
+                {"total_count": 0, "state": "pending", "statuses": []})
+        return ""
+    return run
+
+
+def _rollup_calls(calls):
+    return [c for c in calls if c[:2] == ["gh", "api"] and ("/check-runs" in c[2] or "/status" in c[2])]
 
 
 def test_landing_pr_unverifiable_true_for_a_conflicted_pr_with_zero_checks():
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return _pr_row(mergeable="CONFLICTING", rollup=[])
-        return ""
-    detail = d._landing_pr_unverifiable(run, "acme/widget", "checkout")
-    assert detail and "UNVERIFIABLE" in detail and "checkout" in detail
+    calls = []
+    detail = d._landing_pr_unverifiable(_pr_rest(mergeable="CONFLICTING", rollup=[], calls=calls),
+                                        "acme/widget", "checkout")
+    assert detail and "UNVERIFIABLE" in detail and "checkout" in detail and "#42" in detail
+    assert [c[2] for c in _rollup_calls(calls)] == ["repos/acme/widget/commits/%s/check-runs" % ("a" * 40),
+                                                    "repos/acme/widget/commits/%s/status" % ("a" * 40)]
 
 
 def test_landing_pr_unverifiable_false_when_checks_did_run_despite_conflict():
     """Isolates guard 2 -- checks DID run despite the conflict, a rarer, different shape."""
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return _pr_row(mergeable="CONFLICTING", rollup=[{"name": "ci", "conclusion": "SUCCESS"}])
-        return ""
+    run = _pr_rest(mergeable="CONFLICTING", rollup=[{"name": "ci", "conclusion": "SUCCESS"}])
     assert d._landing_pr_unverifiable(run, "acme/widget", "checkout") is None
 
 
 def test_landing_pr_unverifiable_false_for_a_clean_mergeable_pr():
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return _pr_row(mergeable="MERGEABLE",
-                           rollup=[{"name": "ci", "conclusion": "SUCCESS"}] * 16)
-        return ""
+    calls = []
+    run = _pr_rest(mergeable="MERGEABLE", rollup=[{"name": "ci", "conclusion": "SUCCESS"}] * 16, calls=calls)
     assert d._landing_pr_unverifiable(run, "acme/widget", "checkout") is None
+    assert _rollup_calls(calls) == []                 # the rollup is read ONLY on the CONFLICTING branch
 
 
 def test_landing_pr_unverifiable_false_for_pending_checks():
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return _pr_row(mergeable="MERGEABLE", rollup=[{"name": "ci", "status": "IN_PROGRESS"}])
-        return ""
+    calls = []
+    run = _pr_rest(mergeable="MERGEABLE", rollup=[{"name": "ci", "status": "IN_PROGRESS"}], calls=calls)
     assert d._landing_pr_unverifiable(run, "acme/widget", "checkout") is None
+    assert _rollup_calls(calls) == []
 
 
 def test_landing_pr_unverifiable_false_with_no_open_landing_pr():
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return "[]"
-        return ""
-    assert d._landing_pr_unverifiable(run, "acme/widget", "checkout") is None
+    calls = []
+    assert d._landing_pr_unverifiable(_pr_rest(rows=[], calls=calls), "acme/widget", "checkout") is None
+    assert len(calls) == 1
 
 
 def test_landing_pr_unverifiable_fails_open_on_an_unreadable_gh_reply():
@@ -6773,22 +6799,35 @@ def test_landing_pr_unverifiable_false_for_a_mergeable_branch_with_no_ci_at_all(
     an ordinary branch with no CI wired up, not a conflict. Both empty-rollup cases (this one and
     the conflicted one) must be told apart by `mergeable`, never by rollup emptiness alone."""
     d = _doc()
-    def run(a):
-        if a[:3] == ["gh", "pr", "list"]:
-            return _pr_row(mergeable="MERGEABLE", rollup=[])
-        return ""
-    assert d._landing_pr_unverifiable(run, "acme/widget", "checkout") is None
+    calls = []
+    assert d._landing_pr_unverifiable(_pr_rest(mergeable="MERGEABLE", rollup=[], calls=calls),
+                                      "acme/widget", "checkout") is None
+    assert _rollup_calls(calls) == []
+
+
+@pytest.mark.parametrize("kw", [
+    dict(runs_raw=json.dumps({"total_count": 3, "check_runs": []})),                 # truncated
+    dict(runs_raw="gh: Server Error (HTTP 502)"),                                      # not JSON
+    dict(status_raw=json.dumps({"total_count": 0, "state": "pending"})),              # statuses absent
+    dict(runs_raw=json.dumps({"total_count": 1, "check_runs": [
+        {"name": "ci", "status": "completed", "conclusion": None}]})),                # completed, no conclusion
+    dict(head=""),                                                                     # no head to query
+], ids=["truncated", "garbage", "statuses-absent", "completed-null", "empty-head"])
+def test_landing_pr_unverifiable_a_failed_rollup_read_is_no_alarm(kw):
+    """A rollup that could not be READ is not an EMPTY rollup: reading it as `[]` would raise a false
+    UNVERIFIABLE alarm on a conflicted PR whose checks did run. Fail open: None."""
+    d = _doc()
+    assert d._landing_pr_unverifiable(_pr_rest(mergeable="CONFLICTING", **kw), "acme/widget", "checkout") is None
 
 
 def test_landing_pr_unverifiable_call_includes_repo(tmp_path):
-    """Round 2 finding 2: --repo is required, matching every real precedent for this call shape."""
+    """Round 2 finding 2: the repo is required, and the owner is taken from it (never gh's `{owner}`,
+    which would expand from the doctor PROCESS's cwd remote)."""
     d = _doc()
     calls = []
-    def run(a):
-        calls.append(a)
-        return "[]"
-    d._landing_pr_unverifiable(run, "acme/widget", "checkout")
-    assert calls and "--repo" in calls[0] and "acme/widget" in calls[0]
+    d._landing_pr_unverifiable(_pr_rest(rows=[], calls=calls), "acme/widget", "checkout")
+    assert calls and calls[0][:3] == ["gh", "api", "repos/acme/widget/pulls?head=acme:feature/checkout"
+                                                     "&state=open&per_page=1"]
 
 
 def test_doctor_row_names_every_affected_open_unit_in_one_aggregated_message(tmp_path):
@@ -6796,12 +6835,15 @@ def test_doctor_row_names_every_affected_open_unit_in_one_aggregated_message(tmp
     sdlc = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}})
     _open_unit(sdlc, "checkout")
     _open_unit(sdlc, "payments")
+    conflicted = _pr_rest(mergeable="CONFLICTING", rollup=[], number=42)
+    clean = _pr_rest(mergeable="MERGEABLE", rollup=[{"name": "ci", "conclusion": "SUCCESS"}], number=43)
+
     def run(a):
-        if a[:3] == ["gh", "pr", "list"] and "feature/checkout" in a:
-            return _pr_row(mergeable="CONFLICTING", rollup=[])
-        if a[:3] == ["gh", "pr", "list"] and "feature/payments" in a:
-            return _pr_row(mergeable="MERGEABLE", rollup=[{"name": "ci", "conclusion": "SUCCESS"}])
-        return "[]"
+        if a[:2] == ["gh", "api"] and "feature/checkout" in a[2]:
+            return json.dumps([{"number": 42}])
+        if a[:2] == ["gh", "api"] and "feature/payments" in a[2]:
+            return json.dumps([{"number": 43}])
+        return (conflicted if any("/42" in x or "a" * 40 in x for x in a) else clean)(a)
     detail = d._landing_pr_unverifiable_units(sdlc, {"repo": "acme/widget"}, run)
     assert detail and "checkout" in detail and "payments" not in detail
 

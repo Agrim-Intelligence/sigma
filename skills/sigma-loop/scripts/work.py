@@ -20,7 +20,8 @@ branch and PR. Consequences, all of them the point:
     anything at all.
 
 THE MERGE GATE. Clean is `mergeable`; safe is `mergeStateStatus`, which folds in required checks and
-reviews. One `gh pr view` returns both. Four things this will not do: merge without fresh local
+reviews. One REST `pulls/<n>` read returns both (#895 4a-2; the check rollup is a second and third REST
+read for that pull's own head, one `gh pr view` fallback each). Four things this will not do: merge without fresh local
 verify evidence from THIS run; trust a stale read; treat the usual first-read `UNKNOWN` as an answer;
 or let `CLEAN` on a repo with no required checks pass for "reviewed" — it says so out loud instead.
 Everything else parks with the reason. Zero deps.
@@ -118,7 +119,8 @@ ENFORCEMENT_GATES = (
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "work.auto_merge"),
      "settings": (),
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
-                  "`mergeStateStatus CLEAN` (a still-pending required check is armed, not merged)",
+                  "`mergeStateStatus CLEAN` (REST first, one GraphQL fallback; an unknown state "
+                  "never reads as CLEAN; a still-pending required check is armed, not merged)",
      "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
                   "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
                   "returns on off -- only the merge itself is skipped",
@@ -3460,21 +3462,35 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     already been changed. Four required checks passed every time — correctly, about the wrong code.
 
     A green check on a head you did not review is worse than a red one, so this fails CLOSED: an
-    unreadable head on either side refuses rather than merges."""
+    unreadable head on either side refuses rather than merges.
+
+    REST first (#895 slice 4a-2). Each attempt reads `gh_api.view_pr_gh(... mergeable, mergeStateStatus,
+    headRefOid)` (one `pulls/<n>` GET; an absent or unrecognised `mergeable` / `mergeable_state` is an
+    error, never CLEAN or BEHIND). Once the UNKNOWN loop settles and the pull reported a head, the rollup
+    is read for exactly THAT head with `gh_api.pr_check_rollup_gh` (check-runs, then statuses), before
+    the local-head read, so every `data` returned after a rollup read carries the four keys consumers read
+    (`_behind_transient`, `normalise_ci_rollup`, `_ci_failed_check`, `ci_repair`); the
+    `_PARK_NO_REMOTE_HEAD` park (no head to query) carries no rollup. The rollup read is
+    retried on the pull read's budget, but only for transient failures (`gh_api.FALLBACK_KINDS`): in a
+    cloud session there is no fallback, and one 502 must not park. PRECEDENCE: a rollup still unreadable
+    after its retries parks `could not read PR state` with `{}`, which hides STALE HEAD, an unreadable
+    local head, UNKNOWN, CONFLICTING and BEHIND (a BEHIND PR parks rather than rebases that round). It
+    still fails closed. A push between the two reads can also make the GraphQL fallback answer for a
+    newer head than the one queried; that is refused, so it parks the same way, not as STALE HEAD."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     if not rec or not rec.get("pr"):
         return False, "no PR for this goal — run `work.py pr` first", {}
     data = {}
+    api = _pr_api_run(run, rec["worktree"])
     # Outer loop: while required checks have not ANSWERED, re-read the PR. Re-reading (not
     # re-judging cached data) is the point -- the whole question is whether GitHub's answer has
     # changed. The stale-head check below therefore re-runs on every round too.
     for pending_round in range(PENDING_ATTEMPTS + 1):
       for attempt in range(UNKNOWN_ATTEMPTS):
           try:
-              data = json.loads(run(rec["worktree"], [
-                  "gh", "pr", "view", rec["pr"],
-                  "--json", "mergeable,mergeStateStatus,statusCheckRollup,headRefOid"]))
+              data = gh_api.view_pr_gh(api, rec["pr"], ["mergeable", "mergeStateStatus", "headRefOid"],
+                                       sdlc_dir=sdlc_dir)
           except Exception as exc:            # noqa: BLE001 - a raising read must fail closed, not crash
               if attempt == UNKNOWN_ATTEMPTS - 1:
                   return False, f"{_PARK_PR_STATE_UNREADABLE} ({exc})", {}
@@ -3487,6 +3503,11 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
 
       # Before any GitHub verdict is believed: is GitHub even looking at what we reviewed?
       remote_head = (data.get("headRefOid") or "").strip()
+      if remote_head:
+          rollup, exc = _read_rollup(api, rec["pr"], remote_head, sdlc_dir, sleep)
+          if exc is not None:
+              return False, f"{_PARK_PR_STATE_UNREADABLE} ({exc})", {}
+          data["statusCheckRollup"] = rollup
       try:
           local_head = run(rec["worktree"], ["git", "rev-parse", "HEAD"]).strip()
       except Exception as exc:                # noqa: BLE001 - unreadable tip must never merge
@@ -3529,6 +3550,21 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
           # Not a check problem at all (a required review, say). Unchanged.
           return False, f"not safe to merge (mergeStateStatus={status})", data
       return True, "clean and safe", data
+
+
+def _read_rollup(api, pr, head, sdlc_dir, sleep):
+    """-> (rollup, None) or (None, exc). gate()'s rollup read for exactly `head`, on the pull read's budget
+    (UNKNOWN_ATTEMPTS attempts, UNKNOWN_BACKOFF doubling), but retried ONLY for a transient
+    `gh_api.FALLBACK_KINDS` failure: a permission 403, a malformed or truncated page, or a refused sha is
+    deterministic and parks at once rather than sleeping ~21 s for the same answer."""
+    for attempt in range(UNKNOWN_ATTEMPTS):
+        try:
+            return gh_api.pr_check_rollup_gh(api, pr, head, sdlc_dir=sdlc_dir), None
+        except Exception as exc:                # noqa: BLE001 - unreadable rollup must fail closed
+            transient = isinstance(exc, gh_api.GhApiError) and exc.kind in gh_api.FALLBACK_KINDS
+            if not transient or attempt == UNKNOWN_ATTEMPTS - 1:
+                return None, exc
+            sleep(UNKNOWN_BACKOFF * (2 ** attempt))
 
 
 def merge_rights(sdlc_dir, config, goal, run=None):

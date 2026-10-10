@@ -68,9 +68,33 @@ HEAD_SHA = "0" * 40
 REMOTE_URL = "git@github.com:acme/app.git"
 
 
-def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), head=HEAD_SHA):
-    return json.dumps({"mergeable": mergeable, "mergeStateStatus": status, "headRefOid": head,
-                       "statusCheckRollup": [{"name": n, "conclusion": c} for n, c in checks]})
+def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), head=HEAD_SHA, statuses=(),
+          **pull):
+    """#895 4a-2: the handler LIST one settled gate round reads over REST -- the `pulls/7` body (PR_GET),
+    then `commits/<head>/check-runs` and `commits/<head>/status` -- built from gh-shaped inputs by
+    `prfake`. `checks` are `(name, conclusion)` CheckRuns ("" = still running), `statuses` are `(context,
+    state)` StatusContexts. The pull body is a SUPERSET (`prfake.rest_pull`), so it also answers
+    merge_rights / the review gate's author read: `**pull` carries `isCrossRepository=`, `author=`, ...
+    Spread it FIRST into `_runner`'s handlers (first substring match wins) and never beside `_rights()`
+    (use `_perm()`), so there is ONE pull body per test."""
+    return prfake.gate_handlers(prfake.rest_pull(mergeable=mergeable, mergeStateStatus=status, headRefOid=head,
+                                                 **pull), checks, statuses, head)
+
+
+def _reads(run, token):
+    """How many calls carried `token` -- e.g. PR_GET (gate pull reads), STATUS_READ (one per settled round)."""
+    return sum(token in c for c in run.calls)
+
+
+#: one per settled gate round (the rollup's last read): what `"pr view"` / `"mergeStateStatus"` counted
+#: before #895 4a-2 moved the gate's single GraphQL read onto three REST reads.
+STATUS_READ = "/status --method GET"
+CHECK_RUNS_READ = "/check-runs --method GET"
+
+
+def _reads_pr(line):
+    """True when `line` reads the PR in any form: `gh pr view`, the REST pull, or its rollup (#895 4a-2)."""
+    return any(t in line for t in ("pr view", "pulls/7", "check-runs", "/status"))
 
 
 def _merged_pr(sha="a" * 40):
@@ -166,12 +190,9 @@ def test_ci_repair_cap_falls_back_to_the_existing_failed_outcome_with_the_check_
 
 def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dispatch(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
-    run = _runner([
-        (PR_GET, prfake.rest_pull()),
-        ("gh repo view --json viewerPermission", "ADMIN"),
-        ("gh pr view 7 --json mergeable", _view(status="BLOCKED", checks=(("lint", "FAILURE"),))),
-    ])
-    # The base gate response deliberately lacks a details URL; its fail-closed repair fallback
+    run = _runner(_view(status="BLOCKED", checks=(("lint", "FAILURE"),))
+                  + [("gh repo view --json viewerPermission", "ADMIN")])
+    # The base gate response deliberately lacks an Actions details URL; its fail-closed repair fallback
     # preserves the named failed outcome instead of issuing an agent a blind instruction.
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
     assert out == "PARK: failing required check lint has no readable Actions log"
@@ -368,9 +389,14 @@ def _pr_state(state="OPEN", auto_merge=False, **kw):
 # Ordered BEFORE any generic handler that would also match `pulls/7`. merge_rights' fork check is now the
 # REST `pulls/7 --method GET` read (PR_GET); the gate's `gh pr view --json mergeable` is a different call.
 def _rights(cross=False, perm="ADMIN", **pull):
-    return [(PR_GET, prfake.rest_pull(isCrossRepository=cross, **pull)),
-            ("viewerPermission", perm),
-            ("nameWithOwner", "acme/app")]
+    return [(PR_GET, prfake.rest_pull(isCrossRepository=cross, **pull))] + _perm(perm)
+
+
+def _perm(perm="ADMIN"):
+    """merge_rights' permission reads only, for a test whose ONE pull body comes from `_view()` (#895 4a-2).
+    No `cross` kwarg on purpose: a fork flag goes on `_view(isCrossRepository=True)`, so it can never be
+    silently dropped by a second, shadowed pull body."""
+    return [("viewerPermission", perm), ("nameWithOwner", "acme/app")]
 
 
 def _protected(checks=("ci",), reviews=0):
@@ -2391,28 +2417,29 @@ def test_gate_retries_the_lazy_unknown_then_accepts(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     seen = []
+    clean = _view()
 
-    def view(_line):
+    def pull(_line):
         seen.append(1)
-        return _view(mergeable="UNKNOWN") if len(seen) < 3 else _view()
+        return _view(mergeable="UNKNOWN")[0][1] if len(seen) < 3 else clean[0][1]
 
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", view)]), sleep=NOSLEEP)
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([(PR_GET, pull)] + clean[1:]), sleep=NOSLEEP)
     assert ok and verdict == "clean and safe" and len(seen) == 3
 
 
 def test_gate_parks_on_a_persistent_unknown(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _view(mergeable="UNKNOWN"))])
+    run = _runner(_view(mergeable="UNKNOWN"))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and "UNKNOWN" in verdict
-    assert sum("pr view" in c for c in run.calls) == work.UNKNOWN_ATTEMPTS
+    assert _reads(run, PR_GET) == work.UNKNOWN_ATTEMPTS
 
 
 def test_gate_parks_on_conflicts(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", _view("CONFLICTING", "DIRTY"))]),
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(_view("CONFLICTING", "DIRTY")),
                                sleep=NOSLEEP)
     assert not ok and "conflicts" in verdict
 
@@ -2420,7 +2447,7 @@ def test_gate_parks_on_conflicts(tmp_path):
 def test_gate_reports_behind_for_the_caller_to_act_on(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", _view(status="BEHIND"))]),
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(_view(status="BEHIND")),
                                sleep=NOSLEEP)
     assert not ok and verdict == work.BEHIND
 
@@ -2429,14 +2456,14 @@ def test_gate_names_the_failing_check(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     view = _view(status="UNSTABLE", checks=(("lint", "SUCCESS"), ("tests", "FAILURE")))
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", view)]), sleep=NOSLEEP)
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(view), sleep=NOSLEEP)
     assert not ok and "UNSTABLE" in verdict and "tests" in verdict and "lint" not in verdict
 
 
 def test_gate_parks_when_review_is_still_required(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", _view(status="BLOCKED"))]),
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(_view(status="BLOCKED")),
                                sleep=NOSLEEP)
     assert not ok and "BLOCKED" in verdict
 
@@ -2450,13 +2477,18 @@ def test_gate_parks_with_a_usable_reason_when_pr_view_keeps_raising(tmp_path):
     and review_gate (fails open), this read had NO guard at all before F25."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", RuntimeError("gh: HTTP 502 Bad Gateway"))])
+    bad = RuntimeError("gh: HTTP 502 Bad Gateway")
+    run = _runner([(PR_GET, bad), ("pr view", bad)])      # REST 502, and its one GraphQL fallback too
     ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok
     assert "could not read PR state" in verdict and "502" in verdict
     assert data == {}
-    # exhausted every retry attempt before giving up, same budget as the UNKNOWN-persists case
-    assert sum("pr view" in c for c in run.calls) == work.UNKNOWN_ATTEMPTS
+    # exhausted every retry attempt before giving up, same budget as the UNKNOWN-persists case. #895
+    # 4a-2: each attempt is REST then ONE `gh pr view` fallback, until the shared breaker opens after
+    # BREAKER_THRESHOLD (3) consecutive REST failures and the 4th attempt goes straight to the fallback.
+    assert _reads(run, PR_GET) == 3
+    assert _reads(run, "pr view") == work.UNKNOWN_ATTEMPTS == 4
+    assert not any(t in c for c in run.calls for t in (CHECK_RUNS_READ, STATUS_READ))
 
 
 def test_gate_retries_past_a_transient_pr_view_error_then_succeeds(tmp_path):
@@ -2465,15 +2497,233 @@ def test_gate_retries_past_a_transient_pr_view_error_then_succeeds(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     seen = []
+    clean = _view()
 
-    def view(_line):
+    def pull(_line):
         seen.append(1)
         if len(seen) == 1:
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return _view()
+        return clean[0][1]
 
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", view)]), sleep=NOSLEEP)
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([(PR_GET, pull)] + clean[1:]), sleep=NOSLEEP)
     assert ok and verdict == "clean and safe" and len(seen) == 2
+
+
+# --- #895 slice 4a-2: the gate reads REST first (pull, then the rollup for the pull's own head) ---------
+
+_BAD_GATEWAY = "gh: Server Error (HTTP 502)"
+
+
+def _gate_run(pull, runs=None, statuses=None, head=HEAD_SHA, extra=()):
+    """One pull body plus raw rollup bodies (str, Exception, or callable) for `head`."""
+    return _runner([(PR_GET, pull),
+                    (prfake.check_runs_get(head), prfake.rest_check_runs([("ci", "SUCCESS")]) if runs is None else runs),
+                    (prfake.status_get(head), prfake.rest_statuses([]) if statuses is None else statuses)]
+                   + list(extra))
+
+
+def test_gate_reads_pull_then_rollup_for_the_pull_head_never_pr_view(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner(_view())
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert ok and verdict == "clean and safe"
+    reads = [c for c in run.calls if _reads_pr(c)]
+    assert reads == ["gh api repos/{owner}/{repo}/pulls/7 --method GET",
+                     "gh api repos/{owner}/{repo}/commits/%s/check-runs --method GET -f per_page=100 -f page=1" % HEAD_SHA,
+                     "gh api repos/{owner}/{repo}/commits/%s/status --method GET -f per_page=100 -f page=1" % HEAD_SHA]
+    assert set(data) == {"mergeable", "mergeStateStatus", "headRefOid", "statusCheckRollup"}
+    assert data["statusCheckRollup"][0]["__typename"] == "CheckRun"
+
+
+def test_gate_c1_absent_mergeable_parks_unreadable_never_merges(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    view = _view(mergeable=prfake.ABSENT)
+    ok, verdict, data = work.gate(d, ON, goal, run=_runner(view), sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    run = _runner(_view(mergeable=prfake.ABSENT) + _perm() + _protected())
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: could not read PR state")
+    assert not any("pr merge" in c for c in run.calls)
+
+
+@pytest.mark.parametrize("state", ["CLEAN", "ok", prfake.ABSENT], ids=["upper-CLEAN", "ok", "absent"])
+def test_gate_c2_unrecognised_merge_state_parks_unreadable_never_behind(tmp_path, state):
+    """BEHIND force-push-rebases, CLEAN merges: an unrecognised `mergeable_state` reads as neither."""
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    view = _view(mergeable_state=state)
+    ok, verdict, data = work.gate(d, ON, goal, run=_runner(view), sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    run = _runner(_view(mergeable_state=state) + _perm() + _protected())
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: could not read PR state")
+    assert not any("rebase" in c or "pr merge" in c for c in run.calls)
+
+
+def test_gate_c3_unknown_merge_state_overrides_a_true_mergeable(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner(_view(mergeable="MERGEABLE", status="UNKNOWN"))
+    ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict == work._PARK_MERGEABILITY_UNKNOWN
+    assert _reads(run, PR_GET) == work.UNKNOWN_ATTEMPTS
+
+
+def test_gate_c4_absent_head_sha_parks_without_a_rollup_read(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=prfake.ABSENT))])
+    ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict == work._PARK_NO_REMOTE_HEAD
+    assert not any(CHECK_RUNS_READ in c or STATUS_READ in c for c in run.calls)
+
+
+def test_gate_c5_truncated_check_runs_park_unreadable(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _gate_run(prfake.rest_pull(), runs=prfake.rest_check_runs([("ci", "SUCCESS")], total=5))
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    assert "truncated" in verdict
+
+
+def test_gate_c6_completed_check_run_without_conclusion_parks_unreadable(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    runs = json.dumps({"total_count": 1, "check_runs": [
+        {"name": "ci", "status": "completed", "conclusion": None, "details_url": "u"}]})
+    ok, verdict, data = work.gate(d, ON, goal, run=_gate_run(prfake.rest_pull(), runs=runs), sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+
+
+def test_gate_c7_status_page_without_statuses_parks_unreadable(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    statuses = json.dumps({"total_count": 0, "state": "success"})
+    ok, verdict, data = work.gate(d, ON, goal, run=_gate_run(prfake.rest_pull(), statuses=statuses),
+                                  sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+
+
+def test_gate_c8_rollup_is_read_for_the_pull_head_and_a_local_mismatch_is_stale(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    remote, local = "a" * 40, "b" * 40
+    run = _runner(_view(head=remote) + [("rev-parse HEAD", local)])
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict.startswith("STALE HEAD")
+    assert any("commits/%s/check-runs" % remote in c for c in run.calls)
+    assert not any("commits/%s/" % local in c for c in run.calls)
+    assert data["headRefOid"] == remote and "statusCheckRollup" in data
+
+
+def test_gate_names_a_failing_status_context(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner(_view(status="BLOCKED", checks=(), statuses=(("ci/legacy", "failure"),)))
+    ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and "failing: ci/legacy" in verdict
+
+
+def test_gate_rest_details_url_reaches_ci_repair(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    runs = json.dumps({"total_count": 1, "check_runs": [
+        {"name": "lint", "status": "completed", "conclusion": "failure",
+         "details_url": "https://github.com/acme/app/actions/runs/42/job/9"}]})
+    run = _gate_run(prfake.rest_pull(mergeStateStatus="BLOCKED"), runs=runs,
+                    extra=_perm() + _protected() + [("gh run view 42 --log-failed", "E999 planted")])
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("REPAIR: implement CI fix cycle 1/"), out
+    assert "gh run view 42 --log-failed" in run.calls
+
+
+def test_gate_cloud_session_never_falls_back_to_pr_view(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d)
+    bad = RuntimeError(_BAD_GATEWAY)
+    run = _runner([(PR_GET, bad), (CHECK_RUNS_READ, bad), (STATUS_READ, bad)])
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    assert not any("pr view" in c for c in run.calls)
+
+
+def test_gate_rollup_read_is_retried_once_past_a_502_in_a_cloud_session(tmp_path, monkeypatch):
+    """No fallback in a cloud session: without the retry one 502 on check-runs would park the goal (and
+    parking strips `sdlc:goal`, so a human would have to re-queue it)."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d)
+    seen, slept = [], []
+
+    def runs(_line):
+        seen.append(1)
+        if len(seen) == 1:
+            raise RuntimeError(_BAD_GATEWAY)
+        return prfake.rest_check_runs([("ci", "SUCCESS")])
+
+    run = _gate_run(prfake.rest_pull(), runs=runs)
+    ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=slept.append)
+    assert ok and verdict == "clean and safe", verdict
+    assert _reads(run, CHECK_RUNS_READ) == 2 and _reads(run, "pr view") == 0
+    assert slept == [work.UNKNOWN_BACKOFF]
+
+
+def test_gate_rollup_502_on_every_attempt_parks_after_the_budget(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _gate_run(prfake.rest_pull(), runs=RuntimeError(_BAD_GATEWAY))
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    assert "502" in verdict
+    assert _reads(run, CHECK_RUNS_READ) == work.UNKNOWN_ATTEMPTS
+
+
+def test_gate_rollup_permission_403_parks_at_once_without_sleeping(tmp_path):
+    """Retrying is for transient failures only (gh_api.FALLBACK_KINDS): a permission 403 (a fine-grained
+    token without `checks:read`, DERIVED) or a malformed body will not change in 21 s of backoff."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    slept = []
+    run = _gate_run(prfake.rest_pull(),
+                    runs=RuntimeError("gh: Resource not accessible by integration (HTTP 403)"))
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=slept.append)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    assert _reads(run, CHECK_RUNS_READ) == 1 and slept == [] and _reads(run, "pr view") == 0
+
+
+@pytest.mark.parametrize("case", ["stale-head", "behind", "conflicting"])
+def test_gate_unreadable_rollup_precedes_every_later_verdict(tmp_path, monkeypatch, case):
+    """D4 precedence, stated: a rollup still unreadable after its retries hides STALE HEAD, BEHIND and
+    CONFLICTING behind `could not read PR state` with `{}` -- still a park, never a merge or a rebase."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    pull = {"stale-head": dict(), "behind": dict(mergeStateStatus="BEHIND"),
+            "conflicting": dict(mergeable="CONFLICTING", mergeStateStatus="DIRTY")}[case]
+    extra = [("rev-parse HEAD", "b" * 40)] if case == "stale-head" else []
+    run = _gate_run(prfake.rest_pull(**pull), runs=RuntimeError(_BAD_GATEWAY), extra=extra)
+    ok, verdict, data = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
+    assert not ok and verdict.startswith(work._PARK_PR_STATE_UNREADABLE) and data == {}
+    run = _gate_run(prfake.rest_pull(**pull), runs=RuntimeError(_BAD_GATEWAY), extra=extra + _perm() + _protected())
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: could not read PR state"), out
+    assert not any("rebase" in c or "pr merge" in c for c in run.calls)
+
+
+# --- #895 4a-2, R4 decision: the `reviewDecision` read is UNCHANGED (GraphQL-only, fails closed) -----
+
+_APPROVAL = {"work": {"enabled": True, "require_review": "approval"}}
+
+
+def test_r4_review_decision_read_argv_is_unchanged(tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    run = _runner(_review(decision="APPROVED"))
+    assert work.review_gate(d, _APPROVAL, g, run=run) == (True, "")
+    assert "gh pr view 7 --json reviewDecision,latestReviews" in run.calls
+
+
+def test_r4_approval_parks_when_the_review_decision_read_is_blocked(tmp_path):
+    """A cloud session's GraphQL block: approval mode can never be satisfied, so it parks, never passes."""
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    block = RuntimeError("gh: GitHub access is not enabled for this session. (HTTP 403)")
+    run = _runner([("reviewDecision", block)] + _review(decision="APPROVED"))
+    ok, why = work.review_gate(d, _APPROVAL, g, run=run)
+    assert ok is False and "could not read PR #7's review decision" in why
+
+
+def test_r4_approval_parks_on_a_null_review_decision_without_sigma_approve(tmp_path):
+    d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
+    ok, why = work.review_gate(d, _APPROVAL, g, run=_runner(_review(decision=None)))
+    assert ok is False and "not approved yet" in why
 
 
 # --- merge rights: permission is never a preference ----------------------------------------------
@@ -2488,7 +2738,7 @@ def test_a_fork_pr_is_never_merged(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights(cross=True) + [("pr view", _view())])
+    run = _runner(_view(isCrossRepository=True) + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out == "PR #7 opened — fork PR — the upstream maintainer merges"
     assert not any("pr merge" in c for c in run.calls)
@@ -2498,7 +2748,7 @@ def test_read_only_access_opens_the_pr_and_stops(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights(perm="READ") + [("pr view", _view())])
+    run = _runner(_view() + _perm(perm="READ"))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 opened —") and "read access" in out
     assert not any("pr merge" in c for c in run.calls)
@@ -2509,8 +2759,8 @@ def test_unknown_rights_fail_closed(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner([("viewerPermission", RuntimeError("gh: not authenticated"))]
-                  + _rights() + [("pr view", _view())])
+    run = _runner(_view() + [("viewerPermission", RuntimeError("gh: not authenticated"))]
+                  + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "could not determine merge rights" in out
     assert not any("pr merge" in c for c in run.calls)
@@ -2521,7 +2771,7 @@ def test_a_no_rights_outcome_is_not_a_park(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights(perm="TRIAGE") + [("pr view", _view())])
+    run = _runner(_view() + _perm(perm="TRIAGE"))
     assert not work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP).startswith("PARK:")
 
 
@@ -2654,8 +2904,7 @@ def test_merge_refuses_without_fresh_local_evidence(tmp_path):
     """CI is not the only leg. No verify for THIS run means no merge, whatever GitHub says."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner(_rights() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr()),
-                                                ("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     assert work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP).startswith("PARK: no fresh verify")
     assert not any("pr merge" in c for c in run.calls)
 
@@ -2664,7 +2913,7 @@ def test_merge_refuses_evidence_from_a_previous_run(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal, age=10_000)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     assert "predates this run" in work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP)
 
 
@@ -2672,7 +2921,7 @@ def test_merge_refuses_a_failing_verify(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal, exit_code=1)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     assert "last verify FAILED" in work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP)
 
 
@@ -2685,7 +2934,7 @@ def test_merge_lands_directly_when_clean_and_safe(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci",), reviews=1) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert "1 required check" in out and "1 required review" in out
@@ -2698,7 +2947,7 @@ def test_merge_deletes_the_remote_branch_after_a_direct_landing(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci",), reviews=1) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert any(c == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
@@ -2709,9 +2958,8 @@ def test_merge_never_attempts_branch_delete_when_the_direct_merge_is_refused(tmp
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected()
-                  + [("pr view", _view()),
-                     ("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
+    run = _runner(_view() + _perm() + _protected()
+                  + [("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
     work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert not any("DELETE" in c for c in run.calls)
 
@@ -2725,9 +2973,8 @@ def test_merge_reports_success_even_when_the_branch_delete_fails_from_a_worktree
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci",), reviews=1)
-                  + [("pr view", _view()),
-                     ("DELETE", RuntimeError(
+    run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1)
+                  + [("DELETE", RuntimeError(
                          "failed to run git: fatal: 'main' is already used by worktree"))])
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
@@ -2747,7 +2994,7 @@ def test_merge_never_raises_when_the_record_is_missing_a_branch_name(tmp_path):
     rec = work._record(d, goal)
     del rec["branch"]
     work._save(d, goal, rec)
-    run = _runner(_rights() + _protected(checks=("ci",), reviews=1) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert not any("DELETE" in c for c in run.calls)
@@ -2760,8 +3007,7 @@ def test_merge_does_not_delete_a_branch_when_only_arming_auto_merge(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert not any("DELETE" in c for c in run.calls)
@@ -2800,7 +3046,7 @@ def _landed(extra=(), issue_state="open"):
     post-landing, to decide -- from GitHub's own observed fact, never from any base, live or
     recorded -- whether its closing keyword already fired. Pass `issue_state=None` to simulate an
     unreadable issue (the read raises), the degrade path's own trigger."""
-    handlers = _rights() + list(extra) + [("pr view", _view())]
+    handlers = _view() + _perm() + list(extra)
     if issue_state is None:
         handlers = handlers + [("--jq .state", RuntimeError("HTTP 500: could not read issue"))]
     else:
@@ -2965,7 +3211,7 @@ def test_a_close_request_never_claims_credit_it_cannot_prove(tmp_path):
     goal = _started(d, goal="1642.md", base="feature/autowatch-dryrun")
     _evidence(d, goal)
     handlers, raced = _issue_state_raced_closed("open")
-    run = _runner(_rights() + [("pr view", _view())] + handlers)
+    run = _runner(_view() + _perm() + handlers)
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert raced["closed"] is True                        # the modelled race did happen
     assert out.startswith("PR #7 merged")
@@ -2987,8 +3233,7 @@ def test_an_armed_pr_never_closes_its_issue(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, goal="1642.md", base="feature/autowatch-dryrun")
     _evidence(d, goal)
-    run = _runner(_rights() + _default_branch("main") + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _default_branch("main") + _auto_merge_allowed(True))
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert _issue_calls(run, "1642") == [], run.calls
@@ -3025,7 +3270,7 @@ def test_a_pr_that_could_only_be_opened_never_closes_its_issue(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, goal="1642.md", base="feature/autowatch-dryrun")
     _evidence(d, goal)
-    run = _runner(_rights(cross=True) + _default_branch("main") + [("pr view", _view())])
+    run = _runner(_view(isCrossRepository=True) + _perm() + _default_branch("main"))
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 opened —")
     assert _issue_calls(run, "1642") == [], run.calls
@@ -3143,7 +3388,7 @@ def test_merge_lands_directly_on_a_repo_that_disallows_auto_merge(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected() + _auto_merge_allowed(False) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + _auto_merge_allowed(False))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
@@ -3158,9 +3403,8 @@ def test_merge_parks_when_a_direct_merge_is_refused(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected()
-                  + [("pr view", _view()),
-                     ("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
+    run = _runner(_view() + _perm() + _protected()
+                  + [("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert "405" in out and "Base branch was modified" in out
@@ -3173,8 +3417,7 @@ def test_merge_protected_policy_still_arms_on_pending_checks_when_auto_merge_is_
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
@@ -3188,9 +3431,8 @@ def test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge(tmp_p
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", ""))),
-                     ("pr merge", RuntimeError('HTTP 405: Required status check "slow" is expected'))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
+                  + [("pr merge", RuntimeError('HTTP 405: Required status check "slow" is expected'))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
@@ -3204,9 +3446,8 @@ def test_merge_parks_when_arming_itself_is_refused_despite_allow_auto_merge(tmp_
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", ""))),
-                     ("pr merge", RuntimeError("HTTP 422: auto-merge is not allowed for this repository"))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
+                  + [("pr merge", RuntimeError("HTTP 422: auto-merge is not allowed for this repository"))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert "422" in out
@@ -3237,15 +3478,14 @@ def test_merge_arms_auto_merge_when_required_checks_are_still_pending_past_the_b
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
     # proves merge() relies on gate()'s existing budget rather than adding a second one of its own.
     # Filtered on "mergeStateStatus" (gate()'s own --json field list) so merge_rights()'s SEPARATE,
     # single fork read (REST `pulls/7 --method GET` since #895 4a-1, formerly a `gh pr view`) isn't counted.
-    assert sum("mergeStateStatus" in c for c in run.calls) == work.PENDING_ATTEMPTS + 1
+    assert _reads(run, STATUS_READ) == work.PENDING_ATTEMPTS + 1
 
 
 def test_merge_parks_not_arms_on_a_genuinely_failing_required_check(tmp_path):
@@ -3253,8 +3493,8 @@ def test_merge_parks_not_arms_on_a_genuinely_failing_required_check(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _mixed(("ci", "SUCCESS"), ("tests", "FAILURE"),
-                                                   status="UNSTABLE"))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("tests", "FAILURE"),
+                                                   status="UNSTABLE") + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: failing required check tests has no readable Actions log")
     assert not any("pr merge" in c for c in run.calls)
@@ -3272,8 +3512,7 @@ def test_merge_logs_a_merge_armed_entry_to_the_ledger(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     ledger.reset_actor_cache()
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     assert work.merge(d, cfg, goal, run=run, sleep=NOSLEEP).startswith("auto-merge armed on PR #7")
     entries = [(e["kind"], e.get("pr")) for e in ledger.read_all(d)]
     assert ("merge-armed", "7") in entries     # the arm lands on the team ledger, not only `done`
@@ -3293,8 +3532,7 @@ def test_merge_logs_a_merged_entry_to_the_ledger_on_a_direct_landing(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     ledger.reset_actor_cache()
-    run = _runner(_rights() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr()),
-                                                ("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     entries = [(e["kind"], e.get("pr")) for e in ledger.read_all(d)]
@@ -3306,8 +3544,7 @@ def test_known_direct_merge_emits_core_facts_when_receipt_sharing_is_disabled(tm
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr()),
-                                                ("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     assert work.merge(d, cfg, goal, run=run, sleep=NOSLEEP).startswith("PR #7 merged")
     entries = [event for event in ledger.read_all(d) if event["kind"] == "merged"]
     events = [event for event in journal_events(ledger, d) if event["kind"] == "merge_observed"]
@@ -3390,8 +3627,7 @@ def test_merge_then_done_refusal_writes_merged_only_once(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     ledger.reset_actor_cache()
-    run = _runner(_rights() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr()),
-                                                ("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
 
@@ -3410,7 +3646,7 @@ def test_merge_leaves_the_pr_alone_when_auto_merge_is_off(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
     assert "auto_merge is off" in out and not any("pr merge" in c for c in run.calls)
     assert not any("protection" in c for c in run.calls)      # off short-circuits before the API call
@@ -3424,7 +3660,7 @@ def test_merge_leaves_the_pr_alone_when_auto_merge_is_off_even_with_pending_chec
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm())
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not any("pr merge" in c for c in run.calls)
     assert "auto_merge is off" in out and "pending" in out.lower()
@@ -3435,13 +3671,7 @@ def test_merge_rebases_a_behind_branch_then_merges(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    seen = []
-
-    def view(_line):
-        seen.append(1)
-        return _view(status="BEHIND") if len(seen) == 1 else _view()
-
-    run = _runner(_rights() + _protected() + [("pr view", view)])
+    run = _runner(_sequence(_view(status="BEHIND"), _view()) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert any("rebase --autostash origin/main" in c for c in run.calls)
@@ -3453,8 +3683,7 @@ def test_a_conflicting_rebase_aborts_and_parks(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _view(status="BEHIND")),
-                               ("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out
     assert "git rebase --abort" in run.calls
@@ -3678,7 +3907,7 @@ def test_a_pure_insertion_changelog_conflict_is_union_merged(tmp_path):
     _evidence(d, goal)
     wt = pathlib.Path(work._record(d, goal)["worktree"])
     (wt / "CHANGELOG.md").write_text(_D3_PURE, encoding="utf-8")
-    run = _runner(_rights() + _protected() + [("pr view", _sequence(_view(status="BEHIND"), _view()))]
+    run = _runner(_sequence(_view(status="BEHIND"), _view()) + _perm() + _protected()
                   + _conflict())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     text = (wt / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -3697,7 +3926,7 @@ def test_an_edited_line_in_the_changelog_conflict_still_aborts(tmp_path):
     _evidence(d, goal)
     wt = pathlib.Path(work._record(d, goal)["worktree"])
     (wt / "CHANGELOG.md").write_text(_D3_EDITED, encoding="utf-8")
-    run = _runner(_rights() + [("pr view", _view(status="BEHIND"))] + _conflict())
+    run = _runner(_view(status="BEHIND") + _perm() + _conflict())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred")
     assert "git rebase --abort" in run.calls
@@ -3713,7 +3942,7 @@ def test_an_add_add_changelog_conflict_aborts_because_there_is_no_base(tmp_path)
     _evidence(d, goal)
     wt = pathlib.Path(work._record(d, goal)["worktree"])
     (wt / "CHANGELOG.md").write_text(_D3_PURE, encoding="utf-8")
-    run = _runner(_rights() + [("pr view", _view(status="BEHIND"))]
+    run = _runner(_view(status="BEHIND") + _perm()
                   + _conflict(stages="100644 bbb 2\tCHANGELOG.md\n100644 ccc 3\tCHANGELOG.md"))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred")
@@ -3725,7 +3954,7 @@ def test_a_conflict_touching_more_than_the_changelog_aborts(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _view(status="BEHIND"))]
+    run = _runner(_view(status="BEHIND") + _perm()
                   + _conflict(unmerged="CHANGELOG.md\nskills/sigma-loop/scripts/work.py"))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred")
@@ -3766,7 +3995,7 @@ def test_a_second_conflicting_commit_in_the_replay_is_also_union_merged(tmp_path
             raise RuntimeError("CONFLICT (content): CHANGELOG.md")     # the NEXT replayed commit
         return ""
 
-    run = _runner(_rights() + _protected() + [("pr view", _sequence(_view(status="BEHIND"), _view()))]
+    run = _runner(_sequence(_view(status="BEHIND"), _view()) + _perm() + _protected()
                   + [("rebase --continue", cont), ("checkout --merge", recheckout)] + _conflict())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert rounds["n"] == 2                                            # it really did go twice
@@ -3790,7 +4019,7 @@ def test_the_union_loop_is_bounded_and_gives_up(tmp_path):
         tries["n"] += 1
         raise RuntimeError("CONFLICT (content): CHANGELOG.md")         # never resolves
 
-    run = _runner(_rights() + [("pr view", _view(status="BEHIND"))]
+    run = _runner(_view(status="BEHIND") + _perm()
                   + [("rebase --continue", cont), ("checkout --merge", recheckout)] + _conflict())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert tries["n"] == work.UNION_ROUNDS                             # bounded, not unbounded
@@ -3800,18 +4029,41 @@ def test_the_union_loop_is_bounded_and_gives_up(tmp_path):
 
 # --- #406: a BEHIND race must self-heal within ONE merge() call, but stay BOUNDED -----------------
 
-def _sequence(*responses):
-    """A `pr view` handler that returns each response in turn, repeating the LAST forever -- so a
-    test can script BEHIND -> (transient) -> settled across a single merge() call. `gate()` may read
-    `pr view` several times per call (its UNKNOWN/PENDING budgets), so `_runner`'s first-substring
-    match drives this; the repeat-last tail is what those inner re-reads see."""
-    seen = []
+class _Seq(list):
+    """A handler list with a `rounds` counter (settled gate rounds served so far)."""
 
-    def view(_line):
-        i = min(len(seen), len(responses) - 1)
-        seen.append(1)
-        return responses[i]
-    return view
+
+def _sequence(*views):
+    """ONE handler list serving `_view()` lists in turn, repeating the LAST forever -- so a test can script
+    BEHIND -> (transient) -> settled across a single merge() call. The pull / check-runs / status handlers
+    all serve view[i]; i advances after each STATUS read (the last read of a settled gate round = the one
+    `gh pr view` per round before #895 4a-2), so merge_rights' earlier pull read and the gate's UNKNOWN
+    re-reads see view[i] without advancing. A check-runs / status read for any sha other than view[i]'s
+    head gets a malformed body (the gate then parks unreadable), so the URL sha stays asserted."""
+    i = [0]
+    seq = _Seq()
+    seq.rounds = 0
+
+    def cur():
+        return views[min(i[0], len(views) - 1)]
+
+    def pull(_line):
+        return cur()[0][1]
+
+    def runs(line):
+        token, body = cur()[1]
+        return body if token in line else "{}"
+
+    def status(line):
+        token, body = cur()[2]
+        if token not in line:
+            return "{}"
+        i[0] += 1
+        seq.rounds += 1
+        return body
+
+    seq.extend([(PR_GET, pull), (CHECK_RUNS_READ, runs), (STATUS_READ, status)])
+    return seq
 
 
 def test_behind_reconcile_self_heals_transient_window_within_one_merge(tmp_path):
@@ -3825,7 +4077,7 @@ def test_behind_reconcile_self_heals_transient_window_within_one_merge(tmp_path)
     view = _sequence(_view(status="BEHIND"),
                      _view(status="BLOCKED", checks=()),   # rebased head: no check attached yet
                      _view())                              # settles CLEAN
-    run = _runner(_rights() + _protected() + [("pr view", view)])
+    run = _runner(view + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
@@ -3843,8 +4095,7 @@ def test_behind_reconcile_arms_when_the_rebased_head_settles_to_pending(tmp_path
     _evidence(d, goal)
     view = _sequence(_view(status="BEHIND"),
                      _mixed(("ci", "SUCCESS"), ("slow", "")))   # rebased head: a check still running
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", view)])
+    run = _runner(view + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7") and "pending" in out
     assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
@@ -3858,7 +4109,7 @@ def test_behind_reconcile_parks_an_unwinnable_race_after_a_bounded_number_of_reb
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view(status="BEHIND"))])
+    run = _runner(_view(status="BEHIND") + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: BEHIND race did not settle") and "merge queue" in out
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == work.BEHIND_REBASES
@@ -3872,15 +4123,14 @@ def test_behind_reconcile_parks_when_the_transient_window_never_closes(tmp_path)
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected()
-                  + [("pr view", _sequence(_view(status="BEHIND"),
-                                           _view(status="BLOCKED", checks=())))])
+    run = _runner(_sequence(_view(status="BEHIND"),
+                                           _view(status="BLOCKED", checks=())) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: not safe to merge") and "BLOCKED" in out
     assert not any("pr merge" in c for c in run.calls)
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == 1
     # initial merge() gate read (1) + exactly BEHIND_ATTEMPTS post-rebase reads -- the bound, pinned.
-    assert sum("mergeStateStatus" in c for c in run.calls) == work.BEHIND_ATTEMPTS + 1
+    assert _reads(run, STATUS_READ) == work.BEHIND_ATTEMPTS + 1
 
 
 def test_behind_reconcile_does_not_poll_past_a_failing_check(tmp_path):
@@ -3889,13 +4139,12 @@ def test_behind_reconcile_does_not_poll_past_a_failing_check(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected()
-                  + [("pr view", _sequence(_view(status="BEHIND"),
-                                           _mixed(("ci", "FAILURE"), status="UNSTABLE")))])
+    run = _runner(_sequence(_view(status="BEHIND"),
+                                           _mixed(("ci", "FAILURE"), status="UNSTABLE")) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: failing required check ci has no readable Actions log")
     assert not any("pr merge" in c for c in run.calls)
-    assert sum("mergeStateStatus" in c for c in run.calls) == 2   # initial + ONE post-rebase, not the budget
+    assert _reads(run, STATUS_READ) == 2   # initial + ONE post-rebase, not the budget
 
 
 def test_behind_reconcile_does_not_poll_past_a_conflict(tmp_path):
@@ -3905,13 +4154,12 @@ def test_behind_reconcile_does_not_poll_past_a_conflict(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected()
-                  + [("pr view", _sequence(_view(status="BEHIND"),
-                                           _view(mergeable="CONFLICTING", status="DIRTY")))])
+    run = _runner(_sequence(_view(status="BEHIND"),
+                                           _view(mergeable="CONFLICTING", status="DIRTY")) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: conflicts with the base branch")
     assert not any("pr merge" in c for c in run.calls)
-    assert sum("mergeStateStatus" in c for c in run.calls) == 2   # not polled past
+    assert _reads(run, STATUS_READ) == 2   # not polled past
 
 
 def test_behind_transient_classification_table():
@@ -3952,7 +4200,7 @@ def test_protected_policy_will_not_merge_an_unprotected_branch(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + UNPROTECTED + [("pr view", _view())])
+    run = _runner(_view() + _perm() + UNPROTECTED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out
     assert not any("pr merge" in c for c in run.calls)
@@ -3964,7 +4212,7 @@ def test_merge_protected_policy_leaves_an_unprotected_branch_alone_even_with_pen
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + UNPROTECTED + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + UNPROTECTED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert not any("pr merge" in c for c in run.calls)
     assert "is not protected" in out and "pending" in out.lower()
@@ -3974,7 +4222,7 @@ def test_always_merges_unprotected_but_says_nothing_gated_it(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + UNPROTECTED + [("pr view", _view())])
+    run = _runner(_view() + _perm() + UNPROTECTED)
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "WARNING" in out and "local verify was the only gate" in out
     assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
@@ -3987,7 +4235,7 @@ def test_checks_that_run_without_being_required_do_not_count_as_protection(tmp_p
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + UNPROTECTED + [("pr view", _view(checks=(("ci", "SUCCESS"),)))])
+    run = _runner(_view(checks=(("ci", "SUCCESS"),)) + _perm() + UNPROTECTED)
     assert "is not protected" in work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
 
 
@@ -3995,7 +4243,7 @@ def test_protection_with_no_requirements_is_not_protection(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=(), reviews=0) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected(checks=(), reviews=0))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert "requires no checks or reviews" in out
     assert not any("pr merge" in c for c in run.calls)
@@ -4012,7 +4260,7 @@ def test_protection_fails_open_when_the_api_returns_non_object_json(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     for shape in ("null", "[]", "42"):
-        run = _runner(_rights() + [("branches/main/protection", shape)] + [("pr view", _view())])
+        run = _runner(_view() + _perm() + [("branches/main/protection", shape)])
         out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
         assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out, shape
         assert not any("pr merge" in c for c in run.calls)
@@ -4132,7 +4380,7 @@ def test_finish_force_releases_the_checkout_even_with_an_open_pr(tmp_path):
     out = work.finish(d, ON, goal, run=run, force=True)
     assert "removed" in out
     assert work._record(d, goal) is None
-    assert not any("pr view" in c for c in run.calls)
+    assert not any(_reads_pr(c) for c in run.calls)
 
 
 def test_finish_proceeds_when_the_pr_is_already_merged(tmp_path):
@@ -4246,7 +4494,7 @@ def test_finish_leaves_both_branches_when_the_goal_never_had_a_pr(tmp_path):
     run = _runner([(PR_GET, _pr_state("MERGED"))])   # must never even be called
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out and "deleted branch" not in out
-    assert not any("pr view" in c for c in run.calls)
+    assert not any(_reads_pr(c) for c in run.calls)
     assert not any("branch -D" in c for c in run.calls)
 
 
@@ -4290,7 +4538,7 @@ def test_finish_force_skips_branch_cleanup_even_when_the_pr_is_actually_merged(t
     run = _runner([(PR_GET, _pr_state("MERGED"))])   # must never even be called
     out = work.finish(d, ON, goal, run=run, force=True)
     assert "removed" in out and "deleted branch" not in out
-    assert not any("pr view" in c for c in run.calls)
+    assert not any(_reads_pr(c) for c in run.calls)
     assert not any("branch -D" in c for c in run.calls)
     assert not any("DELETE" in c for c in run.calls)
 
@@ -4362,7 +4610,7 @@ def test_finish_proceeds_when_the_goal_never_had_a_pr(tmp_path):
     run = _runner([(PR_GET, _pr_state("OPEN"))])       # must never even be called
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out
-    assert not any("pr view" in c for c in run.calls)
+    assert not any(_reads_pr(c) for c in run.calls)
 
 
 def test_finish_recovers_a_record_whose_worktree_admin_entry_another_goal_already_pruned(tmp_path):
@@ -4517,7 +4765,7 @@ def test_cli_root_works_with_the_feature_off(tmp_path, capsys):
 
 
 def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_authors=(), pr_author=None,
-            associations=()):
+            associations=(), pr_get=True):
     """Handlers for the review gate: the marker scan (#895 4a-1: now the REST `issues/7/comments` page
     plus the REST `pulls/7` read for the PR author, both via `_comments`), the `--json
     reviewDecision,latestReviews` read, and the GraphQL thread count. Ordered so the specific
@@ -4534,7 +4782,7 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
     assoc = list(associations) + ["OWNER"] * (len(comments) - len(associations))   # #635: trusted unless a test says otherwise
     rows = [{"body": b, "author": {"login": a}, "authorAssociation": x}
             for b, a, x in zip(comments, authors, assoc)]
-    return _comments(rows, pr_author) + [("reviewDecision", reviews),
+    return _comments(rows, pr_author, pr_get) + [("reviewDecision", reviews),
                                          ("nameWithOwner", "acme/app"), ("graphql", threads)]
 
 
@@ -4542,11 +4790,12 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
 COMMENTS_GET = prfake.comments_get(7)
 
 
-def _comments(rows, pr_author=None):
+def _comments(rows, pr_author=None, pr_get=True):
     """The two REST reads `_comment_directive` makes (#895 4a-1): ONE comments page (gh-shaped `rows`,
     converted by `prfake.rest_comments`) and the `pulls/7` read whose `user.login` is the PR author.
     `pr_author=None` omits `user` (the converter's `{"login": ""}`, read as unknown)."""
-    return [(COMMENTS_GET, prfake.rest_comments(rows)), (PR_GET, prfake.rest_pull(author=pr_author))]
+    return [(COMMENTS_GET, prfake.rest_comments(rows))] + (
+        [(PR_GET, prfake.rest_pull(author=pr_author))] if pr_get else [])
 
 
 def test_review_mode_parses_off_changes_approval_and_true():
@@ -4666,7 +4915,7 @@ def test_merge_parks_when_a_review_requests_changes(tmp_path):
     """The whole point: an ad-hoc Request-changes on an unprotected base stops the auto-merge."""
     cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "changes"}}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"]) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"], pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: changes requested by bo")
     assert not any("pr merge" in c for c in run.calls)                 # never armed the merge
@@ -4675,7 +4924,7 @@ def test_merge_parks_when_a_review_requests_changes(tmp_path):
 def test_merge_arms_when_the_pr_is_approved(tmp_path):
     cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "approval"}}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _review(decision="APPROVED") + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert not out.startswith("PARK") and any("pr merge" in c for c in run.calls)
 
@@ -4812,8 +5061,8 @@ def test_merge_does_not_arm_on_a_non_collaborators_approval(tmp_path):
     """The documented gesture: `work.py merge` under `require_review: approval`."""
     cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "approval"}}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _review(decision=None, comments=["sigma:approve"], comment_authors=["rando"],
-                                      associations=["NONE"]) + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision=None, comments=["sigma:approve"], comment_authors=["rando"],
+                                              associations=["NONE"], pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK") and not any("pr merge" in c for c in run.calls)
 
@@ -5717,7 +5966,7 @@ def test_merge_emits_a_pass_gate_event_on_a_clean_and_safe_merge(tmp_path):
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     events = _gate_events(journal_events(ledger, d), "merge")
@@ -5728,7 +5977,7 @@ def test_merge_emits_a_block_gate_event_with_the_verdict_as_why(tmp_path):
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _view(mergeable="CONFLICTING"))])
+    run = _runner(_view(mergeable="CONFLICTING") + _perm())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: conflicts with the base branch")
     events = _gate_events(journal_events(ledger, d), "merge")
@@ -5743,8 +5992,7 @@ def test_merge_logs_a_warn_gate_event_when_arming_on_pending_checks(tmp_path):
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed")
     events = _gate_events(journal_events(ledger, d), "merge")
@@ -5756,7 +6004,7 @@ def test_merge_review_gate_emits_code_review_gate_event_when_require_review_is_o
     cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "approval"}, **JOURNAL_ON}
     ledger = _load("ledger")
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _review(decision="APPROVED") + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert not out.startswith("PARK")
     events = _gate_events(journal_events(ledger, d), "code_review")
@@ -5770,7 +6018,7 @@ def test_merge_emits_no_code_review_event_when_require_review_is_off(tmp_path):
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}       # require_review unset -> off
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert _gate_events(journal_events(ledger, d), "code_review") == []
 
@@ -5780,7 +6028,7 @@ def test_work_survives_a_raising_ledger_append(tmp_path, monkeypatch):
     `ledger.append` directly instead of `ledger.safe_append`."""
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
 
     def raiser(*a, **k):
         raise RuntimeError("ledger broke")
@@ -5804,7 +6052,7 @@ def test_gate_refuses_when_the_pr_head_is_not_what_we_reviewed(tmp_path):
     """
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _view(head="a" * 40)), ("rev-parse HEAD", "b" * 40)])
+    run = _runner(_view(head="a" * 40) + [("rev-parse HEAD", "b" * 40)])
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok
     assert "STALE HEAD" in verdict
@@ -5816,7 +6064,7 @@ def test_gate_allows_a_head_that_matches(tmp_path):
     """The guard must not block the normal path."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", _view())]), sleep=NOSLEEP)
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(_view()), sleep=NOSLEEP)
     assert ok and verdict == "clean and safe"
 
 
@@ -5825,11 +6073,11 @@ def test_gate_fails_closed_when_a_head_is_unreadable(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
 
-    no_local = _runner([("pr view", _view()), ("rev-parse HEAD", "")])
+    no_local = _runner(_view() + [("rev-parse HEAD", "")])
     ok, verdict, _ = work.gate(d, ON, goal, run=no_local, sleep=NOSLEEP)
     assert not ok and "local branch tip read back empty" in verdict
 
-    no_remote = _runner([("pr view", _view(head=""))])
+    no_remote = _runner(_view(head=""))
     ok, verdict, _ = work.gate(d, ON, goal, run=no_remote, sleep=NOSLEEP)
     assert not ok and "did not report headRefOid" in verdict
 
@@ -5860,15 +6108,16 @@ def test_mechanical_park_verdicts_are_excluded_from_decision_tier_end_to_end(tmp
     d = _sdlc(tmp_path, cfg)
     goal = _started(d)
 
-    # Site work.py:423 -- `gh pr view` keeps raising past every retry.
+    # Site work.py:423 -- the PR read keeps raising past every retry. A 404, not a 502: a transient
+    # failure would open the shared REST breaker (#895) in this sdlc dir and change the next read.
     ok, verdict_pr_state, _ = work.gate(
-        d, ON, goal, run=_runner([("pr view", RuntimeError("gh: HTTP 502 Bad Gateway"))]),
+        d, ON, goal, run=_runner([(PR_GET, RuntimeError("gh: Not Found (HTTP 404)"))]),
         sleep=NOSLEEP)
     assert not ok and "could not read PR state" in verdict_pr_state
 
     # Site work.py:441 -- the local branch tip reads back empty.
     ok, verdict_no_local_head, _ = work.gate(
-        d, ON, goal, run=_runner([("pr view", _view()), ("rev-parse HEAD", "")]), sleep=NOSLEEP)
+        d, ON, goal, run=_runner(_view() + [("rev-parse HEAD", "")]), sleep=NOSLEEP)
     assert not ok and "local branch tip read back empty" in verdict_no_local_head
 
     # Site work.py:714 -- a BEHIND race that never settles inside the rebase budget. Every `gh pr
@@ -5876,7 +6125,7 @@ def test_mechanical_park_verdicts_are_excluded_from_decision_tier_end_to_end(tmp
     # against until BEHIND_REBASES is exhausted -- `git rebase`/`git push` are unmatched substrings
     # here and default to "" (success) per `_runner`'s own contract, so every rebase "succeeds".
     kind, verdict_behind_exhausted = work._reconcile_behind(
-        d, ON, goal, run=_runner([("pr view", _view(status="BEHIND"))]), sleep=NOSLEEP)
+        d, ON, goal, run=_runner(_view(status="BEHIND")), sleep=NOSLEEP)
     assert kind == "park" and "BEHIND race did not settle after" in verdict_behind_exhausted
 
     def boom(*a, **k):
@@ -5915,8 +6164,7 @@ def test_gate_checks_the_head_before_believing_any_github_verdict(tmp_path):
     about the wrong tree, so the head check must come first rather than as a late tie-break."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _view("CONFLICTING", "DIRTY", head="e" * 40)),
-                   ("rev-parse HEAD", "f" * 40)])
+    run = _runner(_view("CONFLICTING", "DIRTY", head="e" * 40) + [("rev-parse HEAD", "f" * 40)])
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok
     assert "STALE HEAD" in verdict, "the head check must win over the conflict report"
@@ -5970,7 +6218,7 @@ def test_start_resume_does_not_re_emit_worktree_start(tmp_path):
 def test_merge_emits_gate_for_merge_and_code_review_to_the_action_log(tmp_path):
     cfg = {"work": {"enabled": True, "auto_merge": "always", "require_review": "approval"}, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _review(decision="APPROVED") + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
     entries = actionlog.read_goal(d, goal)
@@ -5981,7 +6229,7 @@ def test_merge_emits_gate_for_merge_and_code_review_to_the_action_log(tmp_path):
 def test_merge_emits_a_block_gate_to_the_action_log_with_why(tmp_path):
     cfg = {**ALWAYS, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + [("pr view", _view(mergeable="CONFLICTING"))])
+    run = _runner(_view(mergeable="CONFLICTING") + _perm())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: conflicts with the base branch")
     entries = actionlog.read_goal(d, goal)
@@ -5993,7 +6241,7 @@ def test_merge_emits_a_block_gate_to_the_action_log_with_why(tmp_path):
 def test_merge_emits_no_code_review_entry_to_the_action_log_when_require_review_is_off(tmp_path):
     cfg = {**ALWAYS, **ACTIONLOG}          # require_review unset -> off
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     entries = actionlog.read_goal(d, goal)
     assert [e for e in entries if e["kind"] == "gate" and e.get("gate") == "code_review"] == []
@@ -6002,8 +6250,7 @@ def test_merge_emits_no_code_review_entry_to_the_action_log_when_require_review_
 def test_merge_emits_merge_armed_to_the_action_log(tmp_path):
     cfg = {**ALWAYS, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed")
     entries = actionlog.read_goal(d, goal)
@@ -6014,7 +6261,7 @@ def test_merge_emits_merge_armed_to_the_action_log(tmp_path):
 def test_merge_emits_merged_to_the_action_log_on_a_direct_landing(tmp_path):
     cfg = {**ALWAYS, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged")
     entries = actionlog.read_goal(d, goal)
@@ -6047,7 +6294,7 @@ def test_actionlog_survives_a_raising_actionlog_append(tmp_path, monkeypatch):
     `test_work_survives_a_raising_ledger_append` above for the local action log."""
     cfg = {**ALWAYS, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
 
     def raiser(*a, **k):
         raise RuntimeError("actionlog broke")
@@ -6112,7 +6359,7 @@ def test_ledger_is_byte_identical_across_a_full_actionlog_instrumented_sequence(
         work.start(d, cfg, goal, run=_runner([("rev-parse", "main")]))
         rec = work._record(d, goal); rec["pr"] = "7"; work._save(d, goal, rec)
         assert loop.verify_goal(d, goal) == 0
-        run_merge = _runner(_rights() + _review(decision="APPROVED") + [("pr view", _view())])
+        run_merge = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
         out = work.merge(d, cfg, goal, run=run_merge, sleep=NOSLEEP)
         assert out.startswith("PR #7 merged"), out
         out2 = _post_review(d, cfg, goal, _runner([]), "approve")
@@ -6163,10 +6410,10 @@ def test_actionlog_module_has_no_ledger_import():
 
 # --- gate: a check that has not reported is not a check that failed (#464) ------------------------
 
-def _mixed(*pairs, status="BLOCKED"):
-    """A rollup where each entry is (name, conclusion) — conclusion "" means "still running",
-    which is exactly what `gh pr view --json statusCheckRollup` returns for an unfinished check."""
-    return _view(status=status, checks=pairs)
+def _mixed(*pairs, status="BLOCKED", **pull):
+    """A rollup where each entry is (name, conclusion) — conclusion "" means "still running"
+    (REST `in_progress` with a null conclusion, which the converter emits as gh's `conclusion: ""`)."""
+    return _view(status=status, checks=pairs, **pull)
 
 
 def test_gate_waits_for_pending_checks_instead_of_parking(tmp_path):
@@ -6177,16 +6424,11 @@ def test_gate_waits_for_pending_checks_instead_of_parking(tmp_path):
     re-labelled it: 3 of 11 goals on one backlog, and effectively every goal during a CI outage."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    seen = []
-
-    def view(_line):
-        seen.append(1)
-        if len(seen) < 3:
-            return _mixed(("ci", "SUCCESS"), ("slow", ""))     # still running
-        return _view()                                          # reported, CLEAN
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", view)]), sleep=NOSLEEP)
+    running = _mixed(("ci", "SUCCESS"), ("slow", ""))                # still running
+    view = _sequence(running, running, _view())                       # then reported, CLEAN
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(view), sleep=NOSLEEP)
     assert ok and verdict == "clean and safe", verdict
-    assert len(seen) == 3
+    assert view.rounds == 3
 
 
 def test_gate_parks_at_once_on_a_real_failure_without_burning_the_pending_budget(tmp_path):
@@ -6194,10 +6436,10 @@ def test_gate_parks_at_once_on_a_real_failure_without_burning_the_pending_budget
     answered FAILURE must park immediately, not after minutes of pointless polling."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _mixed(("ci", "SUCCESS"), ("tests", "FAILURE"), status="UNSTABLE"))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("tests", "FAILURE"), status="UNSTABLE"))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and "tests" in verdict and "ci" not in verdict
-    assert sum("pr view" in c for c in run.calls) == 1, "a failure must not be retried"
+    assert _reads(run, STATUS_READ) == 1, "a failure must not be retried"
 
 
 def test_gate_parks_when_checks_stay_pending_past_the_budget(tmp_path):
@@ -6205,10 +6447,10 @@ def test_gate_parks_when_checks_stay_pending_past_the_budget(tmp_path):
     says PENDING, so a human can tell 'CI is stuck' from 'CI said no'."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and "pending" in verdict.lower() and "slow" in verdict
-    assert sum("pr view" in c for c in run.calls) == work.PENDING_ATTEMPTS + 1
+    assert _reads(run, STATUS_READ) == work.PENDING_ATTEMPTS + 1
 
 
 def test_gate_pending_exhausted_verdict_has_the_shared_prefix_merge_relies_on(tmp_path):
@@ -6220,18 +6462,20 @@ def test_gate_pending_exhausted_verdict_has_the_shared_prefix_merge_relies_on(tm
     silently drift apart."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and verdict.startswith(work.PENDING_PREFIX)
 
 
 def _rollup(*entries, status="BLOCKED"):
-    """A rollup built field-by-field, so a check can carry a `state` with NO `conclusion` — the
-    CheckRun-vs-StatusContext shape `_view` cannot express. Needed because the two shapes take
-    DIFFERENT branches of `_check_verdict`, and a test that only sets `conclusion` silently never
-    exercises the state branch at all (a mutation proved exactly that)."""
-    return json.dumps({"mergeable": "MERGEABLE", "mergeStateStatus": status, "headRefOid": HEAD_SHA,
-                       "statusCheckRollup": list(entries)})
+    """A rollup built entry-by-entry, so a check can carry a `state` with NO `conclusion` — a
+    StatusContext (REST `commits/<sha>/status`) rather than a CheckRun. Needed because the two shapes
+    take DIFFERENT branches of `_check_verdict`, and a test that only sets `conclusion` silently never
+    exercises the state branch at all (a mutation proved exactly that). An entry with `conclusion` is a
+    CheckRun; one with `state` a StatusContext named by its `name`."""
+    checks = [(e["name"], e["conclusion"]) for e in entries if "conclusion" in e]
+    statuses = [(e["name"], e["state"]) for e in entries if "state" in e]
+    return _view(status=status, checks=checks, statuses=statuses)
 
 
 def test_gate_treats_an_unrecognised_conclusion_as_failing(tmp_path):
@@ -6239,10 +6483,10 @@ def test_gate_treats_an_unrecognised_conclusion_as_failing(tmp_path):
     a failure, not a wait."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _mixed(("ci", "SUCCESS"), ("weird", "SOME_NEW_STATE")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("weird", "SOME_NEW_STATE")))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and "weird" in verdict
-    assert sum("pr view" in c for c in run.calls) == 1, "an unknown conclusion must not be waited on"
+    assert _reads(run, STATUS_READ) == 1, "an unknown conclusion must not be waited on"
 
 
 def test_gate_treats_an_unrecognised_STATE_as_failing_not_pending(tmp_path):
@@ -6257,11 +6501,11 @@ def test_gate_treats_an_unrecognised_STATE_as_failing_not_pending(tmp_path):
     the mutated line was never executed."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _rollup({"name": "ci", "conclusion": "SUCCESS"},
-                                       {"name": "weird", "state": "SOME_NEW_STATE"}))])
+    run = _runner(_rollup({"name": "ci", "conclusion": "SUCCESS"},
+                                       {"name": "weird", "state": "SOME_NEW_STATE"}))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
     assert not ok and "weird" in verdict and "failing" in verdict
-    assert sum("pr view" in c for c in run.calls) == 1, "an unknown state must not be waited on"
+    assert _reads(run, STATUS_READ) == 1, "an unknown state must not be waited on"
 
 
 def test_gate_waits_on_a_state_only_pending_check(tmp_path):
@@ -6269,14 +6513,8 @@ def test_gate_waits_on_a_state_only_pending_check(tmp_path):
     `conclusion` at all, and must be waited on rather than parked."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    seen = []
-
-    def view(_line):
-        seen.append(1)
-        if len(seen) < 2:
-            return _rollup({"name": "ci", "state": "IN_PROGRESS"})
-        return _view()
-    ok, verdict, _ = work.gate(d, ON, goal, run=_runner([("pr view", view)]), sleep=NOSLEEP)
+    view = _sequence(_rollup({"name": "ci", "state": "IN_PROGRESS"}), _view())
+    ok, verdict, _ = work.gate(d, ON, goal, run=_runner(view), sleep=NOSLEEP)
     assert ok and verdict == "clean and safe"
 
 
@@ -8256,8 +8494,7 @@ def test_merge_never_consults_the_cross_repo_check(tmp_path):
     """A tier-1 goal whose sibling is unambiguously red still merges: `merge()` asks nothing about
     the sibling, makes no `gh pr list` call, and lands as it always has."""
     d, goal = _pair(tmp_path, ALWAYS)
-    run = _runner(_rights() + _protected() + _sibling(checks=(("e2e", "FAILURE"),))
-                  + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected() + _sibling(checks=(("e2e", "FAILURE"),)))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
     assert not any("pr list" in c for c in run.calls)
@@ -8269,9 +8506,8 @@ def test_merge_still_arms_auto_merge_on_pending_checks_with_a_red_sibling(tmp_pa
     is the proof: with the check unwired, arming is decided by `gate()`'s verdict alone, exactly as
     it was before #1474. Nothing about this path is new, so nothing about it can be newly wrong."""
     d, goal = _pair(tmp_path, ALWAYS)
-    run = _runner(_rights() + _protected() + _auto_merge_allowed(True)
-                  + _sibling(checks=(("e2e", "FAILURE"),))
-                  + [("pr view", _mixed(("ci", "SUCCESS"), ("slow", "")))])
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected() + _auto_merge_allowed(True)
+                  + _sibling(checks=(("e2e", "FAILURE"),)))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("auto-merge armed on PR #7")
     assert not any("pr list" in c for c in run.calls)
@@ -8306,7 +8542,7 @@ def test_test_trust_gate_emits_warn_and_the_counts_when_a_test_was_weakened(tmp_
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner([("diff", _TAMPERED_DIFF)] + _rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + [("diff", _TAMPERED_DIFF)] + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     events = _gate_events(journal_events(ledger, d), "test_trust")
     assert len(events) == 1 and events[0]["verdict"] == "warn"
@@ -8318,7 +8554,7 @@ def test_test_trust_gate_emits_pass_and_no_reason_on_a_clean_diff(tmp_path):
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     events = _gate_events(journal_events(ledger, d), "test_trust")
     assert len(events) == 1 and events[0]["verdict"] == "pass"
@@ -8332,7 +8568,7 @@ def test_the_test_trust_gate_NEVER_blocks_the_merge(tmp_path):
     become a blocker."""
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner([("diff", _TAMPERED_DIFF)] + _rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + [("diff", _TAMPERED_DIFF)] + _perm() + _protected())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert not out.startswith("PARK"), out
     assert out.startswith("PR #7 merged"), out
@@ -8343,7 +8579,7 @@ def test_test_trust_diffs_against_the_goals_OWN_resolved_base_not_a_hardcoded_ma
     wrong base would report every test in the unit as tampered by this one goal."""
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     diffs = [c for c in run.calls if "diff" in c]
     assert diffs, "the gate never ran git diff at all"
@@ -8359,7 +8595,7 @@ def test_merge_emits_the_test_trust_gate_to_the_action_log(tmp_path):
     writes nothing. Only asserting the actionlog side positively catches that."""
     cfg = {"work": {"enabled": True, "auto_merge": "always"}, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner([("diff", _TAMPERED_DIFF)] + _rights() + _protected() + [("pr view", _view())])
+    run = _runner(_view() + [("diff", _TAMPERED_DIFF)] + _perm() + _protected())
     work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     gates = {e["gate"]: e for e in actionlog.read_goal(d, goal) if e["kind"] == "gate"}
     assert "test_trust" in gates, f"actionlog never received the gate; got {sorted(gates)}"
@@ -9796,7 +10032,7 @@ def test_312_github_no_command_enforce_off_merges_without_verify_evidence(tmp_pa
     """THE REPRO. Declined verify, github mode, no evidence file at all: the merge lands."""
     d = _sdlc(tmp_path, GITHUB_NO_COMMAND)
     goal = _started(d, goal="1642.md")
-    run = _landed(extra=_review(decision="APPROVED"))
+    run = _landed(extra=_review(decision="APPROVED", pr_get=False))
     out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
     assert "no fresh verify evidence" not in out
@@ -9806,8 +10042,7 @@ def test_312_github_no_command_still_parks_on_the_review_gate(tmp_path):
     """Dropping the verify leg must not drop the review leg: a Request-changes still parks."""
     d = _sdlc(tmp_path, GITHUB_NO_COMMAND)
     goal = _started(d, goal="1642.md")
-    run = _runner(_rights() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"])
-                  + [("pr view", _view())])
+    run = _runner(_view() + _perm() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"], pr_get=False))
     out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: changes requested by bo"), out
     assert not any("pr merge" in c for c in run.calls)
@@ -9819,7 +10054,7 @@ def test_312_enforce_on_without_evidence_still_parks_and_names_the_fix(tmp_path)
     cfg = {**GITHUB_NO_COMMAND, "verify": {"enforce": True, "command": ""}}
     d = _sdlc(tmp_path, cfg)
     goal = _started(d, goal="1642.md")
-    run = _landed(extra=_review(decision="APPROVED"))
+    run = _landed(extra=_review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: no fresh verify evidence for this run"), out
     assert "verify_detect.py" in out and "verify.enforce is on" in out
@@ -9834,7 +10069,7 @@ def test_312_command_configured_with_stale_evidence_still_parks(tmp_path):
     d = _sdlc(tmp_path, cfg)
     goal = _started(d, goal="1642.md")
     _evidence(d, goal, age=60)                                       # predates this run
-    run = _landed(extra=_review(decision="APPROVED"))
+    run = _landed(extra=_review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: no fresh verify evidence for this run"), out
     assert "predates this run" in out and "loop.py verify" in out
@@ -9846,7 +10081,7 @@ def test_312_command_configured_with_fresh_evidence_merges(tmp_path):
     d = _sdlc(tmp_path, cfg)
     goal = _started(d, goal="1642.md")
     _evidence(d, goal)
-    out = work.merge(d, cfg, goal, run=_landed(extra=_review(decision="APPROVED")), sleep=NOSLEEP)
+    out = work.merge(d, cfg, goal, run=_landed(extra=_review(decision="APPROVED", pr_get=False)), sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
 
 

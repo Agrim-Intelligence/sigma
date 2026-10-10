@@ -310,6 +310,12 @@ class RestFake:
     def page_calls(self):
         return [c for c in self.calls if c[0] == "api" and c[1].endswith("/comments")]
 
+    def run_calls(self):
+        return [c for c in self.calls if c[0] == "api" and c[1].endswith("/check-runs")]
+
+    def status_calls(self):
+        return [c for c in self.calls if c[0] == "api" and c[1].endswith("/status")]
+
     def gql_calls(self):
         return [c for c in self.calls if c[0] == "issue"]
 
@@ -1655,7 +1661,7 @@ def test_to_gh_pr_shape_malformed_raises(pull, fields):
         g.to_gh_pr_shape(pull, fields)
 
 
-@pytest.mark.parametrize("field", ["mergeable", "statusCheckRollup", "reviewDecision", "mergeStateStatus", "bogus"])
+@pytest.mark.parametrize("field", ["statusCheckRollup", "reviewDecision", "latestReviews", "files", "bogus"])
 def test_pr_fields_whitelist_is_closed(field):
     g = _mod("gh_api")
     assert field not in g.PR_FIELDS
@@ -1667,21 +1673,42 @@ def test_pr_fields_whitelist_is_closed(field):
     assert run.calls == []                                   # refused before any call
 
 
-def test_pr_fields_is_exactly_what_the_seven_sites_request():
+def test_pr_fields_is_exactly_what_the_migrated_sites_request():
+    """4a-1's seven sites plus the merge gate (#895 4a-2): `mergeable`, `mergeStateStatus`. The rollup is
+    NOT a PR field: only `pr_check_rollup_gh` serves it, keyed by an explicit head sha."""
     g = _mod("gh_api")
     assert g.PR_FIELDS == ("number", "title", "body", "state", "headRefOid", "headRefName", "mergedAt",
-                           "closedAt", "autoMergeRequest", "isCrossRepository", "author", "comments")
+                           "closedAt", "autoMergeRequest", "isCrossRepository", "author", "comments",
+                           "mergeable", "mergeStateStatus")
 
 
 class PrFake:
     """Routes the PR REST argv: `pulls/<n>` (the pull), `issues/<n>/comments` pages, `pulls?head=` (list),
     and the `pr view` fallback."""
 
-    def __init__(self, pull=None, comments=(), fail=None, gql=None, pages=None, rows=None, pull_raw=None):
+    def __init__(self, pull=None, comments=(), fail=None, gql=None, pages=None, rows=None, pull_raw=None,
+                 runs=(), runs_total=None, runs_raw=None, statuses=(), statuses_total=None, status_raw=None):
         self.pull = pull if pull is not None else _rest_pull()
         self.comments, self.fail, self.gql = list(comments), fail, gql
         self.pages_raw, self.rows, self.pull_raw = pages or {}, rows, pull_raw
+        # #895 4a-2: `commits/<sha>/check-runs` and `commits/<sha>/status` pages. `*_raw` maps a page
+        # number to a raw body or an Exception (raised), so one page can fail after a good one.
+        self.runs, self.runs_total, self.runs_raw = list(runs), runs_total, runs_raw or {}
+        self.statuses, self.statuses_total, self.status_raw = list(statuses), statuses_total, status_raw or {}
         self.calls = []
+
+    @staticmethod
+    def _page(args):
+        return int([a for a in args if a.startswith("page=")][0][5:])
+
+    def _rollup_page(self, args, raw, rows, total, key):
+        page = self._page(args)
+        if page in raw:
+            if isinstance(raw[page], Exception):
+                raise raw[page]
+            return raw[page]
+        return json.dumps({"total_count": len(rows) if total is None else total,
+                           key: rows[(page - 1) * 100:page * 100]})
 
     def __call__(self, args):
         self.calls.append(list(args))
@@ -1691,6 +1718,10 @@ class PrFake:
             return self.gql if self.gql is not None else '{"state": "OPEN"}'
         if self.fail is not None:
             raise self.fail
+        if args[1].endswith("/check-runs"):
+            return self._rollup_page(args, self.runs_raw, self.runs, self.runs_total, "check_runs")
+        if args[1].endswith("/status"):
+            return self._rollup_page(args, self.status_raw, self.statuses, self.statuses_total, "statuses")
         if args[1].endswith("/comments"):
             page = int([a for a in args if a.startswith("page=")][0][5:])
             if page in self.pages_raw:
@@ -1708,6 +1739,12 @@ class PrFake:
 
     def page_calls(self):
         return [c for c in self.calls if c[0] == "api" and c[1].endswith("/comments")]
+
+    def run_calls(self):
+        return [c for c in self.calls if c[0] == "api" and c[1].endswith("/check-runs")]
+
+    def status_calls(self):
+        return [c for c in self.calls if c[0] == "api" and c[1].endswith("/status")]
 
 
 def _pr_comment(i, login=None, assoc="OWNER"):
@@ -1989,3 +2026,411 @@ def test_cloud_sessions_doc_names_every_pr_field():
     section = doc[start:end if end != -1 else len(doc)]
     missing = [f for f in g.PR_FIELDS if "`%s`" % f not in section]
     assert not missing, "docs/cloud-sessions.md PR-reads section does not name: %r" % missing
+
+
+# ---------------------------------------------------------------- merge-gate reads, REST first (#895 slice 4a-2)
+
+SHA = "a" * 40
+_STATES = ["clean", "dirty", "unstable", "blocked", "behind", "draft", "has_hooks", "unknown"]
+
+
+def _gate_pull(mergeable=True, state="clean", **kw):
+    """A REST pull carrying the two mergeability keys; `ABSENT_KEY` drops one."""
+    d = _rest_pull(**kw)
+    for k, v in (("mergeable", mergeable), ("mergeable_state", state)):
+        if v is not ABSENT_KEY:
+            d[k] = v
+    return d
+
+
+ABSENT_KEY = object()
+
+MERGE_ROWS = [
+    ("true-clean", _gate_pull(True, "clean"), {"mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"}),
+    ("false-dirty", _gate_pull(False, "dirty"), {"mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}),
+    ("null-unknown", _gate_pull(None, "unknown"), {"mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}),
+    # GitHub still computing: the gate's UNKNOWN retry must run, so a stale `true` never wins
+    ("true-but-state-unknown", _gate_pull(True, "unknown"), {"mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}),
+    # both fields agree: a null mergeable never sits beside a CLEAN state
+    ("null-but-state-clean", _gate_pull(None, "clean"), {"mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}),
+] + [("state-%s" % s, _gate_pull(True, s),
+      {"mergeable": "UNKNOWN" if s == "unknown" else "MERGEABLE", "mergeStateStatus": s.upper()})
+     for s in _STATES]
+
+
+@pytest.mark.parametrize("pull,expected", [r[1:] for r in MERGE_ROWS], ids=[r[0] for r in MERGE_ROWS])
+def test_to_gh_pr_shape_mergeability_table(pull, expected):
+    g = _mod("gh_api")
+    assert g.to_gh_pr_shape(pull, ["mergeable", "mergeStateStatus"]) == expected
+    assert g.to_gh_pr_shape(pull, ["mergeable"]) == {"mergeable": expected["mergeable"]}
+    assert g.to_gh_pr_shape(pull, ["mergeStateStatus"]) == {"mergeStateStatus": expected["mergeStateStatus"]}
+
+
+MERGE_ERRORS = [
+    ("mergeable-absent", _gate_pull(ABSENT_KEY, "clean")),
+    ("mergeable-string-true", _gate_pull("true", "clean")),
+    ("mergeable-int", _gate_pull(1, "clean")),
+    ("state-absent", _gate_pull(True, ABSENT_KEY)),
+    ("state-null", _gate_pull(True, None)),
+    ("state-int", _gate_pull(True, 3)),
+    ("state-upper-CLEAN", _gate_pull(True, "CLEAN")),
+    ("state-ok", _gate_pull(True, "ok")),
+    ("state-queued", _gate_pull(True, "queued")),
+    ("state-upper-BEHIND", _gate_pull(True, "BEHIND")),
+    ("state-absent-mergeable-null", _gate_pull(None, ABSENT_KEY)),
+]
+
+
+@pytest.mark.parametrize("pull", [r[1] for r in MERGE_ERRORS], ids=[r[0] for r in MERGE_ERRORS])
+@pytest.mark.parametrize("fields", [["mergeable", "mergeStateStatus"], ["mergeable"], ["mergeStateStatus"]],
+                         ids=["both", "mergeable-only", "state-only"])
+def test_to_gh_pr_shape_malformed_mergeability_raises_kind_other(pull, fields):
+    """Fail closed: an absent or unrecognised value is an error, never a default. Either field validates
+    BOTH keys (the state can force mergeable UNKNOWN, a null mergeable forces the state UNKNOWN)."""
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError) as ei:
+        g.to_gh_pr_shape(pull, fields)
+    assert ei.value.kind == "other"
+
+
+@pytest.mark.parametrize("pull", [r[1] for r in MERGE_ERRORS], ids=[r[0] for r in MERGE_ERRORS])
+def test_malformed_mergeability_never_reads_as_clean_or_behind(pull):
+    """The property behind the table: BEHIND triggers a force-push rebase and CLEAN a merge, so no invalid
+    input may produce either, whatever the converter does with it."""
+    g = _mod("gh_api")
+    try:
+        out = g.to_gh_pr_shape(pull, ["mergeable", "mergeStateStatus"])
+    except g.GhApiError:
+        return
+    assert out.get("mergeStateStatus") not in ("CLEAN", "BEHIND") and out.get("mergeable") != "MERGEABLE"
+
+
+def test_view_pr_gh_serves_the_gate_fields_from_one_pull_get():
+    g = _mod("gh_api")
+    run = PrFake(pull=_gate_pull(True, "blocked"))
+    assert g.view_pr_gh(run, 7, ["mergeable", "mergeStateStatus", "headRefOid"], env={}) == {
+        "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED", "headRefOid": SHA}
+    assert run.calls == [["api", "repos/{owner}/{repo}/pulls/7", "--method", "GET"]]
+
+
+def test_view_pr_gh_still_refuses_status_check_rollup_before_any_call():
+    g = _mod("gh_api")
+    run = PrFake()
+    with pytest.raises(ValueError):
+        g.view_pr_gh(run, 7, ["mergeable", "statusCheckRollup"], env={})
+    assert run.calls == []
+
+
+def _run(name, status="completed", conclusion="success", url=None, **kw):
+    d = {"id": 1, "name": name, "status": status, "conclusion": conclusion,
+         "details_url": url or "https://github.com/o/r/actions/runs/42/job/9", "html_url": "h"}
+    d.update(kw)
+    return d
+
+
+def _status(context, state="success", url="https://ci.example/1"):
+    return {"id": 1, "context": context, "state": state, "target_url": url, "description": "d"}
+
+
+def test_pr_check_rollup_gh_shape_order_and_urls():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("lint"), _run("slow", status="in_progress", conclusion=None),
+                       _run("tests", conclusion="failure")],
+                 statuses=[_status("ci/legacy", "failure")])
+    out = g.pr_check_rollup_gh(run, 7, SHA, "o/r", env={})
+    assert out == [
+        {"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SUCCESS",
+         "detailsUrl": "https://github.com/o/r/actions/runs/42/job/9"},
+        {"__typename": "CheckRun", "name": "slow", "status": "IN_PROGRESS", "conclusion": "",
+         "detailsUrl": "https://github.com/o/r/actions/runs/42/job/9"},
+        {"__typename": "CheckRun", "name": "tests", "status": "COMPLETED", "conclusion": "FAILURE",
+         "detailsUrl": "https://github.com/o/r/actions/runs/42/job/9"},
+        {"__typename": "StatusContext", "context": "ci/legacy", "state": "FAILURE",
+         "targetUrl": "https://ci.example/1"},
+    ]
+    assert run.calls == [
+        ["api", "repos/o/r/commits/%s/check-runs" % SHA, "--method", "GET", "-f", "per_page=100", "-f", "page=1"],
+        ["api", "repos/o/r/commits/%s/status" % SHA, "--method", "GET", "-f", "per_page=100", "-f", "page=1"]]
+
+
+def test_pr_check_rollup_gh_queries_exactly_the_sha_it_was_given():
+    g = _mod("gh_api")
+    run = PrFake()
+    other = "b" * 40
+    assert g.pr_check_rollup_gh(run, 7, other, env={}) == []
+    assert [c[1] for c in run.rest_calls()] == ["repos/{owner}/{repo}/commits/%s/check-runs" % other,
+                                                "repos/{owner}/{repo}/commits/%s/status" % other]
+
+
+ROLLUP_ROW_ERRORS = [
+    ("completed-null-conclusion", _run("x", conclusion=None)),
+    ("completed-empty-conclusion", _run("x", conclusion="")),
+    ("conclusion-not-str", _run("x", conclusion=1)),
+    ("in-progress-conclusion-not-str", _run("x", status="in_progress", conclusion=["failure"])),
+    ("name-missing", {k: v for k, v in _run("x").items() if k != "name"}),
+    ("status-not-str", _run("x", status=None)),
+    ("row-not-object", "x"),
+]
+
+
+@pytest.mark.parametrize("row", [r[1] for r in ROLLUP_ROW_ERRORS], ids=[r[0] for r in ROLLUP_ROW_ERRORS])
+def test_pr_check_rollup_gh_malformed_check_run_raises(row):
+    """completed + null conclusion would read as ok in `work._check_verdict` (empty conclusion + COMPLETED),
+    turning "unknown" into a pass: it RAISES instead (kind other, no fallback)."""
+    g = _mod("gh_api")
+    run = PrFake(runs=[row])
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(run, 7, SHA, env={})
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+def test_pr_check_rollup_gh_in_progress_empty_conclusion_reads_as_null():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("x", status="queued", conclusion="")])
+    assert g.pr_check_rollup_gh(run, 7, SHA, env={})[0]["conclusion"] == ""
+
+
+@pytest.mark.parametrize("row", ["x", {"state": "success"}, {"context": "c", "state": None},
+                                 {"context": 3, "state": "success"}],
+                         ids=["not-object", "context-missing", "state-null", "context-int"])
+def test_pr_check_rollup_gh_malformed_status_raises(row):
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError):
+        g.pr_check_rollup_gh(PrFake(statuses=[row]), 7, SHA, env={})
+
+
+def test_pr_check_rollup_gh_pages_by_total_count():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("c%d" % i) for i in range(103)])
+    out = g.pr_check_rollup_gh(run, 7, SHA, env={})
+    assert len(out) == 103 and len(run.run_calls()) == 2
+    assert [c[-1] for c in run.run_calls()] == ["page=1", "page=2"]
+
+
+def test_pr_check_rollup_gh_exact_multiple_of_100_is_two_pages_not_three():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("c%d" % i) for i in range(200)])
+    assert len(g.pr_check_rollup_gh(run, 7, SHA, env={})) == 200 and len(run.run_calls()) == 2
+
+
+@pytest.mark.parametrize("kw", [dict(runs=[_run("a")], runs_total=2),
+                                dict(statuses=[_status("a")], statuses_total=5)],
+                         ids=["check-runs", "statuses"])
+def test_pr_check_rollup_gh_short_page_below_total_count_raises(kw):
+    """A missing failing check must never read as green: a short page while fetched < total_count raises."""
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(PrFake(**kw), 7, SHA, env={})
+    assert ei.value.kind == "other"
+
+
+def test_pr_check_rollup_gh_cap_reached_below_total_count_raises():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("c%d" % i) for i in range(1000)], runs_total=1001)
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(run, 7, SHA, env={})
+    assert "cap" in str(ei.value) and len(run.run_calls()) == g.CHECK_RUN_PAGE_CAP == 10
+    run = PrFake(statuses=[_status("s%d" % i) for i in range(500)], statuses_total=501)
+    with pytest.raises(g.GhApiError):
+        g.pr_check_rollup_gh(run, 7, SHA, env={})
+    assert len(run.status_calls()) == g.STATUS_PAGE_CAP == 5
+
+
+@pytest.mark.parametrize("raw", ['{"total_count": 1, "check_runs": {"a": 1}}', '{"check_runs": []}',
+                                 '{"total_count": true, "check_runs": []}', '{"total_count": "1", "check_runs": []}',
+                                 "[]", "null", "<html>"],
+                         ids=["runs-not-list", "total-missing", "total-bool", "total-str", "list", "null", "garbage"])
+def test_pr_check_rollup_gh_malformed_check_runs_page_raises(raw):
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(PrFake(runs_raw={1: raw}), 7, SHA, env={})
+    assert ei.value.kind == "other"
+
+
+@pytest.mark.parametrize("raw", ['{"total_count": 0, "state": "pending"}',
+                                 '{"total_count": 0, "state": "success", "statuses": null}',
+                                 '{"state": "success", "statuses": []}'],
+                         ids=["statuses-absent", "statuses-null", "total-missing"])
+def test_pr_check_rollup_gh_malformed_status_page_raises(raw):
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError):
+        g.pr_check_rollup_gh(PrFake(status_raw={1: raw}), 7, SHA, env={})
+
+
+def test_pr_check_rollup_gh_ignores_the_combined_state():
+    """An empty status set reports combined `pending` (MEASURED): never read; no rows -> []."""
+    g = _mod("gh_api")
+    run = PrFake(status_raw={1: '{"total_count": 0, "state": "pending", "statuses": []}'})
+    assert g.pr_check_rollup_gh(run, 7, SHA, env={}) == []
+    run = PrFake(status_raw={1: '{"total_count": 0, "state": "failure", "statuses": []}'})
+    assert g.pr_check_rollup_gh(run, 7, SHA, env={}) == []
+
+
+@pytest.mark.parametrize("sha", ["", "a" * 39, "A" * 40, "g" * 40, "sdlc/7", "a" * 64, None],
+                         ids=["empty", "39", "upper", "non-hex", "branch", "sha256", "none"])
+def test_pr_check_rollup_gh_refuses_a_non_sha_before_any_call(sha):
+    g = _mod("gh_api")
+    run = PrFake()
+    with pytest.raises(ValueError):
+        g.pr_check_rollup_gh(run, 7, sha, env={})
+    assert run.calls == []
+
+
+_FB_ROLLUP = json.dumps({"statusCheckRollup": [{"name": "ci", "conclusion": "SUCCESS"}], "headRefOid": SHA})
+
+
+@pytest.mark.parametrize("hint", [t[1] for t in TRANSIENT], ids=[t[0] for t in TRANSIENT])
+def test_pr_check_rollup_gh_falls_back_once_on_transient(hint):
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(hint), gql=_FB_ROLLUP)
+    assert g.pr_check_rollup_gh(run, 7, SHA, "o/r", env={}) == [{"name": "ci", "conclusion": "SUCCESS"}]
+    assert run.gql_calls() == [["pr", "view", "7", "--repo", "o/r", "--json", "statusCheckRollup,headRefOid"]]
+
+
+@pytest.mark.parametrize("hint", [c[1] for c in CLIENT] + [PROXY + " (HTTP 502)"],
+                         ids=[c[0] for c in CLIENT] + ["proxy"])
+def test_pr_check_rollup_gh_never_falls_back_on_client_errors_or_proxy(hint):
+    g = _mod("gh_api")
+    run = PrFake(runs_raw={1: _err(hint)}, gql=_FB_ROLLUP)
+    with pytest.raises(g.GhApiError):
+        g.pr_check_rollup_gh(run, 7, SHA, "o/r", env={})
+    assert run.gql_calls() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}],
+                         ids=["cloud", "override-off"])
+def test_pr_check_rollup_gh_no_fallback_when_graphql_unavailable(env):
+    g = _mod("gh_api")
+    run = PrFake(fail=_err(RATE), gql=_FB_ROLLUP)
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(run, 7, SHA, "o/r", env=env)
+    assert run.gql_calls() == [] and ei.value.kind == "rate_limit"
+
+
+def test_pr_check_rollup_gh_exactly_one_fallback_and_its_failure_propagates():
+    g = _mod("gh_api")
+    run = PrFake(fail=_err("gh: Server Error (HTTP 502)"), gql=_err("gh: Server Error (HTTP 503)", text="x"))
+    with pytest.raises(g.GhApiError):
+        g.pr_check_rollup_gh(run, 7, SHA, env={})
+    assert len(run.gql_calls()) == 1
+
+
+def test_pr_check_rollup_gh_second_page_429_is_one_fallback_never_half_rest():
+    g = _mod("gh_api")
+    run = PrFake(runs=[_run("c%d" % i) for i in range(150)], runs_raw={2: _err(RATE)}, gql=_FB_ROLLUP)
+    assert g.pr_check_rollup_gh(run, 7, SHA, env={}) == [{"name": "ci", "conclusion": "SUCCESS"}]
+    assert len(run.run_calls()) == 2 and len(run.gql_calls()) == 1 and run.status_calls() == []
+
+
+@pytest.mark.parametrize("gql", [json.dumps({"statusCheckRollup": [], "headRefOid": "b" * 40}),
+                                 json.dumps({"headRefOid": SHA}),
+                                 json.dumps({"statusCheckRollup": None, "headRefOid": SHA}),
+                                 json.dumps({"statusCheckRollup": {}, "headRefOid": SHA})],
+                         ids=["other-head", "rollup-missing", "rollup-null", "rollup-not-list"])
+def test_pr_check_rollup_gh_fallback_for_another_head_or_without_a_list_raises(gql):
+    """A rollup for a different head is never attached: the gate judges `sha`, nothing else."""
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError) as ei:
+        g.pr_check_rollup_gh(PrFake(fail=_err(RATE), gql=gql), 7, SHA, env={})
+    assert ei.value.kind not in g.FALLBACK_KINDS
+
+
+def _list_row(n=7, **kw):
+    d = {"number": n, "state": "open", "mergeable": None, "head": {"sha": SHA, "ref": "feature/x"}}
+    d.update(kw)
+    return d
+
+
+OPEN_FIELDS = ["number", "mergeable", "headRefOid"]
+
+
+def test_open_pr_for_branch_gh_lists_then_reads_the_pull():
+    """List rows carry `mergeable: null` and no `mergeable_state` (MEASURED), so the per-PR GET answers."""
+    g = _mod("gh_api")
+    run = PrFake(rows=[_list_row()], pull=_gate_pull(False, "dirty"))
+    assert g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={}) == {
+        "number": 7, "mergeable": "CONFLICTING", "headRefOid": SHA}
+    assert run.calls == [["api", "repos/acme/app/pulls?head=acme:feature/x&state=open&per_page=1", "--method", "GET"],
+                         ["api", "repos/acme/app/pulls/7", "--method", "GET"]]
+
+
+def test_open_pr_for_branch_gh_empty_list_is_none_in_one_call():
+    g = _mod("gh_api")
+    run = PrFake(rows=[])
+    assert g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={}) is None
+    assert len(run.calls) == 1
+
+
+@pytest.mark.parametrize("raw", ["", "null", '{"message": "x"}', "[1]", "<html>"],
+                         ids=["empty", "null", "dict", "non-dict-row", "garbage"])
+def test_open_pr_for_branch_gh_non_list_body_raises(raw):
+    g = _mod("gh_api")
+    run = PrFake(rows=raw)
+    with pytest.raises(g.GhApiError) as ei:
+        g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={})
+    assert ei.value.kind == "other" and run.gql_calls() == []
+
+
+@pytest.mark.parametrize("number", ["7", True, None, 7.0], ids=["str", "bool", "none", "float"])
+def test_open_pr_for_branch_gh_list_row_number_must_be_an_int(number):
+    g = _mod("gh_api")
+    run = PrFake(rows=[_list_row(n=number)])
+    with pytest.raises(g.GhApiError) as ei:
+        g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={})
+    assert ei.value.kind == "other" and run.gql_calls() == []
+    assert not any(c[1].startswith("repos/acme/app/pulls/") for c in run.rest_calls())
+
+
+def test_open_pr_for_branch_gh_argument_refusals_before_any_call():
+    g = _mod("gh_api")
+    for repo in (None, "", "noslash"):
+        run = PrFake()
+        with pytest.raises(ValueError):
+            g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, repo, env={})
+        assert run.calls == []
+    for fields in (["number", "comments"], ["number", "statusCheckRollup"]):
+        run = PrFake()
+        with pytest.raises(ValueError):
+            g.open_pr_for_branch_gh(run, "feature/x", fields, "acme/app", env={})
+        assert run.calls == []
+
+
+def test_open_pr_for_branch_gh_fallback_argv_and_rules():
+    g = _mod("gh_api")
+    gql = json.dumps([{"number": 3, "mergeable": "CONFLICTING", "headRefOid": SHA}])
+    run = PrFake(fail=_err(RATE), gql=gql)
+    assert g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={}) == {
+        "number": 3, "mergeable": "CONFLICTING", "headRefOid": SHA}
+    assert run.gql_calls() == [["pr", "list", "--repo", "acme/app", "--head", "feature/x", "--state", "open",
+                                "--limit", "1", "--json", "number,mergeable,headRefOid"]]
+    assert g.open_pr_for_branch_gh(PrFake(fail=_err(RATE), gql="[]"), "feature/x", OPEN_FIELDS, "acme/app",
+                                   env={}) is None
+    for bad in (json.dumps([{"number": 3, "headRefOid": SHA}]), "", "<html>", "{}", "[1]"):
+        with pytest.raises(g.GhApiError):
+            g.open_pr_for_branch_gh(PrFake(fail=_err(RATE), gql=bad), "feature/x", OPEN_FIELDS, "acme/app", env={})
+    run = PrFake(fail=_err("gh: Not Found (HTTP 404)"), gql=gql)
+    with pytest.raises(g.GhApiError):
+        g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={})
+    assert run.gql_calls() == []
+    run = PrFake(fail=_err(RATE), gql=gql)
+    with pytest.raises(g.GhApiError):
+        g.open_pr_for_branch_gh(run, "feature/x", OPEN_FIELDS, "acme/app", env={"CLAUDE_CODE_REMOTE": "true"})
+    assert run.gql_calls() == []
+
+
+def test_pr_list_fallback_argv_is_built_only_in_gh_api():
+    assert '["pr", "list", "--repo", repo,' in (S / "gh_api.py").read_text()
+
+
+def test_cloud_sessions_doc_has_a_row_for_every_4a2_field():
+    """The 4a-1 test above reads only the 4a-1 section, whose prose already names `mergeable` and
+    `mergeStateStatus`, so it cannot go red for them. This one requires a TABLE ROW per new field in the
+    4a-2 section."""
+    doc = (S.parent.parent.parent / "docs" / "cloud-sessions.md").read_text(encoding="utf-8")
+    start = doc.index("## Merge-gate and landing-PR reads (#895 slice 4a-2, PR A)")
+    end = doc.find("\n## ", start + 1)
+    section = doc[start:end if end != -1 else len(doc)]
+    rows = [ln for ln in section.splitlines() if ln.startswith("| `")]
+    for prefix in ("| `mergeable` |", "| `mergeStateStatus` |", "| `statusCheckRollup` CheckRun |",
+                   "| `statusCheckRollup` StatusContext |"):
+        assert any(r.startswith(prefix) for r in rows), "4a-2 section has no table row %r" % prefix
