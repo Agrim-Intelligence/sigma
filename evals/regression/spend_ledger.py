@@ -82,7 +82,9 @@ closed). Cases: before the open is written, nothing to settle; after the fsync b
 returned, `reserve` settles the id itself and re-raises; inside `settle`'s locked section, the settle is
 retried once. SIGTERM/SIGHUP are blocked from the flock until the lock's try is entered and again around
 its release (pthread_sigmask; a held signal is delivered right after), so a signal cannot leak the flock'd
-descriptor or the retry's own lock conflict. A signal landing after the else-path settle still exits
+descriptor or the retry's own lock conflict. The mask is per thread: in a host that runs other threads, a process-directed signal can reach the main
+thread's handler despite it; that is the same fail-closed residual (the open stays at its full belt).
+A signal landing after the else-path settle still exits
 128 + signum; while handlers are restored the signal waits and meets the restored handler. Residual: a
 signal during the `except` block of a failing body replaces that exception with the exit, unsettled, which
 fails closed at the full belt. A run that leaves the block without a caller `settle` settles at the full belt, reason "exit".

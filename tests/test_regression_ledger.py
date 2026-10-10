@@ -260,7 +260,9 @@ def test_signal_around_lock_acquire_and_release_does_not_leak_the_lock(tmp_path,
     def hook(name):
         if name == stage and not sent:
             sent.append(1)
-            os.kill(os.getpid(), signal.SIGTERM)
+            # thread-directed: a process-directed kill may land on another thread (xdist workers have
+            # several), whose pending flag lets the handler run on the main thread despite its mask
+            signal.pthread_kill(threading.get_ident(), signal.SIGTERM)
     ledger._hook_in_critical_section = hook
     try:
         try:
