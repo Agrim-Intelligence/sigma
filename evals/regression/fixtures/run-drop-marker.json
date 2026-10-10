@@ -1,0 +1,347 @@
+{
+  "caveats": [
+    "phase end rows prove phase_report.py end was called, not that the phase did its work (evidence: call-existence)",
+    "journal and action log are off by default; a stream absent here may mean the feature was off"
+  ],
+  "goal": "877",
+  "phases": [
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "research",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    },
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "plan",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    },
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "plan_review",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    },
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "implement",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    },
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "review",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    },
+    {
+      "attempts": 1,
+      "cost_cents": 45,
+      "end_present": true,
+      "evidence": "call-existence",
+      "notes": [],
+      "phase": "retro",
+      "start_present": true,
+      "tokens_in": 1200,
+      "tokens_out": 34
+    }
+  ],
+  "run": "run",
+  "schema": "sigma.regression-run/v1",
+  "streams": {
+    "action_log": {
+      "dropped_non_internal": 0,
+      "present": true,
+      "rows": [
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "claimed",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "research",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:01.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "research",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:02.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "plan",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:03.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "plan",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:04.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "plan_review",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:05.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "plan_review",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:06.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "verdict",
+          "phase": "plan_review",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:07.000Z",
+          "verdict": "approve"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "implement",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:08.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "implement",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:09.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "review",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:10.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "review",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:11.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "verdict",
+          "phase": "review",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:12.000Z",
+          "verdict": "approve"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "retro",
+          "state": "start",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:13.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "phase",
+          "phase": "retro",
+          "state": "end",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:14.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "recorded",
+          "result": "done",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:15.000Z"
+        },
+        {
+          "actor": "loop",
+          "goal": "877",
+          "kind": "merged",
+          "thread": "main",
+          "ts": "2026-01-01T00:00:16.000Z"
+        }
+      ],
+      "skipped_malformed": 0,
+      "source": "state/log/877.jsonl"
+    },
+    "commit_order": {
+      "goal_branches": {
+        "sdlc/877-regression-checker": [
+          {
+            "sha": "89d7ea3c5cdafe88733f1a312ff88ccce7807b9d",
+            "subject": "first on main"
+          },
+          {
+            "sha": "25d55cd848456809469a4c1f1c844eb555e9d11f",
+            "subject": "goal work"
+          }
+        ]
+      },
+      "goal_branches_present": true,
+      "main": [
+        {
+          "sha": "89d7ea3c5cdafe88733f1a312ff88ccce7807b9d",
+          "subject": "first on main"
+        },
+        {
+          "sha": "25d55cd848456809469a4c1f1c844eb555e9d11f",
+          "subject": "goal work"
+        }
+      ],
+      "present": true,
+      "source": "remote.git"
+    },
+    "journal": {
+      "files": 1,
+      "kinds": {
+        "phase": 12,
+        "review_posted": 1,
+        "spend": 6
+      },
+      "lines": 19,
+      "present": true,
+      "skipped_malformed": 0,
+      "source": "events/*.jsonl"
+    },
+    "plan": {
+      "bytes": 5,
+      "present": true,
+      "sha256": "1b4025dc7b8d27cf38df85e77b20ed44a00851a2c28b338560560d85deded8e3",
+      "source": "plans/877.md"
+    },
+    "plan_review_verdict": {
+      "gate_file_present": false,
+      "plan_hash": null,
+      "present": true,
+      "route": null,
+      "source": "state/log (kind=verdict, phase=plan_review)",
+      "verdict": "approve",
+      "verified": null
+    },
+    "research": {
+      "bytes": 9,
+      "present": true,
+      "sha256": "104923c9e2dfa3467568fb82512437ce7a3e100ac99cc5ba70f1bcada84287f6",
+      "source": "research/877.md"
+    },
+    "review_evidence": {
+      "marker_in_store": false,
+      "present": false,
+      "reason": "no review_posted event",
+      "review_posted": [],
+      "source": "journal review_posted + gh_state.json comment marker"
+    },
+    "tokens": {
+      "by_phase": {
+        "implement": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        },
+        "plan": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        },
+        "plan_review": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        },
+        "research": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        },
+        "retro": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        },
+        "review": {
+          "cost_cents": 45,
+          "tokens_in": 1200,
+          "tokens_out": 34
+        }
+      },
+      "present": true,
+      "source": "journal phase end (tokens) + spend (cost)"
+    },
+    "verify": {
+      "at": "2026-01-01T00:00:40.000Z",
+      "exit": 0,
+      "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "present": true,
+      "source": "state/verify/877.json",
+      "test_first_passed": true,
+      "verify_state": "pass"
+    }
+  }
+}

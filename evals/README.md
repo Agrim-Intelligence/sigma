@@ -274,3 +274,10 @@ can silently go wrong; it does not close this.
 ```bash
 python3 evals/run.py --live    # parked until a real judge is wired
 ```
+
+## Regression checker
+
+`python3 evals/regression/check.py <record> <properties.json>` checks one record written by `evals/regression/record.py`
+against the property list in `evals/regression/properties.json` and prints `PASS`, `FAIL` or `NOT EVALUABLE` per property.
+Exit 0 means no failure; 1 means a failure or a hard property with no evidence; 2 means the input was refused. The committed
+run and three mutated copies in `evals/regression/fixtures/` come from a synthetic run, so they test the checker, not Sigma.
