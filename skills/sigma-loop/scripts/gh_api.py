@@ -2,8 +2,9 @@
 
 HONESTY FIRST. Slice 1 of #801 was DETECTION AND REPORTING ONLY. Slice 2a of #895 wires ONE op,
 `read_issue`, into `sources.py`'s seven issue reads; slice 3a adds the issue WRITE ops (see WRITES);
-slice 4a-1 adds seven PR READS and 4a-2 the merge gate's (see PR READS); `create_pr`/`merge_pr` still have no caller (`work.py`
-and the other modules keep their remaining direct `gh issue|pr` calls). The cache/probe path is not
+slice 4a-1 adds seven PR READS and 4a-2 the merge gate's (see PR READS); slice 4b-1 the code-goal MERGE
+(see PR MERGE); `create_pr` still has no caller (`work.py` and the other modules keep their remaining direct
+`gh issue|pr` calls). The cache/probe path is not
 exercised by any shipped caller (`doctor` always passes `probe=False`; `read_issue` checks env only),
 and nothing here is evidence that /sigma-loop works in a Claude Code cloud session -- that is
 unmeasured. The 403 wording the probe recognises comes from issue #801's text, not from a captured
@@ -62,8 +63,17 @@ Classification reads gh's stderr (`.hint`) and the cause chain only, never `str(
 INFERRED, not captured live. FEATURE LABELS (was KNOWN BYPASS R5): REST would mint a missing `feature:*`
 label, so `create_issue` and `add_labels` raise `GhApiError(kind="refused")` before any call (layer 1)
 unless the caller passes `feature_labels_exist=True` after `label_exists` (layer 2, in GitHubSource).
-Non-feature labels ARE auto-created by REST (UNMEASURED, documented GitHub behaviour). `create_pr` and
-`merge_pr` still have no caller. `merge_pr` has no auto-merge (REST has none; not emulated).
+Non-feature labels ARE auto-created by REST (UNMEASURED, documented GitHub behaviour). `create_pr` still
+has no caller. `merge_pr` has no auto-merge (REST has none; not emulated); `merge_pr_gh` is its caller.
+
+PR MERGE (#895 slice 4b-1): `merge_pr_gh` (op `pr_merge`) is `work.merge()`'s direct merge: REST
+`PUT pulls/N/merge` with `merge_method` and the vetted head `sha`, through `_rest_write(idempotent=False)`,
+so ONE `gh pr merge N --<m> --match-head-commit SHA` fallback (built here) only on a primary rate limit and
+only while `graphql_available(env)`. Success ONLY on a dict body with `merged is True`; anything else, and
+every failure, raises with a bool `.outcome_unknown` (True: may have landed, the caller READS and never
+re-merges; False: a definite refusal, e.g. 409 head moved, 405 not mergeable, 401/403/404/422, a primary
+rate limit). Input is validated before any call. Body shapes and statuses are DERIVED from GitHub docs,
+UNMEASURED live. See docs/cloud-sessions.md, "Code-goal merge (#895 slice 4b-1)".
 
 PR READS (#895 slice 4a-1): `view_pr_gh` (REST `view_pr`, so `view_pr` now has a caller, plus
 `pr_comments` when `comments` is asked for) and `pr_for_branch_gh` (one `pulls?head=<owner>:<branch>`
@@ -1174,6 +1184,84 @@ def create_pr_nondraft(run, title, body, head, base, repo):
     return _json(run, ["api", _endpoint(repo, "pulls"), "--method", "POST", "-f", "title=%s" % title,
                        "-f", "body=%s" % body, "-f", "head=%s" % head, "-f", "base=%s" % base,
                        "-F", "draft=false"])
+
+
+# ---------------------------------------------------------------- code-goal merge (#895 slice 4b-1)
+
+MERGE_METHODS = ("merge", "squash", "rebase")
+_HEAD_SHA_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_DEFINITE_CASES = frozenset({"auth_401", "not_found_404", "invalid_422", "permission_403", "proxy_block",
+                             "primary_rate_limit", "refused"})
+
+
+def _merge_outcome_unknown(exc):
+    """May the merge have LANDED although this exception says it failed? A preset `.outcome_unknown`
+    wins. False (definite refusal, nothing landed): 401/403-permission/404/422, a proxy block, a primary
+    rate limit (rejected before the write runs), or any other 4xx status in gh's stderr (405 not
+    mergeable, 409 head moved) that is not a secondary rate limit. True otherwise: 5xx, transport /
+    TimeoutExpired, a secondary rate limit, no status at all, a malformed or empty 2xx."""
+    preset = getattr(exc, "outcome_unknown", None)
+    if isinstance(preset, bool):
+        return preset
+    case = _write_case(exc)
+    if case in _DEFINITE_CASES:
+        return False
+    status = _write_status(exc)
+    if case != "secondary_rate_limit" and status is not None and 400 <= status <= 499:
+        return False
+    return True
+
+
+def merge_pr_gh(run, number, method, sha, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """Merge PR `number` with `method`, ONLY if its head is still `sha`: REST `PUT pulls/N/merge`
+    (`merge_method`, `sha`) through `_rest_write(idempotent=False)`, so ONE `gh pr merge N --<method>
+    --match-head-commit SHA` fallback (built here, the ratchet's exempt helper) runs only on a primary
+    rate limit and only while `graphql_available(env)`; never a retry, never a second fallback.
+
+    Success is ONLY a dict body with `merged is True` -> {"merged": True, "merge_commit_sha", "via":
+    "rest"}; a CLI exit 0 -> {"merged": True, "merge_commit_sha": None, "via": "gh"}. Every exception
+    that leaves carries a bool `.outcome_unknown` (see `_merge_outcome_unknown`): True means the PR may
+    have merged -- the caller must READ, never re-merge. Invalid input (`int(str(number))` fails, a
+    method outside MERGE_METHODS, a sha that is not 40/64 lower-case hex) raises kind="invalid",
+    `.outcome_unknown = False`, before any call. The 2xx body shape, 405/409 bodies and CLI-vs-REST
+    sha-guard equivalence are DERIVED from GitHub docs, UNMEASURED live."""
+    try:
+        n = int(str(number))
+    except ValueError:
+        n = None
+    if n is None or method not in MERGE_METHODS or not isinstance(sha, str) or not _HEAD_SHA_RE.match(sha):
+        err = GhApiError("gh_api.merge_pr_gh: refusing to merge PR %r with method %r and head %r "
+                         "(need a number, one of %s, a 40/64 lower-case hex sha)"
+                         % (number, method, sha, "/".join(MERGE_METHODS)), kind="invalid")
+        err.outcome_unknown = False
+        raise err
+
+    def rest():
+        body = merge_pr(run, n, method, sha, repo)
+        if not isinstance(body, dict) or body.get("merged") is not True:
+            err = GhApiError("malformed REST merge reply for PR #%d (no `merged: true`): %s"
+                             % (n, json.dumps(body)[:120]))
+            err.outcome_unknown = True
+            raise err
+        return {"merged": True, "merge_commit_sha": body.get("sha") if isinstance(body.get("sha"), str) else None,
+                "via": "rest"}
+
+    def fallback():
+        _call(fallback_run or run, ["pr", "merge", str(n), "--%s" % method, "--match-head-commit", sha,
+                                    *_repo_flag(repo)])
+        return {"merged": True, "merge_commit_sha": None, "via": "gh"}
+
+    try:
+        return _rest_write("pr_merge", n, "PR #%d merge" % n, "gh pr merge", rest, fallback, idempotent=False,
+                           env=env, sdlc_dir=sdlc_dir, now=now)
+    except Exception as exc:                          # noqa: BLE001 - classify, then propagate unchanged
+        if not isinstance(exc, GhApiError):
+            status, kind = classify(exc)
+            wrapped = GhApiError(str(exc), getattr(exc, "hint", None), status, kind)
+            wrapped.__cause__ = exc
+            exc = wrapped
+        exc.outcome_unknown = _merge_outcome_unknown(exc)
+        raise exc
 
 
 # ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)

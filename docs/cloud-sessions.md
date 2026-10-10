@@ -409,13 +409,81 @@ the `pulls/N/reviews` shape and ordering (`submitted_at`, `id`), the DISMISSED r
 (`filename`), the `gh pr view --json reviews` row shape and order, fork invisibility, the real 429 body, any
 cloud-session run, and latency. Tests use injected runners only.
 
+## Code-goal merge (#895 slice 4b-1)
+
+`work.merge()`'s direct merge now calls `gh_api.merge_pr_gh` (op `pr_merge`): REST `PUT pulls/N/merge` with
+`merge_method` and `sha` = the head gate() vetted, through `_rest_write(idempotent=False)`. ONE `gh pr merge N
+--<m> --match-head-commit SHA` fallback (argv built inside `gh_api`) runs only on a `primary_rate_limit`, and
+only while `graphql_available()` says so; never a retry, never a second fallback. Success is ONLY a JSON object
+with `merged: true`. Every failure carries an outcome flag, decided by the `WRITE_POLICY` case of gh's stderr:
+
+- Definite refusal (nothing landed; `PARK: direct merge of PR #N was refused (...)`, no read): `auth_401`,
+  `not_found_404`, `invalid_422`, `permission_403`, `proxy_block`, `primary_rate_limit` (when the fallback is not
+  allowed, e.g. in a cloud session, or when the fallback itself hit it), and any other 4xx in gh's stderr that is
+  not a secondary rate limit: 405 (not mergeable, a required check not satisfied) and 409 (head moved: the PR is
+  parked, its new head is never merged; a human unparks it and the next merge vets the new head). Invalid input (a non-numeric PR, a method
+  outside merge/squash/rebase, a head that is not 40/64 lower-case hex) is refused before any call.
+- Unknown outcome (the merge MAY have landed): `server_5xx`, `transport_ambiguous` (including a
+  `TimeoutExpired`), `secondary_rate_limit` (rejected before the write like a primary one, but treated as unknown:
+  safe, and it costs the stall below), `other_unparsed` with no status, and an empty, `null`, non-object or
+  `merged`-not-`true` 2xx. A CLI-fallback refusal usually has no `HTTP nnn`, so it also reads as unknown (where a
+  definite refusal would park at once). An unknown outcome is NEVER re-sent and NEVER sent via `gh pr merge` or
+  GraphQL: `pr_landing_state` (ONE REST `pulls/N` read each) runs up to 3 times, 5s apart (bounded 10s), while the
+  answer is still open/unknown. MERGED: the normal post-landing steps (branch delete, issue close, `merged`
+  record) run and the line ends `(outcome reconciled: ...)`. CLOSED unmerged: `PARK: PR #N was closed without
+  merging`. Still OPEN/UNKNOWN: `merge outcome unknown for PR #N (...) -- NOT retried and NOT sent via GraphQL;
+  leaving PR #N awaiting merge ...`, which is NOT a park (a park is not swept by the merge-reconcile pass): the
+  caller records `review` (awaiting_merge), the merge-reconcile pass records `done` once a REST read shows it
+  merged, and if it never lands doctor's stuck-merge alarm names it after `MERGE_STUCK_SECONDS` (3 days). That
+  3-day latency is the cost of every unknown outcome that did not land. The MERGED branch does not compare the
+  merged head to the vetted one (`pr_landing_state` returns no head); the PUT carried `sha`, so this call could
+  only have merged that head (a human or an earlier arm could still have merged a different one).
+- A host that cuts the tool call mid-PUT leaves nothing recorded locally and the PR may or may not have merged.
+  The lever is `loop.py record review` (sets awaiting_merge; the merge-reconcile pass records `done` once a REST
+  read shows MERGED, and `record done` stays refused until then). Re-running `work.py merge` is not the lever: how it reads an already-merged
+  PR was not changed or measured here and it may park a PR that did land. The sha guard only proves no different head can land.
+
+No GraphQL, pending required check: `--auto` is GraphQL and REST has no auto-merge, so when
+`graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe) a
+required check still pending after gate()'s own bounded REST wait (`PENDING_ATTEMPTS` x `PENDING_INTERVAL` =
+450s) is not armed, `allow_auto_merge` is not read, and no merge is sent: `PARK: required checks still pending
+after 450s and auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish`. Checks that
+turn green inside gate()'s wait reach the REST merge with the vetted sha. No extra wait is added, so the
+documented 22.5-minute worst case does not move. Liveness cost: an UNSTABLE PR whose pending checks are NOT
+required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
+byte-identical to before.
+
+A REAL CLOUD SESSION STILL CANNOT MERGE. `merge()` first calls `merge_rights`, whose permission read is `gh repo
+view --json viewerPermission` (GraphQL), and `protection()` reads `gh repo view --json nameWithOwner`. Under
+`CLAUDE_CODE_REMOTE` the first is refused by the proxy and `merge()` returns `PR #N opened -- could not determine
+merge rights (...)` (routes to `record review`); nothing merges. So the REST merge and the no-GraphQL park above
+are reachable today only where GraphQL works, `SIGMA_GH_GRAPHQL=off` being the way to exercise those branches.
+The tests that fake `viewerPermission` under `CLAUDE_CODE_REMOTE` are structural checks of the
+`graphql_available()` branch, not cloud checks; one test pins the real cloud outcome without that fake.
+
+Cost (Scalability): 1 REST PUT per landing (was 1 GraphQL `gh pr merge`), + at most 1 CLI fallback, + at most 3
+REST reads on an unknown outcome: a hard ceiling of 5 GitHub calls for the landing step, independent of repo
+size, per goal with no shared lock, so 10x/100x merges scale linearly against the REST core budget (5,000/h per
+token, documented, UNMEASURED here). The PUT and the reads have no per-call timeout of their own (`_run` sets
+none; existing ceiling).
+
+Deferred to slice 4b-2: the `merge_rights` permission read and `protection()`'s `nameWithOwner` read (first),
+`post_review`'s `gh pr comment`, `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`, and
+`skills/sigma-rebase/scripts/verify_merge.py` (ready/create/merge). `reviewDecision` stays GraphQL by decision;
+R5 `pr list --head` stays. The `--auto` arm stays GraphQL (REST has none).
+
+UNMEASURED, plainly: the REST merge was never run against real GitHub or in a real cloud session. The PUT 2xx
+body shape, the 405/409 statuses and bodies, the 429 body, CLI `--match-head-commit` vs REST `sha` equivalence,
+the merge-queue behaviour of the CLI fallback, and real merge latency all come from GitHub's docs or from fakes.
+Tests use injected runners and the fake gh only.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
   `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, `open_prs_for_head_gh`,
-  `pr_changes_requested`, above) are wired to callers; PR WRITES
-  are not, the raw `create_pr`
-  / `merge_pr` and the project ops have no caller, and nothing in the product exercises the probe or the cache.
+  `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge is
+  (`merge_pr_gh`, slice 4b-1), the raw `create_pr` and the project ops have no caller, and nothing in the product
+  exercises the probe or the cache.
 - `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
 - `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
   carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
@@ -425,7 +493,7 @@ cloud-session run, and latency. Tests use injected runners only.
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

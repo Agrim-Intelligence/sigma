@@ -27,6 +27,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -187,7 +188,9 @@ def drive(repo, run_mode, workdir, baseline_out, unrelated, rest, environ, sigma
         origin_guard(oc, repo_dir, env, url)
         merged = run.step("work merge", [py, loop / "work.py", "merge", ".sdlc", goal], repo_dir, env).stdout.strip()
         summary["merge_line"] = merged[:160]
-        outcome = "done" if merged.startswith("PR #") and " merged " in merged else "review"
+        # #895 4b-1: only the `PR #N merged (<method>)` opening is done; an unknown-outcome line that merely
+        # mentions "merged" routes to review, like every other non-PARK line.
+        outcome = "done" if re.match(r"^PR #\d+ merged \(", merged) else "review"
         run.step("record " + outcome, [py, loop / "loop.py", "record", ".sdlc", goal, outcome], repo_dir, env)
         summary["recorded"] = outcome
     except oc.Red as red:

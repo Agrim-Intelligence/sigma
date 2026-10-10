@@ -554,9 +554,9 @@ def test_merge_never_deletes_the_feature_branch_base_after_a_direct_landing(tmp_
     d = _sdlc(tmp_path)
     goal = _started(d, base=_UNIT_BRANCH)
     _evidence(d, goal)
-    run = _runner(_view() + _perm() + _default_branch("main"))
+    run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _default_branch("main"))
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged"), out
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out
     # existing behavior untouched: the goal's own branch really is deleted.
     assert any(c == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
               for c in run.calls), run.calls

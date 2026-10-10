@@ -13,6 +13,7 @@ gh_api helper always passes, which `pr_landing_state`'s bare `gh api .../pulls/<
 test can answer the two readers differently when it needs to (and with ONE body when it does not).
 """
 import json
+import re
 
 ABSENT = object()            # pass as a value to DROP that REST key (absent, not null)
 HEAD = "0" * 40              # matches test_work.HEAD_SHA, the default both sides report
@@ -205,3 +206,32 @@ def design_handlers(prs, branch="sdlc/9"):
         h.append((pull_get(p["number"]), json.dumps(pull)))
         h.append((files_get(p["number"]), p.get("files", rest_files(kw.get("paths", DESIGN_PATHS)))))
     return h
+
+
+# ---- #895 slice 4b-1: the code-goal merge is a REST PUT ----------------------------------------------------
+
+def merge_put(n=7):
+    """The substring identifying gh_api's REST merge of PR `n` (`api repos/{owner}/{repo}/pulls/<n>/merge
+    --method PUT ...`). `pr_landing_state`'s bare `gh api repos/{owner}/{repo}/pulls/<n>` read is a
+    SUBSTRING of that line, so a `_runner` list must put this handler FIRST."""
+    return "pulls/%s/merge --method PUT" % n
+
+
+def landing_read(n=7):
+    """The substring of `pr_landing_state`'s ONE REST read of PR `n`. It also matches the PUT and the
+    gh_api GET, so rely on handler ORDER (`merge_put` and `pull_get` first)."""
+    return "api repos/{owner}/{repo}/pulls/%s" % n
+
+
+def rest_merged(sha="m" * 40):
+    """The documented 2xx body of `PUT pulls/N/merge` (DERIVED from GitHub docs, UNMEASURED live)."""
+    return json.dumps({"merged": True, "sha": sha, "message": "Pull Request successfully merged"})
+
+
+_MERGE_RE = re.compile(r"pulls/\d+/merge")
+
+
+def merge_calls(calls):
+    """Every call that could MERGE a PR: the gh CLI `pr merge` (arm, fallback, design merge) AND the
+    REST `pulls/N/merge` PUT. A "never merged" guard keyed on `pr merge` alone is vacuous since 4b-1."""
+    return [c for c in calls if "pr merge" in c or _MERGE_RE.search(c)]

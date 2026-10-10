@@ -449,8 +449,12 @@ def cmd_pr(state, argv, pos, flags):
                 sys.exit(1)
         git(state, "update-ref", base_ref, head_sha)
         pr["state"] = "MERGED"
+        # #895 4b-1: ONE merge routine serves both `gh pr merge` (its CLI line) and the REST
+        # `PUT pulls/N/merge` (cmd_api dispatches here with `rest_put`; its JSON reply).
+        reply = (json.dumps({"merged": True, "sha": head_sha, "message": "Pull Request successfully merged"})
+                 if flags.get("rest_put") else "Merged pull request #%s" % number)
         save_state(state)
-        print("Merged pull request #%s" % number)
+        print(reply)
         return
     if sub == "comment":
         pr = state["prs"].get(pos[1])
@@ -618,6 +622,17 @@ def cmd_api(state, argv, pos, flags, multi):
         # empty set, and must never be read.
         emit({"total_count": 0, "check_runs": []} if m.group(1) == "check-runs"
              else {"total_count": 0, "state": "pending", "statuses": []}, flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/pulls/(\d+)/merge$" % re.escape(repo), endpoint)
+    if m and method == "PUT":
+        # #895 4b-1: the code-goal merge. A `sha` that is not the current head is GitHub's documented
+        # 409 (DERIVED, UNMEASURED live); otherwise the SAME `sub == "merge"` body runs.
+        fields = dict(item.partition("=")[::2] for item in multi.get("f", []))
+        pr = state["prs"].get(m.group(1))
+        head = git_rev_parse(state, "refs/heads/" + pr["head"]) if pr is not None else None
+        if pr is not None and "sha" in fields and fields["sha"] != head:
+            sys.stderr.write("gh: Head branch was modified. Review and try the merge again. (HTTP 409)\n")
+            sys.exit(1)
+        cmd_pr(state, argv, ["merge", m.group(1)], {"rest_put": "true"}); return
     m = re.match(r"^repos/%s/pulls/(\d+)/reviews$" % re.escape(repo), endpoint)
     if m and method == "GET":
         # #895 4a-2 PR B: the review gate's REST reviews read. This fixture has no reviewers: one empty page.
