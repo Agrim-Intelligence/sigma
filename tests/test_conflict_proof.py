@@ -506,7 +506,7 @@ def test_merge_stop_is_readable_and_the_merge_commit_pairs_by_key(tmp_path):
 
 # --------------------------------------------------------------------------- gate closed: nothing is wired
 #: The only sibling scripts that reference the library; registered, and reached solely behind the upkeep gate.
-REGISTERED_IMPORTERS = ["feature_upkeep_prove.py"]
+REGISTERED_IMPORTERS = ["feature_upkeep_level2.py", "feature_upkeep_prove.py"]
 
 
 def test_the_library_reads_no_config_and_only_registered_scripts_import_it():
