@@ -4,6 +4,22 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
+  New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
+  line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under
+  `<repo root>/.sdlc/eval/results/` (anchored to the repo root, not the cwd; `--results-dir` overrides). The
+  ladder is `no-credential`, `no-opt-in` (`SIGMA_REGRESSION_LIVE` in 1/true/yes/on), `no-cap` (dollars, from
+  `--cap-usd`/`SIGMA_REGRESSION_CAP_USD`, optional `--belt-usd`), `unsupported-platform`, `pull-request-event`,
+  `subscription-in-gated-mode` (gated = `CI`, `GITHUB_ACTIONS` or `--release-gate`); a run that passes all of them
+  ends in the terminal `REFUSED [not-implemented]`, exit 2, never a silent exit 0. **The module starts no model in
+  this slice** (AST tests ban process-spawning imports and calls; a fake `claude` on `PATH` is never run). Held
+  credentials are redacted by exact value (raw, quoted, url-quoted, base64; values under 8 characters are not)
+  before the shared scrubber. Deviation from the #810 design's "every log line through the scrubber": the
+  scrubber is not run over a whole line because its `credential-assignment-suffix` rule rewrites the fixed
+  `[no-credential]:` prefix; lines are fixed text plus a processed variable part. Row schema is a contract for
+  #819/#820; on a NOT RUN row `cost` is null and `representative` is false, and a reader summing spend must skip
+  null-cost rows, never count them as zero. Not exercised: Windows and the real hosted-runner behaviour.
+  Measured: the 119 cases in `tests/test_regression_live.py` pass on Python 3.9; no timing claim made.
 - **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
   shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
   a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);

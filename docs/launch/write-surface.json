@@ -113,6 +113,22 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/live.py",
+      "function": "write_row",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/live.py",
+      "function": "write_row",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/record.py",
       "function": "write_atomic",
       "rule": "fs-remove",
