@@ -13,9 +13,10 @@ files** (default) or **GitHub issues** (`source: github`, needs an authenticated
 loop the same way either way — the helper handles where goals come from and how status is recorded.
 
 First, reset the per-run budget: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
---session-pid "$PPID"` (mid-session, `start-run .sdlc` resets just that budget cursor, for a
-deliberate fresh push without `start`'s config-warning/session-marker side effects and without
-hand-editing `config.json`.) **Always pass `--session-pid "$PPID"`** on this call and on every
+--session-pid "$PPID"` (mid-session, `start-run .sdlc --session-pid "$PPID"` resets your session's
+and the checkout's budget, for a deliberate fresh push without `start`'s
+config-warning/session-marker effects or hand-editing `config.json`; bare, it resets the only live
+session, or none.) **Always pass `--session-pid "$PPID"`** on this call and on every
 `next`/`next-batch` call below — `$PPID` here means literally that: read it fresh from YOUR OWN
 shell each time you run one of these commands, not a value you captured once and are trying to
 remember. It is your invoking shell's own parent process id, and it stays the SAME stable value

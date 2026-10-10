@@ -77,8 +77,9 @@ pointer any drain mechanism consults -- `/sigma-triage`'s own SKILL.md says this
 structurally identical `.sdlc/plans/triage/active.json`: "No new mechanism is needed -- the loop's
 `next_pending` + `backlog_check` handle the sequencing." So the closest existing primitive, and the
 one `_start_drain` below actually calls, is the same sequence `/sigma-triage`'s own "Start
-now" flow documents: `loop.session_start` and `state.start_run` (the literal actions `loop.py
-start` performs) then `loop._next(sdlc_dir, source, config)` (`loop.py next` -- claims and
+now" flow documents: `loop.begin_run` (the literal action `loop.py start` performs: register
+the session, stamp its run, reset the checkout cursor) then `loop._next(sdlc_dir, source, config)`
+(`loop.py next` -- claims and
 returns the first ready goal, using the SAME lease/lock machinery a concurrent loop needs, not a
 re-derived copy of it).
 
@@ -87,8 +88,8 @@ REUSE, NOT REIMPLEMENTATION, throughout: `owners.owner_of` (CODEOWNERS), `ledger
 `handoff.proposed_label` (the #233 convention), `triage.schedule_waves`/`triage._cap_from_config`/
 `triage._is_github`/`triage._gh_cfg` (wave scheduling + config plumbing, #900's own precedent),
 `sources._priority_aliases`/`sources._blocker_promotion` (threaded into `schedule_waves` exactly as
-`triage.plan_cmd` already does), `state.start_run`/`state.unsafe_goal_reason` (run bookkeeping +
-path safety, `slices.py`'s own precedent), `loop._next` (the drain primitive). Nothing here
+`triage.plan_cmd` already does), `loop.begin_run` (run bookkeeping), `state.unsafe_goal_reason`
+(path safety, `slices.py`'s own precedent), `loop._next` (the drain primitive). Nothing here
 reimplements CODEOWNERS parsing, wave scheduling, or the claim/lease protocol.
 
 FAIL-OPEN, LIKE EVERY SIBLING IN THIS TOOLCHAIN: neither public function raises for a runtime
@@ -127,7 +128,7 @@ owners = _load_loop_script("owners")
 sources = _load_loop_script("sources")
 handoff = _load_loop_script("handoff")     # DEFAULT_PRIORITY / proposed_label() reuse only
 triage = _load_loop_script("triage")       # schedule_waves / _cap_from_config / _is_github / _gh_cfg
-state = _load_loop_script("state")         # start_run() / unsafe_goal_reason() reuse
+state = _load_loop_script("state")         # unsafe_goal_reason() reuse
 loop = _load_loop_script("loop")           # _next() -- the literal "loop.py next" primitive
 
 SCHEMA = "sigma-scope-assign/v1"
@@ -472,17 +473,17 @@ def _render_plan_md(anchor, title, assignee, area, nodes, waves, generated_at):
 
 def _start_drain(sdlc_dir, config, source, run=None):
     """The literal, existing mechanism this codebase already uses to "start a drain" -- see the
-    module docstring's DRAIN DECISION. `state.start_run` (== `loop.py start`) then `loop._next` (==
+    module docstring's DRAIN DECISION. `loop.begin_run` (== `loop.py start`) then `loop._next` (==
     `loop.py next`, claims and returns the first ready goal via its own real lease/lock machinery).
-    Register the same session marker that `loop.py start` registers before resetting the cursor;
-    the admission cap now reads that marker as its authoritative count.
+    `begin_run` registers the same session marker that `loop.py start` registers, stamps that
+    session's own run block (#955: its budgets and its goals' verify freshness), then resets the
+    checkout cursor; the admission cap reads that marker as its authoritative count.
     Never raises: a failure at either step is recorded in the returned dict's own `warnings`; the
     plan file `execute()` already wrote stays a completely valid, actionable artifact regardless."""
     result = {"run_started": False, "picked_kind": None, "picked": None, "warnings": []}
     try:
         session_pid = os.getppid()
-        loop.session_start(sdlc_dir, session_pid)
-        state.start_run(sdlc_dir)
+        loop.begin_run(sdlc_dir, session_pid)
         result["run_started"] = True
     except Exception as exc:                                        # noqa: BLE001 - fail-open
         result["warnings"].append(f"could not start the run: {exc}")

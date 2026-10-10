@@ -43,7 +43,7 @@ long-lived checkout on 2026-10-03, four days of use (not a clean run).
 | --- | --- | --- |
 | `claims/<goal>.lock`, `claims/slack-cmd-<name>.lock` | new bounded dead-owner sweep | `liveness_prune.sweep` |
 | `claims/<goal>.claimed` | new 30-day age prune | `liveness_prune.sweep` |
-| `sessions/<pid>[-<thread>].active` | already bounded; operator lever added | `loop._prune_dead_session_entries` (from `start` and `next`), `liveness_prune.py sweep` |
+| `sessions/<pid>[-<thread>].active` | already bounded; operator lever added; #955 run block capped at 4096 credited attempts | `loop._prune_dead_session_entries` (from `start` and `next`), `liveness_prune.py sweep` |
 | `sessions/locks/<slot>.lock`, `phase-end-<stripe>.lock` | capped at 256 files each, 0 bytes | fixed hash stripes, never deleted |
 | `STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`, `feature-judge-spend.lock` | capped at one file each | kernel `flock`, never deleted |
 | `slack-commands.lock` | already bounded | `slack_commands_listen.acquire_single_instance` reclaim |
@@ -103,6 +103,16 @@ triggers would raise how often a quiet-but-live session older than 12 h is prune
 inert entries (they read dead, never alive) until the operator lever runs: latency, not a bound.
 Without `fcntl` the session prune no-ops too (`_session_locked(require_lock=True)` raises and the
 prune swallows it).
+
+Since #955 each marker also carries its session's own `run` block (run start, the two token
+counters and their per-attempt dedupe lists), so one marker grows with the phases its session is
+credited for, capped at 4096 credited attempts per list (a credit past the cap refuses loudly, like
+STATE.md's own). Measured 2026-10-10 on an Apple M1 with synthetic markers: 4.1 KB at 141 Claude
+attempts, 112 KB at the cap, 256 KB with a full Codex map too (the 42-111 bytes above predate the
+block). The file count is unchanged: the block lives inside the existing marker and goes with it
+when the prune above removes it. A budget credit restores the marker's mtime after writing, so it
+never extends the lease-TTL backstop. The registry storage functions moved to `state.py`
+(`session_locked`, `session_write`, ...); `loop._session_*` remain as aliases.
 
 ### Locks that are capped, not pruned
 
