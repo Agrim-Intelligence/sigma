@@ -15,6 +15,10 @@ SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 def _legacy_work_host_unless_test_sets_codex_thread(monkeypatch):
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
+    # #895 4b-1: merge()'s no-GraphQL branch and the merge fallback read os.environ, so a cloud shell
+    # (or an operator override) must not flip the arm tests; a test that wants it sets it itself.
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
 
 
 def _load(name):
@@ -49,6 +53,8 @@ def _runner(handlers):
                 return resp(line) if callable(resp) else resp
         if "rev-parse HEAD" in line:
             return HEAD_SHA          # gate()'s stale-head check (#197); override via a handler
+        if prfake.merge_put(7) in line:
+            return prfake.rest_merged()   # #895 4b-1: the REST merge lands, as an unmatched `gh pr merge` did
         if "remote get-url" in line:
             return REMOTE_URL        # what feature_sync.repo_slug falls back to (#1577)
         return ""
@@ -2543,7 +2549,7 @@ def test_gate_c1_absent_mergeable_parks_unreadable_never_merges(tmp_path):
     run = _runner(_view(mergeable=prfake.ABSENT) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: could not read PR state")
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 @pytest.mark.parametrize("state", ["CLEAN", "ok", prfake.ABSENT], ids=["upper-CLEAN", "ok", "absent"])
@@ -2556,7 +2562,7 @@ def test_gate_c2_unrecognised_merge_state_parks_unreadable_never_behind(tmp_path
     run = _runner(_view(mergeable_state=state) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: could not read PR state")
-    assert not any("rebase" in c or "pr merge" in c for c in run.calls)
+    assert not any("rebase" in c for c in run.calls) and not prfake.merge_calls(run.calls)
 
 
 def test_gate_c3_unknown_merge_state_overrides_a_true_mergeable(tmp_path):
@@ -2696,7 +2702,7 @@ def test_gate_unreadable_rollup_precedes_every_later_verdict(tmp_path, monkeypat
     run = _gate_run(prfake.rest_pull(**pull), runs=RuntimeError(_BAD_GATEWAY), extra=extra + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: could not read PR state"), out
-    assert not any("rebase" in c or "pr merge" in c for c in run.calls)
+    assert not any("rebase" in c for c in run.calls) and not prfake.merge_calls(run.calls)
 
 
 # --- #895 4a-2, R4 decision: the `reviewDecision` read is UNCHANGED (GraphQL-only, fails closed) -----
@@ -2741,7 +2747,7 @@ def test_a_fork_pr_is_never_merged(tmp_path):
     run = _runner(_view(isCrossRepository=True) + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out == "PR #7 opened — fork PR — the upstream maintainer merges"
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_read_only_access_opens_the_pr_and_stops(tmp_path):
@@ -2751,7 +2757,7 @@ def test_read_only_access_opens_the_pr_and_stops(tmp_path):
     run = _runner(_view() + _perm(perm="READ"))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 opened —") and "read access" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_unknown_rights_fail_closed(tmp_path):
@@ -2763,7 +2769,7 @@ def test_unknown_rights_fail_closed(tmp_path):
                   + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "could not determine merge rights" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_a_no_rights_outcome_is_not_a_park(tmp_path):
@@ -2904,9 +2910,10 @@ def test_merge_refuses_without_fresh_local_evidence(tmp_path):
     """CI is not the only leg. No verify for THIS run means no merge, whatever GitHub says."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+    run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
+                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     assert work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP).startswith("PARK: no fresh verify")
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_merge_refuses_evidence_from_a_previous_run(tmp_path):
@@ -2936,9 +2943,9 @@ def test_merge_lands_directly_when_clean_and_safe(tmp_path):
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert "1 required check" in out and "1 required review" in out
-    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
+    assert MERGE_PUT in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
     assert not any("allow_auto_merge" in c for c in run.calls)   # not even consulted
 
@@ -2949,7 +2956,7 @@ def test_merge_deletes_the_remote_branch_after_a_direct_landing(tmp_path):
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert any(c == "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/sdlc/0001-x"
               for c in run.calls)
 
@@ -2959,7 +2966,7 @@ def test_merge_never_attempts_branch_delete_when_the_direct_merge_is_refused(tmp
     goal = _started(d)
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected()
-                  + [("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
+                  + [(prfake.merge_put(7), RuntimeError("HTTP 405: Base branch was modified"))])
     work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert not any("DELETE" in c for c in run.calls)
 
@@ -2977,8 +2984,166 @@ def test_merge_reports_success_even_when_the_branch_delete_fails_from_a_worktree
                   + [("DELETE", RuntimeError(
                          "failed to run git: fatal: 'main' is already used by worktree"))])
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
-    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls          # the merge call itself is untouched
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
+    assert MERGE_PUT in run.calls          # the merge call itself is untouched
+
+
+# --- #895 slice 4b-1: the direct merge is a REST PUT carrying the vetted head; an unknown outcome is READ ---
+
+MERGE_PUT = f"gh api repos/{{owner}}/{{repo}}/pulls/7/merge --method PUT -f merge_method=squash -f sha={HEAD_SHA}"
+
+
+def _seq(*answers):
+    """A `_runner` response that answers successive calls in order (an Exception is raised), last reused."""
+    left = list(answers)
+
+    def answer(_line):
+        a = left.pop(0) if len(left) > 1 else left[0]
+        if isinstance(a, Exception):
+            raise a
+        return a
+    return answer
+
+
+def _merge_run(put, landing=None, extra=()):
+    """One clean, permitted, unprotected-but-`always` landing whose PUT answers `put` and whose
+    `pr_landing_state` read answers `landing`. The PUT handler is FIRST: the landing read's argv is a
+    substring of the PUT line."""
+    tail = [] if landing is None else [(prfake.landing_read(7), landing)]
+    return _runner([(prfake.merge_put(7), put)] + _view() + _perm() + list(extra) + _issue_state("open") + tail)
+
+
+def _landing_pr(state):
+    return prfake.rest_pull(state=state)
+
+
+def _landing_cfg():
+    return {**ALWAYS, "discovery": {"source": "github"}, **ACTIONLOG}
+
+
+def _no_landing_side_effects(run, d, goal):
+    assert not any("DELETE" in c for c in run.calls), run.calls
+    assert _issue_calls(run, goal.split(".")[0]) == [], run.calls
+    assert not [e for e in actionlog.read_goal(d, goal) if e["kind"] == "merged"]
+
+
+def test_merge_lands_by_rest_put_with_the_vetted_head(tmp_path):
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(prfake.rest_merged())
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged (squash) — ") and "outcome reconciled" not in out, out
+    assert MERGE_PUT in run.calls
+    assert not any("pr merge" in c for c in run.calls) and not any("graphql" in c for c in run.calls)
+    assert any("DELETE" in c for c in run.calls)
+    assert [e for e in actionlog.read_goal(d, goal) if e["kind"] == "merged"]
+
+
+@pytest.mark.parametrize("put", ["", "null", json.dumps({"merged": False}),
+                                 RuntimeError("HTTP 502: Server Error"),
+                                 subprocess.TimeoutExpired(["gh"], 120)],
+                         ids=["empty", "null", "merged-false", "5xx", "timeout"])
+def test_an_unknown_merge_outcome_that_reads_merged_lands_normally(tmp_path, put):
+    """The PUT answered ambiguously (empty 2xx, `merged: false`, 5xx, timeout): ONE REST read says MERGED,
+    so the post-landing steps run, and the line still opens `PR #7 merged (squash) —`."""
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(put, landing=_landing_pr("MERGED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged (squash) — ") and "outcome reconciled" in out, out
+    assert any("DELETE" in c for c in run.calls)
+    assert any("state=closed" in c for c in _issue_calls(run, "1642"))
+    assert [e for e in actionlog.read_goal(d, goal) if e["kind"] == "merged"]
+    assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
+
+
+@pytest.mark.parametrize("landing", [_landing_pr("OPEN"), "not json", json.dumps({"state": "weird"}),
+                                     RuntimeError("HTTP 502: read failed")],
+                         ids=["open", "unparseable", "unknown-state", "read-error"])
+def test_an_unknown_merge_outcome_that_does_not_read_merged_is_left_awaiting_merge(tmp_path, landing):
+    """OPEN / UNKNOWN / read error: not a PARK (a park is not swept by the merge-reconcile pass) but the
+    `record review` line; no branch delete, no issue close, no `merged` record; NOT retried."""
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=landing)
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("merge outcome unknown for PR #7 ("), out
+    assert "NOT retried and NOT sent via GraphQL" in out and "awaiting merge" in out
+    assert not out.startswith("PARK") and not out.startswith("PR #7 merged")
+    _no_landing_side_effects(run, d, goal)
+    assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
+    assert not any("pr merge" in c for c in run.calls)
+
+
+def test_an_unknown_merge_outcome_that_reads_closed_parks(tmp_path):
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=_landing_pr("CLOSED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: PR #7 was closed without merging"), out
+    _no_landing_side_effects(run, d, goal)
+
+
+def test_the_reconcile_read_rides_out_a_short_lag(tmp_path):
+    """GitHub can lag after a 5xx: OPEN, OPEN, MERGED within RECONCILE_ATTEMPTS reads lands."""
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    slept = []
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"),
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("OPEN"), _landing_pr("MERGED")))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=slept.append)
+    assert out.startswith("PR #7 merged (squash) — ") and "outcome reconciled" in out, out
+    reads = [c for c in run.calls if c == "gh api repos/{owner}/{repo}/pulls/7"]
+    assert len(reads) == 3 and slept.count(work.RECONCILE_PAUSE) == 2
+
+
+def test_the_reconcile_read_is_bounded(tmp_path):
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    slept = []
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=_landing_pr("OPEN"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=slept.append)
+    assert out.startswith("merge outcome unknown")
+    assert work.RECONCILE_ATTEMPTS == 3
+    assert sum(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls) == work.RECONCILE_ATTEMPTS
+    assert slept.count(work.RECONCILE_PAUSE) == work.RECONCILE_ATTEMPTS - 1
+
+
+def test_a_put_timeout_never_takes_the_cli_or_graphql_path(tmp_path, monkeypatch):
+    """C3's target: a REST merge that timed out may have landed, so it is NEVER followed by `gh pr merge`
+    (GraphQL) even where GraphQL works -- only REST reads."""
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False); monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(subprocess.TimeoutExpired(["gh"], 120), landing=_landing_pr("OPEN"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("merge outcome unknown")
+    assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
+    assert not any("pr merge" in c for c in run.calls)
+    assert not any("graphql" in c for c in run.calls)
+
+
+def test_a_moved_head_409_parks_without_a_reconcile_read(tmp_path):
+    """409 `Head branch was modified`: a definite refusal. Park; never read-and-land, never merge the new head."""
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 409: Head branch was modified. Review and try the merge again."),
+                     landing=_landing_pr("MERGED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: direct merge of PR #7 was refused ("), out
+    assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
+    assert not any(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls)
+    _no_landing_side_effects(run, d, goal)
+
+
+def test_a_5xx_merge_is_reconciled_not_parked(tmp_path):
+    """C7's other half: 5xx is outcome-unknown, so it READS (and here lands) instead of parking."""
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 503: Service Unavailable"), landing=_landing_pr("MERGED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert "outcome reconciled" in out and any(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls)
+
+
+def test_an_invalid_vetted_head_parks_before_any_put(tmp_path, monkeypatch):
+    d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
+    real = work.normalise_ci_rollup
+    monkeypatch.setattr(work, "normalise_ci_rollup", lambda data: {**real(data), "head_sha": "A" * 40})
+    run = _merge_run(prfake.rest_merged())
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: direct merge of PR #7 was refused ("), out
+    assert prfake.merge_calls(run.calls) == []
 
 
 def test_merge_never_raises_when_the_record_is_missing_a_branch_name(tmp_path):
@@ -2996,7 +3161,7 @@ def test_merge_never_raises_when_the_record_is_missing_a_branch_name(tmp_path):
     work._save(d, goal, rec)
     run = _runner(_view() + _perm() + _protected(checks=("ci",), reviews=1))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert not any("DELETE" in c for c in run.calls)
 
 
@@ -3067,7 +3232,7 @@ def test_a_landed_merge_closes_the_issue_its_base_could_not(tmp_path):
     _evidence(d, goal)
     run = _landed(issue_state="open")
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     closes = [c for c in _issue_calls(run, "1642") if "state=closed" in c]
     assert closes == ["gh api -X PATCH repos/{owner}/{repo}/issues/1642 -f state=closed"], run.calls
     assert "#1642 was still open after the merge" in out
@@ -3085,7 +3250,7 @@ def test_a_landed_merge_onto_the_default_branch_leaves_the_issue_entirely_to_git
     _evidence(d, goal)
     run = _landed(issue_state="closed")
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     # The read happens (that's how "already closed" gets confirmed at all) -- only the two WRITES
     # (the PATCH, the audit comment) must be absent.
     writes = [c for c in _issue_calls(run, "1642") if "state=closed" in c or "/comments" in c]
@@ -3118,7 +3283,7 @@ def test_the_close_fires_even_when_the_recorded_base_matches_default(tmp_path):
     run = _landed(extra=_default_branch("main"),          # what a live read ALSO shows -- unused by the fix
                   issue_state="open")                      # GitHub's own observed fact: still open
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     closes = [c for c in _issue_calls(run, "2572") if "state=closed" in c]
     assert closes == ["gh api -X PATCH repos/{owner}/{repo}/issues/2572 -f state=closed"], run.calls
     assert "#2572 was still open after the merge" in out
@@ -3134,7 +3299,7 @@ def test_a_pr_whose_issue_github_already_closed_gets_no_duplicate_close(tmp_path
     _evidence(d, goal)
     run = _landed(issue_state="closed")                  # GitHub's own observed fact: already closed
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     # The read happens; only the two WRITES (the PATCH, the audit comment) must be absent -- a
     # duplicate PATCH on an already-closed issue would be a no-op, but this asserts it is never
     # even attempted, per the "touch nothing" contract "already closed" is meant to keep.
@@ -3160,7 +3325,7 @@ def test_an_unconfirmed_issue_state_never_silently_trusts_that_its_already_close
     _evidence(d, goal)
     run = _landed(issue_state=None)                      # the state read raises
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     closes = [c for c in _issue_calls(run, "2574") if "state=closed" in c]
     assert closes == ["gh api -X PATCH repos/{owner}/{repo}/issues/2574 -f state=closed"], run.calls
     clause = out.rsplit(" — ", 1)[1]                      # just the close clause, not the whole line
@@ -3186,7 +3351,7 @@ def test_an_unreadable_state_whose_close_also_fails_never_claims_it_was_still_op
     run = _landed(extra=[("-f state=closed", RuntimeError("HTTP 500: could not close"))],
                   issue_state=None)                       # both the read AND the close attempt fail
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     attempts = [c for c in _issue_calls(run, "2575") if "state=closed" in c]
     assert attempts == ["gh api -X PATCH repos/{owner}/{repo}/issues/2575 -f state=closed"], run.calls
     clause = out.rsplit(" — ", 1)[1]                      # just the close clause, not the whole line
@@ -3214,7 +3379,7 @@ def test_a_close_request_never_claims_credit_it_cannot_prove(tmp_path):
     run = _runner(_view() + _perm() + handlers)
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert raced["closed"] is True                        # the modelled race did happen
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     closes = [c for c in _issue_calls(run, "1642") if "state=closed" in c]
     assert closes == ["gh api -X PATCH repos/{owner}/{repo}/issues/1642 -f state=closed"], run.calls
     note = next(c for c in run.calls if "/issues/1642/comments" in c)
@@ -3245,7 +3410,7 @@ def test_a_refused_direct_merge_never_closes_its_issue(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, goal="1642.md", base="feature/autowatch-dryrun")
     _evidence(d, goal)
-    run = _landed(extra=[("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
+    run = _landed(extra=[(prfake.merge_put(7), RuntimeError("HTTP 405: Base branch was modified"))])
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert _issue_calls(run, "1642") == [], run.calls
@@ -3286,7 +3451,7 @@ def test_a_local_goal_never_closes_a_github_issue_when_its_merge_lands(tmp_path)
     _evidence(d, goal)
     run = _landed()
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)          # NOT github mode
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert _issue_calls(run, "0002") == [], run.calls
     assert not any("--jq .state" in c for c in run.calls)   # the issue-state probe is never even made
 
@@ -3305,7 +3470,7 @@ def test_the_close_goes_to_the_repo_the_goal_number_came_from(tmp_path):
     cfg = {**ALWAYS, "discovery": {"source": "github", "github": {"repo": "acme/board"}}}
     run = _landed()
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert any(c.startswith("gh api repos/acme/board/issues/1642") and "--jq .state" in c
                for c in run.calls), run.calls
     assert any(c.startswith("gh api -X PATCH repos/acme/board/issues/1642") for c in run.calls), run.calls
@@ -3338,7 +3503,7 @@ def test_a_close_that_fails_never_turns_a_landed_merge_into_a_failure(tmp_path):
     _evidence(d, goal)
     run = _landed(extra=[("issues/1642 -f state=closed", RuntimeError("HTTP 403: Forbidden"))])
     out = work.merge(d, ALWAYS_GITHUB, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert "#1642" in out and "403" in out
     assert "record done" in out                  # names the retry path
     assert "nothing else will" not in out         # #2615 round 3: that claim was false -- it retries
@@ -3390,8 +3555,8 @@ def test_merge_lands_directly_on_a_repo_that_disallows_auto_merge(tmp_path):
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected() + _auto_merge_allowed(False))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
-    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
+    assert MERGE_PUT in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
 
 
@@ -3404,7 +3569,7 @@ def test_merge_parks_when_a_direct_merge_is_refused(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected()
-                  + [("pr merge", RuntimeError("HTTP 405: Base branch was modified"))])
+                  + [(prfake.merge_put(7), RuntimeError("HTTP 405: Base branch was modified"))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert "405" in out and "Base branch was modified" in out
@@ -3432,11 +3597,85 @@ def test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge(tmp_p
     goal = _started(d)
     _evidence(d, goal)
     run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
-                  + [("pr merge", RuntimeError('HTTP 405: Required status check "slow" is expected'))])
+                  + [(prfake.merge_put(7), RuntimeError('HTTP 405: Required status check "slow" is expected'))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK:")
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
     assert "slow" in out
+
+
+# --- #895 slice 4b-1 D3: no GraphQL -> a still-pending required check is never armed, and no extra wait ---
+
+D3_PARK = (f"PARK: required checks still pending after {work.PENDING_ATTEMPTS * work.PENDING_INTERVAL}s and "
+           "auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish")
+
+
+def _pending_forever():
+    return _mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
+
+
+def test_no_graphql_pending_checks_park_without_arming_or_merging(tmp_path, monkeypatch):
+    """`SIGMA_GH_GRAPHQL=off`: gate() has already spent its bounded REST wait and the check is STILL
+    pending. `--auto` is GraphQL, so it is not attempted, `allow_auto_merge` is not even read, and no
+    merge of any kind (CLI or REST PUT) is sent -- PARK, naming the re-run."""
+    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_pending_forever())
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out == D3_PARK, out
+    assert prfake.merge_calls(run.calls) == []
+    assert not any("allow_auto_merge" in c for c in run.calls)
+    assert not any("--auto" in c.split() for c in run.calls)
+    assert D3_PARK.startswith("PARK: required checks still pending after 450s")
+
+
+def test_no_graphql_branch_under_claude_code_remote_is_structural_only(tmp_path, monkeypatch):
+    """A STRUCTURAL check of the `graphql_available()` branch, NOT a cloud check: `_perm()` fakes the
+    GraphQL `viewerPermission` read that a real cloud session cannot make (see the next test for the
+    real cloud outcome). With CLAUDE_CODE_REMOTE set the same no-arm PARK is taken."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_pending_forever())
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out == D3_PARK, out
+    assert prfake.merge_calls(run.calls) == [] and not any("allow_auto_merge" in c for c in run.calls)
+
+
+def test_a_real_cloud_session_still_stops_at_the_graphql_merge_rights_read(tmp_path, monkeypatch):
+    """The REAL current cloud outcome (stated limitation of 4b-1; moving merge_rights' permission read
+    to REST is slice 4b-2): the GraphQL `viewerPermission` read is refused by the proxy, so merge()
+    returns the `opened -- could not determine merge rights` line and sends no merge at all."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_view() + [("viewerPermission", RuntimeError(
+        "HTTP 403: GitHub GraphQL is not available from Claude Code sessions"))])
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 opened — could not determine merge rights ("), out
+    assert prfake.merge_calls(run.calls) == []
+
+
+def test_no_graphql_checks_that_settle_inside_gate_merge_by_rest_with_the_sha(tmp_path, monkeypatch):
+    """gate()'s own bounded wait IS the wait: checks that turn green inside it reach the D2 REST PUT with
+    the vetted head -- no arm, no extra gate round."""
+    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_sequence(_mixed(("ci", "SUCCESS"), ("slow", "")), _view()) + _perm() + _protected(checks=("ci", "slow")))
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged (squash)") and "outcome reconciled" not in out, out
+    assert MERGE_PUT in run.calls and not any("pr merge" in c for c in run.calls)
+    assert not any("allow_auto_merge" in c for c in run.calls)
+
+
+def test_no_graphql_twin_of_the_disallowed_auto_merge_park(tmp_path, monkeypatch):
+    """Twin of `test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge` with GraphQL
+    unavailable: the D3 PARK, and the PUT GitHub would refuse is never sent."""
+    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
+                  + [(prfake.merge_put(7), RuntimeError('HTTP 405: Required status check "slow" is expected'))])
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out == D3_PARK, out
+    assert prfake.merge_calls(run.calls) == []
 
 
 def test_merge_parks_when_arming_itself_is_refused_despite_allow_auto_merge(tmp_path):
@@ -3497,7 +3736,7 @@ def test_merge_parks_not_arms_on_a_genuinely_failing_required_check(tmp_path):
                                                    status="UNSTABLE") + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: failing required check tests has no readable Actions log")
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_merge_logs_a_merge_armed_entry_to_the_ledger(tmp_path):
@@ -3532,9 +3771,10 @@ def test_merge_logs_a_merged_entry_to_the_ledger_on_a_direct_landing(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     ledger.reset_actor_cache()
-    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+    run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
+                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out   # #895 4b-1: the PUT, not the read
     entries = [(e["kind"], e.get("pr")) for e in ledger.read_all(d)]
     assert ("merged", "7") in entries
     assert ("merge-armed", "7") not in entries
@@ -3544,8 +3784,10 @@ def test_known_direct_merge_emits_core_facts_when_receipt_sharing_is_disabled(tm
     ledger = _load("ledger")
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
-    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
-    assert work.merge(d, cfg, goal, run=run, sleep=NOSLEEP).startswith("PR #7 merged")
+    run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
+                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+    out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out
     entries = [event for event in ledger.read_all(d) if event["kind"] == "merged"]
     events = [event for event in journal_events(ledger, d) if event["kind"] == "merge_observed"]
     assert len(entries) == 1 and len(events) == 1 and events[0]["merge_sha"] == "a" * 40
@@ -3627,9 +3869,10 @@ def test_merge_then_done_refusal_writes_merged_only_once(tmp_path):
     goal = _started(d)
     _evidence(d, goal)
     ledger.reset_actor_cache()
-    run = _runner(_view() + _perm() + _protected() + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+    run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
+                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out   # #895 4b-1: the PUT, not the read
 
     # loop.py's `record done` dispatch, right after -- a synchronous `gh pr merge` guarantees the
     # very next live read sees state=MERGED.
@@ -3648,7 +3891,7 @@ def test_merge_leaves_the_pr_alone_when_auto_merge_is_off(tmp_path):
     _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
-    assert "auto_merge is off" in out and not any("pr merge" in c for c in run.calls)
+    assert "auto_merge is off" in out and not prfake.merge_calls(run.calls)
     assert not any("protection" in c for c in run.calls)      # off short-circuits before the API call
 
 
@@ -3662,7 +3905,7 @@ def test_merge_leaves_the_pr_alone_when_auto_merge_is_off_even_with_pending_chec
     _evidence(d, goal)
     run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm())
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert "auto_merge is off" in out and "pending" in out.lower()
     assert not any("allow_auto_merge" in c for c in run.calls)   # off never even asks
 
@@ -3673,7 +3916,7 @@ def test_merge_rebases_a_behind_branch_then_merges(tmp_path):
     _evidence(d, goal)
     run = _runner(_sequence(_view(status="BEHIND"), _view()) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     assert any("rebase --autostash origin/main" in c for c in run.calls)
     assert any("push --force-with-lease" in c for c in run.calls)
 
@@ -3687,7 +3930,7 @@ def test_a_conflicting_rebase_aborts_and_parks(tmp_path):
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out
     assert "git rebase --abort" in run.calls
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_rebase_detects_an_autostash_pop_conflict_even_though_the_command_itself_exits_0(tmp_path):
@@ -3915,9 +4158,7 @@ def test_a_pure_insertion_changelog_conflict_is_union_merged(tmp_path):
     assert "<<<<<<<" not in text and "|||||||" not in text
     assert text.endswith("\n")                                               # trailing newline kept
     assert "core.editor=true rebase --continue" in " ".join(run.calls)        # never opens an editor
-    assert out.startswith("PR #7 merged")
-
-
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
 def test_an_edited_line_in_the_changelog_conflict_still_aborts(tmp_path):
     """The content-loss guard. A NON-EMPTY diff3 base means a side changed a line the other kept --
     a judgement call, never a union. This is the case that must never silently resolve."""
@@ -3930,7 +4171,7 @@ def test_an_edited_line_in_the_changelog_conflict_still_aborts(tmp_path):
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred")
     assert "git rebase --abort" in run.calls
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert (wt / "CHANGELOG.md").read_text(encoding="utf-8") == _D3_EDITED    # left untouched
 
 
@@ -3999,9 +4240,7 @@ def test_a_second_conflicting_commit_in_the_replay_is_also_union_merged(tmp_path
                   + [("rebase --continue", cont), ("checkout --merge", recheckout)] + _conflict())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert rounds["n"] == 2                                            # it really did go twice
-    assert out.startswith("PR #7 merged")
-
-
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
 def test_the_union_loop_is_bounded_and_gives_up(tmp_path):
     """An endlessly-conflicting replay must PARK, not spin. UNION_ROUNDS is the cap."""
     d = _sdlc(tmp_path)
@@ -4079,8 +4318,8 @@ def test_behind_reconcile_self_heals_transient_window_within_one_merge(tmp_path)
                      _view())                              # settles CLEAN
     run = _runner(view + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
-    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
+    assert MERGE_PUT in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == 1   # ONE rebase, not a storm
 
@@ -4113,7 +4352,7 @@ def test_behind_reconcile_parks_an_unwinnable_race_after_a_bounded_number_of_reb
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: BEHIND race did not settle") and "merge queue" in out
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == work.BEHIND_REBASES
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_behind_reconcile_parks_when_the_transient_window_never_closes(tmp_path):
@@ -4127,7 +4366,7 @@ def test_behind_reconcile_parks_when_the_transient_window_never_closes(tmp_path)
                                            _view(status="BLOCKED", checks=())) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: not safe to merge") and "BLOCKED" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert sum("rebase --autostash origin/main" in c for c in run.calls) == 1
     # initial merge() gate read (1) + exactly BEHIND_ATTEMPTS post-rebase reads -- the bound, pinned.
     assert _reads(run, STATUS_READ) == work.BEHIND_ATTEMPTS + 1
@@ -4143,7 +4382,7 @@ def test_behind_reconcile_does_not_poll_past_a_failing_check(tmp_path):
                                            _mixed(("ci", "FAILURE"), status="UNSTABLE")) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: failing required check ci has no readable Actions log")
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert _reads(run, STATUS_READ) == 2   # initial + ONE post-rebase, not the budget
 
 
@@ -4158,7 +4397,7 @@ def test_behind_reconcile_does_not_poll_past_a_conflict(tmp_path):
                                            _view(mergeable="CONFLICTING", status="DIRTY")) + _perm() + _protected())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: conflicts with the base branch")
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert _reads(run, STATUS_READ) == 2   # not polled past
 
 
@@ -4203,7 +4442,7 @@ def test_protected_policy_will_not_merge_an_unprotected_branch(tmp_path):
     run = _runner(_view() + _perm() + UNPROTECTED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_merge_protected_policy_leaves_an_unprotected_branch_alone_even_with_pending_checks(tmp_path):
@@ -4214,7 +4453,7 @@ def test_merge_protected_policy_leaves_an_unprotected_branch_alone_even_with_pen
     _evidence(d, goal)
     run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + UNPROTECTED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
     assert "is not protected" in out and "pending" in out.lower()
 
 
@@ -4225,7 +4464,7 @@ def test_always_merges_unprotected_but_says_nothing_gated_it(tmp_path):
     run = _runner(_view() + _perm() + UNPROTECTED)
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "WARNING" in out and "local verify was the only gate" in out
-    assert f"gh pr merge 7 --squash --match-head-commit {HEAD_SHA}" in run.calls
+    assert MERGE_PUT in run.calls
     assert not any("--auto" in c.split() for c in run.calls)   # exact token: not a `--autostash` collision
 
 
@@ -4246,7 +4485,7 @@ def test_protection_with_no_requirements_is_not_protection(tmp_path):
     run = _runner(_view() + _perm() + _protected(checks=(), reviews=0))
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert "requires no checks or reviews" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_protection_fails_open_when_the_api_returns_non_object_json(tmp_path):
@@ -4263,7 +4502,7 @@ def test_protection_fails_open_when_the_api_returns_non_object_json(tmp_path):
         run = _runner(_view() + _perm() + [("branches/main/protection", shape)])
         out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
         assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out, shape
-        assert not any("pr merge" in c for c in run.calls)
+        assert not prfake.merge_calls(run.calls)
 
 
 # --- the policy knob itself ----------------------------------------------------------------------
@@ -4993,7 +5232,7 @@ def test_merge_parks_when_a_review_requests_changes(tmp_path):
     run = _runner(_view() + _perm() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"], pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: changes requested by bo")
-    assert not any("pr merge" in c for c in run.calls)                 # never armed the merge
+    assert not prfake.merge_calls(run.calls)                 # never armed the merge
 
 
 def test_merge_arms_when_the_pr_is_approved(tmp_path):
@@ -5001,7 +5240,7 @@ def test_merge_arms_when_the_pr_is_approved(tmp_path):
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
     run = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert not out.startswith("PARK") and any("pr merge" in c for c in run.calls)
+    assert not out.startswith("PARK") and prfake.merge_calls(run.calls)
 
 
 # --- the self-authorship fallback: GitHub forbids approving/blocking your OWN PR, so a solo-account
@@ -5139,7 +5378,7 @@ def test_merge_does_not_arm_on_a_non_collaborators_approval(tmp_path):
     run = _runner(_view() + _perm() + _review(decision=None, comments=["sigma:approve"], comment_authors=["rando"],
                                               associations=["NONE"], pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PARK") and not any("pr merge" in c for c in run.calls)
+    assert out.startswith("PARK") and not prfake.merge_calls(run.calls)
 
 
 # --- F9: comment-marker parsing is line-anchored — a negated ("do NOT sigma:approve"), quoted
@@ -6043,7 +6282,7 @@ def test_merge_emits_a_pass_gate_event_on_a_clean_and_safe_merge(tmp_path):
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     events = _gate_events(journal_events(ledger, d), "merge")
     assert len(events) == 1 and events[0]["verdict"] == "pass"
 
@@ -6110,7 +6349,7 @@ def test_work_survives_a_raising_ledger_append(tmp_path, monkeypatch):
     monkeypatch.setattr(work.ledger, "append", raiser)
 
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     out2 = _post_review(d, cfg, goal, _runner([]), "approve")
     assert out2.startswith("PARK: review comment posted but local effects are pending")
 
@@ -6296,6 +6535,7 @@ def test_merge_emits_gate_for_merge_and_code_review_to_the_action_log(tmp_path):
     run = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
+    assert "outcome reconciled" not in out, out
     entries = actionlog.read_goal(d, goal)
     gates = {e["gate"]: e["verdict"] for e in entries if e["kind"] == "gate"}
     assert gates == {"merge": "pass", "code_review": "pass", "test_trust": "pass"}
@@ -6338,7 +6578,7 @@ def test_merge_emits_merged_to_the_action_log_on_a_direct_landing(tmp_path):
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
     run = _runner(_view() + _perm() + _protected())
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     entries = actionlog.read_goal(d, goal)
     hits = [e for e in entries if e["kind"] == "merged"]
     assert len(hits) == 1 and hits[0]["pr"] == "7"
@@ -6376,7 +6616,7 @@ def test_actionlog_survives_a_raising_actionlog_append(tmp_path, monkeypatch):
     monkeypatch.setattr(actionlog, "append", raiser)
 
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PR #7 merged")
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
     out2 = _post_review(d, cfg, goal, _runner([]), "approve")
     assert "posted sigma:approve" in out2
 
@@ -6437,6 +6677,7 @@ def test_ledger_is_byte_identical_across_a_full_actionlog_instrumented_sequence(
         run_merge = _runner(_view() + _perm() + _review(decision="APPROVED", pr_get=False))
         out = work.merge(d, cfg, goal, run=run_merge, sleep=NOSLEEP)
         assert out.startswith("PR #7 merged"), out
+        assert "outcome reconciled" not in out, out
         out2 = _post_review(d, cfg, goal, _runner([]), "approve")
         assert "posted sigma:approve" in out2
 
@@ -8467,7 +8708,7 @@ def test_the_gate_never_merges_the_sibling_itself(tmp_path):
     d, goal = _pair(tmp_path, APPROVAL)
     run = _runner(_rights() + _sibling())
     assert work.sibling_gate(d, APPROVAL, goal, run=run, sleep=NOSLEEP)[0] is True
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 
@@ -8572,6 +8813,7 @@ def test_merge_never_consults_the_cross_repo_check(tmp_path):
     run = _runner(_view() + _perm() + _protected() + _sibling(checks=(("e2e", "FAILURE"),)))
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
+    assert "outcome reconciled" not in out, out
     assert not any("pr list" in c for c in run.calls)
     assert not any("acme/api" in c for c in run.calls)
 
@@ -8647,6 +8889,7 @@ def test_the_test_trust_gate_NEVER_blocks_the_merge(tmp_path):
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert not out.startswith("PARK"), out
     assert out.startswith("PR #7 merged"), out
+    assert "outcome reconciled" not in out, out
 
 
 def test_test_trust_diffs_against_the_goals_OWN_resolved_base_not_a_hardcoded_main(tmp_path):
@@ -10365,6 +10608,7 @@ def test_312_github_no_command_enforce_off_merges_without_verify_evidence(tmp_pa
     run = _landed(extra=_review(decision="APPROVED", pr_get=False))
     out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
+    assert "outcome reconciled" not in out, out
     assert "no fresh verify evidence" not in out
 
 
@@ -10375,7 +10619,7 @@ def test_312_github_no_command_still_parks_on_the_review_gate(tmp_path):
     run = _runner(_view() + _perm() + _review(decision="CHANGES_REQUESTED", changes_by=["bo"], pr_get=False))
     out = work.merge(d, GITHUB_NO_COMMAND, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: changes requested by bo"), out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_312_enforce_on_without_evidence_still_parks_and_names_the_fix(tmp_path):
@@ -10388,7 +10632,7 @@ def test_312_enforce_on_without_evidence_still_parks_and_names_the_fix(tmp_path)
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: no fresh verify evidence for this run"), out
     assert "verify_detect.py" in out and "verify.enforce is on" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_312_command_configured_with_stale_evidence_still_parks(tmp_path):
@@ -10403,7 +10647,7 @@ def test_312_command_configured_with_stale_evidence_still_parks(tmp_path):
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: no fresh verify evidence for this run"), out
     assert "predates this run" in out and "loop.py verify" in out
-    assert not any("pr merge" in c for c in run.calls)
+    assert not prfake.merge_calls(run.calls)
 
 
 def test_312_command_configured_with_fresh_evidence_merges(tmp_path):
@@ -10413,6 +10657,7 @@ def test_312_command_configured_with_fresh_evidence_merges(tmp_path):
     _evidence(d, goal)
     out = work.merge(d, cfg, goal, run=_landed(extra=_review(decision="APPROVED", pr_get=False)), sleep=NOSLEEP)
     assert out.startswith("PR #7 merged"), out
+    assert "outcome reconciled" not in out, out
 
 
 @pytest.mark.parametrize("verify,goal_cmd,want", [

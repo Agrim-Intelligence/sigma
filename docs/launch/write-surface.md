@@ -252,7 +252,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
 | skills/sigma-loop/scripts/work.py | finish | gh-pr | 1 | work.enabled; confirmed merged PR | high |
 | skills/sigma-loop/scripts/work.py | finish | git-destructive | 1 | ungated | high |
-| skills/sigma-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR | high |
+| skills/sigma-loop/scripts/work.py | merge | gh-pr | 1 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the one remaining site is the `--auto` arm (GraphQL, only while graphql_available); the direct merge goes through gh_api.merge_pr_gh (REST PUT pulls/N/merge with the vetted head sha, invisible to this scanner) since #895 slice 4b-1 | high |
 | skills/sigma-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; work.auto_merge != off | high |
 | skills/sigma-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
 | skills/sigma-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |

@@ -231,8 +231,8 @@ Then repeat until the helper says stop:
    timeout before running it, not after it times out**: the safe minimum is the full worst case,
    **~1,350,000ms (22.5 minutes)**. **Read its first word and record accordingly — never merge past
    it by hand:** `PARK: …` → `record parked` (but a **failing required check** is a fix → `record
-   failed`); `PR #N merged …` → **`record done`**; any other line → **`record review`** (done
-   means merged; `record done` is REFUSED until then). Every ending, and why **`record done`
+   failed`); `PR #N merged …` → **`record done`**; any other line (`merge outcome unknown …`
+   included) → **`record review`** (done means merged; `record done` is REFUSED until then). Every ending, and why **`record done`
    releases the checkout itself — do not run `work.py finish`**: `references/landing.md`. **Read it before the first merge of a run.**
 
    With `config.ledger.enabled` on, the claim and the outcome are mirrored to the **team ledger**

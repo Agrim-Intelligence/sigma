@@ -475,7 +475,7 @@ def test_merge_under_auto_merge_off_runs_the_review_gate_first(monkeypatch, comm
         assert contains in out, out
         if starts != "PARK:":
             assert out.endswith("leaving PR #7 for a human")
-        assert not any("pr merge" in c for c in run.calls)    # `off` never merges, whatever the gate
+        assert not prfake.merge_calls(run.calls)    # `off` never merges (CLI or REST PUT), whatever the gate
 
 
 # --- #255: hardening after #232 --------------------------------------------------------------------

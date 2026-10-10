@@ -59,6 +59,7 @@ API_TAIL = [("POST", re.compile(r"issues(/\d+/comments)?|pulls|labels")),
             ("PUT", re.compile(r"pulls/\d+/merge")),
             ("POST", re.compile(r"issues/\d+/labels")),
             ("DELETE", re.compile(r"issues/\d+/labels/[^/]+|git/refs/heads/sdlc/[^/]+"))]
+MERGE_PUT_RE = re.compile(r"/pulls/\d+/merge$")
 GIT_VERBS = {"add", "branch", "checkout", "clone", "commit", "config", "diff", "fetch", "init", "log", "ls-files",
              "ls-remote", "merge-base", "push", "remote", "rev-list", "rev-parse", "show", "status", "switch",
              "symbolic-ref", "worktree", "stash", "restore", "cat-file", "for-each-ref", "describe", "reflog"}
@@ -446,7 +447,9 @@ def evaluate_capture(lines, inventory, run, baseline, repo):
         bad += violations
         for rule in sorted(rules - inv_rules):
             missing.append("%s needs rule %s, absent from the inventory" % (label, rule))
-        if label == "gh pr merge":
+        # #895 4b-1: the code-goal merge is a REST `PUT .../pulls/<n>/merge`; `gh pr merge` is its fallback.
+        if label == "gh pr merge" or (label == "gh api PUT" and MERGE_PUT_RE.search(
+                str(rec.get("endpoint", "")).split("?")[0])):
             merge_launch = True
         if label == "gh pr create" or (label == "gh api POST" and
                                       str(rec.get("endpoint", "")).split("?")[0].endswith("/pulls")):
@@ -462,9 +465,9 @@ def evaluate_capture(lines, inventory, run, baseline, repo):
     if not push:
         witness.append("no git push in the capture")
     if run == "always" and not merge_launch:
-        witness.append("run always but no gh pr merge in the capture")
+        witness.append("run always but no merge (gh pr merge or REST PUT pulls/N/merge) in the capture")
     if run == "off" and merge_launch:
-        bad.append("run off but the capture holds gh pr merge")
+        bad.append("run off but the capture holds a merge (gh pr merge or REST PUT pulls/N/merge)")
     problems = bad + missing + ["WITNESS: " + w for w in witness]
     detail = "; ".join(problems) or (
         "%d launch kinds, all known reads or allowed writes with an inventory rule (NOT classifiable, only counted: "

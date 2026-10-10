@@ -119,3 +119,25 @@ def test_plan_review_docs_record_the_verdict_gesture():
     assert 'work.py" record-plan-review .sdlc "$goal" --verdict' in record, record
     assert "awk '/^Plan sha256: /{print $3; exit}' \"" + brief_file + "\"" in record, record
     assert 'review_context.py" brief' not in record, record
+
+
+# --- #895 slice 4b-1: two new merge() return shapes the agent must route --------------------------
+
+def test_documents_the_unknown_merge_outcome_line_and_routes_it_to_review():
+    """`merge outcome unknown for PR #N (...)` is NOT a PARK (a park is never swept by the merge-reconcile
+    pass); the skill must name it and send it to `record review`."""
+    flat = _flat(SKILL)
+    assert "merge outcome unknown for PR #N" in flat, "the skill omits merge()'s unknown-outcome line (#895 4b-1)"
+    tail = flat.split("merge outcome unknown for PR #N", 1)[1][:400]
+    assert "**`record review`**" in tail, tail
+
+
+def test_documents_the_no_graphql_pending_check_park():
+    flat = _flat(SKILL)
+    assert ("PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL"
+            in flat), "the skill omits merge()'s no-GraphQL pending-check PARK (#895 4b-1)"
+
+
+def test_documents_the_lever_for_a_host_cut_mid_merge():
+    flat = _flat(SKILL)
+    assert "A cut DURING the merge call itself" in flat and 'loop.py record .sdlc "$goal" review' in flat

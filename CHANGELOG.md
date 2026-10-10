@@ -4,6 +4,32 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The code-goal merge goes REST first (#895, slice 4b-1; refs #895).** `work.merge()`'s direct merge is now
+  `gh_api.merge_pr_gh`: REST `PUT pulls/N/merge` with `merge_method` and the vetted head as `sha` (was `gh pr merge
+  N --<m> --match-head-commit SHA`), with ONE `gh pr merge` fallback on a primary rate limit only, and only while
+  GraphQL is available; never a retry. Success is ONLY a reply carrying `merged: true`: an empty, `null`,
+  non-object or `merged: false` 2xx is an UNKNOWN outcome, never a landing. An unknown outcome (5xx, timeout,
+  secondary rate limit, malformed 2xx, a fallback failure with no `HTTP nnn`) is never re-sent and never sent via
+  GraphQL: it is read back with up to 3 REST `pulls/N` reads (5s apart, bounded 10s); MERGED lands normally
+  (line gains `(outcome reconciled: ...)`), CLOSED parks, still OPEN/UNKNOWN returns `merge outcome unknown for
+  PR #N (...)`, routed to `record review` (awaiting merge: the merge-reconcile pass records done if it landed,
+  doctor's 3-day stuck-merge alarm if not). A definite refusal (409 head moved, 405, 401/403/404/422, a primary
+  rate limit without GraphQL) parks as before, with no read. Without GraphQL (`SIGMA_GH_GRAPHQL=off` or
+  `CLAUDE_CODE_REMOTE`) a required check still pending after gate()'s own 450s REST wait is NOT armed (`--auto` is
+  GraphQL): `PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL`; no
+  extra wait, so the documented 22.5-minute worst case is unchanged. GraphQL available: the arm path is
+  unchanged. HONESTY: D2/D3 are reachable today only where GraphQL works (`SIGMA_GH_GRAPHQL=off` exercises the
+  `graphql_available()` branches); a real `CLAUDE_CODE_REMOTE` session still stops earlier, at `merge_rights`'
+  GraphQL `viewerPermission` read (`PR #N opened -- could not determine merge rights`), so a cloud session
+  cannot merge yet. Host cut mid-PUT: nothing is recorded locally; the lever is `loop.py record review` (a re-run
+  of `work.py merge` against a PR that did merge is NOT measured and may park it). Ratchet (printed `scan()`): work.py 7 -> 6,
+  TOTAL 47 -> 46. Deferred to slice 4b-2: the `merge_rights` permission read, `protection()`'s `nameWithOwner`
+  read, `post_review`'s `gh pr comment`, `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`,
+  `verify_merge.py` (ready/create/merge); `reviewDecision` stays GraphQL by decision; R5 `pr list --head`.
+  UNMEASURED: the REST merge was never run against real GitHub or in a real cloud session; the PUT 2xx body,
+  405/409 statuses and bodies, the 429 body, CLI `--match-head-commit` vs REST `sha` equivalence, merge-queue
+  behaviour of the CLI fallback and real merge latency all come from GitHub docs or fakes. Measured: the new
+  tests in `tests/test_gh_api.py` and `tests/test_work.py`; no timing claim made.
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
   line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under
