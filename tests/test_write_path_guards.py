@@ -46,13 +46,20 @@ def _candidate(sdlc_dir):
         "goal": "42", "to": "watcher"}) + "\n", encoding="utf-8")
 
 
-def _design_row():
-    return json.dumps([{
-        "number": 42, "url": "https://example.test/42", "isCrossRepository": False,
-        "headRefName": "sdlc/9", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-        "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
-        "changedFiles": 2,
-    }])
+def _design_rest(argv):
+    """#895 4a-2 PR B: the design-PR lookup is REST first -- list, `pulls/42`, `pulls/42/files`."""
+    line = " ".join(argv)
+    if "pulls?head=" in line:
+        return json.dumps([{"number": 42, "mergeable": None, "changed_files": None}])
+    if "pulls/42/files" in line:
+        return json.dumps([{"filename": ".sdlc/design/9.md"}, {"filename": ".sdlc/design/9-in-brief.md"}])
+    if "pulls/42 " in line:
+        return json.dumps({
+            "number": 42, "html_url": "https://example.test/42", "state": "open", "merged": False,
+            "mergeable": True, "mergeable_state": "clean", "changed_files": 2,
+            "head": {"ref": "sdlc/9", "sha": "0" * 40, "repo": {"full_name": "acme/app"}},
+            "base": {"ref": "main", "repo": {"full_name": "acme/app"}}})
+    return ""
 
 
 def test_documented_remote_branch_cleanup_refuses_main_before_delete():
@@ -148,12 +155,14 @@ def test_remote_webhook_opt_in_does_not_bypass_the_http_scheme_rule(tmp_path):
     assert posts == []
 
 
-def test_documented_design_merge_obeys_auto_merge_off():
+def test_documented_design_merge_obeys_auto_merge_off(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
     calls = []
 
     def run(cwd, argv):
         calls.append(list(argv))
-        return _design_row() if argv[:3] == ["gh", "pr", "list"] else ""
+        return _design_rest(argv) if argv[:2] == ["gh", "api"] else ""
 
     result = work.merge_design(".sdlc", {"work": {"enabled": True, "auto_merge": "off"}}, "9", run=run)
     assert "auto_merge" in result and "by hand" in result

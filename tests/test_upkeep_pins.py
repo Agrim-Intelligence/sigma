@@ -204,10 +204,12 @@ def test_gate_closed_inert(tmp_path):
 
 def test_changelog_entry():
     text = (S.ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    head = text.split("\n## ", 2)
+    head = text.split("\n## ", 3)
     assert text.startswith("# Changelog") and len(head) > 1 and head[1].startswith("Unreleased"), "no Unreleased section"
-    entries = [e for e in ("\n" + head[1]).split("\n- **") if "#919" in e]
-    assert len(entries) == 1, "the Unreleased section needs exactly one entry for this goal"
+    # a release moves the entries under its own dated heading, so the entry may sit in Unreleased or in the newest release
+    window = "\n".join(head[1:3])
+    entries = [e for e in ("\n" + window).split("\n- **") if "#919" in e]
+    assert len(entries) == 1, "the Unreleased section or the newest release needs exactly one entry for this goal"
     entry = " ".join(entries[0].split())
     bad = []
     for word in ("feature_upkeep_drift.py", "feature_upkeep_state.py", "UNKNOWN", "author date", "no behaviour change", "nothing calls"):

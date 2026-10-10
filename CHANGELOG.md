@@ -4,6 +4,23 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
+  New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
+  line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under
+  `<repo root>/.sdlc/eval/results/` (anchored to the repo root, not the cwd; `--results-dir` overrides). The
+  ladder is `no-credential`, `no-opt-in` (`SIGMA_REGRESSION_LIVE` in 1/true/yes/on), `no-cap` (dollars, from
+  `--cap-usd`/`SIGMA_REGRESSION_CAP_USD`, optional `--belt-usd`), `unsupported-platform`, `pull-request-event`,
+  `subscription-in-gated-mode` (gated = `CI`, `GITHUB_ACTIONS` or `--release-gate`); a run that passes all of them
+  ends in the terminal `REFUSED [not-implemented]`, exit 2, never a silent exit 0. **The module starts no model in
+  this slice** (AST tests ban process-spawning imports and calls; a fake `claude` on `PATH` is never run). Held
+  credentials are redacted by exact value (raw, quoted, url-quoted, base64; values under 8 characters are not)
+  before the shared scrubber. Deviation from the #810 design's "every log line through the scrubber": the
+  scrubber is not run over a whole line because its `credential-assignment-suffix` rule rewrites the fixed
+  `[no-credential]:` prefix; lines are fixed text plus a processed variable part. Row schema is a contract for
+  #819/#820; on a NOT RUN row `cost` is null and `representative` is false, and a reader summing spend must skip
+  null-cost rows, never count them as zero. Not exercised: Windows and the real hosted-runner behaviour.
+  Measured: the 119 cases in `tests/test_regression_live.py` pass on Python 3.9; no timing claim made.
+
 ## 1.0.6 — 2026-10-10 — branch upkeep (opt-in; off by default)
 
 - **Upkeep part B, slice 10: Level 2 end to end against a fake (#951).** A new library, `feature_upkeep_level2.py`, runs eligibility and limits (protected paths, structural and merge-commit stops, file, hunk, line, stop and attempt limits), a plain export of the stopped tree, the capped resolver through the launcher, an engine-side write-back that refuses leftover markers, the level-2 stamp, the existing proof gate, the reviewer, and the existing atomic backup push; attempts and charges are recorded. Off by default and reachable only with the upkeep gate open, `conflicts.resolve` set to `agent` and a plan factory the shipped engine does not set, so with the gate closed every existing path is unchanged. The chat `--rebase` prompt and unit-lock bound change under the gate only (provisional). No real model call was made: every test drives a fake executable, the model flags beyond the confirmed table stay UNVERIFIED, and the limits are provisional and unmeasured.
@@ -144,6 +161,25 @@ All notable changes to Sigma are recorded here, newest first.
   refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
   fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
   so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+- **The design-PR list and the review gate's CHANGES_REQUESTED half go REST first (#895, slice 4a-2 PR B; refs
+  #895).** `work._find_design_pr` (merge_design / close_design) reads `gh_api.open_prs_for_head_gh` (list,
+  `pulls/N`, `pulls/N/files`; ONE `gh pr list` fallback built in `gh_api`), and `work.review_gate` reads
+  `gh_api.pr_changes_requested` (`pulls/N/reviews`, ONE `gh pr view --json reviews` fallback). `reviewDecision`
+  stays one GraphQL `gh pr view` (REST cannot derive APPROVED) and `_unresolved_threads` stays GraphQL; the
+  residual read is skipped when GraphQL is unavailable. THREE BEHAVIOUR CHANGES: (1) `require_review: changes`
+  now fails CLOSED on an unreadable reviews read (it used to return pass); (2) in changes mode an unreadable or
+  unavailable `reviewDecision` no longer returns pass and skips `_unresolved_threads`, which now still runs;
+  (3) a CHANGES_REQUESTED followed by a COMMENTED from the same reviewer now blocks (stricter than
+  `latestReviews`). Approval mode with GraphQL unavailable still parks, even with a `sigma:approve` comment (a
+  known limitation). Fail closed: a design list of 30 or more rows, a non-list or blank body, a malformed
+  detail or fallback row, an unknown review state, a full review page at the 10-page cap and a decisive review
+  without `submitted_at`/`id` all raise; only a genuine `[]` is "no PR". Known divergence: `head=<owner>:` hides
+  a fork PR from another owner (DERIVED), where the old list showed it and the identity check refused it. Also
+  fixed: the `[:120]` slice in two `gh_api` error messages cut a tuple, not the string. Costs: design 1 + 2N
+  calls, reviews `floor(n/100) + 1`. MEASURED: `{owner}` expands inside the query string from the cwd, and list
+  rows carry null `mergeable`/`changed_files` while `pulls/N` carries them. DERIVED/UNMEASURED: review and files
+  shapes and ordering, DISMISSED, the 429 body, any cloud run, latency. Ratchet 48 -> 47 by the printed
+  `scan()` (work.py 8 -> 7). Remaining on #895: R5, writes (4b/4c). Verified with injected-runner tests only.
 - **The merge gate and doctor's landing-PR row go REST first (#895, slice 4a-2 PR A; refs #801).**
   `work.gate()` (R1) now reads `gh_api.view_pr_gh` with two new whitelisted fields, `mergeable` and
   `mergeStateStatus`, then the new `gh_api.pr_check_rollup_gh` (check-runs, then commit statuses) for exactly

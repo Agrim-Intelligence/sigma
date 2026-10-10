@@ -121,6 +121,22 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/live.py",
+      "function": "write_row",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/live.py",
+      "function": "write_row",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/record.py",
       "function": "write_atomic",
       "rule": "fs-remove",
@@ -134,6 +150,14 @@
       "rule": "fs-write",
       "count": 2,
       "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/regression/spend_ledger.py",
+      "function": "_ensure_dir",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run evaluation spend ledger: creates only the ledger directory it is handed (mode 0700, exist_ok); never deletes, renames or replaces a ledger file; refuses without fcntl",
       "risk": "medium"
     },
     {

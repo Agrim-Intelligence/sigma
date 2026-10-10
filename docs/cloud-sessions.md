@@ -2,11 +2,12 @@
 
 Status: slice 1 of #801 (detection and reporting) plus slices 2a, 2b and 2c of #895 (single-issue READS go
 REST first: sources.py, then ten more `issue view` sites; then ten `issue list` sites), slice 3a (issue
-WRITES), slice 4a-1 (seven PR READS) and slice 4a-2 PR A (the merge gate and doctor's landing-PR row). It
+WRITES), slice 4a-1 (seven PR READS), slice 4a-2 PR A (the merge gate and doctor's landing-PR row) and PR B (the
+design-PR list and the review gate's CHANGES_REQUESTED half). It
 does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
-progress, not complete: the remaining PR reads (4a-2 PR B: the design-PR list and the review gate's
-`latestReviews`; later the sibling list), PR writes (4b/4c) and the board remain.
+progress, not complete: the remaining PR reads (the sibling list R5, `reviewDecision`, `_unresolved_threads`), PR
+writes (4b/4c) and the board remain.
 
 ## What the proxy blocks
 
@@ -348,15 +349,13 @@ Token permission (DERIVED from GitHub's docs): check-runs needs `checks:read` on
 GitHub App. A permission 403 never falls back, so on such a token the gate parks unreadable and doctor's row
 says nothing.
 
-R4, the review gate, decided and NOT changed here: under `require_review: approval` it keeps ONE
-`gh pr view <n> --json reviewDecision,latestReviews` read, because REST cannot derive APPROVED /
-REVIEW_REQUIRED (MEASURED: the branch-protection endpoint 404s, and rulesets are invisible to it). That read
-is GraphQL-only and fails CLOSED when GraphQL is unavailable, so in a cloud session approval mode parks,
-never passes. UNCHANGED blind spot, stated honestly: under `require_review: changes` a failed
-`reviewDecision,latestReviews` read already returns "pass" (`work.py` review_gate), which skips the
-CHANGES_REQUESTED check AND `_unresolved_threads`, so in a cloud session a native "Request changes" review
-and unresolved threads are invisible to the gate; only a `sigma:block` comment, read over REST, still blocks.
-PR B's `latestReviews` move narrows this. `_unresolved_threads` stays GraphQL (REST has no `isResolved`).
+R4, the review gate: `reviewDecision` stays GraphQL (PR B moved only its CHANGES_REQUESTED half; see the PR B
+section below), because REST cannot derive APPROVED / REVIEW_REQUIRED (MEASURED: the branch-protection
+endpoint 404s, and rulesets are invisible to it). That residual `gh pr view <n> --json reviewDecision` read is
+skipped when GraphQL is unavailable and fails CLOSED under `require_review: approval`, so in a cloud session
+approval mode parks, never passes, even with a `sigma:approve` comment (a known limitation). `_unresolved_threads`
+stays GraphQL (REST has no `isResolved`) and fails open internally; in a cloud session unresolved threads stay
+invisible to the gate, while a native "Request changes" review is now visible over REST.
 
 MEASURED: the orchestrator's live parity run on 25 PRs of this repository (`mergeable` agreed 25/25,
 values `true` and `null` only; `mergeable_state` `blocked` and `unknown` only; check-run name / state set
@@ -370,15 +369,51 @@ EXPECTED contexts (required status contexts not yet reported), while REST `commi
 returns them, so a BLOCKED PR waiting only on such a context parks "not safe to merge (BLOCKED)" instead of
 waiting and arming `--auto`. That fails closed.
 
-Remaining PR sites, still direct `gh pr` and still open on #895 (counts from the ratchet's `scan()`):
-work.py 8 (R4 `reviewDecision`, R5 the sibling list, R9 the design-PR list, and writes W1-W5 including
-`--auto`), doctor 5 (all non-PR sites), verify_merge 3 (`pr ready|create|merge`). Next: PR B (R9, R4's
-`latestReviews` half), then R5; PR writes are slices 4b/4c.
+Remaining PR sites, still direct `gh pr` and still open on #895 (counts from the ratchet's `scan()`, PRINTED
+after PR B): work.py 7 (R4's residual `reviewDecision` read, R5 the sibling list, and writes W1-W5 including
+`--auto`), doctor 5 (all non-PR sites), verify_merge 3 (`pr ready|create|merge`); TOTAL 47. Next: R5; PR writes
+are slices 4b/4c.
+
+## Design-PR list and review-gate reads (#895 slice 4a-2, PR B)
+
+R9 `work._find_design_pr` (merge_design / close_design) now calls `gh_api.open_prs_for_head_gh` (op
+`pr_list_read`): ONE `GET pulls?head=<owner>:<branch>&state=open&per_page=30`, then per row `pulls/N` (url,
+mergeable and state via the PR A mapping, fork via `_cross_repo`, head ref, `changed_files`) and ONE
+`pulls/N/files?per_page=100`; ONE `gh pr list --head` fallback built inside `gh_api`, on a rate limit, 5xx or
+transport failure only, never in a cloud session. The head owner comes
+from the checkout's slug (`feature_sync.repo_slug`: config, else the local remote; no GraphQL); when it is
+unknown gh's `{owner}` placeholder is sent. Fail closed: a list of 30 or more rows (REST and fallback), a
+non-list body (blank output included), a non-object row, a malformed detail and a bad fallback row all raise and
+become "could not look up a PR"; only a genuine JSON `[]` is "no PR". A short files page is a files/changedFiles
+mismatch that the identity check refuses. Cost: 1 + 2N calls for N rows (N <= 29), against 1 `gh pr list`; no
+cheap-field filter before the per-row calls (simplest, documented). Known divergence: `head=<owner>:` hides a
+fork PR from ANOTHER owner (DERIVED); before, the list showed it and the identity check refused it. It cannot
+read as "merged" because the real PR is still listed and the re-check treats `(None, None)` as proof only when
+the list is genuinely empty.
+
+R4 `review_gate`'s CHANGES_REQUESTED half now calls `gh_api.pr_changes_requested` (op `pr_reviews_read`): `GET
+pulls/N/reviews`, 100 per page, at most 10 pages (a full page at the cap raises), ONE `gh pr view --json reviews`
+fallback through the same reducer. Only APPROVED and CHANGES_REQUESTED decide; COMMENTED, PENDING and DISMISSED
+are accepted and ignored (GitHub rewrites a dismissed review's own row to DISMISSED), and any other state
+raises. The key is the lower-cased login; a null user or a login-less row is keyed by its own id, so a ghost
+never clears another's request. Three behaviour changes, all deliberate: (1) the review read fails CLOSED in
+every mode (changes mode used to pass on an unreadable combined read); (2) in changes mode an unreadable or
+unavailable `reviewDecision` no longer returns pass, so `_unresolved_threads` still runs; (3) a
+CHANGES_REQUESTED followed by a COMMENTED from the same reviewer now blocks (`latestReviews` kept only the last
+review).
+
+MEASURED (live gh, this slice): `{owner}` expands inside the query string of `gh api 'repos/{owner}/{repo}/pulls?head={owner}:<branch>...'`
+from the cwd's remote; pulls LIST rows carry `mergeable: null` and `changed_files: null` (the `mergeable_state` of a list row is
+UNMEASURED), while `pulls/N` carries them (so the detail read is mandatory). DERIVED from GitHub's docs, UNMEASURED:
+the `pulls/N/reviews` shape and ordering (`submitted_at`, `id`), the DISMISSED rewrite, the `pulls/N/files` shape
+(`filename`), the `gh pr view --json reviews` row shape and order, fork invisibility, the real 429 body, any
+cloud-session run, and latency. Tests use injected runners only.
 
 ## What this does NOT do
 
-- `read_issue`, `list_issues_gh`, the seven issue write helpers and the four PR read helpers (`view_pr_gh`,
-  `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, above) are wired to callers; PR WRITES
+- `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
+  `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, `open_prs_for_head_gh`,
+  `pr_changes_requested`, above) are wired to callers; PR WRITES
   are not, the raw `create_pr`
   / `merge_pr` and the project ops have no caller, and nothing in the product exercises the probe or the cache.
 - `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
@@ -390,7 +425,7 @@ work.py 8 (R4 `reviewDecision`, R5 the sibling list, R9 the design-PR list, and 
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls
