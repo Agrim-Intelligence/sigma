@@ -7,6 +7,7 @@ the publish leak gate `tools/leak_scan.py` imports `SHAPE_RULES` below as its ow
 there is no second copy to keep in sync. Best-effort (pattern-based, not a guarantee) — which is why
 anything this feeds (the board mirror, `.sdlc/knowledge/`) is ALSO gitignored (defense in depth)."""
 import re
+import string
 
 #: `SHAPE_RULES` — every single-regex secret shape the publish leak gate detects, `(name, rx)`, with
 #: the gate's contract: the secret VALUE is group 1 when the rx has a group, else the whole match.
@@ -163,13 +164,158 @@ _SECRET_PATTERNS = tuple((rx, replacement) for _name, rx, replacement in _SECRET
 COMMIT_FIXTURE_VALUES = frozenset({"AKIAIOSFODNN7EXAMPLE"})  # leak-scan: allow aws-key public test fixture
 
 
-def commit_secret_hits(text):
-    """Return value-free `(rule, column)` hits for one added source line.
+#: Gate-only exact values the anchored `credential-assignment` rule may carry without refusing: Sigma's
+#: OWN redaction markers -- `[REDACTED]`, what `scrub()` writes for that rule, and `[REDACTED:<name>]` for
+#: every rule in the table -- so a scrubbed transcript or fixture line can be committed. Exact and
+#: unquoted (trailing closers only): no structural `${...}` / `{{...}}` / `<...>` form. DELIBERATELY
+#: narrower than `tools/leak_scan.py`'s `_PLACEHOLDER_VALUE`, which this file cannot import: that is a
+#: publish gate, and a gate's false-positive budget differs from a redactor's and from each other's.
+COMMIT_PLACEHOLDER_VALUES = frozenset({"[REDACTED]"} | {"[REDACTED:%s]" % name
+                                                        for name, _rx, _repl in _SECRET_PATTERN_SPECS})
 
-    The commit gate must say why and where it refused without echoing a credential.  Matches in the
-    exact synthetic fixture list are excluded so the repository can maintain its redaction controls.
-    """
-    hits = []
+#: The CLOSED set of suffixes whose files get the expression and type exemptions below (#961). Every
+#: other file -- config, data, docs, an unknown or missing suffix, a case variant such as `a.PY` -- reads
+#: an unquoted value as a literal, so it keeps every hit but a boolean/null word or a marker. Closed so
+#: that a file nobody listed fails closed; widening it is a deliberate one-line change a test pins.
+COMMIT_CODE_SUFFIXES = frozenset((".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts",
+                                  ".cts", ".vue", ".svelte", ".java", ".kt", ".kts", ".scala", ".groovy",
+                                  ".gradle", ".go", ".rs", ".rb", ".php", ".cs", ".swift", ".dart", ".c",
+                                  ".h", ".cc", ".cpp", ".hpp", ".m", ".mm", ".lua", ".ex", ".exs"))
+
+
+def commit_code_path(path):
+    """True only when the basename has a stem and its last suffix, exactly as git stores it (so
+    case-sensitive), is in `COMMIT_CODE_SUFFIXES`. `None` or an empty path is not a code path."""
+    if not path:
+        return False
+    stem, dot, suffix = str(path).rsplit("/", 1)[-1].rpartition(".")
+    return bool(dot and stem) and "." + suffix in COMMIT_CODE_SUFFIXES
+
+
+# The gate-only value filter for the anchored `credential-assignment` rule (#961). That rule takes ANY
+# 4+ character run after a credential-named key, so a call, an env read, a type annotation and a
+# boolean were refused as credential values and green goals parked. The rule stays byte-identical
+# (`scrub()` and both scanners share it); this judges only the gate's own matches of it, in order, and
+# every check fails CLOSED -- an unrecognised shape keeps its hit:
+#   1. a quoted value directly after the separator always hits (read from the LINE: the rule's own
+#      optional quote hides it);
+#   2. a secret-like token anywhere after the separator keeps the hit (`_last_secret_like_end`);
+#   3. an assigning `=` after the separator whose right side starts a quoted literal or wraps keeps the
+#      hit (`_last_assigned_literal_start`): an annotated, chained or keyword-argument default;
+#   4. only then may the WHOLE value run be exempt: a boolean/null word or a marker in every file, an
+#      expression or (after `:`) a closed-set type in a code file only. Numbers and bare identifiers
+#      never are.
+# Linear by construction: each whole-value pattern is a fullmatch whose adjacent runs share no
+# character, so a failed match cannot be re-split, and the two line scans run once per line, lazily.
+_ASSIGNMENT_SEPARATOR = re.compile(r"[\"']?\s*([:=])\s*([\"']?)")
+_CLOSERS = r"[,;:)}\]]*"
+_BOOLEAN_OR_NULL = re.compile(r"(?:True|False|true|false|None|null|nil|undefined)" + _CLOSERS)
+_PLACEHOLDER = re.compile("(?:%s)" % "|".join(re.escape(v) for v in sorted(COMMIT_PLACEHOLDER_VALUES))
+                          + _CLOSERS)
+#: An identifier head that starts a call, a subscript or an attribute read, then expression characters
+#: only, then an optional `}` tail. Every closer but `}` is already a body character, so the closers are
+#: folded in: a separate closer run after the body let a failed match try every split of a `)` run
+#: (6.9 s measured on one 32 KB line, against 1.3 ms folded).
+_EXPRESSION = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:[(\[]|\.[A-Za-z_])[A-Za-z0-9_.()\[\],;:?!=*+-]*"
+                         r"(?:\}[,;:)}\]]*)?")
+#: Exact names, never "a capitalised word": a YAML value such as `Summer` must stay refused.
+_TYPE_NAME = r"(?:str|bytes|bool|int|float|Any|SecretStr|string|boolean|number|any|unknown|String)"
+_TYPE = re.compile(_TYPE_NAME + r"(?:\|(?:" + _TYPE_NAME + r"|None|null|undefined))*" + _CLOSERS)
+#: An assigning `=` -- not part of `==`, `!=`, `<=`, `>=` or `=>` -- whose right side, after spaces and
+#: opening parentheses, STARTS a quoted literal of any length (optional b/r/u/f prefix, so a triple
+#: quote too) or wraps (the end of the line, or a lone continuation backslash).
+_ASSIGNED_LITERAL = re.compile(r"(?<![=!<>])=(?![=>])[\s(]*(?:\\?$|[bBrRuUfF]{0,2}[\"'`])")
+_WORD_SEGMENT = re.compile(r"[A-Za-z0-9_]+")
+#: A quoted literal, escape-aware, paired left to right from the start of the line. An unterminated one
+#: runs to the end of the line (fail closed), so an attempt at a quote never fails and never rescans.
+_QUOTED_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)(?:"|\\?$)|\'((?:[^\'\\]|\\.)*)(?:\'|\\?$)'
+                             r'|`((?:[^`\\]|\\.)*)(?:`|\\?$)', re.DOTALL)
+#: Hyphenated provider prefixes (`sk-`, `glpat-`, `xoxb-`) split into segments the other clauses judge;
+#: `hf_`/`npm_` are absent because `hf_hub_download(` is ordinary code and their real tokens are long
+#: random runs the 24-run clause refuses.
+_SECRET_PREFIXES = ("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "sk_live_", "sk_test_",
+                    "rk_live_", "rk_test_", "AKIA", "ASIA", "AIza", "eyJ", "xox")
+_ALNUM_RUN = re.compile(r"[A-Za-z0-9]{24,}")
+_UPPER_SNAKE = re.compile(r"[A-Z][A-Z0-9_]*")
+#: Each ASCII letter -> "a" and each ASCII digit -> "0": a token's letter/digit shape.
+_SHAPE = str.maketrans(string.ascii_letters + string.digits, "a" * 52 + "0" * 10)
+_HIT, _CODE_ONLY, _EXEMPT = "hit", "code-only", "exempt"
+
+
+def _secret_like(token):
+    """True when one token looks like a credential value: a known provider prefix; 3+ letter/digit
+    alternations between adjacent characters (a random run alternates constantly); a run of 24+ ASCII
+    letters and digits (an underscore breaks it, so a long snake_case name passes); or 6+ characters
+    holding a letter and a digit, unless the whole token is an upper-snake name (`HS256`, an env name)."""
+    if token.startswith(_SECRET_PREFIXES):
+        return True
+    shape = token.translate(_SHAPE)
+    if shape.count("a0") + shape.count("0a") >= 3:       # neither pair can overlap itself: exact count
+        return True
+    if len(token) >= 24 and _ALNUM_RUN.search(token):
+        return True
+    return len(token) >= 6 and "a" in shape and "0" in shape and not _UPPER_SNAKE.fullmatch(token)
+
+
+def _last_secret_like_end(text):
+    """The largest end offset of a secret-like token on the line, or -1, in ONE pass: every
+    `[A-Za-z0-9_]+` segment, then every whitespace-separated word of every quoted literal. A word in a
+    literal counts at the literal's END, so a literal that straddles a separator counts as after it."""
+    last = -1
+    for match in _WORD_SEGMENT.finditer(text):
+        if _secret_like(match.group()):
+            last = match.end()
+    for match in _QUOTED_LITERAL.finditer(text):
+        if match.end() > last:
+            body = match.group(1) or match.group(2) or match.group(3) or ""
+            if any(_secret_like(word) for word in body.split()):
+                last = match.end()
+    return last
+
+
+def _last_assigned_literal_start(text):
+    """The largest start offset of an assigning `=` that assigns a quoted or wrapped literal, or -1.
+    One `finditer`: an attempt fails at once anywhere but an `=`, and an `=`'s `[\\s(]*` run stops at
+    the next `=`, so no two attempts rescan the same characters."""
+    last = -1
+    for match in _ASSIGNED_LITERAL.finditer(text):
+        last = match.start()
+    return last
+
+
+def _anchored_verdict(text, match, line_scan):
+    """`_HIT`, `_CODE_ONLY` (cleared in a code file only) or `_EXEMPT` (cleared in every file) for one
+    match of the anchored rule. `line_scan` caches the two per-line scans, so a line with k anchored
+    matches costs one pass of each plus O(k), not k passes."""
+    sep = _ASSIGNMENT_SEPARATOR.match(text, match.end(1))
+    if not sep or sep.group(2) or sep.end() >= match.end():
+        return _HIT                     # quoted, or a match this cannot parse: refuse
+    if "secret" not in line_scan:
+        line_scan["secret"] = _last_secret_like_end(text)
+    if line_scan["secret"] > sep.end():
+        return _HIT
+    if "assigned" not in line_scan:
+        line_scan["assigned"] = _last_assigned_literal_start(text)
+    if line_scan["assigned"] >= sep.end():
+        return _HIT
+    value = text[sep.end():match.end()]
+    if _BOOLEAN_OR_NULL.fullmatch(value) or _PLACEHOLDER.fullmatch(value):
+        return _EXEMPT
+    if _EXPRESSION.fullmatch(value) or (sep.group(1) == ":" and _TYPE.fullmatch(value)):
+        return _CODE_ONLY
+    return _HIT
+
+
+def commit_secret_findings(text):
+    """Value-free `(rule, column, code_exempt)` findings for one added source line -- the commit gate's
+    own view, which knows no path. `code_exempt` marks an anchored `credential-assignment` hit that
+    only a CODE-file exemption clears; the caller, which knows the path, drops it for a code file
+    (`commit_secret_hits` below, or work.py per staged path).
+
+    Matches in the exact synthetic fixture list are excluded so the repository can maintain its
+    redaction controls. An identical `(rule, column)` is reported once (both same-named rules hit a
+    quoted literal at its key, which printed one location twice), keeping the stricter finding."""
+    findings, index, line_scan = [], {}, {}
     for name, rx in COMMIT_SHAPE_RULES:
         for match in rx.finditer(text):
             # Assignment rules capture the key name before the credential value; checking every
@@ -177,8 +323,34 @@ def commit_secret_hits(text):
             if any(re.search(r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9])" % re.escape(value),
                              match.group(0)) for value in COMMIT_FIXTURE_VALUES):
                 continue
-            hits.append((name, match.start() + 1))
-    return hits
+            code_exempt = False
+            # The anchored rule is the one whose group 1 (the key) starts the match; the quoted
+            # SHAPE_RULES instance captures the VALUE in group 1, so it is never filtered here.
+            if name == "credential-assignment" and rx.groups and match.start(1) == match.start():
+                verdict = _anchored_verdict(text, match, line_scan)
+                if verdict == _EXEMPT:
+                    continue
+                code_exempt = verdict == _CODE_ONLY
+            key = (name, match.start() + 1)
+            if key in index:
+                if not code_exempt:
+                    findings[index[key]] = (name, key[1], False)
+                continue
+            index[key] = len(findings)
+            findings.append((name, key[1], code_exempt))
+    return findings
+
+
+def commit_secret_hits(text, path=None):
+    """Return value-free `(rule, column)` hits for one added source line.
+
+    The commit gate must say why and where it refused without echoing a credential. `path` is git's raw
+    repo-relative path: a code file's expression and type values pass. A missing path is not a code
+    path, so a caller that cannot say which file the line came from gets only the boolean/null and
+    marker exemptions -- fail closed."""
+    code = commit_code_path(path)
+    return [(rule, column) for rule, column, code_exempt in commit_secret_findings(text)
+            if not (code_exempt and code)]
 
 
 def scrub(text):
