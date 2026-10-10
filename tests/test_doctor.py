@@ -3405,6 +3405,39 @@ def test_check_surfaces_board_dup_risk(tmp_path):
     assert checks["project.number pinned (no duplicate-board risk)"]["ok"] is False
 
 
+def _pulls_by_head(*prs):
+    """#895 4a-1: `_stray_commits_after_merge` reads the PR BY BRANCH through `gh_api.pr_for_branch_gh`,
+    i.e. ONE REST `gh api repos/<repo>/pulls?head=<owner>:<branch>&state=all&sort=created&direction=desc
+    &per_page=30` (newest first). Builds that list body from gh-shaped PR dicts (state OPEN / CLOSED /
+    MERGED, headRefOid, headRefName, number, mergedAt, closedAt); a dict without `headRefOid` yields a
+    row without `head.sha`."""
+    rows = []
+    for p in prs:
+        st = p.get("state")
+        merged = st == "MERGED"
+        row = {"number": p.get("number"),
+               "state": {"OPEN": "open", "CLOSED": "closed", "MERGED": "closed"}.get(st, str(st).lower()),
+               "merged_at": (p.get("mergedAt") or "2026-01-01T00:00:00Z") if merged else p.get("mergedAt"),
+               "closed_at": p.get("closedAt"),
+               "head": {"ref": p.get("headRefName", "sdlc/x"), "repo": {"full_name": "acme/widget"}},
+               "base": {"ref": "main", "repo": {"full_name": "acme/widget"}}}
+        if "headRefOid" in p:
+            row["head"]["sha"] = p["headRefOid"]
+        rows.append(row)
+    return json.dumps(rows)
+
+
+def _is_pulls_by_head(a):
+    """True for the REST pulls-by-head read (`gh api repos/<repo>/pulls?head=...`)."""
+    return a[:2] == ["gh", "api"] and len(a) > 2 and "/pulls?head=" in str(a[2])
+
+
+class _MustNotCall(BaseException):
+    """Raised by a fake `run` for a call that must not happen. A BaseException on purpose: the PR
+    lookup now runs inside `gh_api` and doctor's fail-open `except Exception`, which would swallow an
+    AssertionError and make the "must not even be called" control vacuous."""
+
+
 #: Row name for #2452's check, spelled once here and reused by every test below (and by `check()`
 #: itself) -- no module constant per plan §0.2, this is just the test file's own de-dup.
 _STRAY_ROW = "checked-out branch has no stray commits past its own PR's merge/close"
@@ -3423,9 +3456,9 @@ def test_stray_commits_after_merge_flags_the_real_incident_shape():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            assert a[3] == "sdlc/2450"
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
+        if _is_pulls_by_head(a):
+            assert "pulls?head=acme:sdlc/2450&" in a[2], a
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z", "closedAt": None,
                                 "headRefName": "sdlc/2450"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
@@ -3447,8 +3480,8 @@ def test_stray_commits_after_merge_quiet_when_pr_still_open():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "OPEN", "headRefOid": "abc123", "number": 3604})
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "OPEN", "headRefOid": "abc123", "number": 3604})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return "5\n"
         return ""
@@ -3457,19 +3490,102 @@ def test_stray_commits_after_merge_quiet_when_pr_still_open():
 
 
 def test_stray_commits_after_merge_quiet_when_no_pr_for_branch():
-    """`gh pr view` for a branch with no PR exits 1 ("no pull requests found for branch ..."),
-    which collapses to falsy through `_real_run`'s contract -- no special-casing needed here."""
+    """#895 4a-1: no PR for this branch is an EMPTY REST list (`[]`) -> `pr_for_branch_gh` returns None.
+    A failed or empty-output read (`""`, what a fake or `_real_run` gives for a failure) now RAISES
+    inside gh_api (a failure must never read as "no PR") and lands in the same fail-open None."""
     d = _doc()
     gh_cfg = {"repo": "acme/widget"}
 
+    for answer in ("[]", ""):
+        def run(a, answer=answer):
+            if a[:5] == ["git", "-C", "/repo", "branch", "--show-current"]:
+                return "sdlc/2450\n"
+            if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
+                return "main\n"
+            if _is_pulls_by_head(a):
+                return answer
+            if a[:4] == ["git", "-C", "/repo", "rev-list"]:
+                raise AssertionError(f"must not compute a stray count with no PR: {a}")
+            return ""
+
+        assert d._stray_commits_after_merge(gh_cfg, "/repo", run) is None
+
+
+def _stray_run(rows_body, rev_list="5\n", seen=None):
     def run(a):
+        if seen is not None:
+            seen.append(a)
         if a[:5] == ["git", "-C", "/repo", "branch", "--show-current"]:
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        return ""   # gh pr view -> no PR for this branch
+        if _is_pulls_by_head(a):
+            if isinstance(rows_body, BaseException):
+                raise rows_body
+            return rows_body
+        if a[:4] == ["git", "-C", "/repo", "rev-list"]:
+            return rev_list
+        return ""
+    return run
 
-    assert d._stray_commits_after_merge(gh_cfg, "/repo", run) is None
+
+def test_stray_commits_after_merge_open_pr_beats_an_older_merged_pr():
+    """#895 4a-1: the REST list is newest-created first; an OPEN row anywhere wins (gh's assumed
+    open-first preference, UNMEASURED), so a re-opened branch with a fresh open PR stays quiet."""
+    d = _doc()
+    body = _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 9, "mergedAt": "m"},
+                          {"state": "OPEN", "headRefOid": "def456", "number": 4})
+    assert d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", _stray_run(body)) is None
+
+
+def test_stray_commits_after_merge_takes_the_newest_row_when_none_is_open():
+    d = _doc()
+    body = _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 9, "mergedAt": "m9"},
+                          {"state": "CLOSED", "headRefOid": "def456", "number": 4, "closedAt": "c4"})
+    seen = []
+    fix = d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", _stray_run(body, seen=seen))
+    assert fix and "#9" in fix and "already merged" in fix and "m9" in fix
+    assert ["git", "-C", "/repo", "rev-list", "--count", "abc123..HEAD"] in seen
+
+
+def test_stray_commits_after_merge_reads_by_owner_head_so_a_fork_pr_is_invisible():
+    """Named difference (docs/cloud-sessions.md, UNMEASURED): REST `head=<owner>:<branch>` sees
+    same-owner heads only, where `gh pr view <branch>` resolves across forks. A fork-only PR on a
+    same-named branch is therefore invisible: GitHub answers `[]` and the diagnostic stays quiet."""
+    d = _doc()
+    seen = []
+    assert d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", _stray_run("[]", seen=seen)) is None
+    reads = [a for a in seen if _is_pulls_by_head(a)]
+    assert reads == [["gh", "api", "repos/acme/widget/pulls?head=acme:sdlc/2450&state=all&sort=created"
+                                   "&direction=desc&per_page=30", "--method", "GET"]]
+    assert not any(a[:3] == ["gh", "pr", "view"] for a in seen)
+
+
+def test_stray_commits_after_merge_quiet_when_the_rest_read_errors():
+    d = _doc()
+    failure = d._RawFailure("gh: Not Found (HTTP 404)")
+    assert d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", _stray_run(failure)) is None
+    for garbage in ('{"message": "x"}', "[1]", "null"):
+        assert d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", _stray_run(garbage)) is None
+
+
+def test_stray_commits_after_merge_quiet_on_a_garbage_fallback(monkeypatch):
+    """#895 B1: REST 502, then the ONE `gh pr view <branch>` fallback exits 0 with garbage. gh_api now
+    RAISES rather than degrade to {}; doctor's own except keeps it fail-open (None), as before."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    d = _doc()
+    for garbage in ("", "<html>", "[1]", '{"state": "MERGED"}'):
+        seen = []
+        inner = _stray_run(d._RawFailure("gh: Server Error (HTTP 502)"), seen=seen)
+
+        def run(a, inner=inner, garbage=garbage):
+            if a[:3] == ["gh", "pr", "view"]:
+                seen.append(a)
+                return garbage
+            return inner(a)
+        assert d._stray_commits_after_merge({"repo": "acme/widget"}, "/repo", run) is None
+        assert any(a[:3] == ["gh", "pr", "view"] for a in seen)
 
 
 def test_stray_commits_after_merge_quiet_on_the_default_branch():
@@ -3484,8 +3600,8 @@ def test_stray_commits_after_merge_quiet_on_the_default_branch():
             return "main\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            raise AssertionError(f"must not look up a PR while already on the default branch: {a}")
+        if _is_pulls_by_head(a):
+            raise _MustNotCall(f"must not look up a PR while already on the default branch: {a}")
         return ""
 
     assert d._stray_commits_after_merge(gh_cfg, "/repo", run) is None
@@ -3502,8 +3618,8 @@ def test_stray_commits_after_merge_quiet_when_head_ref_oid_is_head():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return "0\n"
@@ -3554,8 +3670,8 @@ def test_stray_commits_after_merge_quiet_when_rev_list_fails():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "deadbeef", "number": 3604,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "deadbeef", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return d._RawFailure("fatal: bad revision 'deadbeef..HEAD'")
@@ -3578,8 +3694,8 @@ def test_check_surfaces_stray_commits_after_merge(tmp_path):
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", repo_root, "rev-list"]:
             return "3\n"
@@ -3630,10 +3746,10 @@ def test_real_git_stray_commits_after_merge_flags_it_then_switching_branch_clear
     def run(a):
         if a and a[0] == "git":
             return d._real_run(a)
-        if a[:2] == ["gh", "api"]:
+        if a[:2] == ["gh", "api"] and not _is_pulls_by_head(a):
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": c2, "number": 42,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": c2, "number": 42,
                                 "mergedAt": "2026-09-08T00:00:00Z", "closedAt": None,
                                 "headRefName": "feature-x"})
         return ""
@@ -3657,9 +3773,9 @@ def test_stray_commits_after_merge_flags_the_closed_without_merging_shape():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            assert a[3] == "sdlc/2450"
-            return json.dumps({"state": "CLOSED", "headRefOid": "abc123", "number": 3604,
+        if _is_pulls_by_head(a):
+            assert "pulls?head=acme:sdlc/2450&" in a[2], a
+            return _pulls_by_head({"state": "CLOSED", "headRefOid": "abc123", "number": 3604,
                                 "mergedAt": None, "closedAt": "2026-09-08T11:51:30Z",
                                 "headRefName": "sdlc/2450"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
@@ -3687,8 +3803,8 @@ def test_stray_commits_after_merge_quiet_when_default_branch_lookup_fails():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return ""
-        if a[:3] == ["gh", "pr", "view"]:
-            raise AssertionError(f"must not look up a PR with no default branch to compare against: {a}")
+        if _is_pulls_by_head(a):
+            raise _MustNotCall(f"must not look up a PR with no default branch to compare against: {a}")
         return ""
 
     assert d._stray_commits_after_merge(gh_cfg, "/repo", run) is None
@@ -3706,7 +3822,7 @@ def test_stray_commits_after_merge_quiet_when_pr_json_is_malformed():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
+        if _is_pulls_by_head(a):
             return "not valid json {{{"
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             raise AssertionError(f"must not compute a stray count from unparseable PR JSON: {a}")
@@ -3726,8 +3842,8 @@ def test_stray_commits_after_merge_quiet_when_head_ref_oid_missing():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "number": 3604,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             raise AssertionError(f"must not compute a stray count with no headRefOid anchor: {a}")
@@ -3747,8 +3863,8 @@ def test_stray_commits_after_merge_quiet_when_rev_list_count_is_not_numeric():
             return "sdlc/2450\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 3604,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return "not-a-number\n"
@@ -3841,8 +3957,8 @@ def test_stray_commits_after_merge_quiet_when_branch_is_a_registered_open_unit_b
             return "feature/widget\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            raise AssertionError(f"must not look up a PR for an exempt unit branch: {a}")
+        if _is_pulls_by_head(a):
+            raise _MustNotCall(f"must not look up a PR for an exempt unit branch: {a}")
         return ""
 
     assert d._stray_commits_after_merge(gh_cfg, "/repo", run, base) is None
@@ -3862,8 +3978,8 @@ def test_stray_commits_after_merge_still_flags_a_closed_unit_branch(tmp_path):
             return "feature/widget\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 9001,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 9001,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return "4\n"
@@ -3887,8 +4003,8 @@ def test_stray_commits_after_merge_flags_unaffected_repos_with_no_feature_regist
             return "feature/widget\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": "abc123", "number": 9002,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": "abc123", "number": 9002,
                                 "mergedAt": "2026-09-08T11:51:30Z"})
         if a[:4] == ["git", "-C", "/repo", "rev-list"]:
             return "2\n"
@@ -3946,10 +4062,10 @@ def test_real_git_stray_commits_after_merge_exempts_the_reviewers_reproduced_sce
     def run(a):
         if a and a[0] == "git":
             return d._real_run(a)
-        if a[:2] == ["gh", "api"]:
+        if a[:2] == ["gh", "api"] and not _is_pulls_by_head(a):
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            return json.dumps({"state": "MERGED", "headRefOid": head_at_completion, "number": 2379,
+        if _is_pulls_by_head(a):
+            return _pulls_by_head({"state": "MERGED", "headRefOid": head_at_completion, "number": 2379,
                                 "mergedAt": "2026-09-11T09:37:09Z", "closedAt": None,
                                 "headRefName": "feature/widget"})
         return ""
@@ -3982,8 +4098,8 @@ def test_check_does_not_surface_stray_commits_for_a_registered_open_unit_branch(
             return "feature/widget\n"
         if a[:2] == ["gh", "api"] and a[2] == "repos/acme/widget":
             return "main\n"
-        if a[:3] == ["gh", "pr", "view"]:
-            raise AssertionError(f"must not look up a PR for an exempt unit branch: {a}")
+        if _is_pulls_by_head(a):
+            raise _MustNotCall(f"must not look up a PR for an exempt unit branch: {a}")
         return ""
 
     checks = {c["name"]: c for c in d.check(base, run=run)}

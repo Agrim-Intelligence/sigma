@@ -78,6 +78,7 @@ scrub = scrub_module.scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
                                       # auth failure — see that module's own docstring for the two
                                       # confirmed shapes and why one shared classifier, not a copy here
+gh_api = _load("gh_api")             # #895 4a-1: REST-first PR reads (view_pr_gh) for five sites below
 tamper_scan = _load("tamper_scan")   # #1937: diff-only test-tamper scan; imports only `re`, so
                                       # unlike actionlog (which loads work.py for stem()) this one
                                       # is safe to bind eagerly here. NOT named test_*.py: pytest
@@ -1366,6 +1367,29 @@ def _run(cwd, argv):
             detail = f"{block}\n(raw: {detail})" if detail else block
         raise RuntimeError(f"{' '.join(str(a) for a in argv)}: {detail}")
     return proc.stdout.strip()
+
+
+_GH = "gh"          # one binding, so the adapter below builds no `["gh", *args]` ratchet site
+
+
+def _pr_api_run(run, cwd):
+    """#895 4a-1: adapt a `run(cwd, argv)` caller (`_run`'s convention: the argv carries "gh", a failure
+    raises `RuntimeError("<argv joined>: <detail>")` with NO `.hint`) to `gh_api`'s `run(args)`
+    convention (no "gh", a failure raises with `.hint` = gh's stderr). The hint is the detail AFTER the
+    argv prefix, so `gh_api.classify` never reads argv (a repo or branch named `timeout-svc` must not
+    read as a transport failure); `_run`'s proxy-block diagnosis leads that detail, so it still matches.
+    Any other exception (FileNotFoundError for a vanished cwd, ...) passes through; `gh_api` wraps it."""
+    def r(args):
+        argv = [_GH, *args]
+        try:
+            return run(cwd, argv)
+        except RuntimeError as exc:
+            msg = str(exc)
+            prefix = " ".join(str(a) for a in argv) + ": "
+            err = RuntimeError(msg)
+            err.hint = getattr(exc, "hint", None) or (msg[len(prefix):] if msg.startswith(prefix) else msg)
+            raise err from exc
+    return r
 
 
 def root(sdlc_dir, goal, config=None):
@@ -3519,8 +3543,11 @@ def merge_rights(sdlc_dir, config, goal, run=None):
     if not rec or not rec.get("pr"):
         return False, "no PR for this goal"
     try:
-        pr_data = json.loads(run(rec["worktree"], ["gh", "pr", "view", rec["pr"],
-                                                   "--json", "isCrossRepository"]))
+        # #895 4a-1: REST first (`gh api .../pulls/<n>`), ONE `gh pr view` fallback inside gh_api;
+        # sdlc_dir IS passed (in scope here), so the shared REST breaker and fallback log apply. A
+        # deleted fork (null head repo) reads as cross-repo; a malformed pull raises -> no merge.
+        pr_data = gh_api.view_pr_gh(_pr_api_run(run, rec["worktree"]), rec["pr"], ["isCrossRepository"],
+                                    sdlc_dir=sdlc_dir)
         if pr_data.get("isCrossRepository"):
             return False, "fork PR — the upstream maintainer merges"
         perm = run(rec["worktree"], ["gh", "repo", "view", "--json", "viewerPermission",
@@ -4896,13 +4923,16 @@ def _comment_directive(rec, run):
     a marker comment has no `authorAssociation` field at all:
     the gate cannot know whether a trusted block exists, so `review_gate` parks (fails closed)."""
     try:
-        data = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
-                                                 "--json", "comments,author"]))
+        # #895 4a-1: REST first (pulls/<n> for the author, then paged issues/<n>/comments, capped: a
+        # full last page RAISES rather than truncate), ONE `gh pr view` fallback inside gh_api. No
+        # sdlc_dir in scope here, so None: this read never writes the REST breaker or fallback log.
+        # Logins compare REST-to-REST (`x[bot]` both sides) or, on a fallback, gh-to-gh.
+        data = gh_api.view_pr_gh(_pr_api_run(run, rec["worktree"]), rec["pr"], ["comments", "author"])
         if not isinstance(data, dict) or not all(isinstance(c, dict) for c in data.get("comments") or []):
             raise TypeError("not the expected shape")
     except Exception as exc:                    # noqa: BLE001 - unreadable comments -> the caller parks
         raise ValueError(f"{type(exc).__name__}") from None
-    pr_author = (data.get("author") or {}).get("login")
+    pr_author = (data.get("author") or {}).get("login") or None   # "" (no REST user) is unknown, never a match
     directive = None
     same_author = None
     for comment in data.get("comments") or []:  # chronological; the last marker is the current state
@@ -5966,8 +5996,10 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
                 or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", expected_head)
                 or not isinstance(brief_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", brief_hash)):
             return "review evidence is not a typed observation for the active PR revision"
-        current = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
-                                                   "--json", "number,headRefOid"]))
+        # #895 4a-1: REST first via gh_api, sdlc_dir passed (breaker/log); a missing head sha reads ""
+        # and so fails the equality below (stale PARK), any read failure lands in the except (PARK).
+        current = gh_api.view_pr_gh(_pr_api_run(run, rec["worktree"]), rec["pr"], ["number", "headRefOid"],
+                                    sdlc_dir=sdlc_dir)
         if (not isinstance(current, dict) or current.get("number") != expected_pr
                 or current.get("headRefOid") != expected_head):
             return "PARK: review evidence is stale; the PR head changed before posting"
@@ -6100,8 +6132,11 @@ def _open_pr_refusal(sdlc_dir, rec, pr, run):
     path = pathlib.Path(rec.get("worktree", ""))
     cwd = str(path) if path.is_dir() else project_root(sdlc_dir)
     try:
-        data = json.loads(run(cwd, ["gh", "pr", "view", pr,
-                                     "--json", "state,autoMergeRequest"]))
+        # #895 4a-1: REST first via gh_api, sdlc_dir passed (breaker/log). A REST body with NO
+        # `auto_merge` key raises in the converter, so this fails OPEN (None) on that malformed reply,
+        # where `gh pr view` would have read it as "not armed" and refused: a documented minor
+        # loosening on a shape GitHub is not known to send (UNMEASURED).
+        data = gh_api.view_pr_gh(_pr_api_run(run, cwd), pr, ["state", "autoMergeRequest"], sdlc_dir=sdlc_dir)
     except Exception:                # noqa: BLE001 - can't read live state -- fail open, never wedge finish
         return None
     # Review round 3 (B1): an armed PR releases normally, as it does on the base branch.  Retaining
@@ -6119,7 +6154,7 @@ def _pr_merged(sdlc_dir, rec, run):
     a branch is not reversible the way a refused `finish` is, so no `gh`, no network, or an
     unreadable reply must all read as "not confirmed", never as "assume merged".
 
-    A second `gh pr view` rather than threading the ONE `_open_pr_refusal` already makes: that
+    A second PR read rather than threading the ONE `_open_pr_refusal` already makes: that
     function runs BEFORE `git worktree remove` (so it may still need `rec["worktree"]` as a
     fallback cwd candidate) and this always runs AFTER (so `project_root` is the only valid cwd,
     unconditionally) -- different enough timing that sharing one call would need `_open_pr_refusal`
@@ -6127,8 +6162,10 @@ def _pr_merged(sdlc_dir, rec, run):
     (three review rounds) have already hardened. One extra read, once per finished goal, is the
     cheaper risk."""
     try:
-        data = json.loads(run(project_root(sdlc_dir),
-                              ["gh", "pr", "view", str(rec["pr"]), "--json", "state"]))
+        # #895 4a-1: REST first via gh_api, sdlc_dir passed (breaker/log); MERGED only from REST
+        # `merged: true` or a non-empty `merged_at`, anything malformed raises -> False.
+        data = gh_api.view_pr_gh(_pr_api_run(run, project_root(sdlc_dir)), rec["pr"], ["state"],
+                                 sdlc_dir=sdlc_dir)
     except Exception:                       # noqa: BLE001 - unreadable state is never "confirmed merged"
         return False
     return isinstance(data, dict) and data.get("state") == "MERGED"
@@ -6152,7 +6189,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     where `done` was correctly allowed with the PR still open and unarmed.
 
     Once the worktree is gone, also deletes the goal's branch on BOTH sides -- but only when a
-    fresh `gh pr view` positively confirms MERGED (`_pr_merged` above); every other case (no PR,
+    fresh PR read (REST first since #895 4a-1) positively confirms MERGED (`_pr_merged` above); every other case (no PR,
     still open/armed-but-not-landed, closed unmerged, unreadable) leaves both branches untouched,
     same as before this existed. The remote delete here is a BACKSTOP, not the primary path: a
     direct `merge()` landing already deleted it eagerly (see `_delete_remote_branch`); this exists
@@ -6174,8 +6211,8 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                 f"merge-reconcile pass records done and releases this checkout once it merges; "
                 f"finish --force to release anyway")
     # #255 (1): `merged` is the caller's word that it JUST confirmed this PR merged with a REST read
-    # (`done_refusal` on the `record done` path, the merge-reconcile pass). Both `gh pr view` reads
-    # below are GraphQL and would only re-ask the answer already in hand.
+    # (`done_refusal` on the `record done` path, the merge-reconcile pass). Both PR reads below (REST
+    # first since #895 4a-1, a `gh pr view` GraphQL fallback) would only re-ask the answer already in hand.
     if pr and not force and not merged:
         refusal = _open_pr_refusal(sdlc_dir, rec, pr, run)
         if refusal:

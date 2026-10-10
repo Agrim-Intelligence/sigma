@@ -5,6 +5,7 @@ import hashlib, importlib.util, json, os, pathlib, re, shutil, subprocess, sys, 
 
 import pytest
 from journal_events import journal_events
+import prfake                       # #895 4a-1: REST pull/comment bodies for the migrated PR reads
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
@@ -166,7 +167,7 @@ def test_ci_repair_cap_falls_back_to_the_existing_failed_outcome_with_the_check_
 def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dispatch(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner([
-        ("gh pr view 7 --json isCrossRepository", "{}"),
+        (PR_GET, prfake.rest_pull()),
         ("gh repo view --json viewerPermission", "ADMIN"),
         ("gh pr view 7 --json mergeable", _view(status="BLOCKED", checks=(("lint", "FAILURE"),))),
     ])
@@ -348,20 +349,26 @@ def test_review_marker_recovery_finds_a_comment_on_the_second_rest_page():
     assert any("page=2" in endpoint for endpoint in calls)
 
 
-def _pr_state(state="OPEN", auto_merge=False):
-    """`gh pr view --json state,autoMergeRequest` — the single cheap read `done_refusal` makes.
-    A DIFFERENT field set from `_view()` (which answers gate()'s own mergeable/mergeStateStatus/
-    statusCheckRollup/headRefOid question) -- kept as its own helper so the two never get
-    conflated, and so the substring `_runner` handlers key on ("state,autoMergeRequest") can never
-    collide with `_view()`'s own call shape."""
-    return json.dumps({"state": state,
-                       "autoMergeRequest": ({"mergeMethod": "SQUASH"} if auto_merge else None)})
+#: #895 4a-1: the substring of gh_api's REST read of PR 7 (`api repos/{owner}/{repo}/pulls/7 --method
+#: GET`), which the migrated reads (merge_rights, _comment_directive, post_review, _open_pr_refusal,
+#: _pr_merged) all make. ONE REST body answers every field, so handlers key on the call, not on a
+#: `--json` field set. `pr_landing_state`'s bare `gh api .../pulls/7` (no `--method GET`) is NOT matched.
+PR_GET = prfake.pull_get(7)
 
 
-# Ordered BEFORE any ("pr view", ...) handler: `gh pr view --json isCrossRepository` would otherwise
-# be swallowed by the gate's handler, since both are `gh pr view`.
-def _rights(cross=False, perm="ADMIN"):
-    return [("isCrossRepository", json.dumps({"isCrossRepository": cross})),
+def _pr_state(state="OPEN", auto_merge=False, **kw):
+    """The REST `pulls/7` body for `_open_pr_refusal` / `_pr_merged` (gh fields state,autoMergeRequest),
+    built by `prfake.rest_pull` as a SUPERSET: it also carries `merged`/`merged_at` for
+    `pr_landing_state` and the receipt fields, so one body can answer every PR reader in a test.
+    A DIFFERENT call from `_view()` (gate()'s `gh pr view --json mergeable,...`, not migrated)."""
+    return prfake.rest_pull(state=state, autoMergeRequest=({"merge_method": "squash"} if auto_merge else None),
+                            **kw)
+
+
+# Ordered BEFORE any generic handler that would also match `pulls/7`. merge_rights' fork check is now the
+# REST `pulls/7 --method GET` read (PR_GET); the gate's `gh pr view --json mergeable` is a different call.
+def _rights(cross=False, perm="ADMIN", **pull):
+    return [(PR_GET, prfake.rest_pull(isCrossRepository=cross, **pull)),
             ("viewerPermission", perm),
             ("nameWithOwner", "acme/app")]
 
@@ -3237,7 +3244,7 @@ def test_merge_arms_auto_merge_when_required_checks_are_still_pending_past_the_b
     assert f"gh pr merge 7 --auto --squash --match-head-commit {HEAD_SHA}" in run.calls
     # proves merge() relies on gate()'s existing budget rather than adding a second one of its own.
     # Filtered on "mergeStateStatus" (gate()'s own --json field list) so merge_rights()'s SEPARATE,
-    # single `gh pr view --json isCrossRepository` call (also a "pr view" substring) isn't counted.
+    # single fork read (REST `pulls/7 --method GET` since #895 4a-1, formerly a `gh pr view`) isn't counted.
     assert sum("mergeStateStatus" in c for c in run.calls) == work.PENDING_ATTEMPTS + 1
 
 
@@ -3390,7 +3397,7 @@ def test_merge_then_done_refusal_writes_merged_only_once(tmp_path):
 
     # loop.py's `record done` dispatch, right after -- a synchronous `gh pr merge` guarantees the
     # very next live read sees state=MERGED.
-    run2 = _runner([("state,autoMergeRequest", _pr_state(state="MERGED")),
+    run2 = _runner([(PR_GET, _pr_state(state="MERGED")),
                     ("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     assert work.done_refusal(d, cfg, goal, run=run2) is None
 
@@ -4031,21 +4038,21 @@ def test_policy_defaults_to_off_when_unset(tmp_path):
 def test_pr_merged_true_when_github_confirms_merged(tmp_path):
     d = _sdlc(tmp_path)
     rec = {"pr": "7"}
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(PR_GET, _pr_state("MERGED"))])
     assert work._pr_merged(d, rec, run) is True
 
 
 def test_pr_merged_false_when_still_open(tmp_path):
     d = _sdlc(tmp_path)
     rec = {"pr": "7"}
-    run = _runner([("pr view", _pr_state("OPEN"))])
+    run = _runner([(PR_GET, _pr_state("OPEN"))])
     assert work._pr_merged(d, rec, run) is False
 
 
 def test_pr_merged_false_when_closed_without_merging(tmp_path):
     d = _sdlc(tmp_path)
     rec = {"pr": "7"}
-    run = _runner([("pr view", _pr_state("CLOSED"))])
+    run = _runner([(PR_GET, _pr_state("CLOSED"))])
     assert work._pr_merged(d, rec, run) is False
 
 
@@ -4075,7 +4082,7 @@ def test_pr_merged_runs_from_project_root_not_a_worktree(tmp_path):
         if not os.path.isdir(str(cwd)):
             raise FileNotFoundError(2, "No such file or directory", str(cwd))
         line = " ".join(str(a) for a in argv)
-        return pr_json if "pr view" in line else ""
+        return pr_json if prfake.is_pr_get(line) else ""
 
     assert work._pr_merged(d, rec, run) is True
 
@@ -4108,7 +4115,7 @@ def test_finish_refuses_when_the_pr_is_still_open(tmp_path):
     not silently discard the pointer, and it must never even reach `git worktree remove`."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("OPEN"))])
+    run = _runner([(PR_GET, _pr_state("OPEN"))])
     out = work.finish(d, ON, goal, run=run)
     assert out.startswith("kept ")
     assert "PR #7" in out and "open" in out
@@ -4121,7 +4128,7 @@ def test_finish_force_releases_the_checkout_even_with_an_open_pr(tmp_path):
     and skips the PR read entirely rather than confirming OPEN just to override it."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("OPEN"))])
+    run = _runner([(PR_GET, _pr_state("OPEN"))])
     out = work.finish(d, ON, goal, run=run, force=True)
     assert "removed" in out
     assert work._record(d, goal) is None
@@ -4131,7 +4138,7 @@ def test_finish_force_releases_the_checkout_even_with_an_open_pr(tmp_path):
 def test_finish_proceeds_when_the_pr_is_already_merged(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(PR_GET, _pr_state("MERGED"))])
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out
     assert work._record(d, goal) is None
@@ -4141,7 +4148,7 @@ def test_finish_records_an_asynchronously_landed_merge_before_discarding_its_pr_
     """The last observer must record facts before finish removes the only goal record."""
     cfg = {**ON, "ledger": {"enabled": True, "actor": "rae"}, "journal": {"enabled": True}}
     d = _sdlc(tmp_path, cfg); goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED")),
+    run = _runner([(PR_GET, _pr_state("MERGED")),
                    ("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
     assert work.finish(d, cfg, goal, run=run).startswith("removed")
     ledger = _load("ledger")
@@ -4161,7 +4168,7 @@ def test_finish_records_a_confirmed_merge_when_the_goal_worktree_is_already_gone
         if not pathlib.Path(cwd).is_dir():
             raise FileNotFoundError(2, "No such file or directory", str(cwd))
         line = " ".join(str(value) for value in argv)
-        if "pr view" in line:
+        if prfake.is_pr_get(line):
             return _pr_state("MERGED")
         if "api repos/{owner}/{repo}/pulls/7" in line:
             return _merged_pr()
@@ -4175,7 +4182,7 @@ def test_finish_records_a_confirmed_merge_when_the_goal_worktree_is_already_gone
 def test_finish_deletes_both_branches_once_the_pr_is_confirmed_merged(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(PR_GET, _pr_state("MERGED"))])
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out and "deleted branch sdlc/0001-x" in out
     assert any(c == "git branch -D sdlc/0001-x" for c in run.calls)
@@ -4189,7 +4196,7 @@ def test_finish_reports_the_remote_delete_as_unconfirmed_when_it_fails(tmp_path)
     call, but not always (a permission error, a transient API failure) -- came back unconfirmed."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED")),
+    run = _runner([(PR_GET, _pr_state("MERGED")),
                    ("DELETE", RuntimeError("HTTP 403: Resource not accessible"))])
     out = work.finish(d, ON, goal, run=run)
     assert "deleted local branch sdlc/0001-x (remote delete unconfirmed)" in out
@@ -4204,7 +4211,7 @@ def test_finish_covers_the_armed_then_asynchronously_landed_gap(tmp_path):
     is the only place left with a chance to clean up the remote side too."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(PR_GET, _pr_state("MERGED"))])
     out = work.finish(d, ON, goal, run=run)
     assert "deleted branch" in out
     assert any("DELETE" in c for c in run.calls)
@@ -4217,7 +4224,7 @@ def test_finish_leaves_both_branches_when_auto_merge_is_armed_but_not_yet_landed
     skipped."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("OPEN", auto_merge=True))])
+    run = _runner([(PR_GET, _pr_state("OPEN", auto_merge=True))])
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out and "deleted branch" not in out
     assert not any("branch -D" in c for c in run.calls)
@@ -4236,7 +4243,7 @@ def test_finish_leaves_both_branches_when_the_pr_state_is_unreadable(tmp_path):
 def test_finish_leaves_both_branches_when_the_goal_never_had_a_pr(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, pr="")
-    run = _runner([("pr view", _pr_state("MERGED"))])   # must never even be called
+    run = _runner([(PR_GET, _pr_state("MERGED"))])   # must never even be called
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out and "deleted branch" not in out
     assert not any("pr view" in c for c in run.calls)
@@ -4251,7 +4258,7 @@ def test_finish_branch_delete_failure_does_not_change_the_reported_outcome(tmp_p
     d = _sdlc(tmp_path)
     goal = _started(d)
     wt = work._record(d, goal)["worktree"]
-    run = _runner([("pr view", _pr_state("MERGED")),
+    run = _runner([(PR_GET, _pr_state("MERGED")),
                    ("branch -D", RuntimeError("error: branch 'sdlc/0001-x' not found"))])
     out = work.finish(d, ON, goal, run=run)
     assert out == f"removed {wt}"                     # exact match: no false "deleted branch" claim
@@ -4268,7 +4275,7 @@ def test_finish_never_raises_when_the_record_is_missing_a_branch_name(tmp_path):
     rec = work._record(d, goal)
     del rec["branch"]
     work._save(d, goal, rec)
-    run = _runner([("pr view", _pr_state("MERGED"))])
+    run = _runner([(PR_GET, _pr_state("MERGED"))])
     out = work.finish(d, ON, goal, run=run)
     assert out == f"removed {rec['worktree']}"
 
@@ -4280,7 +4287,7 @@ def test_finish_force_skips_branch_cleanup_even_when_the_pr_is_actually_merged(t
     specifically to avoid depending on one."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("MERGED"))])   # must never even be called
+    run = _runner([(PR_GET, _pr_state("MERGED"))])   # must never even be called
     out = work.finish(d, ON, goal, run=run, force=True)
     assert "removed" in out and "deleted branch" not in out
     assert not any("pr view" in c for c in run.calls)
@@ -4299,7 +4306,7 @@ def test_finish_proceeds_when_auto_merge_is_armed_on_a_still_open_pr(tmp_path):
     PR under this repo's own `auto_merge: protected` config gets wedged here instead of released."""
     d = _sdlc(tmp_path)
     goal = _started(d)
-    run = _runner([("pr view", _pr_state("OPEN", auto_merge=True))])
+    run = _runner([(PR_GET, _pr_state("OPEN", auto_merge=True))])
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out
     assert work._record(d, goal) is None
@@ -4341,7 +4348,7 @@ def test_finish_refuses_an_open_pr_even_when_the_worktree_directory_is_already_g
         if not os.path.isdir(str(cwd)):
             raise FileNotFoundError(2, "No such file or directory", str(cwd))
         line = " ".join(str(a) for a in argv)
-        return pr_json if "pr view" in line else ""
+        return pr_json if prfake.is_pr_get(line) else ""
 
     out = work.finish(d, ON, goal, run=run)
     assert out.startswith("kept "), out
@@ -4352,7 +4359,7 @@ def test_finish_refuses_an_open_pr_even_when_the_worktree_directory_is_already_g
 def test_finish_proceeds_when_the_goal_never_had_a_pr(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, pr="")
-    run = _runner([("pr view", _pr_state("OPEN"))])       # must never even be called
+    run = _runner([(PR_GET, _pr_state("OPEN"))])       # must never even be called
     out = work.finish(d, ON, goal, run=run)
     assert "removed" in out
     assert not any("pr view" in c for c in run.calls)
@@ -4511,10 +4518,10 @@ def test_cli_root_works_with_the_feature_off(tmp_path, capsys):
 
 def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_authors=(), pr_author=None,
             associations=()):
-    """Handlers for the review gate: the `--json comments,author` marker scan, the `--json
+    """Handlers for the review gate: the marker scan (#895 4a-1: now the REST `issues/7/comments` page
+    plus the REST `pulls/7` read for the PR author, both via `_comments`), the `--json
     reviewDecision,latestReviews` read, and the GraphQL thread count. Ordered so the specific
-    `--json comments` / `reviewDecision` matches win over a generic `pr view` handler that also
-    matches those lines. `comment_authors` pairs positionally with `comments` (missing entries ->
+    `reviewDecision` match wins over a generic `pr view` handler that also matches that line. `comment_authors` pairs positionally with `comments` (missing entries ->
     None, same as a real comment with no readable author); `pr_author` is the PR's own login (#821:
     unset in every pre-existing caller, so `same_author` computes False there — None != None is
     False by design in `_comment_directive` — leaving their behavior byte-identical)."""
@@ -4525,11 +4532,21 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
         "nodes": [{"isResolved": False}] * unresolved}}}}})
     authors = list(comment_authors) + [None] * (len(comments) - len(comment_authors))
     assoc = list(associations) + ["OWNER"] * (len(comments) - len(associations))   # #635: trusted unless a test says otherwise
-    comment_json = json.dumps({"author": {"login": pr_author},
-                               "comments": [{"body": b, "author": {"login": a}, "authorAssociation": x}
-                                            for b, a, x in zip(comments, authors, assoc)]})
-    return [("json comments", comment_json), ("reviewDecision", reviews),
-            ("nameWithOwner", "acme/app"), ("graphql", threads)]
+    rows = [{"body": b, "author": {"login": a}, "authorAssociation": x}
+            for b, a, x in zip(comments, authors, assoc)]
+    return _comments(rows, pr_author) + [("reviewDecision", reviews),
+                                         ("nameWithOwner", "acme/app"), ("graphql", threads)]
+
+
+#: #895 4a-1: the substring of gh_api's REST comment-page read for PR 7.
+COMMENTS_GET = prfake.comments_get(7)
+
+
+def _comments(rows, pr_author=None):
+    """The two REST reads `_comment_directive` makes (#895 4a-1): ONE comments page (gh-shaped `rows`,
+    converted by `prfake.rest_comments`) and the `pulls/7` read whose `user.login` is the PR author.
+    `pr_author=None` omits `user` (the converter's `{"login": ""}`, read as unknown)."""
+    return [(COMMENTS_GET, prfake.rest_comments(rows)), (PR_GET, prfake.rest_pull(author=pr_author))]
 
 
 def test_review_mode_parses_off_changes_approval_and_true():
@@ -4631,7 +4648,7 @@ def test_review_gate_approval_mode_fails_closed_on_an_unreadable_decision(tmp_pa
     failed. Approval is a positive requirement, so an unknown decision parks."""
     cfg = {"work": {"enabled": True, "require_review": "approval"}}
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner([("json comments", json.dumps({"author": {"login": "bot"}, "comments": []})),
+    run = _runner(_comments([], "bot") + [
                    ("reviewDecision", RuntimeError("gh boom"))])
     ok, why = work.review_gate(d, cfg, g, run=run)
     assert ok is False and "review decision" in why
@@ -4640,7 +4657,7 @@ def test_review_gate_approval_mode_fails_closed_on_an_unreadable_decision(tmp_pa
 def test_review_gate_fails_open_on_a_read_error(tmp_path):
     cfg = {"work": {"enabled": True, "require_review": "changes"}}
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner([("json comments", json.dumps({"author": {"login": "bot"}, "comments": []})),
+    run = _runner(_comments([], "bot") + [
                    ("reviewDecision", RuntimeError("gh boom"))])         # #635: comments readable, decision not
     assert work.review_gate(d, cfg, g, run=run) == (True, "")           # other gates still hold
 
@@ -4733,8 +4750,7 @@ def test_every_non_trusted_association_is_ignored(assoc, tmp_path):
 
 def test_a_marker_comment_with_no_association_field_at_all_parks(tmp_path):
     d = _sdlc(tmp_path, _APPROVAL); g = _started(d)
-    payload = json.dumps({"author": {"login": "bot"}, "comments": [{"body": "sigma:approve", "author": {"login": "x"}}]})
-    run = _runner([("json comments", payload), ("reviewDecision", json.dumps({"reviewDecision": None, "latestReviews": []})),
+    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "x"}}], "bot") + [("reviewDecision", json.dumps({"reviewDecision": None, "latestReviews": []})),
                    ("nameWithOwner", "a/b"), ("graphql", "{}")])
     ok, why = work.review_gate(d, _APPROVAL, g, run=run)
     assert ok is False and "could not read" in why
@@ -4774,21 +4790,21 @@ def test_a_stranger_cannot_override_a_trusted_approval_with_a_later_marker(tmp_p
 @pytest.mark.parametrize("cfg", [_CHANGES, _APPROVAL])
 def test_unreadable_comments_park_instead_of_failing_open(cfg, tmp_path):
     d = _sdlc(tmp_path, cfg); g = _started(d)
-    run = _runner([("json comments", RuntimeError("gh boom"))] + _review(decision="APPROVED"))
+    run = _runner([(COMMENTS_GET, RuntimeError("gh boom"))] + _review(decision="APPROVED"))
     ok, why = work.review_gate(d, cfg, g, run=run)
     assert ok is False and "could not read" in why
 
 
 def test_a_non_object_comment_entry_parks_instead_of_crashing(tmp_path):
     d = _sdlc(tmp_path, _CHANGES); g = _started(d)
-    run = _runner([("json comments", json.dumps({"author": {"login": "b"}, "comments": ["sigma:approve"]}))]
+    run = _runner([(COMMENTS_GET, json.dumps(["sigma:approve"]))]
                   + _review(decision="APPROVED"))
     assert work.review_gate(d, _CHANGES, g, run=run)[0] is False
 
 
 def test_unparseable_comments_park_too(tmp_path):
     d = _sdlc(tmp_path, _CHANGES); g = _started(d)
-    run = _runner([("json comments", "not json")] + _review(decision="APPROVED"))
+    run = _runner([(COMMENTS_GET, "not json")] + _review(decision="APPROVED"))
     assert work.review_gate(d, _CHANGES, g, run=run)[0] is False
 
 
@@ -4938,8 +4954,8 @@ def _post_review(d, cfg, goal, run, verdict, reason=""):
     pr = int(work._record(d, goal)["pr"])
 
     def evidence_run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "view"] and "number,headRefOid" in argv:
-            return json.dumps({"number": pr, "headRefOid": head})
+        if prfake.is_pr_get(argv, pr):                  # #895 4a-1: post_review's REST pulls/<n> read
+            return prfake.rest_pull(number=pr, headRefOid=head)
         result = run(cwd, argv)
         if argv[:3] == ["gh", "pr", "comment"] and not result:
             return "https://github.example/issues/7#issuecomment-99"
@@ -4967,7 +4983,7 @@ def test_post_review_refuses_missing_or_malformed_evidence_before_any_remote_pos
     evidence = pathlib.Path(d) / "malformed-evidence.json"
     evidence.write_text(json.dumps({"goal": goal, "verdict": "approve", "pr": 7,
                                     "head_sha": "a" * 40, "brief_sha256": "not-a-sha"}))
-    malformed = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": "a" * 40}))])
+    malformed = _runner([(PR_GET, prfake.rest_pull(headRefOid="a" * 40))])
     assert "not bound to this goal's current review generation" in work.post_review(
         d, ON, goal, run=malformed, verdict="approve", evidence=str(evidence))
     assert not any("pr comment" in call for call in malformed.calls)
@@ -4977,7 +4993,7 @@ def test_post_review_unblock_posts_a_typed_journal_observation(tmp_path):
     cfg = {**ON, **JOURNAL_ON, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "unblock")
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                    ("pr comment", "https://github.example/issues/7#issuecomment-43")])
     assert work.post_review(d, cfg, goal, run=run, verdict="unblock", evidence=str(evidence)).startswith("posted")
     assert any("sigma:unblock" in call for call in run.calls)
@@ -4990,7 +5006,7 @@ def test_rollout_census_fails_when_post_review_attempts_a_journal_off_write(tmp_
     cfg = {**ON, "ledger": {"enabled": True, "actor": "rae"}, "journal": {"enabled": False}}
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "approve")
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                    ("pr comment", "https://github.example/issues/7#issuecomment-44")])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("posted")
     assert not [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
@@ -5023,7 +5039,7 @@ def test_evidence_backed_success_post_records_one_typed_review_observation_and_i
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "approve")
     evidence = pathlib.Path(evidence)
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                    ("pr comment", "https://github.example/issues/7#issuecomment-42")])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("posted")
     events = [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
@@ -5038,11 +5054,11 @@ def test_evidence_backed_retry_after_ambiguous_post_is_reconcile_only(tmp_path):
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "approve")
     evidence = pathlib.Path(evidence)
-    first = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    first = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                      ("pr comment", RuntimeError("request timed out"))])
     assert work.post_review(d, cfg, goal, run=first, verdict="approve", evidence=str(evidence)).startswith("PARK:")
     assert sum("pr comment" in call for call in first.calls) == 1
-    retry = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    retry = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                      ("issues/7/comments", "[]")])
     assert work.post_review(d, cfg, goal, run=retry, verdict="approve", evidence=str(evidence)).startswith("PARK:")
     assert not any("pr comment" in call for call in retry.calls)
@@ -5053,7 +5069,7 @@ def test_evidence_backed_post_parks_before_comment_when_the_pr_head_moved(tmp_pa
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "approve")
     evidence = pathlib.Path(evidence)
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": "c" * 40}))])
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid="c" * 40))])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("PARK:")
     assert not any("pr comment" in call for call in run.calls)
 
@@ -5067,14 +5083,14 @@ def test_remote_review_reconciliation_retries_an_enabled_journal_write_before_re
     real_append = work.ledger.safe_append
     monkeypatch.setattr(work.ledger, "safe_append", lambda *args, **kwargs:
                         None if args[1] == "review_posted" else real_append(*args, **kwargs))
-    first = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    first = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                      ("pr comment", "https://github.example/issues/7#issuecomment-42")])
     assert work.post_review(d, cfg, goal, run=first, verdict="approve", evidence=str(evidence)).startswith("PARK:")
     request = next((pathlib.Path(d) / "state" / "review-posts").glob("*.json"))
     assert not json.loads(request.read_text()).get("effects_repaired")
     monkeypatch.setattr(work.ledger, "safe_append", real_append)
     marker = "<!-- sigma-review-evidence:%s -->" % hashlib.sha256(evidence.read_bytes()).hexdigest()[:32]
-    retry = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    retry = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                      ("issues/7/comments", json.dumps([{"id": 42, "body": marker}]))])
     assert work.post_review(d, cfg, goal, run=retry, verdict="approve", evidence=str(evidence)).startswith("posted")
     assert len([event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]) == 1
@@ -5114,7 +5130,7 @@ def test_post_review_refuses_evidence_hand_written_outside_the_generation_chain(
     forged.parent.mkdir(parents=True)
     forged.write_text(json.dumps({"goal": goal, "verdict": "approve", "pr": 7,
                                   "head_sha": "a" * 40, "brief_sha256": "b" * 64}))
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": "a" * 40}))])
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid="a" * 40))])
     out = work.post_review(d, ON, goal, run=run, verdict="approve", evidence=str(forged))
     assert "posted" not in out, out
     assert not any("pr comment" in call for call in run.calls), "a forged approval reached GitHub"
@@ -5242,7 +5258,7 @@ def test_finish_releases_an_armed_auto_merge_pr_even_with_the_ledger_on(tmp_path
     the eventual armed merge needs a periodic sweep: #2683."""
     cfg = {**ON, "ledger": {"enabled": True, "actor": "rae"}}
     d = _sdlc(tmp_path, cfg); goal = _started(d)
-    run = _runner([("state,autoMergeRequest", _pr_state(state="OPEN", auto_merge=True))])
+    run = _runner([(PR_GET, _pr_state(state="OPEN", auto_merge=True))])
     out = work.finish(d, cfg, goal, run=run)
     assert "retaining its observation record" not in out, out
     assert not work._record(d, goal), "the armed PR's work record was retained"
@@ -5304,7 +5320,7 @@ def test_documented_unblock_gesture_clears_a_prior_block_on_the_same_revision(tm
     assert work.main(["work.py", "review-evidence", d, goal, "--manifest", manifest,
                       "--review-result", second["REVIEW_RESULT"]]) == 0
     head = subprocess.run(["git", "-C", worktree, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    run = _runner([("headRefOid", json.dumps({"number": 7, "headRefOid": head})),
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                    ("pr comment", "https://github.example/issues/7#issuecomment-51")])
     out = work.post_review(d, ON, goal, run=run, verdict="unblock", evidence=second["REVIEW_EVIDENCE"])
     assert out.startswith("posted sigma:unblock"), out
@@ -9852,3 +9868,286 @@ def test_312_verify_required_is_the_one_shared_rule(tmp_path, verify, goal_cmd, 
         goal = str(p)
     got = state.verify_required({"verify": verify}, goal)
     assert (got is None) if want is None else (want in got), got
+
+
+# --- #895 slice 4a-1: the five work.py PR reads go REST first through gh_api ----------------------
+
+def _raising(msg):
+    """A `_run`-shaped failure: `RuntimeError("<argv joined>: <detail>")`, no `.hint`."""
+    return RuntimeError(msg)
+
+
+def test_pr_api_run_strips_the_argv_prefix_into_the_hint():
+    """Classification must never read argv: a repo named `timeout-svc` is not a transport failure."""
+    def run(cwd, argv):
+        raise RuntimeError(" ".join(argv) + ": gh: Server Error (HTTP 502)")
+    r = work._pr_api_run(run, "/wt")
+    with pytest.raises(RuntimeError) as ei:
+        r(["api", "repos/o/timeout-svc/pulls/7", "--method", "GET"])
+    assert ei.value.hint == "gh: Server Error (HTTP 502)"
+    assert work.gh_api.classify(ei.value) == (502, "server")
+
+    def run404(cwd, argv):
+        raise RuntimeError(" ".join(argv) + ": gh: Not Found (HTTP 404)")
+    with pytest.raises(RuntimeError) as ei:
+        work._pr_api_run(run404, "/wt")(["api", "repos/o/timeout-svc/pulls/7", "--method", "GET"])
+    assert ei.value.hint == "gh: Not Found (HTTP 404)" and "timeout" not in ei.value.hint
+    assert work.gh_api.classify(ei.value) == (404, "not_found")
+
+
+def test_pr_api_run_keeps_proxy_text_and_passes_other_exceptions_through():
+    block = "GitHub access is not enabled for this session."
+
+    def run(cwd, argv):
+        raise RuntimeError(" ".join(argv) + ": " + block)
+    with pytest.raises(RuntimeError) as ei:
+        work._pr_api_run(run, ".")(["api", "x"])
+    assert ei.value.hint == block and work.gh_api.classify(ei.value)[1] == "proxy"
+
+    def run_fnf(cwd, argv):
+        raise FileNotFoundError(2, "gone", cwd)
+    with pytest.raises(FileNotFoundError):
+        work._pr_api_run(run_fnf, ".")(["api", "x"])
+    seen = []
+    assert work._pr_api_run(lambda cwd, argv: seen.append((cwd, argv)) or "ok", "/wt")(["api", "y"]) == "ok"
+    assert seen == [("/wt", ["gh", "api", "y"])]
+
+
+def _rights_run(pull):
+    return _runner([(PR_GET, pull), ("viewerPermission", "ADMIN")])
+
+
+def test_merge_rights_reads_the_fork_bit_over_rest_not_pr_view(tmp_path):
+    d = _sdlc(tmp_path); g = _started(d)
+    run = _rights_run(prfake.rest_pull())
+    assert work.merge_rights(d, ON, g, run=run) == (True, "")
+    assert run.calls[0] == "gh api repos/{owner}/{repo}/pulls/7 --method GET"
+    assert not any("pr view" in c for c in run.calls)
+    assert any("viewerPermission" in c for c in run.calls)
+
+
+@pytest.mark.parametrize("cross", [True, None], ids=["fork", "deleted-fork"])
+def test_merge_rights_refuses_a_fork_and_a_deleted_head_repo(cross, tmp_path):
+    d = _sdlc(tmp_path); g = _started(d)
+    ok, why = work.merge_rights(d, ON, g, run=_rights_run(prfake.rest_pull(isCrossRepository=cross)))
+    assert ok is False and "fork PR" in why
+
+
+@pytest.mark.parametrize("pull", [RuntimeError("x: gh: Not Found (HTTP 404)"), "[1]", "",
+                                  prfake.rest_pull(base=None), prfake.rest_pull(head=None)],
+                         ids=["error", "non-dict", "empty", "no-base", "no-head"])
+def test_merge_rights_fails_closed_on_an_unreadable_or_malformed_pull(pull, tmp_path):
+    d = _sdlc(tmp_path); g = _started(d)
+    ok, why = work.merge_rights(d, ON, g, run=_rights_run(pull))
+    assert ok is False and "could not determine merge rights" in why
+
+
+def test_comment_directive_reads_rest_comments_and_the_pr_author(tmp_path):
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "maint"}, "authorAssociation": "OWNER"}],
+                            "maint"))
+    assert work._comment_directive(rec, run) == ("approve", True)
+    assert run.calls == ["gh api repos/{owner}/{repo}/pulls/7 --method GET",
+                         "gh api repos/{owner}/{repo}/issues/7/comments --method GET -f per_page=100 -f page=1"]
+    run = _runner(_comments([{"body": "sigma:block", "author": {"login": "h"}, "authorAssociation": "MEMBER"}],
+                            "maint"))
+    assert work._comment_directive(rec, run) == ("block", False)
+
+
+def test_comment_directive_bot_author_spelling_matches_rest_to_rest(tmp_path):
+    """REST spells a bot `x[bot]` on BOTH the PR and the comment, so a bot's own marker is same_author."""
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "sigma[bot]"}, "authorAssociation": "MEMBER"}],
+                            "sigma[bot]"))
+    assert work._comment_directive(rec, run) == ("approve", True)
+
+
+def test_comment_directive_fallback_compares_gh_native_spellings(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    gh_native = json.dumps({"author": {"login": "app/sigma"}, "comments": [
+        {"body": "sigma:approve", "author": {"login": "app/sigma"}, "authorAssociation": "MEMBER"}]})
+    run = _runner([(PR_GET, RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                   ("gh pr view 7 --json comments,author", gh_native)])
+    assert work._comment_directive(rec, run) == ("approve", True)
+    assert "gh pr view 7 --json comments,author" in run.calls
+
+
+@pytest.mark.parametrize("handlers", [
+    [(PR_GET, RuntimeError("x: gh: Not Found (HTTP 404)"))],
+    [(COMMENTS_GET, RuntimeError("x: gh: Not Found (HTTP 404)")), (PR_GET, prfake.rest_pull())],
+    [(COMMENTS_GET, json.dumps([1])), (PR_GET, prfake.rest_pull())],
+    [(COMMENTS_GET, json.dumps({"x": 1})), (PR_GET, prfake.rest_pull())],
+], ids=["pull-unreadable", "comments-unreadable", "non-dict-row", "non-list-page"])
+def test_comment_directive_unreadable_raises_value_error(handlers, tmp_path):
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    with pytest.raises(ValueError):
+        work._comment_directive(rec, _runner(handlers))
+
+
+def test_comment_directive_hitting_the_comment_cap_parks(tmp_path, monkeypatch):
+    """A truncated list could hide a trusted `sigma:block`: the cap RAISES, so the gate parks."""
+    monkeypatch.setattr(work.gh_api, "PR_COMMENT_PAGE_CAP", 2)
+    monkeypatch.setattr(work.gh_api.pr_comments, "__defaults__", (None, 2))
+    full = prfake.rest_comments([{"body": "c", "author": {"login": "u"}, "authorAssociation": "OWNER"}] * 100)
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _runner([(COMMENTS_GET, full), (PR_GET, prfake.rest_pull())])
+    with pytest.raises(ValueError):
+        work._comment_directive(rec, run)
+    assert sum(1 for c in run.calls if "comments" in c) == 2
+
+
+def test_comment_directive_marker_without_association_still_parks(tmp_path):
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _runner(_comments([{"body": "sigma:block", "author": {"login": "h"}}], "m"))
+    with pytest.raises(ValueError, match="authorAssociation"):
+        work._comment_directive(rec, run)
+
+
+def test_comment_directive_untrusted_association_is_skipped_with_the_same_line(tmp_path, capsys):
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _runner(_comments([{"body": "sigma:approve", "author": {"login": "rando"}, "authorAssociation": "NONE"}], "m"))
+    assert work._comment_directive(rec, run) == (None, None)
+    assert "ignoring a sigma:approve comment on PR #7 from rando (NONE)" in capsys.readouterr().err
+
+
+def _post_review_raw(d, goal, current, fallback=None):
+    """`_post_review`, but the REST pulls/<n> read answers `current` (a body or an Exception), and a
+    `gh pr view` fallback (when `fallback` is not None) answers `fallback`."""
+    evidence, head = _review_chain(d, goal, "approve", "")
+
+    def run(cwd, argv):
+        if fallback is not None and argv[:3] == ["gh", "pr", "view"]:
+            return fallback
+        if prfake.is_pr_get(argv, 7):
+            if isinstance(current, Exception):
+                raise current
+            return current(head) if callable(current) else current
+        if argv[:3] == ["gh", "pr", "comment"]:
+            return "https://github.example/issues/7#issuecomment-99"
+        return ""
+    run.calls = []
+    out = work.post_review(d, ON, goal, run=run, verdict="approve", reason="", evidence=str(evidence))
+    return out
+
+
+def test_post_review_proceeds_on_a_matching_rest_head(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    out = _post_review_raw(d, goal, lambda head: prfake.rest_pull(headRefOid=head))
+    assert "posted sigma:approve" in out
+
+
+@pytest.mark.parametrize("current", [
+    lambda head: prfake.rest_pull(headRefOid="f" * 40),
+    lambda head: prfake.rest_pull(headRefOid=head, number=8),
+    lambda head: prfake.rest_pull(head={"ref": "x", "repo": None}),
+], ids=["head-differs", "number-differs", "sha-missing"])
+def test_post_review_parks_stale_on_a_different_or_missing_head(current, tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert _post_review_raw(d, goal, current) == "PARK: review evidence is stale; the PR head changed before posting"
+
+
+@pytest.mark.parametrize("current", [RuntimeError("x: gh: Not Found (HTTP 404)"), "[1]", "garbage"],
+                         ids=["error", "non-dict", "garbage"])
+def test_post_review_parks_unavailable_on_an_unreadable_pull(current, tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert _post_review_raw(d, goal, current) == "PARK: review evidence or current PR revision is unavailable"
+
+
+@pytest.mark.parametrize("pull,refused", [
+    (prfake.rest_pull(state="OPEN"), True),
+    (prfake.rest_pull(state="OPEN", autoMergeRequest={"merge_method": "squash"}), False),
+    (prfake.rest_pull(state="MERGED"), False),
+    (prfake.rest_pull(state="CLOSED"), False),
+    (prfake.rest_pull(state="OPEN", auto_merge=prfake.ABSENT), False),     # R7 documented loosening: fail OPEN
+    (prfake.rest_pull(state="weird"), False),
+    ("[1]", False),
+    (RuntimeError("x: gh: Not Found (HTTP 404)"), False),
+], ids=["open", "armed", "merged", "closed", "auto-merge-absent", "weird-state", "non-dict", "error"])
+def test_open_pr_refusal_rest_rows(pull, refused, tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal)
+    run = _runner([(PR_GET, pull)])
+    out = work._open_pr_refusal(d, rec, "7", run)
+    assert (out is not None) is refused
+    assert run.calls == ["gh api repos/{owner}/{repo}/pulls/7 --method GET"]
+
+
+@pytest.mark.parametrize("pull,merged", [
+    (prfake.rest_pull(state="MERGED"), True),
+    (prfake.rest_pull(state="CLOSED", merged=False, merged_at="2026-01-02T00:00:00Z"), True),
+    (prfake.rest_pull(state="OPEN"), False),
+    (prfake.rest_pull(state="CLOSED"), False),
+    (prfake.rest_pull(state="weird"), False),
+    ("[1]", False),
+    ("", False),
+    (RuntimeError("x: gh: Not Found (HTTP 404)"), False),
+], ids=["merged", "closed-with-merged-at", "open", "closed-unmerged", "weird", "non-dict", "empty", "error"])
+def test_pr_merged_rest_rows(pull, merged, tmp_path):
+    d = _sdlc(tmp_path)
+    run = _runner([(PR_GET, pull)])
+    assert work._pr_merged(d, {"pr": "7"}, run) is merged
+    assert run.calls == ["gh api repos/{owner}/{repo}/pulls/7 --method GET"]
+
+
+# --- #895 B1: a `gh pr view` fallback that exits 0 with empty / non-JSON / non-object stdout, or lacks
+# a requested field, RAISES in gh_api (never degrades to {}), so each caller keeps its posture on the
+# fallback path too. Every case is REST 502 -> ONE fallback answering garbage.
+
+_B1_GARBAGE = ["", "<html>", "[1]", "{}"]
+_B1_IDS = ["empty", "non-json", "non-object", "field-missing"]
+
+
+@pytest.fixture
+def _b1_fallback_on(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+
+def _b1_run(fallback, *extra):
+    return _runner([(PR_GET, RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                    ("gh pr view 7", fallback), *extra])
+
+
+@pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
+def test_b1_merge_rights_does_not_merge_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
+    d = _sdlc(tmp_path); g = _started(d)
+    run = _b1_run(fallback, ("viewerPermission", "ADMIN"))
+    ok, why = work.merge_rights(d, ON, g, run=run)
+    assert any("gh pr view 7 --json isCrossRepository" in c for c in run.calls)
+    assert ok is False and "could not determine merge rights" in why
+
+
+@pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
+def test_b1_comment_directive_parks_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
+    rec = {"worktree": str(tmp_path), "pr": "7"}
+    run = _b1_run(fallback)
+    with pytest.raises(ValueError):
+        work._comment_directive(rec, run)
+    assert any("gh pr view 7 --json comments,author" in c for c in run.calls)
+
+
+@pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
+def test_b1_pr_merged_is_false_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
+    """Regression guard only: `{}` also read as False, so this case cannot discriminate the fix."""
+    d = _sdlc(tmp_path)
+    run = _b1_run(fallback)
+    assert work._pr_merged(d, {"pr": "7"}, run) is False
+    assert any("gh pr view 7 --json state" in c for c in run.calls)
+
+
+@pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
+def test_b1_post_review_parks_unavailable_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
+    d = _sdlc(tmp_path); goal = _started(d)
+    out = _post_review_raw(d, goal, RuntimeError("gh api: gh: Server Error (HTTP 502)"), fallback=fallback)
+    assert out == "PARK: review evidence or current PR revision is unavailable"
+
+
+@pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
+def test_b1_open_pr_refusal_stays_fail_open_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
+    """R7 is documented fail-OPEN (None) when state is unreadable; the B1 raise keeps that."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _b1_run(fallback)
+    assert work._open_pr_refusal(d, work._record(d, goal), "7", run) is None
+    assert any("gh pr view 7 --json state,autoMergeRequest" in c for c in run.calls)

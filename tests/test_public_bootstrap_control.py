@@ -260,19 +260,42 @@ def pr_rest_obj(state, number):
     A fast-forward merge in this fixture (`cmd_pr`'s `merge` subcommand, `git update-ref`) never
     creates a distinct merge commit, so `merge_commit_sha` is the same as the fast-forwarded head
     SHA -- correct for how this fixture actually merges, not a real GitHub squash/merge-commit
-    shape, which this fixture does not simulate."""
+    shape, which this fixture does not simulate.
+
+    #895 4a-1: the seven migrated PR reads (`gh_api.view_pr_gh`) read THIS shape too, so it carries
+    what GitHub's REST pull carries for them: lowercase `state` (`open`/`closed`; MERGED is
+    `closed` + `merged: true` + `merged_at`), `user.login`, `auto_merge` (null: this fixture never
+    arms), `title`/`body`, and `head.repo`/`base.repo.full_name` (same repo: no fork)."""
     pr = state["prs"][number]
     head_sha = git_rev_parse(state, "refs/heads/" + pr["head"]) or ""
     owner, name = state["repo"].split("/", 1)
+    merged = pr["state"] == "MERGED"
     return {
-        "number": int(number), "node_id": "PR_%s" % number, "state": pr["state"],
-        "merged": pr["state"] == "MERGED",
+        "number": int(number), "node_id": "PR_%s" % number,
+        "state": "open" if pr["state"] == "OPEN" else "closed",
+        "merged": merged, "title": pr.get("title", ""), "body": pr.get("body", ""),
+        "user": {"login": state["login"], "type": "User"}, "auto_merge": None,
         "created_at": "2026-01-01T00:00:00Z",
-        "merged_at": "2026-01-02T00:00:00Z" if pr["state"] == "MERGED" else None,
-        "merge_commit_sha": head_sha if pr["state"] == "MERGED" else None,
-        "head": {"ref": pr["head"], "sha": head_sha},
-        "base": {"ref": pr["base"], "repo": {"node_id": "R_%s" % name}},
+        "merged_at": "2026-01-02T00:00:00Z" if merged else None,
+        "closed_at": "2026-01-02T00:00:00Z" if pr["state"] != "OPEN" else None,
+        "merge_commit_sha": head_sha if merged else None,
+        "head": {"ref": pr["head"], "sha": head_sha,
+                 "repo": {"full_name": state["repo"], "node_id": "R_%s" % name}},
+        "base": {"ref": pr["base"], "repo": {"full_name": state["repo"], "node_id": "R_%s" % name}},
     }
+
+
+def pr_rest_comments(state, number, page, per_page):
+    """One REST `issues/<n>/comments` page for a PR -- the ONE comments-read shape, serving both
+    readers: #875's `work._find_evidence_marker` (`id`, `body`) and #895 4a-1's `gh_api.pr_comments`
+    (the review gate's marker scan: `user.login`, `author_association` = the association the comment
+    was posted with). What `pr comment` stored, oldest first; an id-less legacy row is not served."""
+    pr = state["prs"].get(number) or {}
+    rows = [{"id": c["id"], "node_id": "IC_%s" % c["id"], "user": {"login": state["login"]},
+             "body": c["body"], "created_at": "2026-01-01T00:%02d:00Z" % (i % 60),
+             "author_association": c.get("assoc", "OWNER")}
+            for i, c in enumerate(map(_as_comment, pr.get("comments", []))) if c.get("id")]
+    return rows[(page - 1) * per_page: page * per_page]
 
 
 def issue_rest_obj(state, number):
@@ -565,16 +588,18 @@ def cmd_api(state, argv, pos, flags, multi):
     m = re.match(r"^repos/%s/issues/(\d+)/comments(?:\?(.*))?$" % re.escape(repo), endpoint)
     if m and (method == "GET" or (method == "" and not multi.get("f"))):
         # (real gh api infers POST from -f/-F fields, so a field call is not a read)
-        # #875: the paged issue-comments read `work._find_evidence_marker` scans (GET only).
+        # #875: the paged issue-comments read `work._find_evidence_marker` scans (GET only); #895
+        # 4a-1: also `gh_api.pr_comments`, whose paging arrives as `--method GET -f per_page=100 -f
+        # page=k` (a GET's fields become the query string), so read both.
         q = dict(kv.partition("=")[::2] for kv in (m.group(2) or "").split("&") if kv)
+        if method == "GET":
+            for item in multi.get("f", []):
+                k, _, v = item.partition("="); q[k] = v
         try:
             per_page, page = max(1, int(q.get("per_page", "30"))), max(1, int(q.get("page", "1")))
         except ValueError:
             per_page, page = 30, 1
-        pr = state["prs"].get(m.group(1))
-        rows = [{"id": c["id"], "body": c["body"]} for c in map(_as_comment, (pr or {}).get("comments", []))
-                if c.get("id")]
-        emit(rows[(page - 1) * per_page: page * per_page], flags.get("jq"), argv); return
+        emit(pr_rest_comments(state, m.group(1), page, per_page), flags.get("jq"), argv); return
     if endpoint == "repos/%s" % repo:
         obj = {"default_branch": state["default_branch"],
                "allow_auto_merge": state.get("allow_auto_merge", True)}
@@ -1395,7 +1420,7 @@ def test_pr_comments_paged_read_honours_page_and_per_page(tmp_path):
     assert [r["body"] for r in flat] == ["body %d" % i for i in range(5)]
     ids = [r["id"] for r in flat]
     assert ids == sorted(set(ids)) and all(isinstance(i, int) for i in ids)
-    assert all(set(r) == {"id", "body"} for r in flat)
+    assert all({"id", "body", "user", "author_association"} <= set(r) for r in flat)  # real REST keys
     assert len(_read_comments_page(world, "101", 100, 1)) == 5  # _find_evidence_marker's gesture
     assert _read_comments_page(world, "999", 100, 1) == []
     assert _unhandled_lines(world) == []
