@@ -16,11 +16,21 @@ import threading
 
 
 import gqlfake
+import prfake
+import pytest
 import test_decompose_check as tdc
 import test_work as tw
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
+
+
+@pytest.fixture(autouse=True)
+def _no_cloud_signal(monkeypatch):
+    """#895 4b-1: merge()'s no-GraphQL branch and the merge fallback read os.environ; a cloud shell or an
+    operator override must not flip these tests."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
 
 
 def _mod(name):
@@ -181,8 +191,11 @@ def test_merge_passes_match_head_commit_on_the_direct_merge_and_the_arm(tmp_path
     tw._evidence(d, goal)
     run = tw._runner(tw._view() + tw._perm() + tw._protected(checks=("ci",), reviews=1))
     out = work.merge(d, tw.GUARDED, goal, run=run, sleep=tw.NOSLEEP)
-    assert out.startswith("PR #7 merged")
-    assert f"gh pr merge 7 --squash --match-head-commit {sha}" in run.calls
+    assert out.startswith("PR #7 merged") and "outcome reconciled" not in out
+    # #895 4b-1: the direct merge is the REST PUT, and it carries the vetted head as `-f sha=`
+    puts = [c for c in run.calls if prfake.merge_put(7) in c]
+    assert puts == [f"gh api repos/{{owner}}/{{repo}}/pulls/7/merge --method PUT -f merge_method=squash -f sha={sha}"]
+    assert not any(c.startswith("gh pr merge") for c in run.calls)
 
     d = tw._sdlc(tmp_path / "arm")
     goal = tw._started(d)
@@ -375,4 +388,4 @@ def test_merge_parks_instead_of_passing_an_empty_head_commit(tmp_path, monkeypat
     monkeypatch.setattr(work, "gate", gate_without_head)
     out = work.merge(d, tw.GUARDED, goal, run=run, sleep=tw.NOSLEEP)
     assert out.startswith("PARK:") and "headRefOid" in out
-    assert not [c for c in run.calls if "pr merge" in c]
+    assert not prfake.merge_calls(run.calls)

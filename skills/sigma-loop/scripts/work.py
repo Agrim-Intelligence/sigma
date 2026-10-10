@@ -26,15 +26,18 @@ verify evidence from THIS run; trust a stale read; treat the usual first-read `U
 or let `CLEAN` on a repo with no required checks pass for "reviewed" — it says so out loud instead.
 Everything else parks with the reason. Zero deps.
 
-THE LANDING IS A DIRECT `gh pr merge` (#1212), not an arm. Arming GitHub's own `--auto` is reserved
+THE LANDING IS A DIRECT MERGE (#1212), not an arm. Arming GitHub's own `--auto` is reserved
 for the one case a direct merge would be refused right now — a required check that has not answered
 yet, and only where the repo's `allow_auto_merge` permits arming. This paragraph used to describe
-`--auto` as the general path, which it stopped being.
+`--auto` as the general path, which it stopped being. Since #895 slice 4b-1 the direct merge is a REST
+`PUT pulls/N/merge` carrying the vetted head sha (`gh_api.merge_pr_gh`); an UNKNOWN outcome is read back
+over REST (`pr_landing_state`, at most RECONCILE_ATTEMPTS reads), never retried or sent via GraphQL;
+and without GraphQL (`--auto` is GraphQL) a still-pending required check parks instead of being armed.
 
 AND THE LANDING CLOSES AN ISSUE (#1649). On a base that is NOT the repository's default branch — a
 goal cut onto `feature/<unit>` — GitHub will not honour a closing keyword, so `_pr_body` writes
 `Refs #N` and names what will close it instead, and `merge()` performs the close itself over REST the
-moment `gh pr merge` succeeds. That is a write to a GitHub issue from a function whose name says
+moment the merge succeeds. That is a write to a GitHub issue from a function whose name says
 merge, so it is stated here rather than left to be found: without it every issue landed through a
 feature branch stays open, and every goal declaring `Blocked by: #N` stays held behind it.
 """
@@ -120,7 +123,11 @@ ENFORCEMENT_GATES = (
      "settings": (),
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
                   "`mergeStateStatus CLEAN` (REST first, one GraphQL fallback; an unknown state "
-                  "never reads as CLEAN; a still-pending required check is armed, not merged)",
+                  "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
+                  "available; without GraphQL it is not armed and the merge parks after gate()'s own "
+                  "bounded REST wait; the merge itself is a REST PUT carrying the vetted head sha, an "
+                  "unknown outcome is reconciled by a REST read and never retried; a real cloud session "
+                  "still stops earlier at the GraphQL `merge_rights` read, see cloud-sessions.md)",
      "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
                   "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
                   "returns on off -- only the merge itself is skipped",
@@ -279,6 +286,11 @@ _CHECK_PENDING = ("PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED", "REQUESTED", "
 # #464, CI takes ~300s while the gate gave checks 21s, so a PR that was merely still building was
 # indistinguishable from one that had failed -- and the caller parks, which strips `sdlc:goal` and
 # permanently dequeues the goal until a human re-labels it.
+# #895 slice 4b-1: a direct merge whose outcome is UNKNOWN (5xx, timeout, malformed 2xx) is read back
+# with `pr_landing_state` (ONE REST read each) up to this many times, RECONCILE_PAUSE seconds apart,
+# while the answer is still open/unknown -- GitHub can lag after a 5xx. Bounded: 3 reads, 10s of pauses.
+RECONCILE_ATTEMPTS = 3
+RECONCILE_PAUSE = 5
 PENDING_ATTEMPTS = 10       # re-reads after the first, before giving up
 PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential: a doubling
                             # backoff overshoots CI's duration and then waits far past it
@@ -1399,6 +1411,13 @@ def _pr_api_run(run, cwd):
             err.hint = getattr(exc, "hint", None) or (msg[len(prefix):] if msg.startswith(prefix) else msg)
             raise err from exc
     return r
+
+
+def _first_line(exc):
+    """The first line of a gh failure for a returned line: its `.hint` (gh's stderr, no argv) when it has
+    one, else its text, else its type name."""
+    text = (getattr(exc, "hint", None) or str(exc) or "").strip()
+    return text.splitlines()[0] if text else type(exc).__name__
 
 
 def root(sdlc_dir, goal, config=None):
@@ -6046,14 +6065,24 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     merge it does not perform now: the caller records `review`, and the merge-reconcile pass records
     `done` once the PR is observed merged.
 
-    #1212: THE LANDING ITSELF prefers a direct `gh pr merge` over arming `--auto`, reserving the
+    #1212: THE LANDING ITSELF prefers a direct merge over arming `--auto`, reserving the
     arm for the one case it exists for — a required check that has not answered yet, where GitHub
     will refuse a direct merge right now no matter what. Every other not-ok-but-arm-worthy or
     clean-and-safe case merges directly: strictly better than arming when there is nothing left to
     wait on, and — the bug this fixes — it works on a repo that has `allow_auto_merge` disabled
     entirely, which arming never could. A direct merge that GitHub genuinely refuses (a conflict, a
     check that flipped, insufficient permission) is caught and turned into a named `PARK:`, never
-    an uncaught raise that would exit 1 with empty stdout — the original bug's exact symptom."""
+    an uncaught raise that would exit 1 with empty stdout — the original bug's exact symptom.
+
+    #895 slice 4b-1: the direct merge is REST (`gh_api.merge_pr_gh`: `PUT pulls/N/merge` with the vetted
+    head as `sha`; ONE `gh pr merge` fallback on a primary rate limit only, while GraphQL is available).
+    A definite refusal (409 head moved, 405, 4xx, primary rate limit) parks as before. An UNKNOWN outcome
+    (5xx, timeout, a reply without `merged: true`) is never re-sent: up to RECONCILE_ATTEMPTS REST reads
+    (RECONCILE_PAUSE apart) decide -- MERGED lands normally (`(outcome reconciled: ...)` appended), CLOSED
+    parks, still OPEN/UNKNOWN returns `merge outcome unknown for PR #N (...)`, which the caller records
+    as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). Without GraphQL a
+    still-pending required check is not armed: it parks after gate()'s own bounded wait (no extra wait,
+    so the documented 22.5-minute worst case is unchanged)."""
     run = run or _run
     # Loaded lazily (see start()'s own comment on why: actionlog.py loads work.py for stem(), so an
     # eager module-level `_load("actionlog")` here would cycle) — once per call, reused below for
@@ -6198,6 +6227,13 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
     # required check that hasn't answered) AND the repo's own setting actually permits arming.
     # Every other path below prefers landing it directly, immediately, over waiting on an async arm.
+    # #895 slice 4b-1: `--auto` is GraphQL and REST has no auto-merge. Without GraphQL (env/override
+    # only, no probe) the arm cannot happen; gate() has ALREADY spent its bounded REST wait and the
+    # check is still pending, so park -- no extra wait (the worst case is unchanged) and no merge
+    # around a pending required check. Checks that settled inside gate() never reach here.
+    if pending_arm and not gh_api.graphql_available()["available"]:
+        return (f"PARK: {PENDING_PREFIX} after {PENDING_ATTEMPTS * PENDING_INTERVAL}s and auto-merge cannot "
+                "be armed without GraphQL; re-run work.py merge once they finish")
     if pending_arm and _auto_merge_allowed(rec, run):
         try:
             run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], "--auto", f"--{method}",
@@ -6219,16 +6255,36 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
 
     # Prefer a direct merge, reserving `--auto` for the case just above. This is what makes an
     # unattended landing possible at all on a repo with `allow_auto_merge: false` — arming there is
-    # refused outright by GitHub, but a plain `gh pr merge` needs no such repo setting.
+    # refused outright by GitHub, but a plain merge needs no such repo setting. #895 slice 4b-1: the
+    # merge is a REST `PUT pulls/N/merge` carrying the vetted head as `sha` (gh_api.merge_pr_gh; ONE
+    # `gh pr merge` fallback on a primary rate limit only, while GraphQL is available).
+    reconciled = ""
+    api = _pr_api_run(run, rec["worktree"])
     try:
-        run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], f"--{method}",
-                              "--match-head-commit", vetted_head])
+        gh_api.merge_pr_gh(api, rec["pr"], method, vetted_head, fallback_run=api, sdlc_dir=sdlc_dir)
     except Exception as exc:                # noqa: BLE001 - a refused merge is a park, never a crash
         # Never let this escape uncaught: main() would print it to stderr, exit 1, and leave stdout
         # empty — the exact shape that made the original `--auto`-only bug unrecoverable, since the
-        # caller's decision table has no branch for "nothing on stdout". A named PARK: line always
-        # gives the caller something to act on.
-        return f"PARK: direct merge of PR #{rec['pr']} was refused ({exc})"
+        # caller's decision table has no branch for "nothing on stdout". A named line always gives
+        # the caller something to act on.
+        if not getattr(exc, "outcome_unknown", True):
+            return f"PARK: direct merge of PR #{rec['pr']} was refused ({exc})"
+        # The merge MAY have landed (5xx, timeout, malformed 2xx): never re-PUT, never `gh pr merge`
+        # or GraphQL -- READ, up to RECONCILE_ATTEMPTS times while the answer is still open/unknown.
+        for attempt in range(RECONCILE_ATTEMPTS):
+            if attempt:
+                sleep(RECONCILE_PAUSE)
+            landing, why = pr_landing_state(sdlc_dir, rec, run)
+            if landing in (MERGED, CLOSED_PR):
+                break
+        if landing == CLOSED_PR:
+            return f"PARK: PR #{rec['pr']} was closed without merging (the merge call failed: {_first_line(exc)})"
+        if landing != MERGED:
+            return (f"merge outcome unknown for PR #{rec['pr']} ({_first_line(exc)}; REST read: {landing}"
+                    f"{' ' + why if why else ''}) -- NOT retried and NOT sent via GraphQL; leaving PR "
+                    f"#{rec['pr']} awaiting merge: the merge-reconcile pass records done if it landed, "
+                    "doctor's stuck-merge alarm covers it if not")
+        reconciled = " (outcome reconciled: the merge call failed ambiguously, a REST read shows the PR merged)"
     if rec.get("branch"):                   # defensive: `start()` always sets it, but never assume
         _delete_remote_branch(rec["worktree"], rec["branch"], run, config=config,
                               base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
@@ -6252,7 +6308,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     actionlog.safe_append(sdlc_dir, goal, "merged", pr=rec["pr"])
     # The clause goes at the END, after `gate_detail`: SKILL.md's decision table routes on the
     # `PR #N merged (<method>) — …` opening, which stays exactly as it was.
-    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}"
+    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}{reconciled}"
 
 
 def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidence=""):

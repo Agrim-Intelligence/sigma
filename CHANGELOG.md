@@ -49,6 +49,33 @@ All notable changes to Sigma are recorded here, newest first.
 - **Fixed a load-sensitive upkeep launcher test**: the kill test now starts its wall-clock budget only after the fake resolver has reported its child, with a deterministic slow-start control (#1099).
 - **Upkeep job: one path owns the unit rewrite** — when the older rebase pass moves a unit, the new unit pass skips it in that run; `valid_ref` is tested to never be looser than `git check-ref-format`.
 - **Drift measure: `--end-of-options` before the refs in its history read (#1063).** The `git log` in `feature_upkeep_drift.walk` now passes the marker before the included and excluded refs, so a ref name is never parsed as an option even if the existing dash and whitespace refusal were bypassed. The `rev-parse` call takes no ref and is unchanged. The argv test asserts the marker precedes the ref, and a mutant that drops it is seen red.
+- **The code-goal merge goes REST first (#895, slice 4b-1; refs #895).** `work.merge()`'s direct merge is now
+  `gh_api.merge_pr_gh`: REST `PUT pulls/N/merge` with `merge_method` and the vetted head as `sha` (was `gh pr merge
+  N --<m> --match-head-commit SHA`), with ONE `gh pr merge` fallback on a primary rate limit only, and only while
+  GraphQL is available; never a retry. Success is ONLY a reply carrying `merged: true`: an empty, `null`,
+  non-object or `merged: false` 2xx is an UNKNOWN outcome, never a landing. An unknown outcome (5xx, timeout,
+  secondary rate limit, malformed 2xx, a fallback failure with no `HTTP nnn`) is never re-sent and never sent via
+  GraphQL: it is read back with up to 3 REST `pulls/N` reads (5s apart, bounded 10s); MERGED lands normally
+  (line gains `(outcome reconciled: ...)`), CLOSED parks, still OPEN/UNKNOWN returns `merge outcome unknown for
+  PR #N (...)`, routed to `record review` (awaiting merge: the merge-reconcile pass records done if it landed,
+  doctor's 3-day stuck-merge alarm if not). A definite refusal (409 head moved, 405, 401/403/404/422, a primary
+  rate limit without GraphQL) parks as before, with no read. Without GraphQL (`SIGMA_GH_GRAPHQL=off` or
+  `CLAUDE_CODE_REMOTE`) a required check still pending after gate()'s own 450s REST wait is NOT armed (`--auto` is
+  GraphQL): `PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL`; no
+  extra wait, so the documented 22.5-minute worst case is unchanged. GraphQL available: the arm path is
+  unchanged. HONESTY: D2/D3 are reachable today only where GraphQL works (`SIGMA_GH_GRAPHQL=off` exercises the
+  `graphql_available()` branches); a real `CLAUDE_CODE_REMOTE` session still stops earlier, at `merge_rights`'
+  GraphQL `viewerPermission` read (`PR #N opened -- could not determine merge rights`), so a cloud session
+  cannot merge yet. Host cut mid-PUT: nothing is recorded locally; the lever is `loop.py record review` (a re-run
+  of `work.py merge` against a PR that did merge is NOT measured and may park it). Ratchet (printed `scan()`): work.py 7 -> 6,
+  TOTAL 47 -> 46. Deferred to slice 4b-2: the `merge_rights` permission read, `protection()`'s `nameWithOwner`
+  read, `post_review`'s `gh pr comment`, `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`,
+  `verify_merge.py` (ready/create/merge); `reviewDecision` stays GraphQL by decision; R5 `pr list --head`.
+  UNMEASURED: the REST merge was never run against real GitHub or in a real cloud session; the PUT 2xx body,
+  405/409 statuses and bodies, the 429 body, CLI `--match-head-commit` vs REST `sha` equivalence, merge-queue
+  behaviour of the CLI fallback and real merge latency all come from GitHub docs or fakes. Measured: the new
+  tests in `tests/test_gh_api.py` and `tests/test_work.py`; no timing claim made.
+
 ## 1.0.7 — 2026-10-11 — doctor preflight checks and small fixes
 
 - **Doctor preflight: missing verify interpreter and branch-creation rulesets (#974).** `/sigma-doctor` now adds a

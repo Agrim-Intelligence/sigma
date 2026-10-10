@@ -782,6 +782,159 @@ def test_merge_pr_argv_sha_guard_and_no_auto():
     assert not any("auto" in a for a in run.calls[0])
 
 
+# ---------------------------------------------------------------- merge_pr_gh (#895 slice 4b-1)
+
+SHA = "a" * 40
+
+
+def _mhe(hint, cause=None):
+    """A runner failure carrying gh's stderr as `.hint` (defined here: `_he` is defined further down)."""
+    e = RuntimeError("gh api -f merge_method=squash failed: " + hint)
+    e.hint = hint
+    if cause is not None:
+        e.__cause__ = cause
+    return e
+
+
+class MFake:
+    """REST (`api ...`) calls raise `rest_exc` or answer `rest_ok`; `pr merge ...` calls are the fallback."""
+
+    def __init__(self, rest_exc=None, rest_ok='{"merged": true, "sha": "%s"}' % ("m" * 40), fb_exc=None):
+        self.rest_exc, self.rest_ok, self.fb_exc, self.calls = rest_exc, rest_ok, fb_exc, []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "api":
+            if self.rest_exc is not None:
+                raise self.rest_exc
+            return self.rest_ok
+        if self.fb_exc is not None:
+            raise self.fb_exc
+        return ""
+
+    def fb(self):
+        return [c for c in self.calls if c[:2] == ["pr", "merge"]]
+
+
+def _merge(run, env=None, **kw):
+    g = _mod("gh_api")
+    kw.setdefault("repo", "o/r")
+    try:
+        return g.merge_pr_gh(run, kw.pop("number", 7), kw.pop("method", "squash"), kw.pop("sha", SHA),
+                             env={} if env is None else env, **kw)
+    except Exception as e:                            # noqa: BLE001
+        return e
+
+
+@pytest.mark.parametrize("bad", [dict(method="fast-forward"), dict(method="--squash"), dict(sha="a" * 39),
+                                 dict(sha="a" * 41), dict(sha="A" * 40), dict(sha="g" * 40), dict(sha=""),
+                                 dict(sha=None), dict(number="7a"), dict(number="")])
+def test_merge_pr_gh_validates_before_any_call(bad):
+    run = MFake()
+    out = _merge(run, **bad)
+    assert type(out).__name__ == "GhApiError" and out.kind == "invalid", out
+    assert out.outcome_unknown is False and run.calls == []
+
+
+def test_merge_pr_gh_rest_argv_carries_the_sha_and_returns_merged():
+    run = MFake()
+    out = _merge(run, number="7")                      # rec["pr"] is a string
+    assert out == {"merged": True, "merge_commit_sha": "m" * 40, "via": "rest"}
+    assert run.calls == [["api", "repos/o/r/pulls/7/merge", "--method", "PUT", "-f", "merge_method=squash",
+                          "-f", "sha=%s" % SHA]]
+
+
+def test_merge_pr_gh_accepts_a_64_hex_sha_and_every_method():
+    for method in ("merge", "squash", "rebase"):
+        run = MFake()
+        assert _merge(run, method=method, sha="b" * 64)["merged"] is True
+        assert run.calls[0][-4:] == ["-f", "merge_method=%s" % method, "-f", "sha=%s" % ("b" * 64)]
+
+
+@pytest.mark.parametrize("body", ["", "null", "[]", '{"merged": false}', '{"merged": "true"}', "{}",
+                                  "<html>garbage", '"merged"'])
+def test_merge_pr_gh_ambiguous_2xx_is_outcome_unknown_with_one_call(body):
+    """R1: an unhandled / empty / non-`merged: true` 2xx must NEVER read as landed."""
+    run = MFake(rest_ok=body)
+    out = _merge(run, env={})
+    assert isinstance(out, Exception) and out.outcome_unknown is True, (body, out)
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+@pytest.mark.parametrize("exc", [_mhe("gh: Server Error (HTTP 502)"),
+                                 _mhe("gh: request failed", cause=subprocess.TimeoutExpired(["gh"], 120)),
+                                 _mhe("Post https://api.github.com/x: dial tcp: i/o timeout"),
+                                 _mhe("gh: You have exceeded a secondary rate limit (HTTP 403)"),
+                                 _mhe("gh: abuse detection, slow down (HTTP 429)"),
+                                 RuntimeError("no stderr at all")])
+def test_merge_pr_gh_ambiguous_failure_is_unknown_and_never_falls_back(exc):
+    run = MFake(rest_exc=exc)
+    out = _merge(run, env={})                         # GraphQL available: still no fallback
+    assert isinstance(out, Exception) and out.outcome_unknown is True, out
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+def test_merge_pr_gh_timeout_expired_raised_by_the_runner_is_unknown():
+    run = MFake(rest_exc=subprocess.TimeoutExpired(["gh"], 120))
+    out = _merge(run, env={})
+    assert out.outcome_unknown is True and len(run.calls) == 1 and run.fb() == []
+
+
+@pytest.mark.parametrize("hint", ["gh: Bad credentials (HTTP 401)", "gh: Resource not accessible (HTTP 403)",
+                                  "gh: Not Found (HTTP 404)", "gh: Pull Request is not mergeable (HTTP 405)",
+                                  "gh: Head branch was modified. Review and try the merge again. (HTTP 409)",
+                                  "gh: Validation Failed (HTTP 422)", PROXY])
+def test_merge_pr_gh_definite_refusal_is_known_with_one_call(hint):
+    run = MFake(rest_exc=_mhe(hint))
+    out = _merge(run, env={})
+    assert isinstance(out, Exception) and out.outcome_unknown is False, hint
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+def test_merge_pr_gh_primary_rate_limit_falls_back_once_and_logs(tmp_path):
+    run = MFake(rest_exc=_mhe("gh: API rate limit exceeded (HTTP 429)"))
+    out = _merge(run, env={}, sdlc_dir=str(tmp_path))
+    assert out == {"merged": True, "merge_commit_sha": None, "via": "gh"}
+    assert run.fb() == [["pr", "merge", "7", "--squash", "--match-head-commit", SHA, "--repo", "o/r"]]
+    assert len(run.calls) == 2
+    entries = json.loads((tmp_path / "state" / "gh-fallback.json").read_text())
+    assert [(e["op"], e["kind"], e["fell_back"]) for e in entries] == [("pr_merge", "primary_rate_limit", True)]
+
+
+def test_merge_pr_gh_fallback_runs_through_fallback_run():
+    rest = MFake(rest_exc=_mhe("gh: API rate limit exceeded (HTTP 429)"))
+    fb = MFake()
+    out = _merge(rest, fallback_run=fb, repo=None)
+    assert out["via"] == "gh" and rest.fb() == []
+    assert fb.calls == [["pr", "merge", "7", "--squash", "--match-head-commit", SHA]]
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}])
+def test_merge_pr_gh_primary_rate_limit_without_graphql_is_a_definite_refusal(env):
+    run = MFake(rest_exc=_mhe("gh: API rate limit exceeded (HTTP 429)"))
+    out = _merge(run, env=env)
+    assert isinstance(out, Exception) and out.outcome_unknown is False
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+@pytest.mark.parametrize("fb_exc, unknown", [(_mhe("gh: Server Error (HTTP 502)"), True),
+                                             (subprocess.TimeoutExpired(["gh"], 120), True),
+                                             (RuntimeError("merge failed"), True),
+                                             (_mhe("gh: Validation Failed (HTTP 422)"), False),
+                                             (_mhe("gh: API rate limit exceeded (HTTP 429)"), False)])
+def test_merge_pr_gh_fallback_failure_is_classified_by_the_same_rule(fb_exc, unknown):
+    run = MFake(rest_exc=_mhe("gh: API rate limit exceeded (HTTP 429)"), fb_exc=fb_exc)
+    out = _merge(run, env={})
+    assert isinstance(out, Exception) and out.outcome_unknown is unknown, (fb_exc, out)
+    assert len(run.calls) == 2 and len(run.fb()) == 1                  # never a second fallback, never a re-PUT
+
+
+def test_merge_pr_gh_repo_placeholder_when_no_repo():
+    run = MFake()
+    _merge(run, repo=None)
+    assert run.calls[0][1] == "repos/{owner}/{repo}/pulls/7/merge"
+
+
 def test_failures_wrap_without_retry_and_unparseable_json_raises():
     g = _mod("gh_api")
     calls = [

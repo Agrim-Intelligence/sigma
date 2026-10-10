@@ -77,6 +77,11 @@ MEASURED 2026-10-10 (#895 slice 4a-2 PR B), via the same `scan()` (PRINTED, not 
 review gate's residual `gh pr view N --json reviewDecision` stays (GraphQL-only by decision) and still counts, so
 that site does not move the count; only R9 does. Still open on #895 (PR): work.py R5 sibling list (the one
 `"pr", "list"` literal left), the review gate's reviewDecision, W1-W5 writes; verify_merge 3.
+MEASURED 2026-10-10 (#895 slice 4b-1), via the same `scan()` (PRINTED, not typed): TOTAL 47 -> 46, work.py
+7 -> 6. `merge()`'s direct merge (`gh pr merge N --<m> --match-head-commit SHA`) moved to
+`gh_api.merge_pr_gh` (REST `PUT pulls/N/merge` with `sha`; its ONE `gh pr merge` fallback argv is built inside
+the EXEMPT helper). Still in work.py: the `--auto` arm (REST has no auto-merge), reviewDecision, R5 sibling
+list, post_review `pr comment`, merge_design `pr merge`, close_design `pr close`; verify_merge 3.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -122,7 +127,7 @@ BASELINE = {
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/sources.py": 20,
     "skills/sigma-loop/scripts/triage.py": 1,
-    "skills/sigma-loop/scripts/work.py": 7,
+    "skills/sigma-loop/scripts/work.py": 6,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
     "skills/sigma-status/scripts/status.py": 3,
 }

@@ -78,10 +78,17 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/diff_revert.py | cleanup | git-destructive | 1 | ungated | high |
 | skills/sigma-loop/scripts/diff_revert.py | run | fs-write | 3 | ungated | medium |
 | skills/sigma-loop/scripts/drift_watch.py | _stamp | fs-write | 2 | ungated | medium |
+| skills/sigma-loop/scripts/feature_backup.py | _atomic_leased_push | git-destructive | 1 | upkeep.enabled; the caller that decides to back up holds the gate (the engine's gate query), and restore and prune query it themselves; no entry point is registered | high |
+| skills/sigma-loop/scripts/feature_backup.py | _atomic_leased_push | git-push | 1 | upkeep.enabled; the caller that decides to back up holds the gate (the engine's gate query), and restore and prune query it themselves; no entry point is registered | high |
+| skills/sigma-loop/scripts/feature_backup.py | _delete_chunk | git-destructive | 1 | upkeep.enabled; the caller that decides to back up holds the gate (the engine's gate query), and restore and prune query it themselves; no entry point is registered | high |
+| skills/sigma-loop/scripts/feature_backup.py | _delete_chunk | git-push | 1 | upkeep.enabled; the caller that decides to back up holds the gate (the engine's gate query), and restore and prune query it themselves; no entry point is registered | high |
 | skills/sigma-loop/scripts/feature_doc.py | _atomic_write_bytes | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/feature_doc.py | _atomic_write_bytes | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_judge.py | _acquire_spend_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_judge.py | _record_spend | fs-write | 2 | ungated | medium |
+| skills/sigma-loop/scripts/feature_land.py | _pull_request | gh-api-write | 1 | upkeep.enabled and the landing verb; creates one non-draft pull request for the verified head only after verify, the tip re-reads and the unattended approval check passed; never merges | medium |
+| skills/sigma-loop/scripts/feature_land.py | _scratch_verify | git-destructive | 1 | upkeep.enabled and the landing verb; removes only the scratch worktree this call created in a private temporary directory | high |
+| skills/sigma-loop/scripts/feature_land_merge.py | do_merge | gh-api-write | 1 | upkeep.enabled and an explicit merge flag; explicit land; attended, or one unconsumed unit approval bound to PR head SHA; verify green; head-pinned; pending record written first; explicit merge method; no auto-merge, no admin flag, no branch-delete flag | high |
 | skills/sigma-loop/scripts/feature_propagate.py | _store | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/feature_propagate.py | _write_remote | gh-api-write | 1 | granted verdict | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _clear_blocked | fs-remove | 1 | work.rebase_upkeep | high |
@@ -95,16 +102,40 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/feature_rebase.py | _pushed | git-push | 1 | work.rebase_upkeep | high |
 | skills/sigma-loop/scripts/feature_rebase.py | _rebase_feature | fs-write | 1 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _remember | fs-write | 2 | work.rebase_upkeep | medium |
-| skills/sigma-loop/scripts/feature_rebase.py | _settle_parks | gh-api-write | 2 | upkeep.enabled | medium |
+| skills/sigma-loop/scripts/feature_rebase.py | _notice | gh-api-write | 1 | upkeep.enabled | medium |
+| skills/sigma-loop/scripts/feature_rebase.py | _settle_parks | gh-api-write | 3 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | _upkeep | fs-write | 1 | work.rebase_upkeep | medium |
+| skills/sigma-loop/scripts/feature_rebase.py | _write_runtime_acks | fs-write | 2 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | ack | fs-write | 2 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | mark_push_refused | fs-write | 2 | work.rebase_upkeep | medium |
 | skills/sigma-loop/scripts/feature_rebase.py | push_refused | fs-remove | 1 | work.rebase_upkeep | high |
-| skills/sigma-loop/scripts/feature_rebase.py | _write_runtime_acks | fs-write | 2 | upkeep.enabled | medium |
 | skills/sigma-loop/scripts/feature_registry.py | _atomic_write_text | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_sync.py | recover | fs-remove | 1 | explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the registry sheet aside, never deletes it | medium |
+| skills/sigma-loop/scripts/feature_upkeep_job.py | __call__ | fs-write | 1 | upkeep.enabled (machine door, the job is started only by the gated decision step); refreshes only the job's own heartbeat file from the supervisor's poll clock | low |
+| skills/sigma-loop/scripts/feature_upkeep_job.py | _touch | fs-write | 1 | upkeep.enabled (machine door); touches only the job's own heartbeat file under the runtime state directory, an OS error is swallowed | low |
+| skills/sigma-loop/scripts/feature_upkeep_landing.py | finish | fs-remove | 1 | upkeep.enabled and a merged read-back verdict; removes only the one record of the unit it was handed inside the pending-landing store, after the unit key passes the name guard | high |
+| skills/sigma-loop/scripts/feature_upkeep_landing.py | prune | fs-remove | 1 | upkeep.enabled caller passes keep_days; removes only record-shaped and temp-shaped files older than the age limit in the pending-landing store, never a symlink, never outside it | high |
+| skills/sigma-loop/scripts/feature_upkeep_launcher.py | _acquire_lock | fs-write | 1 | opt-in; conflicts.resolve agent; creates only the empty lock file beside the per-machine spend store under the local state directory | medium |
+| skills/sigma-loop/scripts/feature_upkeep_launcher.py | _save_records | fs-remove | 1 | opt-in; conflicts.resolve agent; atomic replace of the one per-machine spend file under the local state directory, flock-guarded, pruned to 24 hours | high |
+| skills/sigma-loop/scripts/feature_upkeep_launcher.py | _save_records | fs-write | 1 | opt-in; one JSON file under the local state directory, flock-guarded, pruned to 24 hours | medium |
+| skills/sigma-loop/scripts/feature_upkeep_launcher.py | make_scratch | fs-write | 2 | opt-in upkeep, conflicts.resolve agent, machine opt-in; writes only under a scratch root it created; never inside the repository or home | medium |
+| skills/sigma-loop/scripts/feature_upkeep_launcher.py | remove_scratch | fs-rmtree | 1 | removes only the run directory it created, checked by realpath under its own scratch root | high |
+| skills/sigma-loop/scripts/feature_upkeep_pass.py | ack_union | fs-remove | 2 | upkeep.enabled (project door); unlinks only its own temp file beside the acks file after a failed write | high |
+| skills/sigma-loop/scripts/feature_upkeep_pass.py | ack_union | fs-write | 1 | upkeep.enabled (project door, the decorator is the first action); writes only the one runtime acks file under state/upkeep, atomically (temp file beside it, then replace) | medium |
+| skills/sigma-loop/scripts/feature_upkeep_pass.py | push | git-destructive | 1 | upkeep.enabled (project door); one lease-guarded push of a branch tip, refspec is new-sha:refs/heads/branch, never a delete, refused when the remote branch moved | high |
+| skills/sigma-loop/scripts/feature_upkeep_pass.py | push | git-push | 1 | upkeep.enabled (project door); one lease-guarded push of a branch tip, refspec is new-sha:refs/heads/branch, never a delete, refused when the remote branch moved | high |
+| skills/sigma-loop/scripts/feature_upkeep_pass.py | rewrite | git-destructive | 1 | upkeep.enabled (project door, run_unit_pass is gated and so is upkeep_pass); removes only the throwaway worktree the same call created, never a branch or ref | high |
+| skills/sigma-loop/scripts/feature_upkeep_resolution.py | post_comment | gh-api-write | 1 | upkeep.enabled and a finding the engine filed; integer finding id and explicit owner/name repository; text passes the wording check; one comment, never edited or closed here | medium |
+| skills/sigma-loop/scripts/feature_upkeep_resolution.py | prune | fs-remove | 1 | upkeep.enabled caller passes keep_days; removes only record-shaped files in the engine's own resolutions store, never a symlink, never outside it | high |
+| skills/sigma-loop/scripts/feature_upkeep_level2.py | _write_attempts | fs-remove | 1 | opt-in; upkeep.enabled and conflicts.resolve agent; atomic replace of the one per-unit attempts file under the local state directory, bounded entry count | high |
+| skills/sigma-loop/scripts/feature_upkeep_level2.py | _write_attempts | fs-write | 2 | opt-in; upkeep.enabled and conflicts.resolve agent; one per-unit attempts file under the local state directory, written to a temporary name then replaced | medium |
+| skills/sigma-loop/scripts/feature_upkeep_level2.py | export_tree | fs-write | 1 | opt-in; upkeep.enabled and conflicts.resolve agent; copies tracked files into a fresh scratch tree made by this pass, never into the work tree | medium |
+| skills/sigma-loop/scripts/feature_upkeep_level2.py | resolve_stop | fs-rmtree | 1 | opt-in; upkeep.enabled and conflicts.resolve agent; removes only the scratch directory this pass created for the resolver, never the work tree or a ref | high |
+| skills/sigma-loop/scripts/feature_upkeep_level2.py | resolve_stop | fs-write | 2 | opt-in; upkeep.enabled and conflicts.resolve agent; writes resolved file text back into the unit worktree for the stop being resolved, checked by proof and review before any push | high |
+| skills/sigma-loop/scripts/feature_upkeep_review.py | prune | fs-remove | 1 | opt-in; upkeep.enabled caller passes keep_days; removes only manifest-shaped regular files older than the age limit under the review store, never a symlink, never outside it | high |
+| skills/sigma-loop/scripts/feature_upkeep_review.py | write_manifest | fs-write | 1 | opt-in; upkeep.enabled; one create-once manifest per unit under the review store in the local state directory | medium |
 | skills/sigma-loop/scripts/gh_api.py | _write_cache | fs-remove | 2 | probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895) | low |
 | skills/sigma-loop/scripts/gh_api.py | _write_cache | fs-write | 2 | probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895) | low |
 | skills/sigma-loop/scripts/goal_state_prune.py | sweep | fs-remove | 4 | goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458) | medium |
@@ -173,6 +204,13 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sources.py | _ensure_labels | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_status_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_add_assignees | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_add_labels | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_close | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_comment | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_create | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_edit_body | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_remove_label | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _set_board_status | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _swap_labels | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _sync_backlog | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
@@ -246,7 +284,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/work.py | finish | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/work.py | finish | fs-rmtree | 1 | ungated | high |
 | skills/sigma-loop/scripts/work.py | finish | git-destructive | 2 | ungated | high |
-| skills/sigma-loop/scripts/work.py | merge | gh-pr | 2 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR | high |
+| skills/sigma-loop/scripts/work.py | merge | gh-pr | 1 | work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the one remaining site is the `--auto` arm (GraphQL, only while graphql_available); the direct merge goes through gh_api.merge_pr_gh (REST PUT pulls/N/merge with the vetted head sha, invisible to this scanner) since #895 slice 4b-1 | high |
 | skills/sigma-loop/scripts/work.py | merge_design | gh-pr | 1 | work.enabled; work.auto_merge != off | high |
 | skills/sigma-loop/scripts/work.py | post_review | gh-pr | 1 | ungated | medium |
 | skills/sigma-loop/scripts/work.py | pr | gh-api-write | 1 | ungated | medium |
@@ -268,6 +306,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
 | skills/sigma-rebase/scripts/rebase_brief.py | _write_context_store | fs-write | 1 | ungated | medium |
 | skills/sigma-rebase/scripts/rebase_brief.py | attempt_rebase | git-destructive | 1 | ungated | high |
+| skills/sigma-rebase/scripts/rebase_brief.py | attended_rebase | fs-write | 1 | upkeep.enabled (the legacy call is untouched while closed); creates only the unit's rebase-lock directory under state, then holds the per-unit lock for the one attempt | medium |
 | skills/sigma-rebase/scripts/rebase_brief.py | clear_context_snapshots | fs-remove | 1 | ungated | high |
 | skills/sigma-rebase/scripts/rebase_brief.py | push_branch | git-destructive | 1 | ungated | high |
 | skills/sigma-rebase/scripts/rebase_brief.py | push_branch | git-push | 1 | ungated | high |
