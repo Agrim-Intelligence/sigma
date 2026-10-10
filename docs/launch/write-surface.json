@@ -113,6 +113,22 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/record.py",
+      "function": "write_atomic",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/record.py",
+      "function": "write_atomic",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "risk": "medium"
+    },
+    {
       "path": "hooks/gate_state.py",
       "function": "_open_child",
       "rule": "fs-write",
@@ -191,14 +207,6 @@
       "count": 2,
       "gate": "ungated",
       "risk": "high"
-    },
-    {
-      "path": "skills/sigma-dossier/scripts/dossier.py",
-      "function": "_comment",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
     },
     {
       "path": "skills/sigma-init/scripts/init_flow.py",
@@ -373,14 +381,6 @@
       "function": "_dense_channel",
       "rule": "fs-write",
       "count": 2,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/blockers.py",
-      "function": "_comment",
-      "rule": "gh-issue",
-      "count": 1,
       "gate": "ungated",
       "risk": "medium"
     },
@@ -709,7 +709,7 @@
       "function": "_default_run",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "write ops have no caller (slices 3-7); the only wired caller is read_issue (#895), which issues GET reads and one gh issue view fallback",
+      "gate": "the injected run is the only transport; write helpers (comment_issue, create_issue, add_labels, remove_label, close_issue, edit_issue, add_assignees) have callers since #895 slice 3a, each through GitHubSource._issue_* with the feature-label guard (create_issue/add_labels refuse feature:* unless it exists); a REST write falls back to GraphQL at most once, never on an ambiguous failure, never in a cloud session; the scanner sees only this gh invocation, not which helper called it",
       "risk": "low"
     },
     {
@@ -717,7 +717,7 @@
       "function": "_write_cache",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "probe cache (cache_dir injected, unwired) and read_issue's breaker/fallback log under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
+      "gate": "probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
       "risk": "low"
     },
     {
@@ -725,7 +725,7 @@
       "function": "_write_cache",
       "rule": "fs-write",
       "count": 2,
-      "gate": "probe cache (cache_dir injected, unwired) and read_issue's breaker/fallback log under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
+      "gate": "probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895)",
       "risk": "low"
     },
     {
@@ -1089,14 +1089,6 @@
       "risk": "medium"
     },
     {
-      "path": "skills/sigma-loop/scripts/promote.py",
-      "function": "promote",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
       "path": "skills/sigma-loop/scripts/reconcile.py",
       "function": "_write",
       "rule": "fs-remove",
@@ -1234,14 +1226,6 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "_create_issue",
-      "rule": "gh-label",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
       "function": "_ensure_board",
       "rule": "gh-project",
       "count": 1,
@@ -1338,40 +1322,8 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "_write_priority_label",
-      "rule": "gh-label",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "append_to_body",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "complete",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "high"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
       "function": "create_dependency",
       "rule": "fs-write",
-      "count": 2,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "create_dependency",
-      "rule": "gh-issue",
       "count": 2,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
@@ -1423,14 +1375,6 @@
       "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "release",
-      "rule": "gh-issue",
-      "count": 2,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "high"
     },
     {
       "path": "skills/sigma-loop/scripts/state.py",
@@ -1692,30 +1636,6 @@
       "path": "skills/sigma-loop/scripts/triage.py",
       "function": "_ensure_arbitrary_labels",
       "rule": "gh-label",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/triage.py",
-      "function": "_execute_action",
-      "rule": "gh-issue",
-      "count": 3,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/unpark.py",
-      "function": "_append_block",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/unpark.py",
-      "function": "_comment",
-      "rule": "gh-issue",
       "count": 1,
       "gate": "ungated",
       "risk": "medium"
@@ -2191,14 +2111,6 @@
       "count": 1,
       "gate": "human input() confirmation",
       "risk": "high"
-    },
-    {
-      "path": "skills/sigma-scope/scripts/assign.py",
-      "function": "_apply_assignment",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
     },
     {
       "path": "skills/sigma-scope/scripts/assign.py",

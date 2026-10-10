@@ -10,6 +10,29 @@ import gqlfake
 D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py"
 
 
+# #895 slice 2c: doctor's label scans read REST first. These helpers key the fakes on the REST
+# issues-LIST argv (`gh api repos/<r>/issues --method GET -f labels=..`), which is what a list read is.
+def _is_list(args):
+    return gqlfake.rest_list_params(args[1:]) is not None
+
+
+def _list_label(args):
+    return gqlfake.rest_list_params(args[1:]).get("labels")
+
+
+def _list_state(args):
+    return gqlfake.rest_list_params(args[1:]).get("state", "open")
+
+
+def _rest_row(issue):
+    """gh-shape census row -> REST issues-list row (state lower, closedAt -> closed_at)."""
+    out = dict(issue)
+    out["state"] = str(issue.get("state") or "OPEN").lower()
+    out["closed_at"] = out.pop("closedAt", None)
+    return out
+
+
+
 def _doc():
     spec = importlib.util.spec_from_file_location("doctor", D)
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
@@ -2438,7 +2461,7 @@ def _dm_run(issues, comments=None, view_calls=None):
     def run(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return json.dumps(issues)
         if args[:3] == ["gh", "issue", "view"]:
             if view_calls is not None:
@@ -2563,7 +2586,7 @@ def _bl_run(issues):
     def run(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return json.dumps(issues)
         return ""
     return run
@@ -2631,7 +2654,7 @@ def test_blocked_label_doctor_check_degrades_cleanly_when_backlog_cannot_be_read
     def broken(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return ""          # simulates a failed/empty gh call
         return ""
     checks = d.check(base, run=broken)                 # must not raise
@@ -2640,7 +2663,7 @@ def test_blocked_label_doctor_check_degrades_cleanly_when_backlog_cannot_be_read
     def malformed(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return "not json"
         return ""
     checks = d.check(base, run=malformed)               # must not raise
@@ -2678,13 +2701,12 @@ def _census_run(by_label, fail_labels=()):
     def run(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] != ["gh", "issue", "list"]:
+        if not _is_list(args):
             return ""
-        label = args[args.index("--label") + 1] if "--label" in args else None
-        state = args[args.index("--state") + 1] if "--state" in args else "open"
+        label, state = _list_label(args), _list_state(args)
         if label in fail_labels:
             return "not json"
-        return json.dumps(by_label.get((label, state), []))
+        return json.dumps([_rest_row(r) for r in by_label.get((label, state), [])])
     return run
 
 
@@ -2813,7 +2835,7 @@ def test_multi_state_label_doctor_check_degrades_cleanly_when_backlog_cannot_be_
     def broken(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return ""
         return ""
     checks = d.check(base, run=broken)                   # must not raise
@@ -2822,7 +2844,7 @@ def test_multi_state_label_doctor_check_degrades_cleanly_when_backlog_cannot_be_
     def malformed(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
+        if _is_list(args):
             return "not json"
         return ""
     checks = d.check(base, run=malformed)                 # must not raise
@@ -4551,7 +4573,7 @@ _DONE_CFG = {"repo": "acme/widget", "project": {"enabled": True, "number": 8, "o
 
 def _done_run(issues_json, items_json):
     def run(a):
-        if a[:2] == ["gh", "issue"]:
+        if _is_list(a):
             return issues_json
         if a[:2] == ["gh", "project"]:
             return items_json
@@ -4601,7 +4623,7 @@ def test_open_issue_done_card_check_is_read_only():
     calls = []
     def run(a):
         calls.append(list(a))
-        if a[:2] == ["gh", "issue"]:
+        if _is_list(a):
             return json.dumps([{"number": 5}])
         if a[:2] == ["gh", "project"]:
             return json.dumps({"items": [{"content": {"number": 5}, "status": "Done"}]})
@@ -4638,9 +4660,8 @@ def _by_label_run(by_label):
     def run(args):
         if args[:3] == ["gh", "auth", "status"]:
             return "Logged in."
-        if args[:3] == ["gh", "issue", "list"]:
-            label = args[args.index("--label") + 1] if "--label" in args else None
-            return json.dumps(by_label.get(label, []))
+        if _is_list(args):
+            return json.dumps(by_label.get(_list_label(args), []))
         return ""
     return run
 
@@ -4676,7 +4697,7 @@ def test_unreachable_blocker_scan_degrades_cleanly_when_the_backlog_cannot_be_re
         def run(args, payload=payload):
             if args[:3] == ["gh", "auth", "status"]:
                 return "Logged in."
-            if args[:3] == ["gh", "issue", "list"]:
+            if _is_list(args):
                 return payload
             return ""
         assert _UNREACHABLE not in {c["name"] for c in d.check(base, run=run)}, payload
@@ -4751,7 +4772,7 @@ def test_orphan_scan_degrades_cleanly_when_the_backlog_cannot_be_read(tmp_path):
         def broken(args, _p=payload):
             if args[:3] == ["gh", "auth", "status"]:
                 return "Logged in."
-            if args[:3] == ["gh", "issue", "list"]:
+            if _is_list(args):
                 return _p
             return ""
         assert _ORPHAN not in {c["name"] for c in d.check(base, run=broken)}   # must not raise
@@ -7206,3 +7227,183 @@ def test_graphql_row_load_failure_is_fail_open(tmp_path, monkeypatch):
                         lambda n: (_ for _ in ()).throw(OSError("x")) if n == "gh_api" else real(n))
     base = _sdlc(tmp_path, {"work": {"enabled": True}})
     assert GQL_ROW not in _by_name(d.check(base, run=_pf_fake()))
+
+
+# --- #895 slice 2c: doctor's six label-scan list reads go REST first (gh_api.list_issues_gh) ------
+# Doctor's `run` takes the FULL argv (with "gh") and NEVER raises: a failed call is a falsy
+# `_RawFailure`. Fed straight to the REST fetch that reads as an EMPTY list = success (the failure-as-
+# empty trap), so the list reads go through `_raising_gh`. Doctor stays READ-ONLY: it passes no sdlc_dir,
+# so it never writes the breaker or the fallback log.
+
+_CFG = {"repo": "acme/widget"}
+_429 = "gh: API rate limit exceeded (HTTP 429)"
+
+
+def _scan_run(rest, fallback="[]", log=None):
+    """`rest`: a str (returned for every REST list call) or a callable(args) -> str|_RawFailure.
+    A `gh issue list` argv (the ONE fallback) is recorded in `log['fb']`."""
+    log = log if log is not None else {}
+    log.setdefault("fb", []); log.setdefault("rest", []); log.setdefault("other", [])
+
+    def run(args):
+        if _is_list(args):
+            log["rest"].append(list(args))
+            return rest(args) if callable(rest) else rest
+        if args[:3] == ["gh", "issue", "list"]:
+            log["fb"].append(list(args))
+            return fallback(args) if callable(fallback) else fallback
+        log["other"].append(list(args))
+        return ""
+    run.log = log
+    return run
+
+
+@pytest.fixture
+def gh_env(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+
+def test_unreachable_scan_requests_rest_created_desc_and_never_falls_back_when_healthy(gh_env):
+    d = _doc()
+    run = _scan_run(json.dumps([{"number": 7, "labels": [{"name": "sdlc:blocking"}]}]))
+    assert d._unreachable_blocker_scan(_CFG, run) == [7]
+    p = gqlfake.rest_list_params(run.log["rest"][0][1:])
+    assert p["labels"] == "sdlc:blocking" and p["state"] == "open" and p["per_page"] == "100"
+    assert p["sort"] == "created" and p["direction"] == "desc"
+    assert run.log["fb"] == [] and run.log["rest"][0][1] == "api"
+
+
+def test_dependency_scan_asks_for_updated_desc_not_a_search(gh_env):
+    d = _doc()
+    run = _scan_run(json.dumps([{"number": 1, "body": "x"}]))
+    d._dependency_marker_scan(_CFG, {}, run)
+    p = gqlfake.rest_list_params(run.log["rest"][0][1:])
+    assert p["sort"] == "updated" and p["direction"] == "desc" and "--search" not in run.log["rest"][0]
+
+
+def test_open_issue_done_card_lists_with_the_required_repo(gh_env):
+    d = _doc()
+    cfg = {"repo": "acme/widget", "project": {"enabled": True, "number": 8, "owner": "acme"}}
+    run = _scan_run(json.dumps([{"number": 5}]))
+    d._open_issue_done_card(cfg, run)
+    assert run.log["rest"][0][2] == "repos/acme/widget/issues"
+
+
+def test_a_429_makes_the_site_fall_back_exactly_once_not_read_as_an_empty_board(gh_env):
+    d = _doc()
+    fb = json.dumps([{"number": 7, "labels": [{"name": "sdlc:blocking"}]}])
+    run = _scan_run(d._RawFailure(_429), fallback=fb)
+    assert d._unreachable_blocker_scan(_CFG, run) == [7]       # the fallback's data, not []
+    assert run.log["fb"] == [["gh", "issue", "list", "--repo", "acme/widget", "--label", "sdlc:blocking",
+                              "--state", "open", "--json", "number,labels", "--limit", "200"]]
+    assert len(run.log["rest"]) == 1
+
+
+def test_dependency_scan_fallback_keeps_the_updated_order(gh_env):
+    d = _doc()
+    run = _scan_run(d._RawFailure(_429), fallback=json.dumps([{"number": 1, "body": "x"}]))
+    d._dependency_marker_scan(_CFG, {}, run)
+    assert run.log["fb"][0][-2:] == ["--search", "sort:updated-desc"] and len(run.log["fb"]) == 1
+
+
+@pytest.mark.parametrize("raw", ["gh: Bad credentials (HTTP 401)", "gh: Not Found (HTTP 404)",
+                                 "gh: Validation Failed (HTTP 422)"])
+def test_client_errors_are_none_without_a_fallback(gh_env, raw):
+    d = _doc()
+    run = _scan_run(d._RawFailure(raw), fallback="[]")
+    assert d._blocked_label_scan(_CFG, run) is None and d._unreachable_blocker_scan(_CFG, run) == []
+    assert run.log["fb"] == []
+
+
+def test_empty_and_malformed_pages_are_kind_other_so_none_not_an_empty_census(gh_env):
+    d = _doc()
+    for payload in ("", "not json", json.dumps({"oops": 1})):
+        run = _scan_run(payload)
+        assert d._blocked_label_scan(_CFG, run) is None, payload
+        assert run.log["fb"] == [], payload
+
+
+def test_cloud_session_never_falls_back_from_doctor(monkeypatch):
+    d = _doc()
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    run = _scan_run(d._RawFailure(_429), fallback=json.dumps([{"number": 7, "labels": []}]))
+    assert d._blocked_label_scan(_CFG, run) is None
+    assert run.log["fb"] == []
+
+
+def test_transport_failure_falls_back_once_and_a_failed_fallback_is_none(gh_env):
+    d = _doc()
+    fail = d._RawFailure("dial tcp: i/o timeout")
+    run = _scan_run(fail, fallback=fail)
+    assert d._blocked_label_scan(_CFG, run) is None and len(run.log["fb"]) == 1
+
+
+def test_multi_state_scan_survives_one_label_failing_and_still_flags_the_rest(gh_env):
+    d = _doc()
+    issue = {"number": 3, "labels": [{"name": "sdlc:goal"}, {"name": "sdlc:parked"}]}
+
+    def rest(args):
+        p = gqlfake.rest_list_params(args[1:])
+        return d._RawFailure("gh: Not Found (HTTP 404)") if p["labels"] == "sdlc:needs-confirmation" \
+            else json.dumps([issue])
+    run = _scan_run(rest)
+    assert d._multi_state_label_scan(_CFG, {}, run) == [(3, ["sdlc:goal", "sdlc:parked"])]
+
+
+def _census_fb_run(by_label, rest_fail, log):
+    """REST list -> `rest_fail` (a _RawFailure); the ONE `gh issue list` fallback answers `by_label`."""
+    def run(args):
+        if args[:3] == ["gh", "auth", "status"]:
+            return "Logged in."
+        if _is_list(args):
+            return rest_fail
+        if args[:3] == ["gh", "issue", "list"]:
+            log.append(list(args))
+            label = args[args.index("--label") + 1]
+            state = args[args.index("--state") + 1]
+            return json.dumps(by_label.get((label, state), []))
+        return ""
+    return run
+
+
+def test_census_row_completes_from_the_fallback_when_rest_is_rate_limited(tmp_path, gh_env):
+    """A wrapper that SWALLOWED the failure (returned "" for it) would read 429 as an empty census, and
+    this would see no anomaly at all: the fallback's data must reach the census."""
+    d = _doc()
+    base = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}})
+    log = []
+    run = _census_fb_run({("sdlc:goal", "closed"): [_closed_issue(7, "sdlc:goal", "sdlc:parked")]},
+                         d._RawFailure(_429), log)
+    names = {c["name"]: c for c in d.check(base, run=run)}
+    assert _CENSUS_NAME in names and names[_CENSUS_NAME]["ok"] is False and "#7" in names[_CENSUS_NAME]["fix"]
+    assert _CENSUS_READ_NAME not in names and log
+
+
+def test_census_row_says_it_could_not_read_in_full_on_an_outage(tmp_path, gh_env):
+    d = _doc()
+    base = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}})
+    log = []
+    run = _census_fb_run({}, d._RawFailure("gh: Server Error (HTTP 503)"), log)
+
+    def both_fail(args):
+        out = run(args)
+        if args[:3] == ["gh", "issue", "list"]:
+            return d._RawFailure("gh: Server Error (HTTP 503)")
+        return out
+    names = {c["name"]: c for c in d.check(base, run=both_fail)}
+    assert _CENSUS_READ_NAME in names and names[_CENSUS_READ_NAME]["ok"] is False
+    assert _CENSUS_NAME not in names
+    assert "NOT a clean bill of health" in names[_CENSUS_READ_NAME]["fix"]
+
+
+def test_doctor_is_read_only_it_writes_no_breaker_or_fallback_log_even_after_a_fallback_class_failure(tmp_path, gh_env):
+    d = _doc()
+    base = _sdlc(tmp_path, {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}})
+    log = []
+    for _ in range(4):                                  # more than the breaker threshold
+        d.check(base, run=_census_fb_run({}, d._RawFailure(_429), log))
+    state = pathlib.Path(base) / "state"
+    assert log                                          # the fallback WAS exercised
+    assert not (state / "gh-rest-breaker.json").exists() and not (state / "gh-fallback.json").exists()
+    assert not list(pathlib.Path(base).rglob("gh-fallback.json")) and not list(pathlib.Path(base).rglob("gh-rest-breaker.json"))

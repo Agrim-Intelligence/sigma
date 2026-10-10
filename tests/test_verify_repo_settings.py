@@ -144,9 +144,7 @@ def test_required_reviews_and_a_missing_check_fail():
     recorded = _protected()
     rsc = recorded[PROT]["body"]["required_status_checks"]
     only_checks = {"checks": [{"context": c, "app_id": 15368} for c in
-                              ["test (ubuntu-latest, 3.10)", "test (ubuntu-latest, 3.11)",
-                               "test (ubuntu-latest, 3.12)", "test (ubuntu-latest, 3.13)",
-                               "test (macos-latest, 3.12)", "lint"]]}
+                              ["test", "lint"]]}
     recorded[PROT]["body"]["required_status_checks"] = dict(rsc, contexts=[], **only_checks)
     assert all(_results(recorded).values())          # `checks` alone, plus an extra name, still passes
     recorded[PROT]["body"]["required_status_checks"]["checks"].pop(0)

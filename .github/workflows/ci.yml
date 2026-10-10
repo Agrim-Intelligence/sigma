@@ -1,33 +1,73 @@
 name: CI
 
+# Two jobs, two cadences:
+#   test  -- the ONLY required check. PRs and merges to main; macOS 3.12; the suite minus the
+#            heaviest files (SLOW below). Minutes, not an hour.
+#   full  -- nightly and on demand; the whole suite on every launch-supported leg.
+# Ceiling: a break that only the slow files, or an Ubuntu / older-Python leg, can see lands on
+# main and is found by the nightly run, up to a day later. Measured 2026-10-10: the six files
+# below are 6 of 311 files and 50% of suite test-seconds (12,969 tests, all green).
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      full:
-        description: "Run every leg (true), or only the leg a PR runs (false)"
-        type: boolean
-        default: true
   schedule:
-    - cron: "17 5 * * 1"  # weekly full matrix
+    - cron: "17 5 * * *"  # nightly full matrix
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   test:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      SLOW: >-
+        --ignore=tests/test_readiness_drills.py
+        --ignore=tests/test_readiness_growth_audit.py
+        --ignore=tests/test_b6_463.py
+        --ignore=tests/test_mutation_sample.py
+        --ignore=tests/test_onboarding_control.py
+        --ignore=tests/test_shared_sdlc_paths.py
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: configure git identity for tests that create real commits
+        run: |
+          git config --global user.name "sigma-ci"
+          git config --global user.email "sigma-ci@users.noreply.github.com"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pytest pytest-xdist
+      - name: pytest (subset)
+        run: python -m pytest tests/ $SLOW -rs -q -n auto
+      - name: no retired skill prefix left in any tracked path or file (#523)
+        if: ${{ !cancelled() }}
+        run: python3 tools/rename_check.py
+      - name: write-surface inventory ratchet
+        run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
+      - name: quality gate (Tier-1 behavioral drift vs baseline)
+        run: python3 evals/run.py
+      - name: decision gate
+        run: |
+          python3 hooks/decision_gate.py validate .
+          python3 hooks/decision_gate.py check .
+      - name: SKILL.md frontmatter reads exactly as written (needs PyYAML)
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pip install pyyaml
+          python -m pytest tests/test_skill_frontmatter_yaml.py -q
+
+  full:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    # pull_request runs only the leg marked `pr: true`; every other leg still
-    # reports (so the check names exist) but skips all steps in seconds. The full matrix runs
-    # weekly (schedule) and on demand (workflow_dispatch). Ceiling: an Ubuntu or older-Python
-    # break is found by the weekly run, up to a week after the merge that caused it.
-    env:
-      FULL: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || matrix.pr || false }}
     strategy:
       # Every leg runs to completion: without this, the first failing leg cancels the others and
       # a version-specific failure hides whether the other version is green (issue #241).
@@ -45,40 +85,34 @@ jobs:
             python: "3.13"
           - os: macos-latest
             python: "3.12"
-            pr: true
     steps:
-      - if: ${{ env.FULL == 'true' }}
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: configure git identity for tests that create real commits
-        if: ${{ env.FULL == 'true' }}
         run: |
           git config --global user.name "sigma-ci"
           git config --global user.email "sigma-ci@users.noreply.github.com"
-      - if: ${{ env.FULL == 'true' }}
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python }}
-      - if: ${{ env.FULL == 'true' }}
-        run: python -m pip install --upgrade pip pytest pytest-xdist
-      - name: pytest
-        if: ${{ env.FULL == 'true' }}
+      - run: python -m pip install --upgrade pip pytest pytest-xdist
+      - name: pytest (full suite)
         run: python -m pytest tests/ -rs -q -n auto
       - name: no retired skill prefix left in any tracked path or file (#523)
-        if: ${{ !cancelled() && env.FULL == 'true' }}
+        if: ${{ !cancelled() }}
         run: python3 tools/rename_check.py
       - name: write-surface inventory ratchet
-        if: ${{ env.FULL == 'true' }}
         run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
       - name: quality gate (Tier-1 behavioral drift vs baseline)
-        if: ${{ env.FULL == 'true' }}
         run: python3 evals/run.py
-      - name: decision gate
+      - name: golden tasks verify
         if: ${{ env.FULL == 'true' }}
+        run: python3 evals/golden/verify.py
+      - name: decision gate
         run: |
           python3 hooks/decision_gate.py validate .
           python3 hooks/decision_gate.py check .
       - name: SKILL.md frontmatter reads exactly as written (needs PyYAML)
-        if: ${{ !cancelled() && env.FULL == 'true' }}
+        if: ${{ !cancelled() }}
         run: |
           python -m pip install pyyaml
           python -m pytest tests/test_skill_frontmatter_yaml.py -q

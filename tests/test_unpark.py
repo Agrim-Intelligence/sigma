@@ -27,7 +27,7 @@ def _view(number=5, title="A goal", body="", labels=("sdlc:parked",), comments=(
 
 
 def _runner(views=None, by_label=None, states=None, fail_on=()):
-    calls, label_state, gql_calls = [], set(), []
+    calls, label_state, gql_calls, fallbacks, rest_writes = [], set(), [], [], []
     views, by_label, states = views or {}, by_label or {}, states or {}
 
     def run(args):
@@ -40,13 +40,30 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         if gql is not None:
             gql_calls.append(list(args))
             return gql
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
+        params = gqlfake.rest_list_params(args)
+        if params is not None:      # #895 2c: the list read is REST first
+            return by_label.get(params.get("labels"), "[]")
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
+            fallbacks.append(list(args))      # the one `issue list` fallback; REST-first tests assert this empty
             label = args[args.index("--label") + 1] if "--label" in args else None
             return by_label.get(label, "[]")
+        # #895: issue reads are REST first; answered REST-shaped (issue + comments pages) from the same
+        # gh-shape `views` / `states`, a `states` entry winning exactly as the old `--json state` branch did.
+        def _gh_shape(n, _f):
+            if n in states:
+                return {"state": states[n], "stateReason": "COMPLETED" if states[n] == "CLOSED" else ""}
+            return views.get(n, _view(number=int(n)))
+        rest = gqlfake.rest_issue(args, _gh_shape)
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))      # the one fallback; REST-first tests assert this empty
             n = str(args[2])
             field = args[args.index("--json") + 1] if "--json" in args else ""
             if field.startswith("state"):
@@ -57,6 +74,8 @@ def _runner(views=None, by_label=None, states=None, fail_on=()):
         return ""
     run.calls = calls
     run.gql_calls = gql_calls
+    run.fallbacks = fallbacks
+    run.rest_writes = rest_writes
     return run
 
 
@@ -275,7 +294,7 @@ def test_a_failed_body_write_still_leaves_the_answers_on_the_issue(capsys):
     """The comment carries the same text, so nothing is lost -- but the body is the copy that gets
     read, and silently not having it is how a goal is re-parked for the reason just answered."""
     u = _mod("unpark")
-    run = _runner(views={"5": _view(comments=[_park("x")])}, fail_on=["issue edit 5 "])
+    run = _runner(views={"5": _view(comments=[_park("x")])}, fail_on=["issues/5 --method PATCH"])
     result = u.resolve(".sdlc", _config(), 5, {"decision": "start it again"}, "unpark", run=run)
     assert result["outcome"] == "unparked"
     assert any(c[:2] == ["issue", "comment"] for c in run.calls)
@@ -304,7 +323,7 @@ def test_list_is_oldest_first_and_names_the_scope():
 
 def test_list_reports_incomplete_rather_than_empty_when_a_query_fails():
     u = _mod("unpark")
-    run = _runner(fail_on=["--label sdlc:parked"])
+    run = _runner(fail_on=["labels=sdlc:parked"])
     result = u.list_parked(".sdlc", _config(), run=run)
     assert result["complete"] is False
     assert any("incomplete" in n for n in result["degraded"])
@@ -399,9 +418,60 @@ def test_cli_list_and_brief_render_and_exit_zero(tmp_path, capsys):
 def test_cli_brief_refuses_an_unreadable_issue_without_a_traceback(tmp_path, capsys):
     u = _mod("unpark")
     (tmp_path / "config.json").write_text(json.dumps(_config()))
-    run = _runner(fail_on=["issue view 5"])
+    run = _runner(fail_on=["issues/5", "issue view 5"])
     assert u.main(["unpark.py", "brief", str(tmp_path), "5"], run=run) == 1
     assert "could not read #5" in capsys.readouterr().err
+
+
+def test_resolve_refuses_when_the_issue_cannot_be_read():
+    """GhApiError (REST and the one fallback fail) reaches resolve()'s own arm: failed, nothing written."""
+    u = _mod("unpark")
+    run = _runner(fail_on=["issues/5", "issue view 5"])
+    out = u.resolve(".sdlc", _config(), 5, {}, "unpark", run=run)
+    assert out["outcome"] == "failed" and "could not read the current state of #5" in out["detail"]
+    assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
+
+
+def test_fetch_issue_reads_rest_first_issue_and_comments_and_nothing_else():
+    """#895: `_fetch_issue` has no except of its own; it asks `api .../issues/5` then its comments page."""
+    u = _mod("unpark")
+    run = _runner(views={"5": _view(comments=[_park("changes requested")])})
+    source = _mod("sources").GitHubSource(_config(), run=run)
+    data = u._fetch_issue(source, 5)
+    assert data["number"] == 5 and data["state"] == "OPEN" and len(data["comments"]) == 1
+    reads = [c for c in run.calls if c[0] == "api"]
+    assert [c[1] for c in reads] == ["repos/acme/widget/issues/5", "repos/acme/widget/issues/5/comments"]
+    assert run.fallbacks == []
+
+
+def test_fetch_issue_lets_a_ghapierror_reach_the_callers_except():
+    """No except in `_fetch_issue`: the CALLER's arm (brief/resolve) must see the typed error."""
+    u = _mod("unpark")
+    src = _mod("sources")
+    gh_api = src.gh_api
+    run = _runner(fail_on=["issues/5", "issue view 5"])
+    source = src.GitHubSource(_config(), run=run)
+    try:
+        u._fetch_issue(source, 5)
+    except gh_api.GhApiError:
+        pass
+    else:
+        raise AssertionError("expected GhApiError to propagate")
+
+
+def test_fetch_issue_rest_5xx_falls_back_once(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    u = _mod("unpark")
+    inner = _runner(views={"5": _view(comments=[_park("x")])})
+
+    def run(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    data = u._fetch_issue(_mod("sources").GitHubSource(_config(), run=run), 5)
+    assert data["state"] == "OPEN"
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "5"]]
 
 
 def test_cli_resolve_end_to_end(tmp_path, capsys):
@@ -580,3 +650,24 @@ def test_the_keep_parked_marker_quotes_the_substantive_answer_not_the_routing_on
     comment = next(c[c.index("--body") + 1] for c in run.calls if c[:2] == ["issue", "comment"])
     assert au.KEEP_PARKED_MARKER in comment
     assert "wait for the pricing call" in comment
+
+
+def test_comment_and_body_append_are_rest_writes_with_swallow_and_false_semantics():
+    """#895 slice 3a: the comment is a REST POST, the body append a REST PATCH (raw `-f body=`); a failing
+    comment is swallowed, a failing PATCH writes ONE stderr line and returns False."""
+    u = _mod("unpark")
+    run = _runner()
+    src = _mod("sources").GitHubSource(_config(), run=run)
+    u._comment(src, 5, "hello")
+    assert u._append_block(src, 5, "old", "BLOCK") is True
+    assert [(c[1], c[3]) for c in run.rest_writes] == [
+        ("repos/acme/widget/issues/5/comments", "POST"), ("repos/acme/widget/issues/5", "PATCH")]
+    assert "body=" in " ".join(run.rest_writes[1]) and "-F" not in run.rest_writes[1]
+    bad = _runner(fail_on=["issues/5/comments", "issues/5 --method PATCH"])
+    bsrc = _mod("sources").GitHubSource(_config(), run=bad)
+    u._comment(bsrc, 5, "hello")                                     # swallowed
+    import io, contextlib
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert u._append_block(bsrc, 5, "old", "BLOCK") is False
+    assert err.getvalue().count("\n") == 1 and "could not write them into the body" in err.getvalue()

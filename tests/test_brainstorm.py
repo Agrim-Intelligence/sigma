@@ -12,6 +12,8 @@ import tempfile
 
 import pytest
 
+import gqlfake
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-scope" / "scripts"
 
 
@@ -186,12 +188,30 @@ def test_direct_issue_number_accepts_a_light_wrapper_phrase():
     assert out["form"] == "issue_number" and out["issue"]["ref"] == "7"
 
 
-def test_direct_issue_number_falls_back_to_a_live_fetch_when_not_mirrored():
-    bs = _mod()
+def _live_runner(number=99, fail=None):
+    """REST-first fake (#895): answers `api repos/<o>/<r>/issues/N --method GET`; any other argv is
+    recorded in `run.unexpected` (and raised), the `issue view` fallback in `run.fallbacks`."""
+    calls, unexpected, fallbacks = [], [], []
 
     def fake_run(args, binary="gh"):
-        assert args[:3] == ["issue", "view", "99"]
-        return json.dumps({"number": 99, "title": "Live-fetched title", "body": "Live body"})
+        calls.append(list(args))
+        if args[:2] == ["issue", "view"]:
+            fallbacks.append(list(args))
+            return json.dumps({"number": number, "title": "Live-fetched title", "body": "Live body"})
+        if fail and gqlfake.rest_issue_target(args):
+            raise RuntimeError(fail)
+        rest = gqlfake.rest_issue(args, lambda n, f: {"title": "Live-fetched title", "body": "Live body"})
+        if rest is None:
+            unexpected.append(list(args))
+            raise RuntimeError("unexpected argv: %r" % (args,))
+        return rest
+    fake_run.calls, fake_run.unexpected, fake_run.fallbacks = calls, unexpected, fallbacks
+    return fake_run
+
+
+def test_direct_issue_number_falls_back_to_a_live_fetch_when_not_mirrored():
+    bs = _mod()
+    fake_run = _live_runner()
 
     with tempfile.TemporaryDirectory() as d:
         base = _github_sdlc(pathlib.Path(d), [])   # empty mirror -> not in local corpus
@@ -199,6 +219,41 @@ def test_direct_issue_number_falls_back_to_a_live_fetch_when_not_mirrored():
     assert out["form"] == "issue_number"
     assert out["confident"] is True
     assert out["issue"] == {"ref": "99", "title": "Live-fetched title", "body": "Live body", "score": None}
+    # #895: REST first (repo set -> its own path), no `issue view`, nothing else asked
+    assert fake_run.calls == [["api", "repos/example/example/issues/99", "--method", "GET"]]
+    assert fake_run.unexpected == [] and fake_run.fallbacks == []
+
+
+def test_live_fetch_with_no_repo_configured_lets_gh_fill_the_placeholders():
+    bs = _mod()
+    fake_run = _live_runner()
+    cfg = {"discovery": {"source": "github", "github": {}}}
+    issue = bs._fetch_issue_live("99", cfg, fake_run)
+    assert issue["title"] == "Live-fetched title"
+    assert fake_run.calls == [["api", "repos/{owner}/{repo}/issues/99", "--method", "GET"]]
+
+
+def test_live_fetch_failure_reaches_the_callers_except_as_unresolved():
+    """`_fetch_issue_live` has no except of its own: the CALLER's arm sees GhApiError and degrades."""
+    bs = _mod()
+    fake_run = _live_runner(fail="gh: HTTP 404 Not Found")
+    gh_api = bs.backlog_check.sources.gh_api
+    with pytest.raises(gh_api.GhApiError):
+        bs._fetch_issue_live("99", {"discovery": {"github": {"repo": "example/example"}}}, fake_run)
+    with tempfile.TemporaryDirectory() as d:
+        base = _github_sdlc(pathlib.Path(d), [])
+        out = bs.resolve_target("#99", sdlc_dir=str(base), run=fake_run)
+    assert out["form"] == "unresolved" and "issue_not_found" in out["degraded"]
+
+
+def test_live_fetch_rest_5xx_falls_back_once_through_the_same_injected_run(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    bs = _mod()
+    fake_run = _live_runner(fail="gh: HTTP 502 Bad Gateway")
+    issue = bs._fetch_issue_live("99", {"discovery": {"github": {"repo": "example/example"}}}, fake_run)
+    assert issue["body"] == "Live body"
+    assert [c[:3] for c in fake_run.fallbacks] == [["issue", "view", "99"]]
 
 
 # ---------------------------------------------------------------------------- form 3: fuzzy issue reference

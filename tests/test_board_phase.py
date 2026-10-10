@@ -441,7 +441,7 @@ def test_on_the_board_sigma_created_the_field_still_wins_as_before(tmp_path, mon
     _relabel(gh, board, "sdlc:goal", "priority:P0")
     _start(sdlc, "plan", monkeypatch, gh)
     edits = [c for c in gh.calls if c[:2] == ["issue", "edit"]]
-    assert edits and "priority:P1" in edits[-1], edits           # field wins, label corrected
+    assert any("--add-label" in e and e[e.index("--add-label") + 1] == "priority:P1" for e in edits), edits           # field wins, label corrected
     assert "the field wins" in capsys.readouterr().err
 
 
@@ -840,7 +840,7 @@ def test_a_board_created_in_this_run_keeps_field_wins_on_the_status_path(tmp_pat
     assert src._set_board_status("11", src.col["qc"]) is True
     assert _card(board).get("status") == "QC"
     edits = [c for c in gh.calls if c[:2] == ["issue", "edit"]]
-    assert edits and "priority:P3" in edits[-1], edits      # field wins on Sigma's own board
+    assert any("--add-label" in e and e[e.index("--add-label") + 1] == "priority:P3" for e in edits), edits      # field wins on Sigma's own board
 
 
 def test_setup_created_names_a_board_by_number_and_owner(tmp_path, monkeypatch):

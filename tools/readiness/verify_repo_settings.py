@@ -19,13 +19,7 @@ import re
 import subprocess
 import sys
 
-REQUIRED_CHECKS = (
-    "test (ubuntu-latest, 3.10)",
-    "test (ubuntu-latest, 3.11)",
-    "test (ubuntu-latest, 3.12)",
-    "test (ubuntu-latest, 3.13)",
-    "test (macos-latest, 3.12)",
-)
+REQUIRED_CHECKS = ("test",)  # the PR/merge subset job; the five-leg `full` job is nightly, not required
 DEFAULT_TEAM = "sigma-maintainers"
 TEAM_RIGHTS = ("maintain", "admin")
 SLUG = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")

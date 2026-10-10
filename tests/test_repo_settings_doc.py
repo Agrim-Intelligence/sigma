@@ -30,14 +30,13 @@ def _verifier():
 
 
 def ci_check_names(text):
-    """`test (<os>, <python>)` for every matrix `include` entry of job `test`; loud on any surprise."""
+    """The required check names: job `test` is one check named `test`; loud on any surprise."""
     job = re.search(r"^  test:\n(.*?)(?=^  \S|\Z)", text, re.S | re.M)
     assert job, "ci.yml has no job `test`; the check names would change"
     body = job.group(1)
     assert not re.search(r"^    name:", body, re.M), "job `test` has a `name:`; GitHub would report that instead"
-    pairs = re.findall(r'- os:\s*(\S+)\s*\n\s*python:\s*"([\d.]+)"', body)
-    assert len(pairs) == len(re.findall(r"- os:", body)) == 5, "unreadable or changed CI matrix: %r" % pairs
-    return {"test (%s, %s)" % pair for pair in pairs}
+    assert not re.search(r"^    strategy:", body, re.M), "job `test` has a matrix; GitHub would report one check per leg"
+    return {"test"}
 
 
 def doc_check_names(text):
@@ -51,17 +50,22 @@ def doc_check_names(text):
 def test_required_check_names_in_the_doc_are_ci_check_names():
     ci = ci_check_names(_read(WORKFLOW))
     doc = doc_check_names(_read(DOC))
-    assert len(doc) == len(set(doc)) == 5
+    assert len(doc) == len(set(doc)) == 1
     assert set(doc) == ci
     assert set(_verifier().REQUIRED_CHECKS) == ci
 
 
 def test_a_name_ci_does_not_report_is_caught():
     ci = ci_check_names(_read(WORKFLOW))
-    broken = _read(DOC).replace("`test (macos-latest, 3.12)`", "`test (macos-latest, 3.11)`")
+    broken = _read(DOC).replace("- `test`\n", "- `unit`\n")
     assert set(doc_check_names(broken)) != ci
-    renamed = _read(WORKFLOW).replace('python: "3.13"', 'python: "3.14"')
-    assert ci_check_names(renamed) != set(doc_check_names(_read(DOC)))
+    matrixed = _read(WORKFLOW).replace("  test:\n", "  test:\n    strategy:\n      matrix: {x: [1]}\n", 1)
+    try:
+        ci_check_names(matrixed)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("a matrix on job `test` went unnoticed")
     named = _read(WORKFLOW).replace("  test:\n", "  test:\n    name: unit\n", 1)
     try:
         ci_check_names(named)

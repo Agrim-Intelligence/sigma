@@ -12,6 +12,14 @@ def _mod(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+LIST_GET = "/issues --method GET"     # #895 2c: the REST issues-LIST argv (the single-issue read is /issues/<n>)
+
+
+def rest_list_calls(run):
+    """The REST list reads the runner saw (one per label per page)."""
+    return [c for c in run.calls if gqlfake.rest_list_params(c) is not None]
+
+
 def _config(**gh):
     return {"discovery": {"source": "github", "github": {"repo": "acme/widget", **gh}}}
 
@@ -32,7 +40,8 @@ def _parked_issue(number, title="", body="", labels=("sdlc:parked",)):
            "labels": [{"name": n} for n in labels]}
 
 
-def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, fail_on=()):
+def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, fail_on=(), list_fail=None,
+                  fallback_list="[]"):
     """Fake `gh` runner covering every call shape the sweep makes:
     - `issue list --label sdlc:parked ...`               -> returns `parked` (a JSON array string)
     - `issue view <n> ... --json state,stateReason`       -> `{"state": ..., "stateReason": ...}`
@@ -52,6 +61,8 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
     state_reasons = state_reasons or {}
     comments = comments or {}
     labels = set()
+    fallbacks = []
+    list_fallbacks = []
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -67,21 +78,28 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
         if gql is not None:
             return gql
         calls.append(list(args))
-        if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
+        params = gqlfake.rest_list_params(args)
+        if params is not None:                  # #895 2c: the list read is REST first
+            if list_fail is not None:
+                raise list_fail
             # #1351: the `sdlc:blocking` query (_fetch_blocking_issues, "what's currently labeled
-            # blocking") is a DIFFERENT concept from `parked` (what THIS fixture's callers set up)
-            # -- returning the same canned `parked` payload for it would make every parked issue
-            # look like it's ALSO currently blocking, contaminating compute_blocking_actions with
-            # data no test using this simpler, non-label-aware fixture actually intends to supply.
-            label = args[args.index("--label") + 1] if "--label" in args else None
-            return "[]" if label == "sdlc:blocking" else parked
-        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
-            {"id": f"c{i}", "author": {"login": "x"}, "body": b,
-             "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
-            for i, b in enumerate(comments.get(n, []))]})
+            # blocking") is a DIFFERENT concept from `parked` -- returning the same canned `parked`
+            # payload for it would make every parked issue look currently blocking.
+            return "[]" if params.get("labels") == "sdlc:blocking" else parked
+        if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
+            list_fallbacks.append(list(args))   # #895 2c: the ONE `gh issue list` fallback
+            return fallback_list
+        rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: issue reads are REST first
+            "state": states.get(n, "OPEN"),
+            "stateReason": state_reasons.get(n, "COMPLETED" if states.get(n) == "CLOSED" else ""),
+            "comments": [
+                {"id": f"c{i}", "author": {"login": "x"}, "body": b,
+                 "createdAt": "2026-01-01T00:00:00Z", "authorAssociation": "OWNER"}
+                for i, b in enumerate(comments.get(n, []))]})
         if rest is not None:
             return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))     # #895: the ONE fallback; a REST-first test asserts this empty
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
             if json_field.startswith("state"):
@@ -98,6 +116,8 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
             return "{}"
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
+    run.list_fallbacks = list_fallbacks
     return run
 
 
@@ -117,14 +137,16 @@ def test_fetch_parked_issues_queries_by_the_parked_label_and_open_state():
     run = _sweep_runner()
     source = au.sources.GitHubSource(_config(), run=run)
     au._fetch_parked_issues(source)
-    call = next(c for c in run.calls if c[:2] == ["issue", "list"])
-    assert "--label" in call and call[call.index("--label") + 1] == "sdlc:parked"
-    assert "--state" in call and call[call.index("--state") + 1] == "open"
+    call = rest_list_calls(run)[0]
+    p = gqlfake.rest_list_params(call)
+    assert p["labels"] == "sdlc:parked" and p["state"] == "open"
+    assert p["sort"] == "created" and p["direction"] == "desc"      # newest first, like `gh issue list`
+    assert run.list_fallbacks == []
 
 
 def test_fetch_parked_issues_fails_open_on_gh_error():
     au = _mod("auto_unpark")
-    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issue list"]))
+    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=[LIST_GET]))
     assert au._fetch_parked_issues(source) == []
 
 
@@ -157,7 +179,7 @@ def test_fetch_parked_issues_status_reports_complete_when_both_queries_succeed()
 
 def test_fetch_parked_issues_status_reports_incomplete_when_both_queries_fail():
     au = _mod("auto_unpark")
-    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issue list"]))
+    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=[LIST_GET]))
     issues, complete = au._fetch_parked_issues_status(source)
     assert issues == []
     assert complete is False
@@ -167,7 +189,7 @@ def test_fetch_parked_issues_status_is_incomplete_even_if_only_one_of_two_querie
     au = _mod("auto_unpark")
     run = _label_aware_sweep_runner(
         by_label={"sdlc:blocked": json.dumps([_blocked_issue(42, labels=("sdlc:blocked",))])},
-        fail_on=["--label sdlc:parked"])
+        fail_on=["labels=sdlc:parked"])
     source = au.sources.GitHubSource(_config(), run=run)
     issues, complete = au._fetch_parked_issues_status(source)
     # the OTHER query's real results are still returned (compute_unpark_actions' own partial-data
@@ -192,7 +214,7 @@ def test_fetch_parked_issues_is_the_issues_only_view_of_status():
 
 
 def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, comments=None,
-                              fail_on=(), fail_labels=()):
+                              fail_on=(), fail_labels=(), list_fail=None, fallback_list="[]"):
     """Like `_sweep_runner` above but distinguishes an `issue list --label X` call by the actual
     value of `X` -- needed to prove #1358's fix genuinely queries BOTH `sdlc:parked` and
     `sdlc:blocked` as two independently-filtered calls. `_sweep_runner` itself returns the same
@@ -206,6 +228,8 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
     comments = comments or {}
 
     labels = set()
+    fallbacks = []
+    list_fallbacks = []
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -225,15 +249,24 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
         if gql is not None:
             return gql
         calls.append(list(args))
+        params = gqlfake.rest_list_params(args)
+        if params is not None:                  # #895 2c: the list read is REST first
+            if list_fail is not None:
+                raise list_fail
+            return by_label.get(params.get("labels"), "[]")
         if len(args) >= 2 and args[0] == "issue" and args[1] == "list":
-            label = args[args.index("--label") + 1] if "--label" in args else None
-            return by_label.get(label, "[]")
-        rest = gqlfake.rest_issue(args, lambda n, f: {"comments": [      # #895: fetch_comments is REST first
-            {"id": f"c{i}", "author": {"login": "x"}, "body": b, "createdAt": "2026-01-01T00:00:00Z"}
-            for i, b in enumerate(comments.get(n, []))]})
+            list_fallbacks.append(list(args))   # #895 2c: the ONE `gh issue list` fallback
+            return fallback_list
+        rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: issue reads are REST first
+            "state": states.get(n, "OPEN"),
+            "stateReason": state_reasons.get(n, "COMPLETED" if states.get(n) == "CLOSED" else ""),
+            "comments": [
+                {"id": f"c{i}", "author": {"login": "x"}, "body": b, "createdAt": "2026-01-01T00:00:00Z"}
+                for i, b in enumerate(comments.get(n, []))]})
         if rest is not None:
             return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))     # #895: the ONE fallback; a REST-first test asserts this empty
             n = args[2]
             json_field = args[args.index("--json") + 1] if "--json" in args else ""
             if json_field.startswith("state"):
@@ -249,6 +282,8 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
             return "{}"
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
+    run.list_fallbacks = list_fallbacks
     return run
 
 
@@ -266,7 +301,7 @@ def test_fetch_parked_issues_also_queries_by_goal_blocked_label():
     source = au.sources.GitHubSource(_config(), run=run)
     issues = au._fetch_parked_issues(source)
     assert [i["number"] for i in issues] == [42]
-    queried = {c[c.index("--label") + 1] for c in run.calls if c[:2] == ["issue", "list"]}
+    queried = {gqlfake.rest_list_params(c)["labels"] for c in rest_list_calls(run)}
     assert queried == {"sdlc:parked", "sdlc:blocked"}
 
 
@@ -287,7 +322,7 @@ def test_fetch_parked_issues_survives_one_label_query_failing():
     au = _mod("auto_unpark")
     blocked_issue = _blocked_issue(42, title="blocked goal", labels=("sdlc:blocked",))
     run = _label_aware_sweep_runner(
-        by_label={"sdlc:blocked": json.dumps([blocked_issue])}, fail_on=["--label sdlc:parked"])
+        by_label={"sdlc:blocked": json.dumps([blocked_issue])}, fail_on=["labels=sdlc:parked"])
     source = au.sources.GitHubSource(_config(), run=run)
     issues = au._fetch_parked_issues(source)
     assert [i["number"] for i in issues] == [42]
@@ -376,8 +411,35 @@ def test_ref_is_open_fails_closed_true_on_gh_error():
     """Unreadable blocker state -> treated as still open (the safe direction): a write this sweep
     can't easily undo must never fire on data it could not confirm."""
     au = _mod("auto_unpark")
-    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issue view 7"]))
-    assert au._ref_is_open(source, "7", {}) is True
+    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issues/7", "issue view 7"]))
+    assert au._ref_is_open(source, "7", {}) is True      # GhApiError reaches the site's own arm
+
+
+def test_ref_is_open_reads_rest_first_and_never_asks_for_anything_else():
+    """#895: the read is `api repos/<o>/<r>/issues/7 --method GET`; no `issue view`, no other argv."""
+    au = _mod("auto_unpark")
+    run = _sweep_runner(states={"7": "CLOSED"})
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._ref_is_open(source, "7", {}) is False
+    assert run.calls == [["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.fallbacks == []
+
+
+def test_ref_is_open_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    au = _mod("auto_unpark")
+    run = _sweep_runner(states={"7": "CLOSED"}, fail_on=["issues/7"])
+    # fail_on raises a plain error (kind other, no fallback); a 502 text is what earns the one fallback
+    inner = run
+
+    def flaky(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    source = au.sources.GitHubSource(_config(), run=flaky)
+    assert au._ref_is_open(source, "7", {}) is False
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "7"]]
 
 
 def test_ref_is_open_memoizes_across_calls_in_the_same_cache():
@@ -387,8 +449,9 @@ def test_ref_is_open_memoizes_across_calls_in_the_same_cache():
     cache = {}
     au._ref_is_open(source, "7", cache)
     au._ref_is_open(source, "7", cache)
-    view_calls = [c for c in run.calls if c[:2] == ["issue", "view"]]
+    view_calls = [c for c in run.calls if gqlfake.rest_issue_target(c) == ("7", False)]
     assert len(view_calls) == 1
+    assert not [c for c in run.calls if c[:2] == ["issue", "view"]]     # no fallback, no unexpected argv
 
 
 # --------------------------------------------------------------------------- compute_unpark_actions
@@ -817,14 +880,16 @@ def test_fetch_blocking_issues_queries_by_the_blocking_label_and_all_states():
     run = _sweep_runner()
     source = au.sources.GitHubSource(_config(), run=run)
     au._fetch_blocking_issues(source)
-    call = next(c for c in run.calls if c[:2] == ["issue", "list"])
-    assert "--label" in call and call[call.index("--label") + 1] == "sdlc:blocking"
-    assert "--state" in call and call[call.index("--state") + 1] == "all"
+    call = rest_list_calls(run)[0]
+    p = gqlfake.rest_list_params(call)
+    assert p["labels"] == "sdlc:blocking" and p["state"] == "all"
+    assert p["sort"] == "created" and p["direction"] == "desc"
+    assert run.list_fallbacks == []
 
 
 def test_fetch_blocking_issues_fails_open_on_gh_error():
     au = _mod("auto_unpark")
-    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=["issue list"]))
+    source = au.sources.GitHubSource(_config(), run=_sweep_runner(fail_on=[LIST_GET]))
     assert au._fetch_blocking_issues(source) == set()
 
 
@@ -1016,7 +1081,7 @@ def test_sweep_unpark_skips_blocking_reconciliation_when_the_parked_fetch_is_inc
     au = _mod("auto_unpark")
     run = _label_aware_sweep_runner(
         by_label={"sdlc:blocking": json.dumps([{"number": 7}])},
-        fail_on=["--label sdlc:parked", "--label sdlc:blocked"])
+        fail_on=["labels=sdlc:parked", "labels=sdlc:blocked"])
     result = au.sweep_unpark(".sdlc", _config(), apply=True, run=run)
     assert result["actions"] == []
     remove_calls = [c for c in run.calls if c[:2] == ["issue", "edit"] and "--remove-label" in c]
@@ -1089,7 +1154,7 @@ def test_cli_sweep_verb_is_wired_through_main(tmp_path, monkeypatch):
     # `sources._run_gh` instead, the identical idiom triage.py's own
     # `test_cli_enact_verb_is_wired_through_main` already established, so this never risks a real
     # `gh` call against a real repo.
-    monkeypatch.setattr(au.sources, "_run_gh", lambda a: "[]" if a[:2] == ["issue", "list"] else "")
+    monkeypatch.setattr(au.sources, "_run_gh", lambda a: "[]" if gqlfake.rest_list_params(a) is not None else "")
     base = tmp_path / ".sdlc"; base.mkdir()
     (base / "config.json").write_text(json.dumps(_config()))
     rc = au.main(["auto_unpark.py", "sweep", str(base)])
@@ -1121,10 +1186,10 @@ def _view_wrapper(run, number, labels, assignees, state):
     """`blockers._state` reads `issue view <n> --json labels,assignees,state`; the sweep fixtures
     answer `--json state,stateReason` only, so this layers the one extra shape on top."""
     def _run(args):
-        if (len(args) >= 3 and args[0] == "issue" and args[1] == "view" and str(args[2]) == number
-                and "--json" in args and "labels" in args[args.index("--json") + 1]):
-            return json.dumps({"labels": [{"name": l} for l in labels],
-                               "assignees": [{"login": a} for a in assignees], "state": state})
+        if gqlfake.rest_issue_target(args) == (number, False):       # #895: REST first
+            return gqlfake.rest_issue(args, lambda n, f: {
+                "labels": [{"name": l} for l in labels],
+                "assignees": [{"login": a} for a in assignees], "state": state})
         return run(args)
     return _run
 
@@ -1187,9 +1252,8 @@ def test_an_unreadable_blocker_degrades_to_the_blocking_label_alone():
     original = src._run
 
     def _run(args):
-        if (len(args) >= 3 and args[0] == "issue" and args[1] == "view" and str(args[2]) == "7"
-                and "--json" in args and "labels" in args[args.index("--json") + 1]):
-            raise RuntimeError("gh: 502")
+        if gqlfake.rest_issue_target(args) == ("7", False) or args[:2] == ["issue", "view"]:
+            raise RuntimeError("gh: 502")      # REST 5xx, and the one fallback fails too
         return original(args)
     src._run = _run
     actions = au.compute_blocking_actions(".sdlc", _config(), src,
@@ -1303,3 +1367,78 @@ def test_a_parked_issue_still_contributes_its_blocker_to_the_blocking_label():
     actions = au.compute_blocking_actions(".sdlc", _config(), src, [parked], set(), run=run)
     assert [a["issue"] for a in actions] == ["7"]
     assert "sdlc:blocking" in actions[0]["add"]
+
+
+# --- #895 slice 2c: the two list reads go REST first (gh_api.list_issues_gh) ---------------------
+# Fail-open arms must survive: a wrongly-empty blocker set removes labels (a real write), so ANY error
+# keeps `complete=False` / `set()`. Each test also asserts the REST argv WAS requested, so it cannot
+# pass against the old `issue list` code.
+
+import pytest  # noqa: E402
+
+RATE_429 = RuntimeError("gh: API rate limit exceeded (HTTP 429)")
+RATE_429.hint = "gh: API rate limit exceeded (HTTP 429)"
+
+
+@pytest.fixture(autouse=False)
+def gh_env(monkeypatch):
+    """Site-level fallback tests set the gate explicitly; never rely on the ambient environment."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+
+def test_rest_error_on_one_label_is_incomplete_and_requests_rest(gh_env):
+    au = _mod("auto_unpark")
+    run = _label_aware_sweep_runner(by_label={"sdlc:blocked": json.dumps([_blocked_issue(42)])},
+                                    fail_on=["labels=sdlc:parked"])
+    source = au.sources.GitHubSource(_config(), run=run)
+    issues, complete = au._fetch_parked_issues_status(source)
+    assert complete is False and [i["number"] for i in issues] == [42]
+    # `fail_on` raises before the call is recorded, so only the label that succeeded is in the log
+    assert {gqlfake.rest_list_params(c)["labels"] for c in rest_list_calls(run)} == {"sdlc:blocked"}
+    assert run.list_fallbacks == []                     # a non-fallback-class error never falls back
+
+
+def test_blocking_read_error_is_the_empty_set_so_no_label_is_removed(gh_env):
+    au = _mod("auto_unpark")
+    run = _sweep_runner(list_fail=RuntimeError("gh: Not Found (HTTP 404)"))
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._fetch_blocking_issues(source) == set()
+    assert len(rest_list_calls(run)) == 1 and run.list_fallbacks == []
+
+
+def test_429_on_the_first_page_serves_one_fallback_and_the_sweep_completes(gh_env):
+    au = _mod("auto_unpark")
+    fb = json.dumps([_blocked_issue(42)])
+    run = _label_aware_sweep_runner(list_fail=RATE_429, fallback_list=fb)
+    source = au.sources.GitHubSource(_config(), run=run)
+    issues, complete = au._fetch_parked_issues_status(source)
+    assert complete is True and [i["number"] for i in issues] == [42]
+    assert len(run.list_fallbacks) == 2 and len(rest_list_calls(run)) == 2   # one fallback per label query
+    argv = run.list_fallbacks[0]
+    assert argv[:2] == ["issue", "list"] and "--limit" in argv and "--search" not in argv
+
+
+def test_429_blocking_read_falls_back_exactly_once(gh_env):
+    au = _mod("auto_unpark")
+    run = _sweep_runner(list_fail=RATE_429, fallback_list=json.dumps([{"number": 9}]))
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._fetch_blocking_issues(source) == {"9"}
+    assert len(run.list_fallbacks) == 1 and run.list_fallbacks[0][run.list_fallbacks[0].index("--state") + 1] == "all"
+
+
+def test_429_in_a_cloud_session_never_falls_back_and_stays_fail_open(monkeypatch):
+    au = _mod("auto_unpark")
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    run = _sweep_runner(list_fail=RATE_429, fallback_list=json.dumps([{"number": 9}]))
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._fetch_blocking_issues(source) == set() and au._fetch_parked_issues_status(source) == ([], False)
+    assert run.list_fallbacks == []
+
+
+def test_a_non_list_page_is_incomplete_without_fallback(gh_env):
+    au = _mod("auto_unpark")
+    run = _sweep_runner(parked=json.dumps({"oops": 1}))
+    source = au.sources.GitHubSource(_config(), run=run)
+    assert au._fetch_parked_issues_status(source) == ([], False)
+    assert run.list_fallbacks == [] and len(rest_list_calls(run)) == 2

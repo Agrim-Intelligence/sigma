@@ -3,6 +3,8 @@ responsible for and classifies each issue, rather than querying for corruption (
 an issue whose defect IS a missing label)."""
 import json, re, pathlib, importlib.util
 
+import gqlfake
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
@@ -19,24 +21,46 @@ def _issue(number, *labels, state="OPEN"):
     return {"number": number, "state": state, "labels": [{"name": n} for n in labels]}
 
 
+def _rest(issue):
+    """gh-shape census row -> the REST issues-list row the REST leg reads (#895 2c)."""
+    out = dict(issue)
+    out["state"] = str(issue.get("state") or "OPEN").lower()
+    out["closed_at"] = out.pop("closedAt", None)
+    return out
+
+
 def _runner(by_label=None, fail_labels=(), bad_json_labels=()):
-    """Fake `gh` runner answering `issue list --label X --state Y` from `by_label[(X, Y)]`."""
+    """Fake `gh` runner answering the census's list reads from `by_label[(X, Y)]`. #895 2c: BOTH shapes
+    -- the REST issues-list GET (first leg) and the one `issue list` fallback (`run.fallbacks`). A label
+    in `fail_labels` fails on BOTH legs with an HTTP 502 (so the fallback is exercised and fails too)."""
     by_label = by_label or {}
-    calls = []
+    calls, fallbacks = [], []
 
     def run(args):
         calls.append(list(args))
+        params = gqlfake.rest_list_params(args)
+        if params is not None:
+            label, state = params.get("labels"), params.get("state", "open")
+            if label in fail_labels:
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+            if label in bad_json_labels:
+                return "not json"
+            return gqlfake.rest_list(args, [_rest(i) for i in by_label.get((label, state), [])])
         if args[:2] != ["issue", "list"]:
             return ""
+        fallbacks.append(list(args))
         label = args[args.index("--label") + 1] if "--label" in args else None
         state = args[args.index("--state") + 1] if "--state" in args else "open"
         if label in fail_labels:
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        if label in bad_json_labels:
-            return "not json"
         return json.dumps(by_label.get((label, state), []))
     run.calls = calls
+    run.fallbacks = fallbacks
     return run
+
+
+def rest_list_calls(run):
+    return [c for c in run.calls if gqlfake.rest_list_params(c) is not None]
 
 
 def _src(run):
@@ -334,8 +358,8 @@ def test_e3_does_not_query_the_same_label_twice_when_two_config_keys_collide():
     cfg = dict(_config(), ledger={"handoff": {"proposed_label": "sdlc:parked"}})
     run = _runner()
     rc.census(".sdlc", cfg, run=run)
-    closed = [c[c.index("--label") + 1] for c in run.calls
-              if "--label" in c and c[c.index("--state") + 1] == "closed"]
+    closed = [gqlfake.rest_list_params(c)["labels"] for c in rest_list_calls(run)
+              if gqlfake.rest_list_params(c).get("labels") and gqlfake.rest_list_params(c)["state"] == "closed"]
     assert len(closed) == len(set(closed)), closed
     assert "sdlc:parked" in closed
 
@@ -414,7 +438,8 @@ def test_census_is_read_only():
                    ("sdlc:needs-triage", "open"): [_issue(2, "sdlc:goal", "sdlc:needs-triage")]})
     result = rc.census(".sdlc", _config(), run=run)
     assert result["issues"].get(rc.NEEDS_TRIAGE) == [2]
-    assert all(c[:2] == ["issue", "list"] for c in run.calls), run.calls
+    assert run.calls and all(gqlfake.rest_list_params(c) is not None for c in run.calls), run.calls
+    assert run.fallbacks == []
 
 
 def test_census_is_a_no_op_outside_github_mode():
@@ -456,7 +481,7 @@ def test_render_distinguishes_clean_from_could_not_read():
 
 def test_cli_census_verb_is_wired_through_main(tmp_path, monkeypatch):
     rc = _mod("reconcile")
-    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if a[:2] == ["issue", "list"] else "")
+    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if gqlfake.rest_list_params(a) is not None else "")
     base = tmp_path / ".sdlc"; base.mkdir()
     (base / "config.json").write_text(json.dumps(_config()))
     assert rc.main(["reconcile.py", "census", str(base)]) == 0
@@ -691,13 +716,17 @@ def test_automatic_tier_respects_the_per_sweep_cap():
 
 
 def _apply_runner(state="CLOSED", labels=("sdlc:goal", "sdlc:in-progress"), swap_fails=False):
-    calls = []
+    calls, unexpected = [], []
 
     def run(args):
         calls.append(list(args))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
+        rest = gqlfake.rest_issue(args, lambda n, f: {"state": state, "labels": [{"name": x} for x in labels]})
+        if rest is not None:        # #895: the fresh re-read is REST first
+            return rest
         if args[:2] == ["issue", "view"]:
+            unexpected.append(list(args))     # the fallback is not expected on a healthy REST read
             return json.dumps({"state": state, "labels": [{"name": n} for n in labels]})
         if args[:2] == ["api", "graphql"]:
             doc = next((a[len("query="):] for a in args if str(a).startswith("query=")), "")
@@ -720,6 +749,7 @@ def _apply_runner(state="CLOSED", labels=("sdlc:goal", "sdlc:in-progress"), swap
                 return json.dumps({"data": {"repository": {"issue": {"id": "I_1"}}}})
         return ""
     run.calls = calls
+    run.unexpected = unexpected      # #895: any `issue view` (the fallback) on a healthy REST read
     return run
 
 
@@ -741,6 +771,10 @@ def test_apply_removes_the_stale_label():
     assert out[0]["result"] == "done"
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "removeLabelsFromLabelable" in docs[0]
+    # #895: the fresh re-read was ONE REST GET of the right issue; no `issue view` fallback
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+        ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.unexpected == []
 
 
 def test_apply_refuses_an_issue_reopened_since_the_census():
@@ -821,7 +855,7 @@ def test_sweep_is_a_no_op_outside_github_mode():
 
 def test_cli_sweep_verb_is_wired_and_dry_runs_by_default(tmp_path, monkeypatch, capsys):
     rc = _mod("reconcile")
-    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if a[:2] == ["issue", "list"] else "")
+    monkeypatch.setattr(rc.sources, "_run_gh", lambda a: "[]" if gqlfake.rest_list_params(a) is not None else "")
     base = tmp_path / ".sdlc"; base.mkdir()
     (base / "config.json").write_text(json.dumps(_config()))
     assert rc.main(["reconcile.py", "sweep", str(base)]) == 0
@@ -943,6 +977,55 @@ def test_apply_proposal_applies_an_add_and_a_remove_in_one_swap():
     assert out[0]["result"] == "done"
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "addLabelsToLabelable" in docs[0] and "removeLabels" in docs[0]
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+        ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.unexpected == []
+
+
+def test_apply_closed_state_and_proposal_skip_a_non_numeric_ref_without_any_read():
+    """#895: `_read_issue` int()s the ref; a malformed one is skipped as 'could not re-read'."""
+    rc = _mod("reconcile"); run = _apply_runner()
+    out = rc.apply_closed_state_actions(_src(run), [{"issue": "not-a-number", "remove": ["x"],
+                                                     "reason": "r"}], apply=True)
+    assert out[0]["result"] == "skipped" and "re-read" in (out[0]["error"] or "")
+    out = rc.apply_proposal(_src(run), {"proposals": [
+        {"issue": "not-a-number", "add": [], "remove": ["x"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    assert run.calls == [] or all(c[0] != "api" or not c[1].startswith("repos/") for c in run.calls)
+    assert run.unexpected == []
+
+
+def test_apply_skips_when_the_fresh_reread_fails_at_both_closed_state_and_proposal_sites():
+    """GhApiError (REST and the one fallback both fail) lands in each site's own `except Exception`."""
+    rc = _mod("reconcile"); inner = _apply_runner()
+
+    def run(args):
+        if gqlfake.rest_issue_target(args) or args[:2] == ["issue", "view"]:
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    out = rc.apply_closed_state_actions(_src(run), _action(), apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    out = rc.apply_proposal(_src(run), {"proposals": [
+        {"issue": "7", "add": [], "remove": ["sdlc:in-progress"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "skipped" and "could not re-read" in out[0]["error"]
+    assert not [a for c in inner.calls for a in c if str(a).startswith("query=mutation")]
+
+
+def test_apply_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    rc = _mod("reconcile"); inner = _apply_runner()
+
+    def run(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    src = _src(run); src._LABEL_SWAP_RETRY_BASE = 0
+    out = rc.apply_proposal(src, {"proposals": [
+        {"issue": "7", "add": [], "remove": ["sdlc:in-progress"], "evidence": "e"}]}, apply=True)
+    assert out[0]["result"] == "done", out
+    assert [c[:3] for c in inner.calls if c[:2] == ["issue", "view"]] == [["issue", "view", "7"]]
+    assert len(inner.unexpected) == 1       # the fallback read, recorded
 
 
 def test_cli_apply_requires_a_plan(capsys):
@@ -1099,17 +1182,24 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
     variation call `apply_open_issue_promotions` directly instead (see the stale-race tests below)."""
     by_label = by_label or {}
     history = history or {}
-    calls = []
+    calls, unexpected = [], []
 
     def run(args):
         calls.append(list(args))
+        params = gqlfake.rest_list_params(args)
+        if params is not None:      # #895 2c: the census list read is REST first
+            return gqlfake.rest_list(args, [_rest(i) for i in by_label.get((params.get("labels"), params.get("state", "open")), [])])
         if args[:2] == ["issue", "list"]:
-            label = args[args.index("--label") + 1] if "--label" in args else None
-            state = args[args.index("--state") + 1] if "--state" in args else "open"
-            return json.dumps(by_label.get((label, state), []))
+            unexpected.append(list(args))
+            return json.dumps(by_label.get((None, "open"), []))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
+        rest = gqlfake.rest_issue(args, lambda n, f: {"state": fresh_state,
+                                                      "labels": [{"name": x} for x in fresh_labels]})
+        if rest is not None:        # #895: the fresh re-read is REST first
+            return rest
         if args[:2] == ["issue", "view"]:
+            unexpected.append(list(args))
             return json.dumps({"state": fresh_state, "labels": [{"name": n} for n in fresh_labels]})
         if args[:2] == ["api", "graphql"]:
             doc = next((a[len("query="):] for a in args if str(a).startswith("query=")), "")
@@ -1144,6 +1234,7 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
                 return json.dumps({"data": {"repository": {"issue": {"id": "I_1"}}}})
         return ""
     run.calls = calls
+    run.unexpected = unexpected
     return run
 
 
@@ -1464,6 +1555,8 @@ def test_open_issue_promotion_aborts_if_the_issue_closed_since_the_census():
     out = rc.apply_open_issue_promotions(src, [stale_proposal], primary, src.goal_label, apply=True)
     assert out[0]["result"] == "skipped" and "no longer open" in out[0]["error"]
     assert _mutation_docs(run) == []
+    assert run.unexpected == []              # #895: REST-first re-read, no `issue view`
+    assert ["api", "repos/acme/widget/issues/226", "--method", "GET"] in run.calls
 
 
 def test_open_issue_promotion_skips_when_the_fresh_reread_fails():
@@ -1474,8 +1567,8 @@ def test_open_issue_promotion_skips_when_the_fresh_reread_fails():
                       "evidence": "e", "winner": "sdlc:goal"}
 
     def run(args):
-        if args[:2] == ["issue", "view"]:
-            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        if args[:2] == ["issue", "view"] or gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")      # REST AND the one fallback both fail
         return ""
     src = _mod("reconcile").sources.GitHubSource(_config(), run=run)
     primary = rc._primary_labels(src, _config())
@@ -1540,3 +1633,78 @@ def test_recompute_winner_treats_a_fresh_ambiguous_result_as_not_goal_label():
     primary = ("sdlc:goal", "sdlc:parked", "sdlc:needs-confirmation")
     events = [_ev(1000, "add", "sdlc:goal"), _ev(1004, "add", "sdlc:parked")]   # 4s apart
     assert rc._recompute_winner(rc.MULTI_LABEL, primary, set(), events) is None
+
+
+# --- #895 slice 2c: the census list read is REST first (gh_api.list_issues_gh) -------------------
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def gh_env(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+
+def test_census_requests_rest_newest_first_and_never_falls_back_when_healthy(gh_env):
+    rc = _mod("reconcile")
+    run = _runner({("sdlc:goal", "open"): [_issue(2, "sdlc:goal"), _issue(1, "sdlc:goal")]})
+    result = rc.census(".sdlc", _config(), run=run)
+    assert result["complete"] is True and run.fallbacks == []
+    p = gqlfake.rest_list_params(next(c for c in rest_list_calls(run) if "labels=sdlc:goal" in c))
+    assert p["sort"] == "created" and p["direction"] == "desc" and p["per_page"] == "100"
+
+
+def test_census_fail_labels_exercises_the_one_fallback_then_reports_incomplete(gh_env):
+    """A 502 is fallback-class: the REST read is followed by EXACTLY ONE `issue list`, which also fails,
+    so the label reads `([], False, False)` and the census is incomplete (not silently empty)."""
+    rc = _mod("reconcile")
+    run = _runner(fail_labels={"sdlc:parked"})
+    result = rc.census(".sdlc", _config(), run=run)
+    assert result["complete"] is False and result["failed"] and any("sdlc:parked" in f for f in result["failed"])
+    parked_fb = [c for c in run.fallbacks if "sdlc:parked" in c]
+    assert len(parked_fb) == len([c for c in rest_list_calls(run) if "labels=sdlc:parked" in c]) >= 1
+    assert all(len([a for a in c if a == "sdlc:parked"]) == 1 for c in parked_fb)
+
+
+def test_census_malformed_json_never_falls_back(gh_env):
+    rc = _mod("reconcile")
+    run = _runner(bad_json_labels={"sdlc:goal"})
+    assert rc.census(".sdlc", _config(), run=run)["complete"] is False
+    assert not [c for c in run.fallbacks if "sdlc:goal" in c]
+
+
+def test_census_keeps_closed_at_and_state_through_the_adapter(gh_env):
+    rc = _mod("reconcile")
+    row = _closed(7, "sdlc:goal")
+    run = _runner({("sdlc:goal", "closed"): [row]})
+    issues, ok, truncated = rc._fetch_by_label(_src(run), "sdlc:goal", "closed")
+    assert ok and not truncated and issues[0]["state"] == "CLOSED" and issues[0]["closedAt"] == row["closedAt"]
+
+
+def test_census_in_a_cloud_session_does_not_fall_back(monkeypatch):
+    rc = _mod("reconcile")
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    run = _runner(fail_labels={"sdlc:goal"})
+    assert rc._fetch_by_label(_src(run), "sdlc:goal") == ([], False, False)
+    assert run.fallbacks == []
+
+
+def test_census_non_list_page_is_a_failed_read_without_fallback(gh_env):
+    rc = _mod("reconcile")
+    run = _runner()
+    base = run
+    def dict_run(args):
+        return '{"oops": 1}' if gqlfake.rest_list_params(args) is not None else base(args)
+    dict_run.calls = base.calls
+    assert rc._fetch_by_label(_src(dict_run), "sdlc:goal") == ([], False, False)
+    assert base.fallbacks == []
+
+
+def test_one_failed_label_read_calls_the_fallback_argv_exactly_once(gh_env):
+    rc = _mod("reconcile")
+    run = _runner(fail_labels={"sdlc:parked"})
+    assert rc._fetch_by_label(_src(run), "sdlc:parked") == ([], False, False)
+    assert len(rest_list_calls(run)) == 1
+    assert run.fallbacks == [["issue", "list", "--repo", "acme/widget", "--label", "sdlc:parked",
+                              "--state", "open", "--json", "number,labels,state,closedAt", "--limit", "5000"]]

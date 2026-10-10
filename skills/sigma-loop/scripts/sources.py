@@ -1318,6 +1318,79 @@ class GitHubSource:
         return gh_api.read_issue(self._run, int(str(goal).lstrip("#")), fields, self.repo or None, gql_run=self._run,
                                  sdlc_dir=self.sdlc_dir, comment_limit=comment_limit)
 
+    def _list_issues(self, fields, labels=(), state="open", cap=None, sort="created", direction="desc"):
+        """#895 slice 2c: issues in `gh issue list --json <fields>` shape, REST first through
+        `gh_api.list_issues_gh`, with at most ONE `gh issue list` fallback (rate limit / 5xx / transport,
+        never in a cloud session). Both calls go through `self._run`. Newest first unless `sort` is
+        `updated`; the breaker/log are shared with `_read_issue` (`self.sdlc_dir`). Raises GhApiError."""
+        return gh_api.list_issues_gh(self._run, fields, repo=self.repo or None, labels=labels, state=state,
+                                     cap=self._BOARD_ITEM_LIMIT if cap is None else cap, sort=sort,
+                                     direction=direction, gql_run=self._run, fetch=fetch_issues_rest,
+                                     sdlc_dir=self.sdlc_dir)
+
+    # ---- #895 slice 3a: issue WRITES, REST first through `gh_api` (callers stop touching `_run`) ------
+    # Each wrapper sends REST through `self._run` and, per `gh_api.WRITE_POLICY`, at most ONE `gh issue ...`
+    # fallback through the same `self._run`; failures raise GhApiError (an Exception). `LocalSource` has
+    # none of these, so callers guard with `hasattr(source, "_issue_comment")` etc.
+
+    def _write_kw(self):
+        return {"repo": self.repo or None, "fallback_run": self._run, "sdlc_dir": self.sdlc_dir}
+
+    @staticmethod
+    def _n(goal):
+        return int(str(goal).lstrip("#"))
+
+    def _require_feature_labels(self, names):
+        """Layer 2 of the feature-label refusal (#1468): a `feature:*` label may be ATTACHED only if it
+        already exists, because REST would otherwise mint it. One REST GET per feature-prefixed name;
+        an absent label, or any failed lookup (fail closed), raises RuntimeError with `_run`'s refusal
+        wording BEFORE any write. Returns True iff a feature label was present and verified."""
+        verified = False
+        for name in names:
+            if not feature_labels.is_feature_label(name):
+                continue
+            try:
+                ok = gh_api.label_exists(self._run, name, self.repo or None)
+                why = ""
+            except Exception as exc:          # noqa: BLE001 - fail closed on ANY lookup failure
+                ok, why = False, " (could not verify it exists: %s)" % (getattr(exc, "hint", None) or exc)
+            if not ok:
+                raise RuntimeError(
+                    "sigma: refusing to create the label %r — Sigma attaches an existing feature label "
+                    "but never creates one; a human creates the first label of a unit "
+                    "(see docs/label-model.md §5)%s" % (str(name), why))
+            verified = True
+        return verified
+
+    def _issue_comment(self, number, body):
+        return gh_api.comment_issue(self._run, self._n(number), body, **self._write_kw())
+
+    def _issue_edit_body(self, number, body):
+        return gh_api.edit_issue(self._run, self._n(number), body=body, **self._write_kw())
+
+    def _issue_add_labels(self, number, labels):
+        labels = [labels] if isinstance(labels, str) else list(labels)
+        verified = self._require_feature_labels(labels)
+        return gh_api.add_labels(self._run, self._n(number), labels, feature_labels_exist=verified,
+                                 **self._write_kw())
+
+    def _issue_remove_label(self, number, label):
+        return gh_api.remove_label(self._run, self._n(number), label, **self._write_kw())
+
+    def _issue_add_assignees(self, number, assignees):
+        assignees = [assignees] if isinstance(assignees, str) else list(assignees)
+        return gh_api.add_assignees(self._run, self._n(number), assignees, **self._write_kw())
+
+    def _issue_create(self, title, body, labels=()):
+        """-> the REST issue dict, or the URL string if the ONE `gh issue create` fallback ran."""
+        labels = list(labels)
+        verified = self._require_feature_labels(labels)
+        return gh_api.create_issue(self._run, title, body, labels, feature_labels_exist=verified,
+                                   **self._write_kw())
+
+    def _issue_close(self, number, reason=None):
+        return gh_api.close_issue(self._run, self._n(number), reason=reason, **self._write_kw())
+
     # --- #1391 step 1: the atomic-ish label swap primitive ---------------------------------------
     # Every lifecycle transition today spends 3-5 SEPARATE `gh issue edit` calls on one issue's label
     # set, each in its own `try/except: pass` (see `_offboard` below). Measured: that is a 2^3 lattice
@@ -2878,7 +2951,7 @@ class GitHubSource:
                             # goal that is still claimed/in-progress; leave the issue untouched
         self._ensure_labels()
         try:
-            self._run(["issue", "edit", goal, *self._repo_args(), "--remove-label", self.in_progress_label])
+            self._issue_remove_label(goal, self.in_progress_label)       # REST first (#895 slice 3a)
         except Exception as exc:
             # best-effort visibility label; a transient gh error must not block the release -- but
             # it must not vanish either (2026-09-28, see docstring).
@@ -2897,7 +2970,7 @@ class GitHubSource:
         if reason:
             body += ": " + reason
         try:
-            self._run(["issue", "comment", goal, *self._repo_args(), "--body", body])
+            self._issue_comment(goal, body)                              # REST first (#895 slice 3a)
         except Exception as exc:
             # best-effort audit trail; a transient gh error must not block the release -- but it
             # must not vanish either (2026-09-28, see docstring).
@@ -2991,8 +3064,11 @@ class GitHubSource:
             except Exception:
                 pass
         else:
-            self._run(["issue", "close", goal, *self._repo_args(),
-                       "--comment", "Completed by the Sigma SDLC loop."])
+            # #895 slice 3a: REST, two mutations as `gh issue close --comment` was: the comment first
+            # (non-idempotent policy), then the close (idempotent policy). Both RAISE; a comment that
+            # landed with a close that failed leaves the issue OPEN and run_loop parks it, as before.
+            self._issue_comment(goal, "Completed by the Sigma SDLC loop.")
+            self._issue_close(goal, reason="completed")
         # #1391 step 2: routed through the swap primitive for its retries. Measured: this single
         # swallowed write durably failed on 19-27 of 333 post-fix completions (5.7-8.1%), and
         # COMPLETE is the transition where that hurts most -- it is terminal, so it never runs again
@@ -3689,7 +3765,7 @@ class GitHubSource:
         # raises KeyError BEFORE `issue edit`, so a malformed read can never blank the body.
         body = self._read_issue(goal, ["body"])["body"]
         new_body = (body or "").rstrip() + "\n\n" + marker + "\n"
-        self._run(["issue", "edit", goal, *self._repo_args(), "--body", new_body])
+        self._issue_edit_body(goal, new_body)           # REST first (#895 slice 3a); RAISES as before
 
     def issue_url(self, goal):
         return self._issue_url(goal)
@@ -3736,19 +3812,18 @@ class GitHubSource:
                 self._run(["label", "create", label, *self._repo_args(), "--color", "d4c5f9"])
             except Exception:
                 pass                       # a missing label must not stop the hand-off
-        args = ["issue", "create", *self._repo_args(), "--title", title, "--body", body]
-        if goal_label:
-            args += ["--label", self.goal_label]
-        for label in labels:
-            args += ["--label", label]
+        # #895 slice 3a: REST `POST /issues` first (via `_issue_create`); a `feature:*` label is refused
+        # unless it already exists (layer 2), and a create that fails ambiguously (timeout, 5xx) is
+        # NEVER replayed -- one create call, the error raises.
+        issue_labels = ([self.goal_label] if goal_label else []) + list(labels)
 
         self.last_assignee_applied = False
-        number = self._create_issue(args)   # always unassigned -- see docstring
+        number = self._create_issue(title, body, issue_labels)   # always unassigned -- see docstring
         if number is None:
             return None
         if assignee:
             try:
-                self._run(["issue", "edit", number, *self._repo_args(), "--add-assignee", assignee])
+                self._issue_add_assignees(number, assignee)       # REST; verifies the login was kept
                 self.last_assignee_applied = True
             except Exception as exc:
                 # .hint (see _run_gh) is the short reason alone; str(exc) is the fallback for an
@@ -3758,7 +3833,7 @@ class GitHubSource:
                         "GitHub issues can't be assigned to a team; if that's not the cause here, the "
                         "account may not be a repo collaborator. Needs manual routing to the right owner.")
                 try:
-                    self._run(["issue", "comment", number, *self._repo_args(), "--body", note])
+                    self._issue_comment(number, note)
                 except Exception:
                     pass   # best-effort; the issue existing at all is what matters
 
@@ -3769,8 +3844,15 @@ class GitHubSource:
         self._apply_custom_fields(number, labels=labels)
         return number
 
-    def _create_issue(self, args):
-        out = (self._run(args) or "").strip().splitlines()
+    def _create_issue(self, title, body, labels):
+        """-> the new issue number as a string, or None when none came back. REST gives a dict
+        (`str(resp["number"])`, None if absent or not an int); the ONE `gh issue create` fallback (a
+        primary rate limit only) gives a URL whose last path segment is parsed as before. A failure RAISES."""
+        resp = self._issue_create(title, body, labels)
+        if isinstance(resp, dict):
+            n = resp.get("number")
+            return str(n) if isinstance(n, int) and not isinstance(n, bool) else None
+        out = (resp or "").strip().splitlines()
         number = out[-1].rstrip("/").rsplit("/", 1)[-1] if out else ""
         return number if number.isdigit() else None
 
@@ -4795,13 +4877,21 @@ class GitHubSource:
         (field wins a field/label disagreement) so `_promote_blockers` (#900) can write through the
         exact same mechanism instead of a second, parallel one — never a behavior change for
         `_mirror_priority` itself, which now just calls straight through to this."""
-        args = ["issue", "edit", str(n), *self._repo_args(),
-                "--add-label", self.priority_prefix + canon]
-        for name in [(l.get("name") if isinstance(l, dict) else str(l or ""))
-                     for l in (labels or [])]:
-            if name.startswith(self.priority_prefix) and name != self.priority_prefix + canon:
-                args += ["--remove-label", name]
-        self._run(args)
+        # #895 slice 3a: REST, SEQUENTIAL and still NOT atomic. The add goes FIRST, then one DELETE per
+        # stale priority label (it was four unordered parallel requests inside one `gh issue edit`). A
+        # partial failure leaves two priority labels, visible. Self-heal is NARROW (`_priority_name`
+        # takes the MIN rank): if the new label is LOWER priority than the stale one (a demotion) the
+        # stale label still wins, the disagreement persists and the next pass retries the remove; if it
+        # OUTRANKS the stale one (a promotion) and the remove fails, the effective priority is already
+        # right, no disagreement is detected and the stale lower label is never removed by the loop.
+        # `PUT /labels` is deliberately NOT used (replace-set lost update). A `priority:P*` label that is
+        # missing from the repo is MINTED by REST (documented GitHub behaviour, UNMEASURED here).
+        stale = [name for name in [(l.get("name") if isinstance(l, dict) else str(l or ""))
+                                   for l in (labels or [])]
+                 if name.startswith(self.priority_prefix) and name != self.priority_prefix + canon]
+        self._issue_add_labels(n, [self.priority_prefix + canon])
+        for name in stale:
+            self._issue_remove_label(n, name)
 
     def _write_priority_field(self, n, rank, item_id):
         """Set the board's Priority field for issue `n`'s card to `rank`'s canonical `P<n>` option,

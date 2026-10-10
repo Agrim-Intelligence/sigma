@@ -399,10 +399,10 @@ def _comment(source, number, text):
     """Best-effort follow-up comment carrying the same block as the body -- matches `unpark._comment`
     exactly. Never lets a comment failure erase a dossier issue that was already created; the body
     already carries the identical record, so nothing is actually lost."""
-    if not hasattr(source, "_run") or not hasattr(source, "_repo_args"):
-        return                                        # LocalSource has neither -- nothing to post
+    if not hasattr(source, "_issue_comment"):
+        return                                        # LocalSource has none -- nothing to post
     try:
-        source._run(["issue", "comment", str(number), *source._repo_args(), "--body", text])
+        source._issue_comment(number, text)           # REST first through gh_api (#895 slice 3a)
     except Exception:                                  # noqa: BLE001 - audit trail is best-effort
         pass
 

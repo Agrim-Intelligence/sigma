@@ -14,8 +14,11 @@ claim about what was executed, and only the argv can answer it."""
 import importlib.util
 import json
 import pathlib
+import re
 
 import pytest
+
+import gqlfake
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
@@ -72,6 +75,12 @@ class Gh:
         for needle in self.fail:
             if needle in joined:
                 raise RuntimeError("gh: HTTP 404: Not Found (simulated) for %s" % needle)
+        t = gqlfake.rest_write_target(args)
+        if t is not None and t[1] != "user":
+            # #895 slice 3a: REST-first issue writes; re-recorded as the legacy `issue ...` call, and a
+            # canned `issue create` URL reply supplies the created number.
+            num = re.search(r"/issues/(\d+)", self.replies.get("issue create", ""))
+            return gqlfake.rest_write(args, calls=self.calls, create_number=num.group(1) if num else None)
         for needle, reply in self.replies.items():
             if needle in joined:
                 return reply

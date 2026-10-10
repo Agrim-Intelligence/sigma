@@ -11,6 +11,64 @@ All notable changes to Sigma are recorded here, newest first.
   refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
   fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
   so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+- **Seventeen issue WRITE sites go REST first (#895, slice 3a; refs #801).** Comment, create, edit body, close,
+  add/remove label and add-assignee now call new `gh_api` helpers (`comment_issue`, `create_issue`,
+  `edit_issue`, `close_issue`, `add_labels`, `remove_label`, `add_assignees`) through `GitHubSource._issue_*`
+  wrappers. Sites: `dossier`, `blockers`, `promote`, `unpark` (2), `assign`, `triage` (3) and in `sources.py`
+  `release` (2), `complete`, `append_to_body`, `create_dependency` (3) and the priority-label mirror (add plus removes); each
+  keeps its failure arm, return value and message. Fallback policy, one table in code (`gh_api.WRITE_POLICY`):
+  a REST write falls back to the matching `gh issue ...` at most once and is never retried; a primary rate
+  limit falls back for any write, a 5xx only for idempotent writes (add/remove label, close, edit body,
+  add-assignee), and a timeout or transport failure after send, a 5xx on a comment or create, 401/404/422,
+  permission 403, a secondary limit, a proxy block, a refusal and anything unparsed never do; none in a cloud
+  session or with `SIGMA_GH_GRAPHQL=off`. Writes are classified from the status and gh stderr only, never from
+  the message that embeds the body, and use the shared fallback log but never the read breaker. `feature:*`
+  labels are refused before any create or add-label unless they exist (a REST lookup that fails also
+  refuses). Label minting divergence, accepted and pinned: REST can create a missing non-feature label
+  (`priority:P*`, triage's arbitrary add-label) where `gh` failed. `@me` assignees resolve through one
+  `GET user`; if that is refused (403), nothing is sent and `gh` is not tried; team slugs and silently
+  dropped assignees are refused. `remove_label` still ignores a 404, now matched on the status alone (a
+  vanished issue is swallowed like an absent label). NOT atomic: the priority-label mirror is now add then
+  one remove per stale label, sequentially (was unordered parallel); a failed remove leaves two priority labels,
+  and the loop retries it after a demotion but never removes the stale lower label after a promotion.
+  Lifecycle label swaps are unchanged (still one GraphQL document, so still unavailable in a cloud session).
+  The direct-`gh` ratchet drops from 74 to 57 sites (measured by `scan()`); `docs/launch/write-surface.json`
+  was regenerated, and its scanner cannot see a write made through a `gh_api` helper. Still open on #895:
+  `note()` (its owner-accepted duplicate-on-retry ruling conflicts with the no-retry rule), every
+  `label create`, lifecycle swaps, board and PR writes. Verified with injected-runner tests only.
+  Unmeasured: REST label auto-create; that a primary rate-limit rejection never partially executes a write;
+  exact 404 bodies; secondary-limit wording; assignee drop behaviour and `GET user` cost; per-write request
+  counts and latency against `gh issue ...`; a real cloud session.
+- **Ten `gh issue list` reads go REST first (#895, slice 2c; refs #801).** New `gh_api.list_issues_gh`: a
+  paged REST list (newest created first, like `gh issue list`), then at most one `gh issue list` fallback
+  on rate limit, 5xx or transport errors, never in a cloud session, never on client errors or a bad page
+  (empty, malformed or non-list output is an error, not an empty board). Sites: `auto_unpark` (2),
+  `reconcile` census, `assign._active_members`, `doctor` (6, plus its census read); each keeps its fail-open
+  arm, and a failed `auto_unpark` read still can never remove a label. Breaker and log are shared with
+  `read_issue` when an `sdlc_dir` exists (so a rate-limited census can open the breaker for single-issue reads); doctor stays read-only and writes neither. The direct-`gh` ratchet
+  drops from 84 to 74 sites (measured by `scan()`). Verified with injected-runner tests only. Unmeasured: a
+  real cloud session; a 5000-cap board read is up to 50 sequential REST requests per read and per
+  reconcile census tick (derived, not measured, against `SIGMA_WATCH_CALL_TIMEOUT` 120 s); doctor latency
+  (~45 s per site, ~135 s multi-state, derived from the 15 s timeout); gh's newest-created default order
+  (assumed, not re-verified); GraphQL points saved (#1829's figure, not re-measured).
+- **Regression record builder (#874, slice 1 of #870).** `python3 evals/regression/record.py build <run_dir>` writes one
+  `sigma.regression-run/v1` JSON record from a run's plan, research, plan-review verdict, verify state, journal, action log,
+  review evidence, commit order and per-phase tokens. Action-log rows are filtered by the plugin's own `actionlog.INTERNAL_KINDS`
+  (imported, never copied); each stream carries `source` and `present`, and a run directory with absent streams still builds.
+  Phase ends are recorded as `call-existence` evidence only, and the record says so. Nothing is posted or run against a
+  model; read cost is linear in journal and log size and was not benchmarked.
+- **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
+  `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
+  (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`
+  and `title`, and reports a merged PR (REST `closed` + `pull_request.merged_at`) as `MERGED`, so a
+  merged-PR blocker still reads resolved. `triage._resolve_missing_picks` and `brainstorm` have no
+  `sdlc_dir`, so they write no breaker or log. The direct-`gh` ratchet drops from 94 to 84 sites
+  (measured by `scan()`). Live read on 2026-10-10 of merged PR #928: `state closed`, `state_reason null`,
+  `pull_request.merged_at 2026-10-09T17:46:12Z`. Verified with injected-runner tests. Unmeasured: a real
+  cloud session, bot-author spelling beyond one public sample, call counts at scale, `unpark` latency on a
+  comment-heavy issue, and an old closed issue with a null `state_reason`.
+
+- **`python3 evals/golden/verify.py` (#881, slice 1 of #873).** Checks every golden task under `evals/golden/` (hashes, origin, hidden tests red on the start tree and green on the reference, reference diff against `allowed_paths.json`, optional naive patch). No tasks ship yet: with none it exits 0 and says `nothing verified`. CI runs it after the quality gate.
 
 ## 1.0.5 — 2026-10-09 — REST-first issue reads, a verify fix, and faster CI
 

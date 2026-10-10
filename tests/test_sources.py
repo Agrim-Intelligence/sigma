@@ -31,7 +31,15 @@ def _issues_verb(a):
         return "list"
     if len(a) > 1 and a[0] == "api" and str(a[1]).startswith("repos/") and str(a[1]).endswith("/issues"):
         return "list"
+    legacy = gqlfake.legacy_of(a)       # #895 slice 3a: a REST issue write stands for its legacy verb
+    if legacy:
+        return legacy[0][1]
     return a[1] if len(a) > 1 else a[0]
+
+
+def _legacy(a):
+    """Flattened legacy-shaped argv of a REST issue write, so a fake can keep gating on `--remove-label`."""
+    return [x for c in gqlfake.legacy_of(a) for x in c]
 
 
 def _rest_labels(a):
@@ -56,6 +64,8 @@ def _recording_runner(by_subcommand=None):
         gql = _gql_swap(args, labels=labels, calls=calls, repo_args=_repo_flag(args, calls))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):  # #895 slice 3a: REST writes, re-recorded legacy-shaped
+            return gqlfake.rest_write(args, calls=calls, repo_args=_repo_flag(args, calls) or ("--repo", "o/r"))
         calls.append(list(args))
         if "rest" in by_subcommand:      # #895: a gh-shape dict answering gh_api.read_issue's REST GETs
             rest = gqlfake.rest_issue(args, lambda n, f: by_subcommand["rest"])
@@ -1963,6 +1973,8 @@ def test_complete_removes_in_progress_label():
         gql = _gql_swap(a, calls=calls)            # #1391 step 2: transitions swap via graphql now
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(a):
+            return gqlfake.rest_write(a, calls=calls)
         calls.append(list(a))
         return ""
 
@@ -2328,9 +2340,9 @@ def test_github_release_survives_a_raising_label_removal(capsys):
 
     def run(a):
         verb = _issues_verb(a)
-        if verb == "edit" and "--remove-label" in a:
+        if verb == "edit" and "--remove-label" in _legacy(a):
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     result = gh.release("42", "skipped this run")   # must not raise
@@ -2356,7 +2368,7 @@ def test_github_release_survives_a_raising_comment(capsys):
         verb = _issues_verb(a)
         if verb == "comment":
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     result = gh.release("42", "skipped this run")   # must not raise
@@ -2392,10 +2404,10 @@ def test_github_release_warnings_reset_on_each_call():
 
     def run(a):
         verb = _issues_verb(a)
-        if verb == "edit" and "--remove-label" in a and calls["n"] == 0:
+        if verb == "edit" and "--remove-label" in _legacy(a) and calls["n"] == 0:
             calls["n"] += 1
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.release("42", "first attempt")
@@ -2417,9 +2429,9 @@ def test_github_release_no_op_returns_false_and_clears_an_earlier_release_warnin
         rest = gqlfake.rest_issue(a, lambda n, f: {"state": "CLOSED" if state["closed"] else "OPEN", "labels": []})
         if rest is not None:
             return rest
-        if verb == "edit" and "--remove-label" in a:
+        if verb == "edit" and "--remove-label" in _legacy(a):
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     assert gh.release("42", "first, label removal fails") is True
@@ -2442,9 +2454,9 @@ def test_github_release_records_both_failures_in_order_and_still_returns_true(ca
 
     def run(a):
         verb = _issues_verb(a)
-        if (verb == "edit" and "--remove-label" in a) or verb == "comment":
+        if (verb == "edit" and "--remove-label" in _legacy(a)) or verb == "comment":
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     assert gh.release("42", "skipped this run") is True
@@ -2485,7 +2497,7 @@ def test_github_release_warning_is_one_capped_line_when_the_error_has_no_hint(ca
     def run(a):
         if _issues_verb(a) == "comment":
             raise RuntimeError(long_text)
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     assert gh.release("42", "skipped") is True
@@ -2503,7 +2515,7 @@ def test_github_release_warnings_returns_a_copy():
     def run(a):
         if _issues_verb(a) == "comment":
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
-        return ""
+        return gqlfake.rest_write(a) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.release("42", "skipped")
@@ -2600,9 +2612,10 @@ def test_github_release_falls_back_to_releasing_when_the_state_probe_fails(capsy
 # 0. complete() now probes the issue's state first and routes the comment through whichever call
 # will actually post it.
 
-def test_complete_still_uses_combined_close_when_issue_open():
-    """When the state-probe finds the issue still OPEN, complete() keeps today's single combined
-    'issue close --comment' call -- no standalone fallback needed."""
+def test_complete_comments_then_closes():
+    """#895 slice 3a: when the state-probe finds the issue still OPEN, complete() posts the audit comment
+    over REST and THEN closes it (`state_reason=completed`) -- two mutations, comment first, as
+    `gh issue close --comment` was; no combined close call exists any more."""
     src = _mod("sources")
     run = _recording_runner({"rest": {"state": "OPEN"}})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
@@ -2610,9 +2623,10 @@ def test_complete_still_uses_combined_close_when_issue_open():
 
     close_calls = [c for c in run.calls if len(c) > 1 and c[1] == "close"]
     comment_calls = [c for c in run.calls if len(c) > 1 and c[1] == "comment"]
-    assert len(close_calls) == 1, "combined issue close call missing"
-    assert "--comment" in close_calls[0] and "Completed by the Sigma SDLC loop." in close_calls[0]
-    assert comment_calls == [], "no standalone issue comment call should happen when the issue was open"
+    assert len(close_calls) == 1 and "--reason" in close_calls[0] and "completed" in close_calls[0]
+    assert len(comment_calls) == 1 and "Completed by the Sigma SDLC loop." in comment_calls[0]
+    assert run.calls.index(comment_calls[0]) < run.calls.index(close_calls[0])
+    assert not any(c[:2] == ["issue", "close"] and "--comment" in c for c in run.calls)
 
 
 def test_complete_posts_comment_via_fallback_when_already_closed():
@@ -2725,11 +2739,9 @@ def test_park_falls_back_to_rest_when_the_comment_hits_exhausted_graphql():
     assert "body=Parked by Sigma — needs human review: deploy gate" in rest_call
 
 
-def test_complete_falls_back_to_combined_call_when_state_probe_fails():
-    """If the state probe itself fails (transient gh error), complete() must fall through to
-    today's unchanged combined 'issue close --comment' call -- never attempt the standalone
-    comment path on a state it could not actually determine, and never raise (the probe is a new
-    read and must not make complete() any more fragile than it was before this fix)."""
+def test_complete_still_comments_then_closes_when_state_probe_fails():
+    """If the state probe itself fails (transient gh error), complete() falls through to the comment-then-
+    close path -- never the standalone-comment-only path -- and never raises."""
     src = _mod("sources")
     calls = []
 
@@ -2737,16 +2749,34 @@ def test_complete_falls_back_to_combined_call_when_state_probe_fails():
         calls.append(list(a))
         if gqlfake.is_issue_read(a):      # #895: the REST probe AND its one fallback both fail
             raise RuntimeError("gh: HTTP 503 Service Unavailable")
-        return ""
+        return gqlfake.rest_write(a, calls=calls) or ""
 
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.complete("42")   # must not raise
 
-    close_calls = [c for c in calls if len(c) > 1 and c[1] == "close"]
-    comment_calls = [c for c in calls if len(c) > 1 and c[1] == "comment"]
-    assert len(close_calls) == 1, "combined issue close call missing on probe failure"
-    assert "--comment" in close_calls[0]
-    assert comment_calls == [], "no standalone issue comment call should be attempted when the probe itself failed"
+    assert len([c for c in calls if c[:2] == ["issue", "close"]]) == 1
+    assert len([c for c in calls if c[:2] == ["issue", "comment"]]) == 1
+
+
+def test_complete_raises_and_leaves_the_issue_open_when_the_close_fails_after_the_comment():
+    """RAISE contract: the comment landed, the close PATCH failed -> complete() raises (run_loop parks)."""
+    src = _mod("sources")
+    calls = []
+
+    def run(a):
+        if gqlfake.is_issue_read(a):
+            return gqlfake.rest_issue(a, lambda n, f: {"state": "OPEN"}) or ""
+        if gqlfake.is_issue_write(a) and "PATCH" in a:
+            e = RuntimeError("gh: HTTP 422")
+            e.hint = "gh: Unprocessable (HTTP 422)"
+            raise e
+        return gqlfake.rest_write(a, calls=calls) or ""
+
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
+    import pytest
+    with pytest.raises(Exception):
+        gh.complete("42")
+    assert [c[:2] for c in calls] == [["issue", "comment"]]
 
 
 # --- #505 + #506 combined: the already-closed fallback branch (#505) must still remove the
@@ -4654,6 +4684,8 @@ def _rest_429_then_view(view_out):
         gql = _gql_swap(a, calls=calls)
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(a):          # #895 slice 3a: REST writes answered by the shim
+            return gqlfake.rest_write(a, calls=calls)
         calls.append(list(a))
         if gqlfake.rest_issue_target(a) is not None:
             exc = RuntimeError("gh api failed")
@@ -4772,3 +4804,157 @@ def test_fetch_comments_strict_raises_on_malformed_rest_page():
     with pytest.raises(Exception):
         _gh(run).fetch_comments_strict("42")
     assert not any(c[:2] == ["issue", "view"] for c in run.calls)
+
+
+# ---------------------------------------------------------------- #895 slice 3a: GitHubSource WRITE wrappers
+
+def _write_source(missing=(), fail=None, assignable=None, create_number=None):
+    """A real GitHubSource over a recording runner that answers REST writes via `gqlfake.rest_write`.
+    `calls` is every argv the runner saw; `legacy` the legacy-shaped `issue ...` records the shim makes."""
+    src = _mod("sources")
+    calls, legacy = [], []
+
+    def run(args):
+        calls.append(list(args))
+        if fail is not None and fail(args):
+            e = RuntimeError("gh: boom (HTTP 500)")
+            e.hint = "gh: boom (HTTP 500)"
+            raise e
+        out = gqlfake.rest_write(args, calls=legacy, missing_labels=missing, assignable=assignable,
+                                 create_number=create_number)
+        assert out is not None, "unanswered argv (the shim must not make a write vacuous): %r" % (args,)
+        return out
+
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+    return gh, calls, legacy
+
+
+def _posts(calls):
+    return [c for c in calls if "--method" in c and c[c.index("--method") + 1] in ("POST", "PATCH", "DELETE")]
+
+
+def test_issue_write_wrappers_go_rest_with_the_sources_repo_and_record_legacy_calls():
+    gh, calls, legacy = _write_source()
+    gh._issue_comment("#7", "hi")
+    gh._issue_edit_body(7, "new body")
+    gh._issue_add_labels(7, ["area:x"])
+    gh._issue_remove_label(7, "sdlc:in-progress")
+    gh._issue_add_assignees(7, "alice")
+    gh._issue_close(7, reason="completed")
+    assert all(c[0] == "api" and c[1].startswith("repos/o/r/") for c in calls)
+    assert legacy == [
+        ["issue", "comment", "7", "--repo", "o/r", "--body", "hi"],
+        ["issue", "edit", "7", "--repo", "o/r", "--body", "new body"],
+        ["issue", "edit", "7", "--repo", "o/r", "--add-label", "area:x"],
+        ["issue", "edit", "7", "--repo", "o/r", "--remove-label", "sdlc:in-progress"],
+        ["issue", "edit", "7", "--repo", "o/r", "--add-assignee", "alice"],
+        ["issue", "close", "7", "--repo", "o/r", "--reason", "completed"]]
+
+
+def test_issue_create_returns_the_rest_dict_and_non_feature_labels_do_no_lookup():
+    gh, calls, legacy = _write_source(create_number=42)
+    out = gh._issue_create("T", "B", ["sdlc:goal", "priority:P1"])
+    assert out["number"] == 42
+    assert legacy == [["issue", "create", "--repo", "o/r", "--title", "T", "--body", "B", "--label", "sdlc:goal",
+                       "--label", "priority:P1"]]
+    assert len(calls) == 1 and "labels/" not in calls[0][1]          # non-feature -> no GET
+
+
+def test_issue_create_refuses_absent_feature_label_with_zero_writes():
+    gh, calls, legacy = _write_source(missing={"feature:x"})
+    with pytest.raises(RuntimeError, match="refusing to create the label 'feature:x'"):
+        gh._issue_create("T", "B", ["sdlc:goal", "feature:x"])
+    assert _posts(calls) == [] and legacy == []
+    assert calls == [["api", "repos/o/r/labels/feature%3Ax", "--method", "GET"]]
+
+
+def test_issue_add_labels_refuses_absent_feature_label_with_zero_writes():
+    """refinement d: layer 2 on the ADD-LABEL path (triage `add-label feature:x`), not only create."""
+    gh, calls, legacy = _write_source(missing={"feature:x", "Feature:Voice"})
+    with pytest.raises(RuntimeError, match="refusing to create the label"):
+        gh._issue_add_labels(7, "feature:x")
+    assert _posts(calls) == [] and legacy == []
+    with pytest.raises(RuntimeError, match="refusing to create the label"):
+        gh._issue_add_labels(7, ["area:x", "Feature:Voice"])        # case-insensitive, mixed list
+    assert _posts(calls) == [] and legacy == []
+
+
+def test_feature_label_lookup_failure_fails_closed():
+    gh, calls, legacy = _write_source(fail=lambda a: a[1].startswith("repos/o/r/labels/"))
+    for call in (lambda: gh._issue_create("T", "B", ["feature:x"]), lambda: gh._issue_add_labels(7, ["feature:x"])):
+        with pytest.raises(RuntimeError, match="refusing to create the label.*could not verify"):
+            call()
+    assert _posts(calls) == [] and legacy == []
+
+
+def test_present_feature_label_is_attached_after_one_lookup():
+    gh, calls, legacy = _write_source()
+    gh._issue_add_labels(7, "feature:x")
+    assert calls[0] == ["api", "repos/o/r/labels/feature%3Ax", "--method", "GET"]
+    assert len(_posts(calls)) == 1 and legacy == [["issue", "edit", "7", "--repo", "o/r", "--add-label", "feature:x"]]
+    gh, calls, legacy = _write_source(create_number=5)
+    gh._issue_create("T", "B", ["feature:x"])
+    assert calls[0][1] == "repos/o/r/labels/feature%3Ax" and len(_posts(calls)) == 1
+
+
+def test_assignee_dropped_by_github_raises_through_the_wrapper():
+    gh, calls, legacy = _write_source(assignable={"bob"})
+    with pytest.raises(Exception, match="did not assign @alice"):
+        gh._issue_add_assignees(7, ["alice"])
+
+
+# ---------------------------------------------------------------- #895 slice 3a: release / append_to_body on REST
+
+def _rest_err(status, text):
+    e = RuntimeError("gh api failed")
+    e.hint = "gh: %s (HTTP %d)" % (text, status)
+    return e
+
+
+def test_release_label_404_is_a_noop_but_a_vanished_issue_still_surfaces_via_the_comment_404():
+    """D4: remove_label swallows a structured 404 (label absent); the following comment 404 is NOT
+    swallowed by gh_api, so the vanished issue lands in `release_warnings` (one audit-comment entry)."""
+    src = _mod("sources")
+
+    def run(a):
+        legacy = gqlfake.legacy_of(a)
+        if legacy and (legacy[0][1] == "comment" or "--remove-label" in legacy[0]):
+            raise _rest_err(404, "Not Found")
+        return gqlfake.rest_write(a) or ""
+
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+    assert gh.release("42", "x") is True
+    (w,) = gh.release_warnings()
+    assert w.startswith("audit comment failed")
+
+
+def test_release_removes_the_label_and_comments_over_rest_not_gh_issue():
+    run = _recording_runner()
+    src = _mod("sources")
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
+    raw = []
+    inner = gh._run
+
+    def spy(a):
+        raw.append(list(a))
+        return inner(a)
+
+    gh._run = spy
+    assert gh.release("42", "x") is True
+    writes = [c for c in raw if gqlfake.is_issue_write(c)]
+    assert [(c[1].split("/", 3)[-1], c[3]) for c in writes] == [
+        ("issues/42/labels/sdlc%3Ain-progress", "DELETE"), ("issues/42/comments", "POST")]
+
+
+def test_append_to_body_is_a_rest_patch_that_raises_and_never_blanks_on_a_degraded_read():
+    run = _rest_429_then_view(json.dumps({"body": "Old"}))
+    _gh(run).append_to_body("42", "M")
+    assert [c for c in run.calls if c[:2] == ["issue", "edit"]][0][-1] == "Old\n\nM\n"
+    # failure RAISES
+    def bad(a):
+        if gqlfake.is_issue_read(a):
+            return gqlfake.rest_issue(a, lambda n, f: {"body": "Old"})
+        raise _rest_err(422, "Validation Failed")
+    import pytest
+    with pytest.raises(Exception):
+        _gh(bad).append_to_body("42", "M")

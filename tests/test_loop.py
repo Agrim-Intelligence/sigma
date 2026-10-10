@@ -1,5 +1,8 @@
 import hashlib, json, os, pathlib, importlib.util, tempfile, subprocess, sys, time, shlex, re
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake as _gqlfake
+
 import pytest
 from journal_events import journal_events
 
@@ -2263,6 +2266,9 @@ def test_codex_only_model_override_reaches_pick_time_without_changing_claude(tmp
     title = {"title": "Migrate the schema", "body": "for a new tenant"}
     monkeypatch.setenv("CODEX_THREAD_ID", "00000000-0000-4000-8000-000000000823")
     monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("SIGMA_HOST", raising=False)
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
     assert lp._next(base, _QueueWithTitleBody(["a"], title), lp.state.load_config(base)) == ("goal", "a")
     assert len(_model_choice_events(base)) == 1
     monkeypatch.delenv("CODEX_THREAD_ID")
@@ -2616,13 +2622,19 @@ def _in_progress_gh_run(issues, calls=None):
             return json.dumps(issues)
         if verb == "view":
             return json.dumps({"state": "OPEN", "labels": issues[0]["labels"]})
+        legacy = _gqlfake.legacy_of(args)       # #895 slice 3a: release()'s REST writes -> legacy records
+        if legacy:
+            calls.pop()
+            calls.extend(legacy)
+            args = legacy[0]
+            verb = args[1]
         if verb == "edit" and "--remove-label" in args:
             number = args[2]
             label = args[args.index("--remove-label") + 1]
             for issue in issues:
                 if str(issue.get("number")) == str(number):
                     issue["labels"] = [l for l in issue["labels"] if l.get("name") != label]
-        return ""
+        return "[]" if legacy else ""
     run.calls = calls
     return run
 

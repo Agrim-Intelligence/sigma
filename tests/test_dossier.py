@@ -5,7 +5,10 @@ GitHub-mode tests -- same convention `tests/test_unpark.py` already establishes.
 `create_dependency` issues plain `gh issue create` / `issue edit --add-assignee` / `issue comment` /
 `label create` calls, never the GraphQL label-swap transport.
 """
-import json, pathlib, importlib.util, tempfile
+import json, pathlib, importlib.util, tempfile, sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 D = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-dossier" / "scripts"
@@ -29,19 +32,26 @@ def _local_config():
 
 
 def _runner(create_number="42", fail_on=()):
-    calls = []
+    """`run.calls`: legacy-shaped `issue ...` records (the `gqlfake.rest_write` shim re-records each REST
+    write as one, #895 slice 3a) plus any non-REST argv; `run.rest`: the raw REST write argvs."""
+    calls, rest = [], []
 
     def run(args):
         joined = " ".join(str(a) for a in args)
         for needle in fail_on:
             if needle in joined:
                 raise RuntimeError("simulated gh failure: %s" % needle)
+        if gqlfake.is_issue_write(args):
+            rest.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"),
+                                      create_number=create_number)
         calls.append(list(args))
         if len(args) >= 2 and args[0] == "issue" and args[1] == "create":
             return "https://github.com/acme/widget/issues/%s\n" % create_number
         return ""
 
     run.calls = calls
+    run.rest = rest
     return run
 
 
@@ -228,7 +238,9 @@ def test_file_creates_a_story_labelled_never_goal_issue_and_self_assigns():
     assign_calls = [c for c in run.calls if len(c) >= 3 and c[0] == "issue" and c[1] == "edit"
                     and "--add-assignee" in c]
     assert len(assign_calls) == 1
-    assert assign_calls[0][assign_calls[0].index("--add-assignee") + 1] == "@me"
+    # #895 slice 3a: `@me` is client-side in gh and literal in REST, so `add_assignees` resolves it (one
+    # `GET user`) and POSTs the real login; the shim's `me` is "octocat".
+    assert assign_calls[0][assign_calls[0].index("--add-assignee") + 1] == "octocat"
 
 
 def test_file_posts_the_same_block_as_a_comment():
@@ -594,3 +606,17 @@ def test_the_front_door_admits_a_cheaper_neighbour():
     assert "`sdlc:goal` issue" in flat, "no alternative route is named, so the advice is unusable"
     assert "no mapping left for Stage 1" in flat, \
         "the test for when to skip the pipeline is not stated, only the recommendation"
+
+
+# --------------------------------------------------------------------------- #895 slice 3a: the comment is REST
+
+def test_file_comment_goes_rest_and_a_failing_comment_is_swallowed():
+    run = _runner(create_number="7")
+    src = dossier.sources.GitHubSource(_config(), run=run)
+    assert dossier.file(".sdlc", _config(), _answers(), questions_asked=_questions_asked(),
+                        decision="stop", source=src)["outcome"] == "filed"
+    assert any(c[:2] == ["api", "repos/acme/widget/issues/7/comments"] for c in run.rest)
+    bad = _runner(create_number="8", fail_on=["issues/8/comments"])
+    res = dossier.file(".sdlc", _config(), _answers(), questions_asked=_questions_asked(),
+                       decision="stop", source=dossier.sources.GitHubSource(_config(), run=bad))
+    assert res["outcome"] == "filed" and res["number"] == "8"      # best-effort audit comment
