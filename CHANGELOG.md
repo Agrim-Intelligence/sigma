@@ -32,6 +32,12 @@ All notable changes to Sigma are recorded here, newest first.
   unit-completion observer keys a landing by the branch like the rebase landing helper, so one landing
   is recorded once; a landing already recorded under the bare unit key keeps that key. With the gate
   closed nothing changes.
+- **Shared "landed" predicate (#930, upkeep part C, slice 1).** New feature_landed.py: one function that says whether a
+  unit's tip is landed on a base, as a structured verdict (LANDED, NOT_LANDED or UNKNOWN, with how, the base sha, the
+  pull request and the merged head). Ancestry is checked first through an exit-code-preserving bounded runner, then a
+  separate head-aware merged-pull-request read (paged, bounded, truncation never read as "none"); anything it cannot
+  prove is UNKNOWN. Also a repository-slug helper that checks the remote names the same repository. The drift watcher
+  adds an optional landed field only while the upkeep gate is open; with the gate closed nothing changes.
 - **GitHub write plumbing in gh_api (#931, upkeep part C, slice 2).** New REST-only helpers with no caller yet: a pinned merge that requires an explicit method, repository and 40-hex head pin, commit parents, branch rules, repository settings, a typed non-draft pull request create, and a bounded runner that keeps the exit code and failure class. The landing writer joins the receipt allowlist; the doctor row and the cloud-sessions page name the degraded features. Inert unless the upkeep gate is open.
 
 
