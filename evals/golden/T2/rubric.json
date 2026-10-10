@@ -1,0 +1,6 @@
+{"criteria": [
+  "The ordering defect is fixed where it lives, in the shared version-key helper, so every caller of it orders versions numerically.",
+  "Both the changelog newest-release pick and the compatibility minimum check give correct answers for multi-digit components such as 1.10 versus 1.9.",
+  "A patch that only reworks the changelog call site, leaving the compatibility check wrong, is not accepted as the fix.",
+  "Existing behaviour for single-digit versions and the v prefix is unchanged, and the change stays small."
+]}
