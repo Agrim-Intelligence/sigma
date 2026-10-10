@@ -222,7 +222,7 @@ def test_goal_commit_not_on_main_fails(tmp_path, green_record):
 
 def test_absolute_path_in_record_fails_safety(tmp_path, green_record):
     rec = copy.deepcopy(green_record)
-    rec["streams"]["verify"]["head"] = "/Users/someone/secret/dir"
+    rec["streams"]["verify"]["head"] = "/Us" + "ers/someone/secret/dir"  # built at runtime: this file is itself scanned
     _assert_only(_check_rec(tmp_path, rec), "safety.no_absolute_paths", "FAIL")
 
 
