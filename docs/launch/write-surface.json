@@ -1105,6 +1105,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/red_green.py",
+      "function": "observe",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "no config gate (runs on every red/green observation); removes only the tempfile.mkdtemp directory this same call created, outside the repository; best-effort (ignore_errors)",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/release_manifest.py",
       "function": "publish_to_ledger_branch",
       "rule": "git-push",

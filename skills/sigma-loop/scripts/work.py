@@ -184,8 +184,9 @@ ENFORCEMENT_GATES = (
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "verify.enforce"),
      "settings": (), "mechanism": "refuses `work.py pr` (exit 4) unless the published plan's "
                   "pytest nodes have matching whole-file assertion-red evidence preceding fresh "
-                  "observed green; an explicit `--no-tests <reason>` bypasses only this test-first "
-                  "proof and carries the reason verbatim into the PR body",
+                  "observed green; a red's failure kind is read from pytest's JUnit XML, so terminal "
+                  "width and captured output do not decide it; an explicit `--no-tests <reason>` "
+                  "bypasses only this test-first proof and carries the reason verbatim into the PR body",
      "condition": "local evidence is not tamper-proof; legacy advisory witnesses do not qualify; "
                   "external fixture/helper bytes are not part of red's test-file identity"},
     {"control": "Plan review before implementation", "function": "_plan_review_refusal",

@@ -1,8 +1,18 @@
 """Planned pytest red-before-green proof (#267), separate from legacy advisory witnesses.
 
-One explicit collection and test run per verify. No pytest plugin dependency. Only assertion
-failures attributed by pytest's per-node summary qualify. Whole test-file bytes bind red to green;
-external fixtures/helpers are not part of that identity. Local evidence is not tamper-proof.
+One explicit collection and test run per verify. No pytest plugin dependency. Membership comes from
+pytest's final short-summary lines; a red's KIND comes from the JUnit XML the same run writes to a
+temporary directory outside the repository (#956). A node earns an assertion red only when it is on
+a `FAILED` summary line and its one JUnit testcase holds one `<failure>` whose message starts
+`AssertionError` or `assert`, so captured output, terminal width (#414) and `CI` cannot change the
+verdict. Setup/teardown errors never credit. A failed node without exactly one testcase of its own,
+a testcase no planned node owns, and a missing or unreadable XML credit nothing and say why in the
+observed result's `error`. Known limit: two tests that swap names with `record_xml_attribute` (the
+victim takes the forger's name, the forger the victim's) still credit a RuntimeError victim, and
+`error` names no attribution problem (measured). That needs deliberately hostile test code, which
+could already forge a red through the old text parser, so it is no regression. Whole test-file
+bytes bind red to green; external fixtures/helpers are not part of that identity. Local evidence is
+not tamper-proof.
 """
 import hashlib
 import importlib.util
@@ -10,8 +20,11 @@ import json
 import math
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
 import time
+import xml.etree.ElementTree as ET
 
 
 def _witness():
@@ -94,39 +107,58 @@ def _hashes(root, nodes):
     return result
 
 
-def _split_traceback_assertions(output, failed):
-    """Return uniquely attributable assertion failures from pytest's report blocks.
+_ASSERTION_KIND = re.compile(r'(?:AssertionError|assert)\b')
+_NO_XML = ('assertion attribution unavailable: pytest wrote no readable JUnit XML '
+           '(is junitxml disabled, e.g. -p no:junitxml in addopts or PYTEST_ADDOPTS?)')
+_FOREIGN_CASE = 'assertion attribution refused: a JUnit testcase matches no planned node'
+_NOT_UNIQUE = ('assertion attribution skipped %d failed node(s) without exactly one JUnit testcase '
+               '(a teardown error after a failure writes two, as does record_xml_attribute; '
+               'a rerun plugin such as --reruns in addopts may write one per attempt)')
 
-    Pytest 7--9 prints bare ``FAILED <node>`` lines in its short summary, while
-    the assertion type lives in the preceding traceback.  The summary still
-    supplies the authoritative failing node; this only joins it to a report
-    block when its file and unparameterized function name select exactly one
-    such node.  Ambiguous parameterized reports fail closed.
+
+def _junit_key(node):
+    """The (classname, name) pytest's junitxml writes for a node id: its mangle_test_address."""
+    path, bracket, params = node.partition('[')
+    names = path.split('::')
+    names[0] = re.sub(r'\.py$', '', names[0].replace('/', '.'))
+    names[-1] += bracket + params
+    return '.'.join(names[:-1]), names[-1]
+
+
+def _junit_assertions(xml_path, nodes, failed):
+    """Return (credited, problem): FAILED nodes whose own JUnit testcase failed by assertion.
+
+    Kind is read only from the `message` attribute of a testcase's direct `<failure>` child, the
+    first line of the call phase's crash; captured output lives in other elements and is never
+    read. `<error>` (setup/teardown) and `<skipped>` never credit. A failed node without exactly one
+    testcase of its own (a key two planned nodes share, a call failure plus a teardown error,
+    `record_xml_attribute`, or a rerun plugin's per-attempt cases) earns nothing, and the problem
+    says how many. A testcase no planned
+    node owns means names were rewritten, so the whole run credits nothing. The XML comes from the
+    pytest run observe() launched: test text reaches it only as escaped data, and ElementTree
+    resolves no external entities.
     """
-    reports = re.split(r"^=+ short test summary info =+\s*$", output, flags=re.M)[0]
-    # Captured test stdout/stderr shares pytest's report stream.  It is
-    # untrusted test-controlled text, so do not parse any split traceback
-    # attribution from a run that contains it. Refusing a noisy real assertion
-    # is safer than crediting a forged one.
-    if re.search(r"^-+ Captured (?:stdout|stderr|log) .*-+$", reports, re.M):
-        return set()
-    assertions = set()
-    for block in re.split(r"(?m)^_{3,}.*_{3,}\s*$", reports):
-        if not re.search(r"^E\s+(?:AssertionError\b|assert\b)", block, re.M):
-            continue
-        locations = re.findall(r"^(?P<file>[^:\n]+\.py):\d+: in (?P<name>[^\s]+)",
-                               block, re.M)
-        for report_file, report_name in locations:
-            report_file = report_file.lstrip("./")
-            candidates = {
-                node for node in failed
-                if (node.split("::", 1)[0] == report_file
-                    or report_file.endswith("/" + node.split("::", 1)[0]))
-                and node.rsplit("::", 1)[-1].split("[", 1)[0] == report_name
-            }
-            if len(candidates) == 1:
-                assertions.update(candidates)
-    return assertions
+    owners = {}
+    for node in nodes:
+        owners.setdefault(_junit_key(node), []).append(node)
+    try:
+        cases = list(ET.parse(xml_path).getroot().iter('testcase'))
+    except (OSError, ET.ParseError):
+        return set(), _NO_XML
+    count, kind = {}, {}
+    for case in cases:
+        key = (case.get('classname', ''), case.get('name', ''))
+        if key not in owners:
+            return set(), _FOREIGN_CASE
+        count[key] = count.get(key, 0) + 1
+        outcomes = [child for child in case if child.tag in ('failure', 'error', 'skipped')]
+        kind[key] = (len(outcomes) == 1 and outcomes[0].tag == 'failure'
+                     and bool(_ASSERTION_KIND.match(outcomes[0].get('message', ''))))
+    unique = {owner[0]: key for key, owner in owners.items()
+              if len(owner) == 1 and count.get(key) == 1}
+    skipped = len(set(failed) - set(unique))
+    return ({node for node, key in unique.items() if kind[key] and node in failed},
+            _NOT_UNIQUE % skipped if skipped else '')
 
 
 def observe(sdlc_dir, goal, root, plan, run=None):
@@ -141,34 +173,42 @@ def observe(sdlc_dir, goal, root, plan, run=None):
         hashes = _hashes(root, nodes)
         if before_files != _hashes(root, scope) or plan_hash != digest(plan):
             raise ValueError('test or plan changed during collection')
-        started = time.time()
-        proc = run(root, ['python3', '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
-                          '--rootdir=' + str(root), *nodes])
-        completed = time.time()
-        if hashes != _hashes(root, nodes) or plan_hash != digest(plan):
-            raise ValueError('test or plan changed during observation')
-        passed, assertion = set(), set()
-        # Captured test output can itself contain FAILED/PASSED diagnostics. Only pytest's
-        # final summary is authoritative; absent summaries earn no proof.
-        summaries = re.split(r"^=+ short test summary info =+\s*$", proc.stdout, flags=re.M)
-        summary = summaries[-1] if len(summaries) > 1 else ""
-        failed = set()
-        # An expected failure (XFAIL/XPASS) ran and behaved as declared, so it is accounted for; a
-        # whole-file selector over a file with one used to fail every verify. SKIPPED proves nothing.
-        accounted = set()
-        for line in summary.splitlines():
-            if line.startswith(('PASSED ', 'XFAIL ', 'XPASS ')):
-                kind, _, rest = line.partition(' ')
-                node = rest.partition(' - ')[0].strip() if kind != 'PASSED' else rest.strip()
-                if node in hashes:
-                    (passed if kind == 'PASSED' else accounted).add(node)
-            elif line.startswith('FAILED '):
-                node, sep, reason = line[len('FAILED '):].partition(' - ')
-                if node in hashes:
-                    failed.add(node)
-                    if sep and re.match(r'(AssertionError\b|assert\b)', reason):
-                        assertion.add(node)
-        assertion.update(_split_traceback_assertions(proc.stdout, failed))
+        # Outside the repository, so the worktree's content fingerprint never sees it. mkdtemp plus a
+        # best-effort rmtree, not TemporaryDirectory(ignore_cleanup_errors=), which needs 3.10.
+        scratch = tempfile.mkdtemp(prefix='sigma-red-green-')
+        try:
+            xml_path = pathlib.Path(scratch) / 'red_green.xml'
+            started = time.time()
+            proc = run(root, ['python3', '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
+                              '--rootdir=' + str(root), '--junitxml=' + str(xml_path),
+                              '--junit-prefix=', *nodes])
+            completed = time.time()
+            if hashes != _hashes(root, nodes) or plan_hash != digest(plan):
+                raise ValueError('test or plan changed during observation')
+            passed, failed = set(), set()
+            # Captured test output can itself contain FAILED/PASSED diagnostics. Only pytest's
+            # final summary is authoritative; absent summaries earn no proof.
+            summaries = re.split(r"^=+ short test summary info =+\s*$", proc.stdout, flags=re.M)
+            summary = summaries[-1] if len(summaries) > 1 else ""
+            # An expected failure (XFAIL/XPASS) ran and behaved as declared, so it is accounted for;
+            # a whole-file selector over a file with one used to fail every verify. SKIPPED proves
+            # nothing.
+            accounted = set()
+            for line in summary.splitlines():
+                if line.startswith(('PASSED ', 'XFAIL ', 'XPASS ')):
+                    kind, _, rest = line.partition(' ')
+                    node = rest.partition(' - ')[0].strip() if kind != 'PASSED' else rest.strip()
+                    if node in hashes:
+                        (passed if kind == 'PASSED' else accounted).add(node)
+                elif line.startswith('FAILED '):
+                    # Membership only: the reason after ' - ' depends on width and CI (#414/#956).
+                    node = line[len('FAILED '):].partition(' - ')[0]
+                    if node in hashes:
+                        failed.add(node)
+            assertion, problem = (_junit_assertions(xml_path, nodes, failed)
+                                  if proc.returncode == 1 and failed else (set(), ''))
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
         # Collection/interruption/internal/usage failures cannot create trustworthy red.
         if proc.returncode == 1:
             w = _witness()
@@ -182,8 +222,9 @@ def observe(sdlc_dir, goal, root, plan, run=None):
                 'nodes': hashes, 'started_at': started, 'completed_at': completed,
                 'passed': proc.returncode == 0 and not missing,
                 'exit': proc.returncode,
-                'error': '' if not missing else 'planned tests did not all pass: %d not PASSED/XFAIL (first: %s)' % (
-                    len(missing), ', '.join(missing[:3]))}
+                'error': '; '.join(filter(None, (
+                    'planned tests did not all pass: %d not PASSED/XFAIL (first: %s)' % (
+                        len(missing), ', '.join(missing[:3])) if missing else '', problem)))}
     except (OSError, ValueError, TypeError) as exc:
         return {'passed': False, 'error': str(exc)}
 

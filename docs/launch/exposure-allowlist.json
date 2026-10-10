@@ -16,6 +16,16 @@
     ]
   },
   {
+    "path": ".sdlc/plans/956.md",
+    "rule": "email-address",
+    "reason": "plan appendix quoting the test's fixture source strings, where an escaped newline before a pytest decorator reads as an address; not an address",
+    "lines": [
+      "6b9ebd1ae0f8a2550e3ec78b8f4dd395845249a98051df820ae31988a9019962",
+      "6c5a14c8d757e39ef012673ad4d3fc910121b1e516d567e5a73ac26caec45647",
+      "d0f590e10dfd4a47e2f2b33d4b52202a77317ebbdcef1d2954cbe72ee92ddb1e"
+    ]
+  },
+  {
     "path": ".sdlc/research/277.md",
     "rule": "absolute-home-path",
     "reason": "research prose quoting an elided placeholder path that the detector allows",
@@ -459,6 +469,16 @@
     "lines": [
       "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052",
       "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052"
+    ]
+  },
+  {
+    "path": "tests/test_red_green_attribution.py",
+    "rule": "email-address",
+    "reason": "fixture source strings where an escaped newline before a pytest decorator reads as an address; not an address",
+    "lines": [
+      "6b9ebd1ae0f8a2550e3ec78b8f4dd395845249a98051df820ae31988a9019962",
+      "6c5a14c8d757e39ef012673ad4d3fc910121b1e516d567e5a73ac26caec45647",
+      "d0f590e10dfd4a47e2f2b33d4b52202a77317ebbdcef1d2954cbe72ee92ddb1e"
     ]
   },
   {

@@ -3,6 +3,7 @@ import importlib.util
 import json
 import pathlib
 import subprocess
+from xml.sax.saxutils import quoteattr
 
 import pytest
 
@@ -29,20 +30,30 @@ def case(tmp_path):
     return tmp_path, tmp_path / '.sdlc', plan
 
 
+def junit(argv, output):
+    """Write, at observe's --junitxml path, the testcases pytest would for these summary lines."""
+    target = next((a[len('--junitxml='):] for a in argv if a.startswith('--junitxml=')), None)
+    if target is None:
+        return
+    cases = []
+    for line in output.splitlines():
+        kind, _, rest = line.partition(' ')
+        node, _, message = rest.partition(' - ')
+        if kind in ('PASSED', 'FAILED', 'ERROR') and '::' in node:
+            path, name = node.split('::', 1)
+            child = {'FAILED': 'failure', 'ERROR': 'error'}.get(kind)
+            body = f'<{child} message={quoteattr(message)}/>' if child else ''
+            cases.append(f'<testcase classname={quoteattr(path[:-3].replace("/", "."))} '
+                         f'name={quoteattr(name)}>{body}</testcase>')
+    pathlib.Path(target).write_text('<testsuites><testsuite>' + ''.join(cases) + '</testsuite></testsuites>')
+
+
 def runner(output, code=0, nodes=(NODE,)):
     def run(root, argv):
         if '--collect-only' in argv:
             return subprocess.CompletedProcess(argv, 0, '\n'.join(nodes) + '\n', '')
+        junit(argv, output)
         return subprocess.CompletedProcess(argv, code, '=== short test summary info ===\n' + output, '')
-    return run
-
-
-def split_runner(output, code=0, nodes=(NODE,)):
-    """Return pytest 8's captured traceback followed by its bare summary line."""
-    def run(root, argv):
-        if '--collect-only' in argv:
-            return subprocess.CompletedProcess(argv, 0, '\n'.join(nodes) + '\n', '')
-        return subprocess.CompletedProcess(argv, code, output, '')
     return run
 
 
@@ -80,8 +91,21 @@ def test_matching_assertion_then_green_is_accepted(case):
     assert refusal(case, green) == ''
 
 
-def test_split_pytest_assertion_traceback_is_credited_only_for_its_named_node(case):
-    """Pytest 7–9 puts an assertion in its traceback, not on FAILED's summary line."""
+def test_bare_summary_red_is_credited_from_junit_kind(case):
+    """pytest trims a long node's summary reason away; its failure kind comes from JUnit XML."""
+    root, sdlc, plan = case
+    def run(cwd, argv):
+        if '--collect-only' in argv:
+            return runner('')(cwd, argv)
+        junit(argv, f'FAILED {NODE} - AssertionError: assert False\n')
+        return subprocess.CompletedProcess(argv, 1, f'=== short test summary info ===\nFAILED {NODE}\n', '')
+    m = load('red_green')
+    assert not m.observe(sdlc, '42', root, plan, run=run)['passed']
+    assert m.refusal(sdlc, '42', root, plan, observe(case, f'PASSED {NODE}\n')) == ''
+
+
+def test_traceback_text_without_junit_is_not_credited(case):
+    """The text report alone never credits: no JUnit XML, no red, and the error says why."""
     root, sdlc, plan = case
     red_output = '''=================================== FAILURES ===================================
 ____________________________________ test_a ____________________________________
@@ -89,15 +113,16 @@ tests/test_x.py:2: in test_a
     assert False
 E   AssertionError: assert False
 =========================== short test summary info ============================
-FAILED tests/test_x.py::test_a
+FAILED tests/test_x.py::test_a - AssertionError: assert False
 1 failed in 0.01s
 '''
+    def run(cwd, argv):
+        if '--collect-only' in argv:
+            return runner('')(cwd, argv)
+        return subprocess.CompletedProcess(argv, 1, red_output, '')
     m = load('red_green')
-    red = m.observe(sdlc, '42', root, plan, run=split_runner(red_output, 1))
-    assert not red['passed']
-    proof = m.observe(sdlc, '42', root, plan,
-                      run=split_runner('=== short test summary info ===\nPASSED ' + NODE + '\n'))
-    assert m.refusal(sdlc, '42', root, plan, proof) == ''
+    assert 'no readable JUnit XML' in m.observe(sdlc, '42', root, plan, run=run)['error']
+    assert m.refusal(sdlc, '42', root, plan, observe(case, f'PASSED {NODE}\n'))
 
 
 @pytest.mark.parametrize('red', [

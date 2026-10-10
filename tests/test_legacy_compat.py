@@ -385,6 +385,7 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-setup", "sigma-setup:", "sigma-velocity",    # skill names in printed output (#523)
                 "sigma-managed-enrolled-", "sigma-demo", "sigma-dossier", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
                 "sigma-receipt-snapshot-",
+                "sigma-red-green-",   # red_green.observe's mkdtemp prefix (#956)
                 "sigma:spend-approved", "sigma:spend-approval-used")   # new with #722: no legacy spelling
 
 

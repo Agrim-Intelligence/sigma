@@ -80,6 +80,18 @@ All notable changes to Sigma are recorded here, newest first.
   (imported, never copied); each stream carries `source` and `present`, and a run directory with absent streams still builds.
   Phase ends are recorded as `call-existence` evidence only, and the record says so. Nothing is posted or run against a
   model; read cost is linear in journal and log size and was not benchmarked.
+- **Planned-test reds are read from pytest's JUnit XML (#956; meets #414's done-when).** Before, `red_green.observe` dropped every red in a run once any test's report carried a `Captured stdout/stderr/log` section, a passing test's included, whenever pytest had trimmed the `FAILED` line's reason. At 80 columns that trim hits node ids over 61 characters, which the research measured as 92% of this repo's 11,187. The gate could then be passed only with `--no-tests`.
+  - Its one pytest run now writes `--junitxml` into a temporary directory outside the repository, with `--junit-prefix=`. A node earns an assertion red only when it is on a `FAILED` summary line and its one JUnit testcase holds a single `<failure>` whose message starts `AssertionError` or `assert`.
+  - Captured output, terminal width (`COLUMNS`) and `CI` no longer decide a red.
+  - The text parser is removed, and with it two false credits it gave: a RuntimeError reported beside an over-72-character test name, and an `AssertionError` line inside a RuntimeError's own message. Its `-s` and CI-summary forgeries go too.
+  - Setup and teardown errors never credit. These credit nothing and say why in the verify evidence's `test_first.error`:
+    - a failed node without exactly one testcase of its own, including assert-then-teardown-error, which used to count;
+    - a testcase no planned node owns (`record_xml_attribute`);
+    - a missing or unreadable XML (`-p no:junitxml`).
+  - Known limit (measured): two tests that swap names with `record_xml_attribute` still credit a RuntimeError victim, and `error` says nothing; that needs deliberately hostile test code, which could already forge a red through the old parser.
+  - Provenance stays `planned-pytest-v1`, so reds already recorded stay valid.
+  - Verified with pytest 9.0.2 and 8.4.1. Not verified: pytest 7.x, and pytest-xdist in a target's addopts.
+
 - **Ten more `gh issue view` reads go REST first (#895, slice 2b; refs #801).** `auto_unpark`, `blockers`,
   `promote`, `unpark`, `reconcile` (3 sites), `triage` (2) and `brainstorm` now call `gh_api.read_issue`
   (same fallback policy as slice 2a; each site keeps its own failure arm). `to_gh_shape` gains `number`
