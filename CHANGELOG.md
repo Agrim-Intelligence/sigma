@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.7 — 2026-10-11 — doctor preflight checks and small fixes
+
 - **Doctor preflight: missing verify interpreter and branch-creation rulesets (#974).** `/sigma-doctor` now adds a
   MISSING row when the first word of `verify.command` is not on PATH (or an absolute interpreter path is not an
   executable file), and, with `work.enabled` and `gh` present, one MISSING row per ruleset that restricts creating or
