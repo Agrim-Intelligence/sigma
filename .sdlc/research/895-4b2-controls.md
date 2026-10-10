@@ -8,14 +8,14 @@ FAILED tests/test_gh_api.py::test_comment_pr_never_falls_back_unless_primary_rat
 FAILED tests/test_gh_api.py::test_comment_pr_url_is_derived_from_id_when_html_url_is_absent_and_empty_when_neither
 1 failed, 10 passed, 641 deselected in 0.34s
 ## C1 _viewer_permission: nothing granted -> WRITE
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[emptyobj]
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[nested]
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[allfalse]
 FAILED tests/test_work.py::test_merge_rights_reply_without_permissions_is_could_not_determine
 4 failed, 28 passed, 814 deselected in 1.31s
 ## C2 push->ADMIN, triage->WRITE
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
 FAILED tests/test_work.py::test_viewer_permission_maps_the_highest_true_key[body2-WRITE]
 FAILED tests/test_work.py::test_viewer_permission_maps_the_highest_true_key[body3-TRIAGE]
 FAILED tests/test_work.py::test_viewer_permission_maps_the_highest_true_key[body5-WRITE]
@@ -23,24 +23,24 @@ FAILED tests/test_work.py::test_viewer_permission_maps_the_highest_true_key[body
 FAILED tests/test_work.py::test_merge_rights_maps_triage_and_read_to_no_merge_and_write_to_merge
 5 failed, 27 passed, 814 deselected in 1.40s
 ## C3 string 'true' counts as true (type check off)
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'viewer_permission or merge_rights'
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[strtrue]
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[inttrue]
 FAILED tests/test_work.py::test_viewer_permission_raises_on_every_undeterminable_shape[nulltrue]
 3 failed, 29 passed, 814 deselected in 1.24s
 ## C4 protection(): rules result dropped
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
 FAILED tests/test_work.py::test_protection_reads_a_repo_that_enforces_only_through_rulesets
 FAILED tests/test_work.py::test_protection_unions_classic_and_ruleset_checks_by_name_and_takes_the_max_reviews
 FAILED tests/test_work.py::test_protection_a_failing_classic_read_leaves_the_ruleset_result
 3 failed, 22 passed, 844 deselected in 1.70s
 ## C5 _ruleset_requirements: malformed shapes raise / invent requirement
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
 FAILED tests/test_work.py::test_protection_malformed_rules_never_raise_and_never_invent_a_requirement[[{"type": "required_status_che3]
 FAILED tests/test_work.py::test_protection_malformed_rules_never_raise_and_never_invent_a_requirement[[{"type": "pull_request", "par0]
 2 failed, 23 passed, 844 deselected in 1.54s
 ## C6 classic failure discards the rules result
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'test_protection_'
 FAILED tests/test_work.py::test_protection_reads_a_repo_that_enforces_only_through_rulesets
 FAILED tests/test_work.py::test_protection_encodes_a_slashed_base_in_the_rules_path
 FAILED tests/test_work.py::test_protection_a_failing_classic_read_leaves_the_ruleset_result
@@ -77,21 +77,21 @@ stale entry skills/sigma-loop/scripts/work.py:post_review gh-api-write
 ## C12 write-surface: leave the removed post_review gh-pr entry
 stale entry skills/sigma-loop/scripts/work.py:post_review gh-pr
 ## C10 merge_rights reverted to the GraphQL viewerPermission read
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
 FAILED tests/test_work.py::test_a_real_cloud_session_with_no_permissions_in_the_reply_still_does_not_merge
 FAILED tests/test_work.py::test_a_cloud_session_merges_over_rest_with_every_graphql_call_refused
 2 failed, 6 passed, 867 deselected in 2.09s
 ## C-D2 (reviewer refinement 1) protection(): rules read dropped (D2 reverted) -> D4 must go red
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
 FAILED tests/test_work.py::test_a_cloud_session_merges_over_rest_with_every_graphql_call_refused
 1 failed, 7 passed, 867 deselected in 2.04s
 ## C11 merge_rights fail-open on a null/empty permissions reply -> twin red
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'cloud_session'
 FAILED tests/test_work.py::test_a_real_cloud_session_with_no_permissions_in_the_reply_still_does_not_merge
 FAILED tests/test_work.py::test_a_cloud_session_without_permissions_in_the_repo_reply_sends_no_put
 2 failed, 6 passed, 867 deselected in 2.26s
 ## C9 re-add the [gh, pr, comment] literal to work.py
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py
 FAILED tests/test_no_direct_gh.py::test_no_baseline_file_gained_sites
 1 failed, 9 passed in 2.02s
 ## C9b stale BASELINE (work.py left at 6)
@@ -102,7 +102,7 @@ All controls above: broken on purpose, run with the documented gesture, seen red
 
 ## C12 send-back fixes: review_gate thread check without GraphQL, protection() int/empty-name guards
 broken on purpose in work.py: `if not gh_api.graphql_available()["available"]` -> `if False`; `reviews = n or 0` (was non-bool int > 0 guard); `checks.discard(None)` (was `checks -= {None, ""}`)
-gesture: /Users/swapnildubey/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'line_comment or cloud_gate or non_int or empty_string_classic or no_graphql_empty or cloud_session'
+gesture: $HOME/.sigma-venv312/bin/python -m pytest tests/test_work.py -k 'line_comment or cloud_gate or non_int or empty_string_classic or no_graphql_empty or cloud_session'
 FAILED test_a_cloud_session_with_a_pr_line_comment_refuses_and_sends_no_put (the pre-fix code MERGED over an existing line comment: the PUT was sent)
 FAILED test_review_gate_no_graphql_empty_line_comments_passes_with_one_rest_read, test_review_gate_no_graphql_line_comments_or_unreadable_fails_closed[x6]
 FAILED test_protection_a_non_int_classic_review_count_does_not_discard_the_ruleset_result, test_protection_an_empty_string_classic_check_name_is_discarded
