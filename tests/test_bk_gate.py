@@ -252,7 +252,7 @@ def test_rule_text_and_carve_out():
     assert "lease-protected force-push of a unit branch" in readme and "docs/branching-model.md" in readme
     assert "prune of backup refs" in (ROOT / "docs" / "enforcement.md").read_text(encoding="utf-8")
     table = (ROOT / "skills" / "sigma-doctor" / "scripts" / "enforcement_table.py").read_text(encoding="utf-8")
-    assert "backup refs (once upkeep is enabled) are outside it" in table
+    assert "prune of backup refs (once upkeep is enabled) is outside it" in table
     budget = _load_path("backup_phase_budget", ROOT / "evals" / "phase_context_budget.py")
     measured = []
     for phase in budget.PHASES.values():
