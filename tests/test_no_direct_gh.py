@@ -71,6 +71,12 @@ feature/<unit>`) to `gh_api.open_pr_for_branch_gh` + `pr_check_rollup_gh` (fallb
 EXEMPT helper): work.py 9 -> 8, doctor 6 -> 5. Still open on #895 (PR): work.py R4 reviewDecision (its
 `reviewDecision` half stays GraphQL by decision), R5 sibling list, R9 design-PR list, W1-W5 writes;
 verify_merge 3 (ready/create/merge).
+MEASURED 2026-10-10 (#895 slice 4a-2 PR B), via the same `scan()` (PRINTED, not typed): TOTAL 48 -> 47, work.py
+8 -> 7. The design-PR list R9 (`gh pr list --head`) moved to `gh_api.open_prs_for_head_gh` and the review gate's
+`latestReviews` half R4 to `gh_api.pr_changes_requested` (fallback argvs built inside the EXEMPT helper). The
+review gate's residual `gh pr view N --json reviewDecision` stays (GraphQL-only by decision) and still counts, so
+that site does not move the count; only R9 does. Still open on #895 (PR): work.py R5 sibling list (the one
+`"pr", "list"` literal left), the review gate's reviewDecision, W1-W5 writes; verify_merge 3.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -116,7 +122,7 @@ BASELINE = {
     "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/sources.py": 20,
     "skills/sigma-loop/scripts/triage.py": 1,
-    "skills/sigma-loop/scripts/work.py": 8,
+    "skills/sigma-loop/scripts/work.py": 7,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
     "skills/sigma-status/scripts/status.py": 3,
 }
@@ -184,7 +190,8 @@ def test_no_stale_baseline_entry():
 def test_pr_view_fallback_argv_lives_only_in_gh_api():
     """#895 4a-1/4a-2: the migrated PR reads' `pr view` / `pr list` argv is built ONLY inside gh_api (its
     one fallback each). The migrated callers carry none; work.py keeps exactly ONE unmigrated `gh pr view`
-    read (R4 reviewDecision, GraphQL-only by decision), so a migrated site cannot quietly come back."""
+    read (R4 reviewDecision, GraphQL-only by decision) and ONE unmigrated `pr list` (R5 sibling list, deferred),
+    so a migrated site (R9 design-PR list included, PR B) cannot quietly come back."""
     helper = (ROOT / "skills/sigma-loop/scripts/gh_api.py").read_text(encoding="utf-8")
     assert '["pr", "view", ref,' in helper
     assert '["pr", "list", "--repo", repo,' in helper
@@ -193,6 +200,8 @@ def test_pr_view_fallback_argv_lives_only_in_gh_api():
         assert '"pr", "view"' not in text and '"pr", "list"' not in text, rel
     work = (ROOT / "skills/sigma-loop/scripts/work.py").read_text(encoding="utf-8")
     assert work.count('"gh", "pr", "view"') == 1
+    assert work.count('"pr", "list"') == 1          # R5 `_sibling_pull_requests` only; R9 moved in PR B
+    assert '["pr", "list", *_repo_flag(repo), "--head", branch,' in helper
 
 
 def test_exempt_is_exactly_the_helper_and_it_exists():

@@ -5012,20 +5012,23 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     automation to one account), the formal APPROVE / CHANGES_REQUESTED signals can NEVER fire — `approval`
     would refuse forever. Plain comments have no such restriction, so `sigma:block` / `sigma:approve`
     are honoured as a self-usable equivalent, but only from an OWNER / MEMBER / COLLABORATOR commenter
-    (#635). An unreadable COMMENT list fails closed (parks), as does an unreadable review DECISION under
-    `approval`; under `changes` an unreadable decision still fails open (the other gates still hold, and
-    that read must not be the thing that blocks a merge). Unresolved-thread count errors stay open.
+    (#635). An unreadable COMMENT list fails closed (parks), and so does an unreadable REVIEW LIST (REST
+    `pulls/N/reviews`, #895 4a-2 PR B) in every mode: the old changes-mode fail-open on an unreadable
+    combined read is gone. `reviewDecision` (GraphQL; APPROVED is not derivable from REST) is read after it,
+    skipped when GraphQL is unavailable: `approval` then parks (even with a `sigma:approve` comment, a known
+    limitation), `changes` goes on to the thread check with the decision unknown. A CHANGES_REQUESTED followed
+    by a COMMENTED from the same reviewer still blocks (stricter than `latestReviews`). Unresolved-thread
+    count errors stay open.
 
     `mode` (#1774) overrides the local `review_mode(config)` read, and is how an Org's locked
     ceiling reaches this gate: `merge()` resolves it through `effective_review_mode` first and
     passes the answer down. `None` — every existing caller — keeps the exact local read this
     function has always done, so nothing that does not opt into org policy changes.
 
-    THE FAIL-OPEN IN THIS FUNCTION IS NOT THE #1774 DECISION AND IS UNCHANGED. An unreadable
-    GitHub review state still returns (True, "") here, exactly as before. That is a judgement
-    about GitHub's API, made once the gate is already known to be ON; the fail-CLOSED decision
-    #1774 makes is about whether the gate is on at all, and it happens one layer up, before this
-    function is called at all."""
+    THE FAIL-OPEN LEFT IN THIS FUNCTION (the unresolved-thread count, and the unreadable decision under
+    `changes`) IS NOT THE #1774 DECISION. That is a judgement about GitHub's API, made once the gate is
+    already known to be ON; the fail-CLOSED decision #1774 makes is about whether the gate is on at all, and
+    it happens one layer up, before this function is called at all."""
     if mode is None:
         mode = review_mode(config)
     if mode == REVIEW_OFF:
@@ -5042,20 +5045,39 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     if directive == "block":
         return False, (f"a `sigma:block` comment is on PR #{rec['pr']} — address it, then comment "
                        "`sigma:unblock` or `sigma:approve` and re-queue the issue")
+    # #895 4a-2 PR B: the CHANGES_REQUESTED half is REST (`pulls/N/reviews`, ONE `gh pr view --json reviews`
+    # fallback inside gh_api). It fails CLOSED in EVERY mode: an unreadable review list may hide a request
+    # for changes, and the old changes-mode fail-open on an unreadable combined read is gone.
     try:
-        data = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
-                                                "--json", "reviewDecision,latestReviews"]))
-    except Exception:                           # noqa: BLE001 - see below: open for `changes`, CLOSED for `approval`
-        if mode == REVIEW_APPROVAL:             # #635: an approval is a positive requirement; unknown is not met
-            return False, (f"could not read PR #{rec['pr']}'s review decision, so `require_review: approval` "
-                           "cannot be satisfied — re-queue the issue once `gh` works")
-        return True, ""
-    decision = data.get("reviewDecision")
-    changed_by = sorted({(r.get("author") or {}).get("login") for r in (data.get("latestReviews") or [])
-                         if r.get("state") == "CHANGES_REQUESTED"} - {None})
-    if decision == "CHANGES_REQUESTED" or changed_by:
-        who = ", ".join(changed_by) or "a reviewer"
-        return False, f"changes requested by {who} on PR #{rec['pr']} — address them, then re-queue the issue"
+        changed_by = gh_api.pr_changes_requested(_pr_api_run(run, rec["worktree"]), rec["pr"],
+                                                 sdlc_dir=sdlc_dir)
+    except Exception as exc:                    # noqa: BLE001 - fail CLOSED, a request for changes may be hiding
+        print(f"work: review_gate: {exc}", file=sys.stderr)
+        return False, (f"could not read PR #{rec['pr']}'s reviews (see stderr), so the review gate cannot "
+                       "tell whether changes were requested — re-queue the issue once `gh` works")
+    if changed_by:
+        return False, (f"changes requested by {', '.join(changed_by)} on PR #{rec['pr']} — "
+                       "address them, then re-queue the issue")
+    # The residual GraphQL read: `reviewDecision` (APPROVED / REVIEW_REQUIRED are not derivable from REST).
+    # Skipped when GraphQL is unavailable (cloud, SIGMA_GH_GRAPHQL=off). Approval mode: unknown is not met,
+    # so it parks (even with a `sigma:approve` comment: known limitation). Changes mode: unknown -> go on.
+    decision = None
+    if gh_api.graphql_available()["available"]:
+        try:
+            decision = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
+                                                        "--json", "reviewDecision"])).get("reviewDecision")
+        except Exception:                       # noqa: BLE001 - open for `changes`, CLOSED for `approval`
+            decision, unreadable = None, True
+        else:
+            unreadable = False
+    else:
+        unreadable = True
+    if unreadable and mode == REVIEW_APPROVAL:  # #635: an approval is a positive requirement; unknown is not met
+        return False, (f"could not read PR #{rec['pr']}'s review decision (it needs GraphQL, which is "
+                       "unavailable or failed), so `require_review: approval` cannot be satisfied — "
+                       "re-queue the issue once `gh` works")
+    if decision == "CHANGES_REQUESTED":
+        return False, f"changes requested by a reviewer on PR #{rec['pr']} — address them, then re-queue the issue"
     unresolved = _unresolved_threads(rec, run)
     if unresolved:
         return False, (f"{unresolved} unresolved review thread(s) on PR #{rec['pr']} — "
@@ -6528,10 +6550,11 @@ def prune_terminal_review_generations(sdlc_dir, goal=None, limit=REVIEW_PRUNE_GO
 #: used `--limit 1`, silently guessing instead of refusing -- fixed by raising the cap and
 #: checking `len(rows)` explicitly, the same shape `_sibling_pull_requests`'s own caller already
 #: uses (work.py:3675-3678).
-DESIGN_PR_LIMIT = 30   # gh pr list's own upstream default (`gh pr list --help`) -- large enough
-                       # that an ordinary handful of same-named fork PRs never crowds out the
-                       # real one; the length check below refuses outright if this is STILL not
-                       # enough, rather than silently trusting a full page as complete.
+DESIGN_PR_LIMIT = 30   # `per_page` of the REST list and `--limit` of its fallback (#895 PR B; gh pr list's
+                       # own default) -- large enough that a handful of same-named PRs never crowds
+                       # out the real one. A reply of this many rows is refused INSIDE `gh_api` on both
+                       # paths, and again below (kept: it still guards a caller that bypasses gh_api),
+                       # rather than silently trusting a full page as complete. Cost 1 + 2N REST calls.
 
 
 def _design_branch(config, goal):
@@ -6573,8 +6596,8 @@ def _is_this_goals_design_pr(row, goal, branch):
     implementation are cut from the IDENTICAL branch (`_design_branch`, work.py:4276) by
     construction, and NOT `.sdlc/design/<n>.md` alone either (round 4 review finding 1) -- a
     PR carrying only the machine artifact, without its required plain-language sibling, is not
-    a genuine design PR by this repo's own writing rules. `row` (one element of `gh pr list
-    --json ...`'s reply) counts as THIS goal's own design PR only if ALL of the following hold:
+    a genuine design PR by this repo's own writing rules. `row` (one element of the design-PR list, in
+    `gh pr list --json ...` row shape: from REST `pulls/N` + `pulls/N/files`, or from that fallback) counts as THIS goal's own design PR only if ALL of the following hold:
       0. `number` is a positive `int` and not a `bool` (round 4 review finding 2 -- Python's
          `bool` is an `int` subclass, so a naive `isinstance(number, int)` check alone would
          accept `True`/`False` as a PR number). Checked FIRST, before any other field: an
@@ -6653,7 +6676,8 @@ def _is_this_goals_design_pr(row, goal, branch):
 def _find_design_pr(sdlc_dir, config, goal, run):
     """(pr_row, error) -- exactly one set. `(None, None)` is the ORDINARY, sanctioned outcome
     for a branchless/local-only design or one already landed by hand, and means ONLY ONE
-    thing: `gh pr list` answered zero rows. Every other empty-or-refused outcome below returns
+    thing: the design-PR list (REST first, `gh_api.open_prs_for_head_gh`; #895 PR B) answered a genuine
+    empty list. Every other empty-or-refused outcome below returns
     a DISTINCT, non-`None` fixed phrase instead -- `merge_design`/`close_design`'s own
     retry-recovery treats `(None, None)` as proof a prior mutation landed, so conflating "we
     refused every candidate" with "GitHub confirmed there is nothing" would let a refused row
@@ -6661,28 +6685,27 @@ def _find_design_pr(sdlc_dir, config, goal, run):
     successful merge/close.
 
     Identity is delegated entirely to `_is_this_goals_design_pr` (its own docstring states the
-    full ruling) -- this function's job is only: fetch the page, validate its outer shape,
-    refuse a possibly-truncated page outright, run the identity check per row, and adjudicate
+    full ruling) -- this function's job is only: fetch the page (any failure or malformed reply, a blank
+    one included, is a distinct error here, never `(None, None)`: gh_api raises on it), refuse a
+    possibly-truncated page outright, run the identity check per row, and adjudicate
     zero-vs-one-vs-many matches. Every PR number this function itself interpolates (the
     ambiguity and no-match messages below) goes through `_pr_ref` too (round 3 finding 1/2) --
     `branch` and `goal` stay interpolated as before, since neither is PR-controlled (both come
     from the CLI's own goal argument and config via `_design_branch`, work.py:4276)."""
     branch = _design_branch(config, goal)
+    root_dir = project_root(sdlc_dir)
     try:
-        out = run(project_root(sdlc_dir), ["gh", "pr", "list", "--head", branch, "--state",
-                                           "open", "--limit", str(DESIGN_PR_LIMIT),
-                                           "--json", "number,url,mergeable,mergeStateStatus,"
-                                                     "isCrossRepository,headRefName,files,"
-                                                     "changedFiles"])
+        # #895 4a-2 PR B: REST first inside gh_api (list + per-row pulls/N + files), ONE `gh pr list`
+        # fallback built there. The slug (no GraphQL: config, else the local remote) gives the head owner;
+        # None leaves gh's `{owner}` placeholders. Any failure, a malformed reply included, answered nothing.
+        slug = _feature_sync().repo_slug(config, run, root_dir, settings(config)["remote"])
+        rows = gh_api.open_prs_for_head_gh(_pr_api_run(run, root_dir), branch, DESIGN_PR_LIMIT, slug,
+                                           sdlc_dir=sdlc_dir)
     except Exception:                       # noqa: BLE001 - a failed read answered nothing
         print(f"work: _find_design_pr: {sys.exc_info()[1]}", file=sys.stderr)
         return None, f"could not look up a PR on {branch!r} (see stderr for detail)"
-    try:
-        rows = json.loads(out)
-    except Exception:                       # noqa: BLE001 - an unreadable reply answered nothing
-        return None, f"could not parse `gh pr list`'s reply for {branch!r}"
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
-        return None, f"unexpected `gh pr list` reply shape for {branch!r}"
+        return None, f"unexpected design-PR list reply shape for {branch!r}"
     if not rows:
         return None, None                   # gh POSITIVELY confirmed: no open PR at all
     if len(rows) >= DESIGN_PR_LIMIT:

@@ -132,3 +132,76 @@ def gate_handlers(pull, checks=(), statuses=(), head=HEAD):
     and statuses for `head` (which must be the pull's own head.sha)."""
     return [(pull_get(7), pull), (check_runs_get(head), rest_check_runs(checks)),
             (status_get(head), rest_statuses(statuses))]
+
+
+# ---- #895 4a-2 PR B: the review list and the design-PR list/detail/files reads ----------------------------
+
+def reviews_get(n=7):
+    """The substring identifying gh_api's REST review-page read for PR `n`. It does NOT contain
+    `pull_get(n)` (`pulls/7 --method GET`), so a `_runner` list may hold both."""
+    return "pulls/%s/reviews --method GET" % n
+
+
+def rest_reviews(rows):
+    """Reviews -> ONE REST review page (JSON string), oldest first. A row is `(login, STATE)` or a dict of
+    raw REST keys overriding the defaults; `login=None` models a deleted account (`user` null). Ids and
+    `submitted_at` ascend with the row index, so list order IS chronological order. `ABSENT` drops a key."""
+    out = []
+    for i, r in enumerate(rows):
+        login, state = r if isinstance(r, tuple) else (None, None)
+        d = {"id": 5000 + i, "node_id": "PRR_%d" % i, "state": state,
+             "user": {"login": login, "type": "User"} if login is not None else None,
+             "submitted_at": "2026-01-01T00:%02d:00Z" % (i % 60)}
+        if isinstance(r, dict):
+            d.update(r)
+        out.append(d)
+    for d in out:
+        for k in [k for k, v in d.items() if v is ABSENT]:
+            del d[k]
+    return json.dumps(out)
+
+
+def gh_reviews(rows):
+    """The SAME history as `rest_reviews(rows)` (`(login, STATE)` tuples) in `gh pr view --json reviews`
+    shape, list order = review order: the fallback half of the parity test."""
+    return json.dumps({"reviews": [
+        {"author": {"login": login} if login is not None else None, "state": state,
+         "submittedAt": "2026-01-01T00:%02d:00Z" % (i % 60)} for i, (login, state) in enumerate(rows)]})
+
+
+PULLS_LIST = "pulls?head="
+
+
+def files_get(n=42):
+    """The substring identifying gh_api's REST file-page read for PR `n`."""
+    return "pulls/%s/files --method GET" % n
+
+
+def rest_files(paths):
+    return json.dumps([{"filename": p, "status": "added", "sha": "f" * 40} for p in paths])
+
+
+DESIGN_PATHS = (".sdlc/design/9.md", ".sdlc/design/9-in-brief.md")
+
+
+def design_pull(number=42, branch="sdlc/9", paths=DESIGN_PATHS, changed=None, cross=False, **kw):
+    """A REST `pulls/<n>` body for a design PR: `rest_pull` plus `html_url` and `changed_files` (list rows
+    carry null for both mergeable and changed_files, MEASURED, so only this detail read answers them)."""
+    return json.loads(rest_pull(number=number, headRefName=branch, isCrossRepository=cross,
+                                html_url="https://x/%d" % number,
+                                changed_files=len(paths) if changed is None else changed, **kw))
+
+
+def design_handlers(prs, branch="sdlc/9"):
+    """`_runner` handlers for the REST design-PR read: the list (`prs` = dicts for `design_pull`, each with
+    an optional `"files"` raw JSON string override), then per PR the detail and the file page. Every
+    fixture derives from one `design_pull` with one deviation."""
+    rows = [{"number": p["number"], "mergeable": None, "mergeable_state": None, "changed_files": None}
+            for p in prs]
+    h = [(PULLS_LIST, json.dumps(rows))]
+    for p in prs:
+        kw = {k: v for k, v in p.items() if k != "files"}
+        pull = design_pull(branch=branch, **kw)
+        h.append((pull_get(p["number"]), json.dumps(pull)))
+        h.append((files_get(p["number"]), p.get("files", rest_files(kw.get("paths", DESIGN_PATHS)))))
+    return h

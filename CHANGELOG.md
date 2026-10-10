@@ -11,6 +11,25 @@ All notable changes to Sigma are recorded here, newest first.
   refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
   fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
   so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
+- **The design-PR list and the review gate's CHANGES_REQUESTED half go REST first (#895, slice 4a-2 PR B; refs
+  #895).** `work._find_design_pr` (merge_design / close_design) reads `gh_api.open_prs_for_head_gh` (list,
+  `pulls/N`, `pulls/N/files`; ONE `gh pr list` fallback built in `gh_api`), and `work.review_gate` reads
+  `gh_api.pr_changes_requested` (`pulls/N/reviews`, ONE `gh pr view --json reviews` fallback). `reviewDecision`
+  stays one GraphQL `gh pr view` (REST cannot derive APPROVED) and `_unresolved_threads` stays GraphQL; the
+  residual read is skipped when GraphQL is unavailable. THREE BEHAVIOUR CHANGES: (1) `require_review: changes`
+  now fails CLOSED on an unreadable reviews read (it used to return pass); (2) in changes mode an unreadable or
+  unavailable `reviewDecision` no longer returns pass and skips `_unresolved_threads`, which now still runs;
+  (3) a CHANGES_REQUESTED followed by a COMMENTED from the same reviewer now blocks (stricter than
+  `latestReviews`). Approval mode with GraphQL unavailable still parks, even with a `sigma:approve` comment (a
+  known limitation). Fail closed: a design list of 30 or more rows, a non-list or blank body, a malformed
+  detail or fallback row, an unknown review state, a full review page at the 10-page cap and a decisive review
+  without `submitted_at`/`id` all raise; only a genuine `[]` is "no PR". Known divergence: `head=<owner>:` hides
+  a fork PR from another owner (DERIVED), where the old list showed it and the identity check refused it. Also
+  fixed: the `[:120]` slice in two `gh_api` error messages cut a tuple, not the string. Costs: design 1 + 2N
+  calls, reviews `floor(n/100) + 1`. MEASURED: `{owner}` expands inside the query string from the cwd, and list
+  rows carry null `mergeable`/`changed_files` while `pulls/N` carries them. DERIVED/UNMEASURED: review and files
+  shapes and ordering, DISMISSED, the 429 body, any cloud run, latency. Ratchet 48 -> 47 by the printed
+  `scan()` (work.py 8 -> 7). Remaining on #895: R5, writes (4b/4c). Verified with injected-runner tests only.
 - **The merge gate and doctor's landing-PR row go REST first (#895, slice 4a-2 PR A; refs #801).**
   `work.gate()` (R1) now reads `gh_api.view_pr_gh` with two new whitelisted fields, `mergeable` and
   `mergeStateStatus`, then the new `gh_api.pr_check_rollup_gh` (check-runs, then commit statuses) for exactly
