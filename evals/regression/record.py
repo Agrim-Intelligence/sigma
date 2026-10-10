@@ -266,6 +266,12 @@ def read_action_log(sdlc, stem):
                    skipped_malformed=skipped), kept
 
 
+#: The gate writes `pass`/`warn`/`block` (`work.PLAN_REVIEW_VERDICTS`); the regression property asks for
+#: `approve`. Owner ruling 2026-10-10 (#878): both approving words record as `approve`, `block` and any
+#: other word stay verbatim. This one stream field is the only normalisation in this module.
+_PLAN_REVIEW_APPROVING = {"pass": "approve", "warn": "approve"}
+
+
 def read_plan_review(rows, log_present, sdlc, stem):
     source = "state/log (kind=verdict, phase=plan_review)"
     gate = (sdlc / "state" / "gates" / (stem + ".json")).is_file()
@@ -276,7 +282,10 @@ def read_plan_review(rows, log_present, sdlc, stem):
     if not hits:
         return _stream(source, False, "no plan_review verdict row", **blank)
     last = hits[-1]                                    # rows are already ordered by ts
-    return _stream(source, True, verdict=last.get("verdict"), route=last.get("route"),
+    verdict = last.get("verdict")
+    if isinstance(verdict, str):
+        verdict = _PLAN_REVIEW_APPROVING.get(verdict, verdict)
+    return _stream(source, True, verdict=verdict, route=last.get("route"),
                    plan_hash=last.get("plan_hash"), verified=last.get("verified"), gate_file_present=gate)
 
 

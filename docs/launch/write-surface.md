@@ -42,7 +42,6 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_codex | fs-remove | 2 | ungated | high |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_cursor_rules | fs-write | 2 | ungated | medium |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_demo | fs-write | 2 | ungated | medium |
-| skills/sigma-init/scripts/sdlc_init.py | scaffold_extras | fs-write | 1 | ungated | medium |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_github | fs-write | 2 | ungated | medium |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_vision | fs-write | 2 | ungated | medium |
 | skills/sigma-init/scripts/setup_wizard.py | _write_cache | fs-write | 2 | ungated | medium |
@@ -63,6 +62,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/channel_notify.py | _real_post | network-post | 1 | http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery | high |
 | skills/sigma-loop/scripts/channel_notify.py | _save_cursor | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/claim_refs.py | _push | git-push | 1 | library only: called solely by the claim verbs (create, renew, reclaim, delete), always through the explicit --force-with-lease=<ref>:<expected> form on refs/sigma/claims/ (never a plain force); no caller exists in this slice; slice 3 gates it on claims.mode=git | high |
+| skills/sigma-loop/scripts/codex_runtime.py | lock_file | fs-write | 1 | Codex supervisor opt-in only; creates and holds one per-checkout lock file, refuses if the OS lock cannot be acquired | medium |
 | skills/sigma-loop/scripts/coexist.py | _mark | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/coexist.py | backup_features | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/coexist.py | backup_features | fs-rmtree | 1 | ungated | high |
@@ -105,6 +105,9 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/feature_registry.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_sync.py | _acquire | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/feature_sync.py | recover | fs-remove | 1 | explicit `feature_sync.py recover --discard`; renames Sigma's own recovery copy of the registry sheet aside, never deletes it | medium |
+| skills/sigma-loop/scripts/gh_api.py | _default_run | gh-api-write | 1 | the injected run is the only transport; write helpers (comment_issue, create_issue, add_labels, remove_label, close_issue, edit_issue, add_assignees) have callers since #895 slice 3a, each through GitHubSource._issue_* with the feature-label guard (create_issue/add_labels refuse feature:* unless it exists); a REST write falls back to GraphQL at most once, never on an ambiguous failure, never in a cloud session; the scanner sees only this gh invocation, not which helper called it | low |
+| skills/sigma-loop/scripts/gh_api.py | _write_cache | fs-remove | 2 | probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895) | low |
+| skills/sigma-loop/scripts/gh_api.py | _write_cache | fs-write | 2 | probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895) | low |
 | skills/sigma-loop/scripts/goal_state_prune.py | sweep | fs-remove | 4 | goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458) | medium |
 | skills/sigma-loop/scripts/ledger.py | _maybe_prune_journal | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/ledger.py | append | fs-write | 1 | ungated | medium |
@@ -186,7 +189,6 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sources.py | note | fs-write | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | note | gh-api-write | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | note | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/state.py | _cursor_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | _patch_cursor | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/state.py | _queue | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | _state_file | fs-write | 1 | ungated | medium |
@@ -194,6 +196,9 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/state.py | claim_run_stop | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | phase_end_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | reanchor_content | fs-write | 1 | ungated | medium |
+| skills/sigma-loop/scripts/state.py | refuse_symlinks | fs-write | 1 | creates missing parent directories under .sdlc only, one level at a time, after an lstat symlink refusal (#708) | medium |
+| skills/sigma-loop/scripts/supervise_daemon.py | _capture_codex | fs-remove | 2 | Codex host only; removes only the fixed .sdlc/state/supervisor.agent-last transient message before launch and after inspection under the per-checkout OS lock | high |
+| skills/sigma-loop/scripts/supervise_daemon.py | _codex_main | fs-write | 2 | Codex host only; state directory creation follows explicit host selection, and supervisor log/tail writes run under the per-checkout OS lock after enabled-plugin preflight | medium |
 | skills/sigma-loop/scripts/supervise_daemon.py | main | fs-write | 4 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _ensure_gitattributes | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _ensure_lines | fs-write | 1 | ungated | medium |
@@ -221,7 +226,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/upstream.py | _remember | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/upstream.py | _spill | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/watch.py | clear_inbox | fs-write | 1 | ungated | medium |
-| skills/sigma-loop/scripts/watch.py | tick | fs-write | 2 | ungated | medium |
+| skills/sigma-loop/scripts/watch.py | tick | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/watch_classify.py | save_cursor | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/watch_daemon.py | _run | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/watch_daemon.py | acquire_decision_mutex | fs-remove | 2 | ungated | high |
@@ -279,7 +284,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-scope/scripts/assign.py | execute | fs-write | 2 | ungated | medium |
 | skills/sigma-scope/scripts/scope.py | main | fs-write | 2 | ungated | medium |
 | skills/sigma-setup/scripts/setup.py | ensure_ignore | fs-write | 2 | ungated | medium |
-| skills/sigma-setup/scripts/setup.py | write_cfg | fs-write | 1 | ungated | medium |
+| skills/sigma-setup/scripts/setup.py | write_cfg | fs-remove | 2 | ungated | high |
 | skills/sigma-status/scripts/merge_queue_enable.py | create_merge_queue_ruleset | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
 | skills/sigma-status/scripts/merge_queue_enable.py | patch_auto_merge | gh-api-write | 1 | exact --yes-enable-merge-queue admin consent | high |
 | tools/build_public_tree.py | _drop_partial | fs-rmtree | 1 | ungated | high |
@@ -295,20 +300,26 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | tools/build_public_tree.py | main | fs-rmtree | 1 | ungated | high |
 | tools/build_public_tree.py | materialise | fs-write | 2 | ungated | medium |
 | tools/build_public_tree.py | write_report | fs-remove | 1 | ungated | high |
+| tools/goal433_attack.py | main | fs-write | 14 | explicit evidence harness; refuses an output outside the requested repository, writes fixtures only in its TemporaryDirectory, and tests/test_goal433_attack.py verifies the documented invocation | medium |
 | tools/kg_control.py | _repo | fs-write | 7 | ungated | medium |
 | tools/kg_control.py | _write_builder | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | main | fs-write | 2 | ungated | medium |
 | tools/kg_control.py | run | fs-write | 3 | ungated | medium |
 | tools/onboarding_control.py | _drive_local_goal | fs-write | 2 | ungated | medium |
+| tools/onboarding_control.py | _edit_config | fs-write | 1 | ungated | medium |
 | tools/onboarding_control.py | _env | fs-write | 1 | ungated | medium |
 | tools/onboarding_control.py | _fresh_files | fs-write | 2 | ungated | medium |
 | tools/onboarding_control.py | _local_goal_work | fs-write | 2 | ungated | medium |
+| tools/onboarding_control.py | _scripted_phases | fs-write | 5 | ungated | medium |
 | tools/onboarding_control.py | _stub_gh | fs-write | 1 | ungated | medium |
+| tools/onboarding_control.py | _write_transcripts | fs-write | 2 | ungated | medium |
 | tools/onboarding_control.py | host_install | fs-write | 2 | ungated | medium |
 | tools/onboarding_control.py | main | fs-rmtree | 1 | ungated | high |
 | tools/onboarding_control.py | main | fs-write | 1 | ungated | medium |
 | tools/onboarding_control.py | run_github | fs-write | 7 | ungated | medium |
 | tools/onboarding_control.py | run_github | git-push | 1 | ungated | high |
+| tools/onboarding_control.py | run_github_process | fs-write | 15 | ungated | medium |
+| tools/onboarding_control.py | run_github_process | git-push | 1 | ungated | high |
 | tools/onboarding_control.py | run_local | fs-write | 3 | ungated | medium |
 | tools/onboarding_control.py | run_readme_gestures | fs-write | 1 | ungated | medium |
 | tools/readiness/baseline.py | snapshot | fs-write | 2 | explicit snapshot command; empty destination | medium |

@@ -2674,6 +2674,14 @@
     },
     {
       "path": "tools/onboarding_control.py",
+      "function": "_edit_config",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
       "function": "_env",
       "rule": "fs-write",
       "count": 1,
@@ -2714,6 +2722,14 @@
     },
     {
       "path": "tools/onboarding_control.py",
+      "function": "_write_transcripts",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
       "function": "host_install",
       "rule": "fs-write",
       "count": 2,
@@ -2747,6 +2763,22 @@
     {
       "path": "tools/onboarding_control.py",
       "function": "run_github",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "run_github_process",
+      "rule": "fs-write",
+      "count": 15,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/onboarding_control.py",
+      "function": "run_github_process",
       "rule": "git-push",
       "count": 1,
       "gate": "ungated",
