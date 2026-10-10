@@ -4,6 +4,14 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Doctor preflight: missing verify interpreter and branch-creation rulesets (#974).** `/sigma-doctor` now adds a
+  MISSING row when the first word of `verify.command` is not on PATH (or an absolute interpreter path is not an
+  executable file), and, with `work.enabled` and `gh` present, one MISSING row per ruleset that restricts creating or
+  updating `<branch_prefix>*` branches while `current_user_can_bypass` is neither `always` nor `exempt` for the running account, naming the
+  ruleset. Both are silent when fine; an unreadable or malformed GitHub reply gives one advisory "could not check" row.
+  New `landing_preflight.py` library, plus read-only `gh_api.ruleset` and `gh_api.org_ruleset`. Commands starting with
+  `cd`, variables, `~`, command substitution or shell wrappers are never checked. **Not seen live:** the real GitHub
+  reply shape is faked in tests from the documented fields.
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
   line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under
