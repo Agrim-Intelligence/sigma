@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.8 — 2026-10-11 — per-session run budgets and REST-first merges
+
 - **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
   `CLAUDE_CODE_REMOTE` merge are REST: `merge_rights` reads `GET repos/{owner}/{repo}` `.permissions` (fails closed
   on a missing, malformed or all-false object), `protection()` unions classic protection with
