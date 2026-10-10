@@ -51,6 +51,15 @@ All notable changes to Sigma are recorded here, newest first.
   reconcile census tick (derived, not measured, against `SIGMA_WATCH_CALL_TIMEOUT` 120 s); doctor latency
   (~45 s per site, ~135 s multi-state, derived from the 15 s timeout); gh's newest-created default order
   (assumed, not re-verified); GraphQL points saved (#1829's figure, not re-measured).
+- **Regression checker (#877, slice 2 of #870).** `python3 evals/regression/check.py <record> <properties.json>` reads one
+  `record.py` record and prints `PASS`, `FAIL` or `NOT EVALUABLE` per property (outcome, process, cost, quality, safety
+  families, listed in `evals/regression/properties.json`). Exit 0 when every property passes (a soft `NOT EVALUABLE` is
+  allowed); exit 1 on any `FAIL` or any hard property whose source stream is absent; exit 2 refuses a broken input
+  (unreadable or malformed record, wrong schema, malformed property list) so it is never read as a regression. Process
+  properties read INTERNAL action-log rows only; a property naming an agent-writable kind is refused. One recorded run and
+  three mutated copies (plan-review verdict, one phase end, review marker each dropped) are committed under
+  `evals/regression/fixtures/` as controls of the checker itself. Honest limit: the evidence is call-existence from a
+  synthetic run, nothing here was measured against a live run.
 - **Regression record builder (#874, slice 1 of #870).** `python3 evals/regression/record.py build <run_dir>` writes one
   `sigma.regression-run/v1` JSON record from a run's plan, research, plan-review verdict, verify state, journal, action log,
   review evidence, commit order and per-phase tokens. Action-log rows are filtered by the plugin's own `actionlog.INTERNAL_KINDS`
