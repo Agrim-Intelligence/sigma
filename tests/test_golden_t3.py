@@ -7,6 +7,7 @@ property; the cases that matter for isolation also assert the property that must
 
 Unix only: verify.py refuses on Windows.
 """
+import importlib.util
 import json
 import os
 import pathlib
@@ -14,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 
 import pytest
 
@@ -187,15 +189,25 @@ def test_t3_task_shape():
     assert "AUTO-GENERATED" in first and "DO NOT EDIT" in first
     assert set(hashes(TASK)) == HIDDEN_FILES
 
-    stdlib = set(sys.stdlib_module_names) | {"shipping", "generated"}
+    def is_stdlib(name):
+        if name in ("shipping", "generated"):
+            return True
+        names = getattr(sys, "stdlib_module_names", None)  # 3.10+; older interpreters fall back to the location
+        if names is not None:
+            return name in names
+        spec = importlib.util.find_spec(name)
+        origin = getattr(spec, "origin", None) or ""
+        return spec is not None and (origin in ("built-in", "frozen") or (
+            origin.startswith(sysconfig.get_paths()["stdlib"]) and "site-packages" not in origin))
+
     banned_calls = {"write_text", "write_bytes", "rmtree", "remove", "unlink", "mkdir", "makedirs", "rmdir",
                     "rename", "touch", "write", "writelines"}
     for path in _py_files():
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Import):
-                assert all(a.name.split(".")[0] in stdlib for a in node.names), path
+                assert all(is_stdlib(a.name.split(".")[0]) for a in node.names), path
             elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                assert node.module.split(".")[0] in stdlib, path
+                assert is_stdlib(node.module.split(".")[0]), path
             elif isinstance(node, ast.Call):
                 func = node.func
                 name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")

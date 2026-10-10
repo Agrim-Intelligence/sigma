@@ -48,3 +48,6 @@ Measured with `/usr/bin/time -p`, macOS, one task (3 pytest runs: start, referen
 runs of `python3 evals/golden/verify.py`: 0.60 / 0.63 / 0.69 s (min / median / max); three `--only T3` runs:
 0.64 / 0.66 / 0.82 s. One run each of `--only T3` under the machine's Python 3.9.6: 3.96 s; Python 3.13.9: 2.08 s.
 Figures are for ONE task; nothing beyond one task is measured.
+
+## Interpreter fallback control (orchestrator)
+The stdlib check in test_t3_task_shape falls back to a location test when sys.stdlib_module_names is missing (interpreters before 3.10). Run on the 3.9 interpreter with a third-party import planted at the top of the reference cli module: test_t3_task_shape failed red; the plant was reverted with git checkout and the test passes again (15 passed on 3.9 and on 3.12).
