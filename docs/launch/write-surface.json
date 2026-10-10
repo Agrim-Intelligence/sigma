@@ -145,6 +145,14 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/spend_ledger.py",
+      "function": "_ensure_dir",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run evaluation spend ledger: creates only the ledger directory it is handed (mode 0700, exist_ok); never deletes, renames or replaces a ledger file; refuses without fcntl",
+      "risk": "medium"
+    },
+    {
       "path": "hooks/gate_state.py",
       "function": "_open_child",
       "rule": "fs-write",
