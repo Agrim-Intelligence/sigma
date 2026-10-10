@@ -2383,6 +2383,16 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             "commits -- see docs/branching-model.md §3b for the resolution, or set "
             '`work.rebase_upkeep: "off"` while it stands.'))
 
+    # #936: a unit landing left pending (upkeep part C). Gated on the upkeep block and read-only: a closed gate
+    # emits nothing, so a project without the block sees an unchanged check list.
+    try:
+        import time as _t
+        landing_row = _load_loop_script("feature_upkeep_landing").doctor_row(base, cfg, int(_t.time()))
+    except Exception:                     # noqa: BLE001 - a doctor row never crashes the doctor
+        landing_row = None
+    if landing_row:
+        out.append(_chk(landing_row["name"], landing_row["ok"], landing_row["fix"]))
+
     # Part B, level 3: a unit whose rebase was PARKED on a conflict nobody resolved. Its own marker file and its own
     # wording -- never the would-drop row above, which would call a park "N tracked paths removed". Emitted only when a
     # park is on record (the marker exists only when the upkeep gate was open), so a project that never opted in sees
