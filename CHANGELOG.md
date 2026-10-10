@@ -79,6 +79,15 @@ All notable changes to Sigma are recorded here, newest first.
   skills whose every gesture has a passing read-only fixture are `exercised`; the rest are `pinned` (a verbatim
   `SKILL.md` gate) and artifact producers are an existing script or `agent`. The bare `python3 evals/skills/smoke.py`
   stays red for prose-only skills until slice 3 and is not a test gate.
+- **Regression mutation engine (#1056, slice 1 of #808).** New `evals/regression/mutators.py` (stdlib only):
+  `python3 evals/regression/mutators.py apply <regression> --form <form> --root <dir>` breaks one named function body
+  or table entry in a COPY of the tree, resolved with `ast` and never by line number. Regressions: `skip-plan-review`
+  and `drop-review-recording` (form `code`), `disable-secret-scan` (`drop-pattern`, `drop-redactor-only`,
+  `whole-table`, `commit-noop`), `double-context` (`words`, appends the measured words so
+  `python3 evals/phase_context_budget.py` exits 1). Exit 10 anchor missing, 11 ambiguous, 12 mutation changed
+  nothing, each named on stderr; `anchors` lists every anchor. Reading `drop-redactor-only` as dropping the
+  `authorization-header` entry of `_SECRET_PATTERN_SPECS` is an open point for #806. One new write-surface
+  inventory row (`_write_text`). Not measured: Windows, Python 3.10.
 
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`

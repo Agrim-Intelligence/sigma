@@ -137,6 +137,14 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/mutators.py",
+      "function": "_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator/CI-run; writes only the one file under --root it mutates; never the working tree unless --root says so",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/record.py",
       "function": "write_atomic",
       "rule": "fs-remove",
