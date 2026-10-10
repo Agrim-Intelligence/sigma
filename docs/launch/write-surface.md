@@ -22,6 +22,7 @@ SCANNER BLIND SPOT (#895 slice 3a): the scan counts only literal `gh ...` argv. 
 | evals/bench/launcher/sigma_bench_launcher.py | trip | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; the latch file written when the real plugin surface changed during a run | medium |
 | evals/regression/record.py | write_atomic | fs-remove | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | high |
 | evals/regression/record.py | write_atomic | fs-write | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | medium |
+| evals/regression/spend_ledger.py | _ensure_dir | fs-write | 1 | operator-run evaluation spend ledger: creates only the ledger directory it is handed (mode 0700, exist_ok); never deletes, renames or replaces a ledger file; refuses without fcntl | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
 | hooks/gate_state.py | _stripe_lock | fs-remove | 2 | ungated | high |
