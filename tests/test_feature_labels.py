@@ -78,8 +78,8 @@ def _runner(body="", labels=(), comments=(), absent=(), fail_on=()):
         if gql is not None:
             return gql
         calls.append(list(args))
-        if len(args) >= 2 and args[0] == "issue" and args[1] == "view":
-            fields = (args[args.index("--json") + 1] if "--json" in args else "").split(",")
+
+        def view(_n, fields):
             out = {}
             if "title" in fields:
                 out["title"] = "a goal"
@@ -89,7 +89,13 @@ def _runner(body="", labels=(), comments=(), absent=(), fail_on=()):
                 out["labels"] = [{"name": n} for n in sorted(live)]
             if "comments" in fields:
                 out["comments"] = [{"body": c, "authorAssociation": "OWNER"} for c in comments]
-            return json.dumps(out)
+            return out
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
+        if len(args) >= 2 and args[0] == "issue" and args[1] == "view":
+            return json.dumps(view(args[2], (args[args.index("--json") + 1] if "--json" in args else "").split(",")))
         if _is_issues_list_call(args):
             # #1468: the needs-label sweep asks for its own label and needs body+labels back.
             # #1829: REST has no field-selection concept, so (unlike `issue view` above) body is
@@ -141,10 +147,10 @@ def _queue_runner(issues, absent=()):
                        "body": bodies.get(n, "")}
                 out.append(row)
             return json.dumps(out)
-        if args[:2] == ["issue", "view"]:
-            n = str(args[2])
+
+        def view(n, fields):
+            n = str(n)
             current["n"] = n
-            fields = (args[args.index("--json") + 1] if "--json" in args else "").split(",")
             out = {}
             if "title" in fields:
                 out["title"] = "goal %s" % n
@@ -154,7 +160,13 @@ def _queue_runner(issues, absent=()):
                 out["labels"] = [{"name": x} for x in sorted(live.get(n, ()))]
             if "comments" in fields:
                 out["comments"] = [{"body": c} for c in comments.get(n, [])]
-            return json.dumps(out)
+            return out
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
+        if args[:2] == ["issue", "view"]:
+            return json.dumps(view(args[2], (args[args.index("--json") + 1] if "--json" in args else "").split(",")))
         if args[:2] == ["issue", "comment"]:
             comments.setdefault(str(args[2]), []).append(args[-1])
         return ""
@@ -180,8 +192,14 @@ def _label_creates(run):
 
 
 def _views(run, number=None):
-    return [c for c in run.calls if c[:2] == ["issue", "view"]
-            and (number is None or str(c[2]) == str(number))]
+    # #895: an issue read is REST-first, so count reads on either path (comment pages are not reads).
+    return [c for c in run.calls if gqlfake.is_issue_read(c)
+            and (number is None or _read_number(c) == str(number))]
+
+
+def _read_number(c):
+    t = gqlfake.rest_issue_target(c)
+    return t[0] if t else str(c[2])
 
 
 def _sdlc(d, ledger_on=True, max_iterations=10, run_iteration=0):
@@ -406,7 +424,7 @@ def test_a_goal_declaring_nothing_is_a_silent_no_op():
         decision = fl.attach_at_pick(base, gh, "42", cfg)
         assert _notes(base) == []
     assert decision.proceed is True and decision.outcome == fl.NOTHING_TO_DO
-    assert all(c[:2] == ["issue", "view"] for c in run.calls), _flat(run)
+    assert all(gqlfake.is_issue_read(c) for c in run.calls), _flat(run)
 
 
 def test_label_only_attaches_nothing():
@@ -613,8 +631,10 @@ def test_a_flag_whose_timeline_read_fails_posts_nothing_but_still_records():
     but the durable trace must NOT depend on it, or a refusal whose timeline read keeps failing
     leaves no record anywhere."""
     fl = _mod("feature_labels")
-    run = _runner(body=_DECLARES, labels={"sdlc:goal"}, absent={_LABEL},
-                  fail_on=["--json comments"])
+    # #895: REST fetches comment pages only when the issue's comment count is non-zero, so one
+    # unrelated comment makes the timeline read reach the (failing) page; the body read never does.
+    run = _runner(body=_DECLARES, labels={"sdlc:goal"}, absent={_LABEL}, comments=("unrelated",),
+                  fail_on=["--json comments", "issues/42/comments"])
     gh = _source(run)
     with tempfile.TemporaryDirectory() as d:
         base, cfg = _sdlc(d)
@@ -737,7 +757,7 @@ def test_an_unreadable_issue_fails_open():
     """A body we could not fetch is not a body that declares nothing -- but the safe direction is
     still today's behaviour (no unit, configured base), never a queue that stops."""
     fl = _mod("feature_labels")
-    run = _runner(body=_DECLARES, fail_on=["--json body"])
+    run = _runner(body=_DECLARES, fail_on=["--json body", "issues/42 --method GET"])
     gh = _source(run)
     with tempfile.TemporaryDirectory() as d:
         base, cfg = _sdlc(d)
@@ -755,7 +775,7 @@ def test_a_broken_stderr_cannot_break_a_pick(monkeypatch):
             raise ValueError("stderr is gone")
 
     monkeypatch.setattr(fl.sys, "stderr", Exploding())
-    run = _runner(body=_DECLARES, fail_on=["--json body"])
+    run = _runner(body=_DECLARES, fail_on=["--json body", "issues/42 --method GET"])
     gh = _source(run)
     with tempfile.TemporaryDirectory() as d:
         base, cfg = _sdlc(d)
@@ -902,7 +922,7 @@ def test_the_sweep_costs_one_query_and_no_issue_reads():
         assert fl.resume_needs_label(base, gh, cfg) == []       # still held
         after = run.calls[mark:]
     assert [c for c in after if _is_issues_list_call(c)] != []
-    assert [c for c in after if c[:2] == ["issue", "view"]] == []
+    assert [c for c in after if gqlfake.is_issue_read(c)] == []
 
 
 def test_a_released_goal_is_not_examined_again():
@@ -1037,7 +1057,7 @@ def test_a_refused_goal_is_not_re_read_on_the_next_pick():
         first = len(_views(run, 42))
         mark = len(run.calls)
         lp._next(base, gh, cfg, extra_skip={"43"})
-        second = [c for c in run.calls[mark:] if c[:2] == ["issue", "view"] and str(c[2]) == "42"]
+        second = [c for c in run.calls[mark:] if gqlfake.is_issue_read(c) and _read_number(c) == "42"]
     assert first >= 1                       # it WAS examined, once, on the pick that set it aside
     assert second == [], second             # and never again
 
@@ -1275,9 +1295,9 @@ def _flap_runner(body, closed_refs=("7",)):
                 rows.append({"number": int(n), "title": "g",
                             "labels": [{"name": x} for x in sorted(s)], "body": body})
             return json.dumps(rows)
-        if args[:2] == ["issue", "view"]:
-            n = str(args[2])
-            fields = args[args.index("--json") + 1] if "--json" in args else ""
+
+        def view(n, fields):
+            n = str(n)
             out = {}
             if "title" in fields:
                 out["title"] = "g"
@@ -1291,7 +1311,13 @@ def _flap_runner(body, closed_refs=("7",)):
                 out["state"] = "CLOSED" if n in closed_refs else "OPEN"
             if "stateReason" in fields:
                 out["stateReason"] = "COMPLETED" if n in closed_refs else ""
-            return json.dumps(out)
+            return out
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
+        if args[:2] == ["issue", "view"]:
+            return json.dumps(view(args[2], args[args.index("--json") + 1] if "--json" in args else ""))
         if args[:2] == ["issue", "comment"]:
             comments.setdefault(str(args[2]), []).append(args[-1])
         return ""
@@ -1547,8 +1573,10 @@ def _blip(run, needle, times=1):
     `gh issue view`, which is the reachable trigger. Everything else passes through untouched."""
     left = [times]
 
+    needles = (needle,) if isinstance(needle, str) else needle
+
     def wrapped(args):
-        if needle in " ".join(str(a) for a in args) and left[0] > 0:
+        if any(n in " ".join(str(a) for a in args) for n in needles) and left[0] > 0:
             left[0] -= 1
             raise RuntimeError("simulated gh failure: %s" % needle)
         return run(args)
@@ -1557,7 +1585,8 @@ def _blip(run, needle, times=1):
     return wrapped
 
 
-_VIEW_UNIT = "--json body,labels"          # the one call shape `fetch_body_labels` makes
+# the call shapes `fetch_body_labels` makes: #895 REST-first GET, then the `issue view` fallback
+_VIEW_UNIT = ("api repos/o/r/issues/42 --method GET", "--json body,labels")
 _REST_READ = "api repos/o/r/issues/42"     # the one call shape `work._declared_unit` makes
 
 
@@ -1934,7 +1963,7 @@ def test_a_goal_declaring_no_unit_is_unaffected_when_the_feature_is_off_by_defau
         decision = fl.attach_at_pick(base, gh, "42", cfg)
         assert _notes(base) == []
     assert decision.proceed is True and decision.outcome == fl.NOTHING_TO_DO and decision.unit is None
-    assert all(c[:2] == ["issue", "view"] for c in run.calls), _flat(run)
+    assert all(gqlfake.is_issue_read(c) for c in run.calls), _flat(run)
     assert "sdlc:needs-unit" not in run.labels
 
 

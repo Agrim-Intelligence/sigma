@@ -27,8 +27,16 @@ simple stack-based visitor (the same technique tests/test_vocabulary_coverage.py
 own Call-node scan), so a match can be reported as "which function, in which class" and checked
 against the allowlist below.
 
-ALLOWLIST — exactly one entry: `skills/sigma-loop/scripts/sources.py`, class `GitHubSource`, method
+ALLOWLIST (#895 slice 3a: now TWO entries) — the first: `skills/sigma-loop/scripts/sources.py`, class `GitHubSource`, method
 `create_dependency` — the helper's own internal call. Anything else that matches is a violation.
+
+The second entry is `skills/sigma-loop/scripts/gh_api.py`, no class, function `create_issue`: since #895
+slice 3a the REST helper carries its own literal `["issue", "create", ...]` fallback argv (the GraphQL
+fallback `gh issue create`). The entry is PER FUNCTION, so a non-literal or a second literal anywhere
+else in gh_api.py (or any other file) is still a violation. The other half of the guarantee is no longer
+"the literal lives in one place" but "only create_dependency CALLS the helper": see
+test_only_create_dependency_calls_create_issue, which finds callers of `create_issue` / `_issue_create`
+by AST and pins them to `GitHubSource.create_dependency`.
 
 NAMED LIMITATION, stated rather than silently assumed away (matching this repo's own established
 documentation style — see tests/test_vocabulary_coverage.py's "NAMED LIMITATION" passage and
@@ -59,11 +67,23 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 #: for skills/hooks (see module docstring for why the private package is out of scope here).
 _SCAN_DIRS = ("skills", "hooks")
 
-#: Exactly one allowlisted (relpath-under-"skills"-POSIX, class, function) — create_dependency's own
-#: internal call. Nothing else may open an issue this way.
+#: Allowlisted (relpath-under-"skills"-POSIX, class, function) entries: create_dependency's own
+#: internal call, plus (slice 3a) the REST helper's own fallback argv. Nothing else may open an issue this way.
 _ALLOWED_IN_SKILLS = frozenset({
     ("sigma-loop/scripts/sources.py", "GitHubSource", "create_dependency"),
+    # #895 slice 3a: the REST helper's own GraphQL-fallback argv, per FUNCTION (class None).
+    ("sigma-loop/scripts/gh_api.py", None, "create_issue"),
 })
+_GH_API_CREATE = ("sigma-loop/scripts/gh_api.py", None, "create_issue")
+#: The only enclosing (relpath, class, function) allowed to CALL the REST create helper or its wrapper.
+#: The chain is create_dependency -> _create_issue -> _issue_create -> gh_api.create_issue; each link is
+#: called only by the one before it (asserted below), so the entry point stays create_dependency.
+_ALLOWED_CREATE_CALLERS = frozenset({
+    ("sigma-loop/scripts/sources.py", "GitHubSource", "create_dependency"),
+    ("sigma-loop/scripts/sources.py", "GitHubSource", "_issue_create"),
+    ("sigma-loop/scripts/sources.py", "GitHubSource", "_create_issue"),
+})
+_CREATE_NAMES = frozenset({"create_issue", "_issue_create", "_create_issue"})
 
 
 def _is_virtualenv(directory):
@@ -143,6 +163,42 @@ class _Visitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+class _CallVisitor(_Visitor):
+    """Same enclosing-scope stack, but collects CALLS of the REST create helper / its source wrapper
+    (`gh_api.create_issue(...)`, `self._issue_create(...)`, or a bare imported name)."""
+
+    def visit_List(self, node):          # calls only: the list-literal matches belong to _Visitor
+        self.generic_visit(node)
+
+    visit_Tuple = visit_List
+
+    def visit_Call(self, node):
+        f = node.func
+        name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else None)
+        if name in _CREATE_NAMES:
+            cls = self._class_stack[-1] if self._class_stack else None
+            fn = self._func_stack[-1] if self._func_stack else None
+            self.matches.append((cls, fn, node.lineno, name))
+        self.generic_visit(node)
+
+
+def _create_callers(root, allowed=frozenset()):
+    """One formatted entry per call of `create_issue` / `_issue_create` under `root` outside `allowed`."""
+    out = []
+    for path in _owned_py_files(root):
+        rel = path.relative_to(root).as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8-sig", errors="replace"), filename=str(path))
+        except (SyntaxError, ValueError):
+            out.append(f"{rel}: unparseable")
+            continue
+        v = _CallVisitor()
+        v.visit(tree)
+        out += [f"{rel}:{ln}: calls the REST issue-create helper outside create_dependency "
+                f"({cls}.{fn})" for cls, fn, ln, _n in v.matches if (rel, cls, fn) not in allowed]
+    return sorted(out)
+
+
 def _file_matches(path, root):
     """(relpath, class_or_None, function_or_None, lineno) for every issue-create-shaped match in one
     file, or a single `(relpath, None, None, None)` sentinel (lineno=None) when the file is
@@ -218,21 +274,43 @@ def test_skills_and_hooks_only_open_issues_through_create_dependency():
     )
 
 
-def test_create_dependencys_own_list_is_found_but_suppressed_by_the_allowlist():
-    """done_when clause 3: prove the allowlist actually DISCRIMINATES, not just "matches nothing" —
-    the raw matcher (no allowlist) DOES find create_dependency's own list, and the allowlisted
-    checker suppresses exactly that match."""
+def test_gh_api_create_issue_fallback_argv_is_allowlisted():
+    """The raw matcher DOES find gh_api.create_issue's own fallback literal (so the allowlist entry is
+    load-bearing, not decoration), and the allowlisted checker suppresses exactly that match."""
     root = ROOT / "skills"
     raw = _raw_matches(root)
-    assert any(rel == "sigma-loop/scripts/sources.py" and cls == "GitHubSource"
-               and fn == "create_dependency" for rel, cls, fn, _ in raw), (
-        "the matcher itself no longer finds create_dependency's own issue-create list — "
-        f"got: {raw}"
-    )
+    assert any((rel, cls, fn) == _GH_API_CREATE for rel, cls, fn, _ in raw), (
+        f"the matcher no longer finds gh_api.create_issue's fallback argv: {raw}")
+    assert not any(rel == "sigma-loop/scripts/sources.py" for rel, _, _, _ in raw), (
+        "sources.py grew a literal issue-create list again; create_dependency now goes via gh_api")
     violations = _violations(root, _ALLOWED_IN_SKILLS)
-    assert not any("create_dependency" in v for v in violations), (
-        f"the allowlist no longer suppresses create_dependency's own call: {violations}"
-    )
+    assert not any("create_issue" in v or "create_dependency" in v for v in violations), violations
+    # and the entry is per FUNCTION: dropping it makes the real tree fail
+    only_cd = frozenset(e for e in _ALLOWED_IN_SKILLS if e != _GH_API_CREATE)
+    assert any("gh_api.py" in v for v in _violations(root, only_cd))
+
+
+def test_only_create_dependency_calls_create_issue():
+    """The callers of `gh_api.create_issue` and `GitHubSource._issue_create` are exactly
+    `GitHubSource.create_dependency` (so the feature-label layer-2 and label pre-creation live in one place)."""
+    assert _create_callers(ROOT / "skills", _ALLOWED_CREATE_CALLERS) == []
+    found = set()
+    for path in _owned_py_files(ROOT / "skills"):
+        v = _CallVisitor()
+        v.visit(ast.parse(path.read_text(encoding="utf-8-sig", errors="replace")))
+        found |= {(path.relative_to(ROOT / "skills").as_posix(), c, f, n) for c, f, _, n in v.matches}
+    src = "sigma-loop/scripts/sources.py"
+    assert found == {(src, "GitHubSource", "create_dependency", "_create_issue"),
+                     (src, "GitHubSource", "_create_issue", "_issue_create"),
+                     (src, "GitHubSource", "_issue_create", "create_issue")}, found
+
+
+def test_a_second_caller_of_create_issue_is_flagged(tmp_path):
+    (tmp_path / "second.py").write_text(
+        "class Other:\n    def sneak(self):\n        return gh_api.create_issue(run, 't', 'b')\n"
+        "    def sneak2(self):\n        return self._issue_create('t', 'b')\n", encoding="utf-8")
+    out = _create_callers(tmp_path)
+    assert len(out) == 2 and all("second.py" in v for v in out), out
 
 
 # --------------------------------------------------------------------------- the checker, on fixtures

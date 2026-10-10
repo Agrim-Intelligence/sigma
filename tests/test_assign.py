@@ -87,6 +87,11 @@ class FakeSource:
     def _repo_args(self):
         return ["--repo", self.repo]
 
+    def _issue_add_assignees(self, number, assignees):
+        """#895 slice 3a: the REST wrapper; the fake records the legacy-shaped call through `_run`."""
+        for a in ([assignees] if isinstance(assignees, str) else assignees):
+            self._run(["issue", "edit", str(number), *self._repo_args(), "--add-assignee", a])
+
     def note(self, issue, text):
         self.notes.append((str(issue), text))
 
@@ -579,11 +584,79 @@ def test_cli_usage_error_on_missing_args():
 
 
 def test_active_members_degrades_on_non_list_gh_output(tmp_path):
+    """#895 2c: the list read is REST first and a non-list page is now a GhApiError raised BEFORE the
+    old `isinstance(items, list)` arm, so it lands in the `except` arm ("could not rank active repo
+    members: ..."). The old "unexpected gh output" arm was unreachable after the change and is deleted
+    (no test can reach it): this test pins the arm that replaced it, and that nothing fell back."""
     sdlc = _project(tmp_path, codeowners=None)
-    pack = assign.resolve_assignment(str(sdlc), _config(github=True), "unmapped",
-                                      run=lambda args: json.dumps({"not": "a list"}))
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        return json.dumps({"not": "a list"})
+
+    pack = assign.resolve_assignment(str(sdlc), _config(github=True), "unmapped", run=run)
     assert pack["active_members"] == []
-    assert any("unexpected gh output" in w for w in pack["warnings"])
+    assert any("could not rank active repo members" in w for w in pack["warnings"])
+    assert not any("unexpected gh output" in w for w in pack["warnings"])
+    assert [c for c in calls if c[:2] == ["issue", "list"]] == []        # a bad page never falls back
+
+
+def test_active_members_asks_rest_first_newest_first_for_all_states():
+    import gqlfake
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        return gqlfake.rest_list(args, [gqlfake.rest_item(2, ()), gqlfake.rest_item(1, ())]) or "[]"
+
+    assign._active_members(_config(github=True), run=run, sample_size=50)
+    p = gqlfake.rest_list_params(calls[0])
+    assert calls[0][1] == "repos/acme/widgets/issues"
+    assert p["state"] == "all" and p["per_page"] == "50" and p["direction"] == "desc" and "labels" not in p
+
+
+def test_active_members_rate_limited_rest_falls_back_to_one_issue_list(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        if args[0] == "api":
+            exc = RuntimeError("gh api failed")
+            exc.hint = "gh: API rate limit exceeded (HTTP 429)"
+            raise exc
+        return json.dumps([{"assignees": [{"login": "bo"}]}])
+
+    members, warnings = assign._active_members(_config(github=True), run=run)
+    assert members == ["bo"] and warnings == []
+    assert [c for c in calls if c[0] == "issue"] == [["issue", "list", "--repo", "acme/widgets", "--state", "all",
+                                                      "--json", "assignees", "--limit", "50"]]
+
+
+def test_active_members_threads_sdlc_dir_to_the_breaker(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+
+    def run(args):
+        if args[0] == "api":
+            exc = RuntimeError("gh api failed")
+            exc.hint = "gh: Server Error (HTTP 502)"
+            raise exc
+        return "[]"
+
+    assign._active_members(_config(github=True), run=run, sdlc_dir=str(tmp_path))
+    assert json.loads((tmp_path / "state" / "gh-rest-breaker.json").read_text())["consecutive"] == 1
+
+
+def test_resolve_assignment_passes_its_sdlc_dir_down(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path, codeowners=None)
+    seen = {}
+    monkeypatch.setattr(assign, "_active_members",
+                        lambda config, run=None, limit=3, sample_size=50, sdlc_dir=None: seen.update(d=sdlc_dir) or ([], []))
+    assign.resolve_assignment(str(sdlc), _config(github=True), "unmapped", run=lambda a: "[]")
+    assert seen["d"] == str(sdlc)
 
 
 def test_active_members_skips_malformed_items_and_missing_logins():
@@ -830,3 +903,28 @@ def test_start_now_self_with_no_assignee_writes_a_plan_file_without_at_none(tmp_
     content = pathlib.Path(result["plan_file"]).read_text(encoding="utf-8")
     assert "@None" not in content
     assert "unassigned" in content.lower()
+
+
+def test_apply_assignment_goes_rest_and_keeps_the_warning_string_on_failure():
+    """#895 slice 3a, against a REAL GitHubSource: the assignment is a REST POST /assignees; a dropped
+    (non-assignable) login raises inside `gh_api` and surfaces as the unchanged per-issue warning."""
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import gqlfake
+    sources = _mod("sources", LOOP)
+    seen = []
+
+    def run(args):
+        seen.append(list(args))
+        out = gqlfake.rest_write(args, assignable={"bo"})
+        assert out is not None, args
+        return out
+
+    src = sources.GitHubSource(GITHUB_CONFIG, run=run)
+    assigned, warnings = assign._apply_assignment(src, [201], "bo")
+    assert assigned == [201] and warnings == []
+    assert seen[0][:4] == ["api", "repos/acme/widgets/issues/201/assignees", "--method", "POST"]
+    assigned, warnings = assign._apply_assignment(src, [202], "ghost")
+    assert assigned == [] and len(warnings) == 1
+    assert warnings[0].startswith("could not assign @ghost to #202: ")
+    assert not any(c[0] == "issue" for c in seen)                    # no gh issue edit anywhere

@@ -684,6 +684,14 @@ def _alias_repo(tmp_path, monkeypatch, ssh_body, url="git@github-work:o/r.git"):
     return runner, calls
 
 
+def _which_with_gh(name):
+    """Real lookup, except gh: _alias_repo rebuilds PATH from a stub dir + git's dir, and gh need not
+    sit beside git (Homebrew). Assumption: the fake "/fake/gh" is safe because gh is never executed
+    here (the fake runner answers it); only the gh-installed check consults `which`. ssh/git still
+    resolve for real, so the stub ssh is found."""
+    return "/fake/gh" if name == "gh" else shutil.which(name)
+
+
 _POSIX_GIT = pytest.mark.skipif(os.name == "nt" or not shutil.which("git"),
                                 reason="POSIX stub ssh on PATH; needs git")
 
@@ -696,7 +704,7 @@ def test_ssh_alias_remote_is_resolved_through_ssh_G(tmp_path, monkeypatch):
                                 "if sys.argv[1:] == ['-G', 'github-work']:\n"
                                 "    print('user git\\nhostname github.com\\nport 22')\n"
                                 "else:\n    sys.exit(255)")
-    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=_which_with_gh)
     c = by_id(checks)
     assert ["ssh", "-G", "github-work"] in calls
     assert ["gh", "auth", "status", "--active", "--hostname", "github.com"] in calls
@@ -712,7 +720,7 @@ def test_unresolvable_ssh_alias_is_cannot_verify_never_a_login(tmp_path, monkeyp
     """No resolution (ssh -G fails, or no ssh at all) and the host is not a hostname: CANNOT VERIFY,
     no command, no `gh auth login -h <alias>`, not blocking, and gh is never asked about the alias."""
     runner, calls = _alias_repo(tmp_path, monkeypatch, ssh_body)
-    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    checks = pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=_which_with_gh)
     c = by_id(checks)
     assert c["gh-auth"]["ok"] is None and "github-work" in c["gh-auth"]["detail"]
     assert c["gh-auth"]["commands"] == []
@@ -727,7 +735,7 @@ def test_unresolvable_ssh_alias_is_cannot_verify_never_a_login(tmp_path, monkeyp
 def test_ghe_fqdn_is_still_checked_as_itself(tmp_path, monkeypatch):
     runner, calls = _alias_repo(tmp_path, monkeypatch,
                                 "print('hostname ghe.acme.io')", url="git@ghe.acme.io:x/y.git")
-    pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=shutil.which)
+    pf.preflight(str(tmp_path), WORK_ON, runner=runner, which=_which_with_gh)
     assert ["gh", "auth", "status", "--active", "--hostname", "ghe.acme.io"] in calls
 
 

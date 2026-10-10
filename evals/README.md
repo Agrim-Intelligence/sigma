@@ -121,6 +121,46 @@ the recorded one. Every task is scored in one environment, because the harness r
 `evals/bench/tasks/environment.lock` (resolved by `bench_tasks.py lock`, hash and interpreter in the manifest) is what the run
 must build and put first on that PATH; the harness does not enforce it.
 
+## Golden tasks
+
+`evals/golden/` holds small, self-checking tasks (slice 1 of epic #873 ships the verifier; the tasks land in
+later slices). It has nothing to do with `contract/golden/`, which is a different thing (the golden config and
+goal frontmatter the contract tests read). One gesture, no flags:
+
+```bash
+python3 evals/golden/verify.py            # verify every task under evals/golden/
+python3 evals/golden/verify.py --only ID  # one task; a mistyped ID exits 2
+```
+
+A task `<id>/` holds `task.json`, `repo/` (the start tree), `reference/` (the complete fixed tree),
+`allowed_paths.json`, `rubric.json` and `hidden/` (`files/`, `verify.json`, optional `naive/`).
+`task.json` carries `id` (equal to the directory name), `kind`, `origin` (`planned` or `issue:<n>`), `prompt`,
+`visible_command` (a non-empty list starting with `python` or `python3`; validated, never run),
+`hidden_sha256` and `trap`. `hidden_sha256` is a map `{path relative to hidden/: sha256 hex}` whose keys are
+exactly the regular files under `hidden/` (including `verify.json` and `naive/`); a missing, extra or
+mismatched entry is red and names the file. `__pycache__` directories, `*.pyc` and `.DS_Store` are ignored.
+
+Each failure prints `RED <task> <property>: <detail>`. Properties: `task-json`, `id`, `origin`,
+`visible_command`, `hidden-sha256`, `verify-json` (the `command` must be a `python -m pytest` argv with
+`-p no:cacheprovider` and `.sigma-hidden/files`), `rubric` (a JSON object), `allowed_paths` (a list of strings),
+`symlink` (any link under `repo/`, `reference/` or `hidden/`), `hidden-on-start` (hidden tests must exit 1 on
+`repo/`), `hidden-on-reference` (exit 0 on `reference/`), `reference-diff` (every added, changed or deleted path
+between `repo/` and `reference/` must be in `allowed_paths.json`, as an exact path or a `dir/` prefix) and
+`naive` (if `hidden/naive/` exists it is overlaid on `repo/` and the hidden tests must exit 1). The bundle
+the tests run from never contains `naive/`.
+
+Exit codes: 0 all green; 1 any red line; 2 unreadable or invalid input (bad JSON, unknown `--only`, a bad
+`SIGMA_GOLDEN_TIMEOUT`). With no task directories it exits 0 and says `0 golden tasks found ... (nothing
+verified)`: that is not a pass, and a directory without `task.json` is red, never skipped. Unix only: it
+refuses on Windows (exit 2). Each hidden run has a 120 s ceiling (a hung-test limit, not a measured time);
+the whole process group is killed and the run is reported red `timeout`. `SIGMA_GOLDEN_TIMEOUT` (1 to 600
+seconds) overrides it and exists for the tests only. Controls: `python3 -m pytest tests/test_golden_verify.py -q`.
+
+Measured wall time (macOS, `/usr/bin/time -p`, five runs each, one planted task with a naive patch, so 3 pytest
+runs): 0.45 / 0.47 / 0.65 s (min / median / max) under the Python 3.12 venv; 3.42 / 3.77 / 3.94 s under the
+machine's system Python 3.9.6, whose pytest start-up is slower. Cost is linear in tasks and runs are sequential.
+The figure is for ONE task: slices 2-4 add tasks and will change it, and nothing beyond one task is measured.
+
 ## Tier 0 — structural gate over every `SKILL.md` (free, runs in CI)
 
 The product *is* the skill prompts, and Tier 1 below scores the intent hook, not one word of them.

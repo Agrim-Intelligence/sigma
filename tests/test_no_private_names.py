@@ -145,7 +145,7 @@ _PATTERNS = [
     (r"(?-i:" "LOOP" "SMITH" r"_[A-Z_]*)", "retired env-var prefix"),
     (r"sdlc-(align|audit|brainstorm|context|contract-check|debug|decide|define|doctor|dossier"
      r"|goal-design|goal-review|goal|implement|init|kg|log|loop|migration-check|model|plan-review"
-     r"|plan|promote|radar|rebase|release-check|research|retro|review|scope|security-review|setup"
+     r"|plan|prd-intake|promote|radar|rebase|release-check|research|retro|review|scope|security-review|setup"
      r"|slack|status|time|triage|unpark|velocity|verify|vision|wizard)\b", "retired skill name"),
     (r"sdlc-(?:ledger|knowledge)\b", "retired ops token outside branch context"),
     (r"sdlc-" r"\*", "retired skill namespace glob"),

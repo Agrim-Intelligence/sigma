@@ -383,7 +383,7 @@ _MARKER_LITERAL = re.compile(r"""["'](?:<!-- )?sigma[:-][a-z][a-z0-9:-]*""")
 _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "sigma-kg", "sigma-log", "sigma-loop",
                 "sigma-model", "sigma-rebase", "sigma-scope", "sigma-scope-assign", "sigma-scope-plan",
                 "sigma-setup", "sigma-setup:", "sigma-velocity",    # skill names in printed output (#523)
-                "sigma-managed-enrolled-", "sigma-demo", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
+                "sigma-managed-enrolled-", "sigma-demo", "sigma-dossier", "sigma-flake-", "sigma-merge-queue-", "sigma-push-refused",
                 "sigma-receipt-snapshot-",
                 "sigma:spend-approved", "sigma:spend-approval-used")   # new with #722: no legacy spelling
 

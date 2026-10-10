@@ -67,6 +67,7 @@ def _load_loop_script(name):
 
 sources = _load_loop_script("sources")
 triage = _load_loop_script("triage")
+blocker_scan = _load_loop_script("blocker_scan")
 
 #: The label the Dossier ticket carries. NOT in `_ensure_labels`'s bootstrap table (contract §10):
 #: `create_dependency`'s own idempotent label-create mints it at attach instead, so a fresh adopter
@@ -199,7 +200,29 @@ def _title(answers):
     return raw or "Untitled dossier"
 
 
-def render_block(answers, questions_asked=()):
+def _defang(text):
+    """Replace the trigger phrase of any `blocker_scan` dependency match with an ellipsis, so
+    PRD-sourced text rendered into a body can never read as a blocker edge (#822)."""
+    return blocker_scan._BLOCK_RE.sub(lambda m: m.group(0).replace(m.group(1), "…", 1),
+                                      " ".join(str(text).split()))
+
+
+def _source_lines(prd_source):
+    """The `### Source` block (#822): where a PRD-derived Dossier came from. Rendered OUTSIDE the
+    `dossier-qa` fence, after it, and only when a source is given."""
+    lines = ["", "### Source", "",
+             "- **path** — %s" % _defang(prd_source.get("path", "")),
+             "- **sha256** — %s" % prd_source.get("sha256", "")]
+    if prd_source.get("section"):
+        lines.append("- **section** — %s" % _defang(prd_source["section"]))
+    for key, quote in (prd_source.get("cites") or {}).items():
+        if isinstance(quote, (list, tuple)):
+            quote = " / ".join(str(q) for q in quote)
+        lines.append('- **cite %s** — "%s"' % (key, _defang(quote)))
+    return lines
+
+
+def render_block(answers, questions_asked=(), prd_source=None):
     """The fenced record, identical in the body and in the comment so the two can never disagree --
     same contract as `unpark.render_block`. Answers are rendered in BANK ORDER (not dict insertion
     order): unlike unpark's block, which is appended to an issue that already has other content, this
@@ -242,6 +265,8 @@ def render_block(answers, questions_asked=()):
     for key in unrecognized:
         _emit(key, answers[key])
     lines += ["", DOSSIER_QA_END]
+    if prd_source:
+        lines += _source_lines(prd_source)
     return "\n".join(lines)
 
 
@@ -258,7 +283,7 @@ def _resolve_source(sdlc_dir, config, source=None, run=None):
 
 
 def file(sdlc_dir, config, answers, questions_asked=(), decision=None, source=None, run=None,
-         apply=True):
+         apply=True, prd_source=None):
     """Create the Dossier ticket: `story`-labelled, never `sdlc:goal`, self-assigned -- no prompt.
 
     `decision` is the CANONICAL token (`"stop"` or `"continue"`), not the free-text option string --
@@ -335,7 +360,7 @@ def file(sdlc_dir, config, answers, questions_asked=(), decision=None, source=No
         return {"outcome": "failed", "detail": "backlog source cannot open issues"}
 
     title = _title(answers)
-    block = render_block(answers, questions_asked)
+    block = render_block(answers, questions_asked, prd_source)
 
     if not apply:
         detail = ("create %r labelled %r, self-assigned, decision=%s"
@@ -374,10 +399,10 @@ def _comment(source, number, text):
     """Best-effort follow-up comment carrying the same block as the body -- matches `unpark._comment`
     exactly. Never lets a comment failure erase a dossier issue that was already created; the body
     already carries the identical record, so nothing is actually lost."""
-    if not hasattr(source, "_run") or not hasattr(source, "_repo_args"):
-        return                                        # LocalSource has neither -- nothing to post
+    if not hasattr(source, "_issue_comment"):
+        return                                        # LocalSource has none -- nothing to post
     try:
-        source._run(["issue", "comment", str(number), *source._repo_args(), "--body", text])
+        source._issue_comment(number, text)           # REST first through gh_api (#895 slice 3a)
     except Exception:                                  # noqa: BLE001 - audit trail is best-effort
         pass
 

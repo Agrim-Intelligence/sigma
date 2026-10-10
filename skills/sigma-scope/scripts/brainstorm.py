@@ -173,10 +173,10 @@ def _detect_direct_issue_number(invocation):
 
 def _fetch_issue_live(number, config, run):
     gh = (config.get("discovery") or {}).get("github") or {}
-    repo_args = ["--repo", gh["repo"]] if gh.get("repo") else []
-    raw = (run or backlog_check.sources._run_gh)(
-        ["issue", "view", str(number), *repo_args, "--json", "number,title,body"])
-    data = json.loads(raw or "{}")
+    # #895: REST first; no source/sdlc_dir here, so no breaker or log. `run` is also the fallback runner.
+    srcs = backlog_check.sources
+    data = srcs.gh_api.read_issue(run or srcs._run_gh, int(number), ["number", "title", "body"],
+                                  gh.get("repo") or None, gql_run=run or srcs._run_gh)
     if not isinstance(data, dict) or "number" not in data:
         return None
     return {"ref": str(data.get("number")), "title": data.get("title") or "",

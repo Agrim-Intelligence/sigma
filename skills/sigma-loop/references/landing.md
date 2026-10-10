@@ -295,7 +295,8 @@ moves the card to Done, replays the merge observation, releases the checkout) an
   close reuses that read, and so does the checkout release. Closing a goal adds one more REST read
   only when the ledger or journal is on, for the merge facts. This bound is for **PR reads**.
   Issue completion uses GraphQL too: a cold-cache, board-disabled `GitHubSource.complete()`
-  dispatches five gh commands: one `gh issue view` state probe, one issue close, two GraphQL
+  dispatches five gh commands: one REST issue state probe (#895; one `gh issue view` fallback
+  only on rate limit/5xx/transport), one issue close, two GraphQL
   queries (issue node and label ids), and one GraphQL label mutation. This count is measured
   through the real complete method with an injected runner, not live quota or latency. Board
   operations, retries, and comment fallback for an already-closed issue add calls. The automatic triggers skip a PR re-read within the last 120 s, so a larger backlog costs

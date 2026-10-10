@@ -281,9 +281,8 @@ def _read_state(source, number):
     exactly the live, authoritative `state == "CLOSED"` check the target issue itself already gets,
     applied consistently to a reference instead of a second, differently-shaped `gh` call."""
     try:
-        data = json.loads(source._run(["issue", "view", str(number), *source._repo_args(),
-                                       "--json", "labels,state,author,body,stateReason"]) or "{}")
-        if not isinstance(data, dict) or "state" not in data:
+        data = source._read_issue(number, ["labels", "state", "author", "body", "stateReason"])   # #895: REST first
+        if not data.get("state"):
             return None, "unreadable response"
         author = data.get("author")
         # #2532: MERGED (a PR) resolves; CLOSED-without-merge (also a PR) does NOT; an ordinary
@@ -624,9 +623,8 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
             detail += ("; the label landed but the board card did not move to %r — move it by hand "
                        "if this repo picks from the board" % column)
         try:
-            source._run(["issue", "comment", n, *source._repo_args(), "--body",
-                         (DEMOTE_COMMENT.format(proposed=proposed) if demote
-                          else PROMOTE_COMMENT.format(goal=goal))])
+            source._issue_comment(n, (DEMOTE_COMMENT.format(proposed=proposed) if demote
+                                      else PROMOTE_COMMENT.format(goal=goal)))   # REST first (#895 3a)
         except Exception:                               # noqa: BLE001 - audit trail is best-effort
             pass
         out["results"].append({"number": n, "outcome": verb, "detail": detail})

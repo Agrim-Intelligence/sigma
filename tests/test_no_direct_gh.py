@@ -42,6 +42,21 @@ MEASURED 2026-10-09 (#801 slice 1), via `scan()` over the worktree: TOTAL 101 si
 skills/ + hooks/, 21 of which have sites; measured once on one machine, not a ceiling guarantee).
 The dossier's 95 was a grep-derived FLOOR, not a target; the ratchet counts 101.
 No `.sh` file under skills/ or hooks/ mentions `gh` at all (grep, 9 files).
+MEASURED 2026-10-09 (#895 slice 2a), via the same `scan()`: sources.py 35 -> 28 (its 7 issue reads
+moved to `gh_api.read_issue`, whose fallback argv is built inside the EXEMPT helper), TOTAL 94.
+MEASURED 2026-10-10 (#895 slice 2b), via the same `scan()`: TOTAL 94 -> 84. The 10 `issue view` reads
+moved to `gh_api.read_issue`: auto_unpark 3 -> 2, blockers 2 -> 1, promote 2 -> 1, unpark 3 -> 2,
+reconcile 4 -> 1, triage 6 -> 4, brainstorm 1 -> 0 (entry removed). Every `issue list` site is slice 2c.
+MEASURED 2026-10-10 (#895 slice 2c), via the same `scan()` (printed, not typed): TOTAL 84 -> 74. The 10
+`issue list` list-literal sites moved to `gh_api.list_issues_gh` (whose fallback argv is built inside the
+EXEMPT helper): auto_unpark 2 -> 0 and reconcile 1 -> 0 (entries removed), doctor 13 -> 7, assign 2 -> 1
+(the remaining one is the `issue edit` write). status.py keeps its 3 by design. doctor.py's raising
+wrapper is built on `_gh_runner`, so it adds no `["gh", *args]` literal.
+MEASURED 2026-10-10 (#895 slice 3a), via the same `scan()` (printed, not typed): TOTAL 74 -> 57. The 17 issue
+WRITE list-literal sites (comment, create, edit body, close, add/remove label, add-assignee) moved to the
+`gh_api` REST write helpers, whose fallback argv is built inside the EXEMPT helper: dossier, blockers,
+promote, unpark and assign entries removed (1, 1, 1, 2, 1 -> 0), triage 4 -> 1 (the `label create` stays),
+sources 28 -> 20. Still open on #895: note(), every `label create`, lifecycle label swaps, PR/project writes.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -80,24 +95,16 @@ GENERIC_INVOCATION = "python -m pytest tests/test_no_direct_gh.py"
 BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
-    "skills/sigma-doctor/scripts/doctor.py": 13,
-    "skills/sigma-dossier/scripts/dossier.py": 1,
+    "skills/sigma-doctor/scripts/doctor.py": 7,
     "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/auto_unpark.py": 3,
-    "skills/sigma-loop/scripts/blockers.py": 2,
     "skills/sigma-loop/scripts/cross_repo.py": 1,
     "skills/sigma-loop/scripts/feature_owner.py": 1,
     "skills/sigma-loop/scripts/ledger.py": 1,
-    "skills/sigma-loop/scripts/promote.py": 2,
-    "skills/sigma-loop/scripts/reconcile.py": 4,
-    "skills/sigma-loop/scripts/sources.py": 35,
-    "skills/sigma-loop/scripts/triage.py": 6,
-    "skills/sigma-loop/scripts/unpark.py": 3,
+    "skills/sigma-loop/scripts/sources.py": 20,
+    "skills/sigma-loop/scripts/triage.py": 1,
     "skills/sigma-loop/scripts/work.py": 14,
     "skills/sigma-rebase/scripts/rebase_brief.py": 1,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
-    "skills/sigma-scope/scripts/assign.py": 2,
-    "skills/sigma-scope/scripts/brainstorm.py": 1,
     "skills/sigma-status/scripts/status.py": 3,
 }
 

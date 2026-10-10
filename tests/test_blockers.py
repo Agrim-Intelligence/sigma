@@ -37,9 +37,12 @@ def _view(*labels, assignees=(), state="OPEN", state_reason=None):
     return json.dumps(payload)
 
 
-def _runner(views=None, fail_on=()):
-    calls, label_state, gql = [], set(), []
+def _runner(views=None, fail_on=(), raw_rest=None):
+    """`views` are gh-shape payloads; they are answered REST-shaped on `api .../issues/N` (#895).
+    `raw_rest`: {n: REST JSON string} sent verbatim (e.g. a response with no `state`)."""
+    calls, label_state, gql, fallbacks, rest_writes = [], set(), [], [], []
     views = views or {}
+    raw_rest = raw_rest or {}
 
     def run(args):
         joined = " ".join(str(a) for a in args)
@@ -51,16 +54,28 @@ def _runner(views=None, fail_on=()):
         if answered is not None:
             gql.append(list(args))
             return answered
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         calls.append(list(args))
         if args[0] == "project":
             return "{}"
+        target = gqlfake.rest_issue_target(args)
+        if target is not None and target[0] in raw_rest:
+            return raw_rest[target[0]]
+        rest = gqlfake.rest_issue(args, lambda n, f: views.get(n, _view()))
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))      # #895: the one fallback; REST-first tests assert this empty
             return views.get(str(args[2]), _view())
         if args[:2] == ["api", "user"]:
             return "me"
         return ""
     run.calls = calls
     run.gql = gql
+    run.fallbacks = fallbacks
+    run.rest_writes = rest_writes
     return run
 
 
@@ -198,10 +213,42 @@ def test_every_refusal_names_the_route_out():
 
 def test_an_unreadable_blocker_is_reported_unresolved_never_assumed_fine():
     b = _mod("blockers")
-    run = _runner(fail_on=["issue view 7"])
+    run = _runner(fail_on=["issues/7", "issue view 7"])
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
     assert result["surfaced"] == ["7"]
     assert "could not read" in result["results"][0]["detail"]
+
+
+def test_state_reads_rest_first_and_asks_for_nothing_else():
+    """#895: one `api repos/acme/widget/issues/7 --method GET`; no `issue view`; labels/assignees mapped."""
+    b = _mod("blockers")
+    run = _runner(views={"7": _view("bug", assignees=["dana"])})
+    state = b._state(_source(b, run), "7")
+    assert state == {"labels": {"bug"}, "assignees": ["dana"], "closed": False}
+    assert [c for c in run.calls if c[0] != "project"] == [["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    assert run.fallbacks == []
+
+
+def test_a_response_with_no_state_is_refused_not_guessed():
+    b = _mod("blockers")
+    run = _runner(raw_rest={"7": json.dumps({"number": 7, "labels": [], "assignees": [], "comments": 0})})
+    assert b._state(_source(b, run), "7") is None
+    assert run.fallbacks == []
+
+
+def test_rest_5xx_falls_back_once_to_issue_view(monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    b = _mod("blockers")
+    inner = _runner(views={"7": _view("bug")})
+
+    def flaky(args):
+        if gqlfake.rest_issue_target(args):
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return inner(args)
+    state = b._state(_source(b, flaky), "7")
+    assert state["labels"] == {"bug"}
+    assert [c[:3] for c in inner.fallbacks] == [["issue", "view", "7"]]
 
 
 def test_one_unresolvable_blocker_never_stops_the_others_being_resolved():
@@ -272,7 +319,7 @@ def test_routing_survives_a_ledger_that_is_switched_off():
 def test_a_failed_comment_never_undoes_a_landed_resolution():
     b = _mod("blockers")
     run = _runner(views={"7": _view("sdlc:needs-confirmation", "sdlc:followup")},
-                  fail_on=["issue comment"])
+                  fail_on=["issues/7/comments"])
     result = b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
     assert result["results"][0]["verdict"] == b.PROMOTED and result["results"][0]["acted"] is True
 
@@ -461,3 +508,15 @@ def test_resolve_correctly_handles_a_merged_pr_via_the_park_resume_path():
     # outcome a genuinely-closed issue blocker already gets (mirrors the module's own
     # test_the_deadlock_is_closed_end_to_end shape for a PROMOTED verdict).
     assert result["resolved"] == ["7"] and result["surfaced"] == []
+
+
+def test_the_routing_comment_is_a_rest_post_and_its_failure_is_swallowed():
+    """#895 slice 3a: the comment goes through `gh_api` REST, not `gh issue comment`; a failing POST is
+    swallowed (best-effort audit trail) and the ROUTED verdict still stands."""
+    b = _mod("blockers")
+    run = _runner(views={"7": _view(assignees=["someone-else"])})
+    b.resolve(".sdlc", _config(), _source(b, run), "42", ["7"], run=run)
+    assert [c[1] for c in run.rest_writes] == ["repos/acme/widget/issues/7/comments"]
+    bad = _runner(views={"7": _view(assignees=["someone-else"])}, fail_on=["issues/7/comments"])
+    result = b.resolve(".sdlc", _config(), _source(b, bad), "42", ["7"], run=bad)
+    assert result["results"][0]["verdict"] == b.ROUTED and result["results"][0]["acted"] is True

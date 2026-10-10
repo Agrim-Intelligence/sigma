@@ -187,6 +187,10 @@ So: put the commit on an `sdlc/*` branch and land it through a pull request. If 
 `feature/*` branch without Sigma, keeping the unit consistent is yours — the tool tells you it
 stopped, and it tells you nothing before you commit.
 
+## Golden tasks
+
+Golden-task directories under `evals/golden/` are checked by `python3 evals/golden/verify.py` (CI runs it; `--only ID` checks one task). It has nothing to do with `contract/golden/`. See [the evals README](../evals/README.md#golden-tasks).
+
 ## Output
 
 All status reporting in this repo follows `docs/output-contract.md`.

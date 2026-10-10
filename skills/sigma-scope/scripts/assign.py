@@ -175,25 +175,26 @@ def _as_int(value):
 # --------------------------------------------------------------------------- 1. assignment resolution
 
 
-def _active_members(config, run=None, limit=3, sample_size=50):
+def _active_members(config, run=None, limit=3, sample_size=50, sdlc_dir=None):
     """Up to `limit` GitHub logins, ranked by `_ACTIVE_MEASURE`, or `[]` with a `warnings` entry on
     any degrade (non-github discovery mode, no `gh`, unparseable output) -- fail-open, matching every
     other opt-in `gh` read in this toolchain (`triage._resolve_missing_picks`'s own posture).
-    ONE bounded `gh issue list --state all --limit <sample_size> --json assignees` call, REST-search-
-    backed, never GraphQL. `run` is injectable (default `sources._run_gh`) so tests stay hermetic."""
+    ONE bounded list of the newest `sample_size` issues in every state (no label), REST first through
+    `gh_api.list_issues_gh` (#895 slice 2c), with at most ONE `gh issue list --state all --limit N
+    --json assignees` fallback on a rate limit / 5xx / transport failure (never in a cloud session).
+    A page that is not a JSON list is an error, so it lands in the `except` arm below. `run` is
+    injectable (default `sources._run_gh`) so tests stay hermetic; `sdlc_dir`, when given, shares the
+    REST breaker/fallback log with the other reads."""
     if not triage._is_github(config):
         return [], ["active-member ranking needs github discovery mode -- none configured"]
     gh_cfg = triage._gh_cfg(config)
-    repo_args = ["--repo", gh_cfg["repo"]] if gh_cfg.get("repo") else []
     run_ = run or sources._run_gh
     try:
-        out = run_(["issue", "list", *repo_args, "--state", "all", "--limit", str(sample_size),
-                    "--json", "assignees"])
-        items = json.loads(out or "[]")
+        items = sources.gh_api.list_issues_gh(run_, ["assignees"], repo=gh_cfg.get("repo") or None, state="all",
+                                              cap=sample_size, gql_run=run_, fetch=sources.fetch_issues_rest,
+                                              sdlc_dir=sdlc_dir)
     except Exception as exc:                                        # noqa: BLE001 - fail-open
         return [], [f"could not rank active repo members: {exc}"]
-    if not isinstance(items, list):
-        return [], ["unexpected gh output ranking active repo members"]
     counts, order = {}, []
     for item in items:
         if not isinstance(item, dict):
@@ -242,7 +243,7 @@ def resolve_assignment(sdlc_dir, config, area, run=None, active_limit=3, sample_
     active_members = []
     if not codeowners_owner:
         active_members, active_warnings = _active_members(
-            config, run=run, limit=active_limit, sample_size=sample_size)
+            config, run=run, limit=active_limit, sample_size=sample_size, sdlc_dir=sdlc_dir)
         warnings += active_warnings
 
     options = [{"choice": "self", "login": current_user}]
@@ -300,19 +301,18 @@ def _nodes_from_plan(plan, report):
 
 
 def _apply_assignment(source, issue_numbers, assignee):
-    """Best-effort `--add-assignee` against each ALREADY-CREATED issue, one `gh` call per issue --
-    see the module docstring's ASSIGNMENT-ON-AN-EXISTING-ISSUE section for why this reuses
-    `source._run`/`source._repo_args()` directly rather than adding a new `sources.py` method.
+    """Best-effort assignment against each ALREADY-CREATED issue, one REST call per issue
+    (`source._issue_add_assignees`, #895 slice 3a; the module docstring's ASSIGNMENT-ON-AN-EXISTING-ISSUE
+    section predates it and describes the old `source._run` reuse).
     Per-issue try/except (one failure never stops the rest); never raises. A github-incapable
-    `source` (no `_run`/`_repo_args` -- e.g. `LocalSource`) degrades to a single warning and assigns
+    `source` (no `_issue_add_assignees` -- e.g. `LocalSource`) degrades to a single warning and assigns
     nothing, matching `_active_members`'s own github-only posture."""
-    if not (hasattr(source, "_run") and hasattr(source, "_repo_args")):
-        return [], ["assignment needs github discovery mode -- source has no _run/_repo_args"]
+    if not hasattr(source, "_issue_add_assignees"):
+        return [], ["assignment needs github discovery mode -- source has no _issue_add_assignees"]
     assigned, warnings = [], []
     for number in issue_numbers:
         try:
-            source._run(["issue", "edit", str(number), *source._repo_args(),
-                        "--add-assignee", assignee])
+            source._issue_add_assignees(number, assignee)       # REST first through gh_api (#895 3a)
             assigned.append(number)
         except Exception as exc:                                    # noqa: BLE001 - best-effort
             warnings.append(f"could not assign @{assignee} to #{number}: {exc}")

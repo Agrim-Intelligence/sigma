@@ -2290,17 +2290,22 @@ def test_survey_edges_are_relayed_with_renamed_source_and_self_references_exclud
 
 
 def _view_run(by_number):
-    """Fake `run` for `gh issue view N ...` calls, keyed by issue number (args[2]) rather than
-    verb. A number absent from `by_number` raises, matching a real `gh issue view` on an issue
+    """Fake `run` for the REST issue GET (`api repos/<o>/<r>/issues/N --method GET`, #895), keyed by
+    issue number rather than verb; any other argv is recorded in `run.unexpected` and raised. A number absent from `by_number` raises, matching a real `gh issue view` on an issue
     that does not exist (or any other single-call failure) -- proves the per-pick fail-open path."""
-    calls = []
+    calls, unexpected = [], []
     def run(args):
         calls.append(list(args))
-        n = int(args[2])
+        target = gqlfake.rest_issue_target(args)       # #895: the read is REST first
+        if target is None:
+            unexpected.append(list(args))              # incl. the `issue view` fallback
+            raise RuntimeError("unexpected argv: %r" % (args,))
+        n = int(target[0])
         if n not in by_number:
             raise RuntimeError(f"gh: issue #{n} not found")
-        return by_number[n]
+        return gqlfake.rest_issue(args, lambda _n, _f: by_number[n])
     run.calls = calls
+    run.unexpected = unexpected
     return run
 
 
@@ -2336,6 +2341,39 @@ def test_resolve_missing_picks_one_failure_does_not_block_the_rest():
     resolved = triage._resolve_missing_picks([10, 20], {}, None, run, limit=5)
     assert 10 not in resolved
     assert resolved[20]["title"] == "Twenty"
+
+
+def test_resolve_missing_picks_reads_rest_first_with_and_without_a_repo():
+    """#895: repo set -> `repos/<owner>/<repo>/issues/N`; repo unset -> `repos/{owner}/{repo}/...`
+    (gh fills the placeholders). Nothing but that one GET is requested."""
+    triage = _mod("triage"); sources = _mod("sources")
+    gh_source = sources.GitHubSource(
+        {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}}, run=lambda a: "")
+    run = _view_run({7: _issue_view_json(7, "X", ["priority:P3"])})
+    triage._resolve_missing_picks([7], {}, gh_source, run, limit=5)
+    assert run.calls == [["api", "repos/acme/widget/issues/7", "--method", "GET"]]
+    run = _view_run({7: _issue_view_json(7, "X", ["priority:P3"])})
+    triage._resolve_missing_picks([7], {}, None, run, limit=5)
+    assert run.calls == [["api", "repos/{owner}/{repo}/issues/7", "--method", "GET"]]
+    assert run.unexpected == []
+
+
+def test_resolve_missing_picks_passes_the_injected_run_as_the_fallback_too(monkeypatch):
+    """No source here: the injected `run` is both the REST runner and `gql_run`, so a REST 5xx reaches
+    the SAME `run` as one `issue view` (without `gql_run=run` the fallback would shell out to real gh)."""
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    triage = _mod("triage")
+    calls = []
+
+    def run(args):
+        calls.append(list(args))
+        if args[0] == "api":
+            raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        return _issue_view_json(7, "X", ["priority:P3"])
+    resolved = triage._resolve_missing_picks([7], {}, None, run, limit=5)
+    assert resolved[7]["priority"] == "P3"
+    assert [c[:3] for c in calls if c[0] == "issue"] == [["issue", "view", "7"]]
 
 
 def test_resolve_missing_picks_never_raises_when_everything_fails():
@@ -2805,8 +2843,8 @@ def test_plan_cmd_resolve_missing_skips_already_present_survey_picks(tmp_path):
                           "--resolve-missing", "5"], now=0, run=run)
     assert rc == 0
     assert len(run.calls) == 1   # only #12 -- #10 was already covered by the survey
-    args = run.calls[0]
-    assert args[2] == "12"
+    assert run.calls[0] == ["api", "repos/acme/widget/issues/12", "--method", "GET"]
+    assert run.unexpected == []
 
 
 def test_plan_cmd_resolve_missing_rejects_a_non_positive_value(capsys, tmp_path):
@@ -2891,7 +2929,7 @@ def _enact_runner(views=None, fail_on=()):
     contains one of `fail_on`'s substrings, in which case it raises -- the mechanism the
     partial-failure tests need. `run.calls` is the full call log, same convention as
     `_recording_runner`."""
-    calls = []
+    calls, fallbacks, rest_writes = [], [], []
     views = views or {}
     labels = set()
     def run(args):
@@ -2907,12 +2945,22 @@ def _enact_runner(views=None, fail_on=()):
         gql = gqlfake.swap(args, labels=labels, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):                # #895 slice 3a: REST writes, legacy-recorded
+            rest_writes.append(list(args))
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"), labels=labels)
         calls.append(list(args))
+        # #895: the per-issue state read is REST first; the gh-shape `views` are answered REST-shaped.
+        rest = gqlfake.rest_issue(args, lambda n, f: views.get(n, _view_json()))
+        if rest is not None:
+            return rest
         if len(args) >= 3 and args[0] == "issue" and args[1] == "view":
+            fallbacks.append(list(args))      # the one fallback; REST-first tests assert this empty
             return views.get(args[2], _view_json())
         return ""
     run.calls = calls
+    run.fallbacks = fallbacks
     run.labels = labels
+    run.rest_writes = rest_writes
     return run
 
 
@@ -2983,8 +3031,17 @@ def test_fetch_issue_state_parses_labels_assignees_body():
 
 def test_fetch_issue_state_returns_none_on_failure():
     triage = _mod("triage")
-    source = triage.sources.GitHubSource(_enact_config(), run=_enact_runner(fail_on=["issue view 10"]))
-    assert triage._fetch_issue_state(source, "10") is None
+    source = triage.sources.GitHubSource(_enact_config(),
+                                         run=_enact_runner(fail_on=["issues/10", "issue view 10"]))
+    assert triage._fetch_issue_state(source, "10") is None     # GhApiError reaches the site's own arm
+
+
+def test_fetch_issue_state_reads_rest_first_with_no_fallback():
+    triage = _mod("triage")
+    run = _enact_runner(views={"10": _view_json(labels=["sdlc:goal"])})
+    triage._fetch_issue_state(triage.sources.GitHubSource(_enact_config(), run=run), "10")
+    assert [c for c in run.calls if c[0] == "api"] == [["api", "repos/acme/widget/issues/10", "--method", "GET"]]
+    assert run.fallbacks == []
 
 
 # --- _already_marked (marker-dedup precision; F2) --------------------------------------------------
@@ -3304,7 +3361,7 @@ def test_apply_actions_apply_executes_and_marks_done():
 
 def test_apply_actions_partial_failure_isolates_and_continues():
     triage = _mod("triage")
-    run = _enact_runner(fail_on=["--add-label priority:P1"])
+    run = _enact_runner(fail_on=["labels[]=priority:P1"])
     source = triage.sources.GitHubSource(_enact_config(), run=run)
     actions = [
         {"action": "add-label", "issue": "12", "detail": "sdlc:goal", "result": None, "error": None},
@@ -3547,7 +3604,7 @@ def test_enact_cmd_nonzero_exit_when_an_action_fails(tmp_path):
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(_plan(picked=[_picked_item(10, priority="P1")])))
     config = _enact_config()
-    run = _enact_runner(views={"10": _view_json()}, fail_on=["--add-label priority:P1"])
+    run = _enact_runner(views={"10": _view_json()}, fail_on=["labels[]=priority:P1"])
     rc = triage.enact_cmd(str(tmp_path), config, ["--plan", str(plan_path), "--apply"], run=run)
     assert rc == 1
 
@@ -3717,3 +3774,46 @@ def test_a_scalar_gates_parent_does_not_crash_the_context_bucket(tmp_path):
     for value in (True, "on", []):
         out = triage._bucket_context("/nonexistent", {"gates": value})
         assert out["gates"] == {"hard_plan_gate": False, "stop_gate": False}, value
+
+
+# ----------------------------------------------------------------- #895 slice 3a: the three issue writes are REST
+
+def _act(kind, issue, detail):
+    return {"action": kind, "issue": issue, "detail": detail, "result": None, "error": None}
+
+
+def test_assign_add_label_remove_label_go_rest_not_gh_issue_edit():
+    triage = _mod("triage")
+    run = _enact_runner()
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("assign", "10", "dana"), _act("add-label", "10", "sdlc:goal"),
+                                        _act("remove-label", "10", "sdlc:parked")], True)
+    assert [a["result"] for a in out] == ["done"] * 3
+    assert [(c[1], c[3]) for c in run.rest_writes] == [
+        ("repos/acme/widget/issues/10/assignees", "POST"), ("repos/acme/widget/issues/10/labels", "POST"),
+        ("repos/acme/widget/issues/10/labels/sdlc%3Aparked", "DELETE")]
+
+
+def test_a_failed_rest_write_is_still_a_failed_result_carrying_the_rest_error():
+    """The RAISE contract: `_execute_action` raises, `apply_actions` turns it into result=failed and
+    carries the error text, then continues with the next action."""
+    triage = _mod("triage")
+    run = _enact_runner(fail_on=["issues/10/assignees"])
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("assign", "10", "dana"), _act("add-label", "10", "sdlc:goal")], True)
+    assert [a["result"] for a in out] == ["failed", "done"]
+    assert "issues/10/assignees" in out[0]["error"]
+
+
+def test_an_arbitrary_label_is_minted_by_rest_a_documented_divergence_from_gh():
+    """D3: `gh issue edit --add-label X` FAILS on an absent label; REST POST /labels creates it. The
+    triage add-label of a non-feature label does no existence lookup (accepted, documented, UNMEASURED
+    on a live repo); a feature label still goes through the layer-2 lookup."""
+    triage = _mod("triage")
+    run = _enact_runner()
+    source = triage.sources.GitHubSource(_enact_config(), run=run)
+    out = triage.apply_actions(source, [_act("add-label", "10", "made-up-label")], True)
+    assert out[0]["result"] == "done"
+    assert [c[1] for c in run.rest_writes] == ["repos/acme/widget/issues/10/labels"]
+    assert not any("/labels/" in c[1] and "--method" in c and c[c.index("--method") + 1] == "GET"
+                   for c in run.rest_writes)

@@ -131,6 +131,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 STATE_PATH = os.environ["FAKE_GH_STATE"]
 LOG_PATH = os.environ["FAKE_GH_LOG"]
@@ -429,8 +430,12 @@ def cmd_pr(state, argv, pos, flags):
     if sub == "comment":
         pr = state["prs"].get(pos[1])
         if pr is not None:
-            pr.setdefault("comments", []).append({"body": flags.get("body", ""),
+            cid = 1 + max([c.get("id", 0) for p in state["prs"].values()
+                           for c in map(_as_comment, p.get("comments", []))] or [0])
+            pr.setdefault("comments", []).append({"id": cid, "body": flags.get("body", ""),
                                                   "assoc": os.environ.get("FAKEGH_ASSOC", "OWNER")})
+            save_state(state)
+            print("https://github.com/%s/pull/%s#issuecomment-%d" % (state["repo"], pos[1], cid)); return
         save_state(state); return
     unhandled(argv, "unmodeled pr subcommand")
 
@@ -557,6 +562,19 @@ def cmd_api(state, argv, pos, flags, multi):
         names = sorted(state["labels"])
         emit([{"name": n, "color": state["labels"][n].get("color", "")}
               for n in names[(page - 1) * per_page: page * per_page]], flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/comments(?:\?(.*))?$" % re.escape(repo), endpoint)
+    if m and (method == "GET" or (method == "" and not multi.get("f"))):
+        # (real gh api infers POST from -f/-F fields, so a field call is not a read)
+        # #875: the paged issue-comments read `work._find_evidence_marker` scans (GET only).
+        q = dict(kv.partition("=")[::2] for kv in (m.group(2) or "").split("&") if kv)
+        try:
+            per_page, page = max(1, int(q.get("per_page", "30"))), max(1, int(q.get("page", "1")))
+        except ValueError:
+            per_page, page = 30, 1
+        pr = state["prs"].get(m.group(1))
+        rows = [{"id": c["id"], "body": c["body"]} for c in map(_as_comment, (pr or {}).get("comments", []))
+                if c.get("id")]
+        emit(rows[(page - 1) * per_page: page * per_page], flags.get("jq"), argv); return
     if endpoint == "repos/%s" % repo:
         obj = {"default_branch": state["default_branch"],
                "allow_auto_merge": state.get("allow_auto_merge", True)}
@@ -597,6 +615,75 @@ def cmd_api(state, argv, pos, flags, multi):
         if issue is not None and fields.get("state") == "closed":
             issue["state"] = "closed"
         save_state(state); return
+    # #895: the REST write endpoints the migrated sites use (gh_api.py).
+    def _rest_fields():
+        out, lists = {}, {}
+        for item in multi.get("f", []):
+            k, _, v = item.partition("=")
+            if k.endswith("[]"):
+                lists.setdefault(k[:-2], []).append(v)
+            else:
+                out[k] = v
+        return out, lists
+    if endpoint == "repos/%s/issues" % repo and method == "POST":
+        fields, lists = _rest_fields()
+        wanted = lists.get("labels", [])
+        for l in wanted:
+            if l not in state["labels"]:
+                sys.stderr.write("HTTP 422: Validation Failed (label %r not found)\n" % l); sys.exit(1)
+        number = str(state["issue_seq"]); state["issue_seq"] += 1
+        state["issues"][number] = {"labels": wanted, "state": "open", "title": fields.get("title", ""),
+                                    "body": fields.get("body", ""), "assignees": []}
+        save_state(state)
+        emit(issue_rest_obj(state, number), flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/comments$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        fields, _ = _rest_fields()
+        issue.setdefault("comments", []).append(fields.get("body", ""))
+        save_state(state)
+        emit({"body": fields.get("body", "")}, flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/labels$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        _, lists = _rest_fields()
+        for l in lists.get("labels", []):
+            if l not in state["labels"]:
+                sys.stderr.write("HTTP 422: Validation Failed (label %r not found)\n" % l); sys.exit(1)
+            if l not in issue["labels"]:
+                issue["labels"].append(l)
+        save_state(state)
+        emit([{"name": l} for l in issue["labels"]], flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/labels/(.+)$" % re.escape(repo), endpoint)
+    if m and method == "DELETE":
+        issue = state["issues"].get(m.group(1))
+        name = urllib.parse.unquote(m.group(2))
+        if issue is None or name not in issue["labels"]:
+            sys.stderr.write("HTTP 404: Label does not exist\n"); sys.exit(1)
+        issue["labels"].remove(name)
+        save_state(state)
+        emit([{"name": l} for l in issue["labels"]], flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/issues/(\d+)/assignees$" % re.escape(repo), endpoint)
+    if m and method == "POST":
+        issue = state["issues"].get(m.group(1))
+        if issue is None:
+            sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
+        _, lists = _rest_fields()
+        for a in lists.get("assignees", []):
+            if a not in issue.setdefault("assignees", []):
+                issue["assignees"].append(a)
+        save_state(state)
+        emit(issue_rest_obj(state, m.group(1)), flags.get("jq"), argv); return
+    m = re.match(r"^repos/%s/labels/(.+)$" % re.escape(repo), endpoint)
+    if m and method in ("", "GET"):
+        name = urllib.parse.unquote(m.group(1))
+        if name not in state["labels"]:
+            sys.stderr.write("HTTP 404: Not Found (label %r)\n" % name); sys.exit(1)
+        emit({"name": name, "color": state["labels"][name].get("color", "")}, flags.get("jq"), argv); return
     if endpoint == "repos/%s/issues" % repo:
         fields = {}
         for item in multi.get("f", []):
@@ -1237,3 +1324,117 @@ def test_the_fake_refuses_what_gh_refuses(tmp_path):
     assert r8.returncode != 0
     unhandled_lines = [l for l in world["unhandled_path"].read_text(encoding="utf-8").splitlines() if l.strip()]
     assert len(unhandled_lines) == 1
+
+
+# --------------------------------------------------------------------------------------------------
+# #875: the fake's `pr comment` URL + the paged issue-comments read (story #809, PC-7/BR-5/BR-6).
+# --------------------------------------------------------------------------------------------------
+
+_COMMENT_ID_RE = r"(?:comments?/|issuecomment-)(\d+)"  # the pattern text of work.py post_review
+
+
+def _seed_pr(world, number="101"):
+    state = _read_state(world["state_path"])
+    state["prs"][number] = {"head": "h%s" % number, "base": "main", "state": "OPEN",
+                           "title": "t", "body": "", "comments": []}
+    world["state_path"].write_text(json.dumps(state), encoding="utf-8")
+
+
+def _pr_comment(world, number, body):
+    return _fakegh(world, ["pr", "comment", number, "--body", body]).stdout.strip()
+
+
+def _unhandled_lines(world):
+    return [l for l in world["unhandled_path"].read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def test_pr_comment_prints_a_parseable_url_with_the_stored_integer_id(tmp_path):
+    import re
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world)
+    out = _pr_comment(world, "101", "hello")
+    m = re.search(_COMMENT_ID_RE, out)
+    assert m, "no comment URL on stdout: %r" % out
+    cid = int(m.group(1))
+    assert cid > 0
+    stored = _read_state(world["state_path"])["prs"]["101"]["comments"]
+    assert [c["id"] for c in stored] == [cid] and stored[0]["body"] == "hello"
+    assert _unhandled_lines(world) == []
+
+
+def test_pr_comment_ids_are_unique_and_increasing_across_prs(tmp_path):
+    import re
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world, "101"); _seed_pr(world, "102")
+    ids = []
+    for n, body in (("101", "a"), ("102", "b"), ("101", "c"), ("102", "d")):
+        ids.append(int(re.search(_COMMENT_ID_RE, _pr_comment(world, n, body)).group(1)))
+    assert ids == sorted(set(ids)) and len(ids) == 4
+    # legacy state: a bare-string comment and an id-less dict still yield a positive id
+    state = _read_state(world["state_path"])
+    state["prs"]["103"] = {"head": "h", "base": "main", "state": "OPEN", "title": "t", "body": "",
+                           "comments": ["legacy", {"body": "idless", "assoc": "OWNER"}]}
+    world["state_path"].write_text(json.dumps(state), encoding="utf-8")
+    assert int(re.search(_COMMENT_ID_RE, _pr_comment(world, "103", "new")).group(1)) > max(ids)
+    assert _unhandled_lines(world) == []
+
+
+def _read_comments_page(world, number, per_page, page):
+    ep = "repos/%s/issues/%s/comments?per_page=%s&page=%s" % (world["repo"], number, per_page, page)
+    return json.loads(_fakegh(world, ["api", ep]).stdout)
+
+
+def test_pr_comments_paged_read_honours_page_and_per_page(tmp_path):
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world)
+    for i in range(5):
+        _pr_comment(world, "101", "body %d" % i)
+    pages = [_read_comments_page(world, "101", 2, n) for n in (1, 2, 3, 4)]
+    assert [len(p) for p in pages] == [2, 2, 1, 0]
+    flat = [row for p in pages for row in p]
+    assert [r["body"] for r in flat] == ["body %d" % i for i in range(5)]
+    ids = [r["id"] for r in flat]
+    assert ids == sorted(set(ids)) and all(isinstance(i, int) for i in ids)
+    assert all(set(r) == {"id", "body"} for r in flat)
+    assert len(_read_comments_page(world, "101", 100, 1)) == 5  # _find_evidence_marker's gesture
+    assert _read_comments_page(world, "999", 100, 1) == []
+    assert _unhandled_lines(world) == []
+
+
+def test_find_evidence_marker_pages_to_termination_against_the_fake(tmp_path):
+    import importlib.util
+    scripts = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        spec = importlib.util.spec_from_file_location("work_875", scripts / "work.py")
+        work = importlib.util.module_from_spec(spec); spec.loader.exec_module(work)
+    finally:
+        sys.path.remove(str(scripts))
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world)
+    state = _read_state(world["state_path"])
+    marker = "<!-- sigma-review-evidence:abc123 -->"
+    state["prs"]["101"]["comments"] = [
+        {"id": i, "body": (marker if i == 230 else "c%d" % i), "assoc": "OWNER"} for i in range(1, 251)]
+    world["state_path"].write_text(json.dumps(state), encoding="utf-8")
+
+    def run(cwd, argv):
+        assert argv[0] == "gh"
+        return _fakegh(world, argv[1:]).stdout
+
+    found = work._find_evidence_marker(run, str(world["clone_dir"]), 101, "abc123")
+    assert found is not None and found["id"] == 230
+    assert work._find_evidence_marker(run, str(world["clone_dir"]), 101, "nope") is None
+    assert _unhandled_lines(world) == []
+
+
+def test_issue_comments_read_does_not_swallow_a_field_post(tmp_path):
+    """`gh api <endpoint> -f body=x` is a POST (real gh infers it from fields); the fake's
+    comments READ branch must not answer it, so it reaches unhandled() as before #875."""
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world)
+    ep = "repos/%s/issues/101/comments" % world["repo"]
+    r = _fakegh(world, ["api", ep, "-f", "body=x"], check=False)
+    assert r.returncode != 0
+    assert r.stdout.strip() != "[]"
+    assert len(_unhandled_lines(world)) == 1

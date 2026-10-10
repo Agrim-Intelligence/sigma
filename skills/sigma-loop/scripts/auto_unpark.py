@@ -155,10 +155,8 @@ def _fetch_parked_issues_status(source):
     complete = True
     for label in (source.parked_label, source.goal_blocked_label):
         try:
-            out = source._run(["issue", "list", *source._repo_args(), "--label", label,
-                               "--state", "open", "--json", _ISSUE_FIELDS,
-                               "--limit", str(source._BOARD_ITEM_LIMIT)])
-            issues = json.loads(out or "[]")
+            # #895 slice 2c: REST first, newest first, ONE `gh issue list` fallback (see sources._list_issues)
+            issues = source._list_issues(_ISSUE_FIELDS.split(","), labels=[label], state="open")
         except Exception:
             complete = False
             continue
@@ -187,9 +185,7 @@ def _fetch_blocking_issues(source):
     forever, unrevisited -- `gh issue edit --remove-label` works identically on a closed issue, so
     there's no cost to reaching it here."""
     try:
-        out = source._run(["issue", "list", *source._repo_args(), "--label", source.blocking_label,
-                           "--state", "all", "--json", "number", "--limit", str(source._BOARD_ITEM_LIMIT)])
-        issues = json.loads(out or "[]")
+        issues = source._list_issues(["number"], labels=[source.blocking_label], state="all")
     except Exception:
         return set()
     if not isinstance(issues, list):
@@ -228,10 +224,9 @@ def _ref_is_open(source, ref, cache):
     if ref in cache:
         return cache[ref]
     try:
-        raw = source._run(["issue", "view", ref, *source._repo_args(), "--json", "state,stateReason"])
-        data = json.loads(raw or "{}")
-        state = (data.get("state") or "").upper() if isinstance(data, dict) else ""
-        state_reason = (data.get("stateReason") or "") if isinstance(data, dict) else ""
+        data = source._read_issue(ref, ["state", "stateReason"])     # #895: REST first, GhApiError -> open
+        state = (data.get("state") or "").upper()
+        state_reason = data.get("stateReason") or ""
         # #2532: this three-way rule is now `blocker_scan.closed_state` -- extracted so `promote.py`
         # and `blockers.py` share it rather than each reinventing their own (unfixed) copy. `open`
         # is the logical negation of `closed`; the docstring above still carries the full case-by-

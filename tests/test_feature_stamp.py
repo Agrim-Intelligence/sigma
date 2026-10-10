@@ -114,10 +114,11 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
         gql = gqlfake.swap(args, labels=target, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
-        calls.append(list(args))
-        if args[:2] == ["issue", "view"]:
-            n = str(args[2])
-            fields = (args[args.index("--json") + 1] if "--json" in args else "").split(",")
+        if not gqlfake.is_issue_write(args):
+            calls.append(list(args))
+
+        def view(n, fields):
+            n = str(n)
             out = {}
             if "title" in fields:
                 out["title"] = "goal %s" % n
@@ -127,7 +128,29 @@ def _runner(issues=None, absent=(), fail_on=(), number=_FILED, create_returns=No
                 out["labels"] = [{"name": x} for x in sorted(live.get(n, ()))]
             if "comments" in fields:
                 out["comments"] = []
-            return json.dumps(out)
+            return out
+
+        rest = gqlfake.rest_issue(args, view)
+        if rest is not None:
+            return rest
+        if args[:2] == ["issue", "view"]:
+            return json.dumps(view(args[2], (args[args.index("--json") + 1] if "--json" in args else "").split(",")))
+        if gqlfake.is_issue_write(args):          # #895 slice 3a: REST writes -> re-recorded legacy-shaped
+            legacy = []
+            out = gqlfake.rest_write(args, calls=legacy, repo_args=("--repo", "o/r"),
+                                     create_number=number)
+            calls.extend(legacy)
+            if gqlfake.rest_write_target(args)[1] == "create":
+                args = legacy[0]
+                body = args[args.index("--body") + 1]
+                labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
+                created.append({"title": args[args.index("--title") + 1], "body": body,
+                                "labels": list(labels)})
+                if create_returns is not None:
+                    return "{}"             # no usable number came back
+                bodies[str(number)] = body
+                live[str(number)] = set(labels)
+            return out
         if args[:2] == ["issue", "create"]:
             body = args[args.index("--body") + 1]
             labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
@@ -388,7 +411,7 @@ def test_an_unreadable_parent_files_the_issue_with_no_unit(tmp_path):
     """`fetch_body_labels` RAISES on a transport failure by design. A blip must degrade to
     today's behaviour, not lose the follow-up."""
     run = _runner({"42": {"body": _DECLARES, "labels": {"sdlc:goal", _LABEL}}},
-                  fail_on=("issue view 42",))
+                  fail_on=("issue view 42", "repos/o/r/issues/42 "))     # #895: REST-first read, then fallback
     report = _track(tmp_path, run)
     assert report["issue"] == _FILED and report["unit"] is None
     assert any("42" in w for w in report["warnings"]), report["warnings"]

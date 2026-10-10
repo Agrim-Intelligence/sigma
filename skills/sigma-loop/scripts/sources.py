@@ -188,6 +188,7 @@ ledger = _load("ledger")             # blocker-promotion's ledger edge channel (
                                       # at module level: ledger.py has no reference back to this module.
 gh_session = _load("gh_session")     # #78: tell a Claude Code Remote session's gh proxy block apart
                                       # from a real auth failure -- see that module's own docstring.
+gh_api = _load("gh_api")             # #895: issue READS go REST first (gh_api.read_issue)
 feature_labels = _load("feature_labels")   # #1468: the never-create rule for `feature:*` labels.
                                       # Safe at module level: it loads `features` + `ledger`, and
                                       # neither has any reference back to this module.
@@ -832,8 +833,12 @@ def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
     """Fetch up to `limit` most-recent comments on issue `goal`, oldest-first:
     [{"id": str, "author": str, "body": str, "created_at": str, "association": str}, ...].
 
-    ONE `gh issue view --json comments` call. Read-only, injectable `run` (default `_run_gh`) for
-    hermetic tests -- same DI contract as every other GitHub read in this file. FAIL-OPEN: any error
+    #895: REST first via `gh_api.read_issue` (the issue GET plus only the comment pages holding the
+    newest `limit`: at most 3 requests for limit <= 100), with at most ONE `gh issue view --json
+    comments` fallback on rate limit / 5xx / transport, never in a cloud session. No `sdlc_dir` here,
+    so no breaker: during a REST outage every call costs REST + fallback and one stderr line
+    (ceiling; `comment_watch` calls this per claim per tick). Read-only, injectable `run` (default
+    `_run_gh`, serving both the `api` and the fallback argv) for hermetic tests -- same DI contract as every other GitHub read in this file. FAIL-OPEN: any error
     (not `gh`, no auth, bad `goal` ref, network blip, malformed JSON) returns [] rather than raising.
     This sits on a hot path (backlog_check.precheck's pre-token check) and will sit on a periodic one
     too (a future watch tick) — neither may ever stall or crash because a comment fetch failed.
@@ -843,24 +848,24 @@ def fetch_comments(config, goal, run=None, limit=DEFAULT_COMMENT_LIMIT):
     pass here would be a scrub callers can't see and can't reason about, which is worse than none.
 
     `id` is GitHub's GraphQL node id (e.g. `IC_kwDOTE1deM8AAAABNe8Wcg`) — opaque, NOT a sortable
-    integer (verified live against a real repo: `gh issue view <n> --json comments`). Ordering for
+    integer (verified live against a real repo: `gh issue view <n> --json comments`). The REST path
+    emits the comment's `node_id`, which equals that id, so dedup survives a REST/fallback switch.
+    A bot comment author reads `<slug>[bot]` over REST but a bare `<slug>` on the fallback
+    (unmapped, follow-up). Both measured once on a public bot-filed GitHub Skills exercise issue on
+    2026-10-09: REST `node_id` "IC_kwDOVCU5ZM8AAAABamNa1g" == gh `id` "IC_kwDOVCU5ZM8AAAABamNa1g";
+    REST comment user "github-actions[bot]", gh comment author "github-actions". Ordering for
     "new vs. seen" is therefore by `created_at` (ISO-8601, always present, string-sortable); identity
     for "have I seen this before" is by `id` (a dedup key only, never assumed orderable).
 
-    Known, explicit cost caveat: `gh issue view --json comments` has no server-side comment-count
-    limit flag (confirmed via `gh issue view --help` — only `-c/--comments` to toggle inclusion, no
-    count). `limit` bounds what THIS FUNCTION returns and callers process, not the underlying
-    network/GraphQL cost of the one `gh` call itself — for the overwhelming majority of SDLC goal
-    issues (single digits to low dozens of comments) this is a non-issue; an issue with
-    hundreds/thousands of comments would make this one call slow. Not solved here (no `gh` flag
-    exists to solve it); documented so nobody mistakes `limit` for a request-size cap.
+    Cost caveat: on the REST path `limit` does bound the request count (tail pages only); on the
+    fallback path `gh issue view --json comments` has no server-side count flag, so `limit` bounds
+    only what this function returns, not that one call's cost. `limit=0`/None reads every page.
     """
     try:
         gh = (config.get("discovery") or {}).get("github") or {}
-        repo_args = ["--repo", gh["repo"]] if gh.get("repo") else []
-        raw = (run or _run_gh)(["issue", "view", str(goal), *repo_args, "--json", "comments"])
-        data = json.loads(raw or "{}")
-        comments = data.get("comments") if isinstance(data, dict) else None
+        data = gh_api.read_issue(run or _run_gh, int(str(goal).lstrip("#")), ["comments"], gh.get("repo") or None,
+                                 gql_run=run or _run_gh, comment_limit=limit or None)
+        comments = data.get("comments")
         out = []
         for c in comments or []:
             if not isinstance(c, dict):
@@ -1304,6 +1309,87 @@ class GitHubSource:
 
     def _repo_args(self):
         return ["--repo", self.repo] if self.repo else []
+
+    def _read_issue(self, goal, fields, comment_limit=None):
+        """#895: one issue in `gh issue view --json <fields>` shape, REST first through
+        `gh_api.read_issue`, with at most ONE `gh issue view` fallback (rate limit / 5xx / transport,
+        never in a cloud session). Both calls go through `self._run`, so the label refusal, project
+        retry and every recording fake see them. Raises GhApiError (an Exception) on failure."""
+        return gh_api.read_issue(self._run, int(str(goal).lstrip("#")), fields, self.repo or None, gql_run=self._run,
+                                 sdlc_dir=self.sdlc_dir, comment_limit=comment_limit)
+
+    def _list_issues(self, fields, labels=(), state="open", cap=None, sort="created", direction="desc"):
+        """#895 slice 2c: issues in `gh issue list --json <fields>` shape, REST first through
+        `gh_api.list_issues_gh`, with at most ONE `gh issue list` fallback (rate limit / 5xx / transport,
+        never in a cloud session). Both calls go through `self._run`. Newest first unless `sort` is
+        `updated`; the breaker/log are shared with `_read_issue` (`self.sdlc_dir`). Raises GhApiError."""
+        return gh_api.list_issues_gh(self._run, fields, repo=self.repo or None, labels=labels, state=state,
+                                     cap=self._BOARD_ITEM_LIMIT if cap is None else cap, sort=sort,
+                                     direction=direction, gql_run=self._run, fetch=fetch_issues_rest,
+                                     sdlc_dir=self.sdlc_dir)
+
+    # ---- #895 slice 3a: issue WRITES, REST first through `gh_api` (callers stop touching `_run`) ------
+    # Each wrapper sends REST through `self._run` and, per `gh_api.WRITE_POLICY`, at most ONE `gh issue ...`
+    # fallback through the same `self._run`; failures raise GhApiError (an Exception). `LocalSource` has
+    # none of these, so callers guard with `hasattr(source, "_issue_comment")` etc.
+
+    def _write_kw(self):
+        return {"repo": self.repo or None, "fallback_run": self._run, "sdlc_dir": self.sdlc_dir}
+
+    @staticmethod
+    def _n(goal):
+        return int(str(goal).lstrip("#"))
+
+    def _require_feature_labels(self, names):
+        """Layer 2 of the feature-label refusal (#1468): a `feature:*` label may be ATTACHED only if it
+        already exists, because REST would otherwise mint it. One REST GET per feature-prefixed name;
+        an absent label, or any failed lookup (fail closed), raises RuntimeError with `_run`'s refusal
+        wording BEFORE any write. Returns True iff a feature label was present and verified."""
+        verified = False
+        for name in names:
+            if not feature_labels.is_feature_label(name):
+                continue
+            try:
+                ok = gh_api.label_exists(self._run, name, self.repo or None)
+                why = ""
+            except Exception as exc:          # noqa: BLE001 - fail closed on ANY lookup failure
+                ok, why = False, " (could not verify it exists: %s)" % (getattr(exc, "hint", None) or exc)
+            if not ok:
+                raise RuntimeError(
+                    "sigma: refusing to create the label %r — Sigma attaches an existing feature label "
+                    "but never creates one; a human creates the first label of a unit "
+                    "(see docs/label-model.md §5)%s" % (str(name), why))
+            verified = True
+        return verified
+
+    def _issue_comment(self, number, body):
+        return gh_api.comment_issue(self._run, self._n(number), body, **self._write_kw())
+
+    def _issue_edit_body(self, number, body):
+        return gh_api.edit_issue(self._run, self._n(number), body=body, **self._write_kw())
+
+    def _issue_add_labels(self, number, labels):
+        labels = [labels] if isinstance(labels, str) else list(labels)
+        verified = self._require_feature_labels(labels)
+        return gh_api.add_labels(self._run, self._n(number), labels, feature_labels_exist=verified,
+                                 **self._write_kw())
+
+    def _issue_remove_label(self, number, label):
+        return gh_api.remove_label(self._run, self._n(number), label, **self._write_kw())
+
+    def _issue_add_assignees(self, number, assignees):
+        assignees = [assignees] if isinstance(assignees, str) else list(assignees)
+        return gh_api.add_assignees(self._run, self._n(number), assignees, **self._write_kw())
+
+    def _issue_create(self, title, body, labels=()):
+        """-> the REST issue dict, or the URL string if the ONE `gh issue create` fallback ran."""
+        labels = list(labels)
+        verified = self._require_feature_labels(labels)
+        return gh_api.create_issue(self._run, title, body, labels, feature_labels_exist=verified,
+                                   **self._write_kw())
+
+    def _issue_close(self, number, reason=None):
+        return gh_api.close_issue(self._run, self._n(number), reason=reason, **self._write_kw())
 
     # --- #1391 step 1: the atomic-ish label swap primitive ---------------------------------------
     # Every lifecycle transition today spends 3-5 SEPARATE `gh issue edit` calls on one issue's label
@@ -2850,10 +2936,7 @@ class GitHubSource:
         `release_warnings()` so a caller that wants to know can."""
         terminal = False
         try:
-            raw = self._run(["issue", "view", goal, *self._repo_args(), "--json", "state,labels"])
-            info = json.loads(raw or "{}")
-            if not isinstance(info, dict):
-                info = {}
+            info = self._read_issue(goal, ["state", "labels"])
             state_now = (info.get("state") or "").upper()
             label_names = {(l.get("name") or "") for l in (info.get("labels") or [])}
             terminal = state_now == "CLOSED" or self.parked_label in label_names
@@ -2868,7 +2951,7 @@ class GitHubSource:
                             # goal that is still claimed/in-progress; leave the issue untouched
         self._ensure_labels()
         try:
-            self._run(["issue", "edit", goal, *self._repo_args(), "--remove-label", self.in_progress_label])
+            self._issue_remove_label(goal, self.in_progress_label)       # REST first (#895 slice 3a)
         except Exception as exc:
             # best-effort visibility label; a transient gh error must not block the release -- but
             # it must not vanish either (2026-09-28, see docstring).
@@ -2887,7 +2970,7 @@ class GitHubSource:
         if reason:
             body += ": " + reason
         try:
-            self._run(["issue", "comment", goal, *self._repo_args(), "--body", body])
+            self._issue_comment(goal, body)                              # REST first (#895 slice 3a)
         except Exception as exc:
             # best-effort audit trail; a transient gh error must not block the release -- but it
             # must not vanish either (2026-09-28, see docstring).
@@ -2948,8 +3031,7 @@ class GitHubSource:
         # fragile than it was before this fix.
         already_closed = False
         try:
-            state_now = self._run(["issue", "view", goal, *self._repo_args(),
-                                    "--json", "state", "--jq", ".state"]).strip()
+            state_now = self._read_issue(goal, ["state"])["state"]
             already_closed = state_now == "CLOSED"
         except Exception:
             pass
@@ -2982,8 +3064,11 @@ class GitHubSource:
             except Exception:
                 pass
         else:
-            self._run(["issue", "close", goal, *self._repo_args(),
-                       "--comment", "Completed by the Sigma SDLC loop."])
+            # #895 slice 3a: REST, two mutations as `gh issue close --comment` was: the comment first
+            # (non-idempotent policy), then the close (idempotent policy). Both RAISE; a comment that
+            # landed with a close that failed leaves the issue OPEN and run_loop parks it, as before.
+            self._issue_comment(goal, "Completed by the Sigma SDLC loop.")
+            self._issue_close(goal, reason="completed")
         # #1391 step 2: routed through the swap primitive for its retries. Measured: this single
         # swallowed write durably failed on 19-27 of 333 post-fix completions (5.7-8.1%), and
         # COMPLETE is the transition where that hurts most -- it is terminal, so it never runs again
@@ -3345,22 +3430,21 @@ class GitHubSource:
 
         THE ONE QUESTION OWNERSHIP ENFORCEMENT ASKS OF AN ISSUE, and it is deliberately about the
         AUTHOR rather than the assignee or the picker: the rule is about who may CREATE work
-        carrying a unit's label, and an assignee is somebody the work was handed TO. `gh issue view
-        --json author` through this source's own `_run` chokepoint, never a bare module-level
-        shell-out, so `feature_owner.gate_at_pick` is exercised by the same recording fakes as every
-        mutating call in this file.
+        carrying a unit's label, and an assignee is somebody the work was handed TO. #895: REST
+        `issues/N` first via `_read_issue` (fallback: one `gh issue view --json author`), both
+        through this source's own `_run` chokepoint, so `feature_owner.gate_at_pick` is exercised by
+        the same recording fakes as every mutating call in this file. A Bot author reads `app/<slug>`
+        on both paths (measured once on a public bot-filed GitHub Skills exercise issue, 2026-10-09:
+        REST "github-actions[bot]", gh "app/github-actions").
 
-        RAISES on a transport failure (propagated from `_run`) and DEGRADES to `""` on a malformed
-        or unexpected payload — `fetch_body_labels`' split, for its reason: "could not read this
+        RAISES GhApiError on a failed read and on a non-dict REST payload (both take the caller's
+        proceed-with-note path), and DEGRADES to `""` when the fallback's payload is malformed or
+        carries no author — `fetch_body_labels`' split, for its reason: "could not read this
         issue" and "gh answered, with no author in it" are different facts, and the caller's own
         fail-open policy lives in one place. `feature_owner` treats both as "the author cannot be
         named", which PROCEEDS; keeping them distinguishable here is what lets it say which."""
-        raw = self._run(["issue", "view", str(goal), *self._repo_args(), "--json", "author"])
-        try:
-            data = json.loads(raw or "{}")
-        except ValueError:
-            data = {}
-        author = data.get("author") if isinstance(data, dict) else None
+        data = self._read_issue(goal, ["author"])
+        author = data.get("author")
         return (author.get("login") or "") if isinstance(author, dict) else ""
 
     # ----- #1468: the unit-label surface `feature_labels.attach_at_pick` duck-types on -----------
@@ -3372,19 +3456,14 @@ class GitHubSource:
     def fetch_body_labels(self, goal):
         """`{"body": str, "labels": [...]}` -- exactly the payload `features.read` takes.
 
-        RAISES on a transport failure (propagated from `_run`), deliberately: the caller's own
+        #895: REST first via `_read_issue`, one `gh issue view` fallback. RAISES GhApiError on a
+        failed read and on a non-dict REST payload, deliberately: the caller's own
         fail-open policy lives in one place, and a method that degraded a failed read to an empty
         body would make "could not read this issue" indistinguishable from "this issue declares
-        nothing". Malformed JSON degrades rather than raising -- `features.read` is total over
+        nothing". Malformed JSON on the fallback path degrades rather than raising -- `features.read` is total over
         payload shape, so an unusable payload is honestly an absent declaration. Labels are handed
         back RAW (`[{"name": ...}]`); `features._label_name` reads both shapes this repo produces."""
-        raw = self._run(["issue", "view", str(goal), *self._repo_args(), "--json", "body,labels"])
-        try:
-            data = json.loads(raw or "{}")
-        except ValueError:
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
+        data = self._read_issue(goal, ["body", "labels"])
         return {"body": data.get("body") or "", "labels": data.get("labels") or []}
 
     def fetch_body_labels_rest(self, goal):
@@ -3634,8 +3713,10 @@ class GitHubSource:
         return [i for i in issues if isinstance(i, dict)]
 
     def fetch_comments_strict(self, goal):
-        """Direct, read-only issue comments+labels — `gh issue view --json comments,labels` through
-        THIS source's own `_run` chokepoint (#522, `goal_decompose`'s `file`-mode idempotency read).
+        """Direct, read-only issue comments+labels — REST first (ALL comments, paged by the issue's own
+        count; #895), one `gh issue view --json comments,labels` fallback, both through THIS source's
+        own `_run` chokepoint (#522, `goal_decompose`'s `file`-mode idempotency read). A malformed
+        REST payload raises GhApiError; the text below describes the fallback path's payload checks.
         Deliberately, DELIBERATELY the opposite of `fetch_title_body` above: that method degrades a
         transport failure or a malformed/non-object payload to an empty result, because a caller
         only ever uses it for a classifier that fails open by design either way. THIS method RAISES
@@ -3659,11 +3740,10 @@ class GitHubSource:
         only needs comment `body` text (the marker substring) and label `name` strings
         (`area:`/`priority:`), so no normalization layer earns its keep here. Direct read of the
         one issue's own timeline — never a search-API query (eventually consistent, #447)."""
-        raw = self._run(["issue", "view", str(goal), *self._repo_args(), "--json", "comments,labels"])
-        data = json.loads(raw)          # empty/malformed `raw` raises here -- no `or "{}"` fallback,
-                                         # unlike fetch_title_body above -- see the asymmetry note.
-        if not isinstance(data, dict):
-            raise ValueError(f"fetch_comments_strict: expected a JSON object, got {type(data).__name__}")
+        # #895: REST first, ALL comments (paged by the issue's own count); a malformed REST payload
+        # raises GhApiError. On the one-call fallback a malformed payload degrades to {} and the
+        # missing-key check below raises, exactly as before.
+        data = self._read_issue(goal, ["comments", "labels"])
         if "comments" not in data:
             raise ValueError("fetch_comments_strict: response has no 'comments' key — "
                              "malformed or incomplete")
@@ -3681,10 +3761,11 @@ class GitHubSource:
         to auto-skip, however clearly a human would read it on the issue page. Callers wanting
         BOTH the human-visible narrative and the machine-actionable marker call `note()` for the
         former and this for the latter — two different audiences, two different channels."""
-        body = self._run(["issue", "view", goal, *self._repo_args(), "--json", "body",
-                          "--jq", ".body"])
+        # #895: the `["body"]` subscript is deliberate data-loss protection -- a degraded `{}` read
+        # raises KeyError BEFORE `issue edit`, so a malformed read can never blank the body.
+        body = self._read_issue(goal, ["body"])["body"]
         new_body = (body or "").rstrip() + "\n\n" + marker + "\n"
-        self._run(["issue", "edit", goal, *self._repo_args(), "--body", new_body])
+        self._issue_edit_body(goal, new_body)           # REST first (#895 slice 3a); RAISES as before
 
     def issue_url(self, goal):
         return self._issue_url(goal)
@@ -3731,19 +3812,18 @@ class GitHubSource:
                 self._run(["label", "create", label, *self._repo_args(), "--color", "d4c5f9"])
             except Exception:
                 pass                       # a missing label must not stop the hand-off
-        args = ["issue", "create", *self._repo_args(), "--title", title, "--body", body]
-        if goal_label:
-            args += ["--label", self.goal_label]
-        for label in labels:
-            args += ["--label", label]
+        # #895 slice 3a: REST `POST /issues` first (via `_issue_create`); a `feature:*` label is refused
+        # unless it already exists (layer 2), and a create that fails ambiguously (timeout, 5xx) is
+        # NEVER replayed -- one create call, the error raises.
+        issue_labels = ([self.goal_label] if goal_label else []) + list(labels)
 
         self.last_assignee_applied = False
-        number = self._create_issue(args)   # always unassigned -- see docstring
+        number = self._create_issue(title, body, issue_labels)   # always unassigned -- see docstring
         if number is None:
             return None
         if assignee:
             try:
-                self._run(["issue", "edit", number, *self._repo_args(), "--add-assignee", assignee])
+                self._issue_add_assignees(number, assignee)       # REST; verifies the login was kept
                 self.last_assignee_applied = True
             except Exception as exc:
                 # .hint (see _run_gh) is the short reason alone; str(exc) is the fallback for an
@@ -3753,7 +3833,7 @@ class GitHubSource:
                         "GitHub issues can't be assigned to a team; if that's not the cause here, the "
                         "account may not be a repo collaborator. Needs manual routing to the right owner.")
                 try:
-                    self._run(["issue", "comment", number, *self._repo_args(), "--body", note])
+                    self._issue_comment(number, note)
                 except Exception:
                     pass   # best-effort; the issue existing at all is what matters
 
@@ -3764,8 +3844,15 @@ class GitHubSource:
         self._apply_custom_fields(number, labels=labels)
         return number
 
-    def _create_issue(self, args):
-        out = (self._run(args) or "").strip().splitlines()
+    def _create_issue(self, title, body, labels):
+        """-> the new issue number as a string, or None when none came back. REST gives a dict
+        (`str(resp["number"])`, None if absent or not an int); the ONE `gh issue create` fallback (a
+        primary rate limit only) gives a URL whose last path segment is parsed as before. A failure RAISES."""
+        resp = self._issue_create(title, body, labels)
+        if isinstance(resp, dict):
+            n = resp.get("number")
+            return str(n) if isinstance(n, int) and not isinstance(n, bool) else None
+        out = (resp or "").strip().splitlines()
         number = out[-1].rstrip("/").rsplit("/", 1)[-1] if out else ""
         return number if number.isdigit() else None
 
@@ -4790,13 +4877,21 @@ class GitHubSource:
         (field wins a field/label disagreement) so `_promote_blockers` (#900) can write through the
         exact same mechanism instead of a second, parallel one — never a behavior change for
         `_mirror_priority` itself, which now just calls straight through to this."""
-        args = ["issue", "edit", str(n), *self._repo_args(),
-                "--add-label", self.priority_prefix + canon]
-        for name in [(l.get("name") if isinstance(l, dict) else str(l or ""))
-                     for l in (labels or [])]:
-            if name.startswith(self.priority_prefix) and name != self.priority_prefix + canon:
-                args += ["--remove-label", name]
-        self._run(args)
+        # #895 slice 3a: REST, SEQUENTIAL and still NOT atomic. The add goes FIRST, then one DELETE per
+        # stale priority label (it was four unordered parallel requests inside one `gh issue edit`). A
+        # partial failure leaves two priority labels, visible. Self-heal is NARROW (`_priority_name`
+        # takes the MIN rank): if the new label is LOWER priority than the stale one (a demotion) the
+        # stale label still wins, the disagreement persists and the next pass retries the remove; if it
+        # OUTRANKS the stale one (a promotion) and the remove fails, the effective priority is already
+        # right, no disagreement is detected and the stale lower label is never removed by the loop.
+        # `PUT /labels` is deliberately NOT used (replace-set lost update). A `priority:P*` label that is
+        # missing from the repo is MINTED by REST (documented GitHub behaviour, UNMEASURED here).
+        stale = [name for name in [(l.get("name") if isinstance(l, dict) else str(l or ""))
+                                   for l in (labels or [])]
+                 if name.startswith(self.priority_prefix) and name != self.priority_prefix + canon]
+        self._issue_add_labels(n, [self.priority_prefix + canon])
+        for name in stale:
+            self._issue_remove_label(n, name)
 
     def _write_priority_field(self, n, rank, item_id):
         """Set the board's Priority field for issue `n`'s card to `rank`'s canonical `P<n>` option,

@@ -33,6 +33,7 @@ and `work._run` all share, so a runner written here could be handed to any of th
 """
 import importlib.util
 import pathlib
+import sys
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFINE_SCRIPTS = _ROOT / "skills" / "sigma-define" / "scripts"
@@ -791,6 +792,10 @@ def test_the_cli_set_priority_verb_records_it_on_the_unit(tmp_path, capsys):
 # ------------------------------------------------------------------------------- bumping priority (#2162)
 
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake  # noqa: E402
+
+
 class PriorityRunner:
     """A `gh` stand-in modelling only the two calls `bump_priority` can ever issue through a REAL
     `sources.GitHubSource`: the REST issues-list fetch (`fetch_issues_rest`'s own shape) and the
@@ -809,15 +814,18 @@ class PriorityRunner:
         self.calls.append(args)
         if args and args[0] == "api" and args[1].endswith("/issues"):
             return _json.dumps(self.issues)
-        if args[:2] == ["issue", "edit"]:
-            if int(args[2]) in self.fail_edit_for:
+        if gqlfake.is_issue_write(args):         # #895 slice 3a: the label write is REST (add, then removes)
+            n = int(gqlfake.rest_write_target(args)[2])
+            if n in self.fail_edit_for:
                 raise RuntimeError("HTTP 500: server error")
-            return ""
+            return gqlfake.rest_write(args, repo_args=())
         raise AssertionError("PriorityRunner was handed a call bump_priority must never make: %r"
                              % (args,))
 
     def edits(self):
-        return [c for c in self.calls if c[:2] == ["issue", "edit"]]
+        """The legacy-shaped `issue edit <n> --add-label|--remove-label X` record of each REST label write,
+        in the order they were made."""
+        return [l for c in self.calls for l in gqlfake.legacy_of(c, repo_args=())]
 
 
 def _gh_source(issues, **kw):
@@ -906,10 +914,10 @@ def test_bump_priority_writes_the_exact_match_through_the_real_chokepoint():
     issues = [{"number": 7, "labels": [{"name": "feature:voice"}, {"name": "priority:P3"}]}]
     src, run = _gh_source(issues)
     report = define.bump_priority(src, "voice", "P1")
-    edit = run.edits()[0]
-    assert edit[2] == "7"
-    assert edit[edit.index("--add-label") + 1] == "priority:P1"
-    assert edit[edit.index("--remove-label") + 1] == "priority:P3"
+    add, remove = run.edits()                                # #895 slice 3a: add FIRST, then the stale remove
+    assert add[2] == "7" and remove[2] == "7"
+    assert add[add.index("--add-label") + 1] == "priority:P1"
+    assert remove[remove.index("--remove-label") + 1] == "priority:P3"
     assert report["issues"][0]["outcome"] == define.BUMPED
     assert report["issues"][0]["before"] == "P3"
 
@@ -963,7 +971,8 @@ def test_bump_priority_never_walks_blockers_or_touches_anything_but_the_two_call
     issues = [{"number": 1, "labels": [{"name": "feature:voice"}]}]
     src, run = _gh_source(issues)
     define.bump_priority(src, "voice", "P1")
-    assert [c[0] for c in run.calls] == ["api", "issue"]
+    assert [c[0] for c in run.calls] == ["api", "api"]       # the list read, then ONE REST label POST
+    assert run.calls[1][3] == "POST" and run.calls[1][1].endswith("/issues/1/labels")
 
 
 def test_define_py_never_references_blocker_walking_machinery():

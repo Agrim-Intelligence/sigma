@@ -846,6 +846,8 @@ def test_324_complete_cost_names_issue_graphql_in_both_public_docs():
         calls.append(args)
         if args[:2] == ["issue", "view"]:
             return "I_1" if "id" in args else "OPEN"
+        if args[:2] == ["api", "repos/o/r/issues/1"]:       # #895: the REST state probe
+            return json.dumps({"number": 1, "state": "open", "body": "", "comments": 0})
         if args[:2] == ["api", "graphql"]:
             return json.dumps({"data": {"repository": {
                 "issue": {"id": "I_1"},
@@ -854,12 +856,14 @@ def test_324_complete_cost_names_issue_graphql_in_both_public_docs():
         return ""
     src = _load("sources").GitHubSource({"discovery": {"github": {"repo": "o/r"}}}, run=run)
     src.complete("1")
-    assert len([c for c in calls if c[:2] == ["issue", "view"]]) == 1, calls
+    # #895: the state probe is REST (`api repos/o/r/issues/1 --method GET`), no `issue view` for it.
+    assert len([c for c in calls if c[:2] == ["api", "repos/o/r/issues/1"] and "GET" in c]) == 1, calls
+    assert [c for c in calls if c[:2] == ["issue", "view"] and "state" in c] == [], calls
     assert len([c for c in calls if c[:2] == ["api", "graphql"]]) == 3, calls
-    assert len(calls) == 5, calls  # state + close + id + label ids + label mutation, no board
+    assert len(calls) == 6, calls  # state + comment + close (REST, #895) + id + label ids + label mutation, no board
     root = S.parents[2]
     for path in (root / "README.md", S.parent / "references" / "landing.md"):
-        assert "`gh issue view` state probe" in path.read_text(), path
+        assert "REST issue state probe" in path.read_text(), path
 
 
 def test_324_cli_done_holds_lock_against_a_pass(monkeypatch):

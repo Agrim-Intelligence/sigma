@@ -28,6 +28,8 @@ import time
 
 import pytest
 
+import gqlfake
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures" / "hostile"
@@ -220,9 +222,13 @@ def surface_slack(fx, index, tmp_path):
 
 
 def _comment_run(by_goal, calls):
+    def view(goal, fields):
+        return {"comments": by_goal.get(goal, [])}
+
     def run(args):
         calls.append(list(args))
-        return json.dumps({"comments": by_goal.get(args[2], [])})
+        rest = gqlfake.rest_issue(args, view)  # REST-first read (#895); `issue view` is the fallback
+        return rest if rest is not None else json.dumps(view(args[2], None))
     return run
 
 
@@ -241,7 +247,7 @@ def surface_comment(fx, index, tmp_path):
     notes = [e for e in entries if e.get("kind") == "note"]
     dumped = json.dumps(entries)
     return {"notes": str(len(notes)) if len(notes) == len(entries) else f"{len(notes)}+{len(entries) - len(notes)}other",
-            "reads-only": "yes" if calls and all(c[:2] == ["issue", "view"] for c in calls) else "no",
+            "reads-only": "yes" if calls and all(c[:2] == ["issue", "view"] or c[2:4] == ["--method", "GET"] for c in calls) else "no",
             "redacted": "yes" if TOKEN not in dumped and "[REDACTED" in dumped else "no"}
 
 

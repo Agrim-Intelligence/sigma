@@ -15,6 +15,7 @@ import sys
 import threading
 
 
+import gqlfake
 import test_decompose_check as tdc
 import test_work as tw
 
@@ -42,9 +43,15 @@ def _comment(i, body, association, login="someone"):
 
 
 def _comments_run(comments):
+    def view(n, fields):
+        return {"comments": comments, "labels": []}
+
     def run(args):
+        rest = gqlfake.rest_issue(args, view)  # REST-first read (#895); `issue view` is the fallback
+        if rest is not None:
+            return rest
         assert args[:2] == ["issue", "view"], args
-        return json.dumps({"comments": comments, "labels": []})
+        return json.dumps(view(args[2], None))
     return run
 
 
@@ -295,13 +302,12 @@ def test_unpark_brief_ignores_a_strangers_dismissed_finding():
                        "state": "OPEN",
                        "comments": [_comment(1, body, "NONE", "stranger-fake")]})
 
+    def issue(n, fields):                       # REST-first read (#895): 5 is the parked goal, 7 its blocker
+        return json.loads(view) if int(n) == 5 else {"state": "OPEN", "stateReason": ""}
+
     def run(args):
-        if args[:2] == ["issue", "view"]:
-            field = args[args.index("--json") + 1] if "--json" in args else ""
-            if field.startswith("state"):
-                return json.dumps({"state": "OPEN", "stateReason": ""})
-            return view
-        return ""
+        rest = gqlfake.rest_issue(args, issue)
+        return rest if rest is not None else ""
 
     b = u.brief(".sdlc", GH_CONFIG, 5, run=run)
     assert [x["ref"] for x in b["blockers"]] == ["7"]

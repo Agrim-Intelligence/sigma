@@ -1,7 +1,10 @@
 """GitHubSource Projects-v2 board integration. Like test_sources.py, these are hermetic: a
 tiny in-memory simulator of the `gh project` surface stands in for the network, so we assert the
 real board behavior (find-or-create, status mapping, no-duplicate-add, fail-open) without `gh`."""
-import json, re, pathlib, importlib.util, tempfile
+import json, re, pathlib, importlib.util, tempfile, sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gqlfake
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
@@ -201,6 +204,11 @@ def project_world(projects=None, fields=None, items=None, issues=None):
         if swap is not None:
             calls.append(list(a))
             return swap
+        if gqlfake.is_issue_write(a):       # #895 slice 3a: REST issue writes, re-recorded legacy-shaped
+            num = state.get("next_issue", 500)
+            if gqlfake.rest_write_target(a)[1] == "create":
+                state["next_issue"] = num + 1
+            return gqlfake.rest_write(a, calls=calls, repo_args=("--repo", "acme/widget"), create_number=num)
         calls.append(list(a))
         v0, v1 = a[0], (a[1] if len(a) > 1 else "")
         if v0 == "issue" and v1 == "list":
@@ -398,7 +406,7 @@ def test_complete_never_drops_membership_when_the_close_itself_fails():
     def failing(cwd_or_args, *rest):
         args = rest[0] if rest else cwd_or_args
         line = " ".join(str(a) for a in args)
-        if "issue close 5" in line:
+        if "issues/5 --method PATCH" in line and "state=closed" in line:      # #895 slice 3a: REST close
             raise RuntimeError("gh: could not close (502)")
         return inner(cwd_or_args, *rest) if rest else inner(cwd_or_args)
     for attr in ("calls", "labels", "state"):
@@ -529,6 +537,8 @@ def test_project_failures_do_not_break_issue_transitions():
         swap = _pw_label_swap(a, _swap_labels_state, calls=recording.calls)   # #1391 step 2
         if swap is not None:
             recording.calls.append(list(a)); return swap
+        if gqlfake.is_issue_write(a):                                       # #895 slice 3a
+            return gqlfake.rest_write(a, calls=recording.calls, repo_args=("--repo", "acme/widget"))
         recording.calls.append(list(a)); return real(a)
     recording.calls = []
 
@@ -849,6 +859,8 @@ def test_missing_project_scope_warns_once_and_keeps_issue_transitions(capsys):
         swap = _pw_label_swap(a, _swap_state, calls=rec.calls)        # #1391 step 2
         if swap is not None:
             rec.calls.append(list(a)); return swap
+        if gqlfake.is_issue_write(a):                                 # #895 slice 3a
+            return gqlfake.rest_write(a, calls=rec.calls, repo_args=("--repo", "acme/widget"))
         rec.calls.append(list(a)); return real(a)
     rec.calls = []
     gh = src.GitHubSource(_cfg(repo="acme/widget", project={"enabled": True}), run=rec)
@@ -1837,7 +1849,10 @@ def test_sync_brings_a_drifted_LABEL_into_line_with_the_field():
                   issues=[_pissue(7, "priority:P2")])
     _src(run).mark_in_progress("5")
     edits = [" ".join(c) for c in run.calls if c[:2] == ["issue", "edit"]]
-    assert any("--add-label priority:P0" in e and "--remove-label priority:P2" in e for e in edits)
+    # #895 slice 3a: the add and the remove are now two sequential REST calls (add FIRST), not one edit
+    assert any("--add-label priority:P0" in e for e in edits) and any("--remove-label priority:P2" in e for e in edits)
+    assert [i for i, e in enumerate(edits) if "--add-label priority:P0" in e][0] < \
+        [i for i, e in enumerate(edits) if "--remove-label priority:P2" in e][0]
 
 
 def test_sync_warns_loudly_when_the_field_overwrites_a_disagreeing_label(capsys):
@@ -1925,7 +1940,10 @@ def test_field_wins_via_an_alias_writes_the_canonical_label_not_the_alias_spelli
                   issues=[_pissue(7, "priority:P2")])
     _src_aliases(run, {"critical": "P0"}).mark_in_progress("5")
     edits = [" ".join(c) for c in run.calls if c[:2] == ["issue", "edit"]]
-    assert any("--add-label priority:P0" in e and "--remove-label priority:P2" in e for e in edits)
+    # #895 slice 3a: the add and the remove are now two sequential REST calls (add FIRST), not one edit
+    assert any("--add-label priority:P0" in e for e in edits) and any("--remove-label priority:P2" in e for e in edits)
+    assert [i for i, e in enumerate(edits) if "--add-label priority:P0" in e][0] < \
+        [i for i, e in enumerate(edits) if "--remove-label priority:P2" in e][0]
     assert not any("Critical" in e for e in edits)
 
 
@@ -2199,8 +2217,8 @@ def test_mode_smart_promotes_a_blocker_with_no_other_unblocked_work_at_the_depen
     gh = _promo_src(run, mode="smart")
     gh.mark_in_progress("9")
     edits = [" ".join(c) for c in run.calls if c[:2] == ["issue", "edit"]]
-    assert any("issue edit 5" in e and "--add-label priority:P0" in e and "--remove-label priority:P2" in e
-              for e in edits)
+    assert any("issue edit 5" in e and "--add-label priority:P0" in e for e in edits)
+    assert any("issue edit 5" in e and "--remove-label priority:P2" in e for e in edits)
 
 
 def test_mode_smart_promotion_comment_matches_the_spec_wording_exactly():
@@ -2444,7 +2462,7 @@ def test_one_blockers_write_failure_does_not_stop_another_blockers_promotion():
     base = _promo_world(issues)
 
     def flaky(a):
-        if a[:3] == ["issue", "edit", "5"]:
+        if gqlfake.is_issue_write(a) and "/issues/5/labels" in a[1]:       # #895 slice 3a: REST label write
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
         return base(a)
     flaky.calls = base.calls
@@ -2510,7 +2528,7 @@ def test_a_label_write_failure_posts_no_misleading_comment_and_stays_on_the_quie
     base = _promo_world(issues)
 
     def flaky(a):
-        if a[:3] == ["issue", "edit", "5"]:
+        if gqlfake.is_issue_write(a) and "/issues/5/labels" in a[1]:       # #895 slice 3a: REST label write
             raise RuntimeError("gh: HTTP 502 Bad Gateway")
         return base(a)
     flaky.calls = base.calls
@@ -2764,3 +2782,57 @@ def test_both_queue_paths_now_agree_on_every_not_eligible_label():
     for label in src.not_eligible_labels():
         assert src._card_is_eligible(1, {"sdlc:goal", label}) is False, label
     assert src._card_is_eligible(1, {"sdlc:goal"}) is True
+
+
+# --- #895 slice 3a: `_write_priority_label` is REST, add FIRST then one DELETE per stale label ---------
+
+def _prio_src(fail_remove=False):
+    """A real GitHubSource whose REST writes hit a label SET (the shim applies add/remove to it)."""
+    labels, raw = {"priority:P0", "priority:P2"}, []
+
+    def run(a):
+        if gqlfake.is_issue_write(a):
+            raw.append(list(a))
+            if fail_remove and a[3] == "DELETE":
+                raise RuntimeError("gh: HTTP 502 Bad Gateway")
+            return gqlfake.rest_write(a, labels=labels, repo_args=("--repo", "acme/widget"))
+        return ""
+    gh = _mod("sources").GitHubSource(
+        {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}}, run=run)
+    return gh, labels, raw
+
+
+def _lbls(*names):
+    return [{"name": n} for n in names]
+
+
+def test_priority_label_adds_before_removes():
+    gh, labels, raw = _prio_src()
+    gh._write_priority_label(7, "P1", _lbls("priority:P0", "priority:P2", "sdlc:goal"))
+    assert [(c[3], c[1].rsplit("/", 1)[-1]) for c in raw] == [
+        ("POST", "labels"), ("DELETE", "priority%3AP0"), ("DELETE", "priority%3AP2")]
+    assert "labels[]=priority:P1" in raw[0] and sum(1 for x in raw[0] if str(x).startswith("labels[]=")) == 1
+    assert labels == {"priority:P1"}
+
+
+def test_priority_label_add_is_exactly_the_canonical_label_never_the_alias():
+    gh, _, raw = _prio_src()
+    gh._write_priority_label(7, "P0", _lbls("priority:P2"))
+    assert [x for x in raw[0] if str(x).startswith("labels[]=")] == ["labels[]=priority:P0"]
+
+
+def test_a_failing_remove_raises_and_leaves_the_add_done_both_self_heal_directions():
+    """Partial failure is visible (two priority labels) and the call RAISES (`_mirror_priority` catches it
+    into `on_error`). DEMOTION (new P2 over stale P0): the stale higher label still wins `_priority_name`,
+    so the field/label disagreement persists and the next pass retries. PROMOTION (new P0 over stale P2):
+    the effective priority is already right, nothing detects the stale lower label (asserted, not hidden)."""
+    import pytest
+    for canon, stale, want_after in (("P2", "priority:P0", "P0"), ("P0", "priority:P2", "P0")):
+        gh, labels, _ = _prio_src(fail_remove=True)
+        labels.clear(); labels.add(stale)
+        with pytest.raises(Exception):
+            gh._write_priority_label(7, canon, _lbls(stale))
+        assert labels == {stale, "priority:" + canon}                     # the add landed, the remove did not
+        assert gh._priority_name(_lbls(*labels)) == want_after
+    # demotion: effective priority P0 != the desired P2 -> disagreement persists (retry next pass)
+    # promotion: effective priority P0 == the desired P0 -> undetected, stale lower label stays

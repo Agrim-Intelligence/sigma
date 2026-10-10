@@ -1542,12 +1542,13 @@ def _resolve_missing_picks(picked, survey_index, gh_source, run, limit):
     `repo`."""
     missing = [n for n in picked if n not in survey_index]
     prefix = gh_source.priority_prefix if gh_source is not None else "priority:"
-    repo_args = ["--repo", gh_source.repo] if gh_source is not None and gh_source.repo else []
     resolved = {}
     for n in missing[:limit]:
         try:
-            out = run(["issue", "view", str(n), "--json", "number,title,labels", *repo_args])
-            item = json.loads(out or "{}")
+            # #895: REST first; no source here, so no breaker/log (no sdlc_dir); `run` is also the fallback.
+            item = sources.gh_api.read_issue(run, int(n), ["number", "title", "labels"],
+                                             gh_source.repo if gh_source is not None and gh_source.repo else None,
+                                             gql_run=run)
         except Exception:
             continue
         if not isinstance(item, dict) or "number" not in item:
@@ -2012,9 +2013,7 @@ def _fetch_issue_state(source, issue):
     batched multi-issue fetch, matching `fetch_comments`/`fetch_title_body`/
     `fetch_comments_strict`'s own single-issue shape)."""
     try:
-        raw = source._run(["issue", "view", str(issue), *source._repo_args(),
-                           "--json", "labels,assignees,body"])
-        data = json.loads(raw or "{}")
+        data = source._read_issue(issue, ["labels", "assignees", "body"])    # #895: REST first
     except Exception:
         return None
     if not isinstance(data, dict):
@@ -2276,11 +2275,11 @@ def _execute_action(source, action):
     gh-call-mapping. Raises on failure; `apply_actions` is what catches it."""
     kind, issue, detail = action["action"], action["issue"], action["detail"]
     if kind == "assign":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--add-assignee", detail])
+        source._issue_add_assignees(issue, detail)      # REST first (#895 slice 3a)
     elif kind == "add-label":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--add-label", detail])
+        source._issue_add_labels(issue, [detail])         # REST; non-feature labels mint (D3)
     elif kind == "remove-label":
-        source._run(["issue", "edit", issue, *source._repo_args(), "--remove-label", detail])
+        source._issue_remove_label(issue, detail)
     elif kind == "swap-label":
         # #1392: ONE atomic lifecycle transition, replacing the add-label/remove-label PAIR this
         # module used to emit for an unpark. That pair is the same non-atomic write #1391 step 2

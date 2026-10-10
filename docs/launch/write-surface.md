@@ -2,6 +2,8 @@
 
 The `check` command ratchets tracked Python and shell write sites. Control: in a temporary tracked shell file add `gh label delete legacy`, run `python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json`, and see it fail as a new `gh-label` site; remove the line before the green run.
 
+SCANNER BLIND SPOT (#895 slice 3a): the scan counts only literal `gh ...` argv. An issue write migrated onto `skills/sigma-loop/scripts/gh_api.py` (comment, create, edit body, close, add/remove label, add assignee over `gh api`) leaves its old row and shows up only as a call to a `gh_api` helper, so a NEW REST write added through a helper is not seen by `check`. The only recorded REST-write row is gh_api.py `_default_run`, whose gate names the write helpers that now have callers. Rows for the 17 migrated sites were removed from this table; `sources.py` `create_dependency` keeps its `gh-label` and `fs-write` rows (the `label create` step stays). `tests/test_issue_creation_boundary.py` additionally pins the callers of the create helper.
+
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
 | evals/bench/arms/common.py | isolated_env | fs-write | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root | medium |
@@ -18,6 +20,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | evals/bench/launcher/sigma_bench_launcher.py | alert_to | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; one line per refusal or trip into launcher-alerts.log, bounded at 1 MiB | medium |
 | evals/bench/launcher/sigma_bench_launcher.py | fresh_profile | fs-write | 2 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; --dry-run only: a fresh mkdtemp profile with four empty directories | medium |
 | evals/bench/launcher/sigma_bench_launcher.py | trip | fs-write | 1 | operator-run launcher, refuses without the owner's config; writes only inside the config's scratch_root; the latch file written when the real plugin surface changed during a run | medium |
+| evals/regression/record.py | write_atomic | fs-remove | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | high |
+| evals/regression/record.py | write_atomic | fs-write | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
 | hooks/gate_state.py | _stripe_lock | fs-remove | 2 | ungated | high |
@@ -28,7 +32,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-define/scripts/define.py | main | fs-write | 1 | ungated | medium |
 | skills/sigma-doctor/scripts/board_migrate.py | seed_ready | gh-project | 1 | ungated | medium |
 | skills/sigma-doctor/scripts/migrate.py | _write | fs-remove | 2 | ungated | high |
-| skills/sigma-dossier/scripts/dossier.py | _comment | gh-issue | 1 | ungated | medium |
 | skills/sigma-init/scripts/init_flow.py | _write_json | fs-write | 1 | ungated | medium |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold | fs-write | 2 | ungated | medium |
 | skills/sigma-init/scripts/sdlc_init.py | scaffold_codex | fs-remove | 2 | ungated | high |
@@ -52,7 +55,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/agent_watch.py | _save_cursor | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/autowatch.py | _record_spend | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/backlog_check.py | _dense_channel | fs-write | 2 | ungated | medium |
-| skills/sigma-loop/scripts/blockers.py | _comment | gh-issue | 1 | ungated | medium |
 | skills/sigma-loop/scripts/channel_notify.py | _real_post | network-post | 1 | http(s) loopback URL; allow_remote_webhook is exactly true for remote delivery | high |
 | skills/sigma-loop/scripts/channel_notify.py | _save_cursor | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/coexist.py | _mark | fs-write | 1 | ungated | medium |
@@ -137,7 +139,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/pipeline.py | main | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/pipeline.py | propose_from_discovery | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/pipeline.py | propose_goals | fs-write | 2 | ungated | medium |
-| skills/sigma-loop/scripts/promote.py | promote | gh-issue | 1 | ungated | medium |
 | skills/sigma-loop/scripts/reconcile.py | _write | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/reconcile.py | _write | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/release_manifest.py | publish_to_ledger_branch | git-push | 1 | ungated | high |
@@ -155,7 +156,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/slack_commands_listen.py | release_single_instance | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/sources.py | _apply_custom_fields | gh-project | 2 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _archive_card | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | _create_issue | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_board | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_labels | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
@@ -168,18 +168,13 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/sources.py | _sync_backlog | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _write_board_phase | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _write_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | _write_priority_label | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | append_to_body | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | complete | gh-issue | 1 | discovery.source == github; board writes require project.enabled | high |
 | skills/sigma-loop/scripts/sources.py | create_dependency | fs-write | 2 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | create_dependency | gh-issue | 2 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | create_dependency | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | ensure_labels_report | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | fetch_issues_rest | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | note | fs-write | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | note | gh-api-write | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | note | gh-issue | 1 | discovery.source == github; board writes require project.enabled | medium |
-| skills/sigma-loop/scripts/sources.py | release | gh-issue | 2 | discovery.source == github; board writes require project.enabled | high |
 | skills/sigma-loop/scripts/state.py | _cursor_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | _patch_cursor | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/state.py | _queue | fs-write | 1 | ungated | medium |
@@ -211,9 +206,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/triage.py | _atomic_write_text | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/triage.py | _atomic_write_text | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/triage.py | _ensure_arbitrary_labels | gh-label | 1 | ungated | medium |
-| skills/sigma-loop/scripts/triage.py | _execute_action | gh-issue | 3 | ungated | medium |
-| skills/sigma-loop/scripts/unpark.py | _append_block | gh-issue | 1 | ungated | medium |
-| skills/sigma-loop/scripts/unpark.py | _comment | gh-issue | 1 | ungated | medium |
 | skills/sigma-loop/scripts/upstream.py | _file_upstream | gh-api-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/upstream.py | _remember | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/upstream.py | _spill | fs-write | 1 | ungated | medium |
@@ -259,6 +251,8 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-loop/scripts/worktree_prune.py | _atomic_write | fs-write | 2 | the sweep's own state only (state/worktree-prune/<goal>.json journal and state/worktree-prune-seen.json); tmp file then os.replace, under the sweep flock (#465) | low |
 | skills/sigma-loop/scripts/worktree_prune.py | _drop_journal | fs-remove | 1 | unlinks only state/worktree-prune/<goal>.json, the sweep's own journal, under the sweep flock; missing_ok (#465) | low |
 | skills/sigma-loop/scripts/worktree_prune.py | _heal | fs-rmtree | 1 | debris of the sweep's OWN interrupted removal only: a journal exists whose record, branch, path and HEAD still match, the path is exactly <project root>/<worktree_dir>/<goal> and not a symlink, git no longer registers it, and every remaining entry is regenerable or byte-identical to the blob at that path in the journalled HEAD (read in the main repo; a foreign file keeps it); re-checked immediately before the delete; under the sweep flock (#465) | high |
+| skills/sigma-prd-intake/scripts/intake.py | _write_json | fs-remove | 1 | ungated | high |
+| skills/sigma-prd-intake/scripts/intake.py | _write_json | fs-write | 2 | ungated | medium |
 | skills/sigma-radar/scripts/radar.py | record | fs-write | 1 | ungated | medium |
 | skills/sigma-rebase/scripts/conflict_walk.py | _resolve_to_stage | git-destructive | 1 | ungated | high |
 | skills/sigma-rebase/scripts/rebase_brief.py | _write_context_store | fs-remove | 1 | ungated | high |
@@ -271,7 +265,6 @@ The `check` command ratchets tracked Python and shell write sites. Control: in a
 | skills/sigma-rebase/scripts/verify_merge.py | _write_delivery | fs-write | 1 | human input() confirmation | medium |
 | skills/sigma-rebase/scripts/verify_merge.py | ensure_landing_pr | gh-pr | 2 | human input() confirmation | medium |
 | skills/sigma-rebase/scripts/verify_merge.py | merge_pr | gh-pr | 1 | human input() confirmation | high |
-| skills/sigma-scope/scripts/assign.py | _apply_assignment | gh-issue | 1 | ungated | medium |
 | skills/sigma-scope/scripts/assign.py | execute | fs-write | 2 | ungated | medium |
 | skills/sigma-scope/scripts/scope.py | main | fs-write | 2 | ungated | medium |
 | skills/sigma-setup/scripts/setup.py | ensure_ignore | fs-write | 2 | ungated | medium |

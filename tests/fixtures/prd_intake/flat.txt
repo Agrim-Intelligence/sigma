@@ -1,0 +1,1 @@
+Team leads and support agents need one shared place for customer notes because today each person keeps private documents and context is lost when someone is away, and we want a first version that lets an agent write a note, attach a file, and let the whole team read it before the quarterly planning cycle starts, without touching billing or single sign on.
