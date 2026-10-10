@@ -4,16 +4,17 @@
 Quickstart, followed literally on a fresh repository, get one goal to `done`? It is the control for
 epic #227 (plugin install -> `/sigma-init` -> one goal to done), built in #237.
 
-It runs in CI on every push (`tests/test_onboarding_control.py`, Linux, Python 3.10, 3.11, 3.12 and 3.13), with
+It runs in CI on every push (`tests/test_onboarding_control.py`; the only skip is Windows, `os.name == "nt"`), with
 no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
 are not on CI runners, so the install lines are parsed and checked there, and run only by hand.
 
 ## Run it
 
 ```
-python3 tools/onboarding_control.py                         # both modes x both variants, from this checkout
+python3 tools/onboarding_control.py                         # both modes, every variant (github/process included)
 python3 tools/onboarding_control.py --mode local            # local-goals mode only (both variants)
 python3 tools/onboarding_control.py --variant no-command    # only the no-command variant
+python3 tools/onboarding_control.py --mode github --variant process   # only github/process (github-only)
 python3 tools/onboarding_control.py --install all --from-install --json run.json
 ```
 
@@ -27,8 +28,8 @@ scratch copy for a control); `--readme FILE` follows another README (a drift con
 
 Exit 0: every mode and variant reached `done` and every assertion held. Exit 1: red; the JSON names
 the first failing step, and one line per run says `GREEN` or `RED at <step>` (`local`, `github`,
-`local/no-command`, `github/no-command`). Exit 2: a precondition is missing (`git` or `make` not on
-PATH, Windows, or the README cannot be read -- a message, not a traceback) or a bad argument.
+`local/no-command`, `github/no-command`, `github/process`). Exit 2: a precondition is missing (`git` or `make` not on
+PATH, Windows, `python3 -m pytest` unavailable when `github/process` is selected, or the README cannot be read -- a message, not a traceback) or a bad argument.
 
 ## What it follows, step by step
 
@@ -70,7 +71,7 @@ acme/onboarding-demo` in github mode (the origin is a local path, not a GitHub o
 github mode needs the repository given). Both github variants run with work ON -- the real path
 (#312). The `Next:` line's `loop.py next` command is the one the loop runs.
 
-**Two variants per mode.** `confirm`: the repository has a Makefile test target and the README
+**Variants.** Two per mode, plus the github-only `process` variant (below). `confirm`: the repository has a Makefile test target and the README
 gesture confirms it (enforce ON). `no-command`: the repository has only a README.txt, so nothing is
 detected; the verify question is left open, as a user with no test command leaves it, and the
 default init SCAFFOLDS is exactly what `record done` sees. The confirm variant can never see a bad
@@ -126,6 +127,29 @@ on, or a command declared) and the merge demands evidence only then. The control
 reverted in a scratch copy turns `github/no-command` RED through the documented gesture
 (`--mode github --sigma <scratch>`), its approved merge parked on "no fresh verify evidence", while
 `github` stays GREEN.
+
+**github mode, process variant (`github/process`, #878).** The confirm world, but the whole run is driven
+through Sigma's OWN writers, then judged by the regression record layer. Config for this variant:
+`journal`, `action_log` and `gates.plan_review` on, `work.require_review: approval`, `work.auto_merge:
+always`; a fixed non-secret `CLAUDE_CODE_SESSION_ID` and fixture transcripts (model
+`claude-haiku-4-5-20251001`) under the control's fake profile so `phase_report.py end` can price each phase.
+Steps: file goal -> `loop.py start/next` -> `agent-start` -> `work.py start` -> acceptance -> research, plan
+and plan-review phases (verdict NOT yet recorded) -> `work.py commit` of the plan and research -> **negative
+probe**: `work.py pr` must be refused, printing that `gates.plan_review is on` and the plan `has no recorded
+review`, and the fake store must hold no PR -> `record-plan-review` -> the **test-first leg** (a scratch test
+that asserts `hello.txt` exists; `loop.py verify` RED, then the work, then GREEN on the byte-identical test)
+-> `work.py commit`, `pr` -> the review chain (`review_context.py brief`, `reviewer.py resolve`,
+`record-subagent-review`, `record-review`, `review-evidence`, `post-review`) -> retro -> `work.py merge` ->
+`reconcile-merges` -> `evals/regression/record.py build` -> `evals/regression/check.py`. It prints
+`onboarding-control: github/process: GREEN`, or `RED at assert:<property id>` naming the FIRST property
+`check.py` failed (a soft `NOT EVALUABLE` such as `outcome.goal_commits_on_main`, whose branch is deleted at
+merge, is not red). A step that fails earlier is `RED at <step>`.
+
+It is in the default `--variant all` (so the plain gesture runs it) and is github-only:
+`--mode local --variant process` exits 2. It needs `python3 -m pytest` under the variant's environment
+(the control's PATH and the invoking user's site); without it the control exits 2 with `precondition
+missing` and never runs a weaker variant. The record builder maps the plan-review gate's `pass`/`warn` to
+`approve` (owner ruling, #878) so the hard property `process.plan_review_verdict_approved` holds on a real run.
 
 ## Recorded runs
 

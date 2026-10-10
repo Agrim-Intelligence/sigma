@@ -325,13 +325,67 @@ def test_plan_review_verdict_from_log_row_not_gate_file(tmp_path):
     proc, rec = _build(tmp_path)
     assert proc.returncode == 0, proc.stderr
     v = rec["streams"]["plan_review_verdict"]
-    assert v["present"] is True and v["verdict"] == "pass" and v["plan_hash"] == "h2"
+    assert v["present"] is True and v["verdict"] == "approve" and v["plan_hash"] == "h2"
     assert v["route"] == "r2"
     assert v["gate_file_present"] is False                       # a cross-check, never the source
     (sdlc / "state" / "gates").mkdir(parents=True)
     (sdlc / "state" / "gates" / "874.json").write_text("{}")
     proc, rec = _build(tmp_path)
     assert rec["streams"]["plan_review_verdict"]["gate_file_present"] is True
+
+
+def _real_plan_review(tmp_path, monkeypatch, word):
+    """Record `word` through the REAL writer (`work.record_plan_review`) into the scratch run's action
+    log, then build the record through the documented gesture. Returns (written word, record)."""
+    for var in ("CLAUDECODE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(var, raising=False)
+    scripts = ROOT / "skills" / "sigma-loop" / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        spec = importlib.util.spec_from_file_location("work_for_record_test", scripts / "work.py")
+        work = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(work)
+    finally:
+        sys.path.remove(str(scripts))
+    sdlc = _sdlc(tmp_path)
+    config = {"action_log": {"enabled": True}, "gates": {"plan_review": {"enabled": True}}}
+    (sdlc / "config.json").write_text(json.dumps(config))
+    plan = b"# plan\n1. step\n"
+    (sdlc / "plans").mkdir()
+    (sdlc / "plans" / "0001-x.md").write_bytes(plan)
+    out = work.record_plan_review(str(sdlc), config, "0001-x", word, hashlib.sha256(plan).hexdigest(),
+                                  run=lambda cwd, argv: "")
+    proc, rec = _build(tmp_path, goal="0001-x")
+    assert proc.returncode == 0, proc.stderr
+    stream = rec["streams"]["plan_review_verdict"]
+    assert stream["present"] is True
+    return out["verdict"], stream["verdict"]
+
+
+def test_plan_review_verdict_real_writer_sound_records_approve(tmp_path, monkeypatch):
+    written, recorded = _real_plan_review(tmp_path, monkeypatch, "SOUND")
+    assert written == "pass" and recorded == "approve"
+
+
+def test_plan_review_verdict_real_writer_sound_with_refinements_records_approve(tmp_path, monkeypatch):
+    written, recorded = _real_plan_review(tmp_path, monkeypatch, "SOUND-WITH-REFINEMENTS")
+    assert written == "warn" and recorded == "approve"
+
+
+def test_plan_review_verdict_real_writer_fix_first_records_block(tmp_path, monkeypatch):
+    written, recorded = _real_plan_review(tmp_path, monkeypatch, "FIX-FIRST")
+    assert written == "block" and recorded == "block"
+
+
+def test_plan_review_verdict_unknown_word_passes_through_verbatim(tmp_path):
+    sdlc = _sdlc(tmp_path)
+    _log(sdlc, "874", [{"kind": "verdict", "phase": "plan_review", "verdict": "maybe"}])
+    proc, rec = _build(tmp_path)
+    assert proc.returncode == 0, proc.stderr
+    assert rec["streams"]["plan_review_verdict"]["verdict"] == "maybe"
+    _log(sdlc, "874", [{"kind": "verdict", "phase": "plan_review", "verdict": "approve"}])
+    proc, rec = _build(tmp_path)
+    assert rec["streams"]["plan_review_verdict"]["verdict"] == "approve"
 
 
 # --------------------------------------------------------------------------- journal + tokens

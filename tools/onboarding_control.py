@@ -65,7 +65,7 @@ WHAT IT DOES NOT DO (see docs/onboarding-control.md for the owner runbook of eac
     profile's plugin surface before and after, so "untouched" is measured, not assumed.
 
 USAGE
-    python3 tools/onboarding_control.py [--mode local|github|both] [--variant confirm|no-command|all]
+    python3 tools/onboarding_control.py [--mode local|github|both] [--variant confirm|no-command|process|all]
                                         [--sigma DIR] [--readme FILE]
                                         [--install none|claude|codex|all] [--from-install]
                                         [--json FILE] [--workdir DIR] [--keep]
@@ -108,7 +108,7 @@ DEMO_FILE = "sigma-demo.md"
 #: no-command: nothing verify_detect can propose, the verify question left open -- so what the
 #: SCAFFOLD writes is what `record done` sees. The confirm variant overwrites whatever default
 #: init scaffolded, so only this variant sees a bad default (review of PR #306).
-VARIANTS = ("confirm", "no-command")
+VARIANTS = ("confirm", "no-command", "process")
 #: The README's one placeholder for the directory Sigma's scripts live in (#277): defined once in the
 #: Quickstart, and every `python3` gesture a user copies starts with it.
 INSTALLED_SIGMA = "<installed-sigma>"
@@ -353,9 +353,14 @@ class Run:
         return out
 
 
-def _env(root, bin_dir, extra=None):
+def _control_path(bin_dir=None):
+    """The PATH every step of the control runs under (the one `red_green` also spawns `python3` from)."""
     py_dir = str(pathlib.Path(sys.executable).parent)
-    env = {"PATH": os.pathsep.join([str(bin_dir), py_dir, "/usr/local/bin", "/usr/bin", "/bin"]),
+    return os.pathsep.join(([str(bin_dir)] if bin_dir else []) + [py_dir, "/usr/local/bin", "/usr/bin", "/bin"])
+
+
+def _env(root, bin_dir, extra=None):
+    env = {"PATH": _control_path(bin_dir),
            "HOME": str(root / "home"), "GIT_CONFIG_GLOBAL": os.devnull,
            "GIT_CONFIG_SYSTEM": os.devnull, "PYTHONDONTWRITEBYTECODE": "1",
            "GIT_AUTHOR_NAME": "Onboarding Control", "GIT_AUTHOR_EMAIL": "control@example.com",
@@ -1177,6 +1182,278 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
                        "gh_call_count": len(calls)})
 
 
+# ------------------------------------------------------------------------------ github/process (#878)
+
+#: A fixed, non-secret test session id: `phase_report.py` looks agent transcripts up under it, and
+#: `reviewer.py resolve` only selects the `subagent` route when a Claude session id is present.
+PROCESS_SESSION = "00000000-0000-4000-8000-0000000000a1"
+PROCESS_AGENTS = ("onb-research", "onb-plan", "onb-plan-reviewer", "onb-implement", "onb-reviewer",
+                  "onb-retro")
+PROCESS_MODEL = "claude-haiku-4-5-20251001"
+PROCESS_TEST = "tests/test_hello.py"
+#: The scratch test the control writes into the goal worktree. It asserts on EXISTENCE (an assertion
+#: failure, never an error) so the red `loop.py verify` records a witness row, and the SAME bytes go
+#: green when `hello.txt` is written: the red comes from the code under test, never from editing the test.
+PROCESS_TEST_SRC = ('import pathlib\n\nROOT = pathlib.Path(__file__).resolve().parents[1]\n\n\n'
+                    'def test_hello_written():\n    target = ROOT / "hello.txt"\n'
+                    '    assert target.is_file() and target.read_text() == "hi\\n"\n')
+PROCESS_PLAN = ("# Plan\nscripted\n\n## Tests\n- `tests/test_hello.py::test_hello_written`\n")
+_PROPERTY_LINE = re.compile(r"(?m)^(PASS|FAIL|NOT EVALUABLE)\s+(\S+) \[\w+(, hard)?\]")
+
+
+def _pytest_env():
+    """The environment `python3 -m pytest` runs under inside the variant: the control's PATH plus the
+    invoking user's site (`PYTHONUSERBASE`), because the variant's fake HOME would otherwise hide a
+    pytest installed per-user. Nothing else of the real profile is passed."""
+    import site
+    return {"PATH": _control_path(), "PYTHONUSERBASE": site.getuserbase()}
+
+
+def _pytest_precondition(env=None):
+    """"" when `python3 -m pytest` runs under the variant's own environment, else the reason. SAFETY:
+    the test-first proof needs it, and a variant that quietly skipped the proof would be a weaker
+    control wearing the same name."""
+    try:
+        proc = subprocess.run(["python3", "-m", "pytest", "--version"], capture_output=True, text=True,
+                              env=env or _pytest_env(), timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"python3 could not run ({exc.__class__.__name__})"
+    return "" if proc.returncode == 0 else "python3 -m pytest is unavailable"
+
+
+def _write_transcripts(base):
+    """One fixture transcript per agent id the variant passes to `--agent-id`, under the control's own
+    fake profile (never the real one), shaped as Claude Code writes them; timestamped at write time."""
+    from datetime import datetime, timezone
+    for agent in PROCESS_AGENTS:
+        path = (base / "home" / ".claude" / "projects" / "onboarding" / PROCESS_SESSION / "subagents" /
+                f"agent-{agent}.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = []
+        for i in range(3):
+            rows.append({"type": "assistant",
+                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                         "message": {"id": f"msg_{agent}_{i}", "role": "assistant", "model": PROCESS_MODEL,
+                                     "usage": {"input_tokens": 40000, "output_tokens": 8000,
+                                               "cache_read_input_tokens": 90000,
+                                               "cache_creation": {"ephemeral_5m_input_tokens": 20000,
+                                                                  "ephemeral_1h_input_tokens": 0}}}})
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+
+
+def check_github_process(obs):
+    """github/process: the control's own pre-record facts first, then ONE assertion per property line
+    `check.py` printed, named EXACTLY the property id and in its print order, so the first failing
+    assertion is the first property the evaluator failed. A soft NOT EVALUABLE is not red (check.py's
+    own exit rule). Pure, so each assertion can be broken once in a test."""
+    probe = str(obs.get("probe_text", ""))
+    out = [
+        _check("negative probe printed the plan-review refusal",
+               "gates.plan_review is on" in probe and "has no recorded review" in probe, probe[-300:]),
+        _check("negative probe left the fake store without a PR", obs.get("probe_prs") == {},
+               obs.get("probe_prs")),
+        _check("PR opened only after plan-review was recorded", bool(obs.get("pr_after_record")),
+               obs.get("pr_after_record")),
+        _check("review chain posted sigma:approve through post-review",
+               "posted sigma:approve" in str(obs.get("post_review_text", "")), obs.get("post_review_text")),
+        _check("every gh call was one the fake models", obs.get("unhandled") == "", obs.get("unhandled")),
+        _check("record build succeeded", obs.get("build_rc") == 0, obs.get("build_text")),
+    ]
+    for word, ident, hard in _PROPERTY_LINE.findall(str(obs.get("check_text", ""))):
+        out.append(_check(ident, word == "PASS" or (word == "NOT EVALUABLE" and not hard), word))
+    if len(out) == 6:
+        out.append(_check("check.py printed its property lines", False, str(obs.get("check_text", ""))[-300:]))
+    return out
+
+
+def _edit_config(repo, edits):
+    path = repo / ".sdlc" / "config.json"
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    for dotted, value in edits.items():
+        node = cfg
+        *head, leaf = dotted.split(".")
+        for part in head:
+            node = node.setdefault(part, {})
+        node[leaf] = value
+    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+
+
+def run_github_process(sigma, readme_text, root, qs=None):
+    """The github/process variant (#878): the confirm world, driven through Sigma's OWN writers end to
+    end -- phase boundaries, plan-review, a negative probe, the test-first leg, the review chain with
+    `post-review`, merge, done -- then a run record built by `evals/regression/record.py` and judged by
+    `evals/regression/check.py`. RED names the first property that failed. The runner is a deliberate
+    copy of `run_github`'s world setup rather than a shared helper: moving counts out of `run_github`
+    would force re-proving the four variants that already hold."""
+    import hashlib
+    run = Run("github/process")
+    obs = {}
+    # Resolved: on macOS a temp dir is spelled through the /var -> /private/var symlink, and pytest then
+    # reports the planned node as `::test_hello_written` (no file part), which red_green rejects.
+    base = root.resolve() / "github-process"
+    state_path, log_path, unhandled = base / "gh_state.json", base / "gh_log.jsonl", base / "gh_unhandled.jsonl"
+    try:
+        qs = qs or run.timed("readme parse", lambda: parse_quickstart(readme_text, sigma))
+        bin_dir, remote, repo = base / "bin", base / "remote.git", base / "repo"
+        bin_dir.mkdir(parents=True)
+        gh = bin_dir / "gh"
+        gh.write_text(f"#!{sys.executable}\n" + _fake_gh_body(sigma), encoding="utf-8")
+        gh.chmod(0o755)
+        log_path.write_text("", encoding="utf-8")
+        unhandled.write_text("", encoding="utf-8")
+        state_path.write_text(json.dumps({
+            "repo": FAKE_REPO, "remote_git_dir": str(remote), "labels": {}, "label_seq": 0,
+            "issues": {}, "issue_seq": 1, "prs": {}, "pr_seq": 100, "projects": [],
+            "login": "onboarding-bot", "default_branch": "main", "allow_auto_merge": True,
+            "viewer_permission": "ADMIN", "refuse_label_create": False}), encoding="utf-8")
+        env = _env(base, bin_dir, {"FAKE_GH_STATE": str(state_path), "FAKE_GH_LOG": str(log_path),
+                                   "FAKE_GH_UNHANDLED": str(unhandled),
+                                   "CLAUDE_CODE_SESSION_ID": PROCESS_SESSION,
+                                   "PYTHONUSERBASE": _pytest_env()["PYTHONUSERBASE"]})
+        _git(["init", "-q", "--bare", "-b", "main", str(remote)], base, env)
+        _git(["clone", "-q", str(remote), str(repo)], base, env)
+        _fresh_files(repo, "process")
+        _git(["add", "-A"], repo, env)
+        _git(["commit", "-qm", "fresh repository"], repo, env)
+        _git(["push", "-q", "-u", "origin", "main"], repo, env)
+        init_out, obs["scaffolded_verify"] = _init_and_verify(run, qs, sigma, repo, env, "github", "process")
+        _edit_config(repo, {"journal.enabled": True, "gates.plan_review.enabled": True,
+                            "action_log.enabled": True, "work.require_review": "approval",
+                            "work.auto_merge": "always"})
+        _write_transcripts(base)
+        py = sys.executable
+        loop = pathlib.Path(sigma) / "skills" / "sigma-loop" / "scripts"
+
+        def state():
+            return json.loads(state_path.read_text(encoding="utf-8"))
+
+        def script(name, *args, step=None, ok_rc=(0,)):
+            return run.step(step or f"{name} {args[0]}", [py, loop / f"{name}.py", *args], repo, env,
+                            ok_rc=ok_rc)
+
+        def phase(name, agent=None, goal="1"):
+            script("phase_report", "start", ".sdlc", goal, name, "--model", "haiku", "--pid", pid,
+                   step=f"phase_report start {name}")
+            return lambda: script("phase_report", "end", ".sdlc", goal, name, "--pid", pid,
+                                  *(["--agent-id", agent] if agent else []), step=f"phase_report end {name}")
+
+        run.step("file goal (gh issue create, labelled sdlc:goal, assigned @me)",
+                 [gh, "issue", "create", "--repo", FAKE_REPO, "--label", "sdlc:goal", "--assignee", "@me",
+                  "--title", GOAL_TITLE, "--body", f"Create {WORK_FILE} with one line.\n\n"
+                  f"## Done when\n- [ ] {WORK_FILE} contains hi.\n"
+                  "- [ ] Verification passes when configured.\n"
+                  "- [ ] The goal can be recorded done after its PR merges.\n"], repo, env)
+        pid = str(os.getpid())
+        script("loop", "start", ".sdlc", "--session-pid", pid, step="loop start")
+        nxt = _py_argv(_loop_next_line(init_out), sigma, {}, step="loop next", cwd=repo) + \
+            ["--session-pid", pid]
+        goal = run.step("loop next", nxt, repo, env).stdout.strip()
+        if goal != "1":
+            raise Red("loop next", f"expected issue 1, got {goal!r}")
+        script("loop", "agent-start", ".sdlc", goal, "--pid", pid, step="agent-start")
+        script("work", "start", ".sdlc", goal, "--session-pid", pid, step="work start")
+        capture = ["record", ".sdlc", goal]
+        if (_cfg(repo).get("verify") or {}).get("command"):
+            capture += ["--verify-command", "test -s " + WORK_FILE]
+        script("acceptance", *capture, step="record acceptance")
+        wt = repo / ".sdlc" / "work" / goal
+        acceptance = repo / ".sdlc" / "acceptance" / (goal + ".md")
+        (wt / ".sdlc" / "acceptance").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(acceptance, wt / ".sdlc" / "acceptance" / acceptance.name)
+        # research, plan, plan-review (the verdict is NOT recorded yet: the probe needs it absent)
+        (repo / ".sdlc" / "research").mkdir(parents=True, exist_ok=True)
+        (repo / ".sdlc" / "plans").mkdir(parents=True, exist_ok=True)
+        (repo / ".sdlc" / "research" / f"{goal}.md").write_text("# Research\nscripted\n", encoding="utf-8")
+        phase("research", "onb-research")()
+        plan = repo / ".sdlc" / "plans" / f"{goal}.md"
+        plan.write_text(PROCESS_PLAN, encoding="utf-8")
+        phase("plan", "onb-plan")()
+        phase("plan_review", "onb-plan-reviewer")()
+        for sub in ("research", "plans"):
+            (wt / ".sdlc" / sub).mkdir(parents=True, exist_ok=True)
+            shutil.copy2(repo / ".sdlc" / sub / f"{goal}.md", wt / ".sdlc" / sub / f"{goal}.md")
+        # negative probe: a branch carrying its plan and research but NO recorded plan-review must be
+        # refused, naming the gate (the earlier pr() guards need a clean tree and the plan committed)
+        script("work", "commit", ".sdlc", goal, "--message", "sdlc: plan and research",
+               step="work commit (plan and research)")
+        probe = script("work", "pr", ".sdlc", goal, step="work pr (negative probe)", ok_rc=None)
+        obs["probe_text"] = probe.stdout + probe.stderr
+        obs["probe_prs"] = state()["prs"]
+        sha = hashlib.sha256(plan.read_bytes()).hexdigest()
+        script("work", "record-plan-review", ".sdlc", goal, "--verdict", "SOUND", "--plan-sha256", sha,
+               "--agent-id", "onb-plan-reviewer", step="record plan-review")
+        # test-first leg: the test exists, hello.txt does not -> RED; then the work -> GREEN
+        (wt / "tests").mkdir(exist_ok=True)
+        (wt / PROCESS_TEST).write_text(PROCESS_TEST_SRC, encoding="utf-8")
+        implement_end = phase("implement", "onb-implement")
+        red = script("loop", "verify", ".sdlc", goal, step="loop verify (red)", ok_rc=None)
+        obs["verify_red_rc"] = red.returncode
+        (wt / WORK_FILE).write_text("hi\n", encoding="utf-8")
+        end = implement_end()
+        obs["cost_line"] = next((l for l in end.stdout.splitlines() if "cost" in l), "")
+        obs["verify_rc"] = script("loop", "verify", ".sdlc", goal, step="loop verify (green)",
+                                  ok_rc=None).returncode
+        ev = repo / ".sdlc" / "state" / "verify" / f"{goal}.json"
+        obs["evidence"] = json.loads(ev.read_text(encoding="utf-8")) if ev.is_file() else None
+        script("work", "commit", ".sdlc", goal, "--message", f"sdlc: {GOAL_TITLE.lower()}",
+               step="work commit")
+        script("work", "pr", ".sdlc", goal, step="work pr")
+        prs = state()["prs"]
+        pr = next(iter(prs), None)
+        if pr is None:
+            raise Red("work pr", "no PR was opened")
+        obs["pr_after_record"] = len(prs) == 1
+        # the review chain: generation -> resolver -> reviewer -> bound evidence -> post-review
+        sdlc = repo / ".sdlc"
+        manifest = sdlc / "state" / "review-manifests" / f"{goal}.json"
+        script("review_context", "brief", ".sdlc", goal, "--for", "pr-review", "--artifact", f"PR#{pr}",
+               "--output", str(manifest), step="review brief")
+        resolution = sdlc / "state" / "review-resolution.json"
+        resolution.write_text(script("reviewer", "resolve", ".sdlc", step="reviewer resolve").stdout,
+                              encoding="utf-8")
+        paths = script("work", "review-paths", ".sdlc", goal, "--manifest", str(manifest), "--format", "sh",
+                       step="review paths").stdout
+        vars_ = dict(tok.split("=", 1) for tok in shlex.split(paths) if "=" in tok)
+        phase("review", "onb-reviewer")()
+        script("work", "record-subagent-review", ".sdlc", goal, "--manifest", str(manifest), "--resolution",
+               str(resolution), "--verdict", "approve", "--reason", "scripted review of the fixture diff",
+               step="record subagent review")
+        script("work", "record-review", ".sdlc", goal, "--verdict", "APPROVE", "--agent-id", "onb-reviewer",
+               step="record review")
+        evidence = json.loads(script("work", "review-evidence", ".sdlc", goal, "--manifest", str(manifest),
+                                     "--review-result", vars_["REVIEW_RESULT"],
+                                     step="review evidence").stdout)["path"]
+        obs["post_review_text"] = script("work", "post-review", ".sdlc", goal, "--verdict", "approve",
+                                         "--evidence", evidence, step="post-review").stdout.strip()
+        phase("retro", "onb-retro")()                  # the merge gate demands all seven phase records
+        merge = script("work", "merge", ".sdlc", goal, step="work merge", ok_rc=None)
+        obs["merge_text"], obs["merge_rc"] = merge.stdout.strip(), merge.returncode
+        rec = script("loop", "reconcile-merges", ".sdlc", step="loop reconcile-merges", ok_rc=None)
+        obs["reconcile_text"] = rec.stdout.strip()
+        # the record and the evaluator, on the builder's own run-dir layout (<base> holds repo/)
+        record_py = pathlib.Path(sigma) / "evals" / "regression" / "record.py"
+        check_py = pathlib.Path(sigma) / "evals" / "regression" / "check.py"
+        build = run.step("record build", [py, record_py, "build", base, "--goal", goal], repo, env, ok_rc=None)
+        obs["build_rc"], obs["build_text"] = build.returncode, (build.stdout + build.stderr)[-400:]
+        if build.returncode != 0:
+            raise Red("record build", obs["build_text"])
+        verdict = run.step("check", [py, check_py, base / "record.json",
+                                     pathlib.Path(sigma) / "evals" / "regression" / "properties.json"],
+                           repo, env, ok_rc=None)
+        obs["check_text"], obs["check_rc"] = verdict.stdout, verdict.returncode
+    except Red as red:
+        run.failed = red.step
+        run.steps.append({"step": "RED", "at": red.step, "detail": red.detail})
+    obs["unhandled"] = unhandled.read_text(encoding="utf-8") if unhandled.is_file() else ""
+    if run.failed is None:
+        run.assertions += check_github_process(obs)
+    calls = _gh_calls(log_path)
+    ev = obs.get("evidence") or {}
+    obs["evidence"] = {k: ev.get(k) for k in ("command", "exit", "verify_state")} if ev else None
+    return run.result({"variant": "process", "observations": obs, "gh_calls": _summarise_gh(calls),
+                       "gh_call_count": len(calls)})
+
+
 # ------------------------------------------------------------------------------ host install
 
 def _surface_hash(home):
@@ -1247,7 +1524,9 @@ def main(argv):
     ap.add_argument("--mode", choices=("local", "github", "both"), default="both")
     ap.add_argument("--variant", choices=VARIANTS + ("all",), default="all",
                     help="confirm: a Makefile test target, confirmed by the README gesture; "
-                         "no-command: nothing to confirm, the question left open (default: all)")
+                         "no-command: nothing to confirm, the question left open; "
+                         "process: github only, drives Sigma's own writers and checks a run record "
+                         "(default: all)")
     ap.add_argument("--sigma", default=str(ROOT), help="the Sigma checkout to run (default: this one)")
     ap.add_argument("--readme", help="the README to follow (default: <sigma>/README.md)")
     ap.add_argument("--install", choices=("none", "claude", "codex", "all"), default="none")
@@ -1263,6 +1542,18 @@ def main(argv):
     for tool in ("git", "make"):
         if not shutil.which(tool):
             print(f"onboarding_control: precondition missing: `{tool}` not on PATH", file=sys.stderr)
+            return 2
+    wants_process = args.variant in ("all", "process") and args.mode in ("github", "both")
+    if args.variant == "process" and args.mode == "local":
+        print("onboarding_control: --variant process is github-only; use --mode github or --mode both",
+              file=sys.stderr)
+        return 2
+    if wants_process:
+        missing = _pytest_precondition()
+        if missing:
+            print(f"onboarding_control: precondition missing: {missing} (the github/process variant "
+                  "needs it for the test-first proof); install pytest or run --variant confirm",
+                  file=sys.stderr)
             return 2
     sigma = pathlib.Path(args.sigma).resolve()
     readme = pathlib.Path(args.readme or sigma / "README.md")
@@ -1301,9 +1592,11 @@ def main(argv):
         if qs:
             for variant in VARIANTS if args.variant == "all" else (args.variant,):
                 tag = "" if variant == "confirm" else "/" + variant
-                if args.mode in ("local", "both"):
+                if variant != "process" and args.mode in ("local", "both"):
                     result["modes"]["local" + tag] = run_local(run_from, text, root, qs, variant)
-                if args.mode in ("github", "both"):
+                if variant == "process" and args.mode in ("github", "both"):
+                    result["modes"]["github" + tag] = run_github_process(run_from, text, root, qs)
+                elif variant != "process" and args.mode in ("github", "both"):
                     result["modes"]["github" + tag] = run_github(run_from, text, root, qs, variant)
     finally:
         result["seconds"] = round(time.monotonic() - t0, 3)
