@@ -113,6 +113,22 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/record.py",
+      "function": "write_atomic",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/record.py",
+      "function": "write_atomic",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "risk": "medium"
+    },
+    {
       "path": "hooks/gate_state.py",
       "function": "_open_child",
       "rule": "fs-write",
