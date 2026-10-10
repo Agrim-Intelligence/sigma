@@ -13,7 +13,7 @@ Format: guard | broken by | red output | restored green.
 | hidden test, decoy hash pin | one comment line appended to the decoy in `repo/` and `reference/` together, pin not updated | `RED T3 hidden-on-reference: ... (exit 1): 1 failed, 6 passed` | `ok T3` |
 | hidden test, generated hash pin | same, generated file | same red line | `ok T3` |
 | hidden test, shim hash pin | same, shim file | same red line | `ok T3` |
-| missed deletion | `docs/rates.md` kept in `reference/` | `RED T3 hidden-on-reference: ... 1 failed, 6 passed` (and no `reference-diff`: the path equals the start tree, so the diff is blind to it) | `ok T3` |
+| missed deletion | docs/rates.md kept in `reference/` | `RED T3 hidden-on-reference: ... 1 failed, 6 passed` (and no `reference-diff`: the path equals the start tree, so the diff is blind to it) | `ok T3` |
 | config key rename | `reference/config/shipping.json` back to the old key | `RED T3 hidden-on-reference: ... 3 failed, 4 passed` | `ok T3` |
 | call-site rename | `reference/shipping/cart.py` back to the old function name | `RED T3 hidden-on-reference: ... 1 failed, 6 passed` | `ok T3` |
 | allowed_paths coverage | extra file `reference/shipping/extra.py` | `RED T3 reference-diff: shipping/extra.py added but not in allowed_paths.json` | `ok T3` |

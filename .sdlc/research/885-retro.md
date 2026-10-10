@@ -13,7 +13,7 @@ Grade: ACHIEVED - all five acceptance bullets are met with evidence; `python3 ev
 
 ## Debt (non-blocking)
 - Reviewer note: the task prompt hints that vendored and generated code stays as is, which tips off the trap the task is meant to test; a prompt that withheld the hint would test more, at the cost of fairness.
-- Reviewer note: hidden test 5 requires README.md to contain `docs/tariffs.md` but does not check that the old `docs/rates.md` link is gone, so a README carrying both links passes.
+- Reviewer note: hidden test 5 requires README.md to contain docs/tariffs.md but does not check that the old docs/rates.md link is gone, so a README carrying both links passes.
 - Reviewer note: the hidden tests depend on the current working directory being the tree root. `_hidden_run` in `tools/readiness/bench_tasks.py` provides it, but any other executor that runs them elsewhere breaks them.
 - Hidden tests and the reference ship in the repo, so an agent run from a checkout could read them (design doubt D-2, accepted, unresolved).
 - The trap text has no field of its own (`trap` is boolean); it lives only in `rubric.json`, which has no consumer yet (D-3).
