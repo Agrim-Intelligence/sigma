@@ -19,7 +19,10 @@ DAY = 86400
 
 
 def refs_of(world):
-    return bk.remote_refs(world.local)
+    # The bare remote's symbolic HEAD is listed only when it resolves, i.e. when init.defaultBranch matches a pushed
+    # branch (main on a developer machine, master in CI). It is not a ref upkeep writes, so leave it out and the
+    # assertions read the same on every host (#1077).
+    return {ref: sha for ref, sha in bk.remote_refs(world.local).items() if ref != "HEAD"}
 
 
 def transcript(tmp):
