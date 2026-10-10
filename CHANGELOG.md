@@ -4,6 +4,24 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The commit gate stops refusing non-literal `credential-assignment` values (#961).** `work.py commit`
+  refused any 4+ character run after a credential-named key, so a call, an env read, a type annotation
+  and a boolean parked green goals at their last step. A gate-only filter (`scrub.commit_secret_findings`)
+  now passes a whole boolean or null word and Sigma's own redaction markers in every file, and an
+  expression or (after `:`) a closed-set type name only in a code file (`scrub.COMMIT_CODE_SUFFIXES`,
+  case-sensitive). A quoted value, a bare identifier or number as the whole value, an assigning `=`
+  later on the line that starts a quoted literal, and any secret-like token after the separator stay
+  refused; only the first word is judged as the value, so a number can still pass as a code file's
+  annotated default. A quoted literal is reported once, not twice. The rule table, `scrub()`, the publish leak gate and the exposure
+  scanner are unchanged. New `work.allow_secret_content`: an OPERATOR ruling that clears only
+  `credential-assignment`, by exact line hash (`work.py line-hash <file> <line>` prints it without
+  showing the line) or by exact path (wide: it clears future literals in that file too); a reason is
+  required and a malformed entry is ignored and counted. The refusal tells the agent to remove the
+  literal or park, names the allowlist as the operator's, and no longer offers a hand commit.
+  Residual misses (letters-only or digit-only call arguments, getenv defaults and annotated defaults
+  in a code file; a short letters-only or digit-only literal after a leading boolean or null word in
+  any file; a literal on a wrapped line) are listed in the threat model.
+
 - **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
   shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
   a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);

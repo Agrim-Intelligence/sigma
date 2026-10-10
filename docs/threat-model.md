@@ -81,3 +81,92 @@ whose repository configuration you have not reviewed.
 the same Git-local setting only after the operator confirms or supplies the
 command. They refuse to enable a command outside a Git worktree. `decline` and
 initial scaffolding never grant it.
+
+## Credential-shaped lines at `work.py commit`
+
+`work.py commit` stages the goal worktree with `git add -A` and refuses on two axes before anything
+reaches a branch. This section is the operator's reference for both. The loop agent's rule is shorter
+and is printed by the refusal itself: remove the literal or park the goal, never write an allowlist
+entry.
+
+**Secret-shaped names (#1555).** The name refusal covers `.env` and its variants,
+`*.pem`/`*.key`/`*.p12`/`*.pfx`/`*.jks`/`*.keystore`, `id_rsa` and its siblings, `credentials.json`
+and service-account JSON. The public half of a keypair and a staged deletion are never refused. A
+repo that already ignores its `.env` never sees this refusal, because `git add -A` honours
+`.gitignore`; `/sigma-doctor` reports the still-unignored ones before the loop's first commit.
+`work.allow_secret_paths` clears an exact NAME, never content.
+
+**Added content.** Every added staged line is matched against the commit shapes in `scrub.py`. For
+the anchored `credential-assignment` rule (a credential-named key, then `:` or `=`, then a run of 4
+or more characters) a gate-only filter (#961) judges the value, failing closed. The value it judges
+is the rule's own run, which ends at the first space, quote, `<`, `>` or `&`; anything after that run
+is judged only by the two line-wide checks below (a secret-like token, an assigning `=` that starts
+a literal):
+
+- Refused in every file: a quoted value directly after the separator; a bare identifier or a
+  number as the whole value; a `${...}` or `$(...)` template; any line with an assigning `=` after the separator whose
+  right side starts a quoted literal of any length or wraps onto the next line (an annotated,
+  chained or keyword-argument default); and any line with a secret-like token after the separator
+  (a known provider prefix, 3 or more letter/digit alternations, a run of 24 or more letters and
+  digits, or 6 or more characters mixing letters and digits outside an upper-snake name).
+- Passes in a code file only: an expression (a call, an attribute or subscript read) and, after
+  `:`, a type name from a closed set (`str`, `bytes`, `bool`, `int`, `float`, `Any`, `SecretStr`,
+  `string`, `boolean`, `number`, `any`, `unknown`, `String`, or a `|` union of them with `None`,
+  `null` or `undefined`).
+- Passes in every file: a whole boolean or null word (`True`, `False`, `true`, `false`, `None`,
+  `null`, `nil`, `undefined`) and Sigma's own redaction markers (`[REDACTED]`, `[REDACTED:<rule>]`).
+
+A code file is one whose basename has a stem and whose last suffix, compared case-sensitively, is in
+`scrub.COMMIT_CODE_SUFFIXES`: Python, JavaScript and TypeScript, the JVM languages, Go, Rust, Ruby,
+PHP, C#, Swift, Dart, C and C++, Objective-C, Lua and Elixir. Every other file (config, data, docs,
+a suffix nobody listed, an upper-case variant) reads an unquoted value as a literal.
+
+**Residual misses, measured when the filter was designed.** In a code file, a letters-only or
+digit-only value under 24 characters passes as a positional call argument or a getenv default (the
+old gate refused both), and so does an unquoted dotted value made only of expression characters. On
+2,000 random letter/digit runs per length, a run placed as a getenv default was refused 56% of the
+time at 6 characters, 70% at 8, 89% at 14, 97% at 20 and 100% at 24 or more; the misses are runs
+with no digit at all and upper-snake runs with fewer than 3 alternations. A literal on the line
+after a plain assignment (a wrapped `= (` or a triple quote) passes, as it did before. Provider rules
+(`aws-key`, `gh-token`, `stripe-key` and the rest) still fire on their own shapes and have no
+allowlist: a synthetic value that matches one parks the goal.
+
+**Further misses, found in review and confirmed against this filter.** The old gate refused each of
+these, and each follows from judging only the first word as the value. In every file, a boolean or
+null first word passes with a quoted literal later on the line (`<key> = None or "<letters>"`,
+`<key> = True if x else "<letters>"`, `<key> = null ?? "<letters>"`), and so does YAML's
+`<key>: true <letters>`. In a code file, an annotated default passes whatever unquoted number or
+identifier it assigns, when the annotation is an expression or a closed-set type of 4 or more
+characters (`<key>: Optional[int] = <8 digits>`, `<key>: float = <digits>`; a shorter annotation
+never reached the old rule either). The trailing value is still judged by the secret-like check:
+on 500 random runs per length, a letters-only trailing literal and a digit-only annotated default
+each passed 99-100% of the time at 4 to 23 characters and 0% at 24, and a trailing literal mixing
+letters and digits passed only when a draw held no digit (8% at 8 characters, 0% at 16).
+
+**The allowlist, `work.allow_secret_content`.** A line that is still refused and holds no credential
+is cleared only by an entry in the MAIN checkout's `.sdlc/config.json`, and an entry is an OPERATOR
+ruling: a loop agent never writes one itself, attended or not. The agent removes the literal, reads
+the value from the environment, or parks the goal with `record parked "<why>"`, in the order the
+refusal prints. Two entry forms, narrowest first:
+
+- `{"rule": "credential-assignment", "line_sha256": "<hash>", "reason": "<why>"}` clears that one
+  line, in any file, until the line changes. The refusal prints the command that hashes the goal
+  worktree's copy without showing the line, shaped like
+  `python3 <sigma>/skills/sigma-loop/scripts/work.py line-hash <worktree>/<path> <line>`. The hash
+  is the sha256 of the stripped line; a CRLF line hashes as its LF twin, and bytes that are not
+  UTF-8 decode to U+FFFD on both sides.
+- `{"rule": "credential-assignment", "path": "<exact repo-relative path>", "reason": "<why>"}` is
+  WIDE: it clears every current and future `credential-assignment` hit in that file, a real literal
+  added there later included, so it is for a file of fixtures only.
+
+An entry counts only when its `rule` is exactly `credential-assignment` (no wildcard, no provider
+rule), its `reason` is a non-empty string, and it carries exactly one of `path`, compared exactly
+with git's raw repo-relative path (a leading `./` or another letter case never matches), or
+`line_sha256`, 64 lowercase hex. Anything else is ignored, never a crash and never a bypass, and the
+refusal says how many entries it ignored. The refusal never prints a line hash.
+
+**What this does not guarantee.** `work.py commit` reads the MAIN checkout's `.sdlc/config.json`, not
+the goal branch's, so an entry is visible in review only where that file is committed; a repository
+that ignores `.sdlc/` reviews no entry at all. The operator-only rule is prose: nothing in code can
+tell an operator's edit of that file from an agent's. The stored hash is an unsalted sha256 of a line
+that is being committed anyway.

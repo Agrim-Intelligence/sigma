@@ -1560,7 +1560,8 @@ def test_a_content_only_refusal_does_not_offer_the_name_allowlist_as_its_fix(tmp
     (repo / "bg.bin").write_bytes(b"\0K = " + _key().encode() + b"\n")
     refusal = work.commit(d, ON, "0001-x.md", message="test: content only")
     assert refusal.startswith("REFUSED") and "bg.bin" in refusal
-    assert "by hand outside the loop" in refusal and "NAME, never its content" in refusal
+    assert "by hand" not in refusal                   # #961: a hand commit is the bypass, never a remedy
+    assert "NAME, never its content" in refusal
     assert "Add the EXACT path" not in refusal
 
 

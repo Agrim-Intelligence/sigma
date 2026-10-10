@@ -109,19 +109,20 @@ bytes of the plan it hashes** — the branch's copy, or the main checkout's only
 carries none — so a plan edited after its review needs a fresh plan-review, recorded (`running.md`).
 It is checked at `pr` only, not at a later `work.py rebase` force-push, and covers the plan `.md`
 only: not `<stem>.slices.json`, not a design PR.
-**`commit` REFUSES when `git add -A` staged a secret-shaped file** (#1555) — `.env` and its
-variants, `*.pem`/`*.key`, `id_rsa` and friends, `credentials.json`, service-account JSON. It
-names every offending path, takes those paths back out of the index, and leaves every file on
-disk untouched. **Do exactly what the refusal prints, character for character** — it gives you a
+**`commit` REFUSES when `git add -A` staged a secret-shaped file** (#1555). It names every
+offending path, takes those paths back out of the index, and leaves every file on disk untouched.
+**Do exactly what the refusal prints, character for character** — it gives you a
 ready-made `.gitignore` line (already escaped and anchored; the raw path often is NOT a valid
 pattern), and for a file already tracked here, the `git rm --cached` that must come with it.
 Then re-run `commit`. Never `git add -f` past it, and never delete the operator's file to get
 moving. For a fixture, a certificate, or a file this repo commits ON PURPOSE (a Symfony-style
 non-secret `.env`), the answer is the EXACT path in `work.allow_secret_paths` in
 `.sdlc/config.json` — not untracking a file the project means to keep. **Deleting a secret is
-never refused**: the goal that removes a leaked credential is the one this exists to enable. A
-repo that already ignores its `.env` never sees any of it — `git add -A` honours `.gitignore`,
-which is why `/sigma-doctor` reports the still-unignored ones before the loop's first commit.
+never refused**: the goal that removes a leaked credential is the one this exists to enable.
+
+**A content hit** (`credential-assignment`): Remove the literal or read it from the environment, then
+re-run `commit`; else `record parked "<why>"`. **Never write a `work.allow_secret_content` entry
+yourself**: it is an OPERATOR ruling (see `docs/threat-model.md`).
 
 **Then REVIEW the PR you just opened, if `config.work.require_review` is set** — a real review AFTER
 the PR. Self-review before the PR is never enough; this is a **fresh, adversarial pass over the PR's

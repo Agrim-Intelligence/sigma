@@ -153,17 +153,27 @@ ENFORCEMENT_GATES = (
      "readme": "Done means merged"},
     {"control": "Secret-shaped paths and added content refused at work.py commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
-     "settings": ("work.allow_secret_paths",),
+     "settings": ("work.allow_secret_paths", "work.allow_secret_content"),
      "mechanism": "refuses `work.py commit` when a staged path has a secret-shaped basename or an "
                   "added staged line matches scrub.py's credential shapes; the staged diff is read with "
                   "fixed flags and parsed by hunk structure, so diff config, file attributes and "
                   "file names cannot hide a row, and a diff it cannot account for refuses; every "
                   "staged file is read as text (cost is linear in staged bytes, and a compiled file "
-                  "that hits is committed by hand outside the loop or kept out of the repo, since "
-                  "the allowlist clears a name only); UTF-16 text is not matched; diagnostics name "
-                  "only rule and file position, never a matched value; `work.allow_secret_paths` lists exact "
-                  "repo-relative filename exceptions and a small explicit synthetic-fixture list "
-                  "exempts known test values"},
+                  "that hits is kept out of the repo, no hand commit); UTF-16 text is not matched; "
+                  "the anchored `credential-assignment` rule passes a whole boolean or null word and "
+                  "Sigma's own redaction markers in every file, and an expression or (after `:`) a "
+                  "closed-set type name only in a code file (a closed suffix set); a quoted value, a "
+                  "bare identifier or number as the whole value, any line with an assigning `=` after "
+                  "the separator that starts a quoted literal or wraps, and any line with a "
+                  "secret-like token after the separator stay refused; only the first word is judged "
+                  "as the value, so a number after a code-file annotation or a short literal after a "
+                  "leading boolean or null word can pass (residuals in `docs/threat-model.md`); "
+                  "diagnostics name only rule and file position, never a "
+                  "matched value; `work.allow_secret_paths` lists exact repo-relative filename "
+                  "exceptions; `work.allow_secret_content` is an operator ruling that clears only "
+                  "`credential-assignment` by exact line hash (printed by `work.py line-hash`) or "
+                  "exact path, and an agent removes the literal or parks, never adds an entry; a "
+                  "small explicit synthetic-fixture list exempts known test values"},
     {"control": "Plan must be on the goal branch before PR", "function": "_plan_missing_from_branch",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py pr` while the goal's plan exists on disk but is not committed "
@@ -2544,6 +2554,73 @@ def _allowed_secret_paths(config):
     return frozenset(v for v in value if isinstance(v, str))
 
 
+#: The one rule `work.allow_secret_content` may clear (#961), and the shape of a line-hash entry.
+_CONTENT_RULE = "credential-assignment"
+_LINE_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _line_sha256(text):
+    """The hash a `work.allow_secret_content` line entry names: sha256 of the stripped line, the recipe
+    `tools/readiness/exposure_scan.py` already uses, so one hash serves both."""
+    return hashlib.sha256(text.strip().encode("utf-8", "replace")).hexdigest()
+
+
+def _allowed_secret_content(config):
+    """`(paths, line_hashes, ignored)` from `work.allow_secret_content`, read as defensively as
+    `_allowed_secret_paths`: it never raises and a malformed entry is never a bypass.
+
+    AN ENTRY IS AN OPERATOR RULING, never an agent's (#961). The refusal tells a loop agent to remove
+    the literal or park; nothing in code can tell an operator's edit of the MAIN checkout's
+    `.sdlc/config.json` from an agent's, so that rule lives in the refusal and the docs, as spend
+    approval's "never self-grant" does. An entry counts only when it is a dict whose `rule` is exactly
+    `credential-assignment` (no wildcard, no provider rule: their false positives have no in-loop
+    remedy), whose `reason` is a non-empty string, and which carries exactly one of `path` (a non-empty
+    string compared EXACTLY with git's raw repo-relative path, so `*`, `./a.py` or another case never
+    match) or `line_sha256` (64 lowercase hex, path-independent, stale once the line changes). Every
+    other entry -- and a present value that is not a list -- is ignored and counted, so the refusal can
+    say so."""
+    block = config.get("work") if isinstance(config, dict) else None
+    value = block.get("allow_secret_content") if isinstance(block, dict) else None
+    if value is None:
+        return frozenset(), frozenset(), 0
+    if not isinstance(value, list):
+        return frozenset(), frozenset(), 1
+    paths, hashes, ignored = set(), set(), 0
+    for entry in value:
+        valid = (isinstance(entry, dict) and entry.get("rule") == _CONTENT_RULE
+                 and isinstance(entry.get("reason"), str) and entry["reason"].strip()
+                 and ("path" in entry) != ("line_sha256" in entry))
+        if valid and "path" in entry and isinstance(entry["path"], str) and entry["path"]:
+            paths.add(entry["path"])
+        elif (valid and "line_sha256" in entry and isinstance(entry["line_sha256"], str)
+              and _LINE_SHA256.fullmatch(entry["line_sha256"])):
+            hashes.add(entry["line_sha256"])
+        else:
+            ignored += 1
+    return frozenset(paths), frozenset(hashes), ignored
+
+
+def line_hash(file, line_number):
+    """`_line_sha256` of one line of `file`, for an operator's `line_sha256` entry (`work.py line-hash
+    <file> <line>`). The line is read from the file by number, so it never touches a command line or
+    shell history, and only its hash is returned. Lines split on `\n` alone and decode as the gate's
+    rows do (`_parse_added_rows`), so a CRLF file hashes the same. Raises ValueError for a line that is
+    not a positive integer or lies past the end, OSError for an unreadable file."""
+    try:
+        number = int(line_number)
+    except (TypeError, ValueError):
+        raise ValueError("the line must be a positive integer") from None
+    if number < 1:
+        raise ValueError("the line must be a positive integer")
+    data = pathlib.Path(file).read_bytes()
+    rows = data.split(b"\n")
+    if data.endswith(b"\n"):
+        rows.pop()                      # the empty tail after a final newline is not a line
+    if number > len(rows):
+        raise ValueError("line %d is past the end of the file (%d lines)" % (number, len(rows)))
+    return _line_sha256(rows[number - 1].decode("utf-8", "replace"))
+
+
 #: `--name-status -z` frames its output as NUL-terminated FIELDS, not lines: `A\0path\0`, and
 #: `R100\0old\0new\0` for a rename. This recognises the status field so the two shapes can be told
 #: apart while walking the stream. Measured against real git, not inferred from the man page.
@@ -2791,24 +2868,39 @@ def _staged_added_rows(path, keep):
     return found
 
 
-def _row_hits(line, text):
-    """`[(rule, line, column)]` for one added row, or None. Location only; the text is not kept."""
-    found = scrub_module.commit_secret_hits(text)
-    return [(rule, line, column) for rule, column in found] or None
+def _row_hits(line, text, line_hashes=frozenset()):
+    """`[(rule, line, column, code_exempt)]` for one added row, or None. Location only; the text is
+    not kept. A row whose stripped text hashes to an operator's `line_sha256` entry loses its
+    `credential-assignment` findings, and ONLY those: another rule on the same row still refuses. The
+    hash is computed only for a row with such a finding while hash entries exist."""
+    found = scrub_module.commit_secret_findings(text)
+    if (line_hashes and any(rule == _CONTENT_RULE for rule, _column, _exempt in found)
+            and _line_sha256(text) in line_hashes):
+        found = [hit for hit in found if hit[0] != _CONTENT_RULE]
+    return [(rule, line, column, code_exempt) for rule, column, code_exempt in found] or None
 
 
-def _added_secret_hits(path):
+def _added_secret_hits(path, allowed=None):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
     `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
     branch, while the commit boundary is responsible only for newly-added credential material.
     The returned metadata is location-only; a diagnostic can never accidentally interpolate a
     matched value.
-    """
+
+    `allowed` is `_allowed_secret_content`'s triple. Per path, a hit only a code-file exemption clears
+    is dropped when the path is a code file (`scrub.commit_code_path`, on git's raw name: rows are
+    attributed to paths only after the patch is parsed, so the path reaches the filter as this tag),
+    and `credential-assignment` hits are dropped for a path an operator's entry names exactly."""
+    paths, line_hashes, _ignored = allowed or (frozenset(), frozenset(), 0)
     hits = {}
-    for name, per_row in _staged_added_rows(path, _row_hits).items():
-        for found in per_row:
-            hits.setdefault(name, []).extend(found)
+    keep = lambda line, text: _row_hits(line, text, line_hashes)     # noqa: E731 - the shared 2-arg callback
+    for name, per_row in _staged_added_rows(path, keep).items():
+        code, cleared = scrub_module.commit_code_path(name), name in paths
+        kept = [(rule, line, column) for found in per_row for rule, line, column, code_exempt in found
+                if not (code_exempt and code) and not (cleared and rule == _CONTENT_RULE)]
+        if kept:
+            hits.setdefault(name, []).extend(kept)
     return hits
 
 
@@ -2850,7 +2942,11 @@ def _secret_refusal(path, staged, config, run):
     the repo with no reachable remedy."""
     allowed = _allowed_secret_paths(config)
     try:
-        content_hits = _added_secret_hits(path)
+        # #961: the operator's content allowlist is applied HERE, before the early return below, so a
+        # commit whose every hit is allowlisted makes exactly the calls a clean one does. A reader bug
+        # lands in the same fail-closed refusal as a scanner failure.
+        content_allowed = _allowed_secret_content(config)
+        content_hits = _added_secret_hits(path, content_allowed)
     except Exception:                   # never render scanner failures: they can contain a secret
         return ("REFUSED — added staged content could not be scanned, so nothing was committed. "
                 "The index has not been reset; resolve the scanner failure and re-run `work.py commit`.")
@@ -2877,14 +2973,7 @@ def _secret_refusal(path, staged, config, run):
         # Prefer that remedy even when its content also matches; once ignored it will no longer be
         # staged, whereas asking to edit a file the user may merely be removing leaves the loop stuck.
         if hits and not _is_offender(raw, allowed):
-            shown = _diagnostic_path(raw)
-            locations = ", ".join("%s at %s:%d:%d" % (rule, shown, line, column)
-                                  for rule, line, column in hits)
-            lines.append("  * %s — added content matched %s; no matched value is shown. Remove or "
-                         "replace it, then re-run `work.py commit`. A file that must hold such bytes "
-                         "(a compiled artifact) is committed by hand outside the loop: "
-                         "`work.allow_secret_paths` clears a path's NAME, never its content."
-                         % (shown, locations))
+            lines.append(_content_hit_line(path, raw, hits))
             continue
         pattern = _gitignore_pattern(raw)
         shown = _diagnostic_path(raw)
@@ -2915,12 +3004,55 @@ def _secret_refusal(path, staged, config, run):
                   "{\"allow_secret_paths\": [%s]} — then re-run. Exact paths only: a glob would be an "
                   "off switch, not an allowlist.\n"
                   % ", ".join(json.dumps(_diagnostic_path(raw)) for raw in named)) if named else ""
+    ignored = content_allowed[2]
+    content_left = any(rule == _CONTENT_RULE for _st, _raw, hits_ in offenders for rule, _l, _c in hits_)
+    ignored_hint = ("  %d `work.allow_secret_content` entr%s ignored: a valid one has \"rule\": "
+                    "\"credential-assignment\", a non-empty \"reason\" and exactly one of an exact "
+                    "\"path\" or a 64-character lowercase hex \"line_sha256\".\n"
+                    % (ignored, "y was" if ignored == 1 else "ies were")) if ignored and content_left else ""
     return ("REFUSED — `git add -A` staged %d path(s) or added-content match(es) requiring attention "
             "in this goal's worktree. %s\n%s\n"
-            "%s  Added-content checks read only added staged-diff lines; "
+            "%s%s  Added-content checks read only added staged-diff lines; "
             "diagnostics never show matched values. It refuses rather than warns because a wedged "
             "run costs minutes and a pushed credential must be rotated."
-            % (len(offenders), state_line, "\n".join(lines), allow_hint))
+            % (len(offenders), state_line, "\n".join(lines), allow_hint, ignored_hint))
+
+
+def _content_hit_line(path, raw, hits):
+    """The refusal bullet for a path whose ADDED CONTENT hit, its remedies in the order an agent must
+    take them (#961). The loop is told to do exactly what a refusal prints, so the AGENT's move comes
+    first -- remove the literal or read it from the environment, else park -- and the allowlist is
+    named only as an OPERATOR ruling, after it: an entry written by the agent that hit the line would
+    be a self-granted bypass in a config file nobody reviews (TD-4). The narrow line-hash form leads
+    and its recipe hashes the goal WORKTREE's copy (the staged bytes, not the main checkout's); the
+    wide path form says plainly that it clears future literals too. No hash is ever printed: the text
+    can be relayed to an issue, and an unsalted hash of a low-entropy line is guessable."""
+    shown = _diagnostic_path(raw)
+    locations = ", ".join("%s at %s:%d:%d" % (rule, shown, line, column) for rule, line, column in hits)
+    text = "  * %s — added content matched %s; no matched value is shown." % (shown, locations)
+    content_lines = [line for rule, line, _column in hits if rule == _CONTENT_RULE]
+    if content_lines:
+        target = shlex.quote(os.path.join(str(path), raw)) if shown == raw else "<file>"
+        recipe = "python3 %s line-hash %s %d" % (shlex.quote(os.path.abspath(__file__)), target,
+                                                 content_lines[0])
+        text += (" Remove the literal or replace it with a read from the environment or a secret "
+                 "store, then re-run `work.py commit`. If the line holds no secret and cannot be "
+                 "rewritten, park the goal: `record parked \"<why>\"`, naming this rule and location. "
+                 "An allowlist entry is an OPERATOR ruling: an agent never writes one itself, attended "
+                 "or not. For the operator, narrowest first: one entry per line in "
+                 "`work.allow_secret_content` in .sdlc/config.json, {\"rule\": \"credential-assignment\", "
+                 "\"line_sha256\": \"<hash>\", \"reason\": \"<why>\"}, where `%s` prints the hash "
+                 "without showing the line (repeat for each listed line). WIDE: {\"rule\": "
+                 "\"credential-assignment\", \"path\": %s, \"reason\": \"<why>\"} clears every current "
+                 "AND future credential-assignment hit in that file, a real literal added later "
+                 "included, so it is for a file of fixtures only."
+                 % (recipe, json.dumps(raw) if shown == raw else '"<path>"'))
+    if any(rule != _CONTENT_RULE for rule, _line, _column in hits):
+        text += (" %s: remove the value or keep the file out of the repository, else park the goal "
+                 "(`record parked`). `work.allow_secret_paths` clears a path's NAME, never its "
+                 "content, and `work.allow_secret_content` clears only `credential-assignment`."
+                 % ("Any other rule here" if content_lines else "For this rule"))
+    return text
 
 
 #: #910: risk-detect.sh's own three category names -> the `gate` vocabulary value each records
@@ -6799,6 +6931,8 @@ _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal
                              "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
 _RECORD_REVIEW_USAGE = ("usage: work.py record-review <sdlc_dir> <goal> --verdict "
                         "APPROVE|SEND-BACK|BLOCK [--agent-id <reviewer agentId>] [--reason \"<text>\"]")
+_LINE_HASH_USAGE = ("usage: work.py line-hash <file> <line>  (prints the sha256 a "
+                    "`work.allow_secret_content` entry names; never the line)")
 
 
 def _flag(argv, name):
@@ -6837,6 +6971,7 @@ def main(argv):
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
             "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
             "record-review": _RECORD_REVIEW_USAGE,
+            "line-hash": _LINE_HASH_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -6962,6 +7097,16 @@ def main(argv):
         return 0
     if len(argv) >= 3 and argv[1] == "root":                    # no config needed; never fails
         print(root(argv[2], argv[3] if len(argv) > 3 else ""))
+        return 0
+    if len(argv) >= 2 and argv[1] == "line-hash":               # #961: no config; an operator's tool
+        if len(argv) != 4:
+            print(_LINE_HASH_USAGE, file=sys.stderr)
+            return 2
+        try:
+            print(line_hash(argv[2], argv[3]))
+        except (OSError, ValueError) as exc:  # names the file or the number, never the line's text
+            print(f"work: line-hash: {exc}", file=sys.stderr)
+            return 2
         return 0
     # #2482: dispatched OUTSIDE `_COMMANDS`, deliberately -- neither verb touches
     # `.sdlc/state/work/<goal>.json`, so the generic block's `_record()`-shaped machinery below
@@ -7089,6 +7234,7 @@ def main(argv):
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"
           "       work.py root <sdlc_dir> <goal>\n"
+          "       work.py line-hash <file> <line>\n"
           "       work.py merge-design|close-design <sdlc_dir> <goal>   "
           "close-design [--comment \"<text>\"]", file=sys.stderr)
     return 2
