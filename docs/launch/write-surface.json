@@ -2001,6 +2001,22 @@
       "risk": "high"
     },
     {
+      "path": "skills/sigma-prd-intake/scripts/intake.py",
+      "function": "_write_json",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-prd-intake/scripts/intake.py",
+      "function": "_write_json",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-radar/scripts/radar.py",
       "function": "record",
       "rule": "fs-write",

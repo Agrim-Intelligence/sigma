@@ -344,6 +344,17 @@ where you will find what happens if the one comment it writes never lands.
 
 ---
 
+## The PRD door -- a document instead of an interview
+
+If the idea already exists as a PRD file, `sigma-prd-intake` is the way in, and the
+scope-to-goals compile is not the route for a PRD. The model reads the file and drafts answers for each business
+outcome, quoting the PRD for every one; `intake.py` refuses any answer whose quote is not really in
+the file, files one Dossier per outcome (each stamped with the PRD path and sha256) and one umbrella
+`epic` listing them. Anything the PRD leaves silent, vague or contradictory becomes an `open_`
+question for design to carry into Doubts. It accepts a PRD of any shape and refuses a source-code
+file. Design then runs on those Dossiers exactly as on any other. The contract is
+[4f in the pipeline doc](dossier-pipeline.md#4f-stage-0-the-prd-door-sigma-prd-intake).
+
 ## The other way in — a goal that never saw a Dossier
 
 Most issues on a real board were filed by a person, long before any of this existed. The retrofit

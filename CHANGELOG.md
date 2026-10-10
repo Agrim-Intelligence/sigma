@@ -4,6 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
+  shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
+  a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);
+  silent, vague or contradictory answers become `open_` questions; a repository source file is
+  refused as the PRD. `dossier.py` gains an additive `prd_source` (a `### Source` block after the
+  fence; output byte-identical when absent). Not built: stdin/issue-number PRDs and the fast lane,
+  so #822 stays open. Measured: the new tests in `tests/test_prd_intake.py`; no timing claim made.
 - **Seventeen issue WRITE sites go REST first (#895, slice 3a; refs #801).** Comment, create, edit body, close,
   add/remove label and add-assignee now call new `gh_api` helpers (`comment_issue`, `create_issue`,
   `edit_issue`, `close_issue`, `add_labels`, `remove_label`, `add_assignees`) through `GitHubSource._issue_*`
