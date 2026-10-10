@@ -102,7 +102,8 @@ def cli_run(tmp_path_factory):
     rc, lines, blob, proc = _cli(workdir=tmp_path_factory.mktemp("cli"))
     assert rc == 0, proc.stdout[-3000:] + proc.stderr[-2000:]
     assert lines == {"readme-usage": "GREEN", "local": "GREEN", "github": "GREEN",
-                     "local/no-command": "GREEN", "github/no-command": "GREEN"}, lines
+                     "local/no-command": "GREEN", "github/no-command": "GREEN",
+                     "github/process": "GREEN"}, lines
     return blob
 
 
@@ -331,7 +332,7 @@ def test_control_the_original_bug_goes_red_through_the_cli(tmp_path):
     assert rc == 1, proc.stdout[-3000:]
     assert lines == {"readme-usage": "GREEN", "local": "GREEN", "github": "GREEN",
                      "local/no-command": "RED at record done",
-                     "github/no-command": "RED at work pr"}, lines
+                     "github/no-command": "RED at work pr", "github/process": "GREEN"}, lines
     mine = next(g for g in blob["modes"]["local/no-command"]["goals"] if g["work"] == oc.WORK_FILE)
     assert mine["record_rc"] == 4 and "REFUSED" in mine["record_err"] and mine["status"] != "done"
     assert mine["scaffolded_verify"] == {"command": "", "enforce": True}
@@ -353,7 +354,8 @@ def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
     assert rc == 1, proc.stdout[-3000:]
     # (the stdout line's name stops at " (", so the assertion name reads truncated here)
     assert lines == {"readme-usage": "GREEN", "github": "GREEN",
-                     "github/no-command": "RED at assert:the review gate ran"}, lines
+                     "github/no-command": "RED at assert:the review gate ran",
+                     "github/process": "GREEN"}, lines
     assert blob["modes"]["github/no-command"]["failed_step"] == \
         "assert:the review gate ran (a sigma:block parked the merge)"
     gh_obs = blob["modes"]["github/no-command"]["observations"]
@@ -541,6 +543,87 @@ GITHUB_NO_COMMAND_BREAKS = {
 }
 
 
+def _fail_property(ident):
+    """Rewrite one property line of check.py's printed verdict to FAIL, leaving the rest alone."""
+    def mutate(o):
+        text, n = re.subn(r"(?m)^(PASS|NOT EVALUABLE)(\s+)%s " % re.escape(ident), r"FAIL\2%s " % ident,
+                          o["check_text"])
+        assert n == 1, ident
+        o["check_text"] = text
+    return mutate
+
+
+GITHUB_PROCESS_BREAKS = {
+    "negative probe printed the plan-review refusal": lambda o: o.update(probe_text="PR #100 opened"),
+    "negative probe left the fake store without a PR": lambda o: o.update(probe_prs={"100": {}}),
+    "PR opened only after plan-review was recorded": lambda o: o.update(pr_after_record=False),
+    "review chain posted sigma:approve through post-review":
+        lambda o: o.update(post_review_text="PARK: remote comment outcome ambiguous"),
+    "every gh call was one the fake models": lambda o: o.update(unhandled='{"argv": ["x"]}\n'),
+    "record build succeeded": lambda o: o.update(build_rc=2),
+    **{ident: _fail_property(ident) for ident in (
+        "outcome.goal_merged", "outcome.verify_exit_zero", "outcome.goal_commits_on_main",
+        "process.phase_ends_recorded", "process.plan_review_verdict_approved",
+        "process.review_marker_in_store", "cost.tokens_measured", "cost.spend_positive",
+        "quality.test_first_passed", "quality.plan_and_research_present", "safety.only_internal_kinds",
+        "safety.no_absolute_paths", "safety.caveats_present")},
+}
+
+
+def test_every_github_process_assertion_is_seen_red_once(cli_run):
+    obs = cli_run["modes"]["github/process"]["observations"]
+    assert all(a["ok"] for a in oc.check_github_process(obs))
+    assert {a["name"] for a in oc.check_github_process(obs)} == set(GITHUB_PROCESS_BREAKS)
+    for name, mutate in GITHUB_PROCESS_BREAKS.items():
+        _broken(oc.check_github_process, obs, name, mutate)
+    # the first failing assertion is the evaluator's first failing property, in check.py's own order
+    two = copy.deepcopy(obs)
+    _fail_property("process.review_marker_in_store")(two)
+    _fail_property("cost.spend_positive")(two)
+    assert next(a["name"] for a in oc.check_github_process(two) if not a["ok"]) == \
+        "process.review_marker_in_store"
+    # a verdict with no property lines at all is red, never vacuously green
+    empty = dict(obs, check_text="")
+    assert [a["name"] for a in oc.check_github_process(empty) if not a["ok"]] == \
+        ["check.py printed its property lines"]
+
+
+def test_github_process_negative_probe_is_a_real_refusal(cli_run):
+    obs = cli_run["modes"]["github/process"]["observations"]
+    assert "gates.plan_review is on" in obs["probe_text"] and "has no recorded review" in obs["probe_text"]
+    assert obs["probe_prs"] == {}
+    # and the same run, one step later, opened the PR once the verdict was recorded
+    assert obs["pr_after_record"] is True
+
+
+def test_process_variant_is_github_only(tmp_path, capsys):
+    rc = oc.main(["onboarding_control.py", "--mode", "local", "--variant", "process",
+                  "--workdir", str(tmp_path)])
+    assert rc == 2
+    assert "--variant process is github-only; use --mode github or --mode both" in capsys.readouterr().err
+    # --variant all in local mode never schedules a local/process run
+    rc = oc.main(["onboarding_control.py", "--mode", "local", "--variant", "all", "--workdir", str(tmp_path),
+                  "--json", str(tmp_path / "r.json")])
+    assert rc == 0
+    modes = list(json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))["modes"])
+    assert modes == ["readme-usage", "local", "local/no-command"]
+
+
+def test_process_variant_refuses_loudly_without_pytest(tmp_path, monkeypatch, capsys):
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "python3").write_text("#!/bin/sh\necho 'No module named pytest' >&2\nexit 1\n")
+    (stub / "python3").chmod(0o755)
+    assert "pytest is unavailable" in oc._pytest_precondition({"PATH": str(stub)})
+    assert oc._pytest_precondition() == ""                      # this very environment has pytest
+    monkeypatch.setattr(oc, "_control_path", lambda bin_dir=None: str(stub))
+    rc = oc.main(["onboarding_control.py", "--mode", "github", "--variant", "process",
+                  "--workdir", str(tmp_path / "w")])
+    err = capsys.readouterr().err
+    assert rc == 2 and "precondition missing: python3 -m pytest is unavailable" in err
+    assert not (tmp_path / "w").exists()                        # refused before any directory work
+
+
 def test_every_local_assertion_is_seen_red_once(local_run):
     obs = next(g for g in local_run["goals"] if g["work"] == oc.WORK_FILE)
     obs = dict(obs, gh_calls=[])
@@ -611,3 +694,21 @@ def test_acceptance_still_rejects_missing_feature_after_green_repository_baselin
     result = oc.run_local(ROOT, README_TEXT, tmp_path / 'missing-feature')
     assert not result['ok']
     assert result['failed_step'] == 'record done'
+
+
+def test_plain_gesture_names_review_property_when_review_recording_is_broken(tmp_path):
+    """The documented gesture turns github/process RED at the review property when the review marker
+    is never journaled, and exits 0 intact (`cli_run`). Run with --variant process only, to stay
+    affordable; the PLAIN no-flag gesture is the by-hand control recorded with this change."""
+    sigma = _scratch_copy(tmp_path / "sigma")
+    (sigma / "tools").mkdir()
+    shutil.copy2(TOOL, sigma / "tools" / "onboarding_control.py")
+    _mutate(sigma / "skills" / "sigma-loop" / "scripts" / "work.py",
+            'posted = ledger.safe_append(sdlc_dir, "review_posted", goal,',
+            'posted = (lambda *a, **k: True)(sdlc_dir, "review_posted", goal,')
+    proc = subprocess.run([sys.executable, str(sigma / "tools" / "onboarding_control.py"), "--mode", "github",
+                           "--variant", "process", "--workdir", str(tmp_path)],
+                          capture_output=True, text=True, timeout=600)
+    lines = dict(re.findall(r"(?m)^onboarding-control: (\S+): (GREEN|RED at [^(]+?) \(", proc.stdout))
+    assert proc.returncode == 1, proc.stdout[-2000:]
+    assert lines["github/process"] == "RED at assert:process.review_marker_in_store", lines

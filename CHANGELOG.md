@@ -20,6 +20,15 @@ All notable changes to Sigma are recorded here, newest first.
   #819/#820; on a NOT RUN row `cost` is null and `representative` is false, and a reader summing spend must skip
   null-cost rows, never count them as zero. Not exercised: Windows and the real hosted-runner behaviour.
   Measured: the 119 cases in `tests/test_regression_live.py` pass on Python 3.9; no timing claim made.
+- **`github/process` variant in the onboarding control (#878, slice 4 of #809).** `tools/onboarding_control.py`
+  drives Sigma's own writers end to end (phase boundaries, plan-review, a negative probe that must be
+  refused with no PR in the fake store, a test-first red-then-green leg, the review chain with `post-review`,
+  merge, done), builds a record with `evals/regression/record.py` and judges it with `check.py`: GREEN, or
+  `RED at assert:<first failing property id>`. It is in the default `--variant all`; `--mode local --variant
+  process` exits 2; it requires `python3 -m pytest` and exits 2 with `precondition missing` without it.
+  `record.py` now records the plan-review gate's `pass`/`warn` as `approve` (`block` and unknown words verbatim;
+  owner ruling 2026-10-10). The fake gh now models a field-only `POST` to issue comments. Measured on one macOS machine:
+  the variant alone about 35 s, the whole plain gesture about 125 s; no CI figure.
 - **`sigma-prd-intake`: a PRD door into the Dossier pipeline (#822, refs).** A PRD file of any
   shape becomes one cited Dossier per business outcome plus one `epic` umbrella. Every answer needs
   a verbatim PRD quote (>= 20 chars; the check proves it exists, not that it supports the answer);

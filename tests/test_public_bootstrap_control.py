@@ -675,7 +675,8 @@ def cmd_api(state, argv, pos, flags, multi):
         save_state(state)
         emit(issue_rest_obj(state, number), flags.get("jq"), argv); return
     m = re.match(r"^repos/%s/issues/(\d+)/comments$" % re.escape(repo), endpoint)
-    if m and method == "POST":
+    # (real gh infers POST from -f/-F fields: #878's merge note posts this way, with no --method)
+    if m and (method == "POST" or (method == "" and multi.get("f"))):
         issue = state["issues"].get(m.group(1))
         if issue is None:
             sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
@@ -1468,11 +1469,27 @@ def test_find_evidence_marker_pages_to_termination_against_the_fake(tmp_path):
 
 def test_issue_comments_read_does_not_swallow_a_field_post(tmp_path):
     """`gh api <endpoint> -f body=x` is a POST (real gh infers it from fields); the fake's
-    comments READ branch must not answer it, so it reaches unhandled() as before #875."""
+    comments READ branch must not answer it (#875), and since #878 the POST branch records it:
+    the product's post-merge issue note is sent exactly this way."""
     world = _make_repo_world(tmp_path)
     _seed_pr(world)
     ep = "repos/%s/issues/101/comments" % world["repo"]
     r = _fakegh(world, ["api", ep, "-f", "body=x"], check=False)
-    assert r.returncode != 0
-    assert r.stdout.strip() != "[]"
-    assert len(_unhandled_lines(world)) == 1
+    assert r.returncode != 0 and r.stdout.strip() != "[]"                  # issue 101 does not exist
+    assert len(_unhandled_lines(world)) == 0                                # modelled: a 404, not a gap
+
+
+def test_issue_comment_field_post_without_method_is_recorded(tmp_path):
+    """#878: the post-merge note is `gh api <issue comments> -f body=...` with no --method. It must
+    land on the issue (modelled), and a bare GET of the same endpoint must still read, not post."""
+    world = _make_repo_world(tmp_path)
+    state = _read_state(world["state_path"])
+    state["issues"]["7"] = {"labels": [], "state": "open", "title": "t", "body": "", "assignees": []}
+    world["state_path"].write_text(json.dumps(state), encoding="utf-8")
+    ep = "repos/%s/issues/7/comments" % world["repo"]
+    r = _fakegh(world, ["api", ep, "-f", "body=hello"])
+    assert json.loads(r.stdout) == {"body": "hello"}
+    assert _read_state(world["state_path"])["issues"]["7"]["comments"] == ["hello"]
+    assert _unhandled_lines(world) == []
+    assert json.loads(_fakegh(world, ["api", ep]).stdout) == []             # a plain read posts nothing
+    assert _read_state(world["state_path"])["issues"]["7"]["comments"] == ["hello"]
