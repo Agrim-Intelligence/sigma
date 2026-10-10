@@ -401,6 +401,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/claim_refs.py",
+      "function": "_push",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "library only: called solely by the claim verbs (create, renew, reclaim, delete), always through the explicit --force-with-lease=<ref>:<expected> form on refs/sigma/claims/ (never a plain force); no caller exists in this slice; slice 3 gates it on claims.mode=git",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/codex_runtime.py",
       "function": "lock_file",
       "rule": "fs-write",

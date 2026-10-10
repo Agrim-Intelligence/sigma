@@ -62,7 +62,7 @@ LIBRARY_ONLY = {
     "flake_check", "frontmatter", "gh_api", "gh_session", "goal_size", "mutation",
     "scrub", "sources", "state", "tamper_scan", "timing_store", "watch_classify", "witness",
     "merge_queue", "tier_escalation", "board_spec", "red_green", "shell_policy", "logroll",
-    "codex_runtime",
+    "codex_runtime", "claim_refs",
 }
 
 
