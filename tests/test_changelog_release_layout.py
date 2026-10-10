@@ -56,6 +56,11 @@ def test_the_old_window_pin_shape_goes_red_on_two_releases():
     def old_window(text):
         window = "\n".join(text.split("\n## ", 3)[1:3])
         return [e for e in ("\n" + window).split("\n- **") if "#919" in e]
-    layouts = _layouts()
-    assert len(old_window(layouts["as-committed"])) == 1
-    assert old_window(layouts["one release"]) == []
+    # a synthetic baseline (the entry sits in the newest release section, as the old pin assumed), not the live file:
+    # the live changelog moves with every release, so a control that reads it would break at the next one
+    base = ("# Changelog\n\nAll notable changes to Sigma are recorded here, newest first.\n\n## Unreleased\n\n"
+            "## 1.0.0 \u2014 2026-01-01 \u2014 first release\n\n"
+            "- **Drift measure (#919).** A control entry naming feature_upkeep_drift.py.\n")
+    once = simulate_release(base, "9.9.8", "2098-01-01")
+    assert len(old_window(base)) == 1
+    assert old_window(once) == []
