@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip pytest pytest-xdist
       - name: pytest (subset)
-        run: python -m pytest tests/ $SLOW -rs -q -n auto
+        run: python -m pytest tests/ $SLOW -rs -q -n auto --durations=30
       - name: no retired skill prefix left in any tracked path or file (#523)
         if: ${{ !cancelled() }}
         run: python3 tools/rename_check.py

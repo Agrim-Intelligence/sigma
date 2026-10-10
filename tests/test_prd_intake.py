@@ -123,12 +123,29 @@ def _runner(fail_nth_create=None):
     state = {"creates": 0}
 
     def run(args):
-        calls.append(list(args))
-        if len(args) >= 2 and args[0] == "issue" and args[1] == "create":
+        args = list(args)
+        rest_create = (len(args) >= 2 and args[0] == "api" and args[1].endswith("/issues")
+                       and "POST" in args)
+        if rest_create:
+            # #895 slice 3: issue creates go REST first. Record the call in `gh issue create`
+            # form so the assertions below read one shape, and answer with the REST issue dict.
+            fields = [a for a in args if "=" in a and not a.startswith("-")]
+            val = lambda k: next(f.split("=", 1)[1] for f in fields if f.startswith(k + "="))  # noqa: E731
+            norm = ["issue", "create", "--title", val("title"), "--body", val("body")]
+            for f in fields:
+                if f.startswith("labels[]="):
+                    norm += ["--label", f.split("=", 1)[1]]
+            calls.append(norm)
+        else:
+            calls.append(args)
+        if rest_create or (len(args) >= 2 and args[0] == "issue" and args[1] == "create"):
             state["creates"] += 1
             if fail_nth_create == state["creates"]:
                 raise RuntimeError("simulated gh failure")
-            return "https://github.com/acme/widget/issues/%d\n" % (100 + state["creates"])
+            n = 100 + state["creates"]
+            if rest_create:
+                return json.dumps({"number": n, "html_url": "https://github.com/acme/widget/issues/%d" % n})
+            return "https://github.com/acme/widget/issues/%d\n" % n
         return ""
 
     run.calls = calls
