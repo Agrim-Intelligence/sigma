@@ -4,6 +4,12 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Regression gate set and catalogue (#1057, slice 2 of #808).** New `evals/regression/gates.json` (live gates by
+  selection, `skill-smoke`/`safety-check`/`layer1-control` registered `pending` with a reason), `catalogue.json` (one
+  row per mutation form with its `must_be_red_by` gates) and `catalogue.py check`, a read-only schema checker run in
+  the fast suite: rejects an unknown gate id, an empty `must_be_red_by`, a row whose only gate is pending, and a row
+  that drifts from `mutators.py`. Test-first and phase-record suites are deliberately not listed (measured green).
+
 - **Cards for the prose-only skills; the per-skill smoke runner is now a gate (#1046, slice 3 of #805; refs #1043).** One
   `pinned` card per skill with no script (24 today, derived from disk), each pinning a verbatim sentence from its own
   `SKILL.md`; `tests/test_skill_smoke.py` runs `python3 evals/skills/smoke.py` on the real tree. Measured: bare run exit 0,
