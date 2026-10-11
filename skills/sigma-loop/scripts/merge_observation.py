@@ -403,9 +403,17 @@ def _run_git(repo, args, run=None):
 
 
 def resolve_remote_snapshot(repo, remote="origin", branch="sdlc-ledger", run=None):
-    """Fetch once and pin the receipt authority to the exact remote commit it returned."""
-    _run_git(repo, ["fetch", "--no-tags", remote, branch], run)
-    commit = _run_git(repo, ["rev-parse", remote + "/" + branch], run)
+    """Fetch once and pin the receipt authority to the exact remote commit it returned.
+
+    #1142: the fetch NAMES its destination. A bare `fetch <remote> <branch>` moves `<remote>/<branch>`
+    only when the clone's fetch refspec covers it; in a `--single-branch` clone it never does, so
+    once `sync.py` has created that ref the pin below would be whatever it last was, not the remote."""
+    if any(c in "*?[\\^~:" for c in branch) or (
+            any(c in "/:\\" for c in remote) and remote not in _run_git(repo, ["remote"], run).split()):
+        raise ValueError("REFUSED: the receipt snapshot needs a named remote and a plain branch (#1142)")
+    tracking = "refs/remotes/%s/%s" % (remote, branch)
+    _run_git(repo, ["fetch", "--no-tags", remote, "+refs/heads/%s:%s" % (branch, tracking)], run)
+    commit = _run_git(repo, ["rev-parse", tracking], run)
     if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", commit):
         raise ValueError("remote receipt snapshot is not a Git commit SHA")
     tree = _run_git(repo, ["rev-parse", commit + "^{tree}"], run)

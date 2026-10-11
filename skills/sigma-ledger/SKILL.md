@@ -50,6 +50,12 @@ LS="${CLAUDE_SKILL_DIR}/../sigma-loop/scripts"
    ignore . --scope tracked` (or `--scope local`). Do NOT blindly `echo … >> .gitignore` — that has
    overwritten a repo's existing broader exclude.
 
+   A `--single-branch` or `--depth` clone needs no extra fetch refspec: every sync fetch names the ops
+   branch. If `publish`/`pull` say the branch **shares no history** with the remote's, or doctor says
+   `DIVERGED`, re-running the same `bootstrap` re-roots it. It keeps this machine's entries and saves
+   the old tip under `refs/sigma/orphaned/`. See "Sharing it" in `docs/action-log-and-ledger.md` before
+   running it on a branch someone recreated.
+
 `/sigma-doctor` flags this automatically: if the ledger is enabled but not set up, it runs the same
 bootstrap for you.
 

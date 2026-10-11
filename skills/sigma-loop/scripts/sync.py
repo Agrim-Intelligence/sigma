@@ -24,6 +24,7 @@ designed shape, not drift. Push is fast-forward only with a bounded fetch-rebase
 is resolved by replaying, never by forcing. Zero deps.
 """
 import collections
+import fnmatch
 import importlib.util
 import os
 import pathlib
@@ -351,6 +352,131 @@ def _local_ahead(git, root, name, rem):
         return True
 
 
+# --------------------------------------------------------------- one history, never two (#1142)
+#
+# A bare `git fetch <rem> <name>` writes `refs/remotes/<rem>/<name>` ONLY when the clone's
+# `remote.<rem>.fetch` maps that branch. `git clone --single-branch` -- and `--depth N`, which implies
+# it -- writes a refspec for `main` alone, so in such a clone the fetch wrote FETCH_HEAD and nothing
+# else, every `<rem>/<name>` read below failed, and `init` took the failure for "nobody has pushed the
+# branch yet": it started a SECOND history from the empty tree beside the team's. Field case: a
+# 325-commit `sdlc-ledger` on origin, an orphan here, and a publish rejected non-fast-forward every
+# tick while saying it would retry. Every fetch in this module now names its destination.
+
+#: Characters that would make `+refs/heads/<name>:<tracking>` mean something else -- a glob that
+#: fetches every head, a second `:`. `_ref_value` only stops a value from being an OPTION.
+_REFSPEC_META = frozenset("*?[\\^~:")
+
+
+def _tracking_ref(git, cwd, rem, name):
+    """`refs/remotes/<rem>/<name>`, the ref every comparison here reads, or a loud REFUSED when it
+    cannot exist: a remote-tracking ref needs a NAMED remote (a URL or path makes the refspec
+    invalid -- and before #1142 such a config forked on the second machine anyway). `git remote` is
+    consulted only for a value that looks like a URL or path, since a name may legally hold a `/`."""
+    if any(c in _REFSPEC_META for c in name):
+        raise ValueError(f"REFUSED: branch {name!r} is not a plain branch name, so it cannot be "
+                         "fetched by name (#1142); set a plain branch in .sdlc/config.json")
+    if any(c in "/:\\" for c in rem) and rem not in git(cwd, ["remote"]).split():
+        raise ValueError(f"REFUSED: remote {rem!r} is a URL or path, and the ops branch needs a named "
+                         "remote to track (#1142); `git remote add <name> <url>` and set that name "
+                         "in .sdlc/config.json")
+    return f"refs/remotes/{rem}/{name}"
+
+
+def _fetch(git, cwd, rem, name):
+    """Fetch `<rem>`'s `<name>` INTO `refs/remotes/<rem>/<name>`, whatever `remote.<rem>.fetch`
+    says (see the block comment above). `+`, as git's own default refspec has it, so a branch someone
+    force-pushed still updates the ref instead of failing the fetch. Returns the tracking ref."""
+    tracking = _tracking_ref(git, cwd, rem, name)
+    git(cwd, ["fetch", rem, f"+refs/heads/{name}:{tracking}"])
+    return tracking
+
+
+def _remote_branch_state(git, root, rem, name):
+    """What the remote says about `refs/heads/<name>` once a fetch of it has failed: "present",
+    "absent", "unreadable" (a configured remote that did not answer), or "no-remote" (`rem` is not
+    configured here at all -- a local-only setup, with nothing to diverge from). `ls-remote` is given
+    the full ref as its pattern (no `--heads`, renamed in git 2.46) and its answer is matched exactly,
+    because a pattern matches any ref that merely ENDS with it."""
+    try:
+        out = git(root, ["ls-remote", rem, f"refs/heads/{name}"])
+    except Exception:                           # noqa: BLE001 - unreachable, or not a remote at all
+        try:
+            configured = rem in git(root, ["remote"]).split()
+        except Exception:                       # noqa: BLE001 - cannot tell: fail closed
+            configured = True
+        return "unreadable" if configured else "no-remote"
+    refs = {line.split("\t", 1)[1].strip() for line in out.splitlines() if "\t" in line}
+    return "present" if f"refs/heads/{name}" in refs else "absent"
+
+
+def _shallow_commits(git, cwd):
+    """The commits this repository's history is CUT at, which `rev-list --max-parents=0` reports as
+    roots although they are not. `--git-path` names the common directory's file even from a linked
+    worktree (probed), and prints it relative to the `-C` directory in a main checkout."""
+    if git(cwd, ["rev-parse", "--is-shallow-repository"]) != "true":
+        return set()
+    shallow = pathlib.Path(git(cwd, ["rev-parse", "--git-path", "shallow"]))
+    if not shallow.is_absolute():
+        shallow = pathlib.Path(cwd) / shallow
+    return set(shallow.read_text(encoding="utf-8").split())
+
+
+def _shares_history(git, cwd, rem, name):
+    """True when HEAD and `<rem>/<name>` have a common ancestor, False when they PROVABLY have none,
+    None when it cannot be told -- and None is never read as False, because False is what makes a
+    caller call the state permanent.
+
+    `merge-base` answers the common case in O(commits since the base): 11.7 ms on a 32,500-commit
+    branch (`.sdlc/research/1142-measure.py history`; git 2.46.2, one laptop, load ~3, best of 5).
+    It exits 1 for "no base" and 128 for a missing ref, which the injected `git` cannot tell apart,
+    so a failure is settled by root sets instead: two histories share an ancestor exactly when they
+    share a root (115.6 ms for the same branch, and only ever on this path). A root that is really a
+    shallow cut proves nothing, so that is None."""
+    tracking = f"refs/remotes/{rem}/{name}"
+    try:
+        git(cwd, ["merge-base", "HEAD", tracking])
+        return True
+    except Exception:                           # noqa: BLE001 - no base, or no ref: settled below
+        pass
+    try:
+        mine = set(git(cwd, ["rev-list", "--max-parents=0", "HEAD"]).split())
+        theirs = set(git(cwd, ["rev-list", "--max-parents=0", tracking]).split())
+        cut = _shallow_commits(git, cwd)
+    except Exception:                           # noqa: BLE001 - unreadable: cannot tell
+        return None
+    if not mine or not theirs or (mine | theirs) & cut:
+        return None
+    return bool(mine & theirs)
+
+
+#: PERMANENT, so it must never wear the transient "will retry" wording, and it names both ways to get
+#: here: the #1142 fork, and a remote branch someone deleted and recreated -- where re-rooting
+#: republishes this clone's copy of whatever was removed, which is the operator's call to make.
+_UNRELATED = ("{verb} refused: {name} here shares no history with {rem}/{name} (it was started on its "
+              "own -- #1142 -- or {rem}/{name} was deleted and recreated), so no retry can land it; "
+              "`sync.py bootstrap .sdlc{flag}` re-roots it onto {rem}/{name} and republishes this "
+              "clone's own {what}")
+#: Not provably unrelated, but no base is visible either: rebasing would replay every local commit
+#: onto the remote all the same, which is the graft. So nothing is rebased; this one can heal.
+_NO_BASE_VISIBLE = ("{verb} deferred: no common ancestor with {rem}/{name} is visible in this clone (a "
+                    "shallow cut or an unreadable repository), so it is not rebasing onto it -- deepen "
+                    "the history (`git fetch --deepen`) or run /sigma-doctor")
+
+
+def _diverged(git, path, rem, name, verb, channel):
+    """`None` when it is safe to rebase onto `<rem>/<name>`, else the status that says why not.
+    Called BEFORE every rebase, never after one fails: the ledger's `rebase -X theirs` SUCCEEDS on an
+    unrelated history -- its add/add conflicts on README.md and TEAM.md resolve to this clone's
+    copies -- and would graft the empty-tree root onto everyone's branch."""
+    shared = _shares_history(git, path, rem, name)
+    if shared is True:
+        return None
+    if shared is False:
+        return _UNRELATED.format(verb=verb, name=name, rem=rem, what="notes" if channel == KNOWLEDGE
+                                 else "entries", flag=" --channel knowledge" if channel == KNOWLEDGE else "")
+    return _NO_BASE_VISIBLE.format(verb=verb, rem=rem, name=name)
+
+
 def init(sdlc_dir, config, run=None, channel=LEDGER):
     """Create the ops branch (from the empty tree, so it carries no code) and check it out as the
     channel's worktree. Idempotent: an existing worktree is left alone."""
@@ -362,8 +488,9 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
     if is_worktree(sdlc_dir) if channel == LEDGER else is_worktree(sdlc_dir, channel=channel):
         return f"already a worktree: {path}"
 
+    tracking = _tracking_ref(git, root, rem, name)  # a REFUSED here is the operator's to see (#1142)
     try:                                        # a colleague may have pushed the branch already
-        git(root, ["fetch", rem, name])
+        _fetch(git, root, rem, name)
         if _local_ahead(git, root, name, rem):
             # #592: a local ops branch holding commits the remote lacks (a ledger entry not yet
             # published) is never moved: `branch --force` would drop them. Left as it is, the next
@@ -372,12 +499,26 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
             print(f"sigma: sync init: local branch {name} has commits {rem}/{name} lacks (or they "
                   "could not be counted); leaving it where it is", file=sys.stderr)
         else:
-            git(root, ["branch", "--force", name, f"{rem}/{name}"])
+            git(root, ["branch", "--force", name, tracking])
     except Exception as exc:
         if _local_branch_exists(git, root, name):
             print(f"sigma: sync init: could not move local branch {name} onto {rem}/{name} "
                   f"({str(exc)[:200]}); keeping it as it is", file=sys.stderr)
         else:
+            # #1142: the empty tree ONLY when the remote provably has no such branch, or there is no
+            # remote at all. A failed fetch is not that answer -- it is how a single-branch clone
+            # used to fork the team's ledger -- so any other state refuses and creates nothing;
+            # entries written meanwhile stay in the plain directory and are carried in later.
+            state = _remote_branch_state(git, root, rem, name)
+            if state == "present":
+                raise RuntimeError(f"REFUSED: {rem} has {name} but it could not be fetched "
+                                   f"({str(exc)[:200]}); a second {name} started here could never be "
+                                   "published (#1142) -- fix the fetch, then re-run "
+                                   "`sync.py bootstrap .sdlc`") from exc
+            if state == "unreadable":
+                raise RuntimeError(f"REFUSED: could not read {rem} to see whether it already has {name} "
+                                   f"({str(exc)[:200]}); not starting a history that could fork the "
+                                   f"team's (#1142) -- re-run when {rem} is reachable") from exc
             empty = git(root, ["hash-object", "-t", "tree", "/dev/null"])
             commit = git(root, ["commit-tree", empty, "-m", f"{channel}: start the ops branch"])
             git(root, ["branch", name, commit])     # plumbing only — the main index is never written
@@ -456,7 +597,10 @@ def pull(sdlc_dir, config, run=None, channel=LEDGER):
     path, name, rem = worktree(sdlc_dir), branch(config), remote(config)
     if not is_worktree(sdlc_dir):
         return "not a worktree — run `sync.py init` first (nothing fetched)"
-    git(path, ["fetch", rem, name])
+    _fetch(git, path, rem, name)
+    stop = _diverged(git, path, rem, name, "pull", LEDGER)
+    if stop is not None:
+        return stop
     try:
         git(path, ["rebase", f"{rem}/{name}"])
     except Exception as exc:                    # noqa: BLE001 - a watcher must never wedge
@@ -482,7 +626,10 @@ def _pull_knowledge(sdlc_dir, config, git):
         return "pull deferred: another knowledge sync holds the lock"
     try:
         try:
-            git(ch.path, ["fetch", ch.remote, ch.branch])
+            _fetch(git, ch.path, ch.remote, ch.branch)
+            stop = _diverged(git, ch.path, ch.remote, ch.branch, "pull", KNOWLEDGE)
+            if stop is not None:
+                return stop
             try:
                 git(ch.path, ["rebase", f"{ch.remote}/{ch.branch}"])
             except Exception:
@@ -549,23 +696,49 @@ def _ahead(git, path, rem, name):
         return None
 
 
+def _record_push(git, path, rem, name, before):
+    """#1142 review, finding 1: a push moves `refs/remotes/<rem>/<name>` only when the fetch refspec
+    maps the branch. In a single-branch clone it never does, so the ref `_fetch` created would lag
+    every successful publish, and `unpublished()`, the doctor and `_ensure_ledger_delivery` would
+    count every published commit as unpushed.
+
+    `before` is HEAD as read just before the push. It is recorded ONLY if HEAD still names it now:
+    another publisher in this worktree can commit while the push runs, and recording the newer HEAD
+    would call that commit published while the remote lacks it -- a false all-clear (review round 2).
+    When HEAD moved, nothing is recorded: the ref stays stale, which over-reports until the next
+    fetch -- the safe direction. The push itself keeps the fixed-literal `HEAD:` source, which can
+    never be empty, so it can never delete the branch (docs/branching-model.md 13b). Best-effort:
+    a failure only leaves the ref as stale as git itself would have."""
+    try:
+        if re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", before) and git(path, ["rev-parse", "HEAD"]) == before:
+            git(path, ["update-ref", f"refs/remotes/{rem}/{name}", before])
+    except Exception:                           # noqa: BLE001 - see docstring
+        pass
+
+
 def _push_with_retry(git, path, rem, name, attempts, rebase_args=(), after_rebase=None,
-                     retry_hint="next record", on_conflict=None):
+                     retry_hint="next record", on_conflict=None, channel=LEDGER):
     """Fast-forward push with a bounded fetch-rebase-retry; never forces. `rebase_args` and
     `after_rebase` are the ledger's `-X theirs` + TEAM.md regeneration; the knowledge channel passes
     neither (its notes union-merge through `.gitattributes`). `retry_hint` names when the caller's
-    own next attempt comes (the ledger's is a watcher tick). Returns a status string."""
+    own next attempt comes (the ledger's is a watcher tick). A history the remote's shares nothing
+    with is never rebased and never retried (#1142: `_diverged`). Returns a status string."""
     last = ""
     for attempt in range(attempts):
         try:
+            before = git(path, ["rev-parse", "HEAD"])
             git(path, ["push", rem, f"HEAD:{name}"])
+            _record_push(git, path, rem, name, before)
             return "published"
         except Exception as exc:                # noqa: BLE001 - contention is expected, not fatal
             last = str(exc)
             if attempt == attempts - 1:
                 break
             try:
-                git(path, ["fetch", rem, name])
+                _fetch(git, path, rem, name)
+                stop = _diverged(git, path, rem, name, "publish", channel)
+                if stop is not None:
+                    return stop
                 try:
                     git(path, ["rebase", *rebase_args, f"{rem}/{name}"])
                 except Exception:
@@ -692,7 +865,8 @@ def _publish_knowledge(sdlc_dir, config, git, attempts):
                 return "nothing to publish"
         except Exception as exc:                # noqa: BLE001 - publish() "always returns a status
             return f"publish deferred: {exc}"   # string, never raises" (#2449), on this channel too
-        out = _push_with_retry(git, path, rem, name, attempts, on_conflict=_resolve_modify_delete)
+        out = _push_with_retry(git, path, rem, name, attempts, on_conflict=_resolve_modify_delete,
+                               channel=KNOWLEDGE)
         if out == "published" and gitlinks:
             return f"published (embedded repository not published, never a note: {', '.join(gitlinks)})"
         return out
@@ -775,15 +949,16 @@ def publish_receipt(sdlc_dir, receipt_path, config=None, run=None, attempts=PUSH
     for _attempt in range(attempts):
         try:
             git(path, ["push", rem, f"HEAD:{name}"])
-            git(path, ["fetch", rem, name])
-            tip = git(path, ["rev-parse", f"{rem}/{name}"])
+            tip = git(path, ["rev-parse", _fetch(git, path, rem, name)])
             git(path, ["merge-base", "--is-ancestor", local_commit, tip])
             if git(path, ["rev-parse", f"{tip}:{relative}"]) != local_blob:
                 return "receipt pending: remote acknowledgement blob mismatch"
             return "receipt published"
         except Exception:
             try:
-                git(path, ["fetch", rem, name])
+                _fetch(git, path, rem, name)
+                if _shares_history(git, path, rem, name) is not True:
+                    break                       # #1142: never graft a receipt onto another history
                 git(path, ["rebase", f"{rem}/{name}"])
             except Exception:
                 try: git(path, ["rebase", "--abort"])
@@ -837,13 +1012,232 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
             git(path, ["commit", "--amend", "--no-edit"])
 
     return _push_with_retry(git, path, rem, name, attempts, rebase_args=("-X", "theirs"),
-                            after_rebase=regenerate_team, retry_hint="next tick")
+                            after_rebase=regenerate_team, retry_hint="next tick", channel=LEDGER)
 
 
 def _write_team(sdlc_dir, path):
     """Regenerate the rolled-up team view from every author's entries. A pure function of the
     entries on disk, so it is always safe to overwrite (that is what makes a race resolvable)."""
     (path / "TEAM.md").write_text(ledger.render(ledger.read_all(sdlc_dir)), encoding="utf-8")
+
+
+def _append_missing_lines(local, published_text):
+    """Append to `local` every line of the branch's copy it lacks; returns how many. APPEND-ONLY
+    (O_APPEND, never a rewrite), so a concurrent `ledger.append` to the same file is never truncated,
+    and idempotent, so a re-root interrupted after this runs converges when re-run. Line order inside
+    an entries file does not matter: `ledger.read_all` sorts by `(ts, actor, seq)`."""
+    text = local.read_text(encoding="utf-8", errors="replace")
+    have = set(text.splitlines())
+    extra = list(dict.fromkeys(line for line in published_text.splitlines()
+                               if line.strip() and line not in have))
+    if extra:
+        with open(local, "a", encoding="utf-8") as fh:
+            fh.write(("" if not text or text.endswith("\n") else "\n") + "\n".join(extra) + "\n")
+    return len(extra)
+
+
+def _this_clones(rel, who, host):
+    """Is the entries file at `rel` this clone's own write? Its `<actor>-<host>.<pid>` name
+    (`ledger.entry_file`) carries THIS machine's host token, whatever actor it names -- #488 shows the
+    actor can resolve differently between runs. A name with no host -- a pre-#540 `<actor>-<pid>`, or
+    a pre-#337 bare `<actor>` -- is owned exactly when `ledger.files_for(who)` would claim it, and by
+    the same rules, so `bo-notes.jsonl` (actor "bo-notes") is never taken for bo's."""
+    stem = pathlib.PurePosixPath(rel).name[:-len(".jsonl")]
+    actor, _, instance = stem.rpartition("-")
+    if actor and ledger._is_instance_token(instance) and "." in instance:
+        return instance.rpartition(".")[0] == host
+    if not who:
+        return False
+    mine = ledger._safe_name(who).lower()       # `files_for`'s own two legacy shapes, and only those:
+    return (actor.lower() == mine and ledger._is_instance_token(instance)) or stem == ledger._safe_name(who)
+
+
+def _aside(sdlc_dir, stamp, channel, rel, unplaced=False):
+    """Where a re-root puts a file it will not publish: `<sdlc>/state/orphaned/<stamp>/<channel>/`
+    (`unplaced/` beneath it for a copy that exists NOWHERE else). Never clobbers an earlier copy."""
+    base = pathlib.Path(sdlc_dir).resolve() / "state" / "orphaned" / stamp / channel
+    dest = (base / "unplaced" if unplaced else base) / rel
+    n = 0
+    while dest.exists():
+        n += 1
+        dest = dest.with_name(f"{dest.name}.{n}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
+def _save_uncommitted(git, sdlc_dir, path, paths, stamp, channel):
+    """Before the re-root's checkout overwrites `paths` with the branch's copies: COPY aside every one
+    whose local content is not what the old tip committed (an uncommitted edit, or an untracked file
+    at a path the branch has) -- the backup ref cannot hold those. Returns them, for the output to
+    name. TEAM.md is skipped: it is generated, and publish regenerates it from the entries."""
+    saved = []
+    for i in range(0, len(paths), 100):
+        chunk = paths[i:i + 100]
+        wanted = set(chunk)
+        out = git(path, ["--literal-pathspecs", "status", "--porcelain", "-z", "--untracked-files=all",
+                         "--", *chunk])
+        for entry in (e for e in out.split("\0") if e):
+            parts = entry.split(None, 1)        # `_run_git` strips the first entry's leading space
+            rel = parts[1] if len(parts) == 2 else ""
+            if rel in wanted and rel != "TEAM.md" and (path / rel).is_file():
+                shutil.copy2(path / rel, _aside(sdlc_dir, stamp, channel, rel, unplaced=True))
+                saved.append(rel)
+    return saved
+
+
+def _settle_ledger(git, sdlc_dir, path, backup, stamp, who):
+    """After a ledger re-root's reset: stage what is this clone's, move out of `entries/` what is not,
+    and NAME anything left over -- so no change remains that publish will not commit (a dirty tracked
+    file makes every later `git rebase` refuse), and no file stays where `unpublished()` counts it,
+    `read_all()` reads it, and TEAM.md renders it. IDEMPOTENT: it recomputes everything from the
+    worktree, so `_resume_reroot` can run it again after a failure part-way through."""
+    host, notes = ledger._host_token(), []
+    loose = [p for p in git(path, ["ls-files", "--others", "-z", "--", ledger.ENTRIES]).split("\0")
+             if p.endswith(".jsonl")]
+    changed = [p for p in git(path, ["diff", "--name-only", "-z", "--", ledger.ENTRIES]).split("\0")
+               if p.endswith(".jsonl")]
+    stage = [p for p in loose + changed if _this_clones(p, who, host)]
+    others = [p for p in loose if not _this_clones(p, who, host)]
+    if others:
+        # Another machine's file: the old branch's copy, byte for byte, is in `backup`, so moving it
+        # aside loses nothing; one that differs exists only here and is named as well as moved.
+        old = {}
+        for row in git(path, ["ls-tree", "-r", "-z", backup, "--", ledger.ENTRIES]).split("\0"):
+            meta, _, rel = row.partition("\t")
+            if rel:
+                old[rel] = meta.split()[-1]
+        blobs = []
+        for i in range(0, len(others), 100):
+            blobs += git(path, ["hash-object", "--", *others[i:i + 100]]).split()
+        for rel, blob in zip(others, blobs):
+            kept = old.get(rel) == blob
+            (path / rel).rename(_aside(sdlc_dir, stamp, LEDGER, rel, unplaced=not kept))
+        notes.append(f"{len(others)} other machine's file(s) moved to "
+                     f"{pathlib.Path(sdlc_dir).resolve() / 'state' / 'orphaned' / stamp / LEDGER}, "
+                     "not republished")
+    # Named from the directory, not from this run's moves, so a resumed settle still names a copy an
+    # interrupted one moved; `_save_uncommitted`'s copies land here too.
+    unplaced_dir = pathlib.Path(sdlc_dir).resolve() / "state" / "orphaned" / stamp / LEDGER / "unplaced"
+    only = sorted(str(f.relative_to(unplaced_dir)) for f in unplaced_dir.rglob("*") if f.is_file())
+    if only:
+        notes.append(f"kept ONLY under {unplaced_dir} (no commit holds them, nothing republished them): "
+                     f"{', '.join(only)}")
+    for i in range(0, len(stage), 100):
+        git(path, ["add", "--", *stage[i:i + 100]])
+    stray = [p for p in git(path, ["diff", "--name-only", "-z"]).split("\0")
+             if p and not (p.startswith(f"{ledger.ENTRIES}/") and _this_clones(p, who, host))]
+    if stray:                                   # a defect if it ever prints: say it, never ignore it
+        notes.append(f"tracked file(s) still differ from {backup} and publish will not stage them, so "
+                     f"a pull will refuse until they are resolved: {', '.join(stray)}")
+    return notes
+
+
+def _pending(sdlc_dir, channel):
+    """A re-root whose reset landed but whose settle step has not finished (#1142 review, finding 2):
+    after the reset the histories are related, so nothing else could tell the next `bootstrap` that
+    anything is left to do. `state/orphaned/<stamp>/<channel>/PENDING`, holding the OLD TIP's hash --
+    so resuming needs no backup ref an operator may have tidied away (review round 2) -- and a FILE,
+    not a ref, so no `update-ref -d` is ever needed to clear it (docs/branching-model.md 13b)."""
+    return sorted((pathlib.Path(sdlc_dir).resolve() / "state" / "orphaned").glob(f"*/{channel}/PENDING"))
+
+
+def _resume_reroot(git, sdlc_dir, ch, who):
+    """Finish a ledger re-root that stopped between its reset and the end of its settle step."""
+    notes = []
+    for marker in _pending(sdlc_dir, ch.name):
+        stamp = marker.parent.parent.name
+        notes.append(f"finished the re-root started at {stamp}")
+        notes += _settle_ledger(git, sdlc_dir, ch.path, marker.read_text(encoding="utf-8").strip(), stamp, who)
+        marker.unlink()
+    return "; " + "; ".join(notes) if notes else ""
+
+
+def _reroot(git, sdlc_dir, ch, who=None):
+    """#1142's lever: move a channel worktree whose branch shares NO history with `<rem>/<name>`
+    onto it, keeping what this clone wrote. `""` when there is nothing to do (the histories are
+    related, or the remote cannot be read -- publish then says so itself).
+
+    Every write to the worktree happens BEFORE the one `reset`, so a crash before it leaves HEAD on
+    the old branch and a re-run starts over; a ledger crash AFTER it leaves a PENDING marker (`_pending`), and the next
+    `bootstrap` finishes the settle step. The old tip is kept at `refs/sigma/orphaned/<channel>/<UTC
+    stamp>` (outside `refs/sigma/claims/`, never pushed). Per path the branch has:
+      * ledger: an `entries/*.jsonl` that is this clone's own (`_this_clones`) and exists here is
+        UNIONED (append-only) and staged; every other path -- a teammate's file, README.md, TEAM.md,
+        .gitattributes, receipts -- takes the branch's copy, the orphan's committed one staying in
+        the backup ref and an uncommitted one copied aside first (`_save_uncommitted`). Splitting by
+        OWNER, not by "did the union change it", is what keeps a recreated (perhaps deliberately
+        purged) branch from getting a teammate's lines back through this clone.
+      * knowledge: a note (`*.md`) that exists here is unioned; scaffold takes the branch's copy.
+        Notes carry no host, so local-only notes go out through publish's secret gate -- the
+        refusal message's "republishes this clone's own notes" is the warning.
+    Operator-run only (`bootstrap`): an unrelated history is also what a deleted-and-recreated
+    remote branch looks like, and republishing onto that is a human's call, not a watcher tick's."""
+    path, name, rem = ch.path, ch.branch, ch.remote
+    # A pending settle is LOCAL work, so it never waits on the network (review round 2); and it runs
+    # only once the reset it follows has landed -- a marker beside an unrelated HEAD is superseded.
+    if ch.name == LEDGER and _shares_history(git, path, rem, name) is True:
+        return _resume_reroot(git, sdlc_dir, ch, who)
+    try:
+        tracking = _fetch(git, path, rem, name)
+    except Exception:                           # noqa: BLE001 - nothing visible to re-root onto
+        return ""
+    shared = _shares_history(git, path, rem, name)
+    if shared is True and ch.name == LEDGER:
+        return _resume_reroot(git, sdlc_dir, ch, who)
+    if shared is not False:
+        return ""
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    backup = f"refs/sigma/orphaned/{ch.name}/{stamp}"
+    old_tip = git(path, ["rev-parse", "HEAD"])
+    git(path, ["update-ref", backup, old_tip])
+    for stale in _pending(sdlc_dir, ch.name):
+        stale.unlink()                          # superseded: HEAD never left the old branch
+    host = ledger._host_token()
+    checkout, appended = [], 0
+    for rel in [p for p in git(path, ["ls-tree", "-r", "-z", "--name-only", tracking]).split("\0") if p]:
+        mine = (rel.endswith(".md") if ch.name == KNOWLEDGE
+                else rel.startswith(f"{ledger.ENTRIES}/") and rel.endswith(".jsonl")
+                and _this_clones(rel, who, host))
+        local = path / rel
+        if mine and local.is_file():
+            if _append_missing_lines(local, git(path, ["show", f"{tracking}:{rel}"])):
+                appended += 1
+        else:
+            checkout.append(rel)
+    saved = _save_uncommitted(git, sdlc_dir, path, checkout, stamp, ch.name)
+    for i in range(0, len(checkout), 100):      # chunked: no file-count bound on the branch
+        git(path, ["--literal-pathspecs", "checkout", tracking, "--", *checkout[i:i + 100]])
+    marker = None
+    if ch.name == LEDGER:
+        marker = _aside(sdlc_dir, stamp, ch.name, "PENDING")
+        marker.write_text(old_tip + "\n", encoding="utf-8")
+    git(path, ["reset", "-q", "--mixed", tracking])
+    notes = [f"re-rooted {name} onto {rem}/{name} (old tip kept at {backup})"]
+    if appended:
+        notes.append(f"{appended} file(s) merged")
+    if saved and ch.name == KNOWLEDGE:      # the ledger's settle step names every unplaced copy
+        notes.append(f"uncommitted local copies replaced by the branch's, saved under "
+                     f"{pathlib.Path(sdlc_dir).resolve() / 'state' / 'orphaned' / stamp}: {', '.join(saved)}")
+    if marker is not None:
+        notes += _settle_ledger(git, sdlc_dir, path, old_tip, stamp, who)
+        marker.unlink()
+    return "; " + "; ".join(notes)
+
+
+def _reroot_guarded(git, sdlc_dir, ch, who=None):
+    """`_reroot`, holding the knowledge channel's lock for it -- released before the caller's own
+    `publish`, which takes it again (an flock is per open file description, so a second acquire in
+    this process would refuse)."""
+    if ch.name != KNOWLEDGE:
+        return _reroot(git, sdlc_dir, ch, who)
+    lock = _knowledge_lock(sdlc_dir)
+    if lock is None:
+        return "; re-root deferred: another knowledge sync holds the lock"
+    try:
+        return _reroot(git, sdlc_dir, ch, who)
+    finally:
+        if lock is not True:
+            lock.close()
 
 
 def bootstrap(sdlc_dir, config, run=None, channel=LEDGER):
@@ -856,19 +1250,31 @@ def bootstrap(sdlc_dir, config, run=None, channel=LEDGER):
     in their own clone to join.
 
     `channel=KNOWLEDGE` is init + publish with no seed file: the scaffold commit is ahead of an absent
-    remote ref, so even a clone with no notes yet pushes the branch (#2698, P4 finding B1)."""
+    remote ref, so even a clone with no notes yet pushes the branch (#2698, P4 finding B1).
+
+    #1142: it is also the LEVER for a worktree whose branch shares no history with the remote's
+    (`_reroot`), and re-roots once more if its own publish comes back `refused` -- two first-ever
+    bootstraps racing an empty remote both start a branch, and the loser's needs exactly this. Once,
+    never a loop."""
     git = run or _run_git
-    if channel == KNOWLEDGE:
-        first = init(sdlc_dir, config, run=git, channel=KNOWLEDGE)
-        return f"{first}; {publish(sdlc_dir, config, run=git, channel=KNOWLEDGE)}"
-    first = init(sdlc_dir, config, run=git)
-    # the exact path a real append() would use right now — same function, so files_for() is
-    # guaranteed to find it (same actor, same os.getpid() within this one process).
-    mine = ledger.entry_file(sdlc_dir, ledger.actor(config))
-    mine.parent.mkdir(parents=True, exist_ok=True)
-    if not mine.exists():
-        mine.touch()            # an empty file is enough for publish to land your presence + the branch
-    return f"{first}; {publish(sdlc_dir, config, run=git)}"
+    first = init(sdlc_dir, config, run=git, channel=channel)
+    ch = _channel(channel, sdlc_dir, config)
+    who = ledger.actor(config) if channel == LEDGER else None
+    rerooted = _reroot_guarded(git, sdlc_dir, ch, who)
+    if channel == LEDGER:
+        # the exact path a real append() would use right now — same function, so files_for() is
+        # guaranteed to find it (same actor, same os.getpid() within this one process).
+        mine = ledger.entry_file(sdlc_dir, who)
+        mine.parent.mkdir(parents=True, exist_ok=True)
+        if not mine.exists():
+            mine.touch()        # an empty file is enough for publish to land your presence + the branch
+    out = publish(sdlc_dir, config, run=git, channel=channel)
+    if out.startswith("publish refused"):
+        again = _reroot_guarded(git, sdlc_dir, ch, who)
+        if again:
+            rerooted += again
+            out = publish(sdlc_dir, config, run=git, channel=channel)
+    return f"{first}{rerooted}; {out}"
 
 
 # --------------------------------------------------------------- is anyone actually publishing? (#1599)
@@ -1087,6 +1493,42 @@ def unpublished(sdlc_dir, config, run=None, now=None):
             "unpushed_commits": ahead}
 
 
+def history_shared(sdlc_dir, config, run=None):
+    """#1142, for `/sigma-doctor`: does this clone's ledger branch share any history with
+    `<remote>/<branch>` as last fetched? `_shares_history`'s three answers, None also when there is
+    no worktree. LOCAL ONLY, like `unpublished()`: it never fetches, so a clone whose tracking ref was
+    never written answers None -- `fetch_refspec_covers` says why that can be."""
+    git = run or _run_git
+    if not is_worktree(sdlc_dir):
+        return None
+    try:
+        return _shares_history(git, worktree(sdlc_dir), remote(config), branch(config))
+    except Exception:                           # noqa: BLE001 - a diagnostic never raises at a caller
+        return None
+
+
+def fetch_refspec_covers(sdlc_dir, config, run=None):
+    """#1142, for `/sigma-doctor`: does `remote.<remote>.fetch` map `refs/heads/<branch>`? False is
+    the `--single-branch`/`--depth` clone, where only a fetch that NAMES the branch (every fetch in
+    this module) ever writes `<remote>/<branch>`. Exact sources and single-`*` globs are matched;
+    a negative (`^`) entry is skipped; anything else unparseable reads as covered, never as an alarm.
+    None when no fetch refspec is configured at all. Reads local config only."""
+    git = run or _run_git
+    rem, name = remote(config), branch(config)
+    try:
+        specs = git(project_root(sdlc_dir), ["config", "--get-all", f"remote.{rem}.fetch"]).split()
+    except Exception:                           # noqa: BLE001 - unset (exit 1): nothing to judge
+        return None
+    want = f"refs/heads/{name}"
+    for spec in specs:
+        if spec.startswith("^"):
+            continue
+        source = spec.lstrip("+").split(":", 1)[0]
+        if source == want or source.count("*") > 1 or ("*" in source and fnmatch.fnmatchcase(want, source)):
+            return True
+    return False
+
+
 def _jsonl_line_count(path):
     """Real entries in one pending file: non-blank JSONL lines, fail-open on read/decode trouble.
 
@@ -1248,6 +1690,9 @@ def publish_after_write(sdlc_dir, config, run=None, now=None, publish_fn=None):
         result = (publish_fn or publish)(sdlc_dir, config, run=run)
         if result == "published":
             return "ledger: published -- the team can see this entry now."
+        if result.startswith("publish refused"):   # #1142: permanent, so no "will retry" tail
+            return ("ledger: NOT published (%s) -- no other machine can see this entry, and no "
+                    "retry will change that until the branch is re-rooted." % result)
         return ("ledger: NOT published (%s) -- no other machine can see this entry yet; a loop "
                 "trigger or `sync.py publish .sdlc` will retry it." % result)
     except Exception as exc:                # noqa: BLE001 - the write already succeeded; report, never raise
