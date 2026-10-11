@@ -49,6 +49,18 @@ LANDED_PR = "landed-pr"
 NOT_LANDED = "not-landed"
 UNREADABLE = "unreadable"
 _HEX = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_REF_BAD = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|//")
+
+
+def valid_ref(value):
+    """True for a plain git ref name that can never be read as an option: a string that does not start with a dash and
+    breaks none of `git check-ref-format`'s rules (control or space, `~^:?*[\\`, `..`, `@{`, `//`, a leading or trailing
+    slash, a component starting with a dot, a trailing dot or `.lock`)."""
+    if not isinstance(value, str) or not value or value.startswith(("-", "/")) or value.endswith(("/", ".")) or value == "@":
+        return False
+    if _REF_BAD.search(value):
+        return False
+    return not any(part.startswith(".") or part.endswith(".lock") for part in value.split("/"))
 
 
 def _git(cwd, argv):
@@ -368,3 +380,54 @@ def upkeep_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, *, r
     if wired and unit_tip:
         ledger_note(config, sdlc_dir, unit, report["result"], unit_tip, append=ledger_append)
     return report
+
+
+# ------------------------------------------------------------------------------------------ the shipped entry point
+
+def unit_callables(cwd, remote, branch):
+    """-> (rewrite, push): the pass's two callables for one unit. `rewrite` replays the unit onto the base tip in a throwaway
+    detached worktree (the unit ref is never moved; a conflict aborts and reads `ok: False`, nothing is resolved here) and
+    remembers the new commit; `push` sends that commit to `remote` as `branch` under a lease on the tip the pass read, so a
+    branch somebody else moved is refused, never overwritten. The run it is handed carries the hooks policy of its phase."""
+    for what, value in (("remote", remote), ("branch", branch)):
+        if not valid_ref(value):
+            raise ValueError("refusing %s %r: not a plain ref name" % (what, value))
+    box = {}
+
+    def rewrite(run, tips):
+        unit_tip, base_tip = tips
+        box.pop("new", None)
+        with tempfile.TemporaryDirectory(prefix="sigma-upkeep-") as parent:
+            tree = os.path.join(parent, "wt")
+            run(cwd, ["git", "worktree", "add", "--detach", tree, unit_tip])
+            try:
+                try:
+                    run(tree, ["git", "rebase", base_tip])
+                except Exception:                           # noqa: BLE001 - a conflict or failure: leave nothing half-done
+                    try:
+                        run(tree, ["git", "rebase", "--abort"])
+                    except Exception:                       # noqa: BLE001
+                        pass
+                    return {"ok": False}
+                box["new"] = run(tree, ["git", "rev-parse", "HEAD"])
+            finally:
+                run(cwd, ["git", "worktree", "remove", "--force", tree])
+        return {"ok": True, "resolved": False}
+
+    def push(run, tips):
+        new = box.get("new")
+        if not (isinstance(new, str) and _HEX.fullmatch(new)):
+            raise RuntimeError("nothing rewritten to push")
+        run(cwd, ["git", "push", "--force-with-lease=refs/heads/%s:%s" % (branch, tips[0]), remote,
+                  "%s:refs/heads/%s" % (new, branch)])
+    return rewrite, push
+
+
+@feature_upkeep.gated("project")
+def run_unit_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, *, remote, branch, cwd=".", **kw):
+    """The shipped caller of `upkeep_pass`: supplies the rewrite and push callables (`unit_callables`) so a pass on a unit that
+    is behind its base replays it and pushes it. Anything else (`run`, `landing_prs`, ...) goes through to the pass."""
+    if not (valid_ref(remote) and valid_ref(branch)):
+        return {"result": "failed", "reason": "invalid-ref", "unit": unit, "unit_tip": None, "base_tip": None}
+    rewrite, push = unit_callables(cwd, remote, branch)
+    return upkeep_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, cwd=cwd, rewrite=rewrite, push=push, **kw)

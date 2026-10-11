@@ -249,17 +249,32 @@ _BRANCH_DD_RE = re.compile(r'"branch"\s*,\s*"-[dD]"')
 #: alone would also match `curl -d`, so the two halves are paired).
 _PUSH_D_RE = re.compile(r'"push"[^\n]*"-d"')
 
+#: `"push" ... "--mirror"` -- a mirror push deletes every remote ref the local side lacks; the write-surface
+#: scanner classes it destructive, so the guard pins it too (#958).
+_PUSH_MIRROR_RE = re.compile(r'"push"[^\n]*"--mirror"')
+
+#: A one-string command (`"git push -d origin x"`): `git push` with `-d`, `--delete` or `--mirror`, or
+#: `git update-ref` with `-d`/`--delete`, inside one quoted literal (#958).
+_STRING_FORM_RE = re.compile(
+    r"""["'][^"'\n]*\bgit\s+(?:push\b[^"'\n]*\s(?:-d|--delete|--mirror)\b"""
+    r"""|update-ref\b[^"'\n]*\s(?:-d|--delete)\b)""")
+
 #: A REST delete in any spelling: `"-X", "DELETE"`, `"--method", "DELETE"`, `"--method=DELETE"`,
 #: `"-XDELETE"`. The endpoint is NOT required on the same line (`gh_api.remove_label` puts the verb and
 #: the endpoint on different physical lines); the kind records whether a `git/refs/` endpoint is there.
 _REST_DELETE_RE = re.compile(r'"(?:-X|--method)"\s*,\s*"(?i:delete)"|"(?:--method=|-X)(?i:delete)"')
 
-#: `update-ref -d` / `--delete`, optionally after `--no-deref` -- the delete forms only; a plain
+#: `update-ref -d` / `--delete`, optionally after other flags such as `--no-deref` or `-m <msg>` (#958) -- the delete forms only; a plain
 #: `update-ref <ref> <sha>` is not a deletion and stays quiet.
-_UPDATE_REF_DELETE_RE = re.compile(r'"update-ref"\s*,\s*(?:"--no-deref"\s*,\s*)?"(?:-d|--delete)"')
+_UPDATE_REF_DELETE_RE = re.compile(r'"update-ref"\s*,(?:\s*"[^"]*"\s*,)*?\s*"(?:-d|--delete)"')
 
 #: A `gh_api.delete...(` helper call, on a `gh_api` name or a `_load("gh_api")` style loader receiver.
 _GH_API_DELETE_RE = re.compile(r"\bgh_api\b(?:[\"']\))?\.delete\w*\s*\(")
+
+
+#: A Python HTTP-client DELETE: `method="DELETE"` keyword, `requests|httpx.delete(`, `.request("DELETE"` (#959).
+_HTTP_DELETE_RE = re.compile(
+    r"""\bmethod\s*=\s*["'](?i:delete)["']|\b(?:requests|httpx)\.delete\s*\(|\.request\(\s*["'](?i:delete)["']""")
 
 
 def _delete_call_sites(root):
@@ -275,13 +290,16 @@ def _delete_call_sites(root):
         for lineno, line in enumerate(_python_scannable_lines(text), start=1):
             if _BRANCH_DD_RE.search(line):
                 hits.append((path, lineno, "branch_dD", line))
-            if "--delete" in line or _PUSH_D_RE.search(line):
+            if ("--delete" in line or _PUSH_D_RE.search(line) or _PUSH_MIRROR_RE.search(line)
+                    or _STRING_FORM_RE.search(line)):
                 hits.append((path, lineno, "push_delete", line))
             if _REST_DELETE_RE.search(line):
                 hits.append((path, lineno,
                              "rest_delete_ref" if "git/refs/" in line else "rest_delete", line))
             if _UPDATE_REF_DELETE_RE.search(line):
                 hits.append((path, lineno, "update_ref_delete", line))
+            if _HTTP_DELETE_RE.search(line):
+                hits.append((path, lineno, "http_delete", line))
             if _GH_API_DELETE_RE.search(line):
                 hits.append((path, lineno, "gh_api_delete", line))
             if ":refs/" in line:
@@ -415,6 +433,9 @@ def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_o
         ("skills/sigma-loop/scripts/release_manifest.py", "publish_to_ledger_branch", "colon_refspec"),
         ("skills/sigma-loop/scripts/feature_backup.py", "_atomic_leased_push", "colon_refspec"),
         ("skills/sigma-loop/scripts/feature_backup.py", "_delete_chunk", "push_delete"),
+        # #1085: a lease-guarded force push of the replayed tip; the source side is checked against a hex-sha regex
+        # (never empty) so the refspec can only update `refs/heads/<branch>`, never delete it
+        ("skills/sigma-loop/scripts/feature_upkeep_pass.py", "push", "colon_refspec"),
     }, found
 
 
