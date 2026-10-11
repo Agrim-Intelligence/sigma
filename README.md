@@ -282,8 +282,8 @@ approval; the shipped default (`changes`) does not require one, so check your se
 rely on it ([enforcement](docs/enforcement.md)). A host may refuse that step: on
 Claude Code in auto mode, the permission classifier denied the approval as self-approval in a first
 live run, and the loop stopped after opening the PR with no recorded review. Sigma does not work
-around a host refusal and never fakes an approval. The goal is parked with the reason "host refused
-review", and the **attended fallback** is yours to take: read the PR, then comment `sigma:approve`
+around a host refusal and never fakes an approval. The loop's instructions say to park the goal and
+not retry (no code produces that park; it is instruction text), and the **attended fallback** is yours to take: read the PR, then comment `sigma:approve`
 from your own account (a comment from an owner, member or collaborator counts; GitHub's formal
 approval needs a second identity because the loop opens the PR under yours), then re-queue the goal
 with `/sigma-unpark`. To let the loop post the approval itself you need a host

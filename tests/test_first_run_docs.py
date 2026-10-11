@@ -3,6 +3,9 @@
 Each check copies the gesture out of the README (not a restated string), so prose that drifts from
 the CLI goes red. `_CHECKS` is the table; the control below deletes each anchor and demands red."""
 import importlib.util
+import json
+import subprocess
+import sys
 import pathlib
 import re
 
@@ -96,28 +99,74 @@ def _mod(rel, name):
     return m
 
 
-def test_the_only_waivable_phases_are_the_ones_the_readme_names():
+def _readme_waiver_set(text):
+    m = re.search(r"waive-phases \.sdlc <goal> ([a-z,]+) --reason", text)
+    return m.group(1) if m else None
+
+
+def test_the_only_waivable_phases_are_exactly_the_ones_the_readme_names():
     waivable = _mod("skills/sigma-loop/scripts/phase_gate.py", "phase_gate").WAIVABLE
-    assert tuple(waivable) == ("research", "retro")
-    assert "research,retro" in README
+    assert _readme_waiver_set(README) == ",".join(waivable)
+
+
+def test_control_widening_the_readme_waiver_set_goes_red():
+    widened = README.replace("research,retro --reason", "research,retro,plan --reason")
+    waivable = _mod("skills/sigma-loop/scripts/phase_gate.py", "phase_gate").WAIVABLE
+    assert widened != README and _readme_waiver_set(widened) != ",".join(waivable)
+
+
+def _runtime_dirs(text):
+    named = set(re.findall(r"`(\.sdlc/[a-z]+/)`", text.split("What init leaves")[1].split("###")[0]))
+    return {d for d in named if d != ".sdlc/goals/"}
 
 
 def test_every_runtime_dir_the_readme_names_is_one_init_really_ignores():
     ignores = _mod("skills/sigma-setup/scripts/setup.py", "sigma_setup").RUNTIME_IGNORES
-    named = set(re.findall(r"`(\.sdlc/[a-z]+/)`", README.split("What init leaves")[1].split("###")[0]))
-    runtime = {d for d in named if d != ".sdlc/goals/"}
+    runtime = _runtime_dirs(README)
     assert runtime and runtime <= set(ignores), (runtime, ignores)
 
 
-def test_the_documented_reconcile_line_is_the_one_loop_py_prints():
+def test_control_naming_a_dir_init_does_not_ignore_goes_red():
+    ignores = _mod("skills/sigma-setup/scripts/setup.py", "sigma_setup").RUNTIME_IGNORES
+    bad = README.replace("`.sdlc/knowledge/`", "`.sdlc/knowledge/`, `.sdlc/plans/`")
+    assert bad != README and not _runtime_dirs(bad) <= set(ignores)
+
+
+def test_reconcile_merges_with_nothing_to_record_prints_nothing(tmp_path):
+    """The documented silent success, run through the real CLI (the merged-line shape is exercised by
+    tests/test_public_bootstrap_control.py; the next test is only a SOURCE PIN of that format)."""
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    (sdlc / "config.json").write_text("{}")
+    proc = subprocess.run([sys.executable, str(ROOT / "skills/sigma-loop/scripts/loop.py"),
+                           "reconcile-merges", str(sdlc)], capture_output=True, text=True)
+    assert proc.returncode == 0 and proc.stdout == "", (proc.stdout, proc.stderr)
+
+
+def test_source_pin_the_documented_reconcile_line_is_the_format_loop_py_prints():
     src = (ROOT / "skills/sigma-loop/scripts/loop.py").read_text(encoding="utf-8")
     assert '(PR #{pr} {what})' in src and '"merged" if outcome == "done"' in src
+    assert "1 done (PR #12 merged)" in README
 
 
-def test_the_readme_does_not_promise_a_review_the_default_does_not_require():
-    section = README.split("Before you start `/sigma-loop`")[1][:900]
-    assert "work.require_review" in section and "default" in section
+def _tmpl_default_require_review():
+    tmpl = (ROOT / "skills/sigma-init/templates/config.json.tmpl").read_text(encoding="utf-8")
+    return json.loads(tmpl)["work"]["require_review"]
+
+
+def _review_default_claim(text):
+    m = re.search(r"shipped default \(`([a-z]+)`\)", text.split("Before you start `/sigma-loop`")[1][:1200])
+    return m.group(1) if m else None
+
+
+def test_the_readme_names_the_real_shipped_require_review_default():
+    assert _review_default_claim(README) == _tmpl_default_require_review() == "changes"
     assert "every PR the loop opens needs" not in README.lower()
+
+
+def test_control_a_readme_naming_a_different_default_goes_red():
+    wrong = README.replace("shipped default (`changes`)", "shipped default (`approval`)")
+    assert wrong != README and _review_default_claim(wrong) != _tmpl_default_require_review()
 
 
 def test_the_skill_instructions_carry_the_same_gestures_as_the_readme():
