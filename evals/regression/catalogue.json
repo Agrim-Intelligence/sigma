@@ -1,0 +1,79 @@
+{
+  "rows": [
+    {
+      "id": "skip-plan-review/code",
+      "regression": "skip-plan-review",
+      "form": "code",
+      "mutation": "skills/sigma-loop/scripts/work.py::_plan_review_refusal",
+      "must_be_red_by": [
+        "work-plan-review-gate",
+        "layer1-control"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "drop-review-recording/code",
+      "regression": "drop-review-recording",
+      "form": "code",
+      "mutation": "skills/sigma-loop/scripts/work.py::_review_post_request",
+      "must_be_red_by": [
+        "work-review-post",
+        "layer1-control"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "disable-secret-scan/drop-pattern",
+      "regression": "disable-secret-scan",
+      "form": "drop-pattern",
+      "mutation": "skills/sigma-loop/scripts/scrub.py::SHAPE_RULES#huggingface-token",
+      "must_be_red_by": [
+        "non-key-evaders",
+        "safety-check"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "disable-secret-scan/drop-redactor-only",
+      "regression": "disable-secret-scan",
+      "form": "drop-redactor-only",
+      "mutation": "skills/sigma-loop/scripts/scrub.py::_SECRET_PATTERN_SPECS#authorization-header",
+      "must_be_red_by": [
+        "scrub-tests",
+        "safety-check"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "disable-secret-scan/whole-table",
+      "regression": "disable-secret-scan",
+      "form": "whole-table",
+      "mutation": "skills/sigma-loop/scripts/scrub.py::SHAPE_RULES",
+      "must_be_red_by": [
+        "scrub-tests",
+        "non-key-evaders"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "disable-secret-scan/commit-noop",
+      "regression": "disable-secret-scan",
+      "form": "commit-noop",
+      "mutation": "skills/sigma-loop/scripts/work.py::_row_hits",
+      "must_be_red_by": [
+        "work-commit-scan"
+      ],
+      "must_be_red_in_live": []
+    },
+    {
+      "id": "double-context/words",
+      "regression": "double-context",
+      "form": "words",
+      "mutation": "evals/phase_context_budget.py::phase",
+      "must_be_red_by": [
+        "phase-context-budget"
+      ],
+      "must_be_red_in_live": []
+    }
+  ]
+}
