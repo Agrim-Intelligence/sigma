@@ -322,3 +322,12 @@ python3 evals/run.py --live    # parked until a real judge is wired
 against the property list in `evals/regression/properties.json` and prints `PASS`, `FAIL` or `NOT EVALUABLE` per property.
 Exit 0 means no failure; 1 means a failure or a hard property with no evidence; 2 means the input was refused. The committed
 run and three mutated copies in `evals/regression/fixtures/` come from a synthetic run, so they test the checker, not Sigma.
+
+## Regression control (layer 2) in CI
+
+`python3 evals/regression/control.py run` plants each catalogued regression in a throwaway copy of the committed tree and
+fails (exit 1, `FAIL stays-green <row> <gate>`) if a gate that must catch it exits 0. CI runs it in the `regression-control`
+job of `.github/workflows/ci.yml`: on a pull request only for rows whose anchor file or gate file the PR changed
+(`git diff --name-only HEAD^1 HEAD > changed.txt; python3 evals/regression/control.py run --changed-files changed.txt`, zero
+selected rows is a pass), and for every row nightly and on `workflow_dispatch`. It never records, never calls a model and
+is not a required check. Not selected on a PR: a helper a gate imports, `conftest.py`, `ci.yml`; the nightly run is the backstop.
