@@ -834,10 +834,10 @@ WRITE_PATH = {"write_text", "write_bytes", "mkdir", "unlink", "touch", "rmdir", 
 # Every write site under evals/regression that tools/readiness/write_surface.py cannot see (it is blind to
 # open(...), os.open, os.write and os.fsync), keyed (file, function, call) -> (count, why it is allowed).
 DOCUMENTED_WRITES = {
-    ("evals/regression/record.py", "write_atomic", ".mkdir"): (1, "creates the output directory of the record"),
-    ("evals/regression/record.py", "write_atomic", ".write_text"): (1, "writes the temp file of the atomic record write"),
-    ("evals/regression/record.py", "write_atomic", "os.replace"): (1, "atomic rename of the temp file onto the record"),
-    ("evals/regression/record.py", "write_atomic", ".unlink"): (1, "removes its own leftover temp file"),
+    ("evals/regression/record.py", "write_atomic", ".mkdir"): (1, "creates the output directory of the record (also called by control.py --record for matrix.json)"),
+    ("evals/regression/record.py", "write_atomic", ".write_text"): (1, "writes the temp file of the atomic record write (also called by control.py --record for matrix.json)"),
+    ("evals/regression/record.py", "write_atomic", "os.replace"): (1, "atomic rename of the temp file onto the record (also called by control.py --record for matrix.json)"),
+    ("evals/regression/record.py", "write_atomic", ".unlink"): (1, "removes its own leftover temp file (also called by control.py --record for matrix.json)"),
     ("evals/regression/live.py", "write_row", ".mkdir"): (1, "creates the results directory for one NOT RUN row"),
     ("evals/regression/live.py", "write_row", ".write_text"): (1, "writes the temp file of the atomic row write"),
     ("evals/regression/live.py", "write_row", "os.replace"): (1, "atomic rename of the temp file onto the row"),
