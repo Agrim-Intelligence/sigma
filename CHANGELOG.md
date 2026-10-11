@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Resolver CLI probe finding record (#948; refs #941).** `docs/launch/evidence/resolver-cli-probe.md` records the real headless probe of the installed command line for the upkeep resolver: the design-flag table, settings, hooks, credential and billing behaviour, standard input, the budget-flag overshoot and exit code, killed-run metering, and the export-or-worktree choice, with what is still open. Docs only: no product code, flag table or model catalog changed.
+
 - **The code-goal merge goes REST first (#895, slice 4b-1; refs #895).** `work.merge()`'s direct merge is now
   `gh_api.merge_pr_gh`: REST `PUT pulls/N/merge` with `merge_method` and the vetted head as `sha` (was `gh pr merge
   N --<m> --match-head-commit SHA`), with ONE `gh pr merge` fallback on a primary rate limit only, and only while
