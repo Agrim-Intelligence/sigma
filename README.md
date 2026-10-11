@@ -423,6 +423,7 @@ Every option Sigma provides, at a glance. Rows that name a control link to [docs
 | **Guided unparking** | A park is a question nobody answered. Asks it in plain language, records the answers **on the issue** (body and comment, fenced so they can't read as a new blocker), then unparks or keeps it parked with the reasoning attached | `/sigma-unpark` |
 | **Model auto-selection** | Predict the tier a goal deserves (haiku/sonnet/opus/fable); Claude accepts these as model aliases, while Codex resolves them to an available host model and reasoning effort | `/sigma-model`, `model_selection: auto` |
 | **Quality-drift gate** | A behavioral corpus scored on every change; the build fails if a discipline signal regresses | `evals/run.py` · [enforcement](docs/enforcement.md) |
+| **Safety check** | Secret-shape redaction, the four named sinks plus the review reason, and the hostile-input fixtures are probed on every change; the build fails if one regresses | `evals/safety/check.py` · [enforcement](docs/enforcement.md) |
 | **Conditional-risk reviews** | Beyond code quality: threat-model auth/PII, catch breaking contracts, plan a migration's rollback, pre-flight a release, or diagnose a bug test-first — a read-only, secret-safe `risk-detect` collector scans the diff and auto-surfaces the matching review at Review, so nothing costs until a change actually trips that risk | `/sigma-security-review`, `/sigma-contract-check`, `/sigma-migration-check`, `/sigma-release-check`, `/sigma-debug` |
 | **Retrospective / learning loop** | After each goal: structural + product debt, intent-vs-shipped, lessons routed to the right store (advisory) | `/sigma-retro` |
 | **Cursor adapter** *(experimental)* | Scaffolds the SDLC discipline as an always-applied Cursor rule — *not yet verified in a live Cursor session* | `/sigma-init --cursor` |
@@ -2220,7 +2221,7 @@ catch drift (see [`evals/README.md`](evals/README.md)):
   suite — including the **leakage gate** (`tools/leak_scan.py`: home paths, secret shapes,
   private-key bodies and links into the owner's other repositories; its docstring lists what it
   cannot see), the **hook behavioral-spec**, and the **Tier-1 quality
-  gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. CI neither measures nor
+  gate** (`evals/run.py`) — on every push/PR, on Linux with Python 3.10, 3.11, 3.12 and 3.13 and on macOS with Python 3.12. The `test` job also runs the safety check (`evals/safety/check.py`: secret shapes, sinks, hostile fixtures). CI neither measures nor
   enforces code coverage. A one-off local run of the suite under coverage.py (Python 3.12, macOS) gave last measured
   line coverage of **90.9%** over `skills/` and `hooks/`; it understates, because scripts tests copy elsewhere and
   children started with a scrubbed environment are not traced. A Linux trial of the same run took 2.1 times as long

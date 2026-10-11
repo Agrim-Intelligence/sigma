@@ -34,6 +34,8 @@ Sink probes (#1050, slice 2 of #1048, AC-3 and AC-4), in `sinks.py` beside this 
 planted, at the start and straddling the cap, through the action log, the ledger, the comment path and
 the review-block reason, and through the real `work.commit` refusal in a scratch repository, loaded
 from the same scripts directory as the scrub under test. See that module's docstring for the limits.
+Scope, copied from that module: the sinks probed are the four the story names plus the review reason (D-1);
+the mirror and the research hook are not probed (D-8), so the claim is "four named plus one", not "every sink".
 
 Hostile fixtures (#1051, slice 3 of #1048, story #806, AC-5 as reworded by the 2026-10-10 decision):
 `tests/test_hostile_inputs.py` is run as a pytest subprocess and the check passes only when the sole
