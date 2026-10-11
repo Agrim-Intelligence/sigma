@@ -1259,6 +1259,7 @@
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/state.py::reanchor_content",
+    "skills/sigma-loop/scripts/work.py::_reanchor_after_rebase",
     "skills/sigma-loop/scripts/work.py::_reconcile_behind"
    ]
   },

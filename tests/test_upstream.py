@@ -919,18 +919,18 @@ def test_an_access_check_that_raises_is_never_a_grant(tmp_path, monkeypatch):
 
 
 def test_a_malformed_config_is_survived_rather_than_raised_through(tmp_path, capsys):
-    """`ledger.settings` is `(config or {}).get("ledger")` — correct for `None` and an
-    `AttributeError` for every other non-mapping, which is exactly the hand-edited shape a knob
-    read has to survive. The finding is still classified, still withheld, still spilled and still
-    on the console; only the ledger write, which genuinely needs a usable config, is lost — and it
-    says so rather than going quiet."""
+    """A hand-edited config that is not a mapping is a shape a knob read has to survive. The config
+    readers are total now (the ledger reader treats a non-mapping block as absent), so nothing is
+    raised through and nothing is lost: the finding is still classified, still withheld and still
+    spilled, and the console carries no traceback."""
     for n, config in enumerate(("not a config", ["ledger"], 7)):
         # a distinct goal per iteration: the same finding on the same goal is a REPEAT, which the
         # withheld record now correctly declines to write a second time
         report = upstream.route(_project(tmp_path), config, "g%d" % n, "t",
                                 f"{KIT_PATH} is wrong", None, run=Gh().triple)
         assert report["withheld"] is True and report["spilled"]
-    assert "could not be recorded in the ledger" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Traceback" not in err and "withheld from this board" in err
 
 
 def test_route_never_raises_and_a_crashed_route_files_locally(tmp_path, monkeypatch, capsys):

@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-migration-check",
+  "kind": "pinned",
+  "gates": [
+    "park and require a human's written sign-off before proceeding"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

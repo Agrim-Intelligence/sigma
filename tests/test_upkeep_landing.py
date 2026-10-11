@@ -157,6 +157,48 @@ def test_record_is_written_before_the_call_and_a_crash_leaves_it(tmp_path):
     assert mod.read_record(tmp_path, "voice")["outcome"] == "unconfirmed"
 
 
+def test_retry_after_a_crash_between_begin_and_merge_reads_the_pr_back_and_lands(tmp_path):
+    """Crash injection at the exact window: the record is written, the process dies before any call (no call recorded)."""
+    assert mod.begin(tmp_path, OPEN, "voice", 7, PRE, 100).ok
+    assert mod.read_record(tmp_path, "voice")["call"] is None
+    reads, called = [], []
+    got = mod.run_landing(tmp_path, OPEN, "voice", 7, PRE, lambda: called.append(1) or OK,
+                          lambda n: reads.append(n) or (open_pr() if not called else merged_pr()), lambda s: [B, T], 1000)
+    assert reads[0] == 7 and called == [1]
+    assert (got.called, got.outcome) == (True, "merged")
+    assert mod.read_record(tmp_path, "voice") is None
+
+
+def test_settle_classifies_a_never_called_record_with_an_open_pr_as_settled_not_unconfirmed(tmp_path):
+    mod.begin(tmp_path, OPEN, "voice", 7, PRE, 100)
+    got = mod.settle(tmp_path, OPEN, "voice", lambda n: open_pr(), lambda s: None, 100 + mod.LIVENESS_SECONDS)
+    assert (got.outcome, got.reason) == ("refused", "crash-before-merge")
+    assert mod.begin(tmp_path, OPEN, "voice", 7, PRE, 160 + mod.LIVENESS_SECONDS).ok
+
+
+def test_a_young_never_called_record_is_never_settled_as_crash_before_merge(tmp_path):
+    mod.begin(tmp_path, OPEN, "voice", 7, PRE, 100)
+    reads = []
+    got = mod.settle(tmp_path, OPEN, "voice", lambda n: reads.append(n) or open_pr(), lambda s: None,
+                     100 + mod.LIVENESS_SECONDS - 1)
+    assert (got.outcome, got.reason) == ("unconfirmed", "landing-in-flight")
+    assert reads == [] and mod.read_record(tmp_path, "voice")["outcome"] == "pending"
+    assert mod.begin(tmp_path, OPEN, "voice", 7, PRE, 200) == (False, "unsettled-record", None)
+
+
+def test_a_future_dated_never_called_record_counts_as_young(tmp_path):
+    mod.begin(tmp_path, OPEN, "voice", 7, PRE, 5000)
+    got = mod.settle(tmp_path, OPEN, "voice", lambda n: open_pr(), lambda s: None, 100)
+    assert got.reason == "landing-in-flight"
+
+
+def test_a_stale_unconfirmed_record_with_a_recorded_lost_call_still_blocks_on_an_open_pr(tmp_path):
+    mod.begin(tmp_path, OPEN, "voice", 7, PRE, 100)
+    mod.finish(tmp_path, OPEN, "voice", mod.Verdict("unconfirmed", "lost"), 110, call=LOST)
+    got = mod.settle(tmp_path, OPEN, "voice", lambda n: open_pr(), lambda s: None, 150)
+    assert got.outcome == "unconfirmed"
+
+
 def test_unwritable_record_means_the_call_is_never_made(tmp_path):
     (tmp_path / "state").write_text("a file where the directory must go")
     called = []
@@ -175,7 +217,7 @@ def test_settle_is_one_pr_read_and_one_commit_read(tmp_path):
     mod.begin(tmp_path, OPEN, "voice", 7, PRE, 100)
     reads = []
     got = mod.settle(tmp_path, OPEN, "voice", lambda n: reads.append(("pr", n)) or merged_pr(),
-                     lambda s: reads.append(("commit", s)) or [B, T], 200)
+                     lambda s: reads.append(("commit", s)) or [B, T], 1000)
     assert got.outcome == "merged" and reads == [("pr", 7), ("commit", M)]
     assert mod.read_record(tmp_path, "voice") is None
 
@@ -185,9 +227,9 @@ def test_settle_with_a_failing_reader_keeps_the_record(tmp_path):
 
     def boom(_):
         raise OSError("down")
-    got = mod.settle(tmp_path, OPEN, "voice", boom, boom, 300)
+    got = mod.settle(tmp_path, OPEN, "voice", boom, boom, 1000)
     assert got.outcome == "unconfirmed"
-    assert mod.read_record(tmp_path, "voice")["last_read_at"] == 300
+    assert mod.read_record(tmp_path, "voice")["last_read_at"] == 1000
 
 
 def test_settle_without_a_record_reads_nothing(tmp_path):
