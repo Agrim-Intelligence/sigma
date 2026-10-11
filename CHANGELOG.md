@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.9 — 2026-10-11 — REST-first GitHub, the board skip in cloud sessions, and eval additions
+
 - **`note()` is REST-first (#895, slice 8; refs #895).** `GitHubSource.note()` posts through `gh_api.comment_issue`
   (`POST issues/N/comments`); the GraphQL-first `gh issue comment` attempt is gone (none at all in a cloud session) and
   the `sources.py` ratchet drops 20 to 19 (TOTAL 37 to 36). The bounded retry is kept but is a REST re-POST only, for a
