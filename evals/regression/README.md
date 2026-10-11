@@ -20,7 +20,7 @@ Entry shape: `{"row": "<id>", "gate": "<gate id>", "status": "red|pending", "run
 - A recorded red proves the gate went red once, at that commit. A record is a claim, not proof.
 - A hand-edited row looks like a recorded one. Only `check`'s pin and commit tests catch it. The pin detects re-pointing of
   the row or gate; it does not detect drift in the mutator's or the test's content.
-- The live check is `control.py run` on CI. NO workflow runs it yet, so today it is operator-run.
+- The live check is meant to be `control.py run` on CI. NO workflow runs it yet, so today it is operator-run.
 - `--skip-objects` and a shallow clone skip the commit-existence checks and print UNVERIFIED. That is not a pass.
   Run `matrix.py check` on a full clone for the real answer.
 

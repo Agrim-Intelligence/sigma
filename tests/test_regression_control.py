@@ -324,3 +324,12 @@ def test_record_git_env_is_not_inherited(tmp_path, monkeypatch):
     r, _ = _run(tmp_path, repo, "--record", "--matrix", str(matrix))
     assert r.returncode == 0, r.stdout + r.stderr
     assert _entries(matrix)[("r1/c", "g")]["commit"] == head, "GIT_DIR must not redirect rev-parse"
+
+
+def test_record_failure_keeps_the_runs_exit_code(tmp_path):
+    repo = _repo(tmp_path, {"r1": ["g"], "r2": ["green"]}, {"g": (RED_IF_BROKEN, "live"), "green": (ALWAYS_GREEN, "live")})
+    blocked = tmp_path / "matrix.json"
+    blocked.mkdir()  # os.replace onto a directory fails
+    r, tmp = _run(tmp_path, repo, "--record", "--matrix", str(blocked))
+    assert r.returncode == 1 and "RECORD-FAILED" in r.stderr and "REFUSED" not in r.stderr
+    assert _left(tmp) == [] and not list(tmp_path.glob("matrix.json.tmp.*"))

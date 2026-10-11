@@ -78,7 +78,8 @@ def _write_matrix(path, repo, rows, gates, seen, run_id):
     if not matrix.HEX40.fullmatch(sha):
         raise OSError(f"cannot read the HEAD commit of {repo}")
     try:
-        old = json.load(open(path, encoding="utf-8"))["rows"]
+        with open(path, encoding="utf-8") as fh:
+            old = [e for e in json.load(fh)["rows"] if isinstance(e, dict)]
     except FileNotFoundError:
         old = []
     except (ValueError, KeyError, OSError) as exc:
@@ -239,7 +240,11 @@ def _control(args, work):
                 seen.add(1 if v == "stays-green" else 6)
                 print(f"FAIL {v} {row['id']} {g}: exit {rc}" + (" under mutation" if v == "stays-green" else ""))
     if args.record:
-        n = _write_matrix(args.matrix, args.repo, rows, gates, results, args.run_id)
+        try:
+            n = _write_matrix(args.matrix, args.repo, rows, gates, results, args.run_id)
+        except OSError as exc:  # the gates all ran: keep their exit code, say the record did not land
+            sys.stderr.write(f"control.py: RECORD-FAILED: {exc}\n")
+            return next((c for c in SEVERITY if c in seen), 2)
         print(f"RECORDED {sum(v == 'red' for v in results.values())} red of {len(results)} seen; "
               f"{n} matrix entries in {args.matrix} (run {args.run_id})")
     return next((c for c in SEVERITY if c in seen), 0)
