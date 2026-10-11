@@ -155,6 +155,16 @@ def _load(name):
 registry = _load("feature_registry")     # the store: read, normalise_entry, is_authorized
 sync = _load("feature_sync")             # same_repo/repo_key/repo_slug, and the per-unit lock
 legacy = _load("legacy")                 # #239: the watermark under the previous name
+_GH_API = []
+
+
+def _gh_api():
+    """gh_api.py, loaded lazily and once (#895 slice 3b): a partial install breaks the call, not the import."""
+    if not _GH_API:
+        _GH_API.append(_load("gh_api"))
+    return _GH_API[0]
+
+
 ledger = _load("ledger")                 # team record (config-gated, default OFF; fail-open)
 
 #: THE VERDICT VOCABULARY. Each value is a different FACT about why the answer is what it is, not a
@@ -247,11 +257,10 @@ def _run_gh(argv):
     """The one gh call this module makes, in `ledger._run_gh`'s own `(argv) -> stdout` shape so a
     caller's injected runner works unchanged. Local import for `feature_sync._run`'s reason: the
     injected runner is the real path and this is the fallback for a direct CLI caller."""
-    import subprocess
-    proc = subprocess.run(["gh", *[str(a) for a in argv]], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or "").strip() or "gh exited %s" % proc.returncode)
-    return (proc.stdout or "").strip()
+    rc, out, err = _gh_api().run_gh(argv)
+    if rc != 0:
+        raise RuntimeError((err or "").strip() or "gh exited %s" % rc)
+    return (out or "").strip()
 
 
 def whoami(run=None):

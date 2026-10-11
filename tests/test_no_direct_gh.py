@@ -92,6 +92,11 @@ MEASURED 2026-10-11 (#895 slice 4b-3), via the same `scan()` (PRINTED, not typed
 `gh_api.close_pr_gh` (REST `PUT pulls/N/merge`, comment POST then `PATCH pulls/N`; both ONE-fallback argvs
 are built inside the EXEMPT helper). Still in work.py: the `--auto` arm, reviewDecision, R5 sibling list;
 verify_merge 3 (ready/create/merge; NOT moved in 4b-3, see docs/cloud-sessions.md).
+MEASURED 2026-10-11 (#895 slice 3b), via the same `scan()` (PRINTED, not typed): TOTAL 43 -> 37. Six `["gh", *args]`
+seam literals moved to `gh_api.run_gh` / `gh_api.gh_argv`: cross_repo, feature_owner, ledger and board_setup
+entries removed (1 each -> 0), status 3 -> 1. These were already `gh api` calls, so this is a spelling change, not
+a behaviour migration. Still counted: every `label create` (sources x3, triage x1 = slice 3c), define x2,
+status.py's `src is None` fallback, doctor 5, board_migrate 2, sources' board sites, work x3, verify_merge x3.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -131,15 +136,11 @@ BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
     "skills/sigma-doctor/scripts/doctor.py": 5,
-    "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/cross_repo.py": 1,
-    "skills/sigma-loop/scripts/feature_owner.py": 1,
-    "skills/sigma-loop/scripts/ledger.py": 1,
     "skills/sigma-loop/scripts/sources.py": 20,
     "skills/sigma-loop/scripts/triage.py": 1,
     "skills/sigma-loop/scripts/work.py": 3,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
-    "skills/sigma-status/scripts/status.py": 3,
+    "skills/sigma-status/scripts/status.py": 1,
 }
 
 

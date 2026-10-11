@@ -1010,6 +1010,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/gh_api.py",
+      "function": "run_gh",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "the one gh spawner for the wrapper seams (#895 slice 3b): it runs whatever argv a seam hands it and has no write policy of its own; its callers (ledger._run_gh, feature_owner._run_gh, cross_repo._run_gh) only ever issue read-only gh api GETs (api user, repos/<repo>), each with a bounded timeout (15 s, 120 s, 30 s) and a missing gh propagating; the scanner sees only this spawn, not which seam called it",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
       "function": "_write_cache",
       "rule": "fs-remove",
       "count": 2,

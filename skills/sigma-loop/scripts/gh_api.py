@@ -1068,6 +1068,24 @@ def _need_number(number):
     return number
 
 
+def gh_argv(args):
+    """-> a fresh `["gh", *str args]`: the one place the `gh` prefix is spelled, for seams that hand argv to an
+    injected runner (#895 slice 3b)."""
+    return ["gh", *[str(a) for a in args]]
+
+
+def run_gh(args, timeout=120):
+    """-> `(returncode, stdout, stderr)` of `gh <args>`: the one `["gh", ...]` spawner for the wrapper seams
+    (#895 slice 3b). Unlike `bounded_runner` it never raises on a non-zero exit, so a caller keeps the exit code and
+    text. A timeout is the synthetic `(124, "", "gh: the call timed out after Ns")`; every other exception
+    (a missing `gh`, say) propagates unchanged."""
+    try:
+        proc = subprocess.run(gh_argv(args), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", "gh: the call timed out after %ss" % timeout
+    return proc.returncode, proc.stdout, proc.stderr
+
+
 def bounded_runner(cwd=None, timeout=120, *, popen=None):
     """-> a `run(args)` callable for the ops above that KEEPS THE FAILURE CLASS. `_default_run` has no working
     directory and drops the exit code; this binds `cwd` and a wall-clock `timeout`, and every failure is raised as a
@@ -1308,7 +1326,8 @@ def close_pr_gh(run, number, comment=None, repo=None, *, fallback_run=None, env=
 
     def rest():
         got = _json(run, ["api", _endpoint(repo, "pulls/%d" % n), "--method", "PATCH", "-f", "state=closed"])
-        if not isinstance(got, dict) or got.get("state") != "closed":
+        # a MERGED PR also reads `state: closed`; never report a merge as a close
+        if not isinstance(got, dict) or got.get("state") != "closed" or got.get("merged"):
             raise GhApiError("malformed REST close reply for PR #%d (no `state: closed`): %s"
                              % (n, json.dumps(got)[:120]))
         return {"closed": True, "via": "rest"}
