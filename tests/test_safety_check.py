@@ -574,7 +574,10 @@ def test_sinks_red_when_a_shape_is_removed_from_scrub(tmp_path):
 
 
 def test_sinks_red_when_the_commit_refusal_is_a_noop(tmp_path):
-    noop = "\n\ndef commit_secret_hits(*a, **k):\n    return []\n"
+    # work.commit reads `commit_secret_findings` since #961, so a no-op of `commit_secret_hits` alone
+    # no longer reaches the gate; both entry points must return nothing for the refusal to be a no-op.
+    noop = ("\n\ndef commit_secret_findings(*a, **k):\n    return []\n"
+            "\n\ndef commit_secret_hits(*a, **k):\n    return []\n")
     done = _gesture_in(tmp_path, scrub_edit=lambda t: t + noop)
     assert done.returncode == 1, done.stdout + done.stderr
     assert "commit-sink private-key" in done.stdout and "commit-sink aws-key" in done.stdout
