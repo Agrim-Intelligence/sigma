@@ -6614,9 +6614,9 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                     print("merge receipt publication pending: %s" % exc, file=sys.stderr)
             if not _merge_delivery_complete(sdlc_dir, goal):
                 return "PARK: confirmed merge observation delivery is pending; retry finish to repair it"
-    args = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
+    remove_argv = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
     try:
-        run(project_root(sdlc_dir), args)
+        run(project_root(sdlc_dir), remove_argv)
     except Exception as exc:                # noqa: BLE001 - "still has work in it" is the common case
         # (#1202 correction 2, verified against real git) `git worktree remove` on an admin entry a
         # DIFFERENT goal's `finish` already pruned (below, unconditionally, on every successful run)
@@ -7053,26 +7053,6 @@ def _find_design_pr(sdlc_dir, config, goal, run):
     return matches[0], None
 
 
-def _retry_gh(run, cwd, argv, attempts=2, pause=2.0, sleep=time.sleep):
-    """Run a `gh` mutation with ONE retry on failure (#2482 round 2 finding 2) -- proportionate to
-    what `merge_design`/`close_design` actually call (`gh pr merge`/`gh pr close`, both REST-backed,
-    not GraphQL), so this does NOT import `GitHubSource.note`'s full 4-attempt/REST-fallback
-    machinery (sources.py:1217, `_NOTE_RETRIES`) -- that machinery specifically defends against
-    GraphQL's shared 5,000-points/hour quota exhaustion (#1657), which does not apply to a REST
-    call. One retry meaningfully closes "a single transient hiccup permanently strands the PR"
-    without copying a defense built for a different failure mode. Raises on final failure -- the
-    caller's own `except Exception` still reports it, never crashes past the CLI."""
-    last = None
-    for attempt in range(attempts):
-        try:
-            return run(cwd, argv)
-        except Exception as exc:            # noqa: BLE001 - only the LAST attempt's failure matters
-            last = exc
-            if attempt + 1 < attempts:
-                sleep(pause)
-    raise last
-
-
 def _wait_out_unknown_mergeability(sdlc_dir, config, goal, run, attempts=3, pause=5.0,
                                    sleep=time.sleep):
     """A short, bounded poll for GitHub's own lazy `mergeStateStatus` computation to resolve past
@@ -7095,7 +7075,7 @@ def _wait_out_unknown_mergeability(sdlc_dir, config, goal, run, attempts=3, paus
 
 def merge_design(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     """Land a Stage-1 design PR on CONFIRM (#2482) -- deliberately NOT `merge()` above.
-    `sleep` threaded through to `_retry_gh`/`_wait_out_unknown_mergeability`, mirroring `gate()`'s
+    `sleep` threaded through to `_wait_out_unknown_mergeability`, mirroring `gate()`'s
     own `sleep=time.sleep` parameter (work.py:2036) -- the established way this file makes a
     function that sleeps under real failure conditions testable without a real wait. See the
     plan's own "why the obvious fix is wrong" section: `merge()`'s verify-evidence gate cannot ever
@@ -7120,32 +7100,53 @@ def merge_design(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     if policy(config) == OFF:
         return "auto_merge is off (config: \"work\": {\"auto_merge\": \"always\"}) -- land this PR by hand"
     method = settings(config)["merge_method"]
+    # #895 4b-3: REST `PUT pulls/N/merge` pinned to the head sha the identity check just vetted
+    # (`gh_api.merge_pr_gh`). NO retry and NO fallback after an ambiguous failure: a merge may have landed.
+    # Any failure that may have landed is reconciled by a REST read of the PR itself (`merged`), never by
+    # "the open list came back empty".
+    design_root = project_root(sdlc_dir)
+    design_api = _pr_api_run(run, design_root)
+    design_slug = _design_slug(config, run, design_root)
     try:
-        _retry_gh(run, project_root(sdlc_dir),
-                  ["gh", "pr", "merge", str(pr["number"]), f"--{method}"], sleep=sleep)
-    except Exception:                        # noqa: BLE001 - report, never raise past the CLI
-        # NEVER interpolate the raw exception into the returned string -- this value is folded
-        # verbatim into a goal-review comment (see the insertion point below), and
-        # confirm.md:112-113's rule ("the SAME wording rule governs every COMMENT this skill
-        # writes") means arbitrary `gh` stderr text landing in a posted comment could embed a
-        # trigger word within 40 chars of a `#N` and mint a phantom blocker on a third, unrelated
-        # issue the next time blocker_scan reads this comment. Logged to stderr HERE instead.
-        print(f"work: merge_design: {sys.exc_info()[1]}", file=sys.stderr)
-        # Code review, #2482: `gh pr merge` is NOT idempotent -- if the first attempt landed on
-        # GitHub's own side but the response never reached this process (a dropped connection, the
-        # same #78 proxy class `_run`'s own docstring already names), `_retry_gh`'s second attempt
-        # fails against an ALREADY-merged PR ("pull request is already merged"), and reporting
-        # that as "could not merge" would be a false negative on the goal-review comment -- worse
-        # than the phantom-blocker risk above, since it tells a human the opposite of what
-        # actually happened. Re-check before trusting the failure: if the PR is no longer found as
-        # an open PR at all, it landed.
-        recheck, recheck_err = _find_design_pr(sdlc_dir, config, goal, run)
-        if recheck_err:
-            print(f"work: merge_design: re-check after retry error: {recheck_err}", file=sys.stderr)
-        if recheck is None and recheck_err is None:
-            return f"merged PR #{pr['number']} (confirmed on re-check after a retry error)"
-        return f"could not merge PR #{pr['number']} (see stderr for detail)"
+        gh_api.merge_pr_gh(design_api, pr["number"], method, pr.get("headRefOid"), design_slug, fallback_run=design_api,
+                           sdlc_dir=sdlc_dir)
+    except Exception as exc:                 # noqa: BLE001 - report, never raise past the CLI
+        # NEVER interpolate the raw exception into the returned string -- this value is folded verbatim
+        # into a goal-review comment (confirm.md:112-113: arbitrary `gh` stderr could mint a phantom
+        # blocker on an unrelated issue). Logged to stderr HERE instead.
+        print(f"work: merge_design: {exc}", file=sys.stderr)
+        if getattr(exc, "outcome_unknown", True) is False:
+            return f"could not merge PR #{pr['number']} (see stderr for detail)"
+        design_state = _design_pr_state(design_api, pr["number"], design_slug, sdlc_dir)
+        if design_state == "MERGED":
+            return f"merged PR #{pr['number']} (confirmed on re-read after an unconfirmed reply)"
+        if design_state in ("OPEN", "CLOSED"):
+            return (f"could not merge PR #{pr['number']} ({'still open' if design_state == 'OPEN' else 'closed without merging'}"
+                    f" on re-read; see stderr for detail)")
+        return (f"could not merge PR #{pr['number']} (outcome unconfirmed: it may have merged -- check it "
+                f"by hand; see stderr for detail)")
     return f"merged PR #{pr['number']}"
+
+
+def _design_slug(config, run, design_root):
+    """The `owner/name` the design-PR calls address, or None (gh's `{owner}/{repo}` placeholders) when it
+    cannot be resolved -- the same value `_find_design_pr` passes."""
+    try:
+        return _feature_sync().repo_slug(config, run, design_root, settings(config)["remote"])
+    except Exception:                        # noqa: BLE001 - an unresolved slug just means the placeholder
+        return None
+
+
+def _design_pr_state(design_api, number, design_slug, sdlc_dir):
+    """OPEN/CLOSED/MERGED from a REST read of the PR itself, or None when it could not be read. This is
+    the reconcile read for an ambiguous merge/close: only a positive `MERGED`/`CLOSED` answer counts."""
+    try:
+        data = gh_api.view_pr_gh(design_api, number, ["state"], design_slug, sdlc_dir=sdlc_dir)
+        design_state = data.get("state") if isinstance(data, dict) else None
+        return design_state if design_state in ("OPEN", "CLOSED", "MERGED") else None
+    except Exception as exc:                 # noqa: BLE001 - an unreadable PR proves nothing
+        print(f"work: design PR re-read: {exc}", file=sys.stderr)
+        return None
 
 
 def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.sleep):
@@ -7153,27 +7154,29 @@ def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.slee
     Same lookup, same "no open PR is an ordinary outcome" posture. NOT gated behind `work.enabled`
     (see `merge_design`'s own docstring for the asymmetry) -- closing a rejected design's PR is
     never the wrong direction regardless of whether automated git/gh MUTATION-that-lands-code is
-    generally consented to."""
+    generally consented to. #895 4b-3: REST (`gh_api.close_pr_gh`: the comment, then `PATCH state=closed`),
+    no retry; every failure is reconciled by a REST read of the PR, and only a positive CLOSED counts."""
     run = run or _run
     pr, err = _find_design_pr(sdlc_dir, config, goal, run)
     if err:
         return f"could not check for a design PR: {err}"
     if not pr:
         return "no open design PR found -- nothing to close"
-    args = ["gh", "pr", "close", str(pr["number"])] + (["--comment", comment] if comment else [])
+    design_root = project_root(sdlc_dir)
+    design_api = _pr_api_run(run, design_root)
+    design_slug = _design_slug(config, run, design_root)
     try:
-        _retry_gh(run, project_root(sdlc_dir), args, sleep=sleep)
-    except Exception:                        # noqa: BLE001 - same reasoning as merge_design above
-        print(f"work: close_design: {sys.exc_info()[1]}", file=sys.stderr)
-        # Code review, #2482: same non-idempotent-retry reasoning as merge_design -- a first
-        # `gh pr close` that landed but whose response was lost would make the retry fail against
-        # an already-closed PR, wrongly reporting "could not close". Re-check first.
-        recheck, recheck_err = _find_design_pr(sdlc_dir, config, goal, run)
-        if recheck_err:
-            print(f"work: close_design: re-check after retry error: {recheck_err}", file=sys.stderr)
-        if recheck is None and recheck_err is None:
-            return f"closed PR #{pr['number']} (confirmed on re-check after a retry error)"
-        return f"could not close PR #{pr['number']} (see stderr for detail)"
+        gh_api.close_pr_gh(design_api, pr["number"], comment, design_slug, fallback_run=design_api, sdlc_dir=sdlc_dir)
+    except Exception as exc:                 # noqa: BLE001 - same reasoning as merge_design above
+        print(f"work: close_design: {exc}", file=sys.stderr)
+        design_state = _design_pr_state(design_api, pr["number"], design_slug, sdlc_dir)
+        if design_state == "CLOSED":
+            return f"closed PR #{pr['number']} (confirmed on re-read after an unconfirmed reply)"
+        if design_state in ("OPEN", "MERGED"):
+            return (f"could not close PR #{pr['number']} ({'still open' if design_state == 'OPEN' else 'merged by someone else'}"
+                    f" on re-read; see stderr for detail)")
+        return (f"could not close PR #{pr['number']} (outcome unconfirmed: it may have closed -- check it "
+                f"by hand; see stderr for detail)")
     return f"closed PR #{pr['number']}"
 
 _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,

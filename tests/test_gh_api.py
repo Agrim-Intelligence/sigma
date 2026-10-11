@@ -782,6 +782,91 @@ def test_merge_pr_argv_sha_guard_and_no_auto():
     assert not any("auto" in a for a in run.calls[0])
 
 
+# ---------------------------------------------------------------- close_pr_gh (#895 slice 4b-3)
+
+class CFake:
+    """`issues/N/comments` POSTs and `pulls/N` PATCHes are REST; `pr close ...` is the fallback."""
+
+    def __init__(self, patch_ok='{"state": "closed"}', patch_exc=None, comment_exc=None, fb_exc=None):
+        self.patch_ok, self.patch_exc, self.comment_exc, self.fb_exc, self.calls = patch_ok, patch_exc, comment_exc, fb_exc, []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "api" and "PATCH" in args:
+            if self.patch_exc is not None:
+                raise self.patch_exc
+            return self.patch_ok
+        if args[0] == "api":
+            if self.comment_exc is not None:
+                raise self.comment_exc
+            return '{"id": 5, "html_url": "https://x/y#issuecomment-5"}'
+        if self.fb_exc is not None:
+            raise self.fb_exc
+        return ""
+
+    def fb(self):
+        return [c for c in self.calls if c[:2] == ["pr", "close"]]
+
+
+def _close(run, env=None, **kw):
+    g = _mod("gh_api")
+    kw.setdefault("repo", "o/r")
+    try:
+        return g.close_pr_gh(run, kw.pop("number", 7), kw.pop("comment", None), env={} if env is None else env, **kw)
+    except Exception as e:                            # noqa: BLE001
+        return e
+
+
+def test_close_pr_gh_is_a_patch_with_state_closed_and_no_comment_call_without_a_comment():
+    run = CFake()
+    assert _close(run) == {"closed": True, "via": "rest"}
+    assert run.calls == [["api", "repos/o/r/pulls/7", "--method", "PATCH", "-f", "state=closed"]]
+
+
+def test_close_pr_gh_posts_the_comment_first_and_a_failed_comment_closes_nothing():
+    run = CFake()
+    assert _close(run, comment="why")["closed"] is True
+    assert run.calls[0][:4] == ["api", "repos/o/r/issues/7/comments", "--method", "POST"] and "PATCH" in run.calls[1]
+    run = CFake(comment_exc=RuntimeError("lost"))
+    out = _close(run, comment="why")
+    assert isinstance(out, Exception) and not [c for c in run.calls if "PATCH" in c]
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "7", None, 7.0])
+def test_close_pr_gh_validates_the_number_before_any_call(bad):
+    run = CFake()
+    out = _close(run, number=bad)
+    assert isinstance(out, Exception) and run.calls == []
+
+
+@pytest.mark.parametrize("body", ["", "null", "[]", "{}", '{"state": "open"}', '{"state": "CLOSED"}', '{"state":', "<html>"])
+def test_close_pr_gh_a_2xx_without_state_closed_is_never_success(body):
+    run = CFake(patch_ok=body)
+    out = _close(run)
+    assert isinstance(out, Exception), (body, out)
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+def test_close_pr_gh_5xx_falls_back_once_because_closing_is_idempotent():
+    run = CFake(patch_exc=_mhe("gh: Server Error (HTTP 502)"))
+    assert _close(run) == {"closed": True, "via": "gh"}
+    assert run.fb() == [["pr", "close", "7", "--repo", "o/r"]]
+
+
+@pytest.mark.parametrize("hint", ["gh: Bad credentials (HTTP 401)", "gh: Not Found (HTTP 404)",
+                                  "gh: Validation Failed (HTTP 422)",
+                                  "gh: request failed: dial tcp: i/o timeout"])
+def test_close_pr_gh_definite_and_transport_failures_never_fall_back(hint):
+    run = CFake(patch_exc=_mhe(hint))
+    assert isinstance(_close(run), Exception) and run.fb() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}])
+def test_close_pr_gh_no_fallback_without_graphql(env):
+    run = CFake(patch_exc=_mhe("gh: Server Error (HTTP 502)"))
+    assert isinstance(_close(run, env=env), Exception) and run.fb() == []
+
+
 # ---------------------------------------------------------------- merge_pr_gh (#895 slice 4b-1)
 
 SHA = "a" * 40
@@ -3077,7 +3162,7 @@ class ListRestFake:
         return [c for c in self.calls if c[0] == "pr"]
 
 
-FIELDS = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"
+FIELDS = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles,headRefOid"
 
 
 def _prs(run, **kw):
@@ -3091,7 +3176,7 @@ def test_open_prs_for_head_gh_lists_then_reads_each_pull_and_its_files():
     assert _prs(run) == [{"number": 42, "url": "https://x/42", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
                           "isCrossRepository": False, "headRefName": "sdlc/9",
                           "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
-                          "changedFiles": 2}]
+                          "changedFiles": 2, "headRefOid": prfake.HEAD}]
     assert run.calls == [
         ["api", "repos/o/r/pulls?head=o:sdlc%2F9&state=open&per_page=30", "--method", "GET"],
         ["api", "repos/o/r/pulls/42", "--method", "GET"],
@@ -3155,7 +3240,7 @@ def test_open_prs_for_head_gh_a_list_at_the_limit_raises_on_both_paths():
             _prs(run, limit=limit)
         assert "limit" in str(ei.value) and ei.value.kind == "other" and len(run.rest_calls()) == 1
         rows = [json.loads(prfake.rest_pull())] * limit
-        fb = [dict(zip(FIELDS.split(","), [1] * 8)) for _ in range(limit)]
+        fb = [dict(zip(FIELDS.split(","), [1] * 9)) for _ in range(limit)]
         run = ListRestFake(fail=_err(RATE), gql=json.dumps(fb))
         with pytest.raises(g.GhApiError):
             _prs(run, limit=limit)
@@ -3230,7 +3315,7 @@ def test_open_prs_for_head_gh_argument_refusals_before_any_call():
 def test_open_prs_for_head_gh_falls_back_once_with_the_same_row_shape(hint):
     row = {"number": 42, "url": "u", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
            "isCrossRepository": False, "headRefName": "sdlc/9", "files": [{"path": "a"}], "changedFiles": 1,
-           "extra": "dropped"}
+           "headRefOid": SHA, "extra": "dropped"}
     run = ListRestFake(fail=_err(hint), gql=json.dumps([row]))
     out = _prs(run)
     assert out == [{k: v for k, v in row.items() if k != "extra"}]

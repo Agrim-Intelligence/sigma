@@ -2195,9 +2195,9 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "close_design",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
@@ -2219,16 +2219,8 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "finish",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; confirmed merged PR",
-      "risk": "high"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/work.py",
-      "function": "finish",
       "rule": "git-destructive",
-      "count": 1,
+      "count": 2,
       "gate": "ungated",
       "risk": "high"
     },
@@ -2251,9 +2243,9 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "merge_design",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "work.enabled; work.auto_merge != off",
+      "gate": "work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
