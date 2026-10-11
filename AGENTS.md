@@ -52,7 +52,10 @@ which every host shares.
 **Run the control, or the check is decoration.** Every guard is deliberately broken once and seen to
 fail before it is trusted. Defects that inspection cannot see — a guard that passes against the very
 bug it targets, a lock test that hangs rather than fails — surface only this way. A test never seen
-red proves nothing.
+red proves nothing. A guard predicate with several clauses (or an ordering) gets one control per
+clause: breaking the whole condition at once proves only that some clause is tested, and #954's
+order clause passed every test under a set-membership mutant that way. A test that a docstring cites
+as a guard's proof must go red under that clause's own mutant.
 
 **And run the control on the gesture the DOCS give, not a stronger one.** A guard whose documented
 invocation cannot fail is decoration with a passing test: its tests can pass a flag that makes them
@@ -78,6 +81,13 @@ without a supervisor that cannot leave the daemon orphaned-stopped (a heartbeat,
 timeout, or process-group-scoped signal handling that survives the pausing script's own abnormal
 exit) — no such supervisor exists in this codebase today, so today the answer is: don't.
 `tests/test_no_unsupervised_process_pause.py` enforces this structurally.
+
+**Nothing Sigma writes in the root checkout may block a person's ordinary git operation.** Starting
+a goal, `git pull`, `git checkout`: none of them may be refused because of a file Sigma itself left
+in the root checkout. It has happened twice: tracked registry writes refused the next
+`work.py start` (#954), and untracked plan, research and acceptance copies stop the root
+fast-forwarding over the commit that lands them (#1161). A design that does write there names the
+gesture that clears it and the actor that runs it, in the same change.
 
 ## Before you run the loop
 
