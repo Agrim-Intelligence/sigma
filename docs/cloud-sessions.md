@@ -188,8 +188,7 @@ minimum-rank (highest-priority) label: after a demotion a failed remove is retri
 disagree), but after a promotion the stale lower label is never removed by the loop. It is visible and
 does not change ordering. `PUT /labels` is not used.
 
-Deferred, still open on #895: `note()` (already REST as its last resort, with the owner-accepted
-duplicate-on-retry ruling that this policy contradicts), every `label create`, lifecycle label swaps, the
+Deferred, still open on #895: every `label create`, lifecycle label swaps, the
 D-4 REST swap, PR writes (the board is skipped in cloud, slice 5).
 
 UNMEASURED, not claimed: REST label auto-create on `POST /issues` and `POST /labels`; that a primary
@@ -667,7 +666,7 @@ Real cloud limits left in the merge path (from the code, not measured):
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
 - Board work is skipped with one notice (slice 5), UNMEASURED live.
 
-The 37 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; line numbers drift). The
+The 36 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; line numbers drift). The
 transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 
 | file:line | gh command | transport | blocks a cloud drain? |
@@ -677,7 +676,6 @@ transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 | doctor.py:414, 474, 905, 945 | project list / view / item-list / field-list | GraphQL | no (doctor report) |
 | doctor.py:1387 | `["gh", *args]` runner | varies | no |
 | sources.py:1745, 1809, 3840; triage.py:2267 | label create | REST | no |
-| sources.py:3369 | issue comment (`note()`) | GraphQL | MAYBE, see below |
 | sources.py:2091, 3921, 3972, 3978, 4498, 4973, 4988, 5014, 5069, 5366 | project item-list / item-edit / item-add / field-list | GraphQL | no: board skipped with one notice |
 | sources.py:4179, 4187, 4207, 4219, 4247, 4315 | project create / link / list / view / field-create | GraphQL | no (setup only) |
 | work.py:5404 | pr view reviewDecision | GraphQL | guarded: approval mode parks |
@@ -686,11 +684,13 @@ transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 | verify_merge.py:299, 324, 351 | pr ready / create / merge | GraphQL | no (human-attended rebase) |
 | status.py:174 | issue list | GraphQL | no (display fallback) |
 
-`GitHubSource.note()` (`sources.py` ~3360): its first attempt is `gh issue comment` (a GraphQL-backed gh command),
-retried; the REST fallback (`gh api .../comments -X POST`) runs only after a TRANSIENT failure and a non-transient
-GraphQL-blocked error is re-raised. `handoff.py` wraps it in try/except (a warning); `acceptance.py`,
-`feature_labels.py`, `feature_owner.py`, `feature_propagate.py` and `auto_unpark.py` do not obviously. Probable cloud
-blocker for those side-comment paths, UNMEASURED (depends on how the cloud proxy fails GraphQL); NOT fixed here.
+`GitHubSource.note()` (fixed in slice 8, UNMEASURED in a real cloud session): REST first through
+`gh_api.comment_issue` (`POST issues/N/comments`); no GraphQL-first attempt, and none at all in a cloud session. It re-POSTs
+over REST only for a server 5xx or an ambiguous transport failure (the owner-accepted duplicate-on-retry ruling is retained,
+REST-only). A primary rate limit gets the one policy fallback (not in cloud); active-account drift (401/403/404) and a
+secondary rate limit raise at once, no retry. `loop.py note` prints FAILED / exit 1 on a raise. Whether the cloud proxy
+accepts `POST issues/N/comments` is UNMEASURED. There is no Sigma-side timeout on this path; a gh-reported timeout in stderr is classified transport and
+retried over REST; a silent hang blocks. UNMEASURED.
 
 Deferred (R5): the sibling-PR read (`gh pr list` in `work.py` `_sibling_pull_requests`). REST has no `reviewDecision`,
 `gh_api` has no `isDraft` mapper, and rollups need per-row calls (roughly 40-60 lines and 6 tests); `sibling_gate`
@@ -716,7 +716,7 @@ construction in a cloud session), shell scripts, `.tmpl` prose, and argv built i
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2, 43 after 4b-3, 37 after 3b; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2, 43 after 4b-3, 37 after 3b, 36 after slice 8; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 Its sibling for skill prose (loop-path commands in `skills/**/*.md`; `.tmpl`, shell scripts and the allowlisted

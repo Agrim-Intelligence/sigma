@@ -300,6 +300,15 @@ def test_audit_post_failure_denied_so_no_unaudited_grant():
     assert out.startswith("DENIED") and "audit" in out
 
 
+def test_audit_post_failure_with_a_gh_api_error_is_denied_and_names_the_type():
+    """#895 slice 8: `note()` now raises `GhApiError` (REST-first), no longer a bare runner error. The
+    handler denies on ANY exception, so no unaudited grant; the denial names the new type."""
+    err = _mod("gh_api").GhApiError("gh api failed", "gh: Not Found (HTTP 404)", 404, "not_found")
+    src = FakeSource(note_error=err)
+    out = run(src)
+    assert out.startswith("DENIED") and "GhApiError" in out and "no unaudited grant" in out
+
+
 def test_audit_comment_not_visible_on_reread_denies():
     class Lagging(FakeSource):
         def note(self, goal, text):

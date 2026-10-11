@@ -162,7 +162,7 @@ def record(sdlc_dir, goal, config=None, source=None, draft=None, verify_command=
         if not isinstance(comments, list):
             raise ValueError('could not read acceptance comment history')
         if not any(c.get('body') == comment for c in comments if isinstance(c, dict)):
-            source.note(goal, comment)  # existing bounded retry; ambiguous ack may duplicate
+            source.note(goal, comment)  # REST re-POST on 5xx/transport only; an ambiguous ack may duplicate
     file.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.acceptance-', dir=str(file.parent))
     try:

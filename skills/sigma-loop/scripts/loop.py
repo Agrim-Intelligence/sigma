@@ -6330,12 +6330,12 @@ def _dispatch(argv):
             # #1986: the OLD shape here printed one easy-to-miss stderr line and always returned 0
             # regardless — for `sigma-goal-review`'s REJECT verdict, this note is THE ENTIRE OUTPUT
             # (§7g: no label, no board move, nothing else), so a failure this quiet left a rejected
-            # idea with zero trace anywhere. `source.note` (GitHubSource, #1986) already retried a
-            # transient failure itself before this was ever reached — what still lands here survived
+            # idea with zero trace anywhere. `source.note` (GitHubSource, #1986) already re-POSTed a
+            # server 5xx / ambiguous transport failure itself before this was ever reached — what still lands here survived
             # that and is reported LOUDLY: `FAILED` on stdout, mirroring `mark-designed`'s own
             # OK/FAILED convention that SKILL.md steps already know to read, PLUS a non-zero exit so
             # a caller that only checks the return code (not stderr) still sees it.
-            print(f"loop.py note: recording failed after retries: {e}", file=sys.stderr)
+            print(f"loop.py note: recording failed (retries cover only a server 5xx or ambiguous transport failure): {e}", file=sys.stderr)
             print("FAILED")
             return 1
         print("OK")

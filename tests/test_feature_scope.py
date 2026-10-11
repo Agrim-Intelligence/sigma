@@ -268,6 +268,8 @@ def test_the_refusal_of_an_out_of_unit_goal_writes_nothing_to_it():
         cfg, src = _source(lp, base, [conflicted], calls)
         assert lp._next(base, src, cfg) == ("DONE", None)
     assert not [c for c in calls if c[0:2] == ["issue", "comment"]]
+    # #895: a note is a REST POST now, which this runner records raw (it is not an `issue comment` argv)
+    assert not [c for c in calls if (gqlfake.rest_write_target(c) or (0, 0))[1] == "comment"]
     assert not [c for c in calls if c[0:2] == ["issue", "edit"]]
     assert conflicted["labels"] == [{"name": "sdlc:goal"}, {"name": LABEL}]
 

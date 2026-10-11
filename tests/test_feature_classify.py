@@ -61,6 +61,8 @@ def _runner(labels=(), comments=(), absent=()):
         gql = gqlfake.swap(args, labels=live, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):                # #895: REST writes, legacy-recorded
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
         calls.append(list(args))
         rest = gqlfake.rest_issue(args, lambda n, f: {      # #895: sources' issue reads are REST first
             "comments": [{"body": c} for c in comments], "labels": [{"name": n} for n in sorted(live)],

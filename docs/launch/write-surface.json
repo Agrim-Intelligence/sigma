@@ -1841,14 +1841,6 @@
       "risk": "medium"
     },
     {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "note",
-      "rule": "gh-issue",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
       "path": "skills/sigma-loop/scripts/spend_approval.py",
       "function": "_counter_write",
       "rule": "fs-remove",
