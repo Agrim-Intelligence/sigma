@@ -83,7 +83,7 @@ def test_control_safety_step_removed_from_test_job_fails():
     text = WORKFLOW.read_text(encoding="utf-8")
     start = text.index("      - name: safety check")
     end = text.index("      - name: decision gate", start)
-    with pytest.raises(AssertionError, match="safety"):
+    with pytest.raises(AssertionError, match="missing from the test job"):
         check_safety_step_after_quality_gate(text[:start] + text[end:])
 
 
