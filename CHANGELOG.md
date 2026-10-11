@@ -4,6 +4,12 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Regression gate set and catalogue (#1057, slice 2 of #808).** New `evals/regression/gates.json` (live gates by
+  selection, `skill-smoke`/`safety-check`/`layer1-control` registered `pending` with a reason), `catalogue.json` (one
+  row per mutation form with its `must_be_red_by` gates) and `catalogue.py check`, a read-only schema checker run in
+  the fast suite: rejects an unknown gate id, an empty `must_be_red_by`, a row whose only gate is pending, and a row
+  that drifts from `mutators.py`. Test-first and phase-record suites are deliberately not listed (measured green).
+
 - **Board gate when GraphQL is unavailable (#895, slice 5; refs #895).** New `GitHubSource.board_active`
   (`project.enabled` AND `gh_api.graphql_available()`): when GraphQL is off (`CLAUDE_CODE_REMOTE`,
   `SIGMA_GH_GRAPHQL=off`) every Projects v2 call (card moves, field writes, archive, backlog seeding, the Phase
