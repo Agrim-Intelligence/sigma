@@ -30,16 +30,27 @@ edited the finding prints the new hash, so the table update is one line.
 Every generated value is built at run time from fragments with a seeded generator, so no
 secret-shaped string sits on any source line and the output is deterministic.
 
+Hostile fixtures (#1051, slice 3 of #1048, story #806, AC-5 as reworded by the 2026-10-10 decision):
+`tests/test_hostile_inputs.py` is run as a pytest subprocess and the check passes only when the sole
+non-passes are its strict expected failures, counted from its own `KNOWN_DEFECTS` map (7 today).
+Any failure, error, skip, unexpected pass (a tracked defect that stopped failing), a different
+expected-failure count, or an unreadable summary turns it red (exit 1) or refuses it (exit 2:
+pytest absent, file missing, timeout). Issues 511 and 190 are tracked there, not fixed here.
+That one step is the only subprocess; it is capped at 300 seconds and measured at about 3 seconds
+on one machine, a fixed cost that does not grow with the shape table.
+
 Cost: O(shapes). One regex search and one generator call per entry and a few commit-gate lines
-each, well under a second (not measured on CI). Linear at 10x and 100x. Reads one file, writes
-nothing, spawns nothing, no network.
+each, well under a second (not measured on CI). Linear at 10x and 100x. Reads files, writes
+nothing, one pytest subprocess, no network.
 """
 import argparse
+import ast
 import collections
 import hashlib
 import importlib.util
 import random
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -329,11 +340,51 @@ def run(scrub, table):
             + check_commit_outcomes(scrub, table))
 
 
-def main(argv=None, scrub_path=None):
+_HOSTILE = Path(__file__).resolve().parents[2] / "tests" / "test_hostile_inputs.py"
+_COUNT = re.compile(r"(\d+) (passed|failed|xfailed|xpassed|errors?|skipped|deselected|warnings?)")
+
+
+def known_defects(path):
+    """The number of tracked defects in the hostile test file's own KNOWN_DEFECTS literal."""
+    for node in ast.parse(path.read_text()).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "KNOWN_DEFECTS" for t in node.targets):
+            try:
+                return len(ast.literal_eval(node.value))
+            except (ValueError, TypeError):
+                break
+    raise Refusal("%s has no KNOWN_DEFECTS" % path.name)
+
+
+def run_hostile(path=_HOSTILE):
+    if not path.is_file():
+        raise Refusal("hostile test file not found")
+    expected = known_defects(path)
+    argv = [sys.executable, "-m", "pytest", str(path), "-q", "-p", "no:cacheprovider"]
+    try:
+        done = subprocess.run(argv, cwd=str(path.parents[1]), capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        raise Refusal("hostile run exceeded 300 seconds")
+    last = (done.stdout.strip().splitlines() or [""])[-1]
+    if "No module named pytest" in done.stderr or not _COUNT.search(last):
+        raise Refusal("hostile run produced no pytest summary (pytest absent or crashed)")
+    n = collections.Counter()
+    for num, kind in _COUNT.findall(last):
+        n[kind.rstrip("s") if kind.startswith("error") else kind] += int(num)
+    bad = {k: v for k, v in n.items() if k in ("failed", "xpassed", "error", "skipped", "deselected") and v}
+    out = [_find("hostile-%s" % k, "hostile-fixtures", "-", "%d %s" % (v, k)) for k, v in sorted(bad.items())]
+    if n["xfailed"] != expected:
+        out.append(_find("hostile-xfail-count", "hostile-fixtures", "-",
+                         "expected %d tracked failures, got %d" % (expected, n["xfailed"])))
+    if not out and (done.returncode != 0 or not n["passed"]):
+        out.append(_find("hostile-exit", "hostile-fixtures", "-", "pytest exit %d" % done.returncode))
+    return out
+
+
+def main(argv=None, scrub_path=None, hostile=True):
     argparse.ArgumentParser(description="Pin the live redaction shapes and check them two ways.").parse_args(argv)
     try:
         scrub = load_scrub(scrub_path or _DEFAULT_SCRUB)
-        findings = run(scrub, TABLE)
+        findings = run(scrub, TABLE) + (run_hostile() if hostile else [])
     except Refusal as exc:
         print("check.py: REFUSED: %s" % exc, file=sys.stderr)
         return 2
