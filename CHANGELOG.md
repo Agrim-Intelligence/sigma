@@ -30,9 +30,11 @@ All notable changes to Sigma are recorded here, newest first.
   showing the line) or by exact path (wide: it clears future literals in that file too); a reason is
   required and a malformed entry is ignored and counted. The refusal tells the agent to remove the
   literal or park, names the allowlist as the operator's, and no longer offers a hand commit.
-  Residual misses, tracked by #978 and listed in the threat model: a literal with no secret-like
-  token passes at any length as a code file's call argument or getenv default and, in any file, after
-  a leading boolean or null word (the check judges tokens, so the 24-character bound holds only for an
+  Residual misses, tracked by #978 and listed in the threat model: a quoted literal with no
+  secret-like token that no assigning `=` starts passes at any length anywhere later on the line once
+  the first word is a code file's expression or type name (a call argument, a getenv default, a
+  fallback after `||`, `??` or `or`, a `+` concatenation, a ternary branch, a block default) and, in
+  any file, a boolean or null word (the check judges tokens, so the 24-character bound holds only for an
   unbroken letter/digit run; measured, 2,000 draws per shape: passphrases joined by spaces or hyphens
   passed 100%, no-digit values with symbols 99.8%); so do a number or identifier as a code file's
   annotated default and a literal on a wrapped line.

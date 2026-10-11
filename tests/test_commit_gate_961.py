@@ -115,77 +115,105 @@ def test_the_quoted_literal_row_is_refused_once_by_credential_assignment(monkeyp
     assert _gate(monkeypatch, tmp_path, R5) == [(RULE, 1)]
 
 
+QUOTED = tuple(K + " = " + value for value in ('"uiToken()"', '"True"', '"bool"', '"[REDACTED]"',
+                                              '"ab12cd"', "'" + "hunter2" * 2 + "'", '"********"'))
+
+
 def test_quoted_values_stay_refused_whatever_they_hold(monkeypatch, tmp_path):
     assert _gate(monkeypatch, tmp_path, K + " = uiToken()") == []
-    for value in ('"uiToken()"', '"True"', '"bool"', '"[REDACTED]"', '"ab12cd"',
-                  "'" + "hunter2" * 2 + "'", '"********"'):
-        assert _refused(monkeypatch, tmp_path, K + " = " + value), value
+    for line in QUOTED:
+        assert _refused(monkeypatch, tmp_path, line), line
+
+
+PREFIXED = tuple(K + " = " + prefix + "abcdefgh" + tail
+                 for prefix in ("ghp_", "github_pat_", "sk_live_", "AKIA", "eyJ", "xox")
+                 for tail in (".x", "(", "[0]"))
 
 
 def test_expression_shaped_values_with_a_provider_prefix_stay_refused(monkeypatch, tmp_path):
     """The run after each prefix is letters only, so only the prefix clause refuses it."""
     assert _gate(monkeypatch, tmp_path, K + " = settings.x") == []
-    for prefix in ("ghp_", "github_pat_", "sk_live_", "AKIA", "eyJ", "xox"):
-        for tail in (".x", "(", "[0]"):
-            assert _refused(monkeypatch, tmp_path, K + " = " + prefix + "abcdefgh" + tail), (prefix, tail)
+    for line in PREFIXED:
+        assert _refused(monkeypatch, tmp_path, line), line
+
+
+HIGH_ENTROPY = (K + " = " + MIX + "abc", K + " = " + "Ab1" * 8 + ".b.c", K + ": " + WEAK,
+                K + "=" + WEAK + ".")
 
 
 def test_unquoted_high_entropy_values_stay_refused_bare_or_dotted(monkeypatch, tmp_path):
     assert _gate(monkeypatch, tmp_path, K + " = cfg[0]") == []
-    for line in (K + " = " + MIX + "abc", K + " = " + "Ab1" * 8 + ".b.c", K + ": " + WEAK,
-                 K + "=" + WEAK + "."):
+    for line in HIGH_ENTROPY:
         assert _refused(monkeypatch, tmp_path, line)
+
+
+DOTTED = tuple(K + " = " + value for value in ("SG." + MIX + ".x", "hvs." + L30, "sk.eyJabcdefgh.x",
+                                               "dp.st.dev." + L30, "cfg." + UPS + ".x", "SG." + LD + ".x",
+                                               "Pa.ss@word!"))
 
 
 def test_every_segment_of_a_dotted_value_is_judged_not_only_its_head(monkeypatch, tmp_path):
     """Each later segment is secret-like by exactly one clause; the last value has no secret-like
     segment at all, so only the whole-run expression match refuses it."""
     assert _gate(monkeypatch, tmp_path, K + " = cfg.section.name") == []
-    for value in ("SG." + MIX + ".x", "hvs." + L30, "sk.eyJabcdefgh.x", "dp.st.dev." + L30,
-                  "cfg." + UPS + ".x", "SG." + LD + ".x", "Pa.ss@word!"):
-        assert _refused(monkeypatch, tmp_path, K + " = " + value), value
+    for line in DOTTED:
+        assert _refused(monkeypatch, tmp_path, line), line
+
+
+LITERALS = (K + ' = os.getenv("X", "' + MIX + '")',
+            K + " = SecretStr('" + MIX + "')",
+            K + ' = SecretStr("' + L30 + '")',
+            K + ' = base64.b64decode("abc")',
+            K + ' = os.getenv("X", "' + WEAK + '")',
+            "const " + K + " = process.env.X || `" + WEAK + "`;",
+            "const " + K + ' = null || "' + WEAK + '";',
+            K + " = cfg.get(x) or " + MIX)
 
 
 def test_a_secret_like_literal_anywhere_after_the_separator_keeps_the_hit(monkeypatch, tmp_path):
     assert _gate(monkeypatch, tmp_path, K + ' = os.environ.get("APP_CRED_NAME", "")') == []
     assert _gate(monkeypatch, tmp_path, K + " = data.get('" + K + "')") == []
-    for line in (K + ' = os.getenv("X", "' + MIX + '")',
-                 K + " = SecretStr('" + MIX + "')",
-                 K + ' = SecretStr("' + L30 + '")',
-                 K + ' = base64.b64decode("abc")',
-                 K + ' = os.getenv("X", "' + WEAK + '")',
-                 "const " + K + " = process.env.X || `" + WEAK + "`;",
-                 "const " + K + ' = null || "' + WEAK + '";',
-                 K + " = cfg.get(x) or " + MIX):
+    for line in LITERALS:
         assert _refused(monkeypatch, tmp_path, line)
+
+
+BARE = (K + " = myToken", "const " + K + " = await fetchIt();", K + " = 12345678", K + ": Summer")
 
 
 def test_bare_identifiers_and_numbers_stay_refused(monkeypatch, tmp_path):
     assert _gate(monkeypatch, tmp_path, '"' + K + '": None,') == []
-    for line in (K + " = myToken", "const " + K + " = await fetchIt();", K + " = 12345678",
-                 K + ": Summer"):
+    for line in BARE:
         assert _refused(monkeypatch, tmp_path, line)
+
+
+NOT_TYPES = (K + " = string", K + ": Strong", K + ": stringly", K + ": str=None",
+             K + ': str="' + WORD + '"')
 
 
 def test_type_names_pass_only_after_a_colon_and_only_from_the_closed_set(monkeypatch, tmp_path):
     for line in (K + ": bool", K + ": string;", K + ": string|null;", K + ": SecretStr"):
         assert _gate(monkeypatch, tmp_path, line) == []
-    for line in (K + " = string", K + ": Strong", K + ": stringly", K + ": str=None",
-                 K + ': str="' + WORD + '"'):
+    for line in NOT_TYPES:
         assert _refused(monkeypatch, tmp_path, line)
+
+
+NOT_WORDS = (K + " = Trueish", K + " = None-x", K + "=True,abcdef")
 
 
 def test_booleans_and_null_words_pass_only_as_the_whole_value(monkeypatch, tmp_path):
     for line in (K + " = true;", K + ": null,", K + " = undefined", "def f(self, " + K + "=None):"):
         assert _gate(monkeypatch, tmp_path, line) == []
-    for line in (K + " = Trueish", K + " = None-x", K + "=True,abcdef"):
+    for line in NOT_WORDS:
         assert _refused(monkeypatch, tmp_path, line)
+
+
+NOT_MARKERS = (K + ' = "[REDACTED]"', K + " = [REDACTED]x", K + " = [NOT-REDACTED]")
 
 
 def test_sigma_redaction_markers_pass_only_unquoted_and_exact(monkeypatch, tmp_path):
     assert _gate(monkeypatch, tmp_path, K + ": [REDACTED]") == []
     assert _gate(monkeypatch, tmp_path, K + " = [REDACTED:gh-token],") == []
-    for line in (K + ' = "[REDACTED]"', K + " = [REDACTED]x", K + " = [NOT-REDACTED]"):
+    for line in NOT_MARKERS:
         assert _refused(monkeypatch, tmp_path, line)
 
 
@@ -382,6 +410,30 @@ def test_template_registry_and_loop_docs_make_the_content_allowlist_an_operator_
 
 # --- the assigned-literal guard, the code-file rule and linear time --------------------------------
 
+_Q, _T3 = '"' + WORD + '"', '"""' + WORD + '"""'
+ASSIGNED = (("const " + PW + ": string = " + _Q + ";", "a.ts"),
+            ("val " + PW + ": String = " + _Q, "a.kt"),
+            (PW + ": Optional[str] = " + _Q, "a.py"),
+            (SC + ": bytes = b" + _Q, "a.py"),
+            (PW + ": Optional[str]=" + _Q, "a.py"),
+            (K + " = cfg.x = " + _Q, "a.py"),
+            (K + " = client.get(name=" + _Q + ")", "a.py"),
+            (SC + ": bytes = b" + _T3, "a.py"),
+            (PW + ": Optional[str] = '''" + WORD + "'''", "a.py"),
+            ("const " + PW + ": string = (" + _Q + ");", "a.ts"),
+            (K + " = cfg.x = (" + _Q + ")", "a.py"),
+            (PW + ": Optional[str] = (", "a.py"),
+            (PW + ": Optional[str] = " + chr(92), "a.py"),
+            ("const " + PW + ': string = "ab" + ' + _Q + ";", "a.ts"),
+            ("const " + PW + ": string | undefined = " + _Q + ";", "a.ts"),
+            (SC + ": bytes | None = b" + _Q, "a.py"),
+            (PW + ": Annotated[str, Field()] = " + _Q, "a.py"),
+            (PW + ": Optional[str]=(" + _Q + ")", "a.py"),
+            (PW + ": Optional[str]=b" + _Q, "a.py"),
+            (SC + ": bytes | None = b" + _T3, "a.py"),
+            (PW + ": Optional[str] | None = (", "a.py"))
+
+
 def test_a_value_followed_by_an_assigned_quoted_literal_stays_refused(monkeypatch, tmp_path):
     """The WORD is letters only, so the rest-of-line scan passes every negative below and only the
     assigned-literal guard refuses them. The twins pin the guard's comparison exclusions."""
@@ -389,29 +441,13 @@ def test_a_value_followed_by_an_assigned_quoted_literal_stays_refused(monkeypatc
                  K + ' = cfg.x == "' + WORD + '"', K + ' = cfg.x != "' + WORD + '"',
                  K + ' = cfg.x <= "' + WORD + '"', K + ' = cfg.x >= "' + WORD + '"'):
         assert _gate(monkeypatch, tmp_path, line) == []
-    q, t3 = '"' + WORD + '"', '"""' + WORD + '"""'
-    for line, name in (("const " + PW + ": string = " + q + ";", "a.ts"),
-                       ("val " + PW + ": String = " + q, "a.kt"),
-                       (PW + ": Optional[str] = " + q, "a.py"),
-                       (SC + ": bytes = b" + q, "a.py"),
-                       (PW + ": Optional[str]=" + q, "a.py"),
-                       (K + " = cfg.x = " + q, "a.py"),
-                       (K + " = client.get(name=" + q + ")", "a.py"),
-                       (SC + ": bytes = b" + t3, "a.py"),
-                       (PW + ": Optional[str] = '''" + WORD + "'''", "a.py"),
-                       ("const " + PW + ": string = (" + q + ");", "a.ts"),
-                       (K + " = cfg.x = (" + q + ")", "a.py"),
-                       (PW + ": Optional[str] = (", "a.py"),
-                       (PW + ": Optional[str] = " + chr(92), "a.py"),
-                       ("const " + PW + ': string = "ab" + ' + q + ";", "a.ts"),
-                       ("const " + PW + ": string | undefined = " + q + ";", "a.ts"),
-                       (SC + ": bytes | None = b" + q, "a.py"),
-                       (PW + ": Annotated[str, Field()] = " + q, "a.py"),
-                       (PW + ": Optional[str]=(" + q + ")", "a.py"),
-                       (PW + ": Optional[str]=b" + q, "a.py"),
-                       (SC + ": bytes | None = b" + t3, "a.py"),
-                       (PW + ": Optional[str] | None = (", "a.py")):
+    for line, name in ASSIGNED:
         assert _refused(monkeypatch, tmp_path, line, name), (name, len(line))
+
+
+#: `(line, paths)` refused outside a code file only: each passes in a code file.
+NON_CODE_REFUSED = ((PW + ": " + DOT, NON_CODE_PATHS), (R1, ("config.yml", "README.md")),
+                    (K + ": string", ("config.yml",)))
 
 
 def test_only_code_files_get_the_expression_and_type_exemptions(monkeypatch, tmp_path):
@@ -419,11 +455,9 @@ def test_only_code_files_get_the_expression_and_type_exemptions(monkeypatch, tmp
     assert _gate(monkeypatch, tmp_path, line, "a.py") == []
     for name in CODE_PATHS:
         assert _gate(monkeypatch, tmp_path, line, name) == [], name
-    for name in NON_CODE_PATHS:
-        assert _refused(monkeypatch, tmp_path, line, name), name
-    for name in ("config.yml", "README.md"):
-        assert _refused(monkeypatch, tmp_path, R1, name), name
-    assert _refused(monkeypatch, tmp_path, K + ": string", "config.yml")
+    for text, names in NON_CODE_REFUSED:
+        for name in names:
+            assert _refused(monkeypatch, tmp_path, text, name), name
     for name in ("a.json", "config.yml", "README.md"):
         assert _gate(monkeypatch, tmp_path, R4, name) == [], name
     for value in ("false", "null", "[REDACTED]"):
@@ -431,8 +465,9 @@ def test_only_code_files_get_the_expression_and_type_exemptions(monkeypatch, tmp
     # The scrub API: a missing path is not a code path (fail closed); a path matches the gate.
     assert S.commit_secret_hits(line) != []
     assert S.commit_secret_hits(R4) == []
-    pairs = ([(line, n) for n in CODE_PATHS + NON_CODE_PATHS] + [(R1, "config.yml"), (R1, "README.md"),
-             (K + ": string", "config.yml")] + [(R4, n) for n in ("a.json", "config.yml", "README.md")])
+    pairs = ([(line, n) for n in CODE_PATHS]
+             + [(text, n) for text, names in NON_CODE_REFUSED for n in names]
+             + [(R4, n) for n in ("a.json", "config.yml", "README.md")])
     for text, name in pairs:
         assert S.commit_secret_hits(text, path=name) == _gate(monkeypatch, tmp_path, text, name), name
     for name in CODE_PATHS:
@@ -447,13 +482,15 @@ def _scan(line):
     return [m.start() for _name, rx in S.COMMIT_SHAPE_RULES for m in rx.finditer(line)]
 
 
+PATHOLOGICAL = (K + " = a(" + ")" * 32768 + "@", K + ": string" + "|string" * (32768 // 7) + "@",
+                K + " = a." + "b." * (32768 // 2) + "@")
+
+
 def test_a_pathological_value_run_is_judged_in_linear_time(monkeypatch, tmp_path):
     """Relative, not absolute: both timings run back to back in one process on one line, so a loaded
     machine or `pytest -n auto` stretches them together. A quadratic form measured 590x to 1,020x."""
     assert _gate(monkeypatch, tmp_path, K + " = f(x))") == []
-    n = 32768
-    for line in (K + " = a(" + ")" * n + "@", K + ": string" + "|string" * (n // 7) + "@",
-                 K + " = a." + "b." * (n // 2) + "@"):
+    for line in PATHOLOGICAL:
         assert _refused(monkeypatch, tmp_path, line)
         scan_best = gate_best = float("inf")
         for _attempt in range(3):
@@ -466,3 +503,51 @@ def test_a_pathological_value_run_is_judged_in_linear_time(monkeypatch, tmp_path
             if gate_best < 40 * scan_best:
                 break
         assert gate_best < 40 * scan_best, (gate_best, scan_best)
+
+
+# --- CRLF rows ------------------------------------------------------------------------------------
+
+#: A value whose right side wraps onto the next line, with and without an annotation; the last one's
+#: value is a null word, which passes in every file, so it is the shape that tells outside a code file.
+WRAPPED = (PW + ": Optional[str] = " + chr(92), PW + ": Optional[str] = (", K + " = cfg.x = " + chr(92),
+           K + " = cfg.x = (", K + ": null = " + chr(92))
+
+
+def _refused_corpus():
+    """`(line, paths)` for every line this file asserts the gate refuses, plus `WRAPPED`. A line refused
+    in a code file is refused outside one too: only a code file gets the expression and type
+    exemptions."""
+    code = ([(line, "a.py") for line in (R5,) + QUOTED + PREFIXED + HIGH_ENTROPY + DOTTED + LITERALS
+             + BARE + NOT_TYPES + NOT_WORDS + NOT_MARKERS + PATHOLOGICAL + WRAPPED] + list(ASSIGNED))
+    return [(line, (name, "config.yml")) for line, name in code] + list(NON_CODE_REFUSED)
+
+
+def test_a_crlf_row_is_judged_like_its_lf_twin(monkeypatch, tmp_path):
+    """Rows split on the line feed alone, so a CRLF file's row keeps its carriage return, and a regex
+    end-of-line anchor does not match before one. Every refused line's CRLF twin must be refused too,
+    in a code path and outside one."""
+    for row in (R1, R2, R3, R4):
+        assert _gate(monkeypatch, tmp_path, row + "\r") == []
+    for line, names in _refused_corpus():
+        for name in names:
+            for twin in (line, line + "\r"):
+                rules = {rule for rule, _column in S.commit_secret_hits(twin, path=name)}
+                assert RULE in rules, (name, len(line), twin == line)
+
+
+def test_a_crlf_file_is_refused_like_its_lf_twin_in_real_git(tmp_path):
+    repo, d, committed = tw._real_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "config", "core.autocrlf", "false"], check=True)
+
+    def crlf(*rows):
+        return "".join(row + "\r\n" for row in rows).encode("utf-8")
+
+    (repo / "rows.py").write_bytes(crlf(R1, R2, R3, R4))
+    assert tw.work.commit(d, tw.ON, "0001-x.md", message="test: crlf rows") == COMMITTED
+    assert committed() == {"rows.py"}
+    stored = subprocess.run(["git", "-C", str(repo), "show", "HEAD:rows.py"], capture_output=True,
+                            check=True)
+    assert stored.stdout.count(b"\r\n") == 4            # git kept every carriage return
+    (repo / "rows.py").write_bytes(crlf(R1, R2, R3, R4, PW + ": Optional[str] = " + chr(92), "    " + _Q))
+    out = tw.work.commit(d, tw.ON, "0001-x.md", message="test: crlf wrapped")
+    assert out.startswith("REFUSED") and RULE + " at rows.py:5:1" in out

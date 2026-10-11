@@ -135,17 +135,24 @@ A code file is one whose basename has a stem and whose last suffix, compared cas
 PHP, C#, Swift, Dart, C and C++, Objective-C, Lua and Elixir. Every other file (config, data, docs,
 a suffix nobody listed, an upper-case variant) reads an unquoted value as a literal.
 
-**Residual misses, measured against this filter.** In a code file, a quoted literal passes as a
-positional call argument or a getenv default (`<key> = os.getenv("<NAME>", "<words>")`,
-`<key> = SecretStr("<words>")`; the old gate refused both) when none of its tokens is secret-like,
-whatever its total length, and so does an unquoted dotted value made only of expression characters.
+**Residual misses, measured against this filter.** In a code file, once the value's first word is
+an expression or a closed-set type name, a quoted literal anywhere later on the line passes when none
+of its tokens is secret-like and no assigning `=` starts it, whatever its total length. The old gate
+refused each of these, and each passes in a `.py` and a `.ts` file: a positional call argument or a
+getenv default (`<key> = os.getenv("<NAME>", "<words>")`, `<key> = SecretStr("<words>")`), a
+fallback after `||`, `??` or `or` (`<key> = process.env.X || "<words>"`), a concatenation
+(`<key> = cfg.prefix + "<words>"`), a ternary branch (`<key> = cfg.x ? "<words>" : y`) and a block
+default such as Ruby's `<key> = ENV.fetch("<NAME>") { "<words>" }`. So does an unquoted dotted value
+made only of expression characters.
 The check judges tokens, not the literal: the `[A-Za-z0-9_]+` runs of the line and the
 whitespace-separated words of each quoted literal, and its length clause needs an unbroken run of 24
 letters and digits. So a value with no digit is never secret-like without a provider prefix or such a
 run, and a value broken by spaces, hyphens or other punctuation is judged in short pieces. On 2,000
-random unbroken letter/digit runs per length, a run placed as a getenv default was refused 56% of the
-time at 6 characters, 70% at 8, 89% at 14, 97% at 20 and 100% at 24 or more; the misses are runs
-with no digit at all and upper-snake runs with fewer than 3 alternations. That 24-character bound
+random unbroken letter/digit runs per length (seed 961, a fresh generator per length, each character
+drawn uniformly from the 62 ASCII letters and digits), a run placed as a getenv default in a `.py`
+file was refused 64.0% of the time at 6 characters, 74.2% at 8, 91.4% at 14, 96.8% at 20 and 100% at
+24, 32 and 64; every miss is a run with no digit at all or an upper-snake run with fewer than 3
+alternations. That 24-character bound
 holds for an unbroken run only. Measured on this filter at the token boundary (2,000 random values
 per shape, fixed seed, `scrub.commit_secret_hits` with an `s.py` path; the gate before #961 refused
 all of them): a passphrase of 3 to 8 dictionary words (13 to 70 characters) joined by spaces, and one

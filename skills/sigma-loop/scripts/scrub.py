@@ -223,8 +223,11 @@ _TYPE_NAME = r"(?:str|bytes|bool|int|float|Any|SecretStr|string|boolean|number|a
 _TYPE = re.compile(_TYPE_NAME + r"(?:\|(?:" + _TYPE_NAME + r"|None|null|undefined))*" + _CLOSERS)
 #: An assigning `=` -- not part of `==`, `!=`, `<=`, `>=` or `=>` -- whose right side, after spaces and
 #: opening parentheses, STARTS a quoted literal of any length (optional b/r/u/f prefix, so a triple
-#: quote too) or wraps (the end of the line, or a lone continuation backslash).
-_ASSIGNED_LITERAL = re.compile(r"(?<![=!<>])=(?![=>])[\s(]*(?:\\?$|[bBrRuUfF]{0,2}[\"'`])")
+#: quote too) or wraps (the end of the line, or a lone continuation backslash). A carriage return ends
+#: the line too: rows split on `\n` alone, so a CRLF file's row keeps its `\r`, and `$` never matches
+#: before one (a wrapped CRLF line passed, #961 review). A lookahead, not `\s*$`: that rescans a space
+#: run from every position `[\s(]*` gives back, quadratic (0.8 s measured on one 16 KB run).
+_ASSIGNED_LITERAL = re.compile(r"(?<![=!<>])=(?![=>])[\s(]*(?:\\?(?=\r|$)|[bBrRuUfF]{0,2}[\"'`])")
 _WORD_SEGMENT = re.compile(r"[A-Za-z0-9_]+")
 #: A quoted literal, escape-aware, paired left to right from the start of the line. An unterminated one
 #: runs to the end of the line (fail closed), so an attempt at a quote never fails and never rescans.
