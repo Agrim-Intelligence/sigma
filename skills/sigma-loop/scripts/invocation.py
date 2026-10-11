@@ -216,7 +216,7 @@ def run_adapter(sdlc_dir, data, verb, request, timeout):
         fd = os.open(exe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o700)
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
-        env = {"PATH": "/usr/bin:/bin", "SIGMA_INVOCATION_V": str(V)}
+        env = {"PATH": "/usr/bin:/bin", "INVOCATION_ABI_V": str(V)}
         for key in ("LANG", "LC_ALL"):
             if os.environ.get(key):
                 env[key] = os.environ[key]
@@ -495,6 +495,10 @@ def diagnose(sdlc_dir, adapter_id):
 
 
 def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        print("usage: invocation.py diagnose <sdlc_dir> <claude|codex|cursor>\n"
+              "  checks the operator-pinned adapter; prints installed-and-conforming | defer | refused")
+        return 0
     if len(argv) == 3 and argv[0] == "diagnose":
         result = diagnose(argv[1], argv[2])
         print(result)
