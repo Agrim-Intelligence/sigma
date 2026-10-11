@@ -11394,3 +11394,52 @@ def test_protection_an_empty_string_classic_check_name_is_discarded(tmp_path):
     classic = [("branches/main/protection", json.dumps({"required_status_checks": {"contexts": ["", "ci"]}}))]
     got, _ = _protection(tmp_path, classic + _ruleset())
     assert got == (True, "`main` enforces 1 required check"), got
+
+
+# ---- #612: the opt-in invocation adapter gates only the autonomous APPROVAL post -----------------
+# Protocol simulation (a fixture executable), not a live host: see tests/test_invocation.py.
+
+def _adapter_rig(tmp_path, mode=None, host="claude"):
+    import test_invocation as ti
+    cfg = {**ON, "invocation": {"adapter": host}}
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d)
+    if mode:
+        ti.Rig(tmp_path / "adapter-rig", host, mode=mode, repo=tmp_path)
+    return d, cfg, goal
+
+
+def test_post_review_approve_parks_with_no_post_when_no_adapter_is_pinned(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK:") and "attended review" in out
+    assert not any(_posted(c) for c in run.calls)
+
+
+@pytest.mark.parametrize("mode", ["defer", "wrongack", "nonzero"])
+def test_post_review_approve_parks_with_no_post_on_a_deferred_or_bad_receipt(tmp_path, mode):
+    d, cfg, goal = _adapter_rig(tmp_path, mode)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK:")
+    assert not any(_posted(c) for c in run.calls)
+
+
+def test_post_review_approve_posts_once_with_an_accepted_receipt_and_block_is_ungated(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    run = _runner([])
+    assert "posted sigma:approve" in _post_review(d, cfg, goal, run, "approve")
+    assert any(_posted(c) and "sigma:approve" in c for c in run.calls)
+    statuses = [json.loads(p.read_text())["status"]
+                for p in (pathlib.Path(d) / "state" / "invocations").glob("*.json")]
+    assert statuses == ["consumed"]
+    blocked = _runner([])
+    assert "posted sigma:block" in _post_review(d, cfg, goal, blocked, "block", "x")
+
+
+def test_post_review_with_the_adapter_unconfigured_is_unchanged(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner([])
+    assert "posted sigma:approve" in _post_review(d, ON, goal, run, "approve")
+    assert not (pathlib.Path(d) / "state" / "invocations").exists()

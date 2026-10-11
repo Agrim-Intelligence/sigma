@@ -604,7 +604,37 @@ def test_codex_notice_names_the_config_edit(tmp_path, cx):
     out = io.StringIO()
     assert cx.gate(repo / ".sdlc", "s", env=env, stream=out) is True
     [line] = out.getvalue().splitlines()
-    assert "config.toml" in line and OLD_ID in line
+    # #612: the one-line notice names no Codex path unless a verified invocation names Codex as the
+    # active host (mutable environment is not authority); `coexist.py check` still lists the step.
+    assert "config.toml" not in line and "Codex" in line and OLD_ID in line
+
+
+def test_the_full_check_report_still_names_the_codex_config_edit(tmp_path, cx):
+    env = _host(tmp_path, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID)
+    report = cx.assess(_repo(tmp_path) / ".sdlc", env=env, home=tmp_path)
+    assert "config.toml" in cx.message(report)
+    assert "config.toml" in cx.notice_line(report, verified_hosts=("codex",))
+
+
+def _codex_notice(tmp_path, cx, adapter, mode="ok"):
+    import test_invocation as ti
+    repo = _repo(tmp_path)
+    env = _host(tmp_path, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID)
+    rig = ti.Rig(tmp_path / "rig", adapter, mode=mode, repo=repo)
+    (repo / ".sdlc" / "config.json").write_text(json.dumps({"invocation": {"adapter": adapter}}))
+    rig.review()                                  # a verified receipt: protocol simulation only
+    out = io.StringIO()
+    assert cx.gate(repo / ".sdlc", "s", env=env, stream=out) is True
+    return out.getvalue()
+
+
+def test_a_fresh_verified_codex_receipt_restores_the_codex_path_in_the_notice(tmp_path, cx):
+    assert "config.toml" in _codex_notice(tmp_path, cx, "codex")
+
+
+def test_a_verified_claude_receipt_or_a_deferred_codex_one_does_not(tmp_path, cx):
+    assert "config.toml" not in _codex_notice(tmp_path / "a", cx, "claude")
+    assert "config.toml" not in _codex_notice(tmp_path / "b", cx, "codex", mode="defer")
 
 
 def test_the_override_silences_the_notice_and_only_exactly_1_does(tmp_path, cx):

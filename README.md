@@ -346,6 +346,7 @@ see which features are live for your config.
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
 | [Configuration reference](docs/configuration.md) | see every flag and default |
 | [Features](docs/features.md) | see everything Sigma provides |
+| [Invocation adapter](docs/invocation-adapter.md) | let a host you trust approve the loop's review post and relay phase ends (opt-in) |
 | [What is enforced](docs/enforcement.md) | know which rules are checked by code and which are advice |
 | [Architecture](docs/architecture.md) | see how the hooks, phases and loop fit together |
 | [Platform support](docs/platform-support.md) | check what is validated on Claude Code, Codex and Cursor |

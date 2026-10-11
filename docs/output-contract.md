@@ -217,6 +217,11 @@ Four things there are deliberate:
   the tier is a prediction, not an observation, and an agent set it rather than code deriving it —
   and both must survive. Neither needs a full sentence to do so.
 
+With the opt-in invocation adapter configured ([docs/invocation-adapter.md](invocation-adapter.md)),
+`phase_report.py end` also writes one `phase_report: host relay ...` line to **stderr**: `acknowledged`
+(the adapter acknowledged the exact Block B bytes) or `unavailable: <reason>`. Block B on stdout is
+unchanged and the line never says a UI displayed anything.
+
 A block with **no title after the id** means no source on this host knew it; that is the honest
 degradation, not a bug, and never a cue to go and fetch one.
 
