@@ -29,9 +29,8 @@ P0|P1|P2] [--label model:<tier>] [--title T] [--body-file F]`. All three value-f
 required, with no default, on purpose. **Triage decides, by default.** Unless `ai_filed.triage.enabled` is false, an AI-filed issue is checked against a
 deny-list (hard-stop words and shapes, secret shapes, a recorded-permission marker on the first body line) and then
 either ARMED at its bucket priority (urgent P2, routine P3, unclear P4, below any human-filed P1) or PARKED with
-a declared question kind. `--queue queued` lets triage decide; `--queue actionable` still runs the deny-list and arms
-at most as urgent as the bucket (`--priority` may lower urgency, never raise it). The needs-confirmation label is retired
-(a leftover one stays inert). `ai_filed.max_per_goal`, `.max_per_run` and `.max_depth` park the excess. With
+a question kind. `--queue queued` lets triage decide; `--queue actionable` still runs the deny-list and arms
+at most as urgent as the bucket (`--priority` may lower urgency, never raise it). The needs-confirmation label is retired. `ai_filed.max_per_goal`, `.max_per_run` and `.max_depth` park the excess. With
 triage off, `queued` withholds `sdlc:goal` for a human to promote. **`--blocks yes` is what should drive
 `--queue actionable`**; the only other use is work a human EXPLICITLY asked for by name in this session; otherwise it
 is `queued`.

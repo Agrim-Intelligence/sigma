@@ -352,7 +352,7 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
             swap = {"action": "swap-label", "issue": issue, "detail": triage._swap_detail(add, remove),
                     "add": add, "remove": remove, "result": None, "error": None}
             steps = [swap]
-            if getattr(source, "project_enabled", False):
+            if getattr(source, "board_active", False):
                 steps.append({"action": "set-status", "issue": issue, "detail": source.col["ready"],
                               "result": None, "error": None})
             if not all(s["result"] == "done" for s in triage.apply_actions(source, steps, True)):
