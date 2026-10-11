@@ -189,6 +189,7 @@ ledger = _load("ledger")             # blocker-promotion's ledger edge channel (
                                       # at module level: ledger.py has no reference back to this module.
 gh_session = _load("gh_session")     # #78: tell a Claude Code Remote session's gh proxy block apart
                                       # from a real auth failure -- see that module's own docstring.
+post_guard = _load("post_guard")      # #375: opt-in refusal of private-reference text (SIGMA_LEAK_PATTERNS)
 gh_api = _load("gh_api")             # #895: issue READS go REST first (gh_api.read_issue)
 feature_labels = _load("feature_labels")   # #1468: the never-create rule for `feature:*` labels.
                                       # Safe at module level: it loads `features` + `ledger`, and
@@ -1280,6 +1281,7 @@ class GitHubSource:
         having created the label, not from having failed to. Nothing downstream is broken by that: an
         `issue create --label feature:x` against a repo with no such label fails loudly, which is the
         correct outcome for filing into a unit nobody has opened."""
+        post_guard.check(args)             # #375: opt-in; a no-op unless SIGMA_LEAK_PATTERNS is set
         if feature_labels.creates_a_feature_label(args):
             try:
                 sys.stderr.write(
