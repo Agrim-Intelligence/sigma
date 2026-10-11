@@ -29,6 +29,9 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | evals/regression/record.py | write_atomic | fs-remove | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | high |
 | evals/regression/record.py | write_atomic | fs-write | 2 | operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs | medium |
 | evals/regression/spend_ledger.py | _ensure_dir | fs-write | 1 | operator-run evaluation spend ledger: creates only the ledger directory it is handed (mode 0700, exist_ok); never deletes, renames or replaces a ledger file; refuses without fcntl | medium |
+| evals/safety/sinks.py | _sdlc | fs-write | 2 | operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched | medium |
+| evals/safety/sinks.py | commit | fs-write | 3 | operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched | medium |
+| evals/safety/sinks.py | probe_comment | fs-write | 2 | operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched | medium |
 | hooks/gate_state.py | _open_child | fs-write | 1 | ungated | medium |
 | hooks/gate_state.py | _prune | fs-remove | 1 | ungated | high |
 | hooks/gate_state.py | _stripe_lock | fs-remove | 2 | ungated | high |

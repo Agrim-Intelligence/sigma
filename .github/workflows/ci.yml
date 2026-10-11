@@ -56,6 +56,8 @@ jobs:
         run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
       - name: quality gate (Tier-1 behavioral drift vs baseline)
         run: python3 evals/run.py
+      - name: safety check (secret shapes, sinks, hostile fixtures)
+        run: python3 evals/safety/check.py
       - name: decision gate
         run: |
           python3 hooks/decision_gate.py validate .

@@ -181,7 +181,7 @@
       "function": "_sdlc",
       "rule": "fs-write",
       "count": 2,
-      "gate": "operator-run check (evals/safety/check.py) and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
       "risk": "medium"
     },
     {
@@ -189,7 +189,7 @@
       "function": "commit",
       "rule": "fs-write",
       "count": 3,
-      "gate": "operator-run check (evals/safety/check.py) and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
       "risk": "medium"
     },
     {
@@ -197,7 +197,7 @@
       "function": "probe_comment",
       "rule": "fs-write",
       "count": 2,
-      "gate": "operator-run check (evals/safety/check.py) and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
       "risk": "medium"
     },
     {

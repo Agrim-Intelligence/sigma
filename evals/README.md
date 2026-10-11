@@ -282,6 +282,12 @@ drops below `baseline.json`** — that drop is the drift signal. No LLM, no cost
 python3 evals/run.py          # score the corpus, gate on drift vs baseline
 ```
 
+The safety check (secret shapes, sinks, hostile fixtures) is separate, free and also runs in CI:
+
+```bash
+python3 evals/safety/check.py
+```
+
 Add a fixture (`{id, prompt, expect: code|ask|standard, tier2_rubric}`) whenever you add or change a
 discipline signal. Raise the baseline only when you add harder fixtures — never lower it to green a red
 build without justifying the regression.

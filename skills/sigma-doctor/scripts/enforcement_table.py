@@ -174,6 +174,11 @@ EXTERNAL_CONTROLS = (
                   "requires the check",
      "condition": "Sigma's own public CI on push/PR; nothing installs it into your repository",
      "readme": "Quality-drift gate"},
+    {"control": "Safety check (secret shapes, sinks, hostile fixtures)", "kind": "git-host", "hosts": "all",
+     "enabled_by": (), "settings": (),
+     "mechanism": "`evals/safety/check.py` fails the CI job; blocks a merge only where branch "
+                  "protection requires the check",
+     "condition": "Sigma's own public CI on push/PR; nothing installs it into your repository"},
 )
 
 #: Gates that exist but are deliberately not registered (S5): pick-time gates outside the three
