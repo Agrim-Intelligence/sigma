@@ -70,7 +70,9 @@ gets copied, and that choice is load-bearing in a way that is easy to get backwa
 WHAT IS DELIBERATELY NOT HERE. Nothing on this module's write path touches the registry: no shard,
 no chart sheet, no registry file of any kind, read or written. (Precisely: the only `.json` anywhere
 in reach is `.sdlc/config.json`, which `ledger.safe_append` reads inside its own guard to find out
-whether the ledger is even on -- the ledger's own gate, not the registry, and a read.) The doc is
+whether the ledger is even on -- the ledger's own gate, not the registry, and a read -- plus, since
+#954, this page's own provenance record under gitignored `state/features/provenance/`, which
+`feature_provenance` reads and writes around each page write: Sigma's state, not a registry file.) The doc is
 DOWNSTREAM of the machine truth, and a sync that wrote back into the registry would make prose an
 input to it -- rule 1 inverted. Deciding WHEN to sync,
 cross-checking a branch against the branches that actually exist, and folding a recovered entry back
@@ -82,6 +84,7 @@ Module shape follows `feature_registry.py` and `features.py`: no third-party dep
 module-level constants, siblings loaded via `_load`.
 """
 import collections
+import contextlib
 import hashlib
 import importlib.util
 import os
@@ -732,7 +735,7 @@ def _read(path):
         return None, "it exists but could not be read (%s)" % exc
 
 
-def _atomic_write_bytes(path, data):
+def _atomic_write_bytes(path, data, features_dir=None):
     """Write via a temp file in the SAME directory, then `os.replace`.
 
     The bytes twin of `feature_registry._atomic_write_text`, and byte-oriented for this module's
@@ -740,14 +743,21 @@ def _atomic_write_bytes(path, data):
     promised not to touch. Same directory so `os.replace` stays on one filesystem, the only case it
     is guaranteed atomic, so a reader only ever sees the fully-old or the fully-new file. `mkstemp`
     names the temp uniquely and the `.tmp` suffix keeps a crashed write's litter out of every glob
-    that matters."""
+    that matters.
+
+    `features_dir`, when given, records this page write's provenance (#954) exactly as
+    `feature_registry._atomic_write_text` does for a shard: the one `os.replace` runs inside
+    `registry.provenance.recorded`, after the page's chain records it and under its lock. Every
+    write `sync` makes passes it."""
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
-        os.replace(tmp, str(path))
+        with (registry.provenance.recorded(features_dir, path, tmp) if features_dir is not None
+              else contextlib.nullcontext()):
+            os.replace(tmp, str(path))
     except BaseException:
         try:
             os.unlink(tmp)
@@ -849,7 +859,7 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
     block = render_block(name, entry)
 
     if data is None:
-        _atomic_write_bytes(path, render_doc(name, entry).encode("utf-8"))
+        _atomic_write_bytes(path, render_doc(name, entry).encode("utf-8"), features_dir)
         return _report(path, CREATED, entry=registry.normalise_entry(entry))
 
     where = locate(data)
@@ -870,7 +880,7 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
         # than left to be discovered: YAML front matter has to begin at byte 0, so a `<name>.md`
         # that opened with some no longer parses as having any. Every byte survives -- it is a
         # position change, not a loss -- but a reader should know it can happen.
-        _atomic_write_bytes(path, block.encode("utf-8") + b"\n\n" + data)
+        _atomic_write_bytes(path, block.encode("utf-8") + b"\n\n" + data, features_dir)
         return _report(path, PREPENDED, entry=registry.normalise_entry(entry))
 
     body = data[where.inner_start:where.inner_stop]
@@ -919,7 +929,7 @@ def sync(features_dir, name, entry, goal=None, sdlc_dir=None):
         # whether to write, never what to write.
         return _report(path, UNCHANGED, entry=registry.normalise_entry(entry))
 
-    _atomic_write_bytes(path, spliced)
+    _atomic_write_bytes(path, spliced, features_dir)
     if _marker_pair(data)[0] != BEGIN_OPEN.encode("ascii"):
         # #239: said once, on the write that respells it -- silent when there was nothing old.
         sys.stderr.write("feature_doc: migrated legacy managed-block markers in %s to Sigma's on use\n"

@@ -111,6 +111,7 @@ Module shape follows `features.py` and `owners.py`: zero third-party dependencie
 constants, pure functions apart from the filesystem calls that are the point, loaded by siblings
 via `_load("feature_registry")`.
 """
+import contextlib
 import copy
 import importlib.util
 import json
@@ -136,6 +137,11 @@ is_unit_name = _load("features")._is_unit_name
 
 #: #239: the previous name's schema id (`<previous>/features@1`) reads as `SCHEMA`; see legacy.py.
 legacy = _load("legacy")
+
+#: #954: the provenance chain every shard write records, which is what lets `work.py start` tell
+#: Sigma's own uncommitted shard from a human's edit. Standard library only, and it loads nothing
+#: back, so this is not a cycle.
+provenance = _load("feature_provenance")
 
 #: The version key. `index.json` is duplicated in full into every participating repo (§7.1), so this
 #: string is a cross-repo contract: a document that does not carry it is not one this code can read.
@@ -1109,7 +1115,7 @@ def resolve_any_unit(sdlc_dir, name):
 # --------------------------------------------------------------------------- writing
 
 
-def _atomic_write_text(path, text, schema=None):
+def _atomic_write_text(path, text, schema=None, features_dir=None):
     """Write via a temp file in the SAME directory, then `os.replace`.
 
     Mirrors `triage._atomic_write_text` and `state._patch_cursor`'s publish tail: same directory so
@@ -1128,7 +1134,13 @@ def _atomic_write_text(path, text, schema=None):
     way. Without it, whichever writer loses the race dies on a directory that already exists.
 
     `schema`, when given, is the id `text` declares: if the file being replaced carried the previous
-    name's id, one stderr line says so (#239). It only reads the file being replaced, never another."""
+    name's id, one stderr line says so (#239). It only reads the file being replaced, never another.
+
+    `features_dir`, when given, makes this a REGISTRY write whose provenance is recorded (#954): the
+    one `os.replace` below then runs inside `provenance.recorded`, under that file's provenance lock
+    and after its chain records this write -- so a concurrent `work.py start` that sees the new bytes
+    always finds them in the chain. `write_unit` passes it; `write_index` and `_refresh_mirror` do
+    not, so `index.json` and the recovery copy are never exempt from the dirty-root guard."""
     path = pathlib.Path(path)
     old = _legacy_schema_at(path) if schema is not None else None
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1136,7 +1148,9 @@ def _atomic_write_text(path, text, schema=None):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
-        os.replace(tmp, str(path))
+        with (provenance.recorded(features_dir, path, tmp) if features_dir is not None
+              else contextlib.nullcontext()):
+            os.replace(tmp, str(path))
     except BaseException:
         try:
             os.unlink(tmp)
@@ -1165,11 +1179,14 @@ def write_unit(features_dir, name, entry):
     """Record one unit, and touch nothing else. -> the path written.
 
     This is the pick path's write, and its entire contract is negative: it WRITES `units/<name>.json`
-    and no other file, and opens no other unit's file and no `.md`. It reads `index.json` in exactly
+    and no other registry file, and opens no other unit's file and no `.md`. It reads `index.json` in exactly
     one case -- its own file carries the previous plugin's schema id (the legacy-delta rule below)
     -- and never writes or holds it. That is what
     makes two concurrent picks on different units structurally incapable of corrupting each other,
-    and it is why the chart sheet is materialised separately (`write_index`) rather than here.
+    and it is why the chart sheet is materialised separately (`write_index`) rather than here. The
+    one other file it writes is that shard's OWN provenance record in gitignored
+    `state/features/provenance/` (#954, `feature_provenance`), which no other unit's write touches,
+    so the property holds for it too.
 
     PASS THE WHOLE ENTRY, NEVER A DELTA. THIS IS THE CALLER'S OBLIGATION AND IT IS NOT OPTIONAL.
     `read` REPLACES a unit's entry with its shard rather than merging the two, so whatever this
@@ -1207,7 +1224,8 @@ def write_unit(features_dir, name, entry):
                                   verdict[1])
     _protect(features_dir)
     _atomic_write_text(path, dumps({"schema": SCHEMA,
-                                    "features": {name: normalise_entry(entry)}}), schema=SCHEMA)
+                                    "features": {name: normalise_entry(entry)}}), schema=SCHEMA,
+                       features_dir=features_dir)
     return path
 
 
