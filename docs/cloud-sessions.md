@@ -650,10 +650,54 @@ Record: the Sigma version, the session transcript, the notice text, whether `GET
 `permissions`, whether the `{owner}/{repo}` placeholders resolved (or `GH_REPO` was needed), whether the rules read, the comment POST and the merge PUT passed the proxy, and every park reason
 verbatim.
 
-Open (named, not fixed here): `review_context.py` still tells reviewers to run `gh pr diff` (line 594) and
-`gh issue view` (lines 606, 651, 817, 830; by grep, numbers may drift); the `mechanism` string at `work.py:130` is stale (named open, left as is):
-it still says a cloud session stops at the GraphQL `merge_rights` read, which slice 4b-2 moved to REST; any GraphQL
-read left in the cloud merge section above.
+What is still open is in "What remains (#895 slice 7)" below.
+
+## What remains (#895 slice 7)
+
+Slice 7 made the `review_context.py` briefs REST-first (`gh api repos/{owner}/{repo}/pulls/N` with the diff Accept
+header, `.../issues/N`) and corrected the `work.py` merge `mechanism` string (regenerated into `docs/enforcement.md`).
+The briefs carry the literal `{owner}/{repo}` placeholder, which `gh api` expands only inside a git checkout (a
+reviewer running outside one needs `GH_REPO`). NOT run in a real Claude Code cloud session; the end-to-end cloud run
+stays UNMEASURED.
+
+Real cloud limits left in the merge path (from the code, not measured):
+- A pending required check parks: `--auto` is GraphQL, so with no GraphQL the merge parks after `gate()`'s own bounded REST wait.
+- Any PR line comment parks (thread resolution is GraphQL; without it only an empty `pulls/N/comments?per_page=1` list proves none).
+- `require_review: approval` parks (`reviewDecision` is GraphQL-only).
+- `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
+- Board work is skipped with one notice (slice 5), UNMEASURED live.
+
+The 37 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; line numbers drift). The
+transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
+
+| file:line | gh command | transport | blocks a cloud drain? |
+|---|---|---|---|
+| define.py:215, 311 | label create / label list | REST | no (setup) |
+| board_migrate.py:122, 135 | project item-list / item-edit | GraphQL | no (operator tool) |
+| doctor.py:414, 474, 905, 945 | project list / view / item-list / field-list | GraphQL | no (doctor report) |
+| doctor.py:1387 | `["gh", *args]` runner | varies | no |
+| sources.py:1745, 1809, 3840; triage.py:2267 | label create | REST | no |
+| sources.py:3369 | issue comment (`note()`) | GraphQL | MAYBE, see below |
+| sources.py:2091, 3921, 3972, 3978, 4498, 4973, 4988, 5014, 5069, 5366 | project item-list / item-edit / item-add / field-list | GraphQL | no: board skipped with one notice |
+| sources.py:4179, 4187, 4207, 4219, 4247, 4315 | project create / link / list / view / field-create | GraphQL | no (setup only) |
+| work.py:5404 | pr view reviewDecision | GraphQL | guarded: approval mode parks |
+| work.py:5568 | pr list (sibling gate) | GraphQL | no (`unit_completion`, after done, decides nothing) |
+| work.py:6335 | pr merge --auto | GraphQL | guarded: only when GraphQL is available |
+| verify_merge.py:299, 324, 351 | pr ready / create / merge | GraphQL | no (human-attended rebase) |
+| status.py:174 | issue list | GraphQL | no (display fallback) |
+
+`GitHubSource.note()` (`sources.py` ~3360): its first attempt is `gh issue comment` (a GraphQL-backed gh command),
+retried; the REST fallback (`gh api .../comments -X POST`) runs only after a TRANSIENT failure and a non-transient
+GraphQL-blocked error is re-raised. `handoff.py` wraps it in try/except (a warning); `acceptance.py`,
+`feature_labels.py`, `feature_owner.py`, `feature_propagate.py` and `auto_unpark.py` do not obviously. Probable cloud
+blocker for those side-comment paths, UNMEASURED (depends on how the cloud proxy fails GraphQL); NOT fixed here.
+
+Deferred (R5): the sibling-PR read (`gh pr list` in `work.py` `_sibling_pull_requests`). REST has no `reviewDecision`,
+`gh_api` has no `isDraft` mapper, and rollups need per-row calls (roughly 40-60 lines and 6 tests); `sibling_gate`
+only feeds `unit_completion` after `done`, so it decides nothing.
+
+Not scanned by either ratchet: `gh_api.py` fallback argv (EXEMPT; runs only after REST fails, so GraphQL fails by
+construction in a cloud session), shell scripts, `.tmpl` prose, and argv built incrementally.
 
 ## What this does NOT do
 

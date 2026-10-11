@@ -49,7 +49,7 @@ def test_every_phase_names_its_own_artifact():
                ".sdlc/plans" in rc.brief(base, "g", "plan-review", repo_root=root)
         assert "diff" in rc.brief(base, "g", "code-review", repo_root=root).lower()
         pr = rc.brief(base, "g", "pr-review", artifact="42", repo_root=root)
-        assert "#42" in pr and "gh pr diff 42" in pr
+        assert "#42" in pr and "pulls/42" in pr
         assert "intent" in rc.brief(base, "g", "retro", repo_root=root).lower() or \
                "goal it claimed" in rc.brief(base, "g", "retro", repo_root=root)
 
@@ -72,7 +72,7 @@ def test_github_bare_issue_number_points_to_the_issue():
     with tempfile.TemporaryDirectory() as d:
         base, root = _repo(d)
         out = _rc().brief(base, "42", "pr-review", artifact="42", repo_root=root)
-        assert "issue #42" in out and "gh issue view 42" in out
+        assert "issue #42" in out and "issues/42" in out
         assert "acceptance criteria" in out
 
 
@@ -433,7 +433,7 @@ def test_github_fetch_failure_degrades_to_the_pointer_and_never_raises():
     with tempfile.TemporaryDirectory() as d:
         base, root = _repo(d)
         out = _rc().brief(base, "42", "code-review", repo_root=root, source=_Boom())
-        assert "gh issue view 42" in out             # the pre-existing pointer survives
+        assert "issues/42" in out             # the pre-existing pointer survives
         assert "could not be fetched" in out         # and the gap is declared, not hidden
 
 
@@ -828,7 +828,7 @@ def test_goal_review_artifact_fetch_failure_degrades_and_states_the_gap():
     with tempfile.TemporaryDirectory() as d:
         base, root = _repo(d)
         out = _rc().brief(base, "1826", "goal-review", artifact="1826", repo_root=root, source=_Boom())
-        assert "gh issue view 1826" in out
+        assert "issues/1826" in out
         assert "could not be fetched" in out
         assert "Inputs NOT available" in out
 
