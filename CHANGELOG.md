@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The nightly `full` job runs the safety check too (follow-up to #1052).** `python3 evals/safety/check.py` is now a step in `full`, right after its quality gate, so the Ubuntu 3.10-3.13 legs run it as well as the macOS PR leg. `tests/test_ci_matrix.py` used to forbid this; it now requires the step in both jobs, and a control that removes it from `full` goes red. Not measured: the step's wall time on the Ubuntu legs (5.7 s locally on macOS).
+
 - **Resolver CLI probe finding record (#948; refs #941).** `docs/launch/evidence/resolver-cli-probe.md` records the real headless probe of the installed command line for the upkeep resolver: the design-flag table, settings, hooks, credential and billing behaviour, standard input, the budget-flag overshoot and exit code, killed-run metering, and the export-or-worktree choice, with what is still open. Docs only: no product code, flag table or model catalog changed.
 
 - **`work.py start` no longer refuses on the registry files its own sync wrote (#954).** Once the
