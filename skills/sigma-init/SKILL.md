@@ -174,6 +174,11 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    re-detects, and stores candidate `<n>` only if it still has the `<id>` that was shown --
    otherwise it refuses ("the repository changed since the report") and stores nothing; re-run
    `/sigma-init` and confirm from the new report. A `.sdlc` that is a symlink is refused.
+   `--verify` takes only a printed `N:ID`, so confirming needs a SECOND invocation: the first run lists
+   candidates and asks; re-run with e.g. `/sigma-init --verify 1:9f3a2c1b` (the pair printed beside the
+   candidate). A literal command is refused on purpose. After init, fresh `.gitignore` and `.sdlc/` show
+   as untracked: commit `.gitignore`, `.sdlc/goals/`, `.sdlc/project.md`, `.sdlc/config.json`; the
+   runtime dirs are already ignored; never ignore `.sdlc/` as a whole.
    The flow's flags do the same as the gestures below: `--verify <n>:<id>` is `confirm`,
    `--verify-command-file <file>` is `set --command-file`, `--no-verify` is `decline`.
    - **Claude Code:** ask the user with a real question: confirm a detected candidate, replace

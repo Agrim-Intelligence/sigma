@@ -162,8 +162,12 @@ or a work flip) for questions `.sdlc/config.json` does not already answer.
   one, give your own, or decline. Confirming turns `verify.enforce` on; declining leaves it off and
   records why. With enforce off and no command there is nothing to prove, so nothing demands verify
   evidence: `record done` and, in github mode, the PR merge still pass their other gates (review,
-  CI, done-means-merged). The gestures, with `<n>` and `<id>` copied from the printed list (init
-  prints them with both paths already filled in):
+  CI, done-means-merged). `--verify` takes only `N:ID` of a candidate init printed, never a literal
+  command (detected text must not become a shell line), so the first run lists the candidates and
+  stops with an `[ask]`, and you confirm with a second invocation, for example
+  `/sigma-init --verify 1:9f3a2c1b` with the pair printed beside your chosen candidate. The
+  gestures, with `<n>` and `<id>` copied from the printed list (init prints them with both paths
+  already filled in):
 
   ```
   python3 <installed-sigma>/skills/sigma-init/scripts/verify_detect.py confirm .sdlc <n> <id>
@@ -182,6 +186,15 @@ or a work flip) for questions `.sdlc/config.json` does not already answer.
   ```
 
 Run these from the root of your repository.
+
+### What init leaves in `git status`
+
+Right after init, `git status` shows `.gitignore` and `.sdlc/` as untracked in a fresh repository.
+That is expected. Init git-ignores only the machine-written runtime directories (`.sdlc/state/`,
+`.sdlc/ledger/`, `.sdlc/work/`, `.sdlc/knowledge/`). Review `git status`, then commit `.gitignore`
+and the durable files: `.sdlc/goals/`, `.sdlc/project.md` and `.sdlc/config.json` (plans, research and
+acceptance records are durable evidence too, and are committed with the goal that wrote them). Do not
+ignore `.sdlc/` as a whole.
 
 ### If `/sigma-init` says you lack access
 
@@ -260,6 +273,34 @@ Everyday commands:
 | `/sigma-triage` | Plan a dependency-ordered run over the backlog. |
 | `/sigma-doctor` | Check the setup and print the exact fix for anything wrong. |
 | `/sigma-audit` · `/sigma-align` | Audit the codebase's health, or check shipped work against your strategy. |
+
+### Before you start `/sigma-loop`: independent review
+
+Every PR the loop opens needs an independent review before it can merge. The loop obtains one from a
+fresh reviewer and records the approval with `work.py post-review`. A host may refuse that step: on
+Claude Code in auto mode, the permission classifier denied the approval as self-approval in a first
+live run, and the loop stopped after opening the PR with no recorded review. Sigma does not work
+around a host refusal and never fakes an approval. The goal stays parked at "PR open, review
+missing", and the **attended fallback** is yours to take: read the PR, then approve it on GitHub or
+comment `sigma:approve` from your own account (a comment from an owner, member or collaborator
+counts), then re-queue the goal. To let the loop post the approval itself you need a host
+permission rule you set yourself; a stock install has none, so plan for attended review.
+
+### Small goals, and what you will see
+
+A small goal still gets acceptance before the work: `acceptance.py record` captures the `## Done when`
+criteria first, never after the work, and a goal with none gets a drafted section recorded first. The
+only phases you may skip are research and retro, with
+`loop.py waive-phases .sdlc <goal> research,retro --reason "<why>"` (recorded in the log); plan,
+plan-review, implement and review always run and show. `work.py pr --no-tests "<reason>"` is a
+different thing: it excuses only the test-first proof for a change a test cannot see, and it is not a
+waiver of any phase.
+
+At each phase boundary the loop runs `phase_report.py start` and `phase_report.py end`; `end` prints
+the phase's cost line (or says why the host cannot report one). No cost line means those two commands
+did not run. After a merge, `loop.py reconcile-merges .sdlc` prints nothing when there is nothing
+left to record, and that silence is success; a newly merged goal prints exactly one line such as
+`1 done (PR #12 merged)`.
 
 To leave the loop running overnight with automatic restarts, see
 [Running the loop unattended](docs/running-unattended.md). How the loop picks goals, the budgets that

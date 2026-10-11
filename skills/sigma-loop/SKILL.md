@@ -225,6 +225,7 @@ Then repeat until the helper says stop:
      **`commit` is LOCAL; only `pr` pushes.** **The cycle is hard-capped:** at
      `work.max_review_cycles` (default **3**) `post-review` returns `PARK: …` instead of asking for
      another fix → `record parked "<why>"`.
+   - **Host refusal** of post-review: never retry or route around; `record parked "host refused review"`.
    - **Unblock (same revision)** → fresh generation, `--verdict unblock`.
 
    Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise your tool-call
