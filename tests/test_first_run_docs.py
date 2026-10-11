@@ -83,3 +83,36 @@ def test_control_a_missing_or_bare_verify_example_is_red():
     assert _verify_example(README.replace("`/sigma-init --verify", "`/sigma-init --verif")) is None
     _, _, err = _init_flow().parse(["--verify", "1"])
     assert err and "N:ID" in err
+
+
+# ---- the prose is held to the code it describes (not just to substrings) ----------------------
+
+def _mod(rel, name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / rel)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_the_only_waivable_phases_are_the_ones_the_readme_names():
+    waivable = _mod("skills/sigma-loop/scripts/phase_gate.py", "phase_gate").WAIVABLE
+    assert tuple(waivable) == ("research", "retro")
+    assert "research,retro" in README
+
+
+def test_every_runtime_dir_the_readme_names_is_one_init_really_ignores():
+    ignores = _mod("skills/sigma-setup/scripts/setup.py", "sigma_setup").RUNTIME_IGNORES
+    named = set(re.findall(r"`(\.sdlc/[a-z]+/)`", README.split("What init leaves")[1].split("###")[0]))
+    runtime = {d for d in named if d != ".sdlc/goals/"}
+    assert runtime and runtime <= set(ignores), (runtime, ignores)
+
+
+def test_the_documented_reconcile_line_is_the_one_loop_py_prints():
+    src = (ROOT / "skills/sigma-loop/scripts/loop.py").read_text(encoding="utf-8")
+    assert '(PR #{pr} {what})' in src and '"merged" if outcome == "done"' in src
+
+
+def test_the_readme_does_not_promise_a_review_the_default_does_not_require():
+    section = README.split("Before you start `/sigma-loop`")[1][:900]
+    assert "work.require_review" in section and "default" in section
+    assert "every PR the loop opens needs" not in README.lower()

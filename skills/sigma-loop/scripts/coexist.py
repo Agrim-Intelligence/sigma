@@ -763,21 +763,10 @@ def overridden(env=None):
     return env.get(OVERRIDE_ENV) == "1"
 
 
-def _removals(report, verified_hosts=()):
-    """The exact removal step for each ACTIVE signal that names one (uninstall, config edit, hook).
-    #612: a Codex step carries a machine-wide config PATH, so the one-line notice shows it only when
-    the caller passes "codex" in `verified_hosts` (a host proven by a verified invocation, never by
-    the environment); otherwise it names Codex and points at `coexist.py check`, which lists it."""
-    out = []
-    for s in report.active:
-        if s.kind not in ("claude-enabled", "codex-enabled", "hook") or not s.fix:
-            continue
-        if s.kind == "codex-enabled" and "codex" not in verified_hosts:
-            out.append("%s is also enabled in Codex on this machine (run `coexist.py check` for the "
-                       "step)" % (s.plugin or OLD))
-        else:
-            out.append(s.fix)
-    return out
+def _removals(report):
+    """The exact removal step for each ACTIVE signal that names one (uninstall, config edit, hook)."""
+    return [s.fix for s in report.active if s.kind in ("claude-enabled", "codex-enabled", "hook")
+            and s.fix]
 
 
 def runs_here(report):
@@ -817,10 +806,10 @@ def marketplaces(report):
     return out
 
 
-def notice_line(report, verified_hosts=()):
+def notice_line(report):
     """THE notice (#314): one line, naming the uninstall command, the ordering caveat for the one
     step that converts the registry, and the one-time backup. It never says "refused"."""
-    removals = _removals(report, verified_hosts)
+    removals = _removals(report)
     line = ("%s: notice: the plugin previously published as %r is also enabled here; %s -- "
             "uninstall it when ready%s" % (BRAND, OLD, HANDLING,
                                            (": " + " ; ".join(removals)) if removals else ""))

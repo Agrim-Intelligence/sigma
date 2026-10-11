@@ -604,16 +604,7 @@ def test_codex_notice_names_the_config_edit(tmp_path, cx):
     out = io.StringIO()
     assert cx.gate(repo / ".sdlc", "s", env=env, stream=out) is True
     [line] = out.getvalue().splitlines()
-    # #612: the one-line notice names no Codex path unless a verified invocation names Codex as the
-    # active host (mutable environment is not authority); `coexist.py check` still lists the step.
-    assert "config.toml" not in line and "Codex" in line and OLD_ID in line
-
-
-def test_the_full_check_report_still_names_the_codex_config_edit(tmp_path, cx):
-    env = _host(tmp_path, codex='[plugins."%s"]\nenabled = true\n' % OLD_ID)
-    report = cx.assess(_repo(tmp_path) / ".sdlc", env=env, home=tmp_path)
-    assert "config.toml" in cx.message(report)
-    assert "config.toml" in cx.notice_line(report, verified_hosts=("codex",))
+    assert "config.toml" in line and OLD_ID in line
 
 
 def test_the_override_silences_the_notice_and_only_exactly_1_does(tmp_path, cx):

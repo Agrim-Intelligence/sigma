@@ -190,8 +190,8 @@ Run these from the root of your repository.
 ### What init leaves in `git status`
 
 Right after init, `git status` shows `.gitignore` and `.sdlc/` as untracked in a fresh repository.
-That is expected. Init git-ignores only the machine-written runtime directories (`.sdlc/state/`,
-`.sdlc/ledger/`, `.sdlc/work/`, `.sdlc/knowledge/`). Review `git status`, then commit `.gitignore`
+That is expected. Init git-ignores the machine-written runtime directories (`.sdlc/state/`,
+`.sdlc/ledger/`, `.sdlc/work/`, `.sdlc/knowledge/`, and a few more it lists). Review `git status`, then commit `.gitignore`
 and the durable files: `.sdlc/goals/`, `.sdlc/project.md` and `.sdlc/config.json` (plans, research and
 acceptance records are durable evidence too, and are committed with the goal that wrote them). Do not
 ignore `.sdlc/` as a whole.
@@ -276,8 +276,10 @@ Everyday commands:
 
 ### Before you start `/sigma-loop`: independent review
 
-Every PR the loop opens needs an independent review before it can merge. The loop obtains one from a
-fresh reviewer and records the approval with `work.py post-review`. A host may refuse that step: on
+The loop asks a fresh, independent reviewer to review every PR it opens, and records the approval
+with `work.py post-review`. With `work.require_review: approval` the merge needs that recorded
+approval; the shipped default (`changes`) does not require one, so check your setting before you
+rely on it ([enforcement](docs/enforcement.md)). A host may refuse that step: on
 Claude Code in auto mode, the permission classifier denied the approval as self-approval in a first
 live run, and the loop stopped after opening the PR with no recorded review. Sigma does not work
 around a host refusal and never fakes an approval. The goal stays parked at "PR open, review
@@ -293,12 +295,12 @@ criteria first, never after the work, and a goal with none gets a drafted sectio
 only phases you may skip are research and retro, with
 `loop.py waive-phases .sdlc <goal> research,retro --reason "<why>"` (recorded in the log); plan,
 plan-review, implement and review always run and show. `work.py pr --no-tests "<reason>"` is a
-different thing: it excuses only the test-first proof for a change a test cannot see, and it is not a
-waiver of any phase.
+different thing: where `verify.enforce` is on, it excuses only the test-first proof for a change a
+test cannot see, and it is not a waiver of any phase.
 
 At each phase boundary the loop runs `phase_report.py start` and `phase_report.py end`; `end` prints
 the phase's cost line (or says why the host cannot report one). No cost line means those two commands
-did not run. After a merge, `loop.py reconcile-merges .sdlc` prints nothing when there is nothing
+did not run or the host hid their output; run them again by hand to tell which. After a merge, `loop.py reconcile-merges .sdlc` prints nothing when there is nothing
 left to record, and that silence is success; a newly merged goal prints exactly one line such as
 `1 done (PR #12 merged)`.
 
