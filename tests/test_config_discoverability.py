@@ -189,3 +189,23 @@ def test_shared_settings_readers_are_total_on_a_truthy_non_object_block():
             assert isinstance(reader(None), dict) and isinstance(reader([]), dict), key
     finally:
         sys.path.remove(str(scripts))
+
+
+def test_template_documents_every_key():
+    """Every key skills/sigma-loop/scripts/decision_rubric_cfg.py reads appears in the template."""
+    import json
+    block = json.loads(TMPL)["decision_rubric"]
+    assert block["records"]["enabled"] is False
+    assert block["records"]["repo_visibility"] == "private"
+    assert "_decision_rubric" in json.loads(TMPL)
+    src = (ROOT / "skills" / "sigma-loop" / "scripts" / "decision_rubric_cfg.py").read_text(encoding="utf-8")
+    for key in ("decision_rubric", "repo_visibility", "enabled"):
+        assert key in src and key in TMPL
+
+
+def test_template_documents_the_store_keys():
+    import json
+    rec = json.loads(TMPL)["decision_rubric"]["records"]
+    note = json.loads(TMPL)["_decision_rubric"]
+    for key in ("store_dir", "lock_timeout_s", "archive_after_days", "max_files_warn"):
+        assert key in rec and "`%s`" % key in note

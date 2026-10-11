@@ -436,6 +436,9 @@ def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_o
         # #1085: a lease-guarded force push of the replayed tip; the source side is checked against a hex-sha regex
         # (never empty) so the refspec can only update `refs/heads/<branch>`, never delete it
         ("skills/sigma-loop/scripts/feature_upkeep_pass.py", "push", "colon_refspec"),
+        # classifier pattern text, never executed: hard_stop.py only matches command text with
+        # regexes (module-level pattern, no enclosing function); it never runs git
+        ("skills/sigma-loop/scripts/hard_stop.py", None, "push_delete"),
     }, found
 
 
