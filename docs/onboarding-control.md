@@ -332,7 +332,7 @@ Deviations from the fake-gh run above are the finding: each one is filed as its 
 
 ## CI wiring, the wall-time budget and the planted regressions (#879)
 
-The PR `onboarding-control` job (macOS, Python 3.12; its own job so the required `test` job, which measured 31 and 35 minutes in its pytest subset against a 45 minute timeout, does not grow by the 6 minutes these steps cost there) runs:
+The PR `onboarding-control` job (macOS, Python 3.12; its own job so the required `test` job, whose pytest subset measured 29.6, 31.2 and 34.9 minutes in three runs against a 45 minute timeout, does not grow by the 6 minutes these steps cost there) runs:
 
 ```
 python3 evals/regression/budget.py          # the plain gesture above; prints "onboarding-control wall time: Xs, ceiling Ys"

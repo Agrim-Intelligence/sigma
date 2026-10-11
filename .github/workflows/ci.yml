@@ -164,8 +164,8 @@ jobs:
   onboarding-control:
     # The plain `python3 tools/onboarding_control.py` held to evals/regression/budget.json, then the planted
     # regressions through the same gesture (#879). Its own job, parallel to `test`, so the required job
-    # does not grow: measured on the PR's CI cell, the two steps cost about 6 minutes on top of a 31-35
-    # minute pytest subset (45 minute timeout). Ceiling: not a required check until the owner adds it.
+    # does not grow: measured on the PR's CI cell, the two steps cost about 6 minutes on top of a 29-35
+    # minute pytest subset (three runs: 29m37s, 31m13s, 34m52s) (45 minute timeout). Ceiling: not a required check until the owner adds it.
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: macos-latest
     timeout-minutes: 30

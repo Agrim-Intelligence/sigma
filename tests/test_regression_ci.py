@@ -106,12 +106,14 @@ def validate_onboarding_job(text):
     assert re.search(rf"^\s+run: {re.escape(BUDGET_STEP)}$", j, re.M), "onboarding job must run the budget step"
     assert PLANTED_STEP in j, "onboarding job must run the planted-regression tests"
     assert "continue-on-error" not in j, "the budget step must be able to fail the job"
+    assert "runs-on: macos-latest" in head and "timeout-minutes:" in head, "job must be the macOS cell with a timeout"
 
 
 def test_onboarding_job_runs_the_control_against_the_budget():
     validate_onboarding_job(WORKFLOW.read_text(encoding="utf-8"))
     budget = json.loads((ROOT / "evals" / "regression" / "budget.json").read_text(encoding="utf-8"))
-    assert budget["ceiling_seconds"] is None or budget["ceiling_seconds"] > 0
+    assert isinstance(budget["ceiling_seconds"], (int, float)) and budget["ceiling_seconds"] > 0, \
+        "budget.json must hold a measured ceiling, not null (null means unenforced)"
 
 
 def test_onboarding_job_without_the_budget_step_is_rejected():
@@ -128,7 +130,6 @@ def test_onboarding_job_without_the_planted_tests_is_rejected():
     assert broken != text
     with pytest.raises(AssertionError, match="planted-regression"):
         validate_onboarding_job(broken)
-
 
 
 def test_onboarding_job_not_run_on_pull_request_is_rejected():

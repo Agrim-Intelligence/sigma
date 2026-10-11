@@ -39,7 +39,7 @@ All notable changes to Sigma are recorded here, newest first.
   gesture, two deterministic concurrency seams and a multi-process smoke run), each seen red against
   the old code or a weakened build. Not measured: Windows, and a live multi-slot loop on an adopter.
 
-- **PR `test` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Adds minutes to the required `test` job (measured on the PR).
+- **PR `onboarding-control` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (300 s, about 3.2x the max of 5 CI runs on the macOS PR cell: 58.6 to 95.1 s; the weekly Ubuntu and older-Python legs do not run it and were not measured); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Runs as its own `onboarding-control` job so the required `test` job does not grow.
 
 - **PR `onboarding-control` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Runs as its own `onboarding-control` job so the required `test` job does not grow.
 - **Ledger bootstrap joins, never forks, the remote ops branch in a single-branch clone (#1142).**
@@ -141,7 +141,6 @@ All notable changes to Sigma are recorded here, newest first.
   exceptions carry a reason) and checks the grant. `docs/cloud-sessions.md` gains "Running the loop in a Claude Code
   cloud session" with owner smoke-test steps. The `Bash(gh api *)` grant is as broad as the gh issue/pr grants beside it (not narrowed; per-endpoint allowlist is the follow-up). NOT run in a real Claude Code cloud session. Slice 7 (below) closed the
   `review_context.py` and `mechanism` items.
-
 
 - **Cards for the prose-only skills; the per-skill smoke runner is now a gate (#1046, slice 3 of #805; refs #1043).** One
   `pinned` card per skill with no script (24 today, derived from disk), each pinning a verbatim sentence from its own
@@ -471,8 +470,6 @@ All notable changes to Sigma are recorded here, newest first.
   prove is UNKNOWN. Also a repository-slug helper that checks the remote names the same repository. The drift watcher
   adds an optional landed field only while the upkeep gate is open; with the gate closed nothing changes.
 - **GitHub write plumbing in gh_api (#931, upkeep part C, slice 2).** New REST-only helpers with no caller yet: a pinned merge that requires an explicit method, repository and 40-hex head pin, commit parents, branch rules, repository settings, a typed non-draft pull request create, and a bounded runner that keeps the exit code and failure class. The landing writer joins the receipt allowlist; the doctor row and the cloud-sessions page name the degraded features. Inert unless the upkeep gate is open.
-
-
 
 - **Backup refs for a rewritten unit tip: create, restore, prune (#921, upkeep part A, slice 5).** With
   `upkeep.enabled` true, the pick-time rebase pass now keeps the old tip of a unit branch as
