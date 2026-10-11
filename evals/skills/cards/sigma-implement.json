@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-implement",
+  "kind": "pinned",
+  "gates": [
+    "**No production code without a failing test first.**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-plan",
+  "kind": "pinned",
+  "gates": [
+    "The finished plan goes to **`sigma-plan-review`** (never skipped) before any edit"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

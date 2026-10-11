@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-vision",
+  "kind": "pinned",
+  "gates": [
+    "**never overwrite a tier the user already filled**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

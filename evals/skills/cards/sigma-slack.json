@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-slack",
+  "kind": "pinned",
+  "gates": [
+    "`ensure` only acts when something — a person, or this skill —"
+  ],
+  "scripts": [],
+  "artifacts": []
+}
