@@ -1368,11 +1368,13 @@ def relay_block(sdlc_dir, goal, phase, block):
     operator-pinned adapter and report the outcome on STDERR, so stdout stays the contract's Block B.
     `acknowledged` means the adapter acked those bytes, not that any UI displayed them. A fallback
     banner (block None) has no constructed bytes to attest, so nothing is relayed. Never raises."""
-    if block is None:
-        return
     try:
         inv = _load("invocation")
         if not inv.settings(sdlc_dir):
+            return
+        if block is None:
+            print("phase_report: host relay unavailable: no constructed Block B to attest",
+                  file=sys.stderr)
             return
         payload = (block + "\n").encode("utf-8")
         import base64

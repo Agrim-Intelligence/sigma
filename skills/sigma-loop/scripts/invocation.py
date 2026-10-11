@@ -99,12 +99,20 @@ def settings(sdlc_dir):
     """-> None when the adapter is not configured (the default: zero behaviour change), else
     {adapter, ttl, timeout}. A configured-but-invalid block raises Refused: misconfiguration must not
     silently turn the gate off."""
+    cfg, unreadable = None, False
     try:
         cfg = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        pass
     except (OSError, ValueError):
-        return None
+        unreadable = True
     block = cfg.get("invocation") if isinstance(cfg, dict) else None
-    if block is None or (isinstance(block, dict) and not block.get("adapter")):
+    if unreadable or block is None or (isinstance(block, dict) and not block.get("adapter")):
+        # The repository's config.json is agent-writable, so it can never switch the gate OFF where
+        # the operator pinned an adapter: a pin with the config off (or unreadable) refuses.
+        if _any_pin(_repo(sdlc_dir)):
+            raise Refused("an operator adapter pin exists but invocation.adapter is not set (or "
+                          "config.json is unreadable); set it, or remove the pin deliberately")
         return None
     if not isinstance(block, dict) or block.get("adapter") not in ADAPTERS:
         raise Refused("invocation.adapter must be one of %s" % ", ".join(ADAPTERS))
@@ -116,6 +124,17 @@ def settings(sdlc_dir):
             raise Refused("invocation.%s must be an integer %d-%d" % (key, lo, hi))
         out[name] = val
     return out
+
+
+def _any_pin(repo):
+    env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": os.environ.get("HOME", "")}
+    try:
+        proc = subprocess.run(["git", "-C", repo, "config", "--local", "--get-regexp",
+                               r"^sigma\.invocation\.adapter\."],
+                              capture_output=True, text=True, timeout=10, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
 def _repo(sdlc_dir):
@@ -351,12 +370,12 @@ def _write(d, rec):
 def _prune(d):
     removed = 0
     cutoff = _now() - 10 * TTL_RANGE[1]
-    for p in sorted(d.glob("*.json")):
+    for p in sorted(list(d.glob("*.json")) + list(d.glob(".tmp-*")) + list(d.glob("run-*"))):
         if removed >= MAX_PRUNE:
             break
         try:
             if p.stat().st_mtime < cutoff:
-                p.unlink()
+                shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink()
                 removed += 1
         except OSError:
             continue
@@ -399,8 +418,13 @@ def authorize(sdlc_dir, kind, goal, payload_sha256, *, request_extra=None, phase
         horizon = _now() - TTL_RANGE[1]         # only records that can still be live: bounds the scan
         for other in d.glob("*.json"):          # a receipt id may be used once
             if other.name != _path(d, challenge["action_id"]).name and other.stat().st_mtime >= horizon:
-                o = _read(d, other.stem)
-                if o and o.get("receipt_id") == resp["receipt_id"] and o["challenge"]["adapter_id"] == resp["adapter_id"]:
+                try:
+                    o = _read(d, other.stem)
+                    same = (o and o.get("receipt_id") == resp["receipt_id"]
+                            and o["challenge"]["adapter_id"] == resp["adapter_id"])
+                except (Refused, KeyError, TypeError):
+                    continue                    # a foreign or corrupt file is skipped, never fatal
+                if same:
                     raise Refused("duplicate receipt id")
         status = "verified" if resp["status"] == "accepted" else "deferred"
         _write(d, {"challenge": challenge, "status": status, "receipt_id": resp["receipt_id"]})
@@ -421,14 +445,15 @@ def consume(sdlc_dir, action_id):
 
 
 def fresh_hosts(sdlc_dir):
-    """Adapter ids with an unexpired verified/consumed receipt or conforming diagnose: the only
-    thing that may name a host-specific path. Never raises; empty means 'no verified host'."""
+    """Adapter ids with an unexpired verified/consumed receipt (a reply bound to a Sigma challenge;
+    the record itself is a same-user file, so this is not a security boundary): the only thing that
+    may name a host-specific path. Never raises; empty means 'no verified host'."""
     out = set()
     try:
         with _locked(sdlc_dir) as d:
             for p in d.glob("*.json"):
                 rec = _read(d, p.stem)
-                if (rec and rec.get("status") in ("verified", "consumed", "diagnosed")
+                if (rec and rec.get("status") in ("verified", "consumed")
                         and _now() <= _epoch(rec["challenge"]["expires_at"])):
                     out.add(rec["challenge"]["adapter_id"])
     except (Refused, OSError, KeyError, ValueError):
@@ -450,10 +475,6 @@ def diagnose(sdlc_dir, adapter_id):
         want = canonical({"adapter_id": adapter_id, "kinds": list(KINDS), "v": V}) + "\n"
         if raw.decode("utf-8", "replace") != want:
             return "refused"
-        ch = build_challenge(sdlc_dir, "phase-relay", adapter_id, "diagnose", "0" * 64, cfg["ttl"],
-                             phase="diagnose")
-        with _locked(sdlc_dir) as d:
-            _write(d, {"challenge": ch, "status": "diagnosed"})
         return "installed-and-conforming"
     except Refused:
         return "refused"

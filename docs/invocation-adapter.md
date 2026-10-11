@@ -19,6 +19,13 @@ README ("Before you start `/sigma-loop`") applies.
   Whether a given host's real adapter works is checked only by running `diagnose` below against it;
   none has been run in this repository, so host-visible relay is **unproven on every host** until an
   operator does.
+- It gates **Sigma's own `post-review --verdict approve` verb only.** Anything running as you can still
+  post a `sigma:approve` comment directly with `gh`, and the merge gate (`work.require_review:
+  approval`) reads that comment, not a receipt. Closing that needs a second human identity or branch
+  protection on your git host; binding a receipt into the comment and checking it at merge is not built.
+- The repository's `config.json` can never switch it off where you pinned an adapter: a pin with
+  `invocation.adapter` unset, null or `config.json` unreadable refuses (remove the pin deliberately
+  to turn it off).
 - A relay `acknowledged` means the adapter acknowledged the exact bytes. It does not claim any UI
   displayed them.
 
@@ -46,7 +53,8 @@ you and not group/world writable, not a symlink. `diagnose` prints `installed-an
   `host relay acknowledged ...` or `host relay unavailable: <reason>` on stderr. The local phase
   record is written either way.
 - The one-line coexistence notice names a host-specific config path only for a host with a fresh
-  verified receipt.
+  adapter receipt. The record is a same-user file, so this is a courtesy filter, not a security
+  boundary; `coexist.py check` always lists every detected step.
 
 ## Protocol (version 1)
 
@@ -65,7 +73,8 @@ beyond one line refuse. `adapter describe --stdio` must answer the capabilities 
 | Failure | Result | Recovery |
 |---|---|---|
 | no pin, wrong hash, symlink, unsafe mode, timeout, malformed reply | refuse, adapter not run (or killed) | attended review; fix the pin; rerun `diagnose` |
-| crash after receipt, before the post | receipt stays `verified` until it expires, then is dead | rerun `post-review`; a new receipt is asked for |
+| crash after receipt, before the post | the receipt was already consumed (single use) | rerun `post-review`; a new receipt is asked for |
+| retry of a post that already has a request | no receipt asked: it only reconciles by marker, so an adapter outage cannot block recovery | `reconcile-review-post` / rerun |
 | receipt used | single use (`consumed`) | a new challenge |
 | ambiguous remote post | existing evidence-marker path (`reconcile-review-post`) | unchanged |
 | Windows / no POSIX locks | refuse | attended review |

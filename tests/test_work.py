@@ -11443,3 +11443,35 @@ def test_post_review_with_the_adapter_unconfigured_is_unchanged(tmp_path):
     run = _runner([])
     assert "posted sigma:approve" in _post_review(d, ON, goal, run, "approve")
     assert not (pathlib.Path(d) / "state" / "invocations").exists()
+
+
+def test_post_review_approve_parks_when_the_pin_exists_but_repo_config_turns_the_gate_off(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    (pathlib.Path(d) / "config.json").write_text(json.dumps({**ON, "invocation": {"adapter": None}}))
+    run = _runner([])
+    out = _post_review(d, {**ON, "invocation": {"adapter": None}}, goal, run, "approve")
+    assert out.startswith("PARK:") and "pin exists" in out
+    assert not any(_posted(c) for c in run.calls)
+
+
+def test_a_retry_of_an_already_prepared_post_needs_no_fresh_receipt(tmp_path):
+    """Recovery must not depend on the adapter being up: an existing request only reconciles."""
+    import test_invocation as ti
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    pr = int(work._record(d, goal)["pr"])
+
+    def run_for(replies):
+        def evidence_run(cwd, argv):
+            if prfake.is_pr_get(argv, pr):
+                return prfake.rest_pull(number=pr, headRefOid=head)
+            return replies(cwd, argv)
+        return evidence_run
+    first = _runner([])
+    ok = work.post_review(d, cfg, goal, run=run_for(lambda c, a: _comment_reply(99) if _posted(" ".join(map(str, a))) else first(c, a)),
+                          verdict="approve", evidence=str(evidence))
+    assert "posted sigma:approve" in ok
+    ti.Rig(tmp_path / "adapter-rig2", "claude", mode="nonzero", repo=tmp_path)       # adapter now down
+    second = _runner([])
+    again = work.post_review(d, cfg, goal, run=run_for(second), verdict="approve", evidence=str(evidence))
+    assert not again.startswith("PARK: the invocation") and not any(_posted(c) for c in second.calls)

@@ -159,7 +159,8 @@ ENFORCEMENT_GATES = (
      "mechanism": "with an operator-pinned adapter, `post_review --verdict approve` posts only after a "
                   "verified single-use receipt bound to the PR head, brief and evidence digests; a "
                   "deferral, refusal, missing pin or timeout parks for attended review. Operator "
-                  "attestation, not isolation from the maker; fixture tests prove the protocol only"},
+                  "attestation, not isolation from the maker: a direct `gh` `sigma:approve` comment still "
+                  "passes the merge gate, and fixture tests prove the protocol only"},
     {"control": "Review-to-fix cycle cap", "function": "post_review", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": ("work.max_review_cycles",),
      "mechanism": "parks the goal once its review-to-fix cycles reach `work.max_review_cycles` "
@@ -6621,8 +6622,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
 def _invocation_refusal(sdlc_dir, goal, pr, head_sha, brief_sha256, evidence):
     """"" when the post may proceed (adapter off, or a verified receipt consumed); else a PARK line.
     Never raises: any adapter-side failure fails CLOSED into the attended path."""
-    inv = _load("invocation")
     try:
+        inv = _load("invocation")
         got = inv.authorize(sdlc_dir, "review-post", goal,
                             hashlib.sha256(pathlib.Path(evidence).read_bytes()).hexdigest(),
                             pr=pr, head_sha=head_sha, brief_sha256=brief_sha256)
@@ -6633,9 +6634,9 @@ def _invocation_refusal(sdlc_dir, goal, pr, head_sha, brief_sha256, evidence):
                     "(README: independent review)")
         inv.consume(sdlc_dir, got["action_id"])
         return ""
-    except inv.Refused as exc:
-        return f"PARK: the invocation adapter refused this review post ({exc}); attended review needed"
     except Exception as exc:        # noqa: BLE001 - fail closed, never post on an unexpected error
+        if exc.__class__.__name__ == "Refused":
+            return f"PARK: the invocation adapter refused this review post ({exc}); attended review needed"
         return f"PARK: invocation check failed ({exc.__class__.__name__}); attended review needed"
 
 
@@ -6734,7 +6735,11 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
     else:
         body = ("sigma:block\n\n**Sigma post-PR review — changes requested "
                 f"(cycle {cycles}/{cap}):**\n" + (reason.strip() or "(see review notes)"))
-    if v == "approve":
+    ev_sha = hashlib.sha256(pathlib.Path(evidence).read_bytes()).hexdigest()
+    if v == "approve" and not (pathlib.Path(sdlc_dir) / "state" / "review-posts"
+                               / (ev_sha[:32] + ".json")).exists():
+        # A request that already exists is a RETRY: it only reconciles by marker and never posts, so
+        # it must not need a fresh receipt (an adapter outage must not block recovery).
         # #612: opt-in. With `invocation.adapter` set, an approval post needs a verified,
         # single-use receipt bound to THIS PR head, brief and evidence; otherwise it parks for
         # attended review. Before `_review_post_request` on purpose: a refusal there must not leave a
@@ -6744,6 +6749,8 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
             return refusal
     try:
         evidence_id = hashlib.sha256(pathlib.Path(evidence).read_bytes()).hexdigest()[:32]
+        if evidence_id != ev_sha[:32]:
+            return "PARK: review evidence changed after the invocation check; attended review needed"
         # The marker is part of the immutable remote request.  Hashing the unmarked body made
         # the receipt attest to bytes GitHub never received, and left a retry unable to prove
         # it was looking for exactly the original request.

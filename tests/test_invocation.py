@@ -124,11 +124,33 @@ def test_accepted_receipt_is_single_use(rig):
         inv.consume(str(rig.sdlc), got["action_id"])
 
 
-def test_unconfigured_is_off_and_never_runs_anything(tmp_path):
+def _unpin(r):
+    for k in ("path", "sha256"):
+        subprocess.run(["git", "-C", str(r.repo), "config", "--local", "--unset-all",
+                        "sigma.invocation.adapter.%s.%s" % (r.host, k)], check=True)
+
+
+def test_unconfigured_and_unpinned_is_off_and_never_runs_anything(tmp_path):
     r = Rig(tmp_path, "claude")
+    _unpin(r)
     r.config({})
     assert inv.authorize(str(r.sdlc), "review-post", "612", "c" * 64, pr=7, head_sha="a" * 40,
                          brief_sha256="b" * 64) == {"status": "off"}
+    assert not r.ran() and not (r.sdlc / "state" / "invocations").exists()
+
+
+@pytest.mark.parametrize("how", ["null-adapter", "block-removed", "corrupt-config"])
+def test_repo_config_cannot_switch_the_gate_off_where_a_pin_exists(tmp_path, how):
+    """The repository's config.json is agent-writable; the operator's pin is the root of trust."""
+    r = Rig(tmp_path, "claude")
+    if how == "null-adapter":
+        r.config({"adapter": None})
+    elif how == "block-removed":
+        (r.sdlc / "config.json").write_text("{}")
+    else:
+        (r.sdlc / "config.json").write_text("{not json")
+    with pytest.raises(inv.Refused, match="pin exists"):
+        r.review()
     assert not r.ran()
 
 
@@ -333,7 +355,7 @@ def test_diagnose_without_an_adapter_is_a_safe_defer_with_no_side_effects(tmp_pa
 def test_diagnose_a_conforming_adapter_and_a_nonconforming_one(rig):
     proc = _cli(rig.sdlc, rig.host)
     assert proc.stdout.strip() == "installed-and-conforming" and proc.returncode == 0
-    assert rig.host in inv.fresh_hosts(str(rig.sdlc))
+    assert inv.fresh_hosts(str(rig.sdlc)) == set()           # a describe is not a receipt
     rig.install("baddescribe")
     assert _cli(rig.sdlc, rig.host).stdout.strip() == "refused"
     assert _cli(rig.sdlc, "nope").stdout.strip() == "refused"
@@ -390,6 +412,7 @@ def test_a_missing_pin_makes_the_relay_unavailable_not_a_failure(tmp_path):
 
 def test_an_unconfigured_repo_prints_no_relay_line_and_writes_no_state(tmp_path):
     r = Rig(tmp_path, "claude")
+    _unpin(r)
     r.config({})
     proc = _end(r, tmp_path)
     assert proc.returncode == 0 and "relay" not in proc.stderr
@@ -446,3 +469,25 @@ def test_the_scaffolded_config_ships_the_adapter_off():
     with tempfile.TemporaryDirectory() as d:
         pathlib.Path(d, "config.json").write_text(tmpl)
         assert inv.settings(d) is None
+
+
+def test_a_corrupt_foreign_record_does_not_brick_authorize_and_leftovers_are_pruned(tmp_path):
+    r = Rig(tmp_path, "claude")
+    r.review()
+    d = r.sdlc / "state" / "invocations"
+    (d / ("x" * 43 + ".json")).write_text("{not json")
+    (d / ("y" * 43 + ".json")).write_text('{"receipt_id": "z"}')          # no challenge key
+    old = d / ".tmp-leftover"
+    old.write_text("x")
+    os.utime(old, (1, 1))
+    assert r.review()["status"] == "accepted"
+    assert not old.exists()
+
+
+def test_a_relay_with_no_constructed_block_says_unavailable(tmp_path, capsys):
+    r = Rig(tmp_path, "claude")
+    spec = importlib.util.spec_from_file_location("phase_report_t", ROOT / "skills/sigma-loop/scripts/phase_report.py")
+    pr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pr)
+    pr.relay_block(str(r.sdlc), "42", "research", None)
+    assert "no constructed Block B" in capsys.readouterr().err and not r.ran()
