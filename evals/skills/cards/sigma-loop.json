@@ -2,7 +2,7 @@
   "skill": "sigma-loop",
   "kind": "pinned",
   "gates": [
-    "(deploy, delete, overwrite, spend, migrate) \u2014 NEVER"
+    "(deploy, delete, overwrite, spend, migrate) — NEVER"
   ],
   "scripts": [
     {
@@ -18,8 +18,20 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/ai_filed_counter.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/auto_unpark.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/autowatch.py",
@@ -78,6 +90,18 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_record.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_rubric_cfg.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/decision_tier.py",
       "role": "gesture"
     },
@@ -100,6 +124,10 @@
     {
       "path": "skills/sigma-loop/scripts/discovery.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/drift_tick.py",
@@ -230,11 +258,19 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/file_triage.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/flake_check.py",
       "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/frontmatter.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gate_hold.py",
       "role": "library"
     },
     {
@@ -258,12 +294,24 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/hard_stop.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/hard_stop_guard.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/landing_preflight.py",
       "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/ledger.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/legacy.py",
@@ -310,6 +358,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/park_mix.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/phase_gate.py",
       "role": "gesture"
     },
@@ -324,6 +376,10 @@
     {
       "path": "skills/sigma-loop/scripts/promote.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/qkind.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/reconcile.py",
@@ -360,6 +416,10 @@
     {
       "path": "skills/sigma-loop/scripts/risk-detect.sh",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/rulebook.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/run_with_timeout.py",
