@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import types
@@ -104,24 +105,32 @@ def test_tracked():
 """
 
 
-def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True, hostile=_TINY_OK):
+def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True, hostile=_TINY_OK, edits=None):
+    """A scratch copy of everything the sink probes load (scripts, hooks, sinks.py), with optional edits.
+
+    `edits` maps a path under the tree to a text-to-text function; each must change its file."""
     (tmp_path / "evals" / "safety").mkdir(parents=True)
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_hostile_inputs.py").write_text(hostile)
+    shutil.copy(ROOT / "evals" / "safety" / "sinks.py", tmp_path / "evals" / "safety" / "sinks.py")
     text = CHECK_PATH.read_text()
     if check_edit:
         edited = check_edit(text)
         assert edited != text, "check.py mutation did not take effect"
         text = edited
     (tmp_path / "evals" / "safety" / "check.py").write_text(text)
-    if with_scrub:
-        (tmp_path / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
-        text = SCRUB_PATH.read_text()
-        if scrub_edit:
-            edited = scrub_edit(text)
-            assert edited != text, "scrub.py mutation did not take effect"
-            text = edited
-        (tmp_path / "skills" / "sigma-loop" / "scripts" / "scrub.py").write_text(text)
+    scripts = tmp_path / "skills" / "sigma-loop" / "scripts"
+    shutil.copytree(SCRUB_PATH.parent, scripts, ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "hooks").mkdir()
+    shutil.copy(ROOT / "hooks" / "research_capture.py", tmp_path / "hooks" / "research_capture.py")
+    if not with_scrub:
+        (scripts / "scrub.py").unlink()
+    for rel, fn in dict(edits or {}, **({"skills/sigma-loop/scripts/scrub.py": scrub_edit} if scrub_edit else {})).items():
+        target = tmp_path / rel
+        text = target.read_text()
+        edited = fn(text)
+        assert edited != text, "%s mutation did not take effect" % rel
+        target.write_text(edited)
 
 
 # ---------------------------------------------------------------- the real tree
@@ -538,3 +547,65 @@ def test_gesture_refuses_when_pytest_summary_unreadable(tmp_path):
     _scratch_tree(tmp_path, hostile="KNOWN_DEFECTS = {}\nraise SystemExit(0)\n")
     done = _run(_gesture(), tmp_path)
     assert done.returncode == 2 and done.stdout == "" and "REFUSED" in done.stderr, done.stdout + done.stderr
+
+
+# ---------------------------------------------------------------- sink probes (#1050)
+
+SCRIPTS = "skills/sigma-loop/scripts/"
+
+
+def _gesture_in(tmp_path, **kw):
+    _scratch_tree(tmp_path, **kw)
+    return _run(_gesture(), tmp_path)
+
+
+def test_sinks_clean_on_real_tree():
+    c = _check()
+    assert c.run_sinks(SCRUB_PATH, c.live_specs(_REAL), c.TABLE) == []
+
+
+def test_sinks_red_when_a_shape_is_removed_from_scrub(tmp_path):
+    line = '    ("aws-key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}"), "[REDACTED:aws-key]"),\n'
+    done = _gesture_in(tmp_path, scrub_edit=lambda t: t.replace(line, "", 1))
+    assert done.returncode == 1, done.stdout + done.stderr
+    for sink in ("actionlog", "ledger", "comment", "review-reason"):
+        assert "sink-leak aws-key" in done.stdout and "%s start" % sink in done.stdout, sink
+    assert "commit-sink aws-key" in done.stdout
+
+
+def test_sinks_red_when_the_commit_refusal_is_a_noop(tmp_path):
+    noop = "\n\ndef commit_secret_hits(*a, **k):\n    return []\n"
+    done = _gesture_in(tmp_path, scrub_edit=lambda t: t + noop)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "commit-sink private-key" in done.stdout and "commit-sink aws-key" in done.stdout
+    assert "commit-sink credential-assignment-suffix" not in done.stdout   # pinned accepted: still accepted
+
+
+def test_sinks_red_when_a_sink_cuts_before_scrubbing(tmp_path):
+    cut = lambda t: t.replace("cap=1 << 30)", "cap=len(body) + 1)").replace(
+        "ledger._sanitize_free_text(", "(lambda b, cap: b)(", 1)
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "comment_watch.py": cut})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "sink-leak aws-key" in done.stdout and "comment straddle" in done.stdout
+    assert "actionlog" not in done.stdout and "ledger " not in done.stdout
+
+
+def test_review_reason_probe_red_when_post_review_stops_scrubbing(tmp_path):
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "work.py": lambda t: t.replace("reason = scrub(reason or \"\")", "reason = (reason or \"\")")})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "review-reason start" in done.stdout
+
+
+def test_gesture_red_when_sink_leaks(tmp_path):
+    leak = lambda t: t.replace("            text = mod._scrub(text)", "            text = text", 1)
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "actionlog.py": leak})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "sink-leak aws-key" in done.stdout and "actionlog start" in done.stdout
+
+
+def test_sink_probe_findings_carry_no_value():
+    c = _check()
+    for row in c.TABLE:
+        value = c.generate(row)
+        assert not any(value[-10:] in line for line in c.run_sinks(SCRUB_PATH, c.live_specs(_REAL), c.TABLE))
+        break

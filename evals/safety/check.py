@@ -30,6 +30,11 @@ edited the finding prints the new hash, so the table update is one line.
 Every generated value is built at run time from fragments with a seeded generator, so no
 secret-shaped string sits on any source line and the output is deterministic.
 
+Sink probes (#1050, slice 2 of #1048, AC-3 and AC-4), in `sinks.py` beside this file: every entry is
+planted, at the start and straddling the cap, through the action log, the ledger, the comment path and
+the review-block reason, and through the real `work.commit` refusal in a scratch repository, loaded
+from the same scripts directory as the scrub under test. See that module's docstring for the limits.
+
 Hostile fixtures (#1051, slice 3 of #1048, story #806, AC-5 as reworded by the 2026-10-10 decision):
 `tests/test_hostile_inputs.py` is run as a pytest subprocess and the check passes only when the sole
 non-passes are its strict expected failures, counted from its own `KNOWN_DEFECTS` map (7 today).
@@ -380,11 +385,28 @@ def run_hostile(path=_HOSTILE):
     return out
 
 
-def main(argv=None, scrub_path=None, hostile=True):
+def run_sinks(scrub_path, live, table):
+    sinks_path = Path(__file__).resolve().parent / "sinks.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_sigma_safety_sinks", str(sinks_path))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.probe_all(Path(scrub_path).resolve().parent, table, live, generate, _find)
+    except Refusal:
+        raise
+    except Exception as exc:  # a sink that cannot load or be probed is a refusal, never a pass
+        raise Refusal("sink probes failed (%s: %s)" % (type(exc).__name__, exc))
+
+
+def main(argv=None, scrub_path=None, hostile=True, sinks=True):
     argparse.ArgumentParser(description="Pin the live redaction shapes and check them two ways.").parse_args(argv)
     try:
         scrub = load_scrub(scrub_path or _DEFAULT_SCRUB)
-        findings = run(scrub, TABLE) + (run_hostile() if hostile else [])
+        findings = run(scrub, TABLE)
+        if sinks:
+            findings += run_sinks(scrub_path or _DEFAULT_SCRUB, live_specs(scrub), TABLE)
+        if hostile:
+            findings += run_hostile()
     except Refusal as exc:
         print("check.py: REFUSED: %s" % exc, file=sys.stderr)
         return 2
