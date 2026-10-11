@@ -110,6 +110,7 @@ One line, first token the verdict. Branch on it — the three are **not** interc
   be located, so **say in the verdict that strategic alignment was not judged, and why**, then judge
   correctness alone. A check that could not look reads ABSENT, never PASS.
 
+
 ## Verdict
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
 operator command | inline, author self-review`. Then one of: **SOUND** (implement as-is) /

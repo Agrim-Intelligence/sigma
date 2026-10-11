@@ -55,6 +55,9 @@ auto_unpark = _load("auto_unpark")
 backlog_check = _load("backlog_check")
 legacy = _load("legacy")          # #239: a Q&A block written under the previous name
 decision_tier = _load("decision_tier")
+qkind = _load("qkind")            # #994: a kind declared on the park comment
+gate_hold = _load("gate_hold")    # #1005: the hold guard shared with promote
+decision_record = _load("decision_record")   # slice 8: store record + attributed comment
 loop = _load("loop")
 
 #: The fixed heading of the recorded block, in the body and in the comment alike. Deliberately free
@@ -126,6 +129,18 @@ QUESTIONS = {
         {"id": "route", "ask": "This session paused to hand off, not because of a problem. Keep "
                                "going with a fresh session, or look into it first?",
          "options": ["keep going", "look into it first"]},
+    ],
+    # #1005: the gate-hold kinds. Releasing either without the registry edit sends the goal back for
+    # exactly one pick, so `resolve` refuses until the registry allows it.
+    "scope_hold": [
+        {"id": "route", "ask": "This goal is in a repository its unit does not list. Add that "
+                               "repository to the unit in the registry, or drop the goal?",
+         "options": ["add the repository", "drop this"]},
+    ],
+    "owner_hold": [
+        {"id": "route", "ask": "The account that opened this is not a recorded owner of its unit. "
+                               "Authorize it in the registry, correct the recorded owner, or drop "
+                               "the goal?", "options": ["authorize it", "correct the owner", "drop this"]},
     ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},
@@ -234,7 +249,10 @@ def brief(sdlc_dir, config, number, source=None, run=None):
     # #1392 / PR-1: BOTH re-derived from text that is always on the issue. `loop._reason_class` and
     # `decision_tier.classify` are pure functions; the ledger fields are unreachable on a stock
     # config (ledger.enabled ships false) and `decision_tier.resolve` is gated off besides.
-    reason_class = loop._reason_class(reason) if reason else "unknown"
+    declared = qkind.parse_line(reason) if reason else None      # #994: a declared kind wins
+    if declared:
+        reason = qkind.strip_line(reason)
+    reason_class = declared or (loop._reason_class(reason) if reason else "unknown")
     tier, tier_signal = decision_tier.classify(reason) if reason else (None, None)
 
     goal_doc = {"ref": str(number), "raw": (data.get("title") or "") + "\n" + body}
@@ -394,6 +412,14 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
                 "detail": "#%s is closed — reopen it first if it should be worked" % n}
 
     names = _names(data)
+    if decision == "unpark" and gate_hold.declared_gate_kind(
+            [c.get("body") or "" for c in (data.get("comments") or [])]):
+        # #1005: the hold guard `/sigma-promote` already has. A gate hold is released by a registry edit,
+        # not by a label; unparking without it returns the goal for one pick and it is parked again.
+        held = gate_hold.gate_hold_blocks(source, n, config, sdlc_dir=sdlc_dir, names=names,
+                                          gesture="unpark")
+        if held:
+            return {"number": n, "decision": decision, "outcome": "failed", "detail": held}
     block = render_block(answers, questions_asked)
     # #1393: `proposed_label` joins the removal set. An issue can be BOTH awaiting approval and
     # parked (a proposal a human parked rather than ruled on), and an unpark that only dropped
@@ -422,18 +448,19 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
         # reimplemented, and not approximated by pasting its marker. A human deciding "leave it
         # parked" here is making exactly the decision that comment exists to record, so the
         # automatic sweep must see it in the form it already knows how to read.
-        _comment(source, n, block + "\n\n"
-                 + auto_unpark.keep_parked_comment(_one_line(_substantive_reason(answers))))
+        err = _comment_decision(sdlc_dir, config, source, n, block + "\n\n"
+                                + auto_unpark.keep_parked_comment(_one_line(_substantive_reason(answers))),
+                                "keep-parked", answers, data)
         _append_block(source, n, data.get("body") or "", block)
         return {"number": n, "decision": decision, "outcome": "kept-parked",
-                "detail": "answers recorded; the automatic sweep will leave it alone"}
+                "detail": "answers recorded; the automatic sweep will leave it alone" + err}
 
     if not add and not remove:
         # Nothing to swap -- but the answers are still worth recording, and this is not a failure.
-        _comment(source, n, block)
+        err = _comment_decision(sdlc_dir, config, source, n, block, "unpark", answers, data)
         _append_block(source, n, data.get("body") or "", block)
         return {"number": n, "decision": decision, "outcome": "unparked",
-                "detail": "#%s was already pickable — answers recorded" % n}
+                "detail": "#%s was already pickable — answers recorded" % n + err}
     try:
         source._swap_labels(n, add=add, remove=remove)
     except Exception as exc:                            # noqa: BLE001 - reported, never raised
@@ -444,18 +471,50 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
         # the same five questions because GitHub returned a 502 is the one cost here that cannot be
         # automated away. Recording first also makes the retry cheap: `brief` reads the block back,
         # so the second attempt has nothing left to ask.
-        _comment(source, n, block)
+        err = _comment_decision(sdlc_dir, config, source, n, block, "unpark", answers, data)
         _append_block(source, n, data.get("body") or "", block)
         return {"number": n, "decision": decision, "outcome": "failed",
                 "detail": "label write did not land: %s — the answers were recorded, so re-running "
-                          "this will not ask them again" % exc}
+                          "this will not ask them again" % exc + err}
     detail = triage._swap_detail(add, remove)
     if not source._set_board_status(n, source.col["ready"]) and source.board_active:
         detail += ("; the label landed but the board card did not move to %r — move it by hand if "
                    "this repo picks from the board" % source.col["ready"])
-    _comment(source, n, block)
+    detail += _comment_decision(sdlc_dir, config, source, n, block, "unpark", answers, data)
     _append_block(source, n, data.get("body") or "", block)
     return {"number": n, "decision": decision, "outcome": "unparked", "detail": detail}
+
+
+def _declared_kind(data):
+    """The kind a park comment declared (the last one wins), else `unknown`."""
+    found = None
+    for c in (data.get("comments") or []):
+        found = qkind.parse_line(c.get("body") or "") or found
+    return found or "unknown"
+
+
+def _comment_decision(sdlc_dir, config, source, number, text, gesture, answers, data):
+    """Post `text`. With the records part open it is posted WITH the decision record's id and the
+    record is stored; closed, this is exactly `_comment` (byte-identical). Returns "" or a
+    "; <error>" suffix for the caller's detail."""
+    tried = []                                          # the comment was attempted (never post twice)
+    try:
+        if decision_record.enabled(config):
+            choice = (answers or {}).get(CLOSING_QUESTION["id"]) or gesture
+            rec = decision_record.build(gesture, number, _declared_kind(data), choice,
+                                        _substantive_reason(answers), decision_record.how_for(gesture))
+
+            def _post(num, body):
+                tried.append(num)
+                source._issue_comment(num, body)
+            out = decision_record.write_all(sdlc_dir, rec, config, source, text=text, poster=_post)
+            return "; " + out["error"] if out["error"] else ""
+    except Exception as exc:                            # noqa: BLE001 - never break the gesture
+        if not tried:
+            _comment(source, number, text)
+        return "; decision record failed: %s" % exc
+    _comment(source, number, text)
+    return ""
 
 
 def _comment(source, number, text):

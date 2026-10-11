@@ -242,13 +242,17 @@ def test_the_blocked_by_edges_still_parse_after_stamping(tmp_path):
     assert features.parse_body(body) == UNIT       # and the declaration survived the append
 
 
-def test_a_plan_whose_issues_are_filed_is_still_only_PROPOSED(tmp_path):
-    """`compile_plan` files as `sdlc:needs-confirmation` unless the caller asks otherwise -- locally,
-    `status: proposed`. Step 9 of this skill ("start now, or leave it on the board") is a QUESTION,
-    so opening a unit must not start work by itself."""
+def test_a_plan_whose_issues_are_filed_is_queued_and_never_started(tmp_path):
+    """Since the decision rubric (slice 17) `compile_plan` arms a plan issue at its own plan priority unless the
+    deny-list parks it -- locally, `status: pending`, never the retired `proposed` state. Step 9 of this skill
+    ("start now, or leave it on the board") is still a QUESTION: arming queues the goal, it does not start it, so
+    opening a unit must not start work by itself."""
     flow = _flow(tmp_path)
     for path in sorted((flow["sdlc"] / "goals").glob("*.md")):
-        assert "status: proposed" in path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
+        # a plan issue is queued (pending); the parent that only groups them stays proposed; nothing is started
+        assert "status: pending" in text or "status: proposed" in text
+        assert "status: in_progress" not in text and "status: done" not in text
 
 
 # ------------------------------------------------------------------------------- the registry gate

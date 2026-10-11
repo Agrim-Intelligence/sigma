@@ -149,9 +149,9 @@ Then repeat until the helper says stop:
 
    **Blocked on someone else's AREA? Hand it off before you park** — use `handoff.py open`, THEN
    park this goal as normal. **Found something worth tracking that isn't a cross-area blocker? Never
-   call `gh issue create` directly.** Use `handoff.py track`, and **choose `--queue queued` — on an
-   autonomous or overnight run that is the DEFAULT posture for a non-blocking finding, not the
-   exception**; **`--blocks yes` is what drives `--queue actionable`.** Every flag, and how a kit
+   call `gh issue create` directly.** Use `handoff.py track`, and **choose `--queue queued`
+   for a non-blocking finding: triage arms it at a low priority or parks it**; **`--blocks yes`
+   is what drives `--queue actionable`.** Every flag, and how a kit
    finding is routed off this board: `references/filing.md`.
 
    As you complete each phase, **record it** so the issue timeline is the audit trail:
@@ -183,7 +183,7 @@ Then repeat until the helper says stop:
    to the review queue for a human; never edit a standing doc unattended.
 6. Record the outcome, including the retro grade from step 5 if Retrospective ran:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" record .sdlc "$goal" done --retro-grade
-   achieved|partial|diverged` (or `parked "reason" ...` / `failed "reason" ...`; omit the flag on a
+   achieved|partial|diverged` (or `parked "reason" --qkind <kind>` / `failed "reason" ...`; omit the flag on a
    goal that never reached Retrospective). Passing it is also what refreshes the knowledge graph
    when `knowledge_graph.auto_refresh` is `true`. **Do not run a graph build by hand as well.**
 

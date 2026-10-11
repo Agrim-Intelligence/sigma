@@ -92,7 +92,7 @@ bare `gh issue create` nobody can find. It is filed `blocks_goal=False`: a confl
 unit's branch is not a reason to park the goal that happened to trigger the pass, and
 `create_tracked_issue`'s own docstring names that exact false-blocking bug. And
 `immediately_actionable=False`: resolving two divergent histories is a judgement about intent, which
-is what the `sdlc:needs-confirmation` tier is for.
+is what the declared-question park is for.
 
 AND THE TREE IS LEFT CLEAN, WHICH IS THE HARDER HALF. A half-applied rebase poisons every later goal
 in the run, and an unattended loop has nobody to notice. `work.rebase()`'s abort-on-any-failure
@@ -173,6 +173,7 @@ def _load(name):
 
 
 features = _load("features")
+hsg = _load("hard_stop_guard")      # decision rubric slice 10: a no-op until hard_stops.enabled is true
 _safe_ref = state_safe_ref = _load("state").safe_ref     # #710: ONE validator for config-supplied git names
 registry = _load("feature_registry")
 sync = _load("feature_sync")
@@ -1913,7 +1914,7 @@ def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key="
     `blocks_goal=False`: the goal that triggered the pass is not the goal that conflicted, and
     `create_tracked_issue`'s own docstring names false-blocking as the bug that axis exists to
     prevent. `immediately_actionable=False`: reconciling two divergent histories is a judgement
-    about intent, which is what `sdlc:needs-confirmation` is for.
+    about intent, which is what a declared-question park is for.
 
     `slot` IDENTIFIES THE FINDING and `key` FINGERPRINTS ITS STATE, so an unchanged finding is
     filed once rather than every pick -- see `_told_before`. The clause still reports the finding on
@@ -2549,6 +2550,19 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
             report["why"] = problem[1]
             return report
         backup = {"unit": unit, "clock": _WALL}
+    if hsg.enabled(config):
+        # Slice 10: the lease push of a registered unit branch is Sigma's own (register rule); anything else is not.
+        try:
+            registry_now = registry.read(registry.registry_dir(sdlc_dir))
+        except Exception:             # noqa: BLE001 - an unreadable registry reads as not-own
+            registry_now = None
+        # Classifier TEXT only (never executed); the real push is `_pushed`, the one pinned colon-refspec site.
+        verdict = hsg.guard("git push --force-with-lease %s HEAD:%s" % (remote, "refs/heads/" + branch),
+                            {"branch": branch, "registry": registry_now}, config)
+        if verdict.blocked:
+            report["outcome"] = FAILED
+            report["why"] = verdict.reason
+            return report
     path = worktree_path(sdlc_dir, unit)
     outcome = _rebase_feature(run, cwd, path, branch, base_ref, before, remote, report,
                               strict=gate.enabled(config), backup=backup, level1=_level1_options(config))

@@ -409,6 +409,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/ai_filed_counter.py",
+      "function": "bump",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "runs only when ai_filed triage is on (the default; ai_filed.triage.enabled false skips it); writes only the one bounded counter file under the state directory (atomic temp then replace, pruned by age and size); never deletes another writer's file; an unreadable counter is never overwritten",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ai_filed_counter.py",
+      "function": "bump",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "runs only when ai_filed triage is on (the default; ai_filed.triage.enabled false skips it); writes only the one bounded counter file under the state directory (atomic temp then replace, pruned by age and size); never deletes another writer's file; an unreadable counter is never overwritten",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/autowatch.py",
       "function": "_record_spend",
       "rule": "fs-write",
@@ -537,6 +553,38 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "records part enabled (reindex, archive); creates only the lock file inside the records folder",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "_publish",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "records part enabled; removes only the temp file this call created beside its target after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.records.enabled is exactly true; exclusive create of one new id-named file in the records folder; never overwrites",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "archive",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "person-run archive verb; records part enabled; removes only record files older than records.archive_after_days after they are written into a yearly archive file under the lock",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/diff_revert.py",
       "function": "cleanup",
       "rule": "fs-remove",
@@ -567,6 +615,30 @@
       "count": 3,
       "gate": "ungated",
       "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_acquire",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_record",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_record",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
     },
     {
       "path": "skills/sigma-loop/scripts/drift_watch.py",
@@ -1078,6 +1150,38 @@
       "rule": "fs-remove",
       "count": 1,
       "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_publish",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); removes only the temp file this call created beside its target after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_save_state",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); removes only the temp file this call created beside the local pointer state after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_save_state",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); writes only the local pointer queue and day counter under the state folder; holds ids, kinds and how only",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "compact_pointers",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); person-run compaction; removes only this actor's own pointer-only files from this host whose process is gone and that are older than records.pointer.compact_after_days, after their lines are in the own rollup file; never another writer's file",
       "risk": "high"
     },
     {
@@ -1726,6 +1830,22 @@
       "rule": "gh-issue",
       "count": 1,
       "gate": "discovery.source == github; board writes require project.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_approval.py",
+      "function": "_counter_write",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_approval.py",
+      "function": "_counter_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
       "risk": "medium"
     },
     {
@@ -3206,6 +3326,70 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/rubric_e2e.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "function": "_write_new",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.enabled is exactly true; exclusive create of one new id-named watch or veto file in the autonomy folder; never overwrites; a link folder is refused",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "function": "prune_watch",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.enabled is exactly true; removes only watch files in the autonomy folder older than autonomy.watch.retention_days by embedded time; vetoes and links are never touched",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/rulebook.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "rulebook part enabled; removes only the temp file this call created beside the rulebook file after a failed write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/rulebook.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.rulebook.enabled is exactly true; writes the rulebook file by temp file and atomic replace; propose adds a proposed rule and approve (owner only) seals one; a link folder is refused",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.applier.enabled is exactly true; removes only answered or vetoed ask files in the autonomy folder older than two days by embedded time",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_write_atomic",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "applier gate open; removes only the temp file this call created beside its target after a failed write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_write_atomic",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.applier.enabled is exactly true; writes one ask file or the tick heartbeat in the autonomy folder by temp file and atomic replace; a link folder is refused",
       "risk": "medium"
     }
   ]

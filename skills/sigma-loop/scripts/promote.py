@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """promote.py (#1392) -- the ONE sanctioned way to move an issue across the human approval gate.
 
-WHY THIS EXISTS. `sdlc:needs-confirmation` (`handoff.PROPOSED_LABEL`, #233) is the approval gate:
-an issue Sigma filed itself carries it and deliberately does NOT carry `sdlc:goal`, so no loop
+LEGACY-ONLY LABEL (decision-rubric slice 18). Nothing writes the confirmation label any more -- a
+filed follow-up is already a goal, armed or parked with a declared question -- so every bucket
+below that keys on `proposed_label` lists LEFTOVERS from old boards, and this verb stays as the
+way to approve or clear each one. The history that follows explains why the buckets exist.
+
+WHY THIS EXISTS. The legacy confirmation label (`handoff.PROPOSED_LABEL`, #233) was the approval gate:
+an issue Sigma filed itself carried it and deliberately does NOT carry `sdlc:goal`, so no loop
 can pick it until a human says so. The approval gesture is REMOVING that label -- but nothing ever
 said so out loud, and the intuitive gesture in the GitHub UI is the opposite one: ADD `sdlc:goal`.
 Do that and the issue carries BOTH, which is not a state the model has a name for.
@@ -58,7 +63,7 @@ case: a sibling issue in the very same batch that had only just been promoted, n
 `apply` now parses EVERY `Blocked by:`/`depends on`/`depends upon` reference a body names (reusing
 `blocker_scan.extract_refs`, the same whole-body scanner `mirror.py` and the pick-time dependency
 gate already read blockers off of) and refuses unless every one is a LIVE, confirmed CLOSED issue --
-never "carries `sdlc:goal`", never "not carrying `sdlc:needs-confirmation`", and never
+never "carries `sdlc:goal`", never "not carrying the legacy confirmation label", and never
 `blockers.classify`'s adjacent `PICKABLE` verdict, which answers a different question (see
 `_blocker_status`'s own docstring). `list` shows which rows declare a blocker at all, at zero extra
 `gh` cost; only `apply` (and its `--dry-run`) ever live-verifies what one resolves to.
@@ -106,6 +111,11 @@ def _feature(name):
 PROMOTE_COMMENT = "Promoted to `{goal}` via /sigma-promote — approved for the loop to pick up."
 DEMOTE_COMMENT = ("Returned to `{proposed}` via /sigma-promote — awaiting approval again; the loop "
                   "will not pick it up.")
+
+#: #1006 (decision rubric): with triage on, a demotion PARKS the issue (reason and declared question kind in
+#: the comment) instead of writing the legacy confirmation label.
+DEMOTE_PARK_COMMENT = ("Parked via /sigma-promote: demoted out of the queue, so the loop will not pick it "
+                       "up. Run /sigma-unpark to release it.")
 
 _ISSUE_FIELDS = "number,title,labels,body"
 #: `body` added #1888 so `_row` can annotate a bucket row with the `Blocked by:` reference(s) it
@@ -405,59 +415,17 @@ def _feature_hold(sdlc_dir, config, number, names, author):
     all adoption.
 
     NEVER RAISES, AND FAILS OPEN ON EVERY AXIS -- an unadopted project, an issue declaring no unit,
-    two rival unit labels, an unreadable registry. Each answers None."""
-    try:
-        features = _feature("features")
-        try:
-            unit = features.parse_labels(sorted(names))
-        except features.AmbiguousUnit:
-            return None                                 # two rival units: no one gate to ask
-        if not unit:
-            return None
-        label = _feature("feature_labels").label_for(unit)
-        # SCOPE FIRST, AND THE ORDER IS `loop._next`'S OWN. That function short-circuits the `and`
-        # between the two gates so a goal refused for scope never also collects an ownership
-        # refusal -- one pick, one reason. A goal in an unlisted repo also has no board owner
-        # recorded there by construction, so asking ownership first would answer `not-an-owner` for
-        # every one of them and print the reason the pick would NOT have given.
-        repo = _scope_expansion(sdlc_dir, config, unit)
-        if repo:
-            return ("#%s carries %s and %s is not one of the repos that unit lists — adding one "
-                    "expands the unit's scope, which is its owner's decision (§7.3). Promoting it "
-                    "returns it to the board and the next pick sets it aside again — add %s to "
-                    "that unit's repos in the registry, then promote."
-                    % (number, label, repo, repo))
-        owner = _feature("feature_owner")
-        verdict = owner.would_hold(sdlc_dir, config, unit, author)
-        if verdict is not None:
-            return ("#%s carries %s and unit ownership still holds it: %s. Promoting it returns it "
-                    "to the board and the next pick sets it aside again — set "
-                    "repos.%s.authorized = true in the registry, or correct the owner recorded "
-                    "there, then promote."
-                    % (number, label,
-                       owner.refusal_clause(verdict, unit, verdict.repo,
-                                            "the account that opened it"),
-                       verdict.repo))
-        return None
-    except Exception:                                   # noqa: BLE001 - a wrong refusal is the wedge
-        return None
+    two rival unit labels, an unreadable registry. Each answers None.
+
+    #1005: THE BODY MOVED to `gate_hold.feature_hold` (scope first, then ownership, the pick's own
+    order), so `/sigma-unpark` asks the very same question; this keeps the name and the prose."""
+    return _feature("gate_hold").feature_hold(sdlc_dir, config, number, names, author)
 
 
 def _scope_expansion(sdlc_dir, config, unit):
     """The repo this goal is in when that repo is NOT one the unit lists, else None. #1477's
-    question, asked through #1477's own predicate -- and now the WHOLE of it: `_feature_hold` records
-    the arm that briefly existed and was withdrawn, so nothing is left out here any more."""
-    registry = _feature("feature_registry")
-    sync = _feature("feature_sync")
-    features_dir = registry.registry_dir(sdlc_dir)
-    if not features_dir.is_dir():
-        return None
-    raw = registry.read(features_dir).get(unit)
-    if raw is None:
-        return None
-    repo = sync.repo_slug(config, sync._run, str(pathlib.Path(sdlc_dir).parent),
-                          sync.DEFAULT_REMOTE)
-    return repo if sync.is_scope_expansion(registry.normalise_entry(raw), repo) else None
+    question, asked through #1477's own predicate (now `gate_hold.scope_expansion`)."""
+    return _feature("gate_hold").scope_expansion(sdlc_dir, config, unit)
 
 
 def _refusal(source, number, names, closed, demote, hold=None, unresolved=None):
@@ -552,8 +520,10 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
     # #1393: demotion gives up MEMBERSHIP, so it must clear the overlays with it -- an overlay is
     # only ever legitimate alongside `goal_label`, and leaving `sdlc:in-progress` or `sdlc:blocked`
     # on an issue that is no longer a goal is the orphan shape the census exists to find.
-    add, remove = (([proposed], [goal, *source.overlay_labels()]) if demote
-                   else ([goal], [proposed]))
+    # #1006: with triage on (the default) a demotion parks rather than writing the legacy label.
+    park_demote = demote and not _feature("file_triage").is_off(config)
+    add, remove = ((([source.parked_label] if park_demote else [proposed]), [goal, *source.overlay_labels()])
+                   if demote else ([goal], [proposed]))
     verb = "demoted" if demote else "promoted"
 
     for number in numbers:
@@ -583,7 +553,7 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
         # `_swap_labels` is idempotent, so this is a nicety, not a correctness guard -- except for
         # the one case that matters, `both == True`, which is the `drift` bucket and IS a real
         # repair (remove-only), so it must not be short-circuited here.
-        settled = (proposed in names and goal not in names) if demote else \
+        settled = (add[0] in names and goal not in names) if demote else \
                   (goal in names and proposed not in names)
         if settled:
             out["results"].append({"number": n, "outcome": "skipped",
@@ -622,11 +592,28 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
             # bool (#1391 step 4). Loud, and carried in the result.
             detail += ("; the label landed but the board card did not move to %r — move it by hand "
                        "if this repo picks from the board" % column)
+        audit = (DEMOTE_COMMENT.format(proposed=proposed) if demote
+                 else PROMOTE_COMMENT.format(goal=goal))
+        if park_demote:
+            audit = DEMOTE_PARK_COMMENT + "\n" + _feature("qkind").render_line("needs_decision")
+        tried = []                                      # the comment was attempted (never post twice)
         try:
-            source._issue_comment(n, (DEMOTE_COMMENT.format(proposed=proposed) if demote
-                                      else PROMOTE_COMMENT.format(goal=goal)))   # REST first (#895 3a)
-        except Exception:                               # noqa: BLE001 - audit trail is best-effort
-            pass
+            dr = _feature("decision_record")
+            if dr.enabled(config):                      # slice 8: store record + attributed comment
+                rec = dr.build("demote" if demote else "promote", n, "unknown", verb, "", "human")
+
+                def _post(num, body):
+                    tried.append(num)
+                    source._issue_comment(num, body)
+                err = dr.write_all(sdlc_dir, rec, config, source, text=audit, poster=_post)["error"]
+                detail += "; " + err if err else ""
+        except Exception as exc:                        # noqa: BLE001 - never break the gesture
+            detail += "; decision record failed: %s" % exc
+        if not tried:
+            try:
+                source._issue_comment(n, audit)         # REST first (#895 3a)
+            except Exception:                           # noqa: BLE001 - audit trail is best-effort
+                pass
         out["results"].append({"number": n, "outcome": verb, "detail": detail})
     return out
 
@@ -675,19 +662,234 @@ def render_promote(result):
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------------------------------
+# migrate-confirmation (decision rubric, slice 20, #1010)
+#
+# One-time move of every issue still carrying the confirmation label: armed (`sdlc:goal`) or an ordinary
+# park, decided by the SAME rubric triage (`file_triage.decide`) and the SAME blocker and gate predicates
+# `apply` uses. Dry run by default (zero writes). Adds no gh call site: reads go through
+# `sources.fetch_issues_rest` / `source._read_issue`, writes through `source._swap_labels` (ONE mutation per
+# issue, so a parked-plus-label pair can never exist), `source._issue_comment` and `source._set_board_status`.
+# ---------------------------------------------------------------------------------------------------
+import collections, re
+
+#: First line of the comment this verb leaves; its presence on an issue means "already explained".
+MIGRATE_MARKER = "<!-- sigma:migrate-confirmation -->"
+#: Copies of the two comment markers the gate writers use (loading those modules here would pull the whole
+#: branching model in); `test_markers_match_their_modules` pins each to its owner.
+_OWNER_MARKER = "<!-- sigma:feature-ownership -->"
+_SCOPE_MARKER = "<!-- sigma:feature-scope-expansion -->"
+_FOLLOWUP_LABEL = "sdlc:followup"
+#: PROVISIONAL: the most labelled issues one run will read; a fetch that reaches it reports itself incomplete.
+#: Override with `ai_filed.migration.max_issues`.
+MIGRATE_FETCH_CAP = 10000
+_PRIORITY = re.compile(r"priority:(P[0-4])$")
+
+Arm = collections.namedtuple("Arm", "priority reason qkind")
+Park = collections.namedtuple("Park", "reason qkind")
+
+
+def _label_names(issue):
+    return [(l.get("name") if isinstance(l, dict) else l) or "" for l in (issue.get("labels") or [])]
+
+
+def _comment_bodies(issue):
+    return [(c.get("body") if isinstance(c, dict) else c) or "" for c in (issue.get("comments") or [])]
+
+
+def classify_population(issue):
+    """`ownership_hold`, `scope_hold`, `followup` or `human` for one labelled issue: the gate flag comments
+    first (they carry a registry decision), then the follow-up label, else a human-typed proposal."""
+    bodies = _comment_bodies(issue)
+    if any(_OWNER_MARKER in b for b in bodies):
+        return "ownership_hold"
+    if any(_SCOPE_MARKER in b for b in bodies):
+        return "scope_hold"
+    if _FOLLOWUP_LABEL in _label_names(issue):
+        return "followup"
+    return "human"
+
+
+def _own_priority(issue):
+    found = [m.group(1) for m in (_PRIORITY.match(n) for n in _label_names(issue)) if m]
+    return min(found) if found else None
+
+
+def plan_for(issue, config, unresolved=(), hold=None):
+    """`Arm` or `Park` for one labelled issue. `unresolved` is the blocker refs not confirmed CLOSED, `hold`
+    the gate-hold sentence or None (both from the `apply` predicates). Never arms past a hold, a blocker,
+    or the deny-list; a human proposal keeps its own priority, an AI-filed one gets the bucket's."""
+    pop = classify_population(issue)
+    if pop == "ownership_hold":
+        return Park("ownership hold: a non-owner filing; the unit owner decides through the registry", "owner_hold")
+    if pop == "scope_hold":
+        return Park("scope-expansion hold: the unit owner decides through the registry", "scope_hold")
+    if unresolved:
+        return Park("open blocker(s) not confirmed closed: " + ", ".join(unresolved), "dependency")
+    if hold:
+        return Park("gate hold: " + str(hold), "needs_decision")
+    ft = _feature("file_triage")
+    mine = _own_priority(issue)
+    title, body = issue.get("title") or "", issue.get("body") or ""
+    if pop == "human":
+        d = ft.decide(title, body, {"human_confirmed": True, "priority": mine}, config)
+    else:
+        d = ft.decide(title, body, {}, config)
+    if d.kind != "arm":
+        return Park(d.reason, "needs_decision")
+    pri = d.priority
+    if pop == "followup" and mine and int(mine[1]) >= int(pri[1]):
+        pri = mine                                       # PROVISIONAL: never raise an existing priority
+    return Arm(pri, d.reason, None)
+
+
+def _migrate_comment(plan, pop):
+    if isinstance(plan, Arm):
+        return ("%s\nMigrated off the retired confirmation queue: armed for the loop at %s (population: %s; %s). "
+                "Pick-time guards still apply." % (MIGRATE_MARKER, plan.priority, pop, plan.reason))
+    return ("%s\nMigrated off the retired confirmation queue: parked (population: %s; %s). Run /sigma-unpark "
+            "to release it.\n%s" % (MIGRATE_MARKER, pop, plan.reason, _feature("qkind").render_line(plan.qkind)))
+
+
+def _migrate_cap(config):
+    blk = (config or {}).get("ai_filed") if isinstance(config, dict) else None
+    mig = blk.get("migration") if isinstance(blk, dict) else None
+    cap = mig.get("max_issues") if isinstance(mig, dict) else None
+    return cap if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0 else MIGRATE_FETCH_CAP
+
+
+def _migrate_one(source, config, sdlc_dir, item, apply, rep_item):
+    n = rep_item["number"]
+    data = source._read_issue(n, ["labels", "state", "author", "body", "stateReason", "comments"])
+    names = set(_label_names(data))
+    closed = blocker_scan.closed_state(str(data.get("state") or "").upper(), data.get("stateReason") or "")
+    if closed:
+        rep_item.update(outcome="closed", detail="closed: labels kept")
+        return
+    if source.proposed_label not in names:
+        rep_item.update(outcome="noop", detail="no longer carries %s" % source.proposed_label)
+        return
+    author = data.get("author")
+    author = (author.get("login") if isinstance(author, dict) else "") or ""
+    issue = {"title": item.get("title") or "", "body": data.get("body") or "", "labels": sorted(names),
+             "comments": _comment_bodies(data)}
+    pop = classify_population(issue)
+    unresolved = [("#%s (%s)" % (r, s)) for r, _p, s in _blocker_status(source, n, issue["body"]) if s != "CLOSED"]
+    try:
+        hold = _feature_hold(sdlc_dir, config, n, names, author)
+    except Exception:                                   # noqa: BLE001 - the hold probe fails open, like apply
+        hold = None
+    plan = plan_for(issue, config, unresolved, hold)
+    arm = isinstance(plan, Arm)
+    rep_item.update(population=pop, action="arm" if arm else "park")
+    add, remove = ([source.goal_label], [source.proposed_label]) if arm else \
+                  ([source.parked_label], [source.proposed_label])
+    if arm:
+        if plan.priority != _own_priority(issue):
+            add.append("priority:" + plan.priority)
+            remove += [x for x in sorted(names) if _PRIORITY.match(x)]
+    elif source.goal_label in names:
+        remove.append(source.goal_label)                # a half-promoted pair is repaired by the park
+    add = [l for l in add if l not in names]
+    detail = "%s (%s; %s)" % ("arm at " + plan.priority if arm else "park", pop, plan.reason)
+    if not apply:
+        rep_item.update(outcome="would-arm" if arm else "would-park", detail=detail)
+        return
+    source._swap_labels(n, add=add, remove=remove)      # ONE mutation: the removal rides with the addition
+    rep_item.update(outcome="armed" if arm else "parked", detail=detail)
+    if arm and hasattr(source, "_set_board_status"):
+        try:
+            source._set_board_status(n, source.col["ready"])
+        except Exception:                               # noqa: BLE001 - the label landed; the card is best-effort
+            rep_item["detail"] += "; board card not moved"
+    if not any(MIGRATE_MARKER in b for b in issue["comments"]):
+        try:
+            source._issue_comment(n, _migrate_comment(plan, pop))
+        except Exception:                               # noqa: BLE001 - audit line is best-effort
+            rep_item["detail"] += "; comment did not post"
+
+
+def migrate(source, config, apply=False, sdlc_dir=".sdlc"):
+    """Report dict: `apply`, `refused` (reason or None), `error`, `total` (M: every labelled issue fetched,
+    open or closed, or None when the fetch failed), `covered` (N: handled without a read or write failure),
+    `complete` (error-free, N == M, not cut off by the cap) and `items`. Dry run (`apply=False`) makes no write."""
+    rep = {"apply": bool(apply), "refused": None, "error": "", "total": None, "covered": 0,
+           "complete": False, "truncated": False, "items": []}
+    if not _github(source):
+        rep["refused"] = "migration needs github discovery mode"
+        return rep
+    if _feature("file_triage").is_off(config):
+        rep["refused"] = ("ai_filed.triage.enabled is false: the confirmation queue is still the intended state, "
+                          "so nothing is migrated")
+        return rep
+    cap = _migrate_cap(config)
+    try:
+        # Paged by REST page size past the 200-issue backlog window; state=all so closed issues are COUNTED
+        # (and left untouched) and covered N of M is honest.
+        issues = sources.fetch_issues_rest(source._run, getattr(source, "repo", None), [source.proposed_label],
+                                           cap=cap, state="all")
+    except Exception as exc:                            # noqa: BLE001 - reported, exit non-zero
+        rep["error"] = _why(exc)
+        return rep
+    rep["total"] = len(issues)
+    rep["truncated"] = len(issues) >= cap
+    for item in issues:
+        row = {"number": str(item.get("number")), "outcome": "failed", "detail": "", "population": "", "action": ""}
+        try:
+            if str(item.get("state") or "").lower() == "closed":
+                row.update(outcome="closed", detail="closed: labels kept")
+            else:
+                _migrate_one(source, config, sdlc_dir, item, apply, row)
+        except Exception as exc:                        # noqa: BLE001 - one failure never stops the rest
+            row.update(outcome="failed", detail="not migrated: %s" % _why(exc))
+        rep["items"].append(row)
+    rep["covered"] = sum(1 for r in rep["items"] if r["outcome"] != "failed")
+    rep["complete"] = rep["covered"] == rep["total"] and not rep["truncated"]
+    return rep
+
+
+def render_migrate(rep):
+    mode = "APPLIED" if rep["apply"] else "DRY-RUN"
+    if rep["refused"]:
+        return "migrate-confirmation (%s): refused: %s" % (mode, rep["refused"])
+    if rep["error"]:
+        return "migrate-confirmation (%s): could not list the labelled issues: %s\ncovered 0 of unknown" % (
+            mode, rep["error"])
+    lines = ["migrate-confirmation (%s): %d issue(s)" % (mode, len(rep["items"]))]
+    for r in rep["items"]:
+        lines.append("  [%s] #%s: %s" % (r["outcome"], r["number"], r["detail"]))
+    counts = collections.Counter(r["outcome"] for r in rep["items"])
+    lines.append("summary: " + (", ".join("%d %s" % (v, k) for k, v in sorted(counts.items())) or "nothing to do"))
+    lines.append("covered %d of %d" % (rep["covered"], rep["total"]))
+    if rep["truncated"]:
+        lines.append("INCOMPLETE: the fetch reached its cap; raise ai_filed.migration.max_issues and rerun")
+    return "\n".join(lines)
+
+
 _USAGE = ("usage: promote.py list <sdlc_dir> [--assignee X] [--json]\n"
           "       promote.py apply <sdlc_dir> <issue>... [--dry-run]\n"
-          "       promote.py demote <sdlc_dir> <issue>...")
+          "       promote.py demote <sdlc_dir> <issue>...\n"
+          "       promote.py migrate-confirmation <sdlc_dir> [--dry-run | --apply]")
 
 
 def _numbers(argv_tail):
     return [a for a in argv_tail if not str(a).startswith("--")]
 
 
-def main(argv, run=None):
+def main(argv, run=None, source=None):
     if argv[1:] in (["-h"], ["--help"]):
         print(_USAGE)
         return 0
+    if len(argv) >= 3 and argv[1] == "migrate-confirmation":
+        flags = argv[3:]
+        if set(flags) - {"--dry-run", "--apply"} or ("--dry-run" in flags and "--apply" in flags):
+            print(_USAGE, file=sys.stderr)
+            return 2
+        config = triage._config(argv[2])
+        rep = migrate(source or sources.GitHubSource(config, run=run), config, apply="--apply" in flags,
+                      sdlc_dir=argv[2])
+        print(render_migrate(rep))
+        return 2 if rep["refused"] else (0 if rep["complete"] else 1)
     if len(argv) >= 3 and argv[1] == "list":
         sdlc_dir = argv[2]
         flags = triage._flags(argv[3:])
