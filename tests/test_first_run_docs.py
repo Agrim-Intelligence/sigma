@@ -126,4 +126,5 @@ def test_the_skill_instructions_carry_the_same_gestures_as_the_readme():
     ident = _verify_example(README)
     assert f"`/sigma-init --verify {ident}`" in init and "SECOND invocation" in init
     assert "ignore `.sdlc/` as a whole" in init
-    assert "Host refusal" in loop and "never retry or route around" in loop
+    running = " ".join((ROOT / "skills/sigma-loop/references/running.md").read_text(encoding="utf-8").split())
+    assert "host refusal" in running.lower() and "never retried or routed around" in running
