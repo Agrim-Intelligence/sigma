@@ -4,3 +4,4 @@
 - Probe lesson: a placeholder past a cap is cut off, so the placeholder is asserted only on the start planting.
 - Limit: `post_review` is probed by its scrub handle plus a source pin, not run (needs generation-bound evidence).
 - Open owner ruling (#806/#1058): the `drop-redactor-only` mutator default (authorization-header) is not decided here.
+- Residual debt: the review-reason probe pins `post_review` source text rather than running it, and the comment probe leaves a patched `fetch_comments` on its private module copy (isolated, never restored).
