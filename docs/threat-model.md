@@ -135,13 +135,27 @@ A code file is one whose basename has a stem and whose last suffix, compared cas
 PHP, C#, Swift, Dart, C and C++, Objective-C, Lua and Elixir. Every other file (config, data, docs,
 a suffix nobody listed, an upper-case variant) reads an unquoted value as a literal.
 
-**Residual misses, measured when the filter was designed.** In a code file, a letters-only or
-digit-only value under 24 characters passes as a positional call argument or a getenv default (the
-old gate refused both), and so does an unquoted dotted value made only of expression characters. On
-2,000 random letter/digit runs per length, a run placed as a getenv default was refused 56% of the
+**Residual misses, measured against this filter.** In a code file, a quoted literal passes as a
+positional call argument or a getenv default (`<key> = os.getenv("<NAME>", "<words>")`,
+`<key> = SecretStr("<words>")`; the old gate refused both) when none of its tokens is secret-like,
+whatever its total length, and so does an unquoted dotted value made only of expression characters.
+The check judges tokens, not the literal: the `[A-Za-z0-9_]+` runs of the line and the
+whitespace-separated words of each quoted literal, and its length clause needs an unbroken run of 24
+letters and digits. So a value with no digit is never secret-like without a provider prefix or such a
+run, and a value broken by spaces, hyphens or other punctuation is judged in short pieces. On 2,000
+random unbroken letter/digit runs per length, a run placed as a getenv default was refused 56% of the
 time at 6 characters, 70% at 8, 89% at 14, 97% at 20 and 100% at 24 or more; the misses are runs
-with no digit at all and upper-snake runs with fewer than 3 alternations. A literal on the line
-after a plain assignment (a wrapped `= (` or a triple quote) passes, as it did before. Provider rules
+with no digit at all and upper-snake runs with fewer than 3 alternations. That 24-character bound
+holds for an unbroken run only. Measured on this filter at the token boundary (2,000 random values
+per shape, fixed seed, `scrub.commit_secret_hits` with an `s.py` path; the gate before #961 refused
+all of them): a passphrase of 3 to 8 dictionary words (13 to 70 characters) joined by spaces, and one
+joined by hyphens, each passed 100% of the time as a getenv default and as a `SecretStr(...)`
+argument; a no-digit value of 8 to 40 letters and symbols passed 99.8%, refused only when it held an
+unbroken run of 24 or more letters; the same symbol values with one digit added passed 0%. Quoted
+directly after the separator, the hyphen-joined and symbol values were refused 100% and the
+space-joined ones 98.5%: the 1.5% open with a word under 4 characters, which the rule's own run never
+matched, before #961 or after. A literal on the line after a plain assignment (a wrapped `= (` or a
+triple quote) passes, as it did before. Closing these misses is tracked by #978. Provider rules
 (`aws-key`, `gh-token`, `stripe-key` and the rest) still fire on their own shapes and have no
 allowlist: a synthetic value that matches one parks the goal.
 
@@ -155,7 +169,10 @@ characters (`<key>: Optional[int] = <8 digits>`, `<key>: float = <digits>`; a sh
 never reached the old rule either). The trailing value is still judged by the secret-like check:
 on 500 random runs per length, a letters-only trailing literal and a digit-only annotated default
 each passed 99-100% of the time at 4 to 23 characters and 0% at 24, and a trailing literal mixing
-letters and digits passed only when a draw held no digit (8% at 8 characters, 0% at 16).
+letters and digits passed only when a draw held no digit (8% at 8 characters, 0% at 16). Those
+bounds, too, hold for an unbroken run only: after `<key> = None or`, the space- and hyphen-joined
+passphrases and the no-digit symbol values measured above passed 100%, 100% and 99.8% in a `.yml`
+file and in a `.py` file alike (2,000 each, the old gate refused all), at every length drawn.
 
 **The allowlist, `work.allow_secret_content`.** A line that is still refused and holds no credential
 is cleared only by an entry in the MAIN checkout's `.sdlc/config.json`, and an entry is an OPERATOR

@@ -30,9 +30,12 @@ All notable changes to Sigma are recorded here, newest first.
   showing the line) or by exact path (wide: it clears future literals in that file too); a reason is
   required and a malformed entry is ignored and counted. The refusal tells the agent to remove the
   literal or park, names the allowlist as the operator's, and no longer offers a hand commit.
-  Residual misses (letters-only or digit-only call arguments, getenv defaults and annotated defaults
-  in a code file; a short letters-only or digit-only literal after a leading boolean or null word in
-  any file; a literal on a wrapped line) are listed in the threat model.
+  Residual misses, tracked by #978 and listed in the threat model: a literal with no secret-like
+  token passes at any length as a code file's call argument or getenv default and, in any file, after
+  a leading boolean or null word (the check judges tokens, so the 24-character bound holds only for an
+  unbroken letter/digit run; measured, 2,000 draws per shape: passphrases joined by spaces or hyphens
+  passed 100%, no-digit values with symbols 99.8%); so do a number or identifier as a code file's
+  annotated default and a literal on a wrapped line.
 - **Upkeep no longer refuses a base deletion of a path the branch only inherited (#1146).** `dropped_paths` now excuses a deleted path the branch carries byte-identical to the fork point (two extra guarded reads, only when the replay deletes something); a path the branch added or changed is still refused, and any failure to find one fork point keeps the old refusal. PROVISIONAL, owner to ratify: a base revert of work already on the base at the fork point now reads as inherited and is not refused (documented limit, `docs/branching-model.md` §3b and §15).
 - **Rule drafting says plainly it cannot draft on public record visibility (#1149).** Public visibility drops the free-text choice, so `rule_draft.py` found no option and yielded nothing silently. `draft` now refuses with a clear reason and `list` prints it on stderr and exits 1. PROVISIONAL, owner to ratify: refuse rather than add a surviving field to the record writers. Gates closed is unchanged.
 - **Draft a rule from a learned pattern, tested on held-back decisions (#1138, story #988).** New `rule_draft.py` with `list` (kind and area pairs at autonomy level 2 or more whose answers agree at a threshold) and `draft` (majority option, source record ids linked, handed to `rulebook.propose` so it stays proposed; approval is the owner's, unchanged). Answers are split deterministically by a hash of the record id; the draft must also hold on the held-out part, else no draft (fail closed, also on a small set, a tie, a hard-stop kind or an existing rule). Inert unless the rulebook, autonomy and records parts are all enabled. PROVISIONAL thresholds: `rulebook.draft.min_agreement` 0.90, `min_held_out` 5.
