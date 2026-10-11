@@ -21,7 +21,10 @@ import pytest
 from skill_corpus import skill_corpus
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-README = (ROOT / "README.md").read_text()
+#: The README is the front door; the pipeline detail it links to lives in these docs.
+README_DOCS = ("README.md", "docs/running-the-loop.md", "docs/backlog.md", "docs/companions.md",
+               "docs/knowledge-graph.md")
+README = "".join((ROOT / rel).read_text() for rel in README_DOCS)
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 BRANCHING = (ROOT / "docs" / "branching-model.md").read_text(encoding="utf-8")
 #: #2107 moved `sigma-goal-design`'s whole step 5 ("Write the artifact" -- the schema, the copyable
@@ -43,6 +46,11 @@ PROPAGATE = (ROOT / "skills" / "sigma-loop" / "scripts" /
 #: `tests/test_sdlc_init.py::_RULE` is deliberately the same constant: paraphrases are how a
 #: cross-reference becomes false, which is what review caught on this very PR.
 RULE = "Nobody commits directly to a feature branch. All work reaches it through `sdlc/*` goal"
+
+
+def test_readme_links_every_doc_it_delegates_to():
+    front = (ROOT / "README.md").read_text()
+    assert [rel for rel in README_DOCS[1:] if f"]({rel})" not in front] == []
 
 
 def test_documents_all_seven_phases():

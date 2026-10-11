@@ -300,9 +300,9 @@ def test_the_documented_decision_gate_and_ledger_claims_match_the_code(tmp_path)
         cfg, _notes = setup.configure(str(d), source="local-goals")
         assert cfg["ledger"]["enabled"] is expect, value
 
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = "".join((ROOT / "docs" / f).read_text(encoding="utf-8") for f in ("features.md", "configuration.md"))
     row = next(line for line in readme.splitlines() if line.startswith("| **Decisions that actually hold**"))
-    assert "**denied**" in row and "name = <literal>" in row and "docs/enforcement.md" in row
+    assert "**denied**" in row and "name = <literal>" in row and "(enforcement.md)" in row
     assert "an edit that breaks it is **denied**" not in readme
     assert "still writes `ledger.enabled` as `true` where it is unset" not in readme
     assert "only where the key is still `null` or absent" in readme

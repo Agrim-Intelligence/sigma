@@ -29,7 +29,8 @@ NOT COVERED (documented gaps; each pinned by a "documented gap" test below, so w
 conscious edit): string-form / shell-string calls (`"issue view".split()`); argv built incrementally
 (`args = ["issue"]; args += ["edit"]`, `.append`/`.extend`); lists whose first element is a variable
 (`[cmd, ...]`); a call that passes its arguments to a wrapper as positional strings
-(`_gh("issue", "view")`); skill prose (.md, .tmpl); SHELL SCRIPTS (skills/**/*.sh, hooks/*.sh) -- 9
+(`_gh("issue", "view")`); `.tmpl` prose (`.md` under skills/ is now partly covered by tests/test_no_direct_gh_prose.py: loop-path
+commands only; the allowlisted lines stay uncovered); SHELL SCRIPTS (skills/**/*.sh, hooks/*.sh) -- 9
 files today, a grep found no `gh` reference in any of them, but nothing keeps that true. The ratchet
 therefore guarantees "no new list-literal gh issue|pr|project|label call", not "no new gh call".
 
@@ -82,6 +83,25 @@ MEASURED 2026-10-10 (#895 slice 4b-1), via the same `scan()` (PRINTED, not typed
 `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge` with `sha`; its ONE `gh pr merge` fallback argv is built inside
 the EXEMPT helper). Still in work.py: the `--auto` arm (REST has no auto-merge), reviewDecision, R5 sibling
 list, post_review `pr comment`, merge_design `pr merge`, close_design `pr close`; verify_merge 3.
+MEASURED 2026-10-11 (#895 slice 4b-2), via the same `scan()` (PRINTED, not typed): TOTAL 46 -> 45, work.py
+6 -> 5. `post_review`'s `gh pr comment` moved to `gh_api.comment_pr` (REST `POST issues/N/comments`; its ONE
+`gh pr comment` fallback argv is built inside the EXEMPT helper). The `gh repo view` and `gh api` literals of
+`merge_rights` / `protection` were never counted, so that part moves nothing. Still in work.py: the `--auto`
+arm, reviewDecision, R5 sibling list, merge_design `pr merge`, close_design `pr close`; verify_merge 3.
+MEASURED 2026-10-11 (#895 slice 4b-3), via the same `scan()` (PRINTED, not typed): TOTAL 45 -> 43, work.py
+5 -> 3. `merge_design`'s `gh pr merge` moved to `gh_api.merge_pr_gh` and `close_design`'s `gh pr close` to
+`gh_api.close_pr_gh` (REST `PUT pulls/N/merge`, comment POST then `PATCH pulls/N`; both ONE-fallback argvs
+are built inside the EXEMPT helper). Still in work.py: the `--auto` arm, reviewDecision, R5 sibling list;
+verify_merge 3 (ready/create/merge; NOT moved in 4b-3, see docs/cloud-sessions.md).
+MEASURED 2026-10-11 (#895 slice 3b), via the same `scan()` (PRINTED, not typed): TOTAL 43 -> 37. Six `["gh", *args]`
+seam literals moved to `gh_api.run_gh` / `gh_api.gh_argv`: cross_repo, feature_owner, ledger and board_setup
+entries removed (1 each -> 0), status 3 -> 1. These were already `gh api` calls, so this is a spelling change, not
+a behaviour migration. Still counted: every `label create` (sources x3, triage x1 = slice 3c), define x2,
+status.py's `src is None` fallback, doctor 5, board_migrate 2, sources' board sites, work x3, verify_merge x3.
+
+MEASURED 2026-10-11 (#895 slice 8), via the same `scan()` (PRINTED, not typed): TOTAL 37 -> 36, sources.py 20 -> 19.
+`GitHubSource.note()` was the last GraphQL-first comment: its `["issue", "comment", ...]` literal is gone and the
+method posts through `gh_api.comment_issue` (REST), whose single policy fallback is built inside the EXEMPT helper.
 
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
@@ -121,15 +141,11 @@ BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
     "skills/sigma-doctor/scripts/doctor.py": 5,
-    "skills/sigma-init/scripts/board_setup.py": 1,
-    "skills/sigma-loop/scripts/cross_repo.py": 1,
-    "skills/sigma-loop/scripts/feature_owner.py": 1,
-    "skills/sigma-loop/scripts/ledger.py": 1,
-    "skills/sigma-loop/scripts/sources.py": 20,
+    "skills/sigma-loop/scripts/sources.py": 19,
     "skills/sigma-loop/scripts/triage.py": 1,
-    "skills/sigma-loop/scripts/work.py": 6,
+    "skills/sigma-loop/scripts/work.py": 3,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,
-    "skills/sigma-status/scripts/status.py": 3,
+    "skills/sigma-status/scripts/status.py": 1,
 }
 
 

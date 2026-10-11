@@ -13,16 +13,17 @@ files** (default) or **GitHub issues** (`source: github`, needs an authenticated
 loop the same way either way — the helper handles where goals come from and how status is recorded.
 
 First, reset the per-run budget: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
---session-pid "$PPID"` (mid-session, `start-run .sdlc` resets just that budget cursor, for a
-deliberate fresh push without `start`'s config-warning/session-marker side effects and without
-hand-editing `config.json`.) **Always pass `--session-pid "$PPID"`** on this call and on every
+--session-pid "$PPID"` (mid-session, `start-run .sdlc --session-pid "$PPID"` resets your session's
+and the checkout's budget for a deliberate fresh push, without `start`'s side effects or
+editing `config.json`; bare: the only live session, or none.) **Always pass
+`--session-pid "$PPID"`** on this call and on every
 `next`/`next-batch` call below — `$PPID` here means literally that: read it fresh from YOUR OWN
 shell each time you run one of these commands, not a value you captured once and are trying to
 remember. It is your invoking shell's own parent process id, and it stays the SAME stable value
 every time you read it during this one loop run — this identifies the caller's process. Codex
 Desktop tasks can share it, so the registry also uses the validated `CODEX_THREAD_ID` supplied by
 Codex; a missing or invalid Codex task ID refuses the pick. The session registry
-(`loop.py session-active`/`session-end`, README's "Zero-touch routines") uses both to tell your own
+(`loop.py session-active`/`session-end`, `docs/routines.md`) uses both to tell your own
 prior picks apart from a sibling session's, and without it explicitly threaded through, a later
 `next`/`next-batch` call can silently re-dispatch a goal THIS SAME run already claimed (confirmed:
 omitting the flag lets that happen, because each separate command you run gets its own fresh,
@@ -70,8 +71,8 @@ both shapes. If the line is missing (`model_selection` isn't `"auto"`, or `journ
 off — the shipped default), **fall back to resolving it yourself**, the exact fallback
 `references/running.md` already documents for phase dispatch: in local mode `predict.py resolve
 "$goal" .sdlc`; in github mode, fetch the issue's real text first, title on the first line
-(`gh issue view "$goal" --json title,body --jq '.title + "\n\n" + (.body // "")'`, POSIX
-shell) and pass that text, never the bare `"$goal"`. Under the default selection
+(`gh api repos/{owner}/{repo}/issues/"$goal" --jq '.title + "\n\n" + (.body // "")'`)
+and pass that text, never the bare `"$goal"`. Under the default selection
 setting that fallback prints `off`; retain it as the explicit no-auto-selection state and give it to
 Codex's host resolver, which selects its versioned ordinary-work mapping. (A host with
 no subagent capability never reaches this step at all — goal-slot dispatch has always required
@@ -127,8 +128,8 @@ tests for this exact shape. A goal picked for the first time never even reaches 
 no worktree yet to resume, only to cut.
 
 Each dispatched subagent is a full agent session, not a lightweight thread — that's the real cost of
-`max_concurrent`, not anything sigma itself holds onto (see the README's "Memory & sizing"
-section). Size the number of goal slots you actually run to what your machine can sustain that many
+`max_concurrent`, not anything sigma itself holds onto (see the "Memory & sizing"
+section of `docs/parallelism.md`). Size the number of goal slots you actually run to what your machine can sustain that many
 *active* sessions at once, not to how many issues happen to be open.
 
 Track which goals are currently live in your other slots — you already know this, you dispatched

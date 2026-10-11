@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import types
@@ -90,22 +91,46 @@ def _run(argv, cwd):
     return subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=120)
 
 
-def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True):
+_TINY_OK = """import pytest
+KNOWN_DEFECTS = {("H01", "x", 0): 1}
+
+
+def test_ok():
+    assert True
+
+
+@pytest.mark.xfail(strict=True)
+def test_tracked():
+    assert False
+"""
+
+
+def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True, hostile=_TINY_OK, edits=None):
+    """A scratch copy of everything the sink probes load (scripts, hooks, sinks.py), with optional edits.
+
+    `edits` maps a path under the tree to a text-to-text function; each must change its file."""
     (tmp_path / "evals" / "safety").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_hostile_inputs.py").write_text(hostile)
+    shutil.copy(ROOT / "evals" / "safety" / "sinks.py", tmp_path / "evals" / "safety" / "sinks.py")
     text = CHECK_PATH.read_text()
     if check_edit:
         edited = check_edit(text)
         assert edited != text, "check.py mutation did not take effect"
         text = edited
     (tmp_path / "evals" / "safety" / "check.py").write_text(text)
-    if with_scrub:
-        (tmp_path / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
-        text = SCRUB_PATH.read_text()
-        if scrub_edit:
-            edited = scrub_edit(text)
-            assert edited != text, "scrub.py mutation did not take effect"
-            text = edited
-        (tmp_path / "skills" / "sigma-loop" / "scripts" / "scrub.py").write_text(text)
+    scripts = tmp_path / "skills" / "sigma-loop" / "scripts"
+    shutil.copytree(SCRUB_PATH.parent, scripts, ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / "hooks").mkdir()
+    shutil.copy(ROOT / "hooks" / "research_capture.py", tmp_path / "hooks" / "research_capture.py")
+    if not with_scrub:
+        (scripts / "scrub.py").unlink()
+    for rel, fn in dict(edits or {}, **({"skills/sigma-loop/scripts/scrub.py": scrub_edit} if scrub_edit else {})).items():
+        target = tmp_path / rel
+        text = target.read_text()
+        edited = fn(text)
+        assert edited != text, "%s mutation did not take effect" % rel
+        target.write_text(edited)
 
 
 # ---------------------------------------------------------------- the real tree
@@ -264,7 +289,7 @@ def test_no_finding_line_contains_a_generated_value(monkeypatch, capsys):
     c = _check()
     flipped = tuple((n, h, g, "accepted" if x == "refused" else "refused", s) for n, h, g, x, s in c.TABLE)
     monkeypatch.setattr(c, "TABLE", flipped)
-    assert c.main([]) == 1
+    assert c.main([], hostile=False) == 1
     out = capsys.readouterr()
     shape = re.compile(r"^check\.py: FINDING \S+ \S+ [0-9a-f]{10}: ")
     lines = out.out.splitlines()
@@ -277,7 +302,7 @@ def test_no_finding_line_contains_a_generated_value(monkeypatch, capsys):
 
 def test_main_exit_codes(capsys, tmp_path):
     c = _check()
-    assert c.main([]) == 0
+    assert c.main([], hostile=False) == 0
     assert re.match(r"^check\.py: ok\b", capsys.readouterr().out)
     # refusals: exit 2, nothing on stdout
     broken_import = tmp_path / "broken.py"
@@ -295,12 +320,12 @@ def test_main_exit_codes(capsys, tmp_path):
 def test_malformed_table_refuses(monkeypatch, capsys):
     c = _check()
     monkeypatch.setattr(c, "TABLE", c.TABLE[:1] + (("x", "y"),))
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
     got = capsys.readouterr()
     assert got.out == "" and "REFUSED" in got.err
     bad = ((c.TABLE[0][0], c.TABLE[0][1], c.TABLE[0][2], "maybe", 0),)
     monkeypatch.setattr(c, "TABLE", bad)
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
 
 
 _NEEDED = ("_SECRET_PATTERN_SPECS", "SHAPE_RULES", "COMMIT_SHAPE_RULES", "commit_secret_hits",
@@ -337,7 +362,7 @@ def test_unexpected_probe_exception_is_exit_2(monkeypatch, capsys):
     def boom(text):
         raise AttributeError("probe")
     monkeypatch.setattr(c, "load_scrub", lambda path: _fake(commit_secret_hits=boom))
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
     got = capsys.readouterr()
     assert got.out == "" and got.err.startswith("check.py: REFUSED")
 
@@ -345,7 +370,7 @@ def test_unexpected_probe_exception_is_exit_2(monkeypatch, capsys):
 def test_refused_by_finding_names_rule_and_no_value(monkeypatch, capsys):
     c = _check()
     monkeypatch.setattr(c, "TABLE", _with_row("authorization-header", expect="accepted"))
-    assert c.main([]) == 1
+    assert c.main([], hostile=False) == 1
     out = capsys.readouterr().out
     assert "refused-by:credential-assignment" in out
     value = c.generate(_row("authorization-header"))
@@ -455,4 +480,132 @@ def _banned(source):
 def test_check_py_stays_write_free():
     assert _banned("import subprocess\nopen('f', 'w')\np.mkdir()\nshutil.rmtree(p)\nf.write('x')\n") \
         == ["subprocess", "open", "mkdir", "rmtree", "write"]
-    assert _banned(CHECK_PATH.read_text()) == []
+    # the one sanctioned spawn: the hostile-fixture pytest subprocess (#1051)
+    assert _banned(CHECK_PATH.read_text()) == ["subprocess", "run"]
+    assert "subprocess.run(argv" in CHECK_PATH.read_text()
+
+
+# ---------------------------------------------------------------- hostile fixtures (#1051)
+
+
+def _hostile(tmp_path, body, known='{("H01", "x", 0): 1}'):
+    f = tmp_path / "test_hostile_inputs.py"
+    f.write_text("import pytest\nKNOWN_DEFECTS = %s\n%s" % (known, body))
+    return _C.run_hostile(f)
+
+
+_OK = "def test_a():\n    pass\n"
+_XF = "@pytest.mark.xfail(strict=True)\ndef test_t():\n    assert False\n"
+
+
+def test_hostile_real_file_counts_seven():
+    assert _C.known_defects(ROOT / "tests" / "test_hostile_inputs.py") == 7
+
+
+def test_hostile_green_on_only_tracked_failures(tmp_path):
+    assert _hostile(tmp_path, _OK + _XF) == []
+
+
+def test_hostile_red_on_unexpected_pass(tmp_path):
+    out = _hostile(tmp_path, _OK + "@pytest.mark.xfail(strict=True)\ndef test_t():\n    pass\n")
+    assert any("hostile-failed" in f or "hostile-xpassed" in f for f in out)
+    assert any("hostile-xfail-count" in f for f in out)
+
+
+def test_hostile_red_on_new_failure(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF + "def test_new():\n    assert False\n")
+    assert any("hostile-failed" in f for f in out)
+
+
+def test_hostile_red_on_count_drift(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF, known='{("H01", "x", 0): 1, ("H02", "x", 0): 2}')
+    assert any("hostile-xfail-count" in f for f in out)
+
+
+def test_hostile_red_on_skip(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF + "@pytest.mark.skip\ndef test_s():\n    pass\n")
+    assert any("hostile-skipped" in f for f in out)
+
+
+def test_hostile_refuses_without_defect_map_or_file(tmp_path):
+    for call in (lambda: _hostile(tmp_path, _OK, known="1"), lambda: _C.run_hostile(tmp_path / "nope.py")):
+        try:
+            call()
+        except _C.Refusal:
+            continue
+        raise AssertionError("expected a Refusal")
+
+
+def test_gesture_red_on_tracked_defect_that_stops_failing(tmp_path):
+    _scratch_tree(tmp_path, hostile=_TINY_OK.replace("assert False", "assert True"))
+    done = _run(_gesture(), tmp_path)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "hostile-fixtures" in done.stdout
+
+
+def test_gesture_refuses_when_pytest_summary_unreadable(tmp_path):
+    _scratch_tree(tmp_path, hostile="KNOWN_DEFECTS = {}\nraise SystemExit(0)\n")
+    done = _run(_gesture(), tmp_path)
+    assert done.returncode == 2 and done.stdout == "" and "REFUSED" in done.stderr, done.stdout + done.stderr
+
+
+# ---------------------------------------------------------------- sink probes (#1050)
+
+SCRIPTS = "skills/sigma-loop/scripts/"
+
+
+def _gesture_in(tmp_path, **kw):
+    _scratch_tree(tmp_path, **kw)
+    return _run(_gesture(), tmp_path)
+
+
+def test_sinks_clean_on_real_tree():
+    c = _check()
+    assert c.run_sinks(SCRUB_PATH, c.live_specs(_REAL), c.TABLE) == []
+
+
+def test_sinks_red_when_a_shape_is_removed_from_scrub(tmp_path):
+    line = '    ("aws-key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}"), "[REDACTED:aws-key]"),\n'
+    done = _gesture_in(tmp_path, scrub_edit=lambda t: t.replace(line, "", 1))
+    assert done.returncode == 1, done.stdout + done.stderr
+    for sink in ("actionlog", "ledger", "comment", "review-reason"):
+        assert "sink-leak aws-key" in done.stdout and "%s start" % sink in done.stdout, sink
+    assert "commit-sink aws-key" in done.stdout
+
+
+def test_sinks_red_when_the_commit_refusal_is_a_noop(tmp_path):
+    noop = "\n\ndef commit_secret_hits(*a, **k):\n    return []\n"
+    done = _gesture_in(tmp_path, scrub_edit=lambda t: t + noop)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "commit-sink private-key" in done.stdout and "commit-sink aws-key" in done.stdout
+    assert "commit-sink credential-assignment-suffix" not in done.stdout   # pinned accepted: still accepted
+
+
+def test_sinks_red_when_a_sink_cuts_before_scrubbing(tmp_path):
+    cut = lambda t: t.replace("cap=1 << 30)", "cap=len(body) + 1)").replace(
+        "ledger._sanitize_free_text(", "(lambda b, cap: b)(", 1)
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "comment_watch.py": cut})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "sink-leak aws-key" in done.stdout and "comment straddle" in done.stdout
+    assert "actionlog" not in done.stdout and "ledger " not in done.stdout
+
+
+def test_review_reason_probe_red_when_post_review_stops_scrubbing(tmp_path):
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "work.py": lambda t: t.replace("reason = scrub(reason or \"\")", "reason = (reason or \"\")")})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "review-reason start" in done.stdout
+
+
+def test_gesture_red_when_sink_leaks(tmp_path):
+    leak = lambda t: t.replace("            text = mod._scrub(text)", "            text = text", 1)
+    done = _gesture_in(tmp_path, edits={SCRIPTS + "actionlog.py": leak})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "sink-leak aws-key" in done.stdout and "actionlog start" in done.stdout
+
+
+def test_sink_probe_findings_carry_no_value():
+    c = _check()
+    for row in c.TABLE:
+        value = c.generate(row)
+        assert not any(value[-10:] in line for line in c.run_sinks(SCRUB_PATH, c.live_specs(_REAL), c.TABLE))
+        break

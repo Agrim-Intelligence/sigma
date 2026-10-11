@@ -125,6 +125,10 @@ def _github_counts(gh_cfg, run, config=None):
     pending = open `sdlc:goal` minus those active-in-progress. done/failed don't map to a single
     open-issue label in github mode, so they stay 0.
 
+    LEGACY-ONLY (decision-rubric slice 18): the confirmation label is no longer written -- a filed
+    follow-up is already a goal -- so `proposed` counts LEFTOVERS from old boards only, and is 0 on
+    a clean repo. The label name is read as a legacy alias (`handoff.proposed_label(config)`).
+
     #233: `proposed` DOES map now. A retro/hand-off follow-up filed with immediately_actionable=False
     carries the distinct, config-overridable label `handoff.proposed_label(config)` (#1348 renamed
     the shipped default to `sdlc:needs-confirmation`; a repo can still override it back) and
@@ -159,12 +163,12 @@ def _github_counts(gh_cfg, run, config=None):
         proposed_label = "sdlc:needs-confirmation"
 
     src = _load_sources()
-    login = src.resolve_assignee_login(lambda a: run(["gh", *a]), assignee) if (src and assignee) else None
+    login = src.resolve_assignee_login(lambda a: run(src.gh_api.gh_argv(a)), assignee) if (src and assignee) else None
 
     def n(*labels):
         if src is not None:
             try:
-                issues = src.fetch_issues_rest(lambda a: run(["gh", *a]), repo, list(labels),
+                issues = src.fetch_issues_rest(lambda a: run(src.gh_api.gh_argv(a)), repo, list(labels),
                                                 _COUNT_CAP, assignee=login)
                 return len(issues)
             except Exception:
@@ -394,6 +398,22 @@ def _awaiting_merge_segment(sdlc_dir, now=None):
         return ""
 
 
+def _board_skipped_segment(sdlc_dir):
+    """#895 slice 5: `board: skipped (GraphQL unavailable); labels are the source of truth` -- only when
+    the config has `discovery.github.project.enabled` AND GraphQL is unavailable (env only, no probe).
+    "" otherwise (the line stays as it was). Fail-open."""
+    try:
+        gh = ((_config(pathlib.Path(sdlc_dir)).get("discovery") or {}).get("github") or {})
+        if not (gh.get("project") or {}).get("enabled"):
+            return ""
+        src = _load_sources()
+        if src is None or src.gh_api.graphql_available()["available"]:
+            return ""
+        return "board: skipped (GraphQL unavailable); labels are the source of truth"
+    except Exception:
+        return ""
+
+
 def _legacy_delta_segment(sdlc_dir):
     """#327 LIVENESS: `legacy delta records: N (M would be refused): <repair command>` -- unit
     records the previous plugin wrote after the conversion, which Sigma merges but never applies.
@@ -416,7 +436,8 @@ def main(argv):
     if warning:
         print(warning, file=sys.stderr)
     s = summary(argv[1] if len(argv) > 1 else ".sdlc")
-    line = (f"backlog: {s['proposed']} proposed, {s['pending']} pending, {s['in_progress']} in-progress, "
+    legacy = f"{s['proposed']} legacy-proposed, " if s["proposed"] else ""   # leftovers only
+    line = (f"backlog: {legacy}{s['pending']} pending, {s['in_progress']} in-progress, "
             f"{s['done']} done, {s['parked']} parked, {s['failed']} failed | "
             f"iteration {s['iteration']} | "
             f"review-queue: {'NEEDS ATTENTION' if s['queue_nonempty'] else 'empty'}")
@@ -431,6 +452,9 @@ def main(argv):
     awaiting = _awaiting_merge_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if awaiting:                                # #255: silent unless a goal is awaiting a merge
         line += f" | {awaiting}"
+    board = _board_skipped_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if board:                                   # #895 slice 5: silent unless the board is being skipped
+        line += f" | {board}"
     heartbeat = _loop_heartbeat_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if heartbeat:
         line += f" | {heartbeat}"

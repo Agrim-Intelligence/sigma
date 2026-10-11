@@ -236,6 +236,21 @@ def test_excerpt_is_truncated_before_the_ledger_caps_it(tmp_path):
     assert note["why"].endswith("...")                  # the 160-char excerpt boundary fired, not the 200-cap
 
 
+def test_a_secret_straddling_the_excerpt_cut_leaves_no_fragment(tmp_path):
+    """#1050: `_excerpt` used to cut the RAW body at 160 before the ledger scrubbed it, so a secret
+    starting just before the cut left a fragment the scrubber could no longer recognise. Built at run
+    time so no secret-shaped string sits in this file."""
+    d = _sdlc(tmp_path)
+    _claim(d, "50")
+    secret = "AK" + "IA" + "QWERTYUIOP234567"
+    body = "x" * 146 + " " + secret                    # the 160 cut lands 13 characters into the key
+    run = _runner({"50": [_comment("IC_1", "bob", body, "2026-08-01T00:00:00Z")]})
+
+    comment_watch.tick(d, run=run)
+    note = [e for e in ledger.read_all(d) if e["kind"] == "note"][0]
+    assert "AK" + "IAQ" not in note["why"]            # the fragment; the placeholder itself may be cut by the 200 cap
+
+
 def test_multiple_claimed_issues_are_each_polled_independently(tmp_path):
     d = _sdlc(tmp_path)
     _claim(d, "50", actor=ACTOR)

@@ -192,9 +192,21 @@ relative to the repo root and may not be absolute or contain `..`. Exit 1 on any
 python3 evals/skills/smoke.py --root <skills> --cards-dir <cards>
 ```
 
-The bare form with no flags reads the real `skills/` and the real `evals/skills/cards/`. No real
-cards exist yet, so it stays red until slice 3 writes them, and the runner is deliberately NOT part of
-the `pytest tests/` gate until then. Not measured: behaviour on the real tree.
+The bare form, `python3 evals/skills/smoke.py`, reads the real `skills/` and the real `evals/skills/cards/`. Slice 2 (#1045)
+wrote a card for every skill that has a `scripts/*.py` or `scripts/*.sh` file; slice 3 (#1046) wrote a `pinned` card for each
+prose-only skill (one verbatim MUST/NEVER-style sentence from its own `SKILL.md`, inside the kept prefix; the
+`sigma-plan-review` and `sigma-goal` cards pin the plan-review-before-implementation ordering). The bare form is now green
+and `tests/test_skill_smoke.py` runs it on the real tree, so it is part of the `pytest tests/` gate: a new skill directory
+with no card, or a reworded pinned sentence, turns it red naming the skill (an empty `skills/sigma-probe/` exits 1). A card is `exercised` only when every
+gesture on it has a passing fixture, otherwise `pinned` (a verbatim gate) or `described`. A gesture's `--help`
+behaviour is not repeated in cards: it is held by `test_every_script_answers_help_without_side_effects` (`*.py`) and
+`test_shell_scripts_have_a_help_handler` (`*.sh`, grep only) in `tests/test_script_help.py`. A card's `agent`
+producer means `SKILL.md` tells the agent to write the file and no script does. Wall time (#1047): every run prints `smoke wall: N.NNs, ceiling M.MMs` and a run slower than `ceiling_seconds` in
+`evals/skills/budget.json` is a finding (`--budget` points elsewhere; null or absent = `ceiling unset`). CI shows the line
+because it runs the bare gesture as its own step before pytest (`-q` hides a passing test's output and `--durations=30`
+lists only the 30 slowest tests); the pytest wrapper's bare-gesture run asserts the same ceiling under xdist load. The
+ceiling (1.0s) and the three CI job logs behind it (0.09s, 0.14s, 0.10s, unloaded, macOS 3.12) are recorded in `budget.json`; the
+xdist-load ratio there is a local measurement, and the timer wraps the checks only (not interpreter start).
 
 ## Phase context budget — instruction bill by agent
 
@@ -270,6 +282,12 @@ drops below `baseline.json`** — that drop is the drift signal. No LLM, no cost
 python3 evals/run.py          # score the corpus, gate on drift vs baseline
 ```
 
+The safety check (secret shapes, sinks, hostile fixtures) is separate, free and also runs in CI:
+
+```bash
+python3 evals/safety/check.py
+```
+
 Add a fixture (`{id, prompt, expect: code|ask|standard, tier2_rubric}`) whenever you add or change a
 discipline signal. Raise the baseline only when you add harder fixtures — never lower it to green a red
 build without justifying the regression.
@@ -304,3 +322,12 @@ python3 evals/run.py --live    # parked until a real judge is wired
 against the property list in `evals/regression/properties.json` and prints `PASS`, `FAIL` or `NOT EVALUABLE` per property.
 Exit 0 means no failure; 1 means a failure or a hard property with no evidence; 2 means the input was refused. The committed
 run and three mutated copies in `evals/regression/fixtures/` come from a synthetic run, so they test the checker, not Sigma.
+
+## Regression control (layer 2) in CI
+
+`python3 evals/regression/control.py run` plants each catalogued regression in a throwaway copy of the committed tree and
+fails (exit 1, `FAIL stays-green <row> <gate>`) if a gate that must catch it exits 0. CI runs it in the `regression-control`
+job of `.github/workflows/ci.yml`: on a pull request only for rows whose anchor file or gate file the PR changed
+(`git diff --name-only HEAD^1 HEAD > changed.txt; python3 evals/regression/control.py run --changed-files changed.txt`, zero
+selected rows is a pass), and for every row nightly and on `workflow_dispatch`. It never records, never calls a model and
+is not a required check. Not selected on a PR: a helper a gate imports, `conftest.py`, `ci.yml`; the nightly run is the backstop.

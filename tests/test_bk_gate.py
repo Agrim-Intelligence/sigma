@@ -16,6 +16,7 @@ import sys
 import time
 
 import backup_support as bk
+from changelog_layout import entries_naming
 
 ROOT = bk.ROOT
 UNIT = "u"
@@ -248,11 +249,11 @@ def test_rule_text_and_carve_out():
     for needle in ("### 13c.", "The one exception: backup refs", "_atomic_leased_push", "_delete_chunk", "--expect",
                    "backup.former_prefixes", "220 bytes", "exit 3", "name-too-long", "pick-time rebase pass"):
         assert needle in doc, "docs/branching-model.md lacks %r" % needle
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "running-the-loop.md").read_text(encoding="utf-8")
     assert "lease-protected force-push of a unit branch" in readme and "docs/branching-model.md" in readme
     assert "prune of backup refs" in (ROOT / "docs" / "enforcement.md").read_text(encoding="utf-8")
     table = (ROOT / "skills" / "sigma-doctor" / "scripts" / "enforcement_table.py").read_text(encoding="utf-8")
-    assert "backup refs (once upkeep is enabled) are outside it" in table
+    assert "prune of backup refs (once upkeep is enabled) is outside it" in table
     budget = _load_path("backup_phase_budget", ROOT / "evals" / "phase_context_budget.py")
     measured = []
     for phase in budget.PHASES.values():
@@ -263,7 +264,8 @@ def test_rule_text_and_carve_out():
     assert measured == [], "the carve-out must stay out of the measured phase payloads: %r" % measured
     note = bk.support.template_cfg()["_upkeep"]
     assert "NOTHING RUNS FROM THIS BLOCK" not in note and "no feature calls yet" not in note, "the template note still says nothing runs"
-    assert not note.startswith("RESERVED") and "NOTHING ELSE RUNS FROM THIS BLOCK YET" in note
+    # the scheduler and the other entry points exist now, so the old "nothing else runs yet" sentence is gone on purpose
+    assert not note.startswith("RESERVED") and "NOTHING ELSE RUNS" not in note
     assert "feature_rebase.py restore" in note and "feature_rebase.py prune" in note and "backup.former_prefixes" in note
     assert "pick-time rebase pass" in note and "too long" in note
     gate = (ROOT / "skills" / "sigma-loop" / "scripts" / "feature_upkeep.py").read_text(encoding="utf-8")
@@ -271,8 +273,12 @@ def test_rule_text_and_carve_out():
     entries = json.loads((ROOT / "docs" / "launch" / "dispositions" / "921.json").read_text(encoding="utf-8"))
     assert len(entries) == 1 and entries[0]["pattern"] == "refs/sigma/backup/<unit>/<stamp>", entries
     assert entries[0]["unscanned"] is True and entries[0]["issue"] == "#921" and "feature_backup.py" in entries[0]["evidence"]
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").split("## 1.0.4")[0]
-    assert "(#921, upkeep part A, slice 5)" in changelog
+    assert changelog_names_slice_5((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+
+
+def changelog_names_slice_5(text):
+    """Anywhere in the file: a release moves the entry under a dated heading (#1074)."""
+    return bool(entries_naming(text, "(#921, upkeep part A, slice 5)"))
 
 
 def _pass(tmp, name, block, wall=None, setup=None, race=None):

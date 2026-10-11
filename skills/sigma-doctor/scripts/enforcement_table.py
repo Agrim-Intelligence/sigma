@@ -147,12 +147,22 @@ EXTERNAL_CONTROLS = (
                   "run against the real command line, and cannot prove the resolver did not influence the reviewer. "
                   "It can only add a refusal; a block, a bad reply, a timeout or a moved tree all stop the push",
      "condition": "needs a validated model id; the shipped catalog holds only a placeholder, so the route stays closed"},
+    {"control": "Unit landing is user-requested", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("upkeep.enabled",), "settings": (),
+     "mechanism": "`feature_land.py` `land` and `feature_land_merge.py`: land a unit only on an explicit request, behind the "
+                  "upkeep project door, with the merge pinned to the head that was rehearsed. Landing is deliberately "
+                  "not in `gates.irreversible_actions`: it has its own gate and an explicit yes in `sigma-rebase`",
+     "condition": "closed refuses before any read; the chat door and a hosted ruleset were not covered by the hosted run"},
     {"control": "Irreversible actions park", "kind": "advice", "hosts": "all",
-     "enabled_by": (), "settings": ("gates.irreversible_actions", "gates.on_block"),
+     "enabled_by": ("decision_rubric.hard_stops.enabled",), "settings": ("gates.irreversible_actions", "gates.on_block"),
      "mechanism": "the loop's instructions ask the agent to park rather than run a "
-                  "deploy/delete/overwrite/spend/migrate",
-     "condition": "no code reads these keys; the code's own lease force-push of a unit branch and its prune of "
-                  "backup refs (once upkeep is enabled) are outside it, see docs/branching-model.md section 13b"},
+                  "deploy/delete/overwrite/spend/migrate; with `decision_rubric.hard_stops.enabled` the keys are the "
+                  "legacy alias of the class toggles, and the commit, pull-request and rebase-push steps and the "
+                  "issue writes Sigma performs itself park a matching action (a command an agent runs by itself on a "
+                  "host without hooks stays advice)",
+     "condition": "closed by default; the code's own lease force-push of a registered unit branch or a `sdlc/` branch "
+                  "is carved out as Sigma's own, and its prune of backup refs (once upkeep is enabled) is outside it, "
+                  "see docs/branching-model.md section 13b"},
     {"control": "Branch protection (required checks / reviews)", "kind": "git-host", "hosts": "all",
      "enabled_by": (), "settings": (),
      "mechanism": "GitHub refuses the merge; `work.auto_merge: \"protected\"` merges only where the "
@@ -164,6 +174,11 @@ EXTERNAL_CONTROLS = (
                   "requires the check",
      "condition": "Sigma's own public CI on push/PR; nothing installs it into your repository",
      "readme": "Quality-drift gate"},
+    {"control": "Safety check (secret shapes, sinks, hostile fixtures)", "kind": "git-host", "hosts": "all",
+     "enabled_by": (), "settings": (),
+     "mechanism": "`evals/safety/check.py` fails the CI job; blocks a merge only where branch "
+                  "protection requires the check",
+     "condition": "Sigma's own public CI on push/PR; nothing installs it into your repository"},
 )
 
 #: Gates that exist but are deliberately not registered (S5): pick-time gates outside the three
@@ -171,7 +186,7 @@ EXTERNAL_CONTROLS = (
 NOT_YET = (
     "Pick-time gates in `feature_owner.py`, `feature_propagate.py`, `promote.py` and "
     "`feature_labels.py` (`gate_at_pick` and the promote-time label checks) are not registered "
-    "yet: they back the README's \"Human approval gate, in one transition\" and \"Findings become "
+    "yet: they back the feature list's \"Human approval gate, in one transition\" and \"Findings become "
     "work\" rows, and a follow-up registers them. `work.py` also refuses to load a config with "
     "`ledger.receipt_sharing: true` (not supported yet); that is a config refusal, not a control "
     "on the work, and is deferred with them.",
@@ -406,9 +421,9 @@ def problems(root):
 
 
 def readme_problems(readme_text, all_rows):
-    """Problems with the README's feature table against `all_rows` (a pure function over text; not
-    part of `main`). Every `readme` label names exactly one `| **<label>** |` row, that row links
-    to `docs/enforcement.md`, and a label whose rows are all `advice` does not call itself a gate."""
+    """Problems with the feature table (`docs/features.md`, which the README links) against
+    `all_rows` (a pure function over text; not part of `main`). Every `readme` label names exactly
+    one `| **<label>** |` row, that row links to the enforcement table, and a label whose rows are all `advice` does not call itself a gate."""
     found = []
     lines = readme_text.splitlines()
     by_label = {}
@@ -422,7 +437,7 @@ def readme_problems(readme_text, all_rows):
                          f"expected exactly one (missing or ambiguous)")
             continue
         line = matches[0]
-        if "docs/enforcement.md" not in line:
+        if "(enforcement.md)" not in line and "(docs/enforcement.md)" not in line:
             found.append(f"README: the {label!r} row does not link to docs/enforcement.md")
         if all(r["kind"] == "advice" for r in by_label[label]):
             hit = GATE_WORDS.search(line)

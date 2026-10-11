@@ -2420,3 +2420,33 @@ def test_append_never_truncates_a_schema_valid_ci_check_name(tmp_path):
                       checks_total=1, checks_truncated=False,
                       checks=[{"name": name, "conclusion": "pass"}])
     assert e["checks"][0]["name"] == name, "a schema-valid check name was silently truncated"
+
+
+# --------------------------------------------------------------------------- #895 slice 3b: seam via gh_api
+
+def test_run_gh_delegates_to_gh_api_run_gh_with_a_short_cap(monkeypatch):
+    """RED BEFORE THE CHANGE (delegation spy): returns stdout stripped, and passes timeout=15 (a hook reaches it)."""
+    seen = []
+    monkeypatch.setattr(ledger._gh_api(), "run_gh", lambda args, timeout=120: (seen.append((list(args), timeout)), (0, " me\n", ""))[1])
+    assert ledger._run_gh(["api", "user"]) == "me" and seen == [(["api", "user"], 15)]
+
+
+def test_run_gh_failure_is_an_empty_string_and_actor_falls_back(monkeypatch):
+    """CHARACTERISATION (green today): rc != 0 is "", and `actor` then uses $USER."""
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: type("P", (), {"returncode": 1, "stdout": "x", "stderr": "e"})())
+    assert ledger._run_gh(["api", "user"]) == ""
+    monkeypatch.setenv("USER", "fallbackuser")
+    monkeypatch.setattr(ledger, "_ACTOR_CACHE", {}, raising=False)
+    assert ledger.actor({}) == "fallbackuser"
+
+
+def test_run_gh_missing_binary_propagates(monkeypatch):
+    """CHARACTERISATION (green today): `actor` is the one catcher, `_run_gh` itself does not swallow."""
+    import subprocess
+
+    def boom(argv, **kw):
+        raise FileNotFoundError("gh")
+    monkeypatch.setattr(subprocess, "run", boom)
+    with pytest.raises(FileNotFoundError):
+        ledger._run_gh(["api", "user"])

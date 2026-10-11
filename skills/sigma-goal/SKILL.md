@@ -1,7 +1,7 @@
 ---
 name: sigma-goal
 description: Run one goal through all SDLC phases with approval gates. Use for supervised end-to-end work or /sigma-goal.
-allowed-tools: Bash(python3 *), Bash(gh issue view *)
+allowed-tools: Bash(python3 *), Bash(gh issue view *), Bash(gh api *)
 ---
 
 ## Codex path resolution
@@ -36,10 +36,10 @@ counterpart to the autonomous `/sigma-loop`).
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" resolve "<goal-path>" .sdlc`.
    For a GitHub issue number, PIPE its real text in, never paste it into a shell argument (issue
    text is untrusted data; `$(...)` or backticks inside quotes would run, #713):
-   `gh issue view "<goal>" --json title,body --jq '.title + "\n\n" + (.body // "")' | python3
+   `gh api repos/{owner}/{repo}/issues/"<goal>" --jq '.title + "\n\n" + (.body // "")' | python3
    "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" resolve - .sdlc "<goal>"` (POSIX shell;
    `-` reads the text from stdin) — the TITLE on the first line, because a haiku signal counts only
-   there (#2827); plain `--json title,body` prints one-line JSON, which reads as all title; the final
+   there (#2827); the final
    argument keeps the ledger event attributed to the issue number. Passing
    the bare issue number
    as the text classifies its digits and can silently choose the wrong tier. This is the

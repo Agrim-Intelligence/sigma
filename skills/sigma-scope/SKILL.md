@@ -1,7 +1,7 @@
 ---
 name: sigma-scope
 description: Turn an idea into prioritized, deduplicated, dependency-linked GitHub issues. Use before issue creation or /sigma-scope.
-allowed-tools: Bash(python3 *), Bash(gh issue *), Read, Grep
+allowed-tools: Bash(python3 *), Bash(gh issue *), Bash(gh api *), Read, Grep
 ---
 
 ## Codex path resolution
@@ -50,8 +50,8 @@ The skill is seven steps:
    5, never silently treated as blocking or silently dropped.
    - A candidate's own pack carries `ref`/`score`/`strength`/`evidence`, deliberately no title —
      `dedup.py` never makes a live `gh` call itself. Before presenting a candidate at step 5, fetch
-     its real title with `gh issue view <ref> --json title -q .title` (covered by this skill's own
-     `Bash(gh issue *)` grant) so the question names the issue, not just a bare number — *"this looks
+     its real title with `gh api repos/{owner}/{repo}/issues/<ref> --jq .title` (covered by this skill's own
+     `Bash(gh api *)` grant) so the question names the issue, not just a bare number — *"this looks
      related to #N: '\<real title\>' — same thing, related-but-distinct, or unrelated?"* is a
      question a user can actually answer at a glance; a bare `#N` isn't.
 
@@ -86,8 +86,8 @@ The skill is seven steps:
    - Once confirmed: `python3 "${CLAUDE_SKILL_DIR}/scripts/scope.py" .sdlc --plan
      .sdlc/plans/scope/<slug>.plan.json --report .sdlc/plans/scope/<slug>.report.json` — this is
      the ONLY supported way to invoke `compile_plan.compile_plan()` from here (see "Why
-     `scope.py`" below); never pass `--actionable` at this step, issues file as `sdlc:needs-confirmation`
-     by design — whether/when they start is step 7's decision, not this one's.
+     `scope.py`" below); never pass `--actionable` at this step, issues are armed at their plan priority (or parked if
+     the deny-list matches); with `ai_filed.triage.enabled` false they file with the legacy `sdlc:needs-confirmation`.
 
 7. **Resolve assignment and the execution path.** Infer `area` from the plan's own primary
    touched path (the directory/file step 2 and step 6 centered on); if the plan genuinely spans
@@ -99,7 +99,7 @@ The skill is seven steps:
    - Ask the same run-now-vs-file-and-stop question `/sigma-triage`'s own step 5 already uses. The
      issues themselves are already created and real, as of step 6 — this choice only decides what
      happens NEXT: **file-and-stop** (apply the assignment decided above if any, record it, stop —
-     the issues stay exactly as step 6 left them, `sdlc:needs-confirmation`, nothing further happens), or
+     the issues stay exactly as step 6 left them, nothing further happens), or
      **start now**. If "start now" and the picked login is the invoking user, that's the
      self-assigned path; any other login is the hand-off path.
    - `python3 "${CLAUDE_SKILL_DIR}/scripts/assign.py" execute .sdlc --plan
@@ -157,8 +157,8 @@ touched — this is a new, thin, independently-tested bridge, not a rewrite of e
 ## Caveats
 
 **Proposed, not actionable, until step 7 says so:** every issue `scope.py`/`compile_plan.py` creates
-files as `sdlc:needs-confirmation` (queued but queryable), never `sdlc:goal` — the loop's own `next_pending()`
-can't see it yet. Only step 7's `assign.py execute` with a `start-now-*` path promotes it to
+is armed at its plan priority, or parked when the deny-list matches (triage off: filed with the
+legacy `sdlc:needs-confirmation`, never `sdlc:goal`). Only step 7's `assign.py execute` with a `start-now-*` path promotes it to
 `sdlc:goal`. `file-and-stop` leaves it exactly as created, on purpose — nothing else happens until a
 later `/sigma-triage` or manual promotion picks it up.
 
@@ -185,7 +185,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/dedup.py" .sdlc "<resolved text>"
 
 # 4-5. Confirm the target, ask the clarifying-questions round (this skill's own reasoning; no script)
 
-# 6. Compile the decided plan into real issues (goal_label defaults to False -- sdlc:needs-confirmation)
+# 6. Compile the decided plan into real issues (armed or parked by triage)
 python3 "${CLAUDE_SKILL_DIR}/scripts/scope.py" .sdlc \
   --plan .sdlc/plans/scope/<slug>.plan.json --report .sdlc/plans/scope/<slug>.report.json
 

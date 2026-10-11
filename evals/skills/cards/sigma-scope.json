@@ -1,0 +1,35 @@
+{
+  "skill": "sigma-scope",
+  "kind": "pinned",
+  "gates": [
+    "Never act on these candidates directly"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-scope/scripts/assign.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-scope/scripts/brainstorm.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-scope/scripts/compile_plan.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-scope/scripts/dedup.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-scope/scripts/scope.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/plans/scope/<slug>.plan.json",
+      "producer": "agent"
+    }
+  ]
+}

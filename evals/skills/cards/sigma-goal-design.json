@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-goal-design",
+  "kind": "pinned",
+  "gates": [
+    "NEVER write `Budget` from memory."
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-goal-design/scripts/goal_design.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/design/<n>.md",
+      "producer": "agent"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 ---
 name: sigma-radar
 description: Research current developments against the backlog and write a ranked digest, with no external writes by default. Use for proactive scouting or /sigma-radar.
-allowed-tools: Bash(python3 *), Bash(gh issue *), WebSearch, WebFetch
+allowed-tools: Bash(python3 *), Bash(gh issue *), Bash(gh api *), WebSearch, WebFetch
 ---
 
 ## Codex path resolution
@@ -19,7 +19,7 @@ surfaces what you didn't know to look for. **Phase A is dry-run: it writes a dig
 records what it surfaced, but never files issues or touches GitHub.**
 
 1. **Agenda (rotate over the backlog).** Get the open backlog — local `.sdlc/goals/*.md`, or
-   `gh issue list --state open` in github mode — and count it (N). Pick this run's slice:
+   `gh api "repos/{owner}/{repo}/issues?state=open&per_page=100" --paginate --jq '.[]|select(.pull_request|not)|.number'` in github mode — and count it (N). Pick this run's slice:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/radar.py" agenda <N> <k> <cursor>` (k≈3; `cursor` from the
    last run's `next_cursor`, starting 0). It returns the item indices to research + the next cursor,
    so successive runs cover different items.

@@ -17,7 +17,7 @@ from pathlib import Path
 RISK = {"gh-issue": "medium", "gh-pr": "medium", "gh-label": "medium",
         "gh-project": "medium", "gh-api-write": "medium", "graphql-mutation": "medium",
         "git-push": "high", "git-destructive": "high", "git-ref-write": "high", "fs-remove": "high",
-        "fs-rmtree": "high", "fs-write": "medium", "network-post": "high"}
+        "fs-rmtree": "high", "fs-write": "medium", "network-post": "high", "network-delete": "high"}
 _GH_ACTIONS = {"issue": {"close", "reopen", "edit", "comment", "create", "delete", "transfer", "lock"},
                "pr": {"create", "merge", "close", "comment", "review", "edit", "ready"},
                "label": {"create", "edit", "delete"},
@@ -56,7 +56,7 @@ def _rest_verb(token):                # `-X DELETE`, `--method=DELETE`, `-XDELET
 
 
 _GH_API_WRITES = {"comment_issue", "add_labels", "remove_label", "create_issue", "close_issue", "edit_issue", "add_assignees",
-                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft"}
+                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh", "close_pr_gh"}
 
 
 def _is_gh_api_write_call(func):
@@ -79,12 +79,16 @@ def _metadata(path, function, rule):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/sigma-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
-        ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-pr"):
-            ("work.enabled; work.auto_merge != off", "high"),
-        ("skills/sigma-loop/scripts/work.py", "close_design", "gh-pr"):
-            ("ungated", "high"),
+        ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-api-write"):
+            ("work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)", "high"),
+        ("skills/sigma-loop/scripts/work.py", "close_design", "gh-api-write"):
+            ("ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)", "high"),
         ("skills/sigma-loop/scripts/work.py", "merge", "gh-pr"):
             ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high"),
+        ("skills/sigma-loop/scripts/work.py", "post_review", "gh-api-write"):
+            ("evidence-bound to this goal's review generation and head; one non-idempotent REST comment POST via gh_api.comment_pr (ONE `gh pr comment` fallback only on a primary rate limit while GraphQL is available); an ambiguous outcome parks and reconciles by the immutable marker, never re-posts (#895 slice 4b-2)", "medium"),
+        ("skills/sigma-loop/scripts/work.py", "merge", "gh-api-write"):
+            ('work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2', "high"),
         ("skills/sigma-loop/scripts/work.py", "finish", "gh-pr"):
             ("work.enabled; confirmed merged PR", "high"),
         ("skills/sigma-loop/scripts/work.py", "_delete_remote_branch", "gh-api-write"):
@@ -270,17 +274,50 @@ def _strings(node, values):
     return found
 
 
-def _values(tree):
-    values = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            if node.value is None:
-                continue
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if isinstance(target, ast.Name):
-                    values[target.id] = _strings(node.value, values)
-    return values
+_FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _own_nodes(scope):
+    """Nodes of one scope in walk order, not descending into nested function definitions."""
+    queue = list(ast.iter_child_nodes(scope))
+    found = []
+    while queue:
+        node = queue.pop(0)
+        found.append(node)
+        if not isinstance(node, _FUNCS):
+            queue.extend(ast.iter_child_nodes(node))
+    return found
+
+
+def _scoped_calls(tree):
+    """Yield (call, values) with values resolved per function: own assignments over the enclosing scopes'."""
+    stack = [(tree, {})]
+    while stack:
+        scope, outer = stack.pop()
+        values = dict(outer)
+        nodes = _own_nodes(scope)
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        values[target.id] = _strings(node.value, values)
+        for node in nodes:
+            if isinstance(node, _FUNCS):
+                stack.append((node, values))
+            elif isinstance(node, ast.Call):
+                yield node, values
+
+
+def _is_http_delete(node, name, tokens):
+    """A Python HTTP-client DELETE: `method="DELETE"` keyword, `requests|httpx.delete(`, `.request("DELETE", ...)` (#959)."""
+    for kw in node.keywords:
+        if kw.arg == "method" and any(s.lower() == "delete" for s in _strings(kw.value, {})):
+            return True
+    if name in {"requests.delete", "httpx.delete"}:
+        return True
+    return (name.endswith(".request") and bool(node.args) and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str) and node.args[0].value.lower() == "delete")
 
 
 def _rules_for_call(node, values):
@@ -325,6 +362,8 @@ def _rules_for_call(node, values):
                 rules.add("git-ref-write")      # a plain update-ref creates or moves a ref (#960)
     if _is_gh_api_write_call(node.func):
         rules.add("gh-api-write")
+    if _is_http_delete(node, name, tokens):
+        rules.add("network-delete")
     if name == "shutil.rmtree":
         rules.add("fs-rmtree")
     elif name.startswith("os.") and name.split(".")[-1] in {"unlink", "remove", "rmdir", "replace", "rename"}:
@@ -364,10 +403,7 @@ def scan_paths(root, paths):
                     groups[key] = groups.get(key, 0) + 1
         else:
             tree = ast.parse(text, filename=str(path))
-            values = _values(tree)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
+            for node, values in _scoped_calls(tree):
                 matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
                 function = max(matching, default=(0, "<module>"))[1]
                 rules = _rules_for_call(node, values)

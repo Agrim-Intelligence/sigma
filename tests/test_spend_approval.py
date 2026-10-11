@@ -72,6 +72,12 @@ class FakeSource:
             self.comments.append(self.comments_after_note)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_counter(tmp_path, monkeypatch):
+    """The use counter writes under `.sdlc/state` of the working directory: keep it off the repo."""
+    monkeypatch.chdir(tmp_path)
+
+
 def run(src, config=CFG, action="render 40 clips on RunPod", goal="77"):
     return sa.check(".sdlc", goal, action, config, src)
 
@@ -294,6 +300,15 @@ def test_audit_post_failure_denied_so_no_unaudited_grant():
     assert out.startswith("DENIED") and "audit" in out
 
 
+def test_audit_post_failure_with_a_gh_api_error_is_denied_and_names_the_type():
+    """#895 slice 8: `note()` now raises `GhApiError` (REST-first), no longer a bare runner error. The
+    handler denies on ANY exception, so no unaudited grant; the denial names the new type."""
+    err = _mod("gh_api").GhApiError("gh api failed", "gh: Not Found (HTTP 404)", 404, "not_found")
+    src = FakeSource(note_error=err)
+    out = run(src)
+    assert out.startswith("DENIED") and "GhApiError" in out and "no unaudited grant" in out
+
+
 def test_audit_comment_not_visible_on_reread_denies():
     class Lagging(FakeSource):
         def note(self, goal, text):
@@ -432,7 +447,7 @@ def test_verb_listed_in_usage():
 # ---- docs: the NEVER prose names the verb in all three places ---------------------------------
 
 @pytest.mark.parametrize("rel", ["skills/sigma-loop/SKILL.md",
-                                 "skills/sigma-loop/references/running.md", "README.md"])
+                                 "skills/sigma-loop/references/running.md", "docs/running-the-loop.md"])
 def test_never_prose_names_the_exemption(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "spend-approval" in text, f"{rel}: the NEVER rule no longer names the exemption verb"
@@ -443,7 +458,7 @@ def test_never_prose_names_the_exemption(rel):
 def test_template_documents_the_config_key_default_off():
     tmpl = json.loads((ROOT / "skills/sigma-init/templates/config.json.tmpl")
                       .read_text(encoding="utf-8"))
-    assert tmpl["spend_approval"] == {"enabled": False, "approvers": []}
+    assert tmpl["spend_approval"] == {"enabled": False, "approvers": [], "classes": ["spend"]}
     assert "_spend_approval" in tmpl
 
 
@@ -506,12 +521,12 @@ def test_running_md_documents_the_quoted_heredoc_never_a_shell_interpolated_step
     assert '--action "<' not in text
 
 
-def test_action_dash_reads_stdin_and_shell_text_is_inert(monkeypatch, capsys):
+def test_action_dash_reads_stdin_and_shell_text_is_inert(monkeypatch, capsys, tmp_path):
     import io
     mod = _mod("spend_approval")
     src = FakeSource()
     monkeypatch.setattr(sys, "stdin", io.StringIO("deploy $(touch /x) `id` now\n"))
-    out, code = mod.run_verb("/nonexistent", "77", ["--action", "-"], CFG, src)
+    out, code = mod.run_verb(str(tmp_path / ".sdlc"), "77", ["--action", "-"], CFG, src)
     assert code == 0 and out.startswith("APPROVED")
     assert "touch /x" in src.notes[0][1]                          # data, never executed
 

@@ -371,6 +371,22 @@ def test_note_verb_is_fail_open_but_reports_the_failure_loudly(capsys):
         assert "no gh" in out.err     # the underlying reason is still on stderr, for a human reading the log
 
 
+def test_note_verb_failure_wording_names_what_is_retried(capsys):
+    """#895 slice 8: the retry covers only a server 5xx / ambiguous transport failure, so the stderr line must
+    not claim "after retries" for a 404 that was never retried."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0, max_iter=5); lp = _loop()
+
+        class Boom:
+            def note(self, g, t): raise RuntimeError("HTTP 404")
+
+        lp.sources.get_source = lambda sdlc_dir, config: Boom()
+        assert lp.main(["loop.py", "note", base, "5", "hello"]) == 1
+        err = capsys.readouterr().err
+        assert "retries cover only a server 5xx or ambiguous transport failure" in err
+        assert "after retries" not in err
+
+
 def test_cli_qc_verb_is_a_safe_noop_for_local():
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 1, max_iter=5)
@@ -4291,11 +4307,11 @@ def test_cli_start_run_resets_the_budget_cursor():
 
 
 def test_cli_start_run_never_touches_the_session_marker():
-    """Unlike `start`, `start-run` takes no `--session-pid` -- proving the two verbs stay decoupled
-    (a fresh mid-session budget window must never silently register/renew a session-liveness
+    """Unlike `start`, `start-run` never registers a session -- proving the two verbs stay
+    decoupled (a fresh mid-session budget window must never silently create a session-liveness
     marker `session-active` would then report) rather than `start-run` quietly duplicating `start`.
-    A stray `--session-pid` is simply not read, the same as any other verb ignoring an argv tail it
-    has no use for."""
+    Since #955 `--session-pid` IS read: it names the session whose run block to reset, and only
+    when that session's marker already exists, so with no marker it still creates none."""
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 1)
         lp = _loop()
@@ -7742,7 +7758,7 @@ def test_run_loop_cleanup_cannot_clear_an_overlapping_same_pid_successor(monkeyp
 
 
 def test_readme_session_end_gesture_captures_and_returns_the_generation_token():
-    readme = (pathlib.Path(__file__).resolve().parent.parent / "README.md").read_text()
+    readme = (pathlib.Path(__file__).resolve().parent.parent / "docs/routines.md").read_text()
     match = re.search(r'`(session_generation=\$\(python3 <installed-sigma>/skills/sigma-loop/scripts/loop\.py '
                       r'start \.sdlc --session-pid "\$PPID"\))`', readme)
     assert match, "README must contain one complete, copyable generation-capture command"

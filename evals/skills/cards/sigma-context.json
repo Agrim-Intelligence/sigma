@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-context",
+  "kind": "pinned",
+  "gates": [
+    "if the graph lacks something, say so — never invent an edge."
+  ],
+  "scripts": [],
+  "artifacts": []
+}

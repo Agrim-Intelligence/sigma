@@ -96,16 +96,17 @@ def test_unmerged_pr_blocker():
         for s in _sentences(path.read_text()):
             if _UNMERGED_PR.search(s) and _RESOLVES.search(s) and not _NEG.search(s):
                 raise AssertionError(f"{path.relative_to(ROOT)}: says an unmerged PR resolves a blocker: {s}")
-    readme = " ".join((ROOT / "README.md").read_text().split())
-    sweep = readme[readme.index("`discovery.auto_unpark.mode` is"):][:1800]
+    backlog = " ".join((ROOT / "docs/backlog.md").read_text().split())
+    sweep = backlog[backlog.index("`discovery.auto_unpark.mode` is"):][:1800]
     _check(re.search(r"merged (?:pull request|PR)", sweep), "sweep paragraph must say a merged pull request resolves")
     _check(re.search(r"(?:closed|abandoned)\b.{0,40}without merging.{0,40}\b(?:not|never)\b", sweep), "sweep paragraph must say a PR closed without merging does not resolve")
 
 
 def test_managed_is_advisory():
-    text = " ".join((ROOT / "README.md").read_text().split())
+    text = " ".join((ROOT / "docs/managed-settings.md").read_text().split())
     section = text[text.index("## Managed settings"):]
-    section = section[:section.index(" ## ", 5)]
+    end = section.find(" ## ", 5)
+    section = section if end < 0 else section[:end]
     _check(re.search(r"advisory[^.]{0,40}\bwrite access\b", section), "managed-settings section must say advisory against write access")
     _check(re.search(r"delet\w*[^.]{0,30}falls? back to (?:the )?local config", section), "managed-settings section must say deleting falls back to local config")
     banned = r"not advisory|tamper|\benforced\b|cannot be (?:changed|edited|bypassed|deleted|overridden|removed)"
@@ -123,13 +124,14 @@ def test_plan_review_gate_claim():
     """README no longer says nothing checks plan-review; it names what the loop refuses and what it does not gate."""
     readme = _flat("README.md")
     _check("no code checks that it ran" not in readme, "README still says no code checks that plan-review ran")
-    step = readme[readme.index("4. **Plan-Review**"):readme.index("5. **Implement**")]
+    phases = _flat("docs/running-the-loop.md")
+    step = phases[phases.index("4. **Plan-Review**"):phases.index("5. **Implement**")]
     for needle in ("loop.py record done", "work.py merge", "gates.phase_record", "not gated"):
         _check(needle in step, f"README plan-review step lacks {needle!r}")
-    row = next(r for r in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    row = next(r for r in (ROOT / "docs/features.md").read_text(encoding="utf-8").splitlines()
                if r.startswith("| **Plan review before any edit**"))
     _check("no code checks that it ran" not in row and "phase_record" in row, "the features row is stale")
-    flag = next(r for r in (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    flag = next(r for r in (ROOT / "docs/configuration.md").read_text(encoding="utf-8").splitlines()
                 if r.startswith("| `gates.plan_review.enabled`"))
     _check("phase_record" in flag, "the flags row does not say phase_record already refuses done")
 

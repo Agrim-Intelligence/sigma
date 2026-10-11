@@ -1,0 +1,26 @@
+{
+  "skill": "sigma-doctor",
+  "kind": "pinned",
+  "gates": [
+    "never `gh auth login`"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-doctor/scripts/board_migrate.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-doctor/scripts/doctor.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-doctor/scripts/enforcement_table.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-doctor/scripts/migrate.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}

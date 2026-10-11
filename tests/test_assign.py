@@ -820,10 +820,11 @@ def test_start_drain_reports_start_run_failure_without_raising(tmp_path, monkeyp
     plan = _plan(_issue("a", "Foundation"))
     report = _report({"a": "201"}, ["a"])
 
-    def boom(sdlc_dir):
+    def boom(sdlc_dir, now=None):
         raise RuntimeError("could not create state dir")
 
-    monkeypatch.setattr(assign.state, "start_run", boom)
+    # #955: the start runs inside `loop.begin_run`, so the checkout reset it calls is loop's state.
+    monkeypatch.setattr(assign.loop.state, "start_run", boom)
     result = assign.execute(str(sdlc), _config(), plan, report, "engine", "amy",
                             assign.PATH_START_SELF, source=src)
 
@@ -928,3 +929,17 @@ def test_apply_assignment_goes_rest_and_keeps_the_warning_string_on_failure():
     assert assigned == [] and len(warnings) == 1
     assert warnings[0].startswith("could not assign @ghost to #202: ")
     assert not any(c[0] == "issue" for c in seen)                    # no gh issue edit anywhere
+
+
+def test_triaged_report_promotes_nothing_by_label_and_never_promotes_a_parked_child(tmp_path):
+    """#1006: a report from a triage-on compile carries `parked`; children are already armed, so no
+    label write happens, and a parked child is not started by a start-now path."""
+    sdlc = _project(tmp_path)
+    src = FakeSource()
+    plan = _plan(_issue("a", "Fine"), _issue("b", "Held"))
+    report = _report({"a": "201", "b": "202"}, ["a", "b"])
+    report["parked"] = {"b": "hard-stop word: credentials"}
+    result = assign.execute(str(sdlc), _config(), plan, report, "engine", "bo",
+                            assign.PATH_START_HANDOFF, source=src)
+    assert result["promoted"] == [201] and src.swaps == []
+    assert any("#202 stays parked" in w for w in result["warnings"])

@@ -24,11 +24,14 @@ Rules (each is a finding naming the skill and the item):
   * card paths must be relative and free of `..` (never touches the filesystem outside the repo root).
 Malformed JSON / bad kind / bad role are findings, not tracebacks. Paths in script/artifact entries are
 relative to the repo root (the parent of --root).
-Not wired into the real-tree pytest gate: the bare `python3 evals/skills/smoke.py` stays red until cards exist.
+Wall time: the line before the footer is `smoke wall: N.NNs, ceiling M.MMs` (or `ceiling unset`); N above the `ceiling_seconds` in
+`--budget` (default `budget.json` beside this file) is a finding (#1047). CI runs the bare gesture as its own step so the line shows.
+Wired into the real-tree pytest gate by tests/test_skill_smoke.py (#1046): the bare `python3 evals/skills/smoke.py` is green.
 """
 import argparse
 import importlib.util
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -191,19 +194,43 @@ def check(root, cards_dir, timeout=60):
     return rows, out
 
 
+def _ceiling(path, explicit):
+    """(ceiling_seconds or None, finding or None). A null ceiling is 'unset'; a missing default file too, a missing explicit one is a finding."""
+    f = pathlib.Path(path)
+    if not f.is_file():
+        return None, (f"budget {f}: no such file" if explicit else None)
+    try:
+        c = json.loads(f.read_text(encoding="utf-8")).get("ceiling_seconds")
+    except (ValueError, AttributeError, OSError):
+        return None, f"budget {f.name}: not a JSON object"
+    if c is None:
+        return None, None
+    if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or c <= 0:
+        return None, f"budget {f.name}: ceiling_seconds must be a positive number or null"
+    return float(c), None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=str(REPO / "skills"), help="skills directory (default: <repo>/skills)")
     ap.add_argument("--cards-dir", default=str(HERE / "cards"), help="directory of <skill>.json cards")
+    ap.add_argument("--budget", default=None, help="JSON with ceiling_seconds for this run's wall time (default: budget.json beside this file; null or a missing default file = unset)")
     ap.add_argument("--fixture-timeout", type=float, default=60, help="seconds per fixture before it is a finding (default 60)")
     a = ap.parse_args(argv)
     t0 = time.monotonic()
     rows, findings = check(a.root, a.cards_dir, a.fixture_timeout)
+    wall = time.monotonic() - t0
+    ceiling, bad = _ceiling(a.budget or HERE / "budget.json", a.budget is not None)
+    if bad:
+        findings.append(bad)
+    elif ceiling is not None and wall > ceiling:
+        findings.append(f"wall time {wall:.2f}s exceeds the {ceiling:.2f}s ceiling in the budget file")
     for s, k in rows:
         print(f"{s}  {k}")
     for f in findings:
         print(f"FINDING {f}")
-    print(f"{len(rows)} skills checked, {len(findings)} findings, {time.monotonic() - t0:.2f}s")
+    print(f"smoke wall: {wall:.2f}s, ceiling {'unset' if ceiling is None else f'{ceiling:.2f}s'}")
+    print(f"{len(rows)} skills checked, {len(findings)} findings, {wall:.2f}s")
     return 1 if findings else 0
 
 

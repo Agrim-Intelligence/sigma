@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-radar",
+  "kind": "pinned",
+  "gates": [
+    "never files issues or touches GitHub"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-radar/scripts/radar.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/knowledge/radar/<UTC-date>.md",
+      "producer": "agent"
+    }
+  ]
+}

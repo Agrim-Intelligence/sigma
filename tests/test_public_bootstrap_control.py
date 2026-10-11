@@ -205,7 +205,7 @@ def git_rev_parse(state, ref):
 #: template rendering -- never the four-character text `null` a raw `jq -r` would print.
 _JQ_KEYS = {
     ".number": "number", ".default_branch": "default_branch", ".viewerPermission": "viewerPermission",
-    ".nameWithOwner": "nameWithOwner", ".allow_auto_merge": "allow_auto_merge", ".state": "state",
+    ".nameWithOwner": "nameWithOwner", ".permissions": "permissions", ".allow_auto_merge": "allow_auto_merge", ".state": "state",
     ".login": "login",
 }
 
@@ -223,6 +223,8 @@ def emit(obj, jq_expr, argv):
         print("")
     elif isinstance(val, bool):
         print("true" if val else "false")
+    elif isinstance(val, (dict, list)):
+        print(json.dumps(val))                  # gh renders an object/array `--jq` result as JSON
     else:
         print(val)
 
@@ -607,8 +609,11 @@ def cmd_api(state, argv, pos, flags, multi):
             per_page, page = 30, 1
         emit(pr_rest_comments(state, m.group(1), page, per_page), flags.get("jq"), argv); return
     if endpoint == "repos/%s" % repo:
+        ladder = ("pull", "triage", "push", "maintain", "admin")     # #895 4b-2: REST `permissions`
+        top = {"READ": 0, "TRIAGE": 1, "WRITE": 2, "MAINTAIN": 3, "ADMIN": 4}[state.get("viewer_permission", "ADMIN")]
         obj = {"default_branch": state["default_branch"],
-               "allow_auto_merge": state.get("allow_auto_merge", True)}
+               "allow_auto_merge": state.get("allow_auto_merge", True),
+               "permissions": {k: i <= top for i, k in enumerate(ladder)}}
         emit(obj, flags.get("jq"), argv); return
     m = re.match(r"^repos/%s/pulls\?head=%s:(.+)$" % (re.escape(repo), re.escape(repo.split("/")[0])), endpoint)
     if m:
@@ -692,6 +697,17 @@ def cmd_api(state, argv, pos, flags, multi):
     m = re.match(r"^repos/%s/issues/(\d+)/comments$" % re.escape(repo), endpoint)
     # (real gh infers POST from -f/-F fields: #878's merge note posts this way, with no --method)
     if m and (method == "POST" or (method == "" and multi.get("f"))):
+        pr = state["prs"].get(m.group(1))
+        if pr is not None:
+            # #895 4b-2: a PR comment (post_review) -- the SAME store `pr_rest_comments` reads back.
+            fields, _ = _rest_fields()
+            cid = 1 + max([c.get("id", 0) for p in state["prs"].values()
+                           for c in map(_as_comment, p.get("comments", []))] or [0])
+            pr.setdefault("comments", []).append({"id": cid, "body": fields.get("body", ""),
+                                                  "assoc": os.environ.get("FAKEGH_ASSOC", "OWNER")})
+            save_state(state)
+            emit({"id": cid, "html_url": "https://github.com/%s/pull/%s#issuecomment-%d"
+                  % (state["repo"], m.group(1), cid)}, flags.get("jq"), argv); return
         issue = state["issues"].get(m.group(1))
         if issue is None:
             sys.stderr.write("HTTP 404: Not Found (issue %s)\n" % m.group(1)); sys.exit(1)
@@ -757,6 +773,9 @@ def cmd_api(state, argv, pos, flags, multi):
                         "assignees": [{"login": a} for a in issue.get("assignees", [])],
                         "title": issue.get("title", ""), "body": issue.get("body", "")})
         print(json.dumps(out)); return
+    m = re.match(r"^repos/%s/rules/branches/([^/?]+)(?:\?.*)?$" % re.escape(repo), endpoint)
+    if m and method in ("", "GET"):
+        emit([], flags.get("jq"), argv); return           # #895 4b-2: modelled; this fixture has no rulesets
     m = re.match(r"^repos/%s/branches/([^/]+)/protection$" % re.escape(repo), endpoint)
     if m:
         sys.stderr.write("HTTP 404: Branch not protected\n"); sys.exit(1)
@@ -1488,10 +1507,24 @@ def test_issue_comments_read_does_not_swallow_a_field_post(tmp_path):
     the product's post-merge issue note is sent exactly this way."""
     world = _make_repo_world(tmp_path)
     _seed_pr(world)
-    ep = "repos/%s/issues/101/comments" % world["repo"]
+    ep = "repos/%s/issues/999/comments" % world["repo"]                    # neither a PR nor an issue
     r = _fakegh(world, ["api", ep, "-f", "body=x"], check=False)
-    assert r.returncode != 0 and r.stdout.strip() != "[]"                  # issue 101 does not exist
+    assert r.returncode != 0 and r.stdout.strip() != "[]"                  # issue 999 does not exist
     assert len(_unhandled_lines(world)) == 0                                # modelled: a 404, not a gap
+
+
+def test_a_pr_comment_posted_over_rest_is_read_back_with_id_and_owner_association(tmp_path):
+    """#895 4b-2: post_review's `gh api .../issues/<pr>/comments --method POST` lands in the SAME store
+    `pr_rest_comments` serves, with an id and the OWNER association, so a posted sigma:approve/sigma:block
+    is readable by the review gate; the reply carries {id, html_url}."""
+    world = _make_repo_world(tmp_path)
+    _seed_pr(world)
+    ep = "repos/%s/issues/101/comments" % world["repo"]
+    reply = json.loads(_fakegh(world, ["api", ep, "--method", "POST", "-f", "body=sigma:approve"]).stdout)
+    assert reply["id"] > 0 and reply["html_url"].endswith("#issuecomment-%d" % reply["id"])
+    back = _read_comments_page(world, "101", 100, 1)
+    assert [(c["id"], c["body"], c["author_association"]) for c in back] == [(reply["id"], "sigma:approve", "OWNER")]
+    assert _unhandled_lines(world) == []
 
 
 def test_issue_comment_field_post_without_method_is_recorded(tmp_path):

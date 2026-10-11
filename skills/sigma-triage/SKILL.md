@@ -1,7 +1,7 @@
 ---
 name: sigma-triage
 description: Prioritize and dependency-sequence a multi-goal backlog drain. Use for campaign planning or /sigma-triage.
-allowed-tools: Bash(python3 *), Bash(gh issue *)
+allowed-tools: Bash(python3 *), Bash(gh issue *), Bash(gh api *)
 ---
 
 ## Codex path resolution
@@ -46,7 +46,7 @@ The skill is five steps:
      rubric below: `survey`'s hygiene bucket (`_bucket_hygiene`) computes a `priority_hint` for
      every flagged issue straight from that issue's own title+body text (see "Priority criteria"
      below for the tiers it reads against). A confident hint (`ambiguous: false`) is the answer —
-     apply it as the real label now (`gh issue edit <n> --add-label priority:P<tier>`, one explicit
+     apply it as the real label now (`gh api repos/{owner}/{repo}/issues/<n>/labels -f 'labels[]=priority:P<tier>'` (REST creates a missing label: check it exists first), one explicit
      command per issue, never a shell loop — see "Bulk `gh` mutations" below) so the plan's own
      `--from-survey`/`--resolve-missing` read picks it up like any other already-labelled issue,
      and say what was auto-applied rather than applying it with no trace. Ask only when the hint
@@ -181,7 +181,7 @@ hits it* — not a UI nicety, not a missing feature.
 including an incidental prose mention such as "after #12", "needs #12", or "requires #12 only for
 the docs" — and **skips writing the real marker** (`**Blocked by:** #N`). Consequence: the goal
 may not be parked by `backlog_check`, and the wave can run out of order. Verify edges in the
-question round. See the README's "Known caveat" for more detail.
+question round. See the "Known caveat" in `docs/planning-the-backlog.md` for more detail.
 
 **Conflicting label notice (F4):** If a picked issue already carries a conflicting `priority:*` or
 `model:*` label (same prefix, different value), `enact` prints a **report-only notice** naming both
@@ -218,7 +218,7 @@ gh issue edit 103 --add-label "sdlc:goal"
 ```
 
 Then **always run a read-back verification pass afterward** — re-read every mutated issue (e.g.
-`gh issue view <n> --json labels`) and confirm the change actually landed. A zero exit status is
+`gh api repos/{owner}/{repo}/issues/<n> --jq '[.labels[].name]'`) and confirm the change actually landed. A zero exit status is
 **not** sufficient evidence a mutation applied: because the failure is silent, only re-reading the
 mutated objects catches it. Do this even in an environment that doesn't currently exhibit the bug —
 a partially-applied bulk mutation is otherwise hard to detect after the fact by any other means.

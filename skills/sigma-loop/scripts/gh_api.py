@@ -75,6 +75,14 @@ re-merges; False: a definite refusal, e.g. 409 head moved, 405 not mergeable, 40
 rate limit). Input is validated before any call. Body shapes and statuses are DERIVED from GitHub docs,
 UNMEASURED live. See docs/cloud-sessions.md, "Code-goal merge (#895 slice 4b-1)".
 
+DESIGN-PR CLOSE (#895 slice 4b-3): `close_pr_gh` (op `pr_close`) is `close_design`'s close: the optional comment
+via `comment_pr` FIRST (a failure raises before any close), then REST `PATCH pulls/N state=closed` through
+`_rest_write(idempotent=True)` (5xx may fall back to ONE `gh pr close N`, built here; transport never). Success
+ONLY on a dict body with `state == "closed"`. `merge_design` reuses `merge_pr_gh`; design rows from
+`open_prs_for_head_gh` now carry `headRefOid` so the merge is pinned to the vetted head. Callers RECONCILE a
+failure by a read; nothing here retries. DERIVED from GitHub docs, UNMEASURED live. See docs/cloud-sessions.md,
+"Design-PR merge and close (#895 slice 4b-3)".
+
 PR READS (#895 slice 4a-1): `view_pr_gh` (REST `view_pr`, so `view_pr` now has a caller, plus
 `pr_comments` when `comments` is asked for) and `pr_for_branch_gh` (one `pulls?head=<owner>:<branch>`
 read) return the `gh pr view --json` shape for the CLOSED whitelist `PR_FIELDS` (anything else is
@@ -842,8 +850,8 @@ def _repo_flag(repo):
 def _write(op, number, cmd, rest, fb_argv, idempotent, fallback_run, run, env, sdlc_dir, now):
     """Common wiring of one write op: `rest()` then (per WRITE_POLICY) ONE `gh issue ...` through
     `fallback_run` (default: the same `run`)."""
-    verb = op.replace("issue_", "").replace("_", " ")
-    return _rest_write(op, number, "issue %s%s" % ("#%s " % number if number is not None else "", verb),
+    noun, verb = ("PR", op[3:]) if op.startswith("pr_") else ("issue", op.replace("issue_", ""))
+    return _rest_write(op, number, "%s %s%s" % (noun, "#%s " % number if number is not None else "", verb.replace("_", " ")),
                        cmd, rest, lambda: _call(fallback_run or run, fb_argv),
                        idempotent=idempotent, env=env, sdlc_dir=sdlc_dir, now=now)
 
@@ -854,6 +862,26 @@ def comment_issue(run, number, body, repo=None, *, fallback_run=None, env=None, 
                   lambda: _json(run, ["api", _endpoint(repo, "issues/%d/comments" % number), "--method", "POST",
                                       "-f", "body=%s" % body]),
                   ["issue", "comment", str(number), *_repo_flag(repo), "--body", body], False,
+                  fallback_run, run, env, sdlc_dir, now)
+
+
+def comment_pr(run, number, body, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """POST a PR comment (`issues/N/comments` serves PRs too) -> its URL string, "" when the reply names neither
+    `html_url` nor a numeric `id` (the caller parks: the receipt cannot be confirmed). Same WRITE policy as
+    `comment_issue` (NOT idempotent); the ONE fallback is `gh pr comment N --body` (GraphQL; built here so the
+    ratchet never sees the literal) and returns gh's stdout. #895 slice 4b-2."""
+    def rest():
+        got = _json(run, ["api", _endpoint(repo, "issues/%d/comments" % number), "--method", "POST",
+                          "-f", "body=%s" % body])
+        if not isinstance(got, dict):
+            return ""
+        if isinstance(got.get("html_url"), str) and got["html_url"]:
+            return got["html_url"]
+        cid = got.get("id")
+        return "#issuecomment-%d" % cid if isinstance(cid, int) and not isinstance(cid, bool) else ""
+
+    return _write("pr_comment", number, "gh pr comment", rest,
+                  ["pr", "comment", str(number), *_repo_flag(repo), "--body", body], False,
                   fallback_run, run, env, sdlc_dir, now)
 
 
@@ -1014,7 +1042,8 @@ def merge_pr(run, number, merge_method="squash", sha=None, repo=None):
 # on an enqueue and cannot return the reply `sha`.
 
 _SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
-_REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+# Neither segment may be dots only (`.`, `..`): they are path steps, not names.
+_REPO_RE = re.compile(r"(?!\.+/)[A-Za-z0-9_.-]+/(?!\.+\Z)[A-Za-z0-9_.-]+\Z")
 _MERGE_METHODS = ("merge", "squash", "rebase")
 
 
@@ -1038,6 +1067,24 @@ def _need_number(number):
     if not isinstance(number, int) or isinstance(number, bool) or number < 1:
         raise _refuse("a positive integer pull request number is required")
     return number
+
+
+def gh_argv(args):
+    """-> a fresh `["gh", *str args]`: the one place the `gh` prefix is spelled, for seams that hand argv to an
+    injected runner (#895 slice 3b)."""
+    return ["gh", *[str(a) for a in args]]
+
+
+def run_gh(args, timeout=120):
+    """-> `(returncode, stdout, stderr)` of `gh <args>`: the one `["gh", ...]` spawner for the wrapper seams
+    (#895 slice 3b). Unlike `bounded_runner` it never raises on a non-zero exit, so a caller keeps the exit code and
+    text. A timeout is the synthetic `(124, "", "gh: the call timed out after Ns")`; every other exception
+    (a missing `gh`, say) propagates unchanged."""
+    try:
+        proc = subprocess.run(gh_argv(args), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", "gh: the call timed out after %ss" % timeout
+    return proc.returncode, proc.stdout, proc.stderr
 
 
 def bounded_runner(cwd=None, timeout=120, *, popen=None):
@@ -1074,8 +1121,8 @@ def merge_pr_pinned(run, repo, number, sha, *, merge_method):
     """PUT /pulls/{n}/merge with an EXPLICIT method (keyword-only, no default: `merge_pr` defaults to squash), the
     repository required, and the head pin REQUIRED and validated as 40 lowercase hex (`merge_pr` silently drops an
     empty one). GitHub refuses the merge (409) if the head moved. No auto-merge, no admin flag, no branch-delete
-    option. Returns the reply dict; read its commit with `merge_reply_sha`. A non-dict reply or a reply `sha` that is
-    not 40-hex raises."""
+    option. Returns the reply dict; read its commit with `merge_reply_sha`. A non-dict reply, or a reply whose `sha` is
+    missing or not 40-hex, raises: a merge that names no commit is not reported as merged."""
     _need_repo(repo)
     _need_number(number)
     _need_sha(sha, "the head pin")
@@ -1086,8 +1133,8 @@ def merge_pr_pinned(run, repo, number, sha, *, merge_method):
     if not isinstance(reply, dict):
         raise GhApiError("malformed merge reply for #%d (%s)" % (number, type(reply).__name__))
     got = reply.get("sha")
-    if got is not None and not (isinstance(got, str) and _SHA_RE.match(got)):
-        raise GhApiError("malformed merge reply for #%d: sha is not a full hex sha" % number)
+    if not (isinstance(got, str) and _SHA_RE.match(got)):
+        raise GhApiError("malformed merge reply for #%d: no full hex sha" % number)
     return reply
 
 
@@ -1262,6 +1309,36 @@ def merge_pr_gh(run, number, method, sha, repo=None, *, fallback_run=None, env=N
             exc = wrapped
         exc.outcome_unknown = _merge_outcome_unknown(exc)
         raise exc
+
+
+# ---------------------------------------------------------------- design-PR close (#895 slice 4b-3)
+
+def close_pr_gh(run, number, comment=None, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """Close PR `number` WITHOUT merging, optionally leaving `comment` first (the order `gh pr close --comment`
+    uses). The comment is `comment_pr` (non-idempotent: a failure raises BEFORE any close, so nothing is closed).
+    The close is REST `PATCH pulls/N state=closed` through `_rest_write(idempotent=True)` (closing a closed PR is a
+    no-op, so a 5xx may fall back); ONE `gh pr close N` fallback (built here) per WRITE_POLICY, only while
+    `graphql_available(env)`. Success is ONLY a dict body whose `state` is "closed"; an empty, truncated or
+    malformed 2xx raises (never counted as closed). The caller RECONCILES by a read after any raise; this
+    function never retries. Body shape DERIVED from GitHub docs, UNMEASURED live."""
+    n = _need_number(number)
+    if comment:
+        comment_pr(run, n, comment, repo, fallback_run=fallback_run, env=env, sdlc_dir=sdlc_dir, now=now)
+
+    def rest():
+        got = _json(run, ["api", _endpoint(repo, "pulls/%d" % n), "--method", "PATCH", "-f", "state=closed"])
+        # a MERGED PR also reads `state: closed`; never report a merge as a close
+        if not isinstance(got, dict) or got.get("state") != "closed" or got.get("merged"):
+            raise GhApiError("malformed REST close reply for PR #%d (no `state: closed`): %s"
+                             % (n, json.dumps(got)[:120]))
+        return {"closed": True, "via": "rest"}
+
+    def fallback():
+        _call(fallback_run or run, ["pr", "close", str(n), *_repo_flag(repo)])
+        return {"closed": True, "via": "gh"}
+
+    return _rest_write("pr_close", n, "PR #%d close" % n, "gh pr close", rest, fallback, idempotent=True,
+                       env=env, sdlc_dir=sdlc_dir, now=now)
 
 
 # ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)
@@ -1761,7 +1838,8 @@ def pr_changes_requested(run, number, repo=None, *, gql_run=None, env=None, sdlc
                        env=env, sdlc_dir=sdlc_dir, now=now)
 
 
-DESIGN_PR_JSON = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"
+DESIGN_PR_JSON = ("number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles,"
+                  "headRefOid")
 
 
 def _design_row(run, n, repo):
@@ -1782,7 +1860,9 @@ def _design_row(run, n, repo):
     mergeable, state = _mergeability(pull)
     head = pull.get("head") if isinstance(pull.get("head"), dict) else {}
     ref = head.get("ref")
+    sha = head.get("sha")
     return {"number": n, "url": url, "mergeable": mergeable, "mergeStateStatus": state,
+            "headRefOid": sha if isinstance(sha, str) else "",
             "isCrossRepository": _cross_repo(pull), "headRefName": ref if isinstance(ref, str) else "",
             "files": [{"path": f["filename"]} for f in files], "changedFiles": changed}
 

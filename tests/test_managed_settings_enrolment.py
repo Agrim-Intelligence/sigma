@@ -263,7 +263,7 @@ def test_the_documented_lever_unenroll_clears_the_refusal(tmp_path):
     _enrol(sdlc)
     f.unlink()
     assert ms.read(str(sdlc))[0] == ms.STATUS_ENROLLED_POLICY_MISSING
-    line = next(l for l in (ROOT / "README.md").read_text().splitlines()
+    line = next(l for l in (ROOT / "docs/managed-settings.md").read_text().splitlines()
                 if l.startswith("python3 ") and "managed_settings.py unenroll" in l)
     argv = line.split()                                 # copied out of the docs, then run
     argv[0] = sys.executable
@@ -288,7 +288,7 @@ def test_the_refusal_text_and_the_docs_name_the_same_gesture(tmp_path):
     _enrol(sdlc)
     f.unlink()
     reason = ms.gated_check(str(sdlc), {}, "work.require_review")["reason"]
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/managed-settings.md").read_text()
     assert "managed_settings.py unenroll" in reason and "managed_settings.py unenroll" in readme
 
 

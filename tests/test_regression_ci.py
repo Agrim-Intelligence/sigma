@@ -1,0 +1,89 @@
+"""#1060 (AC-6) -- the workflow runs the layer-2 control on anchor-touching PRs and nightly.
+
+`validate_job` is the guard; each `test_*_rejected` breaks the workflow text one documented way and
+demands the guard raise, so a guard that cannot fail is caught here (a red control, not decoration)."""
+import importlib.util
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+GESTURE = 'python3 evals/regression/control.py run --changed-files "$RUNNER_TEMP/changed-files.txt"'
+
+
+def job(text):
+    assert "\n  regression-control:" in text, "regression-control job missing"
+    return text.split("\n  regression-control:", 1)[1]
+
+
+def validate_job(text):
+    j = "\n".join(ln for ln in job(text).splitlines() if not ln.lstrip().startswith("#"))
+    head = j.split("steps:", 1)[0]
+    for ev in ("pull_request", "schedule", "workflow_dispatch"):
+        assert f"github.event_name == '{ev}'" in head, f"job does not run on {ev}"
+    assert "push" not in head, "job must not run on push"
+    assert GESTURE in j, "PR step must run control.py with --changed-files on the diff"
+    assert "git diff --name-only HEAD^1 HEAD" in j and "fetch-depth: 2" in j
+    assert re.search(r"^\s+python3 evals/regression/control\.py run$", j, re.M), "nightly step must run every row"
+    assert "if: ${{ github.event_name == 'pull_request' }}" in j and "if: ${{ github.event_name != 'pull_request' }}" in j, \
+        "each control step needs its own event guard (HEAD^1 diff is PR-only)"
+    assert "--record" not in j and "--strict" not in j, "CI must not write the matrix or go red on pending gates"
+    for banned in ("secrets.", "ANTHROPIC", "claude ", "gh ", "contents: write"):
+        assert banned not in j, f"control job must not use {banned!r}"
+
+
+def test_workflow_declares_the_regression_control_job():
+    validate_job(WORKFLOW.read_text(encoding="utf-8"))
+
+
+def test_control_dropping_changed_files_flag_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8").replace(' --changed-files "$RUNNER_TEMP/changed-files.txt"', "")
+    with pytest.raises(AssertionError, match="--changed-files"):
+        validate_job(text)
+
+
+def test_control_dropping_schedule_event_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace(" || github.event_name == 'schedule'", "")
+    assert broken != text
+    with pytest.raises(AssertionError, match="schedule"):
+        validate_job(broken)
+
+
+def test_control_step_without_its_event_guard_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8").replace("        if: ${{ github.event_name == 'pull_request' }}\n", "")
+    with pytest.raises(AssertionError, match="event guard"):
+        validate_job(text)
+
+
+def test_control_step_cannot_write_or_spend():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError, match="--record"):
+        validate_job(text.replace("control.py run\n", "control.py run --record\n"))
+
+
+def _control():
+    spec = importlib.util.spec_from_file_location("control_under_test", ROOT / "evals/regression/control.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_anchor_file_change_selects_its_rows_and_unrelated_change_selects_none():
+    """The step feeds `git diff --name-only` lines to control.py's own selector; run it on the real catalogue."""
+    import json
+    import types
+    reg = ROOT / "evals" / "regression"
+    rows = json.loads((reg / "catalogue.json").read_text())["rows"]
+    gates = {g["id"]: g for g in json.loads((reg / "gates.json").read_text())["gates"]}
+    select = _control()._select
+    args = types.SimpleNamespace(regression=None)
+    hit = select(rows, gates, args, {"skills/sigma-loop/scripts/work.py"})
+    assert {r["id"] for r in hit} >= {"skip-plan-review/code", "drop-review-recording/code",
+                                      "disable-secret-scan/commit-noop"}
+    assert select(rows, gates, args, {"skills/sigma-loop/scripts/scrub.py"})
+    assert select(rows, gates, args, {"README.md", "docs/launch/review-plan.md"}) == []

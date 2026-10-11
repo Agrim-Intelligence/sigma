@@ -89,6 +89,7 @@ sources = _load("sources")
 legacy = _load("legacy")        # #239: a keep-parked opt-out written under the previous name
 mirror = _load("mirror")
 backlog_check = _load("backlog_check")
+gate_hold = _load("gate_hold")    # #1005: a park that declares a gate kind is never resumed here
 triage = _load("triage")          # apply_actions / _execute_action -- reused live, not reimplemented
 blockers = _load("blockers")      # #1393: classify() -- the ONE membership-safety policy, not a second
 blocker_scan = _load("blocker_scan")   # #2532: closed_state() -- the rule this file's own
@@ -321,6 +322,8 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
         raw_comments = backlog_check._fetch_scrubbed_comments(sdlc_dir, config, goal_doc, run=run)
         if _is_exempt(raw_comments):
             continue                                    # #1152: deliberate park, opted out -- untouched
+        if gate_hold.declared_gate_kind(raw_comments):
+            continue                                    # #1005: scope_hold / owner_hold wait for the registry edit
         extra_text = backlog_check._cap_join_excerpts(
             backlog_check._strip_offboard_prefixes(
                 backlog_check._filter_dismissal_comments(raw_comments)))
@@ -382,7 +385,7 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
             # unpark only when EVERY action for that issue succeeded -- so emitting this
             # unconditionally would make every label-queue adopter's unparks read as failures and
             # suppress their audit comment and cooldown credit. No board, no card to move.
-            if getattr(source, "project_enabled", False):
+            if getattr(source, "board_active", False):
                 actions.append({"action": "set-status", "issue": n, "detail": source.col["ready"],
                                 "result": None, "error": None})
         resolved[n] = sorted(refs, key=int)
@@ -474,7 +477,8 @@ def compute_blocking_actions(sdlc_dir, config, source, blocked_issues, currently
             if verdict in (blockers.PROMOTED, blockers.ROUTED):
                 if source.goal_label not in state["labels"]:
                     add.append(source.goal_label)
-                if verdict == blockers.PROMOTED and source.proposed_label in state["labels"]:
+                # legacy leftover: stripped when membership is granted, so no {goal, leftover} drift
+                if source.proposed_label in state["labels"]:
                     remove.append(source.proposed_label)
         # A read failure degrades to the blocking label ALONE -- today's behaviour -- never to a
         # guessed membership grant. Fail open toward doing less, and let doctor surface it.
@@ -505,7 +509,7 @@ def sweep_unpark(sdlc_dir, config, apply=False, run=None):
     `apply=True`: labels are mutated through `triage.apply_actions`/`_execute_action` -- the exact
     primitive `enact --apply`'s own unpark case already uses, not a reimplementation -- then, for
     every issue whose actions ALL landed (`done`, never `failed`), one audit-trail comment naming
-    the closed blocker(s) (`_UNPARK_COMMENT`). `discovery.blocker_promotion`'s own README section
+    the closed blocker(s) (`_UNPARK_COMMENT`). `discovery.blocker_promotion`'s own section of docs/backlog.md
     states its rule plainly -- "every promotion is paired with an explanatory comment... never a
     silent label change" -- and an UNATTENDED write needs that even more than a human-reviewed
     `enact --apply` does (a human who just built the plan already has full context; nobody is
@@ -574,9 +578,27 @@ def sweep_unpark(sdlc_dir, config, apply=False, run=None):
             done = by_issue.get(n)
             if done and all(a["result"] == "done" for a in done):
                 unparked.append(n)
+                text = _UNPARK_COMMENT.format(refs=", ".join(f"#{r}" for r in refs),
+                                              label=source.goal_label)
+                posted = []
+
+                def _post(num, body, _n=n):
+                    source.note(num, body)
+                    posted.append(num)                  # a record failure after this must not re-post
                 try:
-                    source.note(n, _UNPARK_COMMENT.format(
-                        refs=", ".join(f"#{r}" for r in refs), label=source.goal_label))
+                    dr = _load("decision_record")
+                    if dr.enabled(config):              # slice 8: autonomous record + same-id comment
+                        dr.write_all(sdlc_dir, dr.build("sweep", n, "dependency", "unpark",
+                                                        "blocker(s) closed: " + ", ".join(
+                                                            f"#{r}" for r in refs),
+                                                        dr.how_for("sweep")),
+                                     config, source, text=text, poster=_post)
+                        continue
+                except Exception:
+                    if posted:
+                        continue
+                try:
+                    source.note(n, text)
                 except Exception:
                     pass
     return {"apply": bool(apply), "checked": len(issues), "eligible": len(resolved),

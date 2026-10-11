@@ -181,6 +181,7 @@ def _load(name):
 
 
 legacy = _load("legacy")
+hsg = _load("hard_stop_guard")      # decision rubric slice 10: a no-op until hard_stops.enabled is true
 discovery = _load("discovery")
 state = _load("state")
 frontmatter = _load("frontmatter")   # LocalSource.fetch_title_body's title/body split (#519)
@@ -426,7 +427,7 @@ def _auto_unpark(config):
     posture `triage.py`'s `enact()` already has: a direct call (this module's own CLI, or a human/
     cron invoking it deliberately) IS the opt-in, same as `enact --apply` needs no separate config
     flag either. Does not reach local-goals mode, for the same structural reason `blocker_promotion`
-    doesn't (see its own docstring/README section): a local goal's "blocked by #N" reference is a
+    doesn't (see its own docstring/docs/backlog.md section): a local goal's "blocked by #N" reference is a
     file path, never a bare issue number `backlog_check._BLOCK_RE` can match, so there is nothing
     for `LocalSource` to ever sweep and the key is simply never read there."""
     block = ((config or {}).get("discovery") or {}).get("auto_unpark")
@@ -950,6 +951,7 @@ class GitHubSource:
 
     def __init__(self, config, run=None, sdlc_dir=None):
         gh = ((config.get("discovery") or {}).get("github")) or {}
+        self._hs_config = config
         self.repo = gh.get("repo") or ""
         self.goal_label = gh.get("goal_label", "sdlc:goal")
         self.in_progress_label = gh.get("in_progress_label", "sdlc:in-progress")
@@ -1446,9 +1448,8 @@ class GitHubSource:
     #: the whole claim path that is a durable, cross-session signal is never mistaken for an ordinary
     #: best-effort lifecycle write that failed.
     _CLAIM_LABEL_FAILURE_MARKER = "CLAIM-LABEL-WRITE-FAILED"
-    #: #1986: same shape as the label-swap retry above, for the identical reason -- a REJECT
-    #: verdict's `note` comment is `sigma-goal-review` §7g's ENTIRE output (no label, no board move,
-    #: nothing else), so a transient `gh` hiccup at exactly that moment must not be free to erase it.
+    #: #1986: a REJECT verdict's `note` comment is `sigma-goal-review` §7g's ENTIRE output (no label,
+    #: no board move, nothing else). #895 slice 8: REST re-POST attempts, on a 5xx/transport failure only.
     _NOTE_RETRIES = 4                # total attempts for one comment (override to 1 in tests)
     _NOTE_RETRY_BASE = 0.5           # backoff seconds: base * 2**attempt (override to 0 in tests)
     #: GitHub node ids are opaque base64-ish tokens. Validated before being inlined into a GraphQL
@@ -1864,6 +1865,32 @@ class GitHubSource:
     _BACKLOG_READ_RETRIES = 3       # total attempts before trusting "nothing pending"
     _BACKLOG_READ_RETRY_BASE = 1.0  # backoff seconds: base * 2**attempt (override to 0 in tests)
 
+    @property
+    def board_active(self):
+        """#895 slice 5: THE board entry condition -- `project_enabled` (config intent) AND GitHub
+        GraphQL reachable (`gh_api.graphql_available()`, env only: no probe, no network, O(1)).
+        When GraphQL is the reason the board is off, ONE stderr notice per process (the once-state
+        lives on the `sys` module, because every consumer loads its own copy of this file) and the
+        board call is SKIPPED -- never raised, never parks a goal; `sdlc:*` labels stay the source
+        of truth. Fail-open: if the availability check itself raises, the board stays on (today's
+        behaviour)."""
+        if not self.project_enabled:
+            return False
+        try:
+            if gh_api.graphql_available()["available"]:
+                return True
+        except Exception:
+            return True
+        if not getattr(sys, "_sigma_board_graphql_noticed", False):
+            try:
+                sys.stderr.write("sigma: GitHub GraphQL is unavailable here (cloud proxy or "
+                                 "SIGMA_GH_GRAPHQL=off); Projects board calls are skipped this run. "
+                                 "sdlc:* labels remain the source of truth.\n")
+            except Exception:
+                pass
+            sys._sigma_board_graphql_noticed = True
+        return False
+
     def _ready_lane(self):
         """The board's `Ready` option name if this board can serve as the queue, else None.
 
@@ -1886,7 +1913,7 @@ class GitHubSource:
         if self._ro_attempted:
             return self._ro_ready
         self._ro_attempted = True
-        if not self.project_enabled or self.queue_source != "status":
+        if not self.board_active or self.queue_source != "status":
             return None
         try:
             owner = self._proj_owner()
@@ -2043,6 +2070,8 @@ class GitHubSource:
         keeps this byte-identical to the pre-#2264 tuple whenever the term is unused — same
         contract `is_blocking` already gives above. See `_board_feature_rank`'s own docstring for
         the fidelity difference from `_feature_rank` this term ships with, disclosed on purpose."""
+        if not self.board_active:        # #895 slice 5: GraphQL unavailable (or board off) => label queue
+            return None
         ready_name = self._ready_lane()
         if not ready_name:
             return None
@@ -2934,6 +2963,8 @@ class GitHubSource:
         failure is no longer silent: it writes one stderr line (mirrors
         `_swap_labels_best_effort`'s own loud-but-non-raising shape) and is recorded in
         `release_warnings()` so a caller that wants to know can."""
+        if hsg.blocks_issue_write(self, goal, "release"):    # slice 10: a foreign issue is parked, not written
+            return
         terminal = False
         try:
             info = self._read_issue(goal, ["state", "labels"])
@@ -3019,6 +3050,8 @@ class GitHubSource:
                 pass
 
     def complete(self, goal):
+        if hsg.blocks_issue_write(self, goal, "complete"):    # slice 10: a foreign issue is parked, not written
+            return
         # #505: when this issue is ALREADY CLOSED by the time this call runs, `gh issue close
         # --comment` on an ALREADY-closed
         # issue exits 0 but silently drops the --comment text (verified live against the real gh
@@ -3051,13 +3084,12 @@ class GitHubSource:
             # misleadingly park/block an already-closed issue over a mere transient gh error, worse
             # than the silent-comment bug this fix closes.
             #
-            # #1657 follow-up (scope): routed through `note()` -- the SAME GraphQL-retry-then-REST-
-            # fallback chokepoint the audit-trail comment for a REJECT verdict already gets -- rather
-            # than the bare single-shot `gh issue comment` this used before. A genuinely exhausted
-            # GraphQL quota used to lose this comment outright even though a completely separate,
-            # untouched REST quota was available the whole time (#1514); now it survives that the
-            # same way `note()`'s own callers already do. Still wrapped in try/except: `note()`
-            # RAISES once its own retries and REST fallback are both spent, and this call site's
+            # #1657 follow-up (scope): routed through `note()` -- the SAME chokepoint the audit-trail
+            # comment for a REJECT verdict already gets -- rather than the bare single-shot `gh issue
+            # comment` this used before. #895 slice 8: `note()` is REST-first (`comment_issue`), a
+            # REST re-POST only on a 5xx/transport failure, one policy fallback on a primary rate
+            # limit (none in cloud). Still wrapped in try/except: `note()` RAISES on final failure
+            # (including drift 401/403/404, which is not retried), and this call site's
             # contract (never make complete() raise on a merely-missing comment) is unchanged.
             try:
                 self.note(goal, "Completed by the Sigma SDLC loop.")
@@ -3107,7 +3139,7 @@ class GitHubSource:
         Runs AFTER the Done status is written — archiving first would leave the Done write landing on
         an already-archived item. Fail-open like every other board write: failing to tidy a card can
         never be allowed to fail a goal that genuinely completed."""
-        if not self.project_enabled or self._project_cfg.get("archive_done") is not True:
+        if not self.board_active or self._project_cfg.get("archive_done") is not True:
             return
         try:
             if not self._ensure_board():
@@ -3171,6 +3203,8 @@ class GitHubSource:
         self._set_board_status(goal, self.col["blocked"])
 
     def park(self, goal, reason, tier=None):
+        if hsg.blocks_issue_write(self, goal, "park"):    # slice 10: a foreign issue is parked, not written
+            return
         comment = PARK_COMMENT_PREFIX + _sanitize_offboard_reason(reason)
         # #953/#1185: no new `gh` call -- richer text in the one that already fires. `tier` is
         # optional and additive: omitted (the default, and every park loop.py's _record() doesn't
@@ -3232,14 +3266,14 @@ class GitHubSource:
             what="park")
         if not landed:
             self._repair_partial_park(goal)
-        # #1657 follow-up (scope): routed through `note()` -- same GraphQL-retry-then-REST-fallback
-        # chokepoint `note()`'s other callers already get -- rather than the bare single-shot `gh
+        # #1657 follow-up (scope): routed through `note()` -- same chokepoint `note()`'s other
+        # callers already get (#895 slice 8: REST-first via `comment_issue`; a REST re-POST only on
+        # 5xx/transport; one policy fallback on a primary rate limit, none in cloud) -- rather than the bare single-shot `gh
         # issue comment` this used before. `park()`/`fail()` both land here, and this comment is
         # the ONLY record of WHY a goal was parked (a park is a human's deliberate checkpoint that
         # only /sigma-unpark reopens -- there is no other durable trail of the reason), so it must
         # not be lost to a fully-exhausted GraphQL quota any more than a REJECT verdict's comment
-        # is. Still wrapped in try/except: `note()` RAISES once its own retries and REST fallback
-        # are both spent, and this call site's contract (a transient gh error must not abort the
+        # is. Still wrapped in try/except: `note()` RAISES on final failure, and this call site's contract (a transient gh error must not abort the
         # drain) is unchanged.
         try:
             self.note(goal, comment)
@@ -3291,63 +3325,36 @@ class GitHubSource:
     def note(self, goal, text):
         """Record on the issue timeline (the audit trail): a journey-log / critical-insight comment.
 
-        #1986: RETRIES on a transient failure, exactly like `_swap_labels` above and for the
-        identical reason -- `sigma-goal-review`'s REJECT verdict writes NOTHING else (§7g: no label,
-        no board move, no edit to the issue body), so this one comment is the ENTIRE record of a
-        rejection, and a transient `gh` hiccup at exactly this moment (an active-account drift on a
-        host juggling more than one `gh` login is one well-documented cause) must not be free to
-        erase it. RAISES on final failure, deliberately unlike the old shape here: `loop.py`'s
-        `note` CLI verb is what decides whether a failed note is fatal to the caller, and it cannot
-        decide what it is never told -- this method used to be reached through a silent
-        `try/except: pass` one layer up (loop.py's `note` verb, before #1986).
+        `sigma-goal-review`'s REJECT verdict writes NOTHING else (§7g: no label, no board move), so this
+        one comment is the ENTIRE record of a rejection (#1986): RAISES on final failure, and `loop.py
+        note` prints FAILED / exits 1 so a lost note is never silent.
 
-        A retry that turns out to have followed an actually-landed write double-posts the comment.
-        Accepted, deliberately: for an audit trail that is otherwise all-or-nothing, a duplicate
-        REJECT comment is a categorically safer failure than a silently missing one.
+        #895 slice 8: REST first (`gh_api.comment_issue`, `POST issues/N/comments`), no GraphQL-first
+        attempt. Retried (<= `_NOTE_RETRIES`, REST only) ONLY for a server 5xx or an ambiguous transport
+        failure; every other failure raises at once, NO retry: active-account drift (401/403/404) and a
+        secondary rate limit. A primary rate limit gets `comment_issue`'s single policy fallback to
+        `gh issue comment` (none in a cloud session) and is never retried. Classified by `_write_case`
+        (gh stderr and the cause chain), never by `exc.kind` / `str(exc)`, which embed the comment body.
+        No Sigma-side timeout on this path; a gh-reported timeout in stderr is classified transport and
+        retried over REST; a silent hang blocks. UNMEASURED.
 
-        #1657: `gh issue comment` resolves through GraphQL, whose 5,000-points/hour budget is
-        shared with every other `gh`-based operation on this board (project/board writes, `gh
-        issue view --json`, ...) and was confirmed exhausted for real during #1514 (a session
-        heavy on `gh` calls). Retrying the SAME call against an exhausted hourly quota just
-        re-fails `_NOTE_RETRIES` times in a few seconds and then raises -- the comment, which for
-        a REJECT verdict is §7g's ENTIRE record, is lost. Once every GraphQL attempt above has
-        come back transient, fall back ONCE to `gh api repos/{owner}/{repo}/issues/{n}/comments`
-        (REST v3), which draws on a completely separate 5,000/hour budget -- the same reasoning
-        a downstream goal-cost recorder already documents for its own comment mirror, and
-        confirmed live in #1514: REST kept working the entire time GraphQL read exhausted. A
-        non-transient GraphQL failure (bad auth, issue not found, ...) still raises immediately,
-        exactly as before -- REST would fail the same way and for the same reason, so trying it
-        would only spend a second quota to learn nothing new.
-
-        POST-MERGE REVIEW FIX: REPO RESOLUTION deliberately does NOT use `self._owner_name()`,
-        for the identical reason `_fetch_issues_rest` (above) already documents for itself --
-        that helper's unset-`repo` fallback shells out to `gh repo view --json owner,name`, which
-        is ITSELF graphql-billed. `discovery.github.repo` ships EMPTY in the sigma-init template
-        and `/sigma-setup` explicitly supports leaving it unset, so calling `_owner_name()` here
-        would resolve straight back onto the exhausted GraphQL quota this fallback exists to route
-        around -- reproduced by a fake-`gh` test with `repo` unset: the ORIGINAL fix's
-        `_owner_name()` call shelled out to `gh repo view`, hit the same simulated rate limit, and
-        the comment was lost exactly as before this fallback existed (see
-        `test_github_note_with_no_resolvable_repo_still_falls_back_to_rest` below). Mirroring
-        `_fetch_issues_rest` exactly: when `self.repo` is set, address it directly
-        (`repos/<repo>/issues/<n>/comments`); when unset, use the literal `{owner}/{repo}`
-        placeholder, which `gh api` resolves from the working directory's git remote at ZERO extra
-        requests (confirmed live by `_fetch_issues_rest`'s own docstring) -- no network call, no
-        quota touched, so an unset `repo` can never again defeat this fallback. A REST call that
-        itself fails (genuinely no git remote to infer from, bad auth, ...) raises that failure
-        directly -- there is nothing further to fall back to."""
+        Duplicate-on-retry ruling, RETAINED and now REST-only: a REST re-POST after a 5xx/transport failure
+        may double-post if the first write landed. This deliberately contradicts `comment_issue`'s own "may
+        have landed" no-retry stance; accepted, because for an all-or-nothing audit trail a duplicate REJECT
+        comment is categorically safer than a missing one. UNMEASURED in a real cloud session."""
+        if hsg.blocks_issue_write(self, goal, "note"):    # slice 10: a foreign issue is parked, not written
+            return
+        fell = []          # the one policy fallback ran: it is final, never followed by another REST POST
+        kw = {**self._write_kw(), "fallback_run": lambda a: (fell.append(1), self._run(a))[1]}
         for attempt in range(self._NOTE_RETRIES):
             try:
-                self._run(["issue", "comment", goal, *self._repo_args(), "--body", text])
+                gh_api.comment_issue(self._run, self._n(goal), text, **kw)
                 return
-            except Exception as exc:
-                if not self._is_transient(exc):
+            except gh_api.GhApiError as exc:
+                if (fell or gh_api._write_case(exc) not in ("server_5xx", "transport_ambiguous")
+                        or attempt == self._NOTE_RETRIES - 1):
                     raise
-                if attempt < self._NOTE_RETRIES - 1:
-                    time.sleep(self._NOTE_RETRY_BASE * (2 ** attempt))
-        endpoint = ("repos/%s/issues/%s/comments" % (self.repo, goal) if self.repo
-                    else "repos/{owner}/{repo}/issues/%s/comments" % goal)
-        self._run(["api", endpoint, "-X", "POST", "-f", "body=" + text])
+                time.sleep(self._NOTE_RETRY_BASE * (2 ** attempt))
 
     def fetch_title_body(self, goal):
         """Direct, read-only issue title+body through THIS source's own `_run` chokepoint (never a
@@ -3604,6 +3611,9 @@ class GitHubSource:
 
     def mark_needs_confirmation(self, goal):
         """#1477: hand this goal back to a human as a PROPOSAL. Returns True iff the swap landed.
+
+        #1005: the two pick gates no longer call this unless `ai_filed.triage.enabled` is false; they
+        PARK with a declared kind (`gate_hold.park_for_gate`). Kept for that switched-off mode.
 
         THIS ONE GIVES UP MEMBERSHIP, and that is the difference between it and `mark_needs_label`
         one method up. That one is an OVERLAY -- a missing label self-heals the moment somebody
@@ -3879,7 +3889,7 @@ class GitHubSource:
         Still fully fail-open — it never raises, and every existing caller ignores the return, so
         their behaviour is byte-identical. `False` means "not written", which for a board-disabled
         repo is the honest answer rather than an error."""
-        if not self.project_enabled:
+        if not self.board_active:
             return False
         try:
             if not self._ensure_board(exclude=goal):
@@ -3920,7 +3930,7 @@ class GitHubSource:
         way (like the built-in Status); a configured field the board doesn't have, or a value that
         isn't one of its options, is SKIPPED rather than guessed (/sigma-doctor flags those at setup).
         Fully fail-open: a board write never breaks the hand-off that already created the issue."""
-        if not self.project_enabled or not (self._custom_fields or self.priority_field):
+        if not self.board_active or not (self._custom_fields or self.priority_field):
             return
         try:
             if not self._ensure_board(exclude=goal):
@@ -4130,7 +4140,11 @@ class GitHubSource:
 
     def _ensure_board(self, exclude=None):
         """Find-or-create the board + its status field once per run; seed the backlog as Todo.
-        Returns True only when the board is fully wired. Idempotent and attempt-once on hard failure."""
+        Returns True only when the board is fully wired. Idempotent and attempt-once on hard failure.
+        #895 slice 5: skipped (False) when the board is configured but GraphQL is unavailable; the
+        `project_enabled and` keeps a direct call on a config-off source byte-identical to before."""
+        if self.project_enabled and not self.board_active:
+            return False
         if self._board_ready or self._board_attempted:
             return self._board_ready
         self._board_attempted = True
@@ -5245,7 +5259,7 @@ class GitHubSource:
         and an uncarded goal is never carded here. Fail-open: never raises, and at most ONE stderr
         line per run (`_warn_field`)."""
         number = self._pinned_number()
-        if not (self.project_enabled and number) or not str(goal).isdigit():
+        if not (self.board_active and number) or not str(goal).isdigit():
             return False
         n = int(goal)
         try:

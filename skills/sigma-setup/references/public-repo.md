@@ -76,7 +76,7 @@ Re-running `/sigma-setup` later keeps these values: a deliberate `false`/`"off"`
 ## Labels
 
 `labels` creates the ten lifecycle labels (`sdlc:goal`, `sdlc:in-progress`, `sdlc:parked`,
-`sdlc:blocked`, `sdlc:blocking`, `sdlc:needs-confirmation`, `sdlc:needs-label`, `sdlc:designed`,
+`sdlc:blocked`, `sdlc:blocking`, the legacy `sdlc:needs-confirmation`, `sdlc:needs-label`, `sdlc:designed`,
 `sdlc:needs-unit`, `sdlc:needs-triage`) and `priority:P0`–`priority:P3`. They must exist before
 anyone can file a goal, because GitHub refuses to apply a label that does not exist. It prints one
 line per label (`created`, `existed`, or `FAILED: <reason>`) and `labels ensured on <repo>` only
@@ -133,6 +133,8 @@ worktree until the merge is observed — the doc's own per-goal growth to watch.
 ## The board
 
 The board is optional; the loop runs on issues and labels either way.
+
+The Projects board needs GraphQL, so the `gh project` commands here do not work from a Claude Code cloud session; run them from your own machine.
 
 - **The owner has no Projects boards.** The first claim's status write creates `<name> — SDLC`,
   rewrites its Status field to the kit's seven lanes, and adds a P0–P4 Priority field. The

@@ -1,0 +1,14 @@
+{
+  "skill": "sigma-setup",
+  "kind": "pinned",
+  "gates": [
+    "this skill only forwards to it"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-setup/scripts/setup.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}

@@ -137,11 +137,27 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/control.py",
+      "function": "_rmtree",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "operator-run and CI-run control (the regression-control job in ci.yml, pull requests and nightly, never --record); removes only the temp directory it made (recorded path), or a stale sigma-regression-* directory that is a real dir of this user, carries its marker text and is over a day old; never the working tree",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/mutators.py",
+      "function": "_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator/CI-run; writes only the one file under --root it mutates; never the working tree unless --root says so",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/record.py",
       "function": "write_atomic",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs; also called by control.py run --record to write matrix.json (a second caller)",
       "risk": "high"
     },
     {
@@ -149,7 +165,7 @@
       "function": "write_atomic",
       "rule": "fs-write",
       "count": 2,
-      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs",
+      "gate": "operator-run evaluation builder: writes only the single output file it is told (atomic temp then replace) and creates its parent directory; never touches the run dir inputs; also called by control.py run --record to write matrix.json (a second caller)",
       "risk": "medium"
     },
     {
@@ -158,6 +174,30 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "operator-run evaluation spend ledger: creates only the ledger directory it is handed (mode 0700, exist_ok); never deletes, renames or replaces a ledger file; refuses without fcntl",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/safety/sinks.py",
+      "function": "_sdlc",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/safety/sinks.py",
+      "function": "commit",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/safety/sinks.py",
+      "function": "probe_comment",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run check (evals/safety/check.py), also run by the CI test job, and its tests; every write is inside a tempfile.TemporaryDirectory scratch tree or scratch git repository that is removed on exit, and nothing under the real .sdlc is touched",
       "risk": "medium"
     },
     {
@@ -401,6 +441,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/ai_filed_counter.py",
+      "function": "bump",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "runs only when ai_filed triage is on (the default; ai_filed.triage.enabled false skips it); writes only the one bounded counter file under the state directory (atomic temp then replace, pruned by age and size); never deletes another writer's file; an unreadable counter is never overwritten",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ai_filed_counter.py",
+      "function": "bump",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "runs only when ai_filed triage is on (the default; ai_filed.triage.enabled false skips it); writes only the one bounded counter file under the state directory (atomic temp then replace, pruned by age and size); never deletes another writer's file; an unreadable counter is never overwritten",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/autowatch.py",
       "function": "_record_spend",
       "rule": "fs-write",
@@ -529,6 +585,38 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "records part enabled (reindex, archive); creates only the lock file inside the records folder",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "_publish",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "records part enabled; removes only the temp file this call created beside its target after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.records.enabled is exactly true; exclusive create of one new id-named file in the records folder; never overwrites",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "archive",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "person-run archive verb; records part enabled; removes only record files older than records.archive_after_days after they are written into a yearly archive file under the lock",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/diff_revert.py",
       "function": "cleanup",
       "rule": "fs-remove",
@@ -559,6 +647,30 @@
       "count": 3,
       "gate": "ungated",
       "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_acquire",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_record",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "function": "_record",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
     },
     {
       "path": "skills/sigma-loop/scripts/drift_watch.py",
@@ -762,9 +874,17 @@
     },
     {
       "path": "skills/sigma-loop/scripts/feature_rebase.py",
+      "function": "_notice",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "upkeep.enabled",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_rebase.py",
       "function": "_settle_parks",
       "rule": "gh-api-write",
-      "count": 2,
+      "count": 3,
       "gate": "upkeep.enabled",
       "risk": "medium"
     },
@@ -929,6 +1049,30 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_pass.py",
+      "function": "push",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "upkeep.enabled (project door); one lease-guarded push of a branch tip, refspec is new-sha:refs/heads/branch, never a delete, refused when the remote branch moved",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_pass.py",
+      "function": "push",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "upkeep.enabled (project door); one lease-guarded push of a branch tip, refspec is new-sha:refs/heads/branch, never a delete, refused when the remote branch moved",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_pass.py",
+      "function": "rewrite",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "upkeep.enabled (project door, run_unit_pass is gated and so is upkeep_pass); removes only the throwaway worktree the same call created, never a branch or ref",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/feature_upkeep_resolution.py",
       "function": "post_comment",
       "rule": "gh-api-write",
@@ -1002,14 +1146,6 @@
     },
     {
       "path": "skills/sigma-loop/scripts/gh_api.py",
-      "function": "_default_run",
-      "rule": "gh-api-write",
-      "count": 1,
-      "gate": "the injected run is the only transport; write helpers (comment_issue, create_issue, add_labels, remove_label, close_issue, edit_issue, add_assignees) have callers since #895 slice 3a, each through GitHubSource._issue_* with the feature-label guard (create_issue/add_labels refuse feature:* unless it exists); a REST write falls back to GraphQL at most once, never on an ambiguous failure, never in a cloud session; since #895 slice 4b-1 work.merge's direct merge is merge_pr_gh (REST PUT pulls/N/merge with sha; ONE gh pr merge fallback on a primary rate limit only; an unknown outcome is read back, never retried); the scanner sees only this gh invocation, not which helper called it; landing helpers (#931): merge_pr_pinned (explicit merge method, repository and 40-hex head pin all required and validated before any call; no auto-merge, no admin flag, no branch-delete option) and create_pr_nondraft (typed draft false) have no caller yet, and bounded_runner binds a working directory and keeps the exit code; the scanner sees none of them until a caller exists",
-      "risk": "low"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/gh_api.py",
       "function": "_write_cache",
       "rule": "fs-remove",
       "count": 2,
@@ -1062,6 +1198,38 @@
       "rule": "fs-remove",
       "count": 1,
       "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_publish",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); removes only the temp file this call created beside its target after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_save_state",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); removes only the temp file this call created beside the local pointer state after a failed write",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "_save_state",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); writes only the local pointer queue and day counter under the state folder; holds ids, kinds and how only",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger_pointer.py",
+      "function": "compact_pointers",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "pointer part open (records, records.pointer.enabled and the ledger all true); person-run compaction; removes only this actor's own pointer-only files from this host whose process is gone and that are older than records.pointer.compact_after_days, after their lines are in the own rollup file; never another writer's file",
       "risk": "high"
     },
     {
@@ -1191,22 +1359,6 @@
       "count": 1,
       "gate": "ungated",
       "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/loop.py",
-      "function": "_session_locked",
-      "rule": "fs-write",
-      "count": 1,
-      "gate": "ungated",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/loop.py",
-      "function": "_session_write",
-      "rule": "fs-remove",
-      "count": 2,
-      "gate": "ungated",
-      "risk": "high"
     },
     {
       "path": "skills/sigma-loop/scripts/loop.py",
@@ -1554,22 +1706,6 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "_gh_json",
-      "rule": "gh-label",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "_graphql",
-      "rule": "graphql-mutation",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
       "function": "_issue_add_assignees",
       "rule": "gh-api-write",
       "count": 1,
@@ -1622,14 +1758,6 @@
       "rule": "gh-api-write",
       "count": 1,
       "gate": "discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "_run_gh",
-      "rule": "gh-label",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
       "risk": "medium"
     },
     {
@@ -1698,14 +1826,6 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "fetch_issues_rest",
-      "rule": "gh-label",
-      "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sources.py",
       "function": "note",
       "rule": "fs-write",
       "count": 1,
@@ -1721,11 +1841,19 @@
       "risk": "medium"
     },
     {
-      "path": "skills/sigma-loop/scripts/sources.py",
-      "function": "note",
-      "rule": "gh-issue",
+      "path": "skills/sigma-loop/scripts/spend_approval.py",
+      "function": "_counter_write",
+      "rule": "fs-remove",
       "count": 1,
-      "gate": "discovery.source == github; board writes require project.enabled",
+      "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_approval.py",
+      "function": "_counter_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
       "risk": "medium"
     },
     {
@@ -1791,6 +1919,22 @@
       "count": 1,
       "gate": "creates missing parent directories under .sdlc only, one level at a time, after an lstat symlink refusal (#708)",
       "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/state.py",
+      "function": "session_locked",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/state.py",
+      "function": "session_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "ungated",
+      "risk": "high"
     },
     {
       "path": "skills/sigma-loop/scripts/supervise_daemon.py",
@@ -2195,9 +2339,9 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "close_design",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
@@ -2219,16 +2363,8 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "finish",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; confirmed merged PR",
-      "risk": "high"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/work.py",
-      "function": "finish",
       "rule": "git-destructive",
-      "count": 1,
+      "count": 2,
       "gate": "ungated",
       "risk": "high"
     },
@@ -2242,18 +2378,26 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
-      "function": "merge_design",
-      "rule": "gh-pr",
+      "function": "merge",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "work.enabled; work.auto_merge != off",
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "merge_design",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "post_review",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "evidence-bound to this goal's review generation and head; one non-idempotent REST comment POST via gh_api.comment_pr (ONE `gh pr comment` fallback only on a primary rate limit while GraphQL is available); an ambiguous outcome parks and reconciles by the immutable marker, never re-posts (#895 slice 4b-2)",
       "risk": "medium"
     },
     {
@@ -3190,6 +3334,70 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/rubric_e2e.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "function": "_write_new",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.enabled is exactly true; exclusive create of one new id-named watch or veto file in the autonomy folder; never overwrites; a link folder is refused",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "function": "prune_watch",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.enabled is exactly true; removes only watch files in the autonomy folder older than autonomy.watch.retention_days by embedded time; vetoes and links are never touched",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/rulebook.py",
+      "function": "_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "rulebook part enabled; removes only the temp file this call created beside the rulebook file after a failed write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/rulebook.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.rulebook.enabled is exactly true; writes the rulebook file by temp file and atomic replace; propose adds a proposed rule and approve (owner only) seals one; a link folder is refused",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.applier.enabled is exactly true; removes only answered or vetoed ask files in the autonomy folder older than two days by embedded time",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_write_atomic",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "applier gate open; removes only the temp file this call created beside its target after a failed write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/applier.py",
+      "function": "_write_atomic",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "decision_rubric.autonomy.applier.enabled is exactly true; writes one ask file or the tick heartbeat in the autonomy folder by temp file and atomic replace; a link folder is refused",
       "risk": "medium"
     }
   ]

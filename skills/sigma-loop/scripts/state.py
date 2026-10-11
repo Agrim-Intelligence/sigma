@@ -4,7 +4,7 @@ Zero third-party dependency, not zero process: since #1897 `done_refusal` shells
 -only: `merge-base`, `diff --name-only`, `ls-files`) to ask what content a verify actually ran
 against. A repo where git cannot answer degrades exactly as one with no work record does — see
 `content_fingerprint`."""
-import contextlib, hashlib, json, os, pathlib, importlib.util, re, subprocess, sys, tempfile, time
+import contextlib, hashlib, json, math, os, pathlib, importlib.util, re, subprocess, sys, tempfile, time
 
 try:
     import fcntl                    # POSIX only -- see _cursor_lock's docstring
@@ -444,8 +444,394 @@ def _set_line(text, key, value):
     return line_re.sub(lambda _: new, text) if line_re.search(text) else text.rstrip() + f"\n{new}\n"
 
 
-def start_run(sdlc_dir):
-    """Reset the per-run budget counters at the start of a /sigma-loop invocation.
+# --- Session registry storage (#955, D-5) ----------------------------------------------------------
+# `state/sessions/<pid>[-<codex thread>].active`, one JSON marker per managing session. Moved down
+# from loop.py verbatim because `done_refusal` (loop.py `record`, work.py `pr` and `merge`) and the
+# budget credit writers below must read it, and this module must not import loop.py. Identity
+# (`_session_marker_path`), lifecycle, admission and prune stay in loop.py, which keeps a `_session_*`
+# alias for every storage name here, so its callers and tests are unchanged.
+
+SESSION_THREAD_ID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+
+_LEDGER_MODULE = []
+
+
+def _ledger():
+    """ledger.py, loaded on first use and cached (the `acceptance_module` idiom). Only the registry's
+    liveness check needs it; ledger.py loads no state.py, so there is no import cycle."""
+    if not _LEDGER_MODULE:
+        spec = importlib.util.spec_from_file_location("ledger", _HERE / "ledger.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _LEDGER_MODULE.append(module)
+    return _LEDGER_MODULE[0]
+
+
+def session_dir(sdlc_dir):
+    return pathlib.Path(sdlc_dir) / "state" / "sessions"
+
+
+def session_lock_path(sdlc_dir, entry_path):
+    """A stable, bounded 256-stripe on-disk lock namespace.
+
+    Stripe identity must not depend on a process's current CPU count: two concurrent
+    processes could then lock different files for the same admission marker. The byte
+    width is a file-format constant, not a host resource budget. Locks are created
+    lazily, remain after clean exit, and are capped at 256 per repository.
+    """
+    slot = hashlib.sha256(entry_path.name.encode()).digest()[0]
+    return session_dir(sdlc_dir) / "locks" / f"{slot}.lock"
+
+
+def session_locked(sdlc_dir, entry_path, fn, require_lock=False):
+    """Run `fn()` — a read-modify-write against ONE session's own registry entry — inside an
+    exclusive, blocking `flock` on a stable lock stripe for that entry, closing a lost-update race #1239 review
+    (finding 3) reproduced deterministically: two genuinely concurrent writers to the SAME
+    `<pid>.active` file (e.g. two `next-batch` slots each claiming a different goal under the same
+    session, or a parallel `next` refill racing a sibling slot's `record`/`release`) each read the
+    same pre-write `in_flight` list and the second write silently clobbers the first's addition —
+    10/10 reproductions with a real `multiprocessing.Process` pair lost one goal's registration.
+
+    Mirrors `_try_acquire_claim_lock`'s established `fcntl.flock` pattern in loop.py for the
+    identical class of problem — except BLOCKING (`LOCK_EX`, no `LOCK_NB`): a session's own registry
+    write is a fast, in-process critical section (read one small JSON file, mutate a list, write it
+    back), not a multi-goal claim race where a busy competitor should be skipped rather than waited
+    on — losing a moment blocked behind a sibling's write is the right trade here, not a bug.
+
+    `entry_path` is the marker being written. loop.py's `_session_locked` resolves it: for a
+    cross-session release or prune, the enumerated entry, so the call locks THAT entry even when the
+    caller's Codex thread differs from its owner; otherwise the caller's own PID/thread entry,
+    preserving Claude's PID-only behavior.
+
+    Admission and registry updates pass `require_lock=True`: if locking is unavailable, refuse
+    rather than risk concurrent writers overrunning the goal limit. Legacy optional callers may
+    retain the prior best-effort fallback. The stripe set is bounded as sessions come and go.
+    Never called inside `_cursor_lock` (#955): no path holds both."""
+    lock_path = session_lock_path(sdlc_dir, entry_path)
+    if fcntl is None:
+        if require_lock:
+            raise RuntimeError("session file locking is unavailable on this host")
+        return fn()
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    except OSError:
+        if require_lock:
+            raise RuntimeError("cannot open session file lock for goal-count admission")
+        return fn()
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return fn()
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+
+
+def session_read(path, strict=False):
+    """Read one session registry entry. Strict admission reads refuse missing/corrupt counts;
+    best-effort inventory reads treat unreadable entries as empty. `run` is the session's own run
+    block (#955), normalised by `session_run`: None when absent or malformed, so every reader
+    degrades to the checkout-wide STATE.md cursor rather than trusting a bad block."""
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        if strict:
+            raise RuntimeError(f"session admission marker unreadable: {path}") from exc
+        return {"in_flight": [], "settled_admissions": None, "valid": False, "run": None}
+    if not isinstance(data, dict) or not isinstance(data.get("in_flight", []), list):
+        if strict:
+            raise RuntimeError(f"session admission marker malformed: {path}")
+        return {"in_flight": [], "settled_admissions": None, "valid": False, "run": None}
+    if strict and ("in_flight" not in data or
+                   any(not isinstance(g, (str, int)) or isinstance(g, bool)
+                       for g in data["in_flight"]) or
+                   len({str(g) for g in data["in_flight"]}) != len(data["in_flight"])):
+        raise RuntimeError(f"session admission goals malformed: {path}")
+    settled = data.get("settled_admissions")
+    if strict and (isinstance(settled, bool) or not isinstance(settled, int) or settled < 0):
+        raise RuntimeError(f"session admission count missing or invalid: {path}")
+    return {"in_flight": [str(g) for g in data.get("in_flight", []) if isinstance(g, (str, int))],
+            "settled_admissions": settled if isinstance(settled, int) and not isinstance(settled, bool) and settled >= 0 else None,
+            "valid": True, "run": session_run(data.get("run"))}
+
+
+def session_write(path, data):
+    """Publish a load-bearing session marker atomically, inside its caller's file lock.
+
+    Admission/claim/release writers predate heartbeat ownership and the run block, and
+    intentionally pass only their own fields. #955 D-1: every key of the existing marker that
+    `data` does not carry is kept, so none of those routine updates can drop `generation` (which
+    would silently turn a later owner-checked `session_end` into a no-op) or `run` (which would
+    hand this session's budgets and freshness anchor back to the checkout-wide cursor). An
+    unreadable existing marker preserves nothing, as before."""
+    try:
+        existing = json.loads(path.read_text())
+    except (OSError, ValueError):
+        existing = None
+    if isinstance(existing, dict):
+        data = {**{k: v for k, v in existing.items() if k not in data}, **data}
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    finally:
+        pathlib.Path(tmp).unlink(missing_ok=True)
+
+
+def _session_paths(sdlc_dir):
+    """`(pid, path)` for every registry file on disk, live or stale alike. Parse the numeric PID
+    prefix from both legacy `<pid>` and Codex `<pid>-<thread UUID>` filenames. Stray names are
+    skipped rather than raising — this directory is scanned on every `_next()` call."""
+    d = session_dir(sdlc_dir)
+    if not d.is_dir():
+        return
+    for path in sorted(d.glob("*.active")):
+        try:
+            pid_text, separator, thread = path.stem.partition("-")
+            pid = int(pid_text)
+            if separator and not SESSION_THREAD_ID.fullmatch(thread):
+                continue
+        except ValueError:
+            continue
+        yield pid, path
+
+
+def session_entries(sdlc_dir):
+    """Yield `(pid, path, in_flight)` for every session registry file on disk, live or stale alike
+    — callers filter liveness themselves (`session_pid_live`) since "is it live" and "what does it
+    say" are independent questions here. Parse the numeric PID prefix from both legacy `<pid>` and
+    Codex `<pid>-<thread UUID>` filenames. Stray names are skipped rather than raising — this
+    directory is scanned on every `_next()` call, so it must degrade on unexpected entries."""
+    for pid, path in _session_paths(sdlc_dir):
+        yield pid, path, session_read(path)["in_flight"]
+
+
+def session_pid_live(pid, path, config):
+    """The same two-signal liveness check `session_active`/`agent_alive` already apply to their own
+    markers (F10.5/#374's own pattern, not reinvented here): `ledger.pid_alive()` first — a
+    definitively dead pid needs no TTL to disqualify — then the entry file's own mtime against
+    `ledger.lease_ttl_seconds(config)` as the pid-reuse backstop. A budget credit restores the
+    marker's mtime after writing it (`_credit_session_runs`), so only the session's own start,
+    claim and release writes move this backstop."""
+    ledger = _ledger()
+    if not ledger.pid_alive(pid):
+        return False
+    ttl = ledger.lease_ttl_seconds(config)
+    if ttl is None:
+        return True
+    try:
+        return (time.time() - path.stat().st_mtime) < ttl
+    except OSError:
+        return True                          # can't even stat it — fail toward "still active"
+
+
+def _registry_config(sdlc_dir):
+    """The config the liveness lease reads; unreadable or absent -> {} (the default 12 h lease)."""
+    try:
+        return load_config(sdlc_dir)
+    except (ConfigMissing, OSError, ValueError):
+        return {}
+
+
+def live_session_records(sdlc_dir):
+    """Yield `(pid, path, session_read(path))` for every LIVE session marker (#955). Reads nothing
+    when `state/sessions` is absent, so a checkout that never ran `/sigma-loop` pays one stat."""
+    if not session_dir(sdlc_dir).is_dir():
+        return
+    config = _registry_config(sdlc_dir)
+    for pid, path in _session_paths(sdlc_dir):
+        if session_pid_live(pid, path, config):
+            yield pid, path, session_read(path)
+
+
+def _goal_key(goal):
+    """The goal identity a path component and a registry comparison both use: a local goal's
+    `.md` path reduces to its stem, so `.sdlc/goals/0001.md` (as `next` prints it) and `0001`
+    name the same goal; anything else is compared as given."""
+    return pathlib.Path(goal).stem if str(goal).endswith(".md") else str(goal)
+
+
+def _goal_holders(records, goal):
+    key = _goal_key(goal)
+    return [(pid, path, record) for pid, path, record in records
+            if key in {_goal_key(g) for g in record["in_flight"]}]
+
+
+# --- A session's own run block (#955) --------------------------------------------------------------
+# A run belongs to the session that started it. Every start path (`loop.begin_run`) stamps a `run`
+# block in ITS OWN marker with the same instant it writes to STATE.md, and `start-run
+# --session-pid` resets it. Session-scoped readers (the budget gates, the run_stop dedupe) read
+# their own block; goal-scoped ones (verify freshness, phase/spend credit) resolve the goal's LIVE
+# holder(s). No block, no holder, or a dead holder: the checkout-wide STATE.md cursor, as before.
+# No `phase_ends` here: that list only drives phase_report's journal dedupe and stays checkout-wide.
+
+def session_run(raw):
+    """A marker's `run` block, normalised, or None when it is absent or malformed. Every field is
+    required: `started_at` a finite number > 0 (not a bool), the two counters non-negative ints,
+    `token_credits` a list of str, `codex_token_credits` a dict of str to non-negative int."""
+    if not isinstance(raw, dict):
+        return None
+
+    def count(value):
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    started = raw.get("started_at")
+    if (isinstance(started, bool) or not isinstance(started, (int, float))
+            or not math.isfinite(started) or started <= 0):
+        return None
+    credits, codex = raw.get("token_credits"), raw.get("codex_token_credits")
+    if (not count(raw.get("tokens")) or not count(raw.get("codex_raw_tokens"))
+            or not isinstance(credits, list) or not all(isinstance(k, str) for k in credits)
+            or not isinstance(codex, dict)
+            or not all(isinstance(k, str) and count(v) for k, v in codex.items())):
+        return None
+    return {"started_at": float(started), "tokens": raw["tokens"],
+            "codex_raw_tokens": raw["codex_raw_tokens"], "token_credits": list(credits),
+            "codex_token_credits": dict(codex)}
+
+
+def fresh_session_run(now):
+    return {"started_at": float(now), "tokens": 0, "codex_raw_tokens": 0,
+            "token_credits": [], "codex_token_credits": {}}
+
+
+def reset_session_run(sdlc_dir, entry_path, now):
+    """Stamp a fresh run block, started at `now`, into one EXISTING session marker. Returns False,
+    writing nothing, when the marker is not a file or not a readable JSON object: a run block never
+    creates (or resurrects) a session. Under the marker's own stripe lock; never inside
+    `_cursor_lock` (callers write the marker first, STATE.md second)."""
+    entry_path = pathlib.Path(entry_path)
+
+    def _reset():
+        if not entry_path.is_file():
+            return False
+        try:
+            if not isinstance(json.loads(entry_path.read_text()), dict):
+                return False
+        except (OSError, ValueError):
+            return False
+        session_write(entry_path, {"run": fresh_session_run(now)})
+        return True
+
+    return session_locked(sdlc_dir, entry_path, _reset, require_lock=True)
+
+
+def goal_run_started_at(sdlc_dir, goal):
+    """The run start a goal's verify evidence must not predate (#955): the checkout's
+    `run_started_at`, unless one or more LIVE sessions hold the goal in `in_flight` — then the
+    latest of those holders' own run starts (a holder without a run block contributes the checkout
+    value). So another session's `start` can no longer void a live session's green, while a goal no
+    live session holds (the `/sigma-goal` arming path, a goal awaiting merge after `record review`)
+    keeps the checkout's latest start exactly as before, and a dead holder anchors nothing."""
+    checkout = load_cursor(sdlc_dir)["run_started_at"]
+    anchors = [record["run"]["started_at"] if record["run"] is not None else checkout
+               for _pid, _path, record in _goal_holders(live_session_records(sdlc_dir), goal)]
+    return max(anchors) if anchors else checkout
+
+
+def _credit_targets(sdlc_dir, goal):
+    """Which session run blocks a spend is charged to, and whether they hold its goal.
+
+    The goal's live holders when there is at least one (a holder with no block is skipped by the
+    writer and reads the checkout cursor). Otherwise EVERY live session: spend that names no goal,
+    or a goal no live session holds, cannot be attributed, so it over-counts rather than escapes a
+    ceiling — exactly what the shared counter did to each of them before."""
+    live = list(live_session_records(sdlc_dir))
+    if goal is not None:
+        holders = _goal_holders(live, goal)
+        if holders:
+            return [path for _pid, path, _record in holders], True
+    return [path for _pid, path, _record in live], False
+
+
+def _credit_session_runs(sdlc_dir, paths, tokens=None, codex=None, key=None, started_at=None,
+                         holders=True):
+    """Add one spend to each target marker's run block, ONE stripe lock at a time (never all at once
+    and never inside `_cursor_lock`, which every caller has already released).
+
+    Per target, under its lock: not a file, unreadable JSON, or no `run` key -> skip (never
+    recreate; a legacy session reads the checkout cursor). `started_at` before the block's own start
+    -> skip (the phase predates THIS session's run: the per-session twin of `record_phase_end`'s
+    old-run guard). Tokens: no attempt key adds; a key already credited adds nothing (a retried
+    phase end self-heals); a new key past `_MAX_RUN_TOKEN_CREDITS` refuses. Codex keeps the highest
+    cumulative amount per key and adds the delta, as STATE.md does. Written only when it changed.
+
+    A credit restores the marker's previous atime/mtime after its atomic replace, inside the same
+    lock. The marker's mtime is `session_pid_live`'s lease-TTL pid-reuse backstop, and charge-to-all
+    spend writes every live marker: without the restore, a dead session whose pid was reused would
+    stay live for as long as anyone spent. Only the session's own start/claim/release refresh it.
+
+    A malformed or capped block, or a lock failure: when the targets HOLD the goal, every target is
+    still attempted and the first problem is raised as RuntimeError afterwards (loud, as STATE.md's
+    own cap is). When they are charge-to-all targets, the problem is one stderr line naming the
+    marker and that session is skipped: one session's bad block must not fail spend for the rest."""
+    first = None
+    for path in paths:
+        def _credit(path=path):
+            try:
+                before = path.stat()
+                raw = json.loads(path.read_text())
+            except (OSError, ValueError):
+                return None
+            if not isinstance(raw, dict) or "run" not in raw:
+                return None
+            run = session_run(raw["run"])
+            if run is None:
+                return (f"session run block malformed in {path.name}; "
+                        "start a fresh /sigma-loop session")
+            if started_at is not None and float(started_at) < run["started_at"]:
+                return None
+            changed = False
+            if tokens is not None:
+                if key is None:
+                    run["tokens"] += tokens
+                    changed = True
+                elif key not in run["token_credits"]:
+                    if len(run["token_credits"]) >= _MAX_RUN_TOKEN_CREDITS:
+                        return ("session run token credit limit (4096 phase attempts) reached; "
+                                "start a fresh /sigma-loop session")
+                    run["token_credits"].append(key)
+                    run["tokens"] += tokens
+                    changed = True
+            if codex is not None and key is not None and codex > run["codex_token_credits"].get(key, 0):
+                if (key not in run["codex_token_credits"]
+                        and len(run["codex_token_credits"]) >= _MAX_RUN_TOKEN_CREDITS):
+                    return ("session run Codex token credit limit (4096 phase attempts) reached; "
+                            "start a fresh /sigma-loop session")
+                run["codex_raw_tokens"] += codex - run["codex_token_credits"].get(key, 0)
+                run["codex_token_credits"][key] = codex
+                changed = True
+            if changed:
+                session_write(path, {"run": run})
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+            return None
+
+        try:
+            problem = session_locked(sdlc_dir, path, _credit, require_lock=True)
+        except (OSError, RuntimeError) as exc:
+            problem = str(exc)
+        if not problem:
+            continue
+        if holders:
+            first = first or problem
+        else:
+            print(f"state: {problem} ({path.name}); this spend was not charged to that session",
+                  file=sys.stderr)
+    if first:
+        raise RuntimeError(first)
+
+
+def start_run(sdlc_dir, now=None):
+    """Reset the checkout-wide run cursor in STATE.md at the start of a /sigma-loop invocation.
     `_set_line` appends missing lines, so pre-0.6 STATE.md files upgrade in place.
     `run_started_at` keeps the raw `time.time()` float (F11/#341) — flooring it to a whole second
     (as before) let a verify's own `at` stamp land in the SAME second as a run that started just
@@ -454,8 +840,14 @@ def start_run(sdlc_dir):
     `now` is captured BEFORE `_patch_cursor` (not inside its `patch` callable), so the timestamp
     reflects the instant `start_run` was actually called, not however long a contended lock
     acquisition might delay the write (#531; the callable itself must stay pure text-in/text-out,
-    see `_cursor_lock`'s docstring)."""
-    now = time.time()
+    see `_cursor_lock`'s docstring). `loop.begin_run` passes the instant it also stamped into the
+    starting session's own run block (#955), so the two anchors agree to the float.
+
+    Since #955 this is the CHECKOUT's run, not every session's: a live session's budgets and its
+    goals' verify freshness come from its own run block, which another session's start (and so
+    this reset) no longer touches. STATE.md is still written exactly as before, which keeps the
+    single-loop path, a goal no live session holds, and every legacy reader unchanged."""
+    now = time.time() if now is None else float(now)
 
     def patch(text):
         text = _set_line(text, "run_iteration", 0)
@@ -468,7 +860,7 @@ def start_run(sdlc_dir):
     _patch_cursor(sdlc_dir, patch)
 
 
-def add_tokens(sdlc_dir, n):
+def add_tokens(sdlc_dir, n, goal=None):
     """Accumulate a spend signal for this run into the `run_tokens` budget cursor. Two producers
     feed this today (#2515): `loop.py spend`'s CLI verb, the host-integration surface for spend
     measured OUTSIDE this codebase; and `phase_report.py cmd_end`, which calls this directly with
@@ -478,11 +870,19 @@ def add_tokens(sdlc_dir, n):
     Routes through `_patch_cursor` (#531): the +n increment is computed from the text read UNDER
     THE LOCK, not a separately (unlocked) read text, so concurrent callers — a real shape under
     `parallel.goals`, and now also concurrent phase-end calls — no longer lose increments to each
-    other."""
+    other.
+
+    #955: then, with that lock released, the same `n` is charged to the run block of each live
+    session holding `goal`, or of EVERY live session when `goal` is None or held by none
+    (`_credit_targets`). No attempt key, so a retried `spend` double-counts in a block exactly as
+    it does in STATE.md."""
     n = int(n)
     if n < 0:
         raise ValueError(f"token count {n} is negative; a spend report can only add (#632)")
     _patch_cursor(sdlc_dir, lambda text: _set_line(text, "run_tokens", _read_int(text, "run_tokens") + n))
+    if n:
+        paths, holders = _credit_targets(sdlc_dir, goal)
+        _credit_session_runs(sdlc_dir, paths, tokens=n, holders=holders)
 
 
 def phase_attempt_key(phase_attempt):
@@ -491,14 +891,21 @@ def phase_attempt_key(phase_attempt):
 
 
 def record_phase_end(sdlc_dir, phase_attempt, started_at, budget_tokens=None,
-                     codex_raw_tokens=None):
+                     codex_raw_tokens=None, goal=None):
     """Atomically mark an end and optional, unit-separated budget credits in this run.
 
     `start_run` resets the same cursor under the same lock. Comparing the marker's start time
     UNDER that lock keeps a phase from an older run out of the new run's budget, even if a
     parallel goal slot finishes after a HANDOFF. Codex credits keep the highest measured
     cumulative amount for each attempt, adding only the delta when a partial rollout grows on
-    retry. Returns (new_end, new_credit_or_delta, old_run).
+    retry. Returns (new_end, new_credit_or_delta, old_run), all three about the checkout-wide
+    STATE.md cursor, as before (phase_report's journal dedupe reads them).
+
+    #955: after that, with `_cursor_lock` released, the same credit goes to the run block of each
+    live session holding `goal` (or of every live session when none does; `_credit_targets`),
+    with the same attempt-key dedupe and the same old-run rule measured against THAT session's own
+    start. So a phase its owner began before ANOTHER session's start is still charged to its owner,
+    even though STATE.md's `old_run` guard now drops it from the checkout cursor.
     """
     key = phase_attempt_key(phase_attempt)
     amount = int(budget_tokens) if budget_tokens is not None else None
@@ -551,22 +958,36 @@ def record_phase_end(sdlc_dir, phase_attempt, started_at, budget_tokens=None,
         return text
 
     _patch_cursor(sdlc_dir, patch)
+    if amount is not None or codex_amount is not None:
+        paths, holders = _credit_targets(sdlc_dir, goal)
+        _credit_session_runs(sdlc_dir, paths, tokens=amount, codex=codex_amount, key=key,
+                             started_at=started_at, holders=holders)
     return tuple(outcome)
 
 
 def run_token_credits(sdlc_dir):
-    """Current run's credited phase attempts; absent on pre-#2521 state files."""
+    """Credited phase attempts: the checkout run's (STATE.md; absent on pre-#2521 state files),
+    united with every session marker's own run block, live or not, since a dead session's credits
+    were real (#955). Without the union, `/sigma-doctor` would report a phase credited only to its
+    owning session (one that began before another session's start) as uncredited."""
+    credits = set()
     path = pathlib.Path(sdlc_dir) / "state" / "STATE.md"
     try:
         text = path.read_text()
     except OSError:
-        return set()
+        text = ""
     match = re.search(r"^run_token_credits:\s*(\[.*\])$", text, re.MULTILINE)
     try:
-        credits = json.loads(match.group(1)) if match else []
+        listed = json.loads(match.group(1)) if match else []
     except (ValueError, TypeError):
-        return set()
-    return set(credits) if isinstance(credits, list) else set()
+        listed = []
+    if isinstance(listed, list):
+        credits.update(listed)
+    for _pid, entry in _session_paths(sdlc_dir):
+        run = session_read(entry)["run"]
+        if run is not None:
+            credits.update(run["token_credits"])
+    return credits
 
 
 def advance_cursor(sdlc_dir, summary):
@@ -769,7 +1190,7 @@ def unsafe_goal_reason(stem):
 
 
 def evidence_path(sdlc_dir, goal):
-    stem = pathlib.Path(goal).stem if str(goal).endswith(".md") else str(goal)
+    stem = _goal_key(goal)
     reason = unsafe_goal_reason(stem)
     if reason:
         raise ValueError(f"unsafe goal {goal!r} for verify evidence: {reason}")
@@ -856,11 +1277,13 @@ def claim_run_stop(sdlc_dir, run_id, run_started_at):
     cycle (`supervise_daemon.py` itself: "budget -> short pause + relaunch"; `supervise_classify.py`:
     "budgets reset on relaunch by design") — a bare-id marker would record only the FIRST terminal
     event ever reached under that id and silently drop every later, genuinely different one (e.g.
-    the real eventual backlog-empty after two budget stops). `run_started_at` (from
-    `load_cursor(sdlc_dir)["run_started_at"]`) is written fresh by `start_run` at the top of every
-    `/sigma-loop` invocation, including every relaunch, so a relaunch's own terminal event claims
-    independently while repeated polling WITHIN one unchanged drain (the original concern in #905's
-    own issue body — "the polled 'next' verb... would emit a duplicate... on every idle poll")
+    the real eventual backlog-empty after two budget stops). `run_started_at` (the calling
+    session's own run start, `loop._session_cursor`, since #955; the checkout's
+    `load_cursor(sdlc_dir)["run_started_at"]` without a session) is written fresh by the start at
+    the top of every `/sigma-loop` invocation, including every relaunch, so a relaunch's own
+    terminal event claims independently while repeated polling WITHIN one unchanged drain (the
+    original concern in #905's own issue body — "the polled 'next' verb... would emit a
+    duplicate... on every idle poll")
     still dedupes against the same marker file.
 
     Storing the claimed set (not a bare boolean) keeps this correct across however many distinct
@@ -1211,7 +1634,9 @@ ENFORCEMENT_EXEMPT = ()
 def done_refusal(sdlc_dir, goal):
     """None when fresh passing evidence exists for this goal, else the reason to refuse.
     Fresh = produced at/after this run's start (a stale green from yesterday proves nothing) AND,
-    #498, by THIS run (a concurrent sibling's green, though fresh, must not be inherited).
+    #498, by THIS run (a concurrent sibling's green, though fresh, must not be inherited). Since
+    #955 "this run's start" is the start of the live session holding the goal, or the checkout's
+    latest start when no live session holds it (`goal_run_started_at`).
     Lives here, not in loop.py, so the merge gate can require the same evidence without the two
     modules having to import each other."""
     ev = evidence_path(sdlc_dir, goal)
@@ -1230,7 +1655,9 @@ def done_refusal(sdlc_dir, goal):
     # `load_cursor`/`start_run`/`verify_goal` now keep the raw float, so this comparison closes that
     # window on its own; a verify milliseconds after start (the normal verify-then-record sequence)
     # still compares strictly greater and stays accepted.
-    if data.get("at", 0) < load_cursor(sdlc_dir)["run_started_at"]:
+    # #955: "this run" is the run of the LIVE session(s) holding the goal, else the checkout's
+    # latest start (`goal_run_started_at`), so another session's `start` cannot void this green.
+    if data.get("at", 0) < goal_run_started_at(sdlc_dir, goal):
         return "verify evidence predates this run"
     # #498: run-id attribution, checked AFTER (never instead of) the exit-code and freshness guards
     # above — a concurrent sibling's green is exit-0 and NEWER than this run's start, so it slips

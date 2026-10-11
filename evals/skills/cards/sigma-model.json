@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-model",
+  "kind": "exercised",
+  "gates": [],
+  "scripts": [
+    {
+      "path": "skills/sigma-model/scripts/predict.py",
+      "role": "gesture",
+      "fixture": [
+        "python3",
+        "skills/sigma-model/scripts/predict.py",
+        "why",
+        "Rename a variable"
+      ],
+      "expect": "model="
+    }
+  ],
+  "artifacts": []
+}

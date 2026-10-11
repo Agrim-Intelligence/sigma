@@ -14,7 +14,7 @@ def test_readme_does_not_claim_unenforced_coverage_floor():
 
 
 def test_readme_hook_count_matches_registry():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/architecture.md").read_text()
     hooks = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
     count = sum(len(group["hooks"]) for groups in hooks.values() for group in groups)
     assert f"registers {count} hook commands" in readme
@@ -35,8 +35,12 @@ def test_channel_webhook_documents_its_enforced_remote_opt_in():
     assert "allow_remote_webhook" in text
 
 
-def test_changelog_versions_are_dated():
-    headings = re.findall(r"^## \[?([0-9]+\.[0-9]+\.[0-9]+)\]?\s*(.*)$", (ROOT / "CHANGELOG.md").read_text(), re.M)
+def undated_changelog_headings(text):
+    headings = re.findall(r"^## \[?([0-9]+\.[0-9]+\.[0-9]+)\]?\s*(.*)$", text, re.M)
     # The one undated form is the owner-dated placeholder on the newest heading (see test_release_consistency).
-    assert headings and all(re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) or (i == 0 and suffix.startswith("— DATE-PENDING — "))
-                            for i, (_version, suffix) in enumerate(headings))
+    return [v for i, (v, suffix) in enumerate(headings)
+            if not (re.search(r"\b\d{4}-\d{2}-\d{2}\b", suffix) or (i == 0 and suffix.startswith("— DATE-PENDING — ")))]
+
+
+def test_changelog_versions_are_dated():
+    assert undated_changelog_headings((ROOT / "CHANGELOG.md").read_text()) == []

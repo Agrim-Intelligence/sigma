@@ -18,6 +18,9 @@ __pycache__/
 .sdlc/plans/scope/
 !.sdlc/research/
 !.sdlc/acceptance/
+!.sdlc/decisions/
+!.sdlc/rulebook.json
+.sdlc/decisions/_*
 !.sdlc/evidence/
 .sdlc/evidence/*
 !.sdlc/evidence/453/
@@ -40,3 +43,6 @@ venv/
 
 # Benchmark task set: an external task's tree is fetched at run time, never committed.
 /evals/bench/tasks/ext-*/repo/
+
+# Atomic-write leftover from a SIGKILLed control.py run --record.
+/evals/regression/matrix.json.tmp.*

@@ -6,6 +6,194 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **Resolver CLI probe finding record (#948; refs #941).** `docs/launch/evidence/resolver-cli-probe.md` records the real headless probe of the installed command line for the upkeep resolver: the design-flag table, settings, hooks, credential and billing behaviour, standard input, the budget-flag overshoot and exit code, killed-run metering, and the export-or-worktree choice, with what is still open. Docs only: no product code, flag table or model catalog changed.
 
+- **PR `test` job timeout 30 -> 45 minutes (CI).** The macOS `test` job ran 24-28 minutes on recent main pushes and was cancelled at the 30-minute cap on #1052's and #1129's PR runs (annotation: "exceeded the maximum execution time of 30m0s"), so the cap no longer left headroom. The measured run times are from the Actions API; the new 45 is a margin, not a measurement. The `full` job's 90-minute cap is unchanged.
+
+## 1.0.9 — 2026-10-11 — REST-first GitHub, the board skip in cloud sessions, and eval additions
+
+- **`note()` is REST-first (#895, slice 8; refs #895).** `GitHubSource.note()` posts through `gh_api.comment_issue`
+  (`POST issues/N/comments`); the GraphQL-first `gh issue comment` attempt is gone (none at all in a cloud session) and
+  the `sources.py` ratchet drops 20 to 19 (TOTAL 37 to 36). The bounded retry is kept but is a REST re-POST only, for a
+  server 5xx or an ambiguous transport failure, classified from gh stderr and the cause chain (never the comment body).
+  Behaviour change: secondary rate limits and "unknown owner type" errors, which the old path retried, now raise at once
+  with NO retry (`loop.py note` prints FAILED / exit 1); active-account drift (401/403/404) was never retried and still
+  raises at once; a primary rate limit gets `comment_issue`'s single policy fallback. There is no Sigma-side
+  timeout on this path; a gh-reported timeout in stderr is classified transport and retried over REST; a silent hang
+  blocks. UNMEASURED. The duplicate-on-retry ruling is retained, REST-only, and deliberately
+  contradicts `comment_issue`'s own "may have landed" stance. NOT run in a real Claude Code cloud session (UNMEASURED).
+- **Regression evidence matrix, `matrix.py check` and `control.py run --record` (#1059, slice 4 of #808).** New
+  `matrix.py check` reads `matrix.json` against `catalogue.json`/`gates.json` and fails on a catalogue
+  (row, gate) pair with no entry, a red entry without run id/date/commit/pin, a commit that is not a 40-hex object or
+  lacks the row/gate, a stale pin, and pending/live mismatches; shallow clones and `--skip-objects` print UNVERIFIED,
+  not a pass. `control.py run --record` writes only gates it saw red (atomically, via `record.write_atomic`) and removes
+  stale evidence for anything else. The regression README documents the gestures and what a record does not prove.
+
+- **Regression control, `control.py run` (#1058, slice 3 of #808).** New `evals/regression/control.py`: extracts
+  `git archive HEAD` into a temp directory (the working tree is never touched; uncommitted changes are not tested),
+  runs each needed live gate once unmutated (already red: exit 3), applies each catalogue row's mutation to a fresh
+  copy and demands every live `must_be_red_by` gate go red, then removes the copy in `finally`. A gate exiting 0 is
+  exit 1 naming row and gate; pytest 5 / crash / timeout is exit 6 (never counted as red); mutator exits 10-12 pass
+  through; `pending` prints and exits 0, or 4 with `--strict`. `safety-check` is now registered live. `--record` is
+  #1059. Model-free, no network. Measured: the real catalogue (7 rows, 7 live gates, 2 pending lines) ran 123 s wall, all red, exit 0, python 3.12 on one laptop; CI not measured.
+
+- **Safety check sink probes (#1050, slice 2 of #806).** `python3 evals/safety/check.py` now plants each pinned shape
+  (built at run time) through the action log, the ledger, the comment path and the review-block reason, at the start
+  and straddling each cap, and through the real `work.commit` refusal in a scratch repository, with the pinned outcome
+  per redactor-only shape. Fix found by the probe: `comment_watch._excerpt` cut the raw body at 160 before scrubbing,
+  leaving a fragment of a secret that straddled the cut; it now flattens, scrubs, then cuts.
+
+- **Smoke runner wall-time line and ceiling (#1047, slice 4 of #805; refs #1043).** `evals/skills/smoke.py` prints
+  `smoke wall: N.NNs, ceiling M.MMs` and fails when N exceeds `ceiling_seconds` in the new `evals/skills/budget.json` (1.0s, from three CI job logs: 0.09s, 0.14s, 0.10s);
+  a CI step runs the bare gesture before pytest so the number is in the job log.
+
+- **Regression gate set and catalogue (#1057, slice 2 of #808).** New `evals/regression/gates.json` (live gates by
+  selection, `skill-smoke`/`safety-check`/`layer1-control` registered `pending` with a reason), `catalogue.json` (one
+  row per mutation form with its `must_be_red_by` gates) and `catalogue.py check`, a read-only schema checker run in
+  the fast suite: rejects an unknown gate id, an empty `must_be_red_by`, a row whose only gate is pending, and a row
+  that drifts from `mutators.py`. Test-first and phase-record suites are deliberately not listed (measured green).
+- **Reviewer briefs REST-first, honest cloud limits, tighter prose ratchet (#895, slice 7; refs #895).**
+  `review_context.py` briefs now say `gh api repos/{owner}/{repo}/pulls/N` (diff Accept header) and `.../issues/N`
+  instead of `gh pr diff` / `gh issue view`. The `work.py` merge `mechanism` string (and the regenerated
+  `docs/enforcement.md` row) now states the real cloud limits: a pending required check, any PR line comment and
+  `require_review: approval` park; `merge_rights` needs the token to receive `permissions` (UNMEASURED).
+  `tests/test_no_direct_gh_prose.py` pins each allowlist entry's `noun verb` and scans 4-space indented blocks.
+  `docs/cloud-sessions.md` gains "What remains (#895 slice 7)": the 37-site audit, the `GitHubSource.note()` finding
+  (first attempt is GraphQL-backed `gh issue comment`; REST only after a transient failure; probable cloud blocker,
+  UNMEASURED, not fixed) and the deferred sibling-PR read. `review-post-pr` token ceiling moved 6305 to 6310. Ratchet
+  baseline stays 37. NOT run in a real Claude Code cloud session.
+- **Loop-path skill prose is REST-first (#895, slice 6; refs #895).** The agent instructions in sigma-loop
+  (SKILL, running, picking, landing), sigma-goal, sigma-retro, sigma-model, sigma-triage, sigma-scope, sigma-context
+  and sigma-radar now read and label issues with `gh api repos/{owner}/{repo}/...` instead of `gh issue view|list|edit`
+  and `gh pr view`; `Bash(gh api *)` is added to those skills' `allowed-tools` (old grants kept). New
+  `tests/test_no_direct_gh_prose.py` keeps bare `gh issue|pr|project|label <verb>` out of skill prose (allowlisted
+  exceptions carry a reason) and checks the grant. `docs/cloud-sessions.md` gains "Running the loop in a Claude Code
+  cloud session" with owner smoke-test steps. The `Bash(gh api *)` grant is as broad as the gh issue/pr grants beside it (not narrowed; per-endpoint allowlist is the follow-up). NOT run in a real Claude Code cloud session. Slice 7 (below) closed the
+  `review_context.py` and `mechanism` items.
+
+
+- **Cards for the prose-only skills; the per-skill smoke runner is now a gate (#1046, slice 3 of #805; refs #1043).** One
+  `pinned` card per skill with no script (24 today, derived from disk), each pinning a verbatim sentence from its own
+  `SKILL.md`; `tests/test_skill_smoke.py` runs `python3 evals/skills/smoke.py` on the real tree. Measured: bare run exit 0,
+  0.08 s locally on one machine; not measured in CI (budget is slice 4).
+- **Board gate when GraphQL is unavailable (#895, slice 5; refs #895).** New `GitHubSource.board_active`
+  (`project.enabled` AND `gh_api.graphql_available()`): when GraphQL is off (`CLAUDE_CODE_REMOTE`,
+  `SIGMA_GH_GRAPHQL=off`) every Projects v2 call (card moves, field writes, archive, backlog seeding, the Phase
+  field, the board-queue pick) is skipped, never raised and never parks a goal, with ONE stderr notice per process
+  (not per run: `phase_report.py` is a fresh process per phase boundary). `sdlc:*` labels stay the source of truth;
+  promote/unpark/auto_unpark read the gate so no false "card did not move" hint. Doctor and `/sigma-status` say so.
+  Not gated: `_swap_labels` and other label GraphQL (residual), and the operator tools `board_migrate`,
+  `board_setup`, `board_layout`. With GraphQL available behaviour is unchanged (existing board suites pass
+  unmodified). Measured: a recording-fake test only. NOT tested in a real cloud session. Details:
+  `docs/cloud-sessions.md`.
+- **Six runner seams go through `gh_api` (#895, slice 3b; refs #895).** `ledger._run_gh`, `feature_owner._run_gh`,
+  `cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now use the new `gh_api.run_gh`
+  (rc/out/err, a timeout is 124) and `gh_api.gh_argv`. These were already `gh api` calls: a spelling change, not a
+  migration to REST. A timeout now exists where none did (ledger 15 s, a judgement and unmeasured; feature_owner
+  120 s; cross_repo 30 s). `close_pr_gh` also rejects a 200 body with `merged: true`. NOT yet REST: every `label
+  create` site (sources x3, triage x1 = slice 3c), `sources.note()` (owner ruling), `define.py` x2, `status.py`'s
+  no-sources fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing is tested
+  live. Ratchet (printed `scan()`): TOTAL 43 -> 37. Details: `docs/cloud-sessions.md`.
+- **Design-PR merge and close go REST (#895, slice 4b-3; refs #895).** goal-review's `merge-design` is
+  `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge`, pinned to the head sha the design-identity check vetted; ONE
+  `gh pr merge` fallback on a primary rate limit only) and `close-design` is `gh_api.close_pr_gh` (comment POST,
+  then `PATCH state=closed`). No retry any more (a merge is not idempotent). After a failure that may have landed
+  the outcome is reconciled by a REST read of the PR's `state`: only a positive MERGED/CLOSED counts, and an empty,
+  truncated, malformed or unreadable answer reads "outcome unconfirmed", never success (the old "open list came
+  back empty" inference is gone). `verify_merge.py` (ready/create/merge, the attended rebase tail) is NOT moved and
+  stays GraphQL, so that tail still cannot run in a cloud session. UNMEASURED live: every body and status here is
+  from GitHub's docs or fakes. Ratchet (printed `scan()`): work.py 5 -> 3, TOTAL 45 -> 43. Write-surface:
+  `merge_design`/`close_design` become `gh-api-write` rows (`close_pr_gh` joins the scanner's set). Details:
+  `docs/cloud-sessions.md`.
+## 1.0.8 — 2026-10-11 — per-session run budgets and REST-first merges
+
+- **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
+  `CLAUDE_CODE_REMOTE` merge are REST: `merge_rights` reads `GET repos/{owner}/{repo}` `.permissions` (fails closed
+  on a missing, malformed or all-false object), `protection()` unions classic protection with
+  `rules/branches/<base>` rulesets (a repo enforcing only through rulesets no longer reads as "not protected"),
+  and `post_review` posts its comment with `gh_api.comment_pr` (`POST issues/N/comments`; ONE `gh pr comment`
+  fallback on a primary rate limit only, never in a cloud session). STILL NOT possible in a cloud
+  session: unresolved review threads can not be read (without GraphQL the review gate makes one REST read of the PR's line
+  comments: none => proceed, any or unreadable => refuses; with GraphQL nothing changes), `require_review: approval`
+  (`reviewDecision` unreadable, parks), the `--auto` arm (a check pending after 450s parks), and `merge_design`,
+  `close_design`, `verify_merge.py` stay GraphQL. `protection()` cannot see bypass actors (it can over-report "enforces"), `evaluate`-mode rulesets,
+  merge queue, deployments/workflows/signatures/thread resolution, or more than 100 rules. UNMEASURED live: the
+  cloud token receiving `permissions`, and the rules read, comment POST and PUT through the proxy. Ratchet
+  (printed `scan()`): work.py 6 -> 5, TOTAL 46 -> 45. Write-surface: `comment_pr` and `merge_pr_gh` join the
+  scanner's REST-write set; `post_review` and `merge` get `gh-api-write` rows. Details: `docs/cloud-sessions.md`.
+- **Level 1 union handles a unit changelog entry across a release heading (#1103).** When the base moved the old Unreleased entries under a new dated version heading, the heading-aware union now keeps the base's sections as they are and files the unit's new entries under Unreleased above that release section, in order, dropping any the base already has; other shapes still park.
+- **Write-surface scanner resolves names per function (#926).** `tools/readiness/write_surface.py` no longer lets the last assignment to a name in the module win for every function: a local `args` list resolves to that function's own assignment, then the enclosing function's, then the module's. Six inventory rows that existed only through another function's list are removed (`work.py` `finish` `gh-pr`, the `sources.py` `_gh_json`, `_run_gh`, `fetch_issues_rest` `gh-label` rows and its `_graphql` mutation row, the `gh_api.py` `_default_run` row) and `finish` now counts 2 `git-destructive` calls, its real `git worktree remove` included.
+- **Branch upkeep close-out: routing text, stated limits and a recorded hosted run.** The scaffolded project template, Cursor rule and Codex block now carry one identical sentence routing "rebase, catch up or land a unit" to the `sigma-rebase` skill (new adopters only; `docs/branching-model.md` section 13f says how an existing adopter picks it up), the rebase skill and a new enforcement row state that landing is user-requested and deliberately not on the irreversible-actions list, and `docs/launch/evidence/upkeep-hosted-run.md` records the sanitized result of one validation on a private throwaway repository (init, two-goal unit, backup, restore, prune, guarded landing, mechanical conflict level, scheduler job). Not covered there: a real-model resolver or reviewer, the chat door against a chat service, and branch rulesets or bypass actors; the scale figures remain reasoned, not measured.
+- **Branch upkeep part B is documented and its local run recorded (#953).** New `docs/upkeep-part-b.md` explains the three conflict levels (`upkeep.conflicts.resolve`: off, mechanical, agent), the landing engine, the opt-in audit and what was and was not proven; `docs/launch/evidence/upkeep-part-b-run.md` records one offline run through every level on a local bare remote with a fake resolver and reviewer, produced by `tests/test_upkeep_partb_run.py` so the record cannot drift. The real-model run is stated as not run (model catalog entry is a placeholder, flags unverified, no credential or cap chosen), as are the chat door, a real-model resolver and reviewer, and branch rulesets. The config table row for `conflicts.mechanical_without_verify` no longer says it is unused. Level 2 stays unreachable in the shipped engine until its plan seam is supplied. Off by default; no behaviour change.
+- **Never-delete guard sees `update-ref` with a message flag, `push --mirror` and string-form commands (#958).** A new parity test ties the guard to the write-surface scanner and pins the remaining known limits by name.
+- **Tests pin `update-ref --stdin` and the bare delete flag in the write-surface scanner (#1066).** Test-only; seen red against a broken classifier.
+- **One issue per parked conflict id (#1104).** Before filing a park finding, upkeep reads the open issues once (newest 100) for the same conflict id; if one exists it files nothing and adds one short comment (a counter and the time) at most once a day. A changed conflict id files a new issue that names the one it supersedes (the old one is left open), and a later clean pass comments on an issue found this way that it resolved, without closing it. Needs `upkeep.enabled` and a resolvable repository; the gate closed is unchanged.
+- **Upkeep gate follow-ups (#965).** The decorator now refuses a machine-door signature with a rest parameter at decoration, its docstring no longer overclaims about a positional environment mapping (a closed gate ignores it), the config template note says an unknown key far from a known one is described by position, type and length, and the test attempt trap also records socket bind, truncate, chmod, chown and utime, with its scope stated.
+- **Config readers for the ledger, work, drift watch and action log blocks are total on a truthy non-object block (#966).** A hand-edited `"ledger": true` now reads as absent instead of raising; the upkeep gate's ledger test and the template discoverability pin were updated to match.
+- **Upkeep pass follow-ups.** With the upkeep gate open, the goal rebase in the work script now re-anchors the evidence fingerprint after a successful rebase, as the behind-PR path already did; the loss check reads the runtime acknowledgement file only while the gate is open, so a file left behind after the gate is closed is ignored; and the attended rebase's push-lease tip read is inside its never-raises contract, returning a failed outcome instead of raising. With the gate closed, the rebase paths are unchanged. Still open: no shipped caller yet supplies the pass's rewrite and push callables.
+- **Upkeep job environment is a strict allowlist.** The detached upkeep job and its engine child now receive only a named list of variables (path, locale, home, ssh agent, and the named GitHub credential variables); lookalike `GH_` and `GITHUB_` names, cloud keys and model keys are dropped, and the branching docs list the exact set. With the upkeep gate closed nothing changes.
+- **Upkeep now says when it has no integration branch.** A repository set up with the default init flow has an empty `work.base`, so the upkeep pass ended `no-base` and did nothing without a hint. The pass report now says `work.base` is empty and where to set it, and `/sigma-doctor` shows an "upkeep integration branch" row when upkeep is on and the base is unset. With upkeep off or the base set, output is unchanged. Init still leaves the base empty, because an empty base also means the branch the loop started on for goal work.
+- **Backup prune re-read now sees a late remote-tracking head (#1064).** The pre-delete re-read also asks for each
+  backup's `<name>/HEAD` form, which a tail pattern of the name cannot return, so a `refs/remotes/<name>/HEAD` that
+  appears after the first listing keeps its backup out of the prune. The residual window between that re-read and the
+  delete push is stated in `docs/branching-model.md` as unmeasured. Gate closed: unchanged.
+- **The bounded runner always ends its lifeline, even when the group-gone confirmation raises (#1065).** A raising confirmation now ends the lifeline as unconfirmed, so the sentinel stops the group instead of being left running.
+- **Tests pin `update-ref --stdin` and the bare delete flag in the write-surface scanner (#1066).** Test-only; seen red against a broken classifier.
+
+- **Head-pinned merge helper: dot-only repository segments and sha-less replies refused (#1067).** The `gh_api` repository
+  pattern now rejects a dot-only owner or name segment, and `merge_pr_pinned` raises on a merge reply that carries no
+  full hex sha, so the landing reads the pull request back and reports it as not merged instead of trusting the reply.
+
+- **Unit sibling guard: a foreign file no longer blocks every lookup, and the landing engine now calls the guard (#1068).** `cross_repo._unit_landing_records` skips (and names on stderr) a file in the landing folder that is readable but does not parse as a landing record; symlinks, unreadable files and the record ceiling still refuse. `feature_land_merge.complete` (and `feature_land.land`) take an optional `landed(repo, branch)` and run `work.unit_sibling_guard` after the tip re-read and before the approval guard, refusing `refused:sibling` without spending an approval; with no measurement supplied a unit that names another repository refuses, a single-repo unit is unchanged, and the closed upkeep gate stays byte-identical.
+- **Disposition record names the real resolution module (#1069).** `docs/launch/dispositions/945.json` called the module without its `feature_` prefix; it now names `feature_upkeep_resolution.py`, and `tests/test_disposition_module_names.py` fails when any disposition record names a `.py` file that does not exist.
+- **Pending-landing record no longer blocks a retry after a crash between begin and merge (#1070).** A pending record with no recorded call whose pull request reads back open and unmerged now settles as `refused` (`crash-before-merge`) on the next landing, so `begin` may overwrite it instead of waiting for the 14-day prune. A record whose lost call was recorded stays unconfirmed.
+- **Upkeep follow-ups: runtime ack file self-heals, descriptor checked before the proof (#1071).**
+  A runtime acknowledgement file cut short by an interrupted write is now rewritten as a whole document on the next
+  resolved push, even when that push has nothing new to acknowledge. The missing-backup-descriptor refusal now runs before
+  the Level 1 proof, so a replay that can never be pushed no longer spends the verify command.
+- **Reviewer route: a truncated brief blocks, manifest generation is explicit (#1072).** `feature_upkeep_review.review` now returns `block` (nothing launched, no manifest) when any brief cap would cut or drop input; `make_manifest` no longer takes a placeholder generation, the store assigns it.
+- **Two load-flaky tests fixed at their seams (#1073).**
+  The hung-gh kill test started its one-second clock at spawn, before the stub had recorded its child, and bounded the second call by wall time; the clock now starts when the stub reports ready and the second call is checked by spawn count. The near-enabled matrix for the job entry point loaded its script inside the trap, so a cold bytecode cache looked like a write; scripts now load before the trap opens. Each has a deterministic control. No timeout was raised.
+- **Changelog pins survive a release commit (#1074).** Audit of every test that reads the shipped changelog: the upkeep drift entry pin looked only at Unreleased plus one section, so it broke at the second release; the backup slice pin read only the text above one fixed heading. Both now read the whole file, a new `tests/test_changelog_release_layout.py` lists each reader with whether it survives, and replays the release layout once and twice against every pin, with a control showing the old window shape goes red. Tests only; no product change.
+- **Upkeep scheduler follow-ups: killed-job note, in-unit budget, lock window stated (#1075).** A job killed outright is now closed as `failed` and noted by the watcher on the next tick; the tick budget is checked inside a unit's measurement, not only between units; the lock-probe window is documented in `docs/running-unattended.md`.
+- **Upkeep pass entry point** — `run_unit_pass` now supplies the pass its rewrite (replay onto the base tip in a scratch worktree) and a lease-guarded push; it is gated by `upkeep.enabled`, so with the gate closed nothing changes.
+- **Upkeep ack read gated** — with the branch-upkeep gate closed, the per-unit runtime ack file under the rebase state is no longer read, matching the upkeep acks file; gate open is unchanged.
+- **Config template note corrected**: the `_upkeep_conflicts` note in the scaffolded config now says Level 1 acts on `upkeep.conflicts.mechanical_without_verify` today (it lets a changelog conflict resolve with no verify command set) instead of saying a later release reads it.
+- **Pre-push private-term guard.** The guard that refuses a push carrying denied patterns is now a tracked, tested tool, `tools/prepush_scan.py`, with an install step in `docs/prepush-guard.md`. It reads its patterns from a file you supply, scans only the commits a push adds (a merge of the default branch no longer pulls upstream commits into the scan), reports hits by location and pattern line number without echoing the matched text, and refuses a missing or empty patterns file.
+- **Upkeep landing: a young never-called pending record is no longer settled as crash-before-merge** - `settle` leaves a record younger than 600 seconds pending (unconfirmed `landing-in-flight`) so another process mid-landing is not refused; older records settle and retry as before.
+- **Config template `_upkeep` note matches what runs today.** The note no longer claims nothing else runs from the upkeep block; it names the scheduler, the conflicts note and the three opt-ins, and a test pins the wording.
+- **Upkeep pass entry point**: its remote and branch are now refused when they start with a dash or are not valid ref names, and the detached upkeep job calls it for its unit (opt-in doors only; gate closed changes nothing).
+- **Fixed a load-sensitive upkeep launcher test**: the kill test now starts its wall-clock budget only after the fake resolver has reported its child, with a deterministic slow-start control (#1099).
+- **Upkeep job: one path owns the unit rewrite** — when the older rebase pass moves a unit, the new unit pass skips it in that run; `valid_ref` is tested to never be looser than `git check-ref-format`.
+- **Drift measure: `--end-of-options` before the refs in its history read (#1063).** The `git log` in `feature_upkeep_drift.walk` now passes the marker before the included and excluded refs, so a ref name is never parsed as an option even if the existing dash and whitespace refusal were bypassed. The `rev-parse` call takes no ref and is unchanged. The argv test asserts the marker precedes the ref, and a mutant that drops it is seen red.
+- **Write-surface row for the offline rubric end-to-end run script (#1108).** Registers its throwaway-repo writes, which slice 21 left out.
+- **Shared-path registry catch-up (#1108, part of #988).** Eight vetted-writer additions in the predecessor written-paths fixture for the new applier config read, the triage finish step in `handoff.py` and the spend-approval counter, so the shared-path guard is green again.
+- **Decision rubric, slice 21: docs rewrites and the offline rubric end-to-end run script (#1011, story #988).** The label model, README, skills and instruction files no longer describe a confirmation queue (the label is legacy; triage arms or parks at filing; the README names queued as the filing default). The run script (`run` verb) drives records, classifier, ladder, judge, triage and migration offline on a throwaway repository; with every switch off it matches a run with no rubric config.
+- **Decision rubric, slice 20: `promote.py migrate-confirmation` (#1010, story #988).** A one-time verb that moves every issue still carrying the confirmation label to armed or an ordinary park through the rubric triage, the blocker predicate and the one-mutation label swap; dry run by default (`--apply` to write), pages past the 200-issue window, prints `covered N of M` and exits non-zero when N is below M, leaves closed issues untouched, and is a no-op on a second run. Nothing else changes.
+- **Decision rubric, slice 18: readers treat the confirmation label as legacy-only (#1008, story #988).** The blocker policy no longer has a confirmation row, status counts leftovers only, doctor flags a leftover as an advisory check, the board Needs a human view lists parked and blocked, and `ledger.handoff.proposed_label` is documented as a read-only legacy alias; promote still lists a leftover and triage still strips it from a picked issue.
+- **Decision rubric, applier prune follow-up (#1107, part of #988).** The applier tick now also removes applied asks with no pending veto once older than `autonomy.applier.prune_after_days` (default 30, at least 1), so they no longer accumulate; a recent applied ask stays for the rolling daily cap. Closed gate unchanged.
+- **Decision rubric, applier follow-up (#1106, part of #988).** The applier now writes the ask as applied right after the gesture and before the decision record and the comment, so a failed status write no longer repeats them on the next tick; with the applier gate closed nothing changes.
+- **Decision rubric, slice 19: levels 3 and 4, the act-and-tell applier (#1009, part of #988).** New library `applier.py` and one extra watch step through the timed-call runner: a parked question nobody answered inside `window_minutes` is answered by its approved, sealed rule through the atomic unpark or promote gesture and the rule id is commented; a person's answer inside the window wins, a no afterwards is a veto (drops a level), hard-stop kinds never reach it, `max_auto_applied_per_day` bounds it, level 4 is silent only for kinds in `allow_silent` (every `spot_check_one_in`-th still comments), and the doctor warns when the tick is older than `stale_after_intervals` watch intervals. OFF unless `decision_rubric.autonomy.applier.enabled` is true; closed behaviour is byte-identical.
+- **Decision rubric, rulebook follow-up (#1105, part of #988).** `rulebook.match` now takes the repository config and passes it to the hard-stop kind check, so a configured extra hard-stop kind is never matched by a rule; it also ignores rules that fail the schema or are approved without a matching seal, so a direct caller cannot bypass the seal. Optional argument; existing callers and closed behaviour are unchanged.
+- **Decision rubric, slice 13: rulebook and propose-approve flow (#1007, part of #988).** New library `rulebook.py`: repository-scoped rules (a person field makes a rule invalid) proposed as a reviewable file diff plus one owner park, approved only through `autonomy.is_owner`, matched as a recommendation only (none or several matches ask), with re-ask after `rulebook.reask_days`. OFF unless `decision_rubric.rulebook.enabled` is true; closed behaviour is byte-identical.
+- **Decision rubric, slice 12: autonomy levels 0 to 2 and watch recorder (#1004, part of #988).** New library `autonomy.py`: a level per question kind and area derived from human answers and watch agreement (lowest machine wins, a veto drops one level, hard-stop kinds capped at 2), watch records pruned after `watch.retention_days`, `is_owner` falling back to `spend_approval.approvers`, and a doctor readout. OFF unless `decision_rubric.autonomy.enabled` is true; closed behaviour is byte-identical.
+- **Decision rubric, slice 17: scope output and demote (#1006, story #988).** With triage on (the default) the scope plan compiler arms each child at its plan priority or parks it when the deny-list matches (report gains `parked`), start-now never promotes a parked child, and demote parks with a reason and question kind; `ai_filed.triage.enabled` false keeps the old output exactly.
+- **Decision rubric, slice 16: gate holds are parks (#1005, story #988).** The scope and ownership pick gates now park a held goal with the declared kind scope_hold or owner_hold instead of writing the confirmation label (new library `gate_hold.py`); `/sigma-unpark` lists, asks about and refuses to release a hold the registry still names, and the automatic sweep leaves them alone. `ai_filed.triage.enabled` false restores the old label write exactly.
+- **Decision store hardening (#1082, part of #988).** The archive folds records by file name stem, ids starting with the archive prefix are rejected, and `get`, `list_by` and `reindex` now require a config and return nothing when the part is closed.
+- **Decision rubric, slice 8: record writers (#1000, part of #988).** New library `decision_record.py`; unpark, promote, ack and the automatic sweep write a store record and an issue comment carrying the same id (decision lines fenced so trigger words plant no blocker; the sweep records `autonomous`). A store failure still posts the comment. OFF unless `decision_rubric.records.enabled` is true; closed output is byte-identical.
+- **Decision rubric, slice 15: filing path (#1003, story #988).** `create_tracked_issue` now arms an AI-filed follow-up or upkeep finding at its triage bucket priority, or parks it with a declared question kind and a park event (ownership-refused filings park as owner_hold; no needs-confirmation label), with per-goal, per-run and depth caps backed by the new bounded `ai_filed_counter.py`; set `ai_filed.triage.enabled` to false for the old output exactly.
+- **Decision rubric, slice 14: file triage core, pure and unwired (#999, story #988).** New library `file_triage.py`: `decide` returns arm, park or queue (never a blocking priority; login-free), a deny-list can only park, `validate_buckets` rejects any bucket at or above the human default; new `ai_filed` template block (triage on by default, buckets P2, P3, P4). Nothing calls it yet.
+- **Decision store hardening (#1082, part of #988).** The archive folds records by file name stem, ids starting with the archive prefix are rejected, and `get`, `list_by` and `reindex` now require a config and return nothing when the part is closed.
+- **Decision rubric, slice 9: ledger pointer (#1001, part of #988).** New library `ledger_pointer.py`: an unaddressed ledger note (reserved ref `decision-pointer`) carrying only record id, question kind and how, batched to `records.pointer.max_writes_per_day` per writer per UTC day with the rest queued, a `compact_pointers` verb that folds only this writer's own old pointer lines into one rollup file, `pointer_file_count`, and a doctor readout. OFF unless `records.pointer.enabled` is true (and records and the ledger are on); closed writes zero bytes.
+- **Decision rubric, slice 10: hard-stop classifier wired at Sigma's own chokepoints (#1002, part of #988).** New library `hard_stop_guard.py` with `guard`, `is_own`, `guard_issue_write` and `record_done_net`, called at the head of work commit, pr and rebase pushes, the unit-branch upkeep push, the issue release, complete, park and note writes, and `loop.py record done`; a matched class or a cannot-tell parks, a `sdlc/` or registered unit lease push and Sigma's own merge are never classified, `gates.irreversible_actions` becomes the legacy alias of the class toggles, and with `decision_rubric.hard_stops.enabled` closed (the default) every step makes exactly the calls it made before.
+- **Decision rubric, slice 5: decisions store (#996, part of #988).** New library `decision_store.py`: one exclusive id-named file per recorded decision in a committed records folder, public-visibility redaction of free text, a rebuildable uncommitted index under a bounded-wait lock, a person-run archive verb, and doctor warnings above the file ceiling and for old untracked records. OFF unless `decision_rubric.records.enabled` is true; repository-based, never person-specific.
+- **Decision store hardening (#1082, part of #988).** The archive folds records by file name stem, ids starting with the archive prefix are rejected, and `get`, `list_by` and `reindex` now require a config and return nothing when the part is closed.
+- **Hard-stop classifier: close pattern gaps (#1079, follow-up to #995).** An owned-branch push no longer hides a second class in the same command; split-flag `rm`, remote branch deletion, `git branch -D` and `find -delete` classify as destroy; quotes also redact `KEY=val` prefixes and `-p` arguments.
+- **Decision rubric, slice 7: class-bound recorded permission and marker scrub (#997, story #988).** `spend_approval.check` takes `hardstop_class`: only spend is honoured (config `spend_approval.classes`, default spend, can only narrow) and any other class is DENIED with a reason; the marker may carry an optional action digest, each use is counted in `.sdlc/state/spend-approval-used.json` so a deleted audit comment cannot re-arm it, and `scrub_marker` quotes a first-line marker. No class given: output unchanged.
+- **Decision rubric, slice 11: drift judge in shadow mode (#998, story #988).** New library `skills/sigma-loop/scripts/drift_judge.py` (`judge`, `verify_quote`, `ceiling_ok`) taking an injected model call; off by default, no call without a configured model and daily ceiling, fail-closed lock, own spend file, nonce-delimited documents, conflicts only with a verified quote. Cost of a real run is not yet measured.
+- **Reference documents key for the reviewer brief: `context.documents` and `context.inline_max_bytes` (#993, decision rubric slice 3).** Extra repo-relative documents join the brief with a per-document present, absent or unreachable state, parent-escaping paths are refused with a reason, oversize bodies become pointers, and an explicit empty list says no documents were named. Absent key: brief byte-identical.
+- **Decision rubric, slice 2: config skeleton (#992, part of #988).** New total reader `decision_rubric_cfg.py` (`load`, `visibility`, `public_repo_warning`), an OFF-by-default `decision_rubric` template block with `records.repo_visibility`, and a doctor features row; a wrong-typed value closes the whole block with a named reason.
+- **Decision rubric, slice 1: measure and pin, read-only (#991).** New `skills/sigma-loop/scripts/park_mix.py` counts park events and park comments by reason class and censuses needs-confirmation issues by population (gate holds are never counted as AI-filed); `park_mix.py report <sdlc_dir>` writes nothing. Tests pin the current filing label sets. No behaviour change.
+- **Decision rubric, slice 6: hard-stop classifier core, pure and unwired (#995, story #988).** New library `skills/sigma-loop/scripts/hard_stop.py`: closed classes with per-class toggles, a class registry (`register_class`), raise-only `raise_to`, `cannot-tell` on any error, own-branch carve-out (`is_own`), `is_hardstop_kind`, and scrubbed quotes. Off unless `hard_stops.enabled` is true; nothing calls it yet.
+- **Decision rubric, slice 4: question-kind declaration (#994, refs #988).** New `qkind.py` (closed `QKINDS` list incl. `scope_hold` and `owner_hold`); `loop.py record <dir> <goal> parked "<text>" --qkind <kind>` appends a `sigma-qkind: <kind>` machine line to the park comment (unknown kind: exit 2, nothing recorded) and the unpark brief prefers the declared kind. Without the flag nothing changes.
 - **The code-goal merge goes REST first (#895, slice 4b-1; refs #895).** `work.merge()`'s direct merge is now
   `gh_api.merge_pr_gh`: REST `PUT pulls/N/merge` with `merge_method` and the vetted head as `sha` (was `gh pr merge
   N --<m> --match-head-commit SHA`), with ONE `gh pr merge` fallback on a primary rate limit only, and only while
@@ -33,6 +221,38 @@ All notable changes to Sigma are recorded here, newest first.
   behaviour of the CLI fallback and real merge latency all come from GitHub docs or fakes. Measured: the new
   tests in `tests/test_gh_api.py` and `tests/test_work.py`; no timing claim made.
 
+- **A second session's `loop.py start` no longer re-anchors a live session's run (#955).** Every
+  start used to reset the one checkout-wide STATE.md run cursor, so session B's `start` voided
+  session A's passing verify (`record done` exit 4, "verify evidence predates this run"), restarted
+  A's `max_minutes` clock, zeroed A's `max_tokens`/`max_codex_raw_tokens` spend or handed it to B,
+  dropped A's in-flight phase from every budget, and let A emit a duplicate `run_stop`. Measured
+  before the fix (origin/main 66b1f1b): the 15 new tests in `test_run_cursor_955.py` failed by
+  assertion; on 5f25b99 the issue's own CLI gestures printed a goal path where A had spent 1100 of
+  `max_tokens 1000`, then `record done` exited 4. Now each start (`loop.begin_run`: CLI `start`,
+  `run_loop`, `assign._start_drain`) also stamps a `run` block in its own session marker with the
+  same instant; budget gates and the `run_stop` dedupe read the caller's own block, verify freshness
+  anchors to the goal's live holder(s), and phase/spend credits go to the holders (spend naming no
+  goal, or a goal no live session holds, to every live session). STATE.md is still written byte for
+  byte as before, so a single loop, a goal no live session holds, and a dead session's goals behave
+  as they did. `start-run` takes `--session-pid` (bare: the only live session, or none with a stderr
+  line when several are live). Budgets are per session, so **N concurrent sessions may together
+  spend N x each ceiling**, as N sequential runs could. Marker writers now keep every key they do not
+  pass (D-1), and a credit never refreshes a marker's mtime (the lease-TTL liveness backstop).
+  Measured 2026-10-10 on an Apple M1, synthetic markers, this code: a marker is 4.1 KB at 141
+  credited Claude attempts and 112 KB at the 4096-attempt cap (256 KB when a Codex map is full too;
+  today's markers are 42-111 bytes); one credit 0.9 ms at 141 attempts, 3.9 ms at the cap (11 ms with
+  both maps full); a live-session scan (once per `done_refusal` and per credit) 0.2 / 2.2 / 10.6 ms
+  for 1 / 10 / 100 sessions at 140 attempts and 1.0 / 7.4 / 70 ms at the cap; a `spend` naming no
+  goal 10 / 105 ms with 10 / 100 live sessions at 140 attempts and 48 / 706 ms at the cap. Past 4096
+  attempts a holder's credit refuses loudly. Not measured: a network filesystem, Linux.
+  Residuals: (R1) a dead holder whose pid is reused reads live until the lease TTL (12 h default) and
+  its run start keeps anchoring that goal, bounded by #498's run id and #1897's fingerprint; (R2) a
+  goal in no live `in_flight` (`/sigma-goal`'s arming path, a goal after `record review`) keeps the
+  checkout anchor, so a concurrent start still voids its evidence, as before; (R3) `/sigma-doctor`'s
+  budget row still windows events from the checkout's latest start; (R4) crashed sessions'
+  heartbeat files are still unpruned; (R5) a bare `start-run` with one live session resets that
+  session even when the caller is not it, as before.
+
 ## 1.0.7 — 2026-10-11 — doctor preflight checks and small fixes
 
 - **Doctor preflight: missing verify interpreter and branch-creation rulesets (#974).** `/sigma-doctor` now adds a
@@ -43,6 +263,21 @@ All notable changes to Sigma are recorded here, newest first.
   New `landing_preflight.py` library, plus read-only `gh_api.ruleset` and `gh_api.org_ruleset`. Commands starting with
   `cd`, variables, `~`, command substitution or shell wrappers are never checked. **Not seen live:** the real GitHub
   reply shape is faked in tests from the documented fields.
+- **Per-skill smoke cards for the script-bearing skills (#1045, slice 2 of #1043).** New `evals/skills/cards/<skill>.json`
+  for every skill with a `scripts/*.py|sh` file; `library` stems across them equal `test_script_help.LIBRARY_ONLY`. Only
+  skills whose every gesture has a passing read-only fixture are `exercised`; the rest are `pinned` (a verbatim
+  `SKILL.md` gate) and artifact producers are an existing script or `agent`. The bare `python3 evals/skills/smoke.py`
+  stays red for prose-only skills until slice 3 and is not a test gate.
+- **Regression mutation engine (#1056, slice 1 of #808).** New `evals/regression/mutators.py` (stdlib only):
+  `python3 evals/regression/mutators.py apply <regression> --form <form> --root <dir>` breaks one named function body
+  or table entry in a COPY of the tree, resolved with `ast` and never by line number. Regressions: `skip-plan-review`
+  and `drop-review-recording` (form `code`), `disable-secret-scan` (`drop-pattern`, `drop-redactor-only`,
+  `whole-table`, `commit-noop`), `double-context` (`words`, appends the measured words so
+  `python3 evals/phase_context_budget.py` exits 1). Exit 10 anchor missing, 11 ambiguous, 12 mutation changed
+  nothing, each named on stderr; `anchors` lists every anchor. Reading `drop-redactor-only` as dropping the
+  `authorization-header` entry of `_SECRET_PATTERN_SPECS` is an open point for #806. One new write-surface
+  inventory row (`_write_text`). Not measured: Windows, Python 3.10.
+
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
   line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under

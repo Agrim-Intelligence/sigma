@@ -1,0 +1,23 @@
+{
+  "skill": "sigma-kg",
+  "kind": "pinned",
+  "gates": [
+    "Archive, never delete"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-kg/scripts/kg.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/knowledge/analysis",
+      "producer": "skills/sigma-kg/scripts/kg.py"
+    },
+    {
+      "path": ".sdlc/state/kg-refresh.json",
+      "producer": "skills/sigma-kg/scripts/kg.py"
+    }
+  ]
+}

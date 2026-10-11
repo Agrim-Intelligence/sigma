@@ -720,6 +720,8 @@ def _apply_runner(state="CLOSED", labels=("sdlc:goal", "sdlc:in-progress"), swap
 
     def run(args):
         calls.append(list(args))
+        if gqlfake.is_issue_write(args):     # note() is REST-first (#895 slice 8): re-record as `issue comment`
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         if args[:2] == ["repo", "view"]:
             return json.dumps({"owner": {"login": "acme"}, "name": "widget"})
         rest = gqlfake.rest_issue(args, lambda n, f: {"state": state, "labels": [{"name": x} for x in labels]})
@@ -772,7 +774,7 @@ def test_apply_removes_the_stale_label():
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "removeLabelsFromLabelable" in docs[0]
     # #895: the fresh re-read was ONE REST GET of the right issue; no `issue view` fallback
-    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/") and not c[1].endswith("/comments")] == [
         ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
     assert run.unexpected == []
 
@@ -977,7 +979,7 @@ def test_apply_proposal_applies_an_add_and_a_remove_in_one_swap():
     assert out[0]["result"] == "done"
     docs = [a for c in run.calls for a in c if str(a).startswith("query=mutation")]
     assert len(docs) == 1 and "addLabelsToLabelable" in docs[0] and "removeLabels" in docs[0]
-    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/")] == [
+    assert [c for c in run.calls if c[0] == "api" and c[1].startswith("repos/") and not c[1].endswith("/comments")] == [
         ["api", "repos/acme/widget/issues/7", "--method", "GET"]]
     assert run.unexpected == []
 
@@ -1186,6 +1188,8 @@ def _sweep_runner(by_label=None, history=None, fresh_state="OPEN", fresh_labels=
 
     def run(args):
         calls.append(list(args))
+        if gqlfake.is_issue_write(args):     # note() is REST-first (#895 slice 8): re-record as `issue comment`
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "acme/widget"))
         params = gqlfake.rest_list_params(args)
         if params is not None:      # #895 2c: the census list read is REST first
             return gqlfake.rest_list(args, [_rest(i) for i in by_label.get((params.get("labels"), params.get("state", "open")), [])])

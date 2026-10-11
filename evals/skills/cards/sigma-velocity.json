@@ -1,0 +1,20 @@
+{
+  "skill": "sigma-velocity",
+  "kind": "exercised",
+  "gates": [],
+  "scripts": [
+    {
+      "path": "skills/sigma-velocity/scripts/velocity.py",
+      "role": "gesture",
+      "fixture": [
+        "python3",
+        "skills/sigma-velocity/scripts/velocity.py",
+        "measure",
+        ".",
+        "7"
+      ],
+      "expect": "velocity (last"
+    }
+  ],
+  "artifacts": []
+}

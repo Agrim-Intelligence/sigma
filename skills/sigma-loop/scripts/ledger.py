@@ -518,7 +518,10 @@ def _config(sdlc_dir):
 
 
 def settings(config):
-    return (config or {}).get("ledger") or {}
+    """The `ledger` block, or `{}`. Total: a non-object config or block (a hand-edited `"ledger": true`)
+    reads as absent instead of raising on `.get`."""
+    block = config.get("ledger") if isinstance(config, dict) else None
+    return block if isinstance(block, dict) else {}
 
 
 def enabled(config):
@@ -893,9 +896,24 @@ def _safe_name(who):
 # --------------------------------------------------------------------------- actor
 
 
+_GH_API = []
+
+
+def _gh_api():
+    """gh_api.py, loaded lazily and once (#895 slice 3b). Not fail-open: a load error propagates (`actor` catches)."""
+    if not _GH_API:
+        spec = importlib.util.spec_from_file_location("gh_api", pathlib.Path(__file__).resolve().parent / "gh_api.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _GH_API.append(mod)
+    return _GH_API[0]
+
+
 def _run_gh(args):
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
-    return proc.stdout.strip() if proc.returncode == 0 else ""
+    # 15 s, not gh_api's 120: `actor` is reachable from a PreToolUse hook (decision_gate); a dead network must not
+    # stall an edit. A judgement, not measured. A timeout reads as "" and `actor` falls back to $USER.
+    rc, out, _err = _gh_api().run_gh(args, timeout=15)
+    return out.strip() if rc == 0 else ""
 
 
 def actor(config, run=None):

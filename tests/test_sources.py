@@ -1,7 +1,7 @@
 """Pluggable backlog sources: LocalSource (files, zero-dep) and GitHubSource (gh CLI).
 GitHubSource talks to GitHub only through an injectable runner, so these tests are hermetic —
 no network, no `gh` required."""
-import json, pathlib, importlib.util, re, tempfile
+import json, pathlib, importlib.util, re, subprocess, tempfile
 import pytest
 
 import gqlfake
@@ -1051,6 +1051,8 @@ def _partial_park_failure_runner(labels, rest_labels_fails=False, remove_always_
                 raise RuntimeError("gh: HTTP 502 Bad Gateway")
             if has_rm and remove_always_fails:
                 raise RuntimeError("gh: HTTP 502 Bad Gateway")
+        if a[0] == "api" and len(a) >= 2 and a[1].endswith("/comments"):
+            return json.dumps({"id": 1})                        # #895 slice 8: note()'s REST POST is no read
         if a[0] == "api" and len(a) >= 2 and a[1].startswith("repos/") and "/issues/" in a[1]:
             stats["issue_reads"] += 1
             if rest_labels_fails:
@@ -1416,114 +1418,229 @@ def test_github_note_comments_on_the_issue():
 
 
 def test_github_note_retries_a_transient_failure_until_the_comment_lands():
-    """#1986: the fix's `note` half -- a transient `gh` blip (this environment's own documented
-    account-drift hazard among them) must not be free to erase `sigma-goal-review`'s REJECT verdict,
-    which writes nothing else at all. Mirrors `test_transient_project_error_retried_until_card_set`'s
-    shape for the identical reason."""
+    """#1986 / #895 slice 8: a transient server 5xx on the REST POST must not erase `sigma-goal-review`'s
+    REJECT verdict (it writes nothing else): re-POSTed over REST, never via `gh issue comment`."""
     src = _mod("sources")
-    attempts = {"n": 0}
+    posts = []
 
     def flaky(a):
-        if a[:2] == ["issue", "comment"]:
-            attempts["n"] += 1
-            if attempts["n"] <= 2:
-                raise RuntimeError("gh issue comment failed: 503 Service Unavailable")
-        return ""
-    flaky.calls = []
+        assert a[0] == "api", a                      # no `issue comment`, no other call
+        posts.append(a)
+        if len(posts) <= 2:
+            e = RuntimeError("gh api failed")
+            e.hint = "gh: Server Error (HTTP 503)"
+            raise e
+        return json.dumps({"id": 1})
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=flaky)
     gh._NOTE_RETRY_BASE = 0     # hermetic: no real backoff sleeps
     gh.note("5", "goal-review: REJECTED -- findings")     # must not raise
-    assert attempts["n"] == 3                              # 2 transient failures were retried, then success
+    assert len(posts) == 3                                # 2 transient failures were retried, then success
 
 
 def test_github_note_raises_on_final_failure_instead_of_swallowing():
-    """#1986: the OLD shape swallowed every `note` failure silently one layer up (`loop.py`'s CLI
-    verb). This method must now RAISE once retries are exhausted -- the caller (the CLI verb, or an
-    internal best-effort wrapper) decides what that means; this layer must not decide it FOR them
-    by staying quiet, which is exactly how a REJECT verdict lost its only comment with zero trace."""
+    """#1986: this method must RAISE once it cannot land the comment -- the caller (the CLI verb, or an
+    internal best-effort wrapper) decides what that means; staying quiet is how a REJECT verdict lost
+    its only comment with zero trace. #895 slice 8: the raised type is `GhApiError`."""
     src = _mod("sources")
 
     def always_fails(a):
-        if a[:2] == ["issue", "comment"]:
-            raise RuntimeError("gh: authentication token drifted (simulated)")
-        return ""
+        e = RuntimeError("gh: authentication token drifted (simulated)")
+        e.hint = "gh: Bad credentials (HTTP 401)"
+        raise e
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=always_fails)
     gh._NOTE_RETRIES, gh._NOTE_RETRY_BASE = 1, 0     # hermetic: fail fast, no real backoff sleeps
-    try:
+    with pytest.raises(Exception) as ei:
         gh.note("5", "goal-review: REJECTED -- findings")
-        assert False, "a note that never landed must raise, not return silently"
-    except RuntimeError as exc:
-        assert "drifted" in str(exc)
+    assert type(ei.value).__name__ == "GhApiError" and "drifted" in str(ei.value)
 
 
-def test_github_note_falls_back_to_rest_once_graphql_quota_is_exhausted():
-    """#1657: `gh issue comment` resolves through GraphQL, whose 5,000/hour budget is shared with
-    every other `gh` operation on the board and was confirmed exhausted for real during #1514 --
-    every retry against the SAME quota just re-fails with the identical error. Once
-    `_NOTE_RETRIES` GraphQL attempts are spent, `note()` must fall back exactly once to REST
-    (`gh api repos/{owner}/{repo}/issues/{n}/comments`), which draws on a separate budget and, per
-    #1514, kept working the entire time GraphQL read exhausted -- so the audit-trail comment still
-    lands instead of being silently lost."""
+def test_github_note_primary_rate_limit_uses_the_one_policy_fallback_after_the_rest_post():
+    """#895 slice 8 (inverts #1657's GraphQL-first shape): REST first, so a primary rate limit on the POST
+    is answered by `comment_issue`'s ONE `gh issue comment` fallback, never a retry loop."""
     src = _mod("sources")
     calls = []
 
-    def quota_exhausted(a):
+    def limited(a):
         calls.append(a)
-        if a[:2] == ["issue", "comment"]:
-            raise RuntimeError("GraphQL: API rate limit exceeded for installation ID 123. (addComment)")
+        if a[0] == "api":
+            e = RuntimeError("gh api failed")
+            e.hint = "gh: API rate limit exceeded (HTTP 429)"
+            raise e
         return ""
-    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=quota_exhausted)
-    gh._NOTE_RETRY_BASE = 0     # hermetic: no real backoff sleeps
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=limited)
+    gh._NOTE_RETRY_BASE = 0
     gh.note("5", "goal-review: REJECTED -- quota exhausted")     # must not raise
-
-    graphql_attempts = [c for c in calls if c[:2] == ["issue", "comment"]]
-    rest_attempts = [c for c in calls if c[0] == "api"]
-    assert len(graphql_attempts) == gh._NOTE_RETRIES     # every GraphQL retry was spent first, none skipped
-    assert len(rest_attempts) == 1                       # REST is a fallback, not a second retry loop
-    rest_call = rest_attempts[0]
-    assert rest_call[1] == "repos/o/r/issues/5/comments"          # separate quota, explicit owner/repo
-    assert rest_call[rest_call.index("-X") + 1] == "POST"
-    assert "body=goal-review: REJECTED -- quota exhausted" in rest_call
+    assert [c[0] for c in calls] == ["api", "issue"]
+    assert calls[0][1] == "repos/o/r/issues/5/comments" and calls[0][calls[0].index("--method") + 1] == "POST"
+    assert "body=goal-review: REJECTED -- quota exhausted" in calls[0]
+    assert calls[1][:3] == ["issue", "comment", "5"]
 
 
-def test_github_note_with_no_resolvable_repo_still_falls_back_to_rest():
-    """POST-MERGE REVIEW FIX (#1657 follow-up): the ORIGINAL REST fallback resolved owner/repo via
-    `self._owner_name()`, whose own unset-`repo` fallback shells out to `gh repo view --json
-    owner,name` -- which is ITSELF graphql-billed. `discovery.github.repo` ships EMPTY in the
-    sigma-init template and `/sigma-setup` explicitly supports leaving it unset, so on the SHIPPED
-    DEFAULT CONFIG the REST fallback still touched the exhausted GraphQL quota and the original
-    #1657 bug reproduced exactly. Reproduced here: with `repo` unset and `gh repo view` wired to
-    raise if it is ever called, the pre-fix code called it anyway (caught internally by
-    `_owner_name()`, which then re-raised the ORIGINAL GraphQL failure since it saw no owner) --
-    so this test failed red against the pre-fix code by raising when it must not.
-
-    Fixed identically to `_fetch_issues_rest`'s own repo resolution (see that method's docstring):
-    never call `_owner_name()` from this path at all. When `self.repo` is unset, address the
-    literal `{owner}/{repo}` placeholder, which `gh api` resolves from the working directory's git
-    remote at ZERO extra requests -- so an unset `repo` can no longer defeat the fallback, and
-    `gh repo view` is never touched."""
+def test_github_note_with_no_resolvable_repo_posts_the_placeholder_endpoint():
+    """`discovery.github.repo` ships EMPTY in the sigma-init template: the REST POST must address the literal
+    `{owner}/{repo}` placeholder (`gh api` infers it from the git remote at zero extra requests) and must
+    never resolve it through the GraphQL-billed `gh repo view` (#1657 follow-up, kept under slice 8)."""
     src = _mod("sources")
     calls = []
 
-    def quota_exhausted_no_repo(a):
+    def run(a):
         calls.append(a)
-        if a[:2] == ["issue", "comment"]:
-            raise RuntimeError("GraphQL: API rate limit exceeded for installation ID 123. (addComment)")
         if a[:2] == ["repo", "view"]:
             raise RuntimeError("gh repo view is itself GraphQL-billed and must never be called here")
-        return ""
-    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=quota_exhausted_no_repo)  # no repo configured
-    gh._NOTE_RETRIES, gh._NOTE_RETRY_BASE = 1, 0     # hermetic: fail fast, no real backoff sleeps
-    gh.note("5", "goal-review: REJECTED -- quota exhausted")     # must NOT raise
+        assert a[0] == "api", a
+        return json.dumps({"id": 1})
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)  # no repo configured
+    gh.note("5", "goal-review: REJECTED")     # must NOT raise
 
-    assert not any(c[:2] == ["repo", "view"] for c in calls), \
-        "note()'s REST fallback must never resolve owner/repo via a GraphQL-billed `gh repo view`"
-    rest_attempts = [c for c in calls if c[0] == "api"]
-    assert len(rest_attempts) == 1
-    rest_call = rest_attempts[0]
-    assert rest_call[1] == "repos/{owner}/{repo}/issues/5/comments"   # gh api infers this locally, 0 requests
-    assert rest_call[rest_call.index("-X") + 1] == "POST"
-    assert "body=goal-review: REJECTED -- quota exhausted" in rest_call
+    assert not any(c[:2] == ["repo", "view"] for c in calls)
+    assert len(calls) == 1 and calls[0][1] == "repos/{owner}/{repo}/issues/5/comments"
+    assert calls[0][calls[0].index("--method") + 1] == "POST"
+    assert "body=goal-review: REJECTED" in calls[0]
+
+
+# --- #895 slice 8: note() is REST-first. Raw `run=` runners (a[0] == "api"): `_recording_runner`
+# would re-record the REST POST as a legacy `issue comment` and make every count below vacuous.
+# Unknown argv RAISES here, never returns "" (a silent pass for a call the test did not expect).
+
+def _hinted(msg, hint=None):
+    e = RuntimeError(msg)
+    if hint:
+        e.hint = hint
+    return e
+
+
+def _note_world(monkeypatch, post, fallback=None, repo="o/r", cloud=False):
+    """-> (GitHubSource, calls). `post(n)` answers the n-th REST POST (1-based: str, or raise);
+    `fallback(n)` the n-th `issue comment` (default: raises, so an unexpected GraphQL call is loud)."""
+    monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    if cloud:
+        monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    else:
+        monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    calls = []
+
+    def run(a):
+        calls.append(list(a))
+        if a[0] == "api" and "--method" in a and a[a.index("--method") + 1] == "POST":
+            return post(len([c for c in calls if c[0] == "api"]))
+        if a[:2] == ["issue", "comment"]:
+            if fallback is None:
+                raise AssertionError("unexpected `gh issue comment`: %r" % (a,))
+            return fallback(len([c for c in calls if c[:2] == ["issue", "comment"]]))
+        raise AssertionError("unexpected argv %r" % (a,))
+    cfg = {"discovery": {"source": "github"}}
+    if repo:
+        cfg["discovery"]["github"] = {"repo": repo}
+    gh = _mod("sources").GitHubSource(cfg, run=run)
+    gh._NOTE_RETRY_BASE = 0
+    return gh, calls
+
+
+def _posts(calls):
+    return [c for c in calls if c[0] == "api"]
+
+
+def _graphql_comments(calls):
+    return [c for c in calls if c[:2] == ["issue", "comment"]]
+
+
+def _raises_gh_api_error(gh, text="x"):
+    with pytest.raises(Exception) as ei:
+        gh.note("5", text)
+    assert type(ei.value).__name__ == "GhApiError"
+    return ei.value
+
+
+def test_note_first_attempt_is_the_rest_post(monkeypatch):
+    gh, calls = _note_world(monkeypatch, lambda n: json.dumps({"id": 1}))
+    assert gh.note("5", "goal-review: REJECTED") is None
+    assert len(_posts(calls)) == 1 and _posts(calls)[0][1] == "repos/o/r/issues/5/comments"
+    assert "body=goal-review: REJECTED" in _posts(calls)[0]
+    assert _graphql_comments(calls) == []
+
+
+def test_note_rest_timeout_retries_rest_only(monkeypatch):
+    def timed_out(n):
+        e = _hinted("gh api timed out")
+        try:
+            raise subprocess.TimeoutExpired("gh", 120)
+        except Exception as t:
+            e.__cause__ = t
+        raise e
+    gh, calls = _note_world(monkeypatch, timed_out)
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == gh._NOTE_RETRIES and _graphql_comments(calls) == []
+    gh, calls = _note_world(monkeypatch, timed_out)
+    gh._NOTE_RETRIES = 1
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == 1 and _graphql_comments(calls) == []
+
+
+def test_note_in_cloud_never_makes_a_graphql_attempt(monkeypatch):
+    def limited(n):
+        raise _hinted("gh api failed", "gh: API rate limit exceeded (HTTP 429)")
+    gh, calls = _note_world(monkeypatch, limited, cloud=True)
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == 1 and _graphql_comments(calls) == []
+
+
+def test_note_primary_rate_limit_makes_exactly_one_fallback(monkeypatch):
+    def limited(n):
+        raise _hinted("gh api failed", "gh: API rate limit exceeded (HTTP 429)")
+    gh, calls = _note_world(monkeypatch, limited, fallback=lambda n: "")
+    assert gh.note("5", "x") is None
+    assert len(_posts(calls)) == 1 and len(_graphql_comments(calls)) == 1
+    # the policy fallback itself failing 5xx is raised: no second POST, no second fallback
+    def bad(n):
+        raise _hinted("gh issue comment failed", "gh: Server Error (HTTP 502)")
+    gh, calls = _note_world(monkeypatch, limited, fallback=bad)
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == 1 and len(_graphql_comments(calls)) == 1
+
+
+@pytest.mark.parametrize("hint", ["gh: Not Found (HTTP 404)", "gh: Unprocessable Entity (HTTP 422)",
+                                  "gh: Bad credentials (HTTP 401)", "gh: Forbidden (HTTP 403)",
+                                  "gh: You have exceeded a secondary rate limit (HTTP 403)"])
+def test_note_4xx_and_secondary_limit_are_not_retried(monkeypatch, hint):
+    def refused(n):
+        raise _hinted("gh api failed", hint)
+    gh, calls = _note_world(monkeypatch, refused)
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == 1 and _graphql_comments(calls) == []
+
+
+def test_note_5xx_retries_rest_only_up_to_the_cap_then_raises(monkeypatch):
+    def bad(n):
+        raise _hinted("gh api failed", "gh: Server Error (HTTP 502)")
+    gh, calls = _note_world(monkeypatch, bad)
+    _raises_gh_api_error(gh)
+    assert len(_posts(calls)) == gh._NOTE_RETRIES and _graphql_comments(calls) == []
+
+    def flaky(n):
+        if n == 1:
+            raise _hinted("gh api failed", "gh: Server Error (HTTP 502)")
+        return json.dumps({"id": 2})
+    gh, calls = _note_world(monkeypatch, flaky)
+    assert gh.note("5", "x") is None
+    assert len(_posts(calls)) == 2 and _graphql_comments(calls) == []
+
+
+def test_note_body_saying_http_502_is_not_retried(monkeypatch):
+    """The `.kind` / `str(exc)` trap: with no `.hint`, `classify()` reads `str(exc)`, which embeds the
+    comment BODY. A body saying `HTTP 502` makes `exc.kind == "server"` (a retry), while `_write_case`
+    (hint and cause chain only) says other_unparsed (no retry). Pin the second."""
+    def body_echo(n):
+        raise _hinted("gh api repos/o/r/issues/5/comments -f body=the proxy said HTTP 502 failed")  # no .hint
+    gh, calls = _note_world(monkeypatch, body_echo)
+    err = _raises_gh_api_error(gh, "the proxy said HTTP 502")
+    assert err.kind == "server"                        # the trap is real: a str-based read WOULD retry
+    assert len(_posts(calls)) == 1 and _graphql_comments(calls) == []
+
+
+def test_note_foreign_issue_returns_before_any_call(monkeypatch):
+    gh, calls = _note_world(monkeypatch, lambda n: (_ for _ in ()).throw(AssertionError("no call")))
+    monkeypatch.setattr(gh.note.__globals__["hsg"], "blocks_issue_write", lambda *a, **k: True)
+    assert gh.note("5", "x") is None and calls == []
 
 
 def test_github_append_to_body_appends_without_overwriting():
@@ -2260,9 +2377,9 @@ def test_offboard_still_posts_the_park_comment_even_when_already_blocked():
     run = _recording_runner_by_json({"labels": json.dumps({"labels": [{"name": "sdlc:blocked"}]})})
     gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
     gh.park("42", "needs a human decision")
-    comments = [c for c in run.calls if len(c) > 1 and c[1] == "comment"]
+    comments = [c for c in run.calls if c[0] == "api" and c[1].endswith("/issues/42/comments")]   # REST POST
     assert len(comments) == 1
-    assert "needs a human decision" in comments[0][comments[0].index("--body") + 1]
+    assert "body=Parked by Sigma — needs human review: needs a human decision" in comments[0]
 
 
 def test_offboard_adds_parked_normally_when_not_already_blocked():
@@ -2689,23 +2806,24 @@ def test_complete_falls_back_to_rest_when_the_already_closed_comment_hits_exhaus
         rest = gqlfake.rest_issue(a, lambda n, f: {"state": "CLOSED"})      # #895: REST state probe
         if rest is not None:
             return rest
-        if verb == "comment":
-            raise RuntimeError("GraphQL: API rate limit exceeded for installation ID 123. (addComment)")
+        if verb == "comment" and a[0] == "api":          # #895 slice 8: the REST POST is rate limited
+            e = RuntimeError("gh api failed")
+            e.hint = "gh: API rate limit exceeded (HTTP 429)"
+            raise e
         return ""
 
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
     gh._NOTE_RETRY_BASE = 0
     gh.complete("42")   # must not raise -- and must not silently lose the comment either
 
-    graphql_attempts = [c for c in calls if c[:2] == ["issue", "comment"]]
+    fallbacks = [c for c in calls if c[:2] == ["issue", "comment"]]
     # excludes the SEPARATE `api graphql` label-removal call `complete()` also issues -- that one
-    # is unrelated to this comment's own retry/fallback and this test does not stub it out.
+    # is unrelated to this comment's own policy fallback and this test does not stub it out.
     rest_attempts = [c for c in calls if c[:2] == ["api", "repos/o/r/issues/42/comments"]]
-    assert len(graphql_attempts) == gh._NOTE_RETRIES     # every GraphQL retry spent first
-    assert len(rest_attempts) == 1                       # then exactly one REST fallback, not lost
-    rest_call = rest_attempts[0]
-    assert rest_call[1] == "repos/o/r/issues/42/comments"
-    assert "body=Completed by the Sigma SDLC loop." in rest_call
+    assert len(rest_attempts) == 1                       # REST first, never retried on a rate limit
+    assert len(fallbacks) == 1                           # then exactly one policy fallback, not lost
+    assert "body=Completed by the Sigma SDLC loop." in rest_attempts[0]
+    assert fallbacks[0][fallbacks[0].index("--body") + 1] == "Completed by the Sigma SDLC loop."
 
 
 def test_park_falls_back_to_rest_when_the_comment_hits_exhausted_graphql():
@@ -2722,21 +2840,22 @@ def test_park_falls_back_to_rest_when_the_comment_hits_exhausted_graphql():
         if gql is not None:
             return gql
         calls.append(a)
-        if a[:2] == ["issue", "comment"]:
-            raise RuntimeError("GraphQL: API rate limit exceeded for installation ID 123. (addComment)")
+        if a[:2] == ["api", "repos/o/r/issues/42/comments"]:      # #895 slice 8: the REST POST is rate limited
+            e = RuntimeError("gh api failed")
+            e.hint = "gh: API rate limit exceeded (HTTP 429)"
+            raise e
         return ""
 
     gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "o/r"}}}, run=run)
     gh._NOTE_RETRY_BASE = 0
     gh.park("42", "deploy gate")   # must not raise -- and must not silently lose the comment either
 
-    graphql_attempts = [c for c in calls if c[:2] == ["issue", "comment"]]
+    fallbacks = [c for c in calls if c[:2] == ["issue", "comment"]]
     rest_attempts = [c for c in calls if c[:2] == ["api", "repos/o/r/issues/42/comments"]]
-    assert len(graphql_attempts) == gh._NOTE_RETRIES
-    assert len(rest_attempts) == 1
-    rest_call = rest_attempts[0]
-    assert rest_call[1] == "repos/o/r/issues/42/comments"
-    assert "body=Parked by Sigma — needs human review: deploy gate" in rest_call
+    assert len(rest_attempts) == 1                       # REST first, never retried on a rate limit
+    assert len(fallbacks) == 1                           # then exactly one policy fallback
+    assert "body=Parked by Sigma — needs human review: deploy gate" in rest_attempts[0]
+    assert fallbacks[0][fallbacks[0].index("--body") + 1] == "Parked by Sigma — needs human review: deploy gate"
 
 
 def test_complete_still_comments_then_closes_when_state_probe_fails():

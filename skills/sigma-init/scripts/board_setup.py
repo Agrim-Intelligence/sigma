@@ -100,6 +100,17 @@ def _sources():
     return _SOURCES[0]
 
 
+_GH_API = []
+
+
+def _gh_api():
+    """gh_api.py loaded DIRECTLY (not via `_sources()`, which would execute sources.py and all its loads) and
+    lazily, so a missing file breaks the first `Board.gh`, not the import (#895 slice 3b)."""
+    if not _GH_API:
+        _GH_API.append(_load(_LOOP / "gh_api.py", "board_setup_gh_api"))
+    return _GH_API[0]
+
+
 ITEM_CLOSED = "Item closed"      # GitHub's name for the workflow that moves a closed item to Done
 
 
@@ -177,7 +188,7 @@ class Board:
 
     # -- gh plumbing
     def gh(self, *args):
-        argv = ["gh", *args]
+        argv = _gh_api().gh_argv(args)
         if self.host != "github.com" and args and args[0] == "api":
             argv[2:2] = ["--hostname", self.host]
         rc, out, err = self.runner(argv)

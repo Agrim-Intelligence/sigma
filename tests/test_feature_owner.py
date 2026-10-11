@@ -25,6 +25,8 @@ import json
 import pathlib
 import types
 
+import pytest
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 P = SCRIPTS / "feature_owner.py"
@@ -66,7 +68,9 @@ BOARD = "@here-owner"
 UNIT_OWNER = "@unit-owner"
 CONFIG = {"work": {"enabled": True, "remote": "origin"},
           "discovery": {"source": "github", "github": {"repo": HERE}},
-          "ledger": {"enabled": True, "actor": "stranger"}}
+          "ledger": {"enabled": True, "actor": "stranger"},
+          # these tests pin the pre-triage proposal label path; the triage path is in test_handoff (#1003)
+          "ai_filed": {"triage": {"enabled": False}}}
 
 
 def _entry(**over):
@@ -802,7 +806,7 @@ def test_only_one_place_branches_on_the_board_owner_wins_arm():
     assert branches == ["if verdict.reason == BOARD_OWNER_WINS:"]
     for sibling in ("handoff.py", "promote.py"):
         assert "BOARD_OWNER_WINS" not in (SCRIPTS / sibling).read_text(encoding="utf-8")
-    assert "refusal_clause" in (SCRIPTS / "promote.py").read_text(encoding="utf-8")
+    assert "refusal_clause" in (SCRIPTS / "gate_hold.py").read_text(encoding="utf-8")   # #1005: moved from promote
 
 
 # ------------------------------------------------- the remedy has to be one you can perform
@@ -1406,3 +1410,37 @@ def test_the_label_contract_documents_the_third_producer():
     doc = (ROOT / "docs" / "label-model.md").read_text(encoding="utf-8")
     assert "2b-iii" in doc
     assert "feature_owner.gate_at_pick" in doc
+
+
+# --------------------------------------------------------------------------- #895 slice 3b: seam via gh_api
+
+def test_run_gh_delegates_to_gh_api_run_gh(monkeypatch):
+    """RED BEFORE THE CHANGE (delegation spy)."""
+    m = _mod()
+    seen = []
+    monkeypatch.setattr(m._gh_api(), "run_gh", lambda args, timeout=120: (seen.append(list(args)), (0, " out\n", ""))[1])
+    assert m._run_gh(["api", "user"]) == "out" and seen == [["api", "user"]]
+
+
+def test_run_gh_nonzero_raises_runtimeerror_with_stderr_or_code(monkeypatch):
+    """CHARACTERISATION (green today)."""
+    import subprocess
+    m = _mod()
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: types.SimpleNamespace(returncode=1, stdout="", stderr=" boom \n"))
+    with pytest.raises(RuntimeError, match="^boom$"):
+        m._run_gh(["api", "x"])
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: types.SimpleNamespace(returncode=4, stdout="", stderr=""))
+    with pytest.raises(RuntimeError, match="gh exited 4"):
+        m._run_gh(["api", "x"])
+
+
+def test_run_gh_missing_binary_propagates(monkeypatch):
+    """CHARACTERISATION (green today)."""
+    import subprocess
+    m = _mod()
+
+    def boom(argv, **kw):
+        raise FileNotFoundError("gh")
+    monkeypatch.setattr(subprocess, "run", boom)
+    with pytest.raises(FileNotFoundError):
+        m._run_gh(["api", "x"])

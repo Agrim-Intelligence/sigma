@@ -72,7 +72,7 @@ SHAPE = _shape()
 #: included on purpose: the module that DEFINES the shape is the last place a stale spelling should
 #: survive, and `ledger.py`'s own header was one of the nine.
 SURFACES = (
-    "README.md",
+    "docs/action-log-and-ledger.md",
     "skills/sigma-ledger/SKILL.md",
     "skills/sigma-init/templates/ledger/README.md.tmpl",
     "skills/sigma-init/templates/config.json.tmpl",
@@ -84,7 +84,7 @@ SURFACES = (
 #: The prose surfaces an ADOPTER reads (as opposed to a maintainer reading a docstring). These are
 #: the ones that have to carry the claim, not merely the filename.
 READER_SURFACES = (
-    "README.md",
+    "docs/action-log-and-ledger.md",
     "skills/sigma-ledger/SKILL.md",
     "skills/sigma-init/templates/ledger/README.md.tmpl",
     "skills/sigma-init/templates/config.json.tmpl",

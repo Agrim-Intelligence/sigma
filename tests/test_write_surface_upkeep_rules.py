@@ -134,6 +134,8 @@ GH_API_HELPERS = [
     ("close_issue", 'gh_api.close_issue(run, 1)'),
     ("create_pr", 'gh_api.create_pr(run, "t", "b", "h", "b")'),
     ("merge_pr", 'gh_api.merge_pr(run, 1)'),
+    ("comment_pr", 'gh_api.comment_pr(run, 1, "x")'),
+    ("merge_pr_gh", 'gh_api.merge_pr_gh(run, 1, "squash", "a" * 40)'),
     ("merge_pr_via_loader", '_load("gh_api").merge_pr(run, 1)'),
     ("comment_issue_via_loop_script_loader", '_load_loop_script("gh_api").comment_issue(run, 1, "x")'),
     ("create_pr_via_self_attribute", 'self.gh_api.create_pr(run, "t", "b", "h", "b")'),
@@ -336,7 +338,13 @@ def test_gh_api_write_helper_names_cover_every_non_get_helper_in_the_module():
                     helpers.add(node.name)
     assert helpers, "found no non-GET helper in gh_api.py -- the drift check would be vacuous"
     declared = set(getattr(_module(), "_GH_API_WRITES", ()))
-    assert helpers == declared, (
+    # #895 4b-2: a declared name with no `--method` literal of its own is allowed ONLY as a WRAPPER that calls a
+    # helper that has one (`merge_pr_gh` -> `merge_pr`): declared-but-unrelated names still fail.
+    funcs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    wrappers = {name for name in declared - helpers if name in funcs and any(
+        isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id in helpers
+        for c in ast.walk(funcs[name]))}
+    assert helpers == declared - wrappers, (
         "the scanner's gh_api write names differ from the non-GET helpers of gh_api.py: "
         "helpers=%s declared=%s" % (sorted(helpers), sorted(declared)))
 
@@ -398,3 +406,52 @@ def test_shell_plain_update_ref_is_a_ref_write(tmp_path):
 
 def test_ref_write_has_a_risk_class():
     assert _module().RISK["git-ref-write"] == "high"
+
+
+# =====================================================================================================
+# #1066 -- the stdin form and the bare delete flag of update-ref, pinned on their own
+# =====================================================================================================
+
+#: id, the one call; --stdin takes its ref updates from input, so it is a ref write like the plain form.
+UPDATE_REF_STDIN = [
+    ("plain_run", 'run(cwd, ["update-ref", "--stdin"])'),
+    ("git_token", 'run(cwd, ["git", "update-ref", "--stdin"])'),
+    ("runner", 'gitc(cwd, ["update-ref", "--stdin"])'),
+    ("nul_terminated", 'run(cwd, ["update-ref", "--stdin", "-z"])'),
+]
+
+#: id, the one call; a bare -d / --delete with no ref operand is still a delete, never a ref write.
+UPDATE_REF_BARE_DELETE = [
+    ("plain_short", 'run(cwd, ["update-ref", "-d"])'),
+    ("plain_long", 'run(cwd, ["update-ref", "--delete"])'),
+    ("git_token_short", 'run(cwd, ["git", "update-ref", "-d"])'),
+    ("runner_short", 'gitc(cwd, ["update-ref", "-d"])'),
+]
+
+
+def test_update_ref_stdin_is_a_ref_write(tmp_path):
+    module = _module()
+    misses = []
+    for case_id, call in UPDATE_REF_STDIN:
+        got = _findings(module, tmp_path, _prune(call))
+        if got != [NEW("prune", "git-ref-write")]:
+            misses.append((case_id, got))
+    assert not misses, misses
+
+
+def test_update_ref_bare_delete_flag_is_destructive_only(tmp_path):
+    module = _module()
+    misses = []
+    for case_id, call in UPDATE_REF_BARE_DELETE:
+        got = _findings(module, tmp_path, _prune(call))
+        if got != [NEW("prune", "git-destructive")]:
+            misses.append((case_id, got))
+    assert not misses, misses
+
+
+def test_shell_update_ref_stdin_and_bare_delete(tmp_path):
+    module = _module()
+    assert _shell_rules_of(module, tmp_path, "git update-ref --stdin") == {"git-ref-write"}
+    assert _shell_rules_of(module, tmp_path, "git update-ref --stdin -z") == {"git-ref-write"}
+    assert _shell_rules_of(module, tmp_path, "git update-ref -d") == {"git-destructive"}
+    assert _shell_rules_of(module, tmp_path, "git update-ref --delete") == {"git-destructive"}

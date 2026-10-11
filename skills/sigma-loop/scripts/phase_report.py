@@ -1620,7 +1620,11 @@ def stale_marker_reason(marker, pid, codex_thread_id, ttl_seconds, now=None,
     marker) as satisfied and exits 0 rather than refusing. So: WITHIN one run, an exact read is
     credited exactly once, retries included; ACROSS a run boundary, the current run's budget simply
     does not see a prior run's attempt at all -- it is priced in the ledger, not in the cursor a
-    ceiling actually gates.
+    ceiling actually gates. Since #955 the boundary a ceiling gates on is the OWNING session's own
+    start: the attempt is also credited to the run block of the live session holding the goal
+    unless it predates THAT session's start, so another session's `start` (which still resets the
+    checkout cursor and still makes `old_run` true there) no longer makes an in-flight attempt old
+    for the session that is running it.
 
     Also measured (2026-09-25): a WINDOWED (no `--agent-id`) stale retry after a fresh trusted end
     writes its own tokenless `phase`/`end` journal event under the `\0stale`-scoped key (by design,
@@ -1999,14 +2003,14 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
         if attempt is not None:
             new_end, _, old_run = state.record_phase_end(
                 sdlc_dir, attempt, record_started_at, budget_tokens,
-                codex_raw_tokens=codex_raw_tokens)
+                codex_raw_tokens=codex_raw_tokens, goal=goal)
             recorded = (_recorded_attempt_kinds(ledger, sdlc_dir, attempt_id)
                         if not new_end or old_run else set())
         else:
             # A missing/mismatched marker cannot identify a retry. Preserve best-effort credit,
             # alongside cmd_end's warning that its transcript window may be inaccurate.
             if budget_tokens is not None:
-                state.add_tokens(sdlc_dir, budget_tokens)
+                state.add_tokens(sdlc_dir, budget_tokens, goal=goal)
             recorded = set()
 
         if "phase" not in recorded and measured:

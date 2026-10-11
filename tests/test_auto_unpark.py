@@ -77,6 +77,8 @@ def _sweep_runner(parked="[]", states=None, state_reasons=None, comments=None, f
         gql = gqlfake.swap(args, labels=labels, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):                # #895: REST writes, legacy-recorded
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
         calls.append(list(args))
         params = gqlfake.rest_list_params(args)
         if params is not None:                  # #895 2c: the list read is REST first
@@ -248,6 +250,8 @@ def _label_aware_sweep_runner(by_label=None, states=None, state_reasons=None, co
         gql = gqlfake.swap(args, labels=labels, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):                # #895: REST writes, legacy-recorded
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
         calls.append(list(args))
         params = gqlfake.rest_list_params(args)
         if params is not None:                  # #895 2c: the list read is REST first

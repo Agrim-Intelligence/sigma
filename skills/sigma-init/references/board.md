@@ -5,6 +5,8 @@
 It creates the board the loop mirrors onto, or finishes or adopts one, and pins it in
 `discovery.github.project.number` / `.owner`. Nothing is created without `--yes`.
 
+The Projects board needs GraphQL, so the `gh project` commands here do not work from a Claude Code cloud session; run them from your own machine.
+
 | Step | What | On failure |
 |---|---|---|
 | auth + scopes | `gh auth status`, preflight's `repo` + `project` check | REFUSED, exit 2, per-host fix lines |

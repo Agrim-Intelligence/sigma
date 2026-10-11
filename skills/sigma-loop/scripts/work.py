@@ -54,6 +54,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     import sys as _sys  # doesn't garble to '?' or crash on a non-UTF-8 console (the Windows cp1252
@@ -76,6 +77,7 @@ def _load(name):
 
 state = _load("state")
 ledger = _load("ledger")
+hsg = _load("hard_stop_guard")      # decision rubric slice 10: a no-op until hard_stops.enabled is true
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
 scrub_module = _load("scrub")
 scrub = scrub_module.scrub
@@ -126,8 +128,11 @@ ENFORCEMENT_GATES = (
                   "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
                   "available; without GraphQL it is not armed and the merge parks after gate()'s own "
                   "bounded REST wait; the merge itself is a REST PUT carrying the vetted head sha, an "
-                  "unknown outcome is reconciled by a REST read and never retried; a real cloud session "
-                  "still stops earlier at the GraphQL `merge_rights` read, see cloud-sessions.md)",
+                  "unknown outcome is reconciled by a REST read and never retried; in a cloud session "
+                  "the merge still parks on a pending required check (no `--auto` arm), on any PR "
+                  "line comment, and under `require_review: approval` (GraphQL-only reads); "
+                  "`merge_rights` needs the token to receive `permissions` (UNMEASURED), see "
+                  "cloud-sessions.md)",
      "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
                   "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
                   "returns on off -- only the merge itself is skipped",
@@ -1165,7 +1170,8 @@ _TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 def settings(config):
     s = dict(DEFAULTS)
-    s.update(config.get("work") or {})
+    block = config.get("work") if isinstance(config, dict) else None
+    s.update(block if isinstance(block, dict) else {})
     for key, label in (("remote", "work.remote"), ("base", "work.base"),
                        ("branch_prefix", "work.branch_prefix")):
         s[key] = state.safe_ref(label, s.get(key))      # #710: option injection into git
@@ -3105,6 +3111,33 @@ def _emit_risk_gates(sdlc_dir, config, goal, categories):
         actionlog.safe_append(sdlc_dir, goal, "gate", gate=gate_kind, verdict="absent", why=why)
 
 
+def _hs_push_stop(sdlc_dir, config, rec, text, prefix="PARK"):
+    """Decision rubric slice 10: the hard-stop classifier at a push chokepoint. "" while the gate is closed (no
+    call is made); else a refusal line carrying the class and pattern id. The branch is classified by the register-based
+    own predicate, so Sigma's lease push of its own goal branch passes."""
+    if not hsg.enabled(config):
+        return ""
+    try:
+        reg = _load("feature_registry")
+        registry = reg.read(reg.registry_dir(sdlc_dir))
+    except Exception:                           # noqa: BLE001 - unreadable registry reads as not-own
+        registry = None
+    v = hsg.guard(text, {"branch": rec.get("branch"), "registry": registry}, config)
+    return f"{prefix}: {v.reason}" if v.blocked else ""
+
+
+def _hs_diff_stop(config, run, path, argv, only):
+    """Slice 10: the staged-diff classes (secrets, tamper) at commit and pr. "" while the gate is closed."""
+    if not hsg.enabled(config):
+        return ""
+    try:
+        diff = run(path, argv) or ""
+    except Exception:                           # noqa: BLE001 - an unreadable diff is cannot-tell
+        return "REFUSED: hard stop: cannot tell what the diff holds (unreadable)"
+    v = hsg.guard(diff, {"only": only, "prose": True}, config)
+    return f"REFUSED: {v.reason}" if v.blocked else ""
+
+
 def commit(sdlc_dir, config, goal, run=None, message=""):
     """Stage and commit everything in THIS GOAL'S worktree — unless what got staged is a credential.
 
@@ -3135,6 +3168,9 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
     if not staged:
         return "nothing to commit"
     refusal = _secret_refusal(path, staged, config, run)
+    if refusal:
+        return refusal
+    refusal = _hs_diff_stop(config, run, path, ["git", "diff", "--cached"], ("access_secrets", "tamper_oversight"))
     if refusal:
         return refusal
     # #910: SCAN BEFORE THE COMMIT, EMIT AFTER IT. Before, because the tripwire reads the working
@@ -3496,6 +3532,10 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     if test_first_refusal:
         return test_first_refusal
 
+    refusal = (_hs_push_stop(sdlc_dir, config, rec, f"git push -u {remote} {rec['branch']}")
+               or _hs_diff_stop(config, run, path, ["git", "diff", f"{remote}/{base}...HEAD"], ("tamper_oversight",)))
+    if refusal:
+        return refusal
     run(path, ["git", "push", "-u", remote, rec["branch"]])
     number = run(path, ["gh", "api",
                         f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
@@ -3650,6 +3690,28 @@ def _read_rollup(api, pr, head, sdlc_dir, sleep):
             sleep(UNKNOWN_BACKOFF * (2 ** attempt))
 
 
+#: REST `permissions` keys, highest first, mapped to the GraphQL `viewerPermission` words `_CAN_MERGE` uses.
+_PERMISSION_KEYS = (("admin", "ADMIN"), ("maintain", "MAINTAIN"), ("push", "WRITE"), ("triage", "TRIAGE"),
+                    ("pull", "READ"))
+
+
+def _viewer_permission(run, cwd):
+    """The viewer's highest repo permission over REST (`GET repos/{owner}/{repo}` `.permissions`; #895 4b-2,
+    GraphQL `viewerPermission` is unreachable from a cloud session). Looks ONLY at the five known keys; a
+    known key whose value is not a bool, a non-object reply, or no key true RAISES (-> merge_rights'
+    "could not determine"): fail CLOSED is structural. UNMEASURED: whether a cloud token receives it."""
+    perms = json.loads(run(cwd, ["gh", "api", "repos/{owner}/{repo}", "--jq", ".permissions"]) or "null")
+    if not isinstance(perms, dict):
+        raise ValueError("no `permissions` object in the repo reply")
+    for key, _ in _PERMISSION_KEYS:
+        if key in perms and not isinstance(perms[key], bool):
+            raise ValueError(f"`permissions.{key}` is not a boolean")
+    for key, word in _PERMISSION_KEYS:
+        if perms.get(key) is True:
+            return word
+    raise ValueError("`permissions` grants nothing")
+
+
 def merge_rights(sdlc_dir, config, goal, run=None):
     """(may_merge, why_not) — PERMISSION, which is never a preference.
 
@@ -3669,13 +3731,36 @@ def merge_rights(sdlc_dir, config, goal, run=None):
                                     sdlc_dir=sdlc_dir)
         if pr_data.get("isCrossRepository"):
             return False, "fork PR — the upstream maintainer merges"
-        perm = run(rec["worktree"], ["gh", "repo", "view", "--json", "viewerPermission",
-                                     "--jq", ".viewerPermission"])
+        perm = _viewer_permission(run, rec["worktree"])
     except Exception as exc:                # noqa: BLE001 - unknown rights must never merge
         return False, f"could not determine merge rights ({exc})"
     if perm not in _CAN_MERGE:
         return False, f"{(perm or 'no').lower()} access on this repo — a maintainer merges"
     return True, ""
+
+
+def _ruleset_requirements(text):
+    """(contexts, reviews) a `GET rules/branches/<base>` reply REQUIRES: `required_status_checks` rules'
+    non-empty-string `context`s and the largest `pull_request` `required_approving_review_count` (int >= 0,
+    never a bool). Anything else -- non-JSON, a non-list, non-dict items, missing keys, bad types --
+    contributes nothing: it never raises and never invents a requirement."""
+    contexts, reviews = set(), 0
+    try:
+        rules = json.loads(text or "null")
+    except ValueError:
+        return contexts, reviews
+    for rule in rules if isinstance(rules, list) else ():
+        params = rule.get("parameters") if isinstance(rule, dict) else None
+        if not isinstance(params, dict):
+            continue
+        if rule.get("type") == "required_status_checks" and isinstance(params.get("required_status_checks"), list):
+            contexts |= {c["context"] for c in params["required_status_checks"]
+                         if isinstance(c, dict) and isinstance(c.get("context"), str) and c["context"]}
+        elif rule.get("type") == "pull_request":
+            n = params.get("required_approving_review_count")
+            if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+                reviews = max(reviews, n)
+    return contexts, reviews
 
 
 def protection(sdlc_dir, config, goal, run=None):
@@ -3684,15 +3769,24 @@ def protection(sdlc_dir, config, goal, run=None):
     The distinction the first version of this file got wrong: it asked whether a check had RUN, but
     a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
     only that GitHub was never asked to object. A 404 from the protection API is the honest signal
-    that nothing but this loop's own verify stands between the branch and the base."""
+    that nothing but this loop's own verify stands between the branch and the base.
+
+    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
+    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each read is
+    independent -- one failing or malformed contributes nothing, never a crash or an invented requirement.
+    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
+    OVER-report "enforces"; gate() and local verify still apply),
+    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
+    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
+    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction: the caller
+    then parks or warns, it never merges on a requirement it could not see)."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     base = rec["base"]
+    classic_ok, checks, reviews = False, set(), 0
     try:
-        repo = run(rec["worktree"], ["gh", "repo", "view", "--json", "nameWithOwner",
-                                     "--jq", ".nameWithOwner"])
         data = json.loads(run(rec["worktree"], ["gh", "api",
-                                                f"repos/{repo}/branches/{base}/protection"]) or "{}")
+                                                f"repos/{{owner}}/{{repo}}/branches/{base}/protection"]) or "{}")
         # Code-review audit (#254 finding 1): `data` is only guaranteed a dict on the happy path --
         # valid-but-non-object JSON (`null`, `[]`, `42`) would otherwise make `.get()` raise
         # AttributeError OUTSIDE this try/except, the same shape done_refusal() had to guard
@@ -3700,14 +3794,26 @@ def protection(sdlc_dir, config, goal, run=None):
         # its `pr_data.get(...)`), so any such reply collapses into the same except below as every
         # other unreadable-response case.
         required = data.get("required_status_checks") or {}
-        checks = required.get("contexts") or required.get("checks") or []
-        reviews = (data.get("required_pull_request_reviews") or {}).get(
-            "required_approving_review_count") or 0
+        listed = required.get("contexts") or required.get("checks") or []
+        checks = {c if isinstance(c, str) else c.get("context") for c in listed
+                  if isinstance(c, str) or isinstance(c, dict)}
+        checks -= {None, ""}
+        n = (data.get("required_pull_request_reviews") or {}).get("required_approving_review_count")
+        reviews = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
+        classic_ok = True
     except Exception:                       # noqa: BLE001 - 404 "Branch not protected" is the common case
-        return False, f"`{base}` is not protected — nothing is enforced on merge"
+        pass
+    try:
+        rule_checks, rule_reviews = _ruleset_requirements(run(rec["worktree"], [
+            "gh", "api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"]))
+        checks, reviews = checks | rule_checks, max(reviews, rule_reviews)
+    except Exception:                       # noqa: BLE001 - an unreadable rules list contributes nothing
+        pass
     bits = ([f"{len(checks)} required check{'' if len(checks) == 1 else 's'}"] if checks else []) + \
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
     if not bits:
+        if not classic_ok:
+            return False, f"`{base}` is not protected — nothing is enforced on merge"
         return False, f"`{base}` is protected but requires no checks or reviews"
     return True, f"`{base}` enforces " + " + ".join(bits)
 
@@ -4010,6 +4116,57 @@ _HEAD_VERSION_RE = re.compile(r"^## \d+\.\d+\.\d+(?: [\u2014-] .*)?$")
 _LINK_FOOTER_RE = re.compile(r"^\[[^\]]+\]: ")
 
 
+def _subsequence_extras(whole, part):
+    """Lines of `whole` left over when `part` is matched greedily as an in-order subsequence, or None."""
+    extras, j = [], 0
+    for ln in whole:
+        if j < len(part) and ln == part[j]:
+            j += 1
+        else:
+            extras.append(ln)
+    return extras if j == len(part) else None
+
+
+def _union_release_moved(ours, base, theirs):
+    """#1103: lines for one conflict hunk whose diff3 base is non-empty only because the base side (ours)
+    moved the old Unreleased entries (`base`) under a new dated version heading, or None to park.
+
+    Proven shape, nothing else: `base` is an in-order subsequence of BOTH sides, so neither side edited an
+    existing line; ours carries a version heading with the moved lines beneath it; everything the unit
+    (theirs) added on top of `base` is a plain list entry. The result keeps ours' text exactly, files the
+    unit's entries not already on ours (matched by their stripped text) under Unreleased above the release
+    heading in their own order, and loses no entry."""
+    if not any(ln.strip() for ln in base):
+        return None
+    cut = next((n for n, ln in enumerate(ours) if ln.startswith("## ")), None)
+    if cut is None or not _HEAD_VERSION_RE.match(ours[cut]):
+        return None
+    pre, rel = ours[:cut], ours[cut:]
+    if any(ln.startswith("## ") and not _HEAD_VERSION_RE.match(ln) for ln in rel):
+        return None
+    if _subsequence_extras(rel, base) is None:
+        return None
+    if any(ln.startswith("## ") or _LINK_FOOTER_RE.match(ln) for ln in pre + theirs):
+        return None
+    added = _subsequence_extras(theirs, base)
+    if added is None:
+        return None
+    if any(ln.strip() and not ln.lstrip().startswith(("- ", "* ")) and not ln.startswith(" ") for ln in added):
+        return None
+    have = {ln.strip() for ln in ours if ln.strip()}
+    fresh = [ln for ln in added if not ln.strip() or ln.strip() not in have]
+    while fresh and not fresh[0].strip():
+        fresh.pop(0)
+    while fresh and not fresh[-1].strip():
+        fresh.pop()
+    if not any(ln.strip() for ln in fresh):
+        return list(ours)
+    head = list(pre)
+    while head and not head[-1].strip():
+        head.pop()
+    return head + fresh + [""] + rel
+
+
 def _union_headed(text):
     """Heading-aware sibling of `_union_diff3`: (resolved, True) or (None, False), the same contract.
 
@@ -4044,7 +4201,7 @@ def _union_headed(text):
         base = []
         while i < len(lines) and lines[i] != _D3_THEIRS:
             base.append(lines[i]); i += 1
-        if i >= len(lines) or base:
+        if i >= len(lines):
             return None, False
         i += 1
         theirs = []
@@ -4053,6 +4210,16 @@ def _union_headed(text):
         if i >= len(lines):
             return None, False
         i += 1
+        if base:                            # #1103: the one non-empty-base shape it can prove
+            moved = _union_release_moved(ours, base, theirs) if section == _HEAD_UNRELEASED else None
+            if moved is None:
+                return None, False
+            out.extend(moved)
+            for ln in reversed(out):
+                if ln.startswith("## "):
+                    section = ln
+                    break
+            continue
         side_heads = [ln for ln in ours + theirs if ln.startswith("## ")]
         if any(ln != _HEAD_UNRELEASED and not _HEAD_VERSION_RE.match(ln) for ln in side_heads):
             return None, False
@@ -4184,8 +4351,13 @@ def rebase(sdlc_dir, config, goal, run=None):
                        or _push_refused(path, rec["branch"]))
             if refused:
                 return refused
+            gated = _hs_push_stop(sdlc_dir, config, rec,
+                                     f"git push --force-with-lease {remote} HEAD:{rec['branch']}")
+            if gated:
+                return gated
             run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
             _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
+            _reanchor_after_rebase(sdlc_dir, config, goal)
             return "rebased (CHANGELOG union-merged)"
         try:
             run(path, ["git", "rebase", "--abort"])
@@ -4238,9 +4410,24 @@ def rebase(sdlc_dir, config, goal, run=None):
                or _push_refused(path, rec["branch"]))
     if refused:
         return refused
+    gated = _hs_push_stop(sdlc_dir, config, rec, f"git push --force-with-lease {remote} HEAD:{rec['branch']}")
+    if gated:
+        return gated
     run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
     _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
+    _reanchor_after_rebase(sdlc_dir, config, goal)
     return "rebased"
+
+
+def _reanchor_after_rebase(sdlc_dir, config, goal):
+    """#1017: under the upkeep opt-in, a successful goal rebase re-records the content fingerprint, as the BEHIND path does
+    (`_reconcile_behind`) and the pass's own replay does. Gate closed: nothing runs, so every legacy path is unchanged.
+    Never raises -- the rebase has already pushed, and a bookkeeping miss must not turn it into a failure."""
+    try:
+        if _feature_upkeep().enabled(config):
+            state.reanchor_content(sdlc_dir, goal)
+    except Exception:                       # noqa: BLE001 - bookkeeping after a landed push is never fatal
+        pass
 
 
 def _replay_would_lose(path, run, pre, base_ref, branch=""):
@@ -5167,6 +5354,25 @@ def _comment_directive(rec, run):
     return directive, same_author
 
 
+def _threads_unprovable(rec, run):
+    """None when PR line comments are provably absent (ONE REST read returned an EMPTY JSON list => no review
+    threads => 0 unresolved); else a refusal string. Used only when GraphQL is unavailable, where the thread
+    read cannot be made: fail CLOSED on any comment, unreadable, non-JSON or non-list reply, or exception."""
+    try:
+        got = json.loads(run(rec["worktree"], ["gh", "api",
+                                               f"repos/{{owner}}/{{repo}}/pulls/{rec['pr']}/comments?per_page=1"]))
+        if isinstance(got, list) and not got:
+            return None
+    except Exception as exc:                    # noqa: BLE001 - fail CLOSED
+        print(f"work: review_gate: line-comment read failed: {exc}", file=sys.stderr)
+    else:
+        print(f"work: review_gate: PR #{rec['pr']} line comments present or unreadable; GraphQL unavailable",
+              file=sys.stderr)
+    return (f"PR #{rec['pr']} has review line comments (or they could not be read) and GraphQL is unavailable, "
+            "so whether their threads are resolved cannot be checked -- resolve/confirm them by hand and "
+            "merge, or re-run where GraphQL works")
+
+
 def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     """(ok, verdict) — the REAL review gate, independent of branch protection.
 
@@ -5190,7 +5396,8 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     skipped when GraphQL is unavailable: `approval` then parks (even with a `sigma:approve` comment, a known
     limitation), `changes` goes on to the thread check with the decision unknown. A CHANGES_REQUESTED followed
     by a COMMENTED from the same reviewer still blocks (stricter than `latestReviews`). Unresolved-thread
-    count errors stay open.
+    count errors stay open when GraphQL is available; without it the thread check is one REST read of the
+    PR's line comments (none => pass, any or unreadable => refuse).
 
     `mode` (#1774) overrides the local `review_mode(config)` read, and is how an Org's locked
     ceiling reaches this gate: `merge()` resolves it through `effective_review_mode` first and
@@ -5250,7 +5457,13 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
                        "re-queue the issue once `gh` works")
     if decision == "CHANGES_REQUESTED":
         return False, f"changes requested by a reviewer on PR #{rec['pr']} — address them, then re-queue the issue"
-    unresolved = _unresolved_threads(rec, run)
+    if not gh_api.graphql_available()["available"]:
+        refusal = _threads_unprovable(rec, run)
+        if refusal:
+            return False, refusal
+        unresolved = 0
+    else:
+        unresolved = _unresolved_threads(rec, run)
     if unresolved:
         return False, (f"{unresolved} unresolved review thread(s) on PR #{rec['pr']} — "
                        "resolve them, then re-queue the issue")
@@ -6356,7 +6569,10 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
     except Exception as exc:  # noqa: BLE001 - leave any incomplete local repair retryable
         return "PARK: review post reconciliation failed (%s)" % exc
     try:
-        comment_output = run(rec["worktree"], ["gh", "pr", "comment", str(rec["pr"]), "--body", body])
+        # #895 4b-2: REST POST (GraphQL-free), ONE `gh pr comment` fallback only on a primary rate limit while
+        # GraphQL is available; the URL (or "") is the receipt source below.
+        comment_output = gh_api.comment_pr(_pr_api_run(run, rec["worktree"]), int(rec["pr"]), body,
+                                           fallback_run=_pr_api_run(run, rec["worktree"]), sdlc_dir=sdlc_dir)
     except Exception as exc:                # noqa: BLE001 - report, never traceback at the loop
         # Dispatch may have reached GitHub; only reconcile-review-post may inspect the marker.
         return f"PARK: remote comment outcome ambiguous ({exc})"
@@ -6518,9 +6734,9 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                     print("merge receipt publication pending: %s" % exc, file=sys.stderr)
             if not _merge_delivery_complete(sdlc_dir, goal):
                 return "PARK: confirmed merge observation delivery is pending; retry finish to repair it"
-    args = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
+    remove_argv = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
     try:
-        run(project_root(sdlc_dir), args)
+        run(project_root(sdlc_dir), remove_argv)
     except Exception as exc:                # noqa: BLE001 - "still has work in it" is the common case
         # (#1202 correction 2, verified against real git) `git worktree remove` on an admin entry a
         # DIFFERENT goal's `finish` already pruned (below, unconditionally, on every successful run)
@@ -6957,26 +7173,6 @@ def _find_design_pr(sdlc_dir, config, goal, run):
     return matches[0], None
 
 
-def _retry_gh(run, cwd, argv, attempts=2, pause=2.0, sleep=time.sleep):
-    """Run a `gh` mutation with ONE retry on failure (#2482 round 2 finding 2) -- proportionate to
-    what `merge_design`/`close_design` actually call (`gh pr merge`/`gh pr close`, both REST-backed,
-    not GraphQL), so this does NOT import `GitHubSource.note`'s full 4-attempt/REST-fallback
-    machinery (sources.py:1217, `_NOTE_RETRIES`) -- that machinery specifically defends against
-    GraphQL's shared 5,000-points/hour quota exhaustion (#1657), which does not apply to a REST
-    call. One retry meaningfully closes "a single transient hiccup permanently strands the PR"
-    without copying a defense built for a different failure mode. Raises on final failure -- the
-    caller's own `except Exception` still reports it, never crashes past the CLI."""
-    last = None
-    for attempt in range(attempts):
-        try:
-            return run(cwd, argv)
-        except Exception as exc:            # noqa: BLE001 - only the LAST attempt's failure matters
-            last = exc
-            if attempt + 1 < attempts:
-                sleep(pause)
-    raise last
-
-
 def _wait_out_unknown_mergeability(sdlc_dir, config, goal, run, attempts=3, pause=5.0,
                                    sleep=time.sleep):
     """A short, bounded poll for GitHub's own lazy `mergeStateStatus` computation to resolve past
@@ -6999,7 +7195,7 @@ def _wait_out_unknown_mergeability(sdlc_dir, config, goal, run, attempts=3, paus
 
 def merge_design(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     """Land a Stage-1 design PR on CONFIRM (#2482) -- deliberately NOT `merge()` above.
-    `sleep` threaded through to `_retry_gh`/`_wait_out_unknown_mergeability`, mirroring `gate()`'s
+    `sleep` threaded through to `_wait_out_unknown_mergeability`, mirroring `gate()`'s
     own `sleep=time.sleep` parameter (work.py:2036) -- the established way this file makes a
     function that sleeps under real failure conditions testable without a real wait. See the
     plan's own "why the obvious fix is wrong" section: `merge()`'s verify-evidence gate cannot ever
@@ -7024,32 +7220,53 @@ def merge_design(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     if policy(config) == OFF:
         return "auto_merge is off (config: \"work\": {\"auto_merge\": \"always\"}) -- land this PR by hand"
     method = settings(config)["merge_method"]
+    # #895 4b-3: REST `PUT pulls/N/merge` pinned to the head sha the identity check just vetted
+    # (`gh_api.merge_pr_gh`). NO retry and NO fallback after an ambiguous failure: a merge may have landed.
+    # Any failure that may have landed is reconciled by a REST read of the PR itself (`merged`), never by
+    # "the open list came back empty".
+    design_root = project_root(sdlc_dir)
+    design_api = _pr_api_run(run, design_root)
+    design_slug = _design_slug(config, run, design_root)
     try:
-        _retry_gh(run, project_root(sdlc_dir),
-                  ["gh", "pr", "merge", str(pr["number"]), f"--{method}"], sleep=sleep)
-    except Exception:                        # noqa: BLE001 - report, never raise past the CLI
-        # NEVER interpolate the raw exception into the returned string -- this value is folded
-        # verbatim into a goal-review comment (see the insertion point below), and
-        # confirm.md:112-113's rule ("the SAME wording rule governs every COMMENT this skill
-        # writes") means arbitrary `gh` stderr text landing in a posted comment could embed a
-        # trigger word within 40 chars of a `#N` and mint a phantom blocker on a third, unrelated
-        # issue the next time blocker_scan reads this comment. Logged to stderr HERE instead.
-        print(f"work: merge_design: {sys.exc_info()[1]}", file=sys.stderr)
-        # Code review, #2482: `gh pr merge` is NOT idempotent -- if the first attempt landed on
-        # GitHub's own side but the response never reached this process (a dropped connection, the
-        # same #78 proxy class `_run`'s own docstring already names), `_retry_gh`'s second attempt
-        # fails against an ALREADY-merged PR ("pull request is already merged"), and reporting
-        # that as "could not merge" would be a false negative on the goal-review comment -- worse
-        # than the phantom-blocker risk above, since it tells a human the opposite of what
-        # actually happened. Re-check before trusting the failure: if the PR is no longer found as
-        # an open PR at all, it landed.
-        recheck, recheck_err = _find_design_pr(sdlc_dir, config, goal, run)
-        if recheck_err:
-            print(f"work: merge_design: re-check after retry error: {recheck_err}", file=sys.stderr)
-        if recheck is None and recheck_err is None:
-            return f"merged PR #{pr['number']} (confirmed on re-check after a retry error)"
-        return f"could not merge PR #{pr['number']} (see stderr for detail)"
+        gh_api.merge_pr_gh(design_api, pr["number"], method, pr.get("headRefOid"), design_slug, fallback_run=design_api,
+                           sdlc_dir=sdlc_dir)
+    except Exception as exc:                 # noqa: BLE001 - report, never raise past the CLI
+        # NEVER interpolate the raw exception into the returned string -- this value is folded verbatim
+        # into a goal-review comment (confirm.md:112-113: arbitrary `gh` stderr could mint a phantom
+        # blocker on an unrelated issue). Logged to stderr HERE instead.
+        print(f"work: merge_design: {exc}", file=sys.stderr)
+        if getattr(exc, "outcome_unknown", True) is False:
+            return f"could not merge PR #{pr['number']} (see stderr for detail)"
+        design_state = _design_pr_state(design_api, pr["number"], design_slug, sdlc_dir)
+        if design_state == "MERGED":
+            return f"merged PR #{pr['number']} (confirmed on re-read after an unconfirmed reply)"
+        if design_state in ("OPEN", "CLOSED"):
+            return (f"could not merge PR #{pr['number']} ({'still open' if design_state == 'OPEN' else 'closed without merging'}"
+                    f" on re-read; see stderr for detail)")
+        return (f"could not merge PR #{pr['number']} (outcome unconfirmed: it may have merged -- check it "
+                f"by hand; see stderr for detail)")
     return f"merged PR #{pr['number']}"
+
+
+def _design_slug(config, run, design_root):
+    """The `owner/name` the design-PR calls address, or None (gh's `{owner}/{repo}` placeholders) when it
+    cannot be resolved -- the same value `_find_design_pr` passes."""
+    try:
+        return _feature_sync().repo_slug(config, run, design_root, settings(config)["remote"])
+    except Exception:                        # noqa: BLE001 - an unresolved slug just means the placeholder
+        return None
+
+
+def _design_pr_state(design_api, number, design_slug, sdlc_dir):
+    """OPEN/CLOSED/MERGED from a REST read of the PR itself, or None when it could not be read. This is
+    the reconcile read for an ambiguous merge/close: only a positive `MERGED`/`CLOSED` answer counts."""
+    try:
+        data = gh_api.view_pr_gh(design_api, number, ["state"], design_slug, sdlc_dir=sdlc_dir)
+        design_state = data.get("state") if isinstance(data, dict) else None
+        return design_state if design_state in ("OPEN", "CLOSED", "MERGED") else None
+    except Exception as exc:                 # noqa: BLE001 - an unreadable PR proves nothing
+        print(f"work: design PR re-read: {exc}", file=sys.stderr)
+        return None
 
 
 def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.sleep):
@@ -7057,27 +7274,29 @@ def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.slee
     Same lookup, same "no open PR is an ordinary outcome" posture. NOT gated behind `work.enabled`
     (see `merge_design`'s own docstring for the asymmetry) -- closing a rejected design's PR is
     never the wrong direction regardless of whether automated git/gh MUTATION-that-lands-code is
-    generally consented to."""
+    generally consented to. #895 4b-3: REST (`gh_api.close_pr_gh`: the comment, then `PATCH state=closed`),
+    no retry; every failure is reconciled by a REST read of the PR, and only a positive CLOSED counts."""
     run = run or _run
     pr, err = _find_design_pr(sdlc_dir, config, goal, run)
     if err:
         return f"could not check for a design PR: {err}"
     if not pr:
         return "no open design PR found -- nothing to close"
-    args = ["gh", "pr", "close", str(pr["number"])] + (["--comment", comment] if comment else [])
+    design_root = project_root(sdlc_dir)
+    design_api = _pr_api_run(run, design_root)
+    design_slug = _design_slug(config, run, design_root)
     try:
-        _retry_gh(run, project_root(sdlc_dir), args, sleep=sleep)
-    except Exception:                        # noqa: BLE001 - same reasoning as merge_design above
-        print(f"work: close_design: {sys.exc_info()[1]}", file=sys.stderr)
-        # Code review, #2482: same non-idempotent-retry reasoning as merge_design -- a first
-        # `gh pr close` that landed but whose response was lost would make the retry fail against
-        # an already-closed PR, wrongly reporting "could not close". Re-check first.
-        recheck, recheck_err = _find_design_pr(sdlc_dir, config, goal, run)
-        if recheck_err:
-            print(f"work: close_design: re-check after retry error: {recheck_err}", file=sys.stderr)
-        if recheck is None and recheck_err is None:
-            return f"closed PR #{pr['number']} (confirmed on re-check after a retry error)"
-        return f"could not close PR #{pr['number']} (see stderr for detail)"
+        gh_api.close_pr_gh(design_api, pr["number"], comment, design_slug, fallback_run=design_api, sdlc_dir=sdlc_dir)
+    except Exception as exc:                 # noqa: BLE001 - same reasoning as merge_design above
+        print(f"work: close_design: {exc}", file=sys.stderr)
+        design_state = _design_pr_state(design_api, pr["number"], design_slug, sdlc_dir)
+        if design_state == "CLOSED":
+            return f"closed PR #{pr['number']} (confirmed on re-read after an unconfirmed reply)"
+        if design_state in ("OPEN", "MERGED"):
+            return (f"could not close PR #{pr['number']} ({'still open' if design_state == 'OPEN' else 'merged by someone else'}"
+                    f" on re-read; see stderr for detail)")
+        return (f"could not close PR #{pr['number']} (outcome unconfirmed: it may have closed -- check it "
+                f"by hand; see stderr for detail)")
     return f"closed PR #{pr['number']}"
 
 _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,

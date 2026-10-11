@@ -7574,3 +7574,31 @@ def test_doctor_is_read_only_it_writes_no_breaker_or_fallback_log_even_after_a_f
     assert log                                          # the fallback WAS exercised
     assert not (state / "gh-rest-breaker.json").exists() and not (state / "gh-fallback.json").exists()
     assert not list(pathlib.Path(base).rglob("gh-fallback.json")) and not list(pathlib.Path(base).rglob("gh-rest-breaker.json"))
+
+
+# --- #895 slice 5: the board is SKIPPED (not failed) when GraphQL is unavailable -------------------
+
+def test_graphql_row_says_board_is_skipped_not_failed(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    base = _sdlc(tmp_path, {"work": {"enabled": True}})
+    row = _by_name(_doc().check(base, run=_pf_fake()))[GQL_ROW]
+    assert "SKIPPED, not failed" in row["fix"]
+    assert "one notice per process" in row["fix"]
+    assert "board_migrate" in row["fix"] and "not gated" in row["fix"]
+
+
+def test_pick_path_gate_state_board_skipped_when_graphql_unavailable(monkeypatch):
+    """CLAUDE_CODE_REMOTE=1 with a status-queue board: a real GitHubSource says the board is off, so
+    `_ready_lane` is never called and the misleading 'run board_migrate' hint is not printed."""
+    d = _doc()
+    src = _sources()
+    called = []
+    orig = src.GitHubSource._ready_lane
+    monkeypatch.setattr(src.GitHubSource, "_ready_lane", lambda self: called.append(1) or orig(self))
+    monkeypatch.setattr(d, "_load_loop_script", lambda name: src)
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "1")
+    disc = {"source": "github", "github": {"project": {"enabled": True, "queue_source": "status"}}}
+    state = d._pick_path_gate_state(disc, lambda a: "")
+    assert state.startswith("board skipped: GraphQL unavailable")
+    assert "board_migrate" not in state
+    assert called == []

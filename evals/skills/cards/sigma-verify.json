@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-verify",
+  "kind": "pinned",
+  "gates": [
+    "**No completion claim without fresh verification output in this turn**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}
