@@ -10,7 +10,7 @@ All notable changes to Sigma are recorded here, newest first.
   copy and demands every live `must_be_red_by` gate go red, then removes the copy in `finally`. A gate exiting 0 is
   exit 1 naming row and gate; pytest 5 / crash / timeout is exit 6 (never counted as red); mutator exits 10-12 pass
   through; `pending` prints and exits 0, or 4 with `--strict`. `safety-check` is now registered live. `--record` is
-  #1059. Model-free, no network. Measured: control tests only; the real-catalogue run time is in the PR.
+  #1059. Model-free, no network. Measured: the real catalogue (7 rows, 7 live gates, 2 pending lines) ran 123 s wall, all red, exit 0, python 3.12 on one laptop; CI not measured.
 
 - **Regression gate set and catalogue (#1057, slice 2 of #808).** New `evals/regression/gates.json` (live gates by
   selection, `skill-smoke`/`safety-check`/`layer1-control` registered `pending` with a reason), `catalogue.json` (one
