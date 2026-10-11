@@ -27,9 +27,8 @@ The **Research** phase executor — the step between restating a goal and planni
 intention; this grounds it in the code: what the change will actually touch, what debt already lives
 there, and how much ceremony it earns.
 
-## Executor resolution (host-aware)
-No `superpowers` / `code-review` companion covers blast-radius research, so this is **always
-Sigma's own** (same as `sigma-retro`). Pure `grep` / `git` / markdown discipline — it degrades
+## Executor
+Always Sigma's own (same as `sigma-retro`). Pure `grep` / `git` / markdown discipline — it degrades
 gracefully on any host.
 
 **Read-only.** It never edits code, plans, or standing docs. The dossier and the questions it raises

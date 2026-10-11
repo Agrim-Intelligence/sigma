@@ -444,12 +444,12 @@ def test_detects_companions_never_failing_on_absence():
     with tempfile.TemporaryDirectory() as t:
         base = _sdlc(t, {"discovery": {"source": "local-goals"}})
         def run(args):
-            return "superpowers@claude-plugins-official" if args == ["claude", "plugin", "list"] else _runner()(args)
+            return "code-review@claude-plugins-official" if args == ["claude", "plugin", "list"] else _runner()(args)
         checks = d.check(base, run=run)
         names = " | ".join(c["name"] for c in checks)
-        assert "superpowers: present" in names            # detected installed
-        assert "code-review: absent" in names             # detected missing
-        assert all(c["ok"] for c in checks if "superpowers" in c["name"] or "code-review" in c["name"])
+        assert "code-review: present" in names            # detected installed
+        assert "superpowers" not in names                 # no longer probed (#1131)
+        assert all(c["ok"] for c in checks if "code-review" in c["name"])
 
 
 def _codex_plugin_runner(installed, *, latest="1.4.13"):
@@ -481,7 +481,6 @@ def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monk
     v = _one_above(d._agents_floor())
     base = _sdlc(tmp_path, {})
     run, calls = _codex_plugin_runner([_codex_entry("sigmaloop", v),
-                                       _codex_entry("superpowers"),
                                        _codex_entry("code-review", installed=False, enabled=False)],
                                       latest=v)
 
@@ -490,7 +489,7 @@ def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monk
     floor_row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
     assert floor_row["ok"] is True and v in floor_row["name"]
     assert names[f"sigma up to date (installed {v})"]["ok"] is True
-    assert "superpowers: present" in names
+    assert not any("superpowers" in n for n in names)
     assert "code-review: absent — portable executor used" in names
     assert calls.count(["codex", "plugin", "list", "--json"]) == 1
     assert not any(a[:2] == ["claude", "plugin"] for a in calls)
@@ -519,7 +518,7 @@ def test_codex_doctor_does_not_show_healthy_when_plugin_list_is_unreadable(monke
     row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
     assert row["ok"] is False and "unverified" in row["name"]
     assert not any(c["name"].startswith("sigma up to date") for c in checks)
-    assert not any(c["name"].startswith("superpowers: present") for c in checks)
+    assert not any(c["name"].startswith("code-review: present") for c in checks)
     assert calls.count(["codex", "plugin", "list", "--json"]) == 1
 
 
@@ -865,7 +864,7 @@ def test_cheap_only_skips_the_plugin_version_subprocess_and_network_calls():
                        or a[:2] == ["claude", "plugin"] for a in seen)
         names = [c["name"] for c in checks]
         assert not any("sigma up to date" in n for n in names)
-        assert not any("superpowers" in n or "code-review" in n for n in names)
+        assert not any("code-review" in n for n in names)
         # ...and the CHEAP checks are still returned normally -- this is a subset, not a stub.
         assert "project layer" in names
 
@@ -885,7 +884,7 @@ def test_the_default_full_check_still_makes_those_calls():
             "the control never reached the network call"
         assert any(a[:3] == ["claude", "plugin", "list"] for a in seen)
         assert "sigma up to date (installed 0.9.7)" in names
-        assert any("superpowers" in n for n in names)
+        assert any("code-review" in n for n in names)
 
 
 def test_cheap_only_still_reports_real_setup_gaps():

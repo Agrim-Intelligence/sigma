@@ -3069,12 +3069,12 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         'work.allow_secret_paths in .sdlc/config.json.'))
 
 
-    # companions (optional): superpowers + code-review power phases 1/3/5/6 when present; Sigma's
-    # portable sigma-* executors are the absent-safe fallback everywhere else — absent is never a failure.
+    # companions (optional): code-review is an extra Review pass when present; Sigma's own
+    # sigma-* executors run every phase either way — absent is never a failure.
     # Skipped under cheap_only: spawns the selected host's plugin CLI.
     if not cheap_only and (cfg.get("companions") or "auto") != "off":
         if plugin_host == "codex":
-            for comp in ("superpowers", "code-review"):
+            for comp in ("code-review",):
                 if codex_plugins is None:
                     out.append(_chk(f"{comp}: unverified", False,
                                     "Codex plugin inventory unavailable; run `codex plugin list --json`"))
@@ -3084,7 +3084,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                                     True, ""))
         else:
             plugins = run(["claude", "plugin", "list"]) or ""
-            for comp in ("superpowers", "code-review"):
+            for comp in ("code-review",):
                 here = comp in plugins
                 out.append(_chk(f"{comp}: {'present' if here else 'absent — portable executor used'}", True, ""))
 

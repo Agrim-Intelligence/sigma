@@ -13,7 +13,7 @@
     "research": {"ceiling": {"words": 1958, "est_tokens": 3012}},
     "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
     "plan-review": {"ceiling": {"words": 2255, "est_tokens": 3661}},
-    "implement": {"ceiling": {"words": 2123, "est_tokens": 3448}},
+    "implement": {"ceiling": {"words": 1892, "est_tokens": 3050}},
     "review-pre-pr": {"ceiling": {"words": 3924, "est_tokens": 6243}},
     "review-post-pr": {"ceiling": {"words": 3958, "est_tokens": 6310}},
     "retro": {"ceiling": {"words": 2465, "est_tokens": 3934}}

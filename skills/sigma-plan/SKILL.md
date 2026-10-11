@@ -16,10 +16,6 @@ For bulky tests or diagnostics, save full output to a scratch file, then inspect
 its exit status and focused matches or a bounded tail. Do not hide failures, and
 keep secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-**Executor resolution (host-aware):**
-- **Claude Code + `superpowers` installed** → prefer **`superpowers:writing-plans`** (its richer version).
-- **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable.
-
 Write plans before code: concrete, testable steps; `sigma-plan-review`.
 
 ## 1. Scope check

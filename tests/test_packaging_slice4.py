@@ -64,24 +64,17 @@ def test_doctor_skill_wellformed():
     assert "never run an interactive login" in t.lower() or "hand them the command" in t.lower()
 
 
-# Each portable executor must (1) defer to its superpowers companion on Claude via a resolution header,
-# and (2) ship a committed parity review vs superpowers asserting >= par. Add a row as each lands.
-PORTABLE_EXECUTORS = {
-    "sigma-verify": ("verification-before-completion", "verify.md"),
-    "sigma-implement": ("test-driven-development", "implement.md"),
-    "sigma-plan": ("writing-plans", "plan.md"),
-    "sigma-brainstorm": ("brainstorming", "brainstorm.md"),
-    "sigma-review": ("requesting-code-review", "review.md"),
-}
+# Sigma's own executors are the only executors (#1131): no skill defers to superpowers, and the
+# retired parity reviews are gone with it.
+EXECUTORS = ("sigma-verify", "sigma-implement", "sigma-plan", "sigma-brainstorm", "sigma-review")
 
 
-def test_portable_executors_defer_to_superpowers_and_have_parity():
-    for skill, (sp, doc) in PORTABLE_EXECUTORS.items():
+def test_executors_do_not_defer_to_superpowers():
+    for skill in EXECUTORS:
         t = (ROOT / "skills" / skill / "SKILL.md").read_text()
         assert f"name: {skill}" in t
-        assert f"superpowers:{sp}" in t, f"{skill}: no resolution header deferring to superpowers on Claude"
-        parity = (ROOT / "docs" / "executor-parity" / doc).read_text()
-        assert skill in parity and "par" in parity.lower(), f"{doc}: missing parity verdict"
+        assert "superpowers" not in t.lower(), f"{skill}: still mentions superpowers"
+    assert not (ROOT / "docs" / "executor-parity").exists()
 
 
 def test_versions_aligned():
