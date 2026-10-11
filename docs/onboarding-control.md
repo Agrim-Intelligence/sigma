@@ -4,7 +4,7 @@
 Quickstart, followed literally on a fresh repository, get one goal to `done`? It is the control for
 epic #227 (plugin install -> `/sigma-init` -> one goal to done), built in #237.
 
-On a pull request and on a push to main the required `test` job runs the plain gesture under
+On a pull request and on a push to main the `onboarding-control` job (macOS, parallel to the required `test` job) runs the plain gesture under
 `evals/regression/budget.py` (wall time against `evals/regression/budget.json`) and only the `-k planted` tests of
 `tests/test_onboarding_control.py` (#879); the rest of that file is in the job's SLOW list and runs in the nightly and
 on-demand `full` job (the whole file, so the planted tests run there twice). The only skip is Windows, `os.name == "nt"`. It has
@@ -332,7 +332,7 @@ Deviations from the fake-gh run above are the finding: each one is filed as its 
 
 ## CI wiring, the wall-time budget and the planted regressions (#879)
 
-The required PR `test` job (macOS, Python 3.12) runs, after the decision gate:
+The PR `onboarding-control` job (macOS, Python 3.12; its own job so the required `test` job, which measured 31 and 35 minutes in its pytest subset against a 45 minute timeout, does not grow by the 6 minutes these steps cost there) runs:
 
 ```
 python3 evals/regression/budget.py          # the plain gesture above; prints "onboarding-control wall time: Xs, ceiling Ys"
@@ -342,9 +342,9 @@ python -m pytest tests/test_onboarding_control.py -k planted -q -n 2
 `budget.py` exits with the control's own code, or 1 when the wall time is over `ceiling_seconds` in
 `evals/regression/budget.json`, or 2 when that file is unreadable; a null ceiling is "unset": it prints and does not fail.
 The ceiling is a margin over wall times read from real `test` job logs, never a laptop number (the laptop run is about 2
-minutes; see the file for the CI runs, their count and the max). The ceiling sits in the one required check, so a slow
-runner blocks PRs: the lever is re-running the job; a wrong ceiling is repaired by a PR that edits `budget.json` with new
-measured runs.
+minutes; see the file for the CI runs, their count and the max). The job is not a required check (the owner adds it to the ruleset if wanted); until then a red job is visible on the PR and
+blocks nothing. The lever for a slow runner is re-running the job; a wrong ceiling is repaired by a PR that edits
+`budget.json` with new measured runs.
 
 The planted-regression gesture (AC-4, AC-7 of #809), run in a scratch copy with the plain, flagless command:
 
