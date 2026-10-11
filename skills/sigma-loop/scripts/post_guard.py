@@ -20,18 +20,27 @@ import base64
 import importlib.util
 import os
 import pathlib
+import unicodedata
 
 ENV = "SIGMA_LEAK_PATTERNS"
 _ROOT = pathlib.Path(__file__).resolve().parents[3]
-_GH_WRITES = {"issue": {"comment", "create", "edit", "close"},
-              "pr": {"create", "edit", "comment", "close", "review", "merge"},
+_GH_WRITES = {"issue": {"comment", "create", "edit", "close", "reopen", "lock", "unlock"},
+              "pr": {"create", "edit", "comment", "close", "reopen", "review", "merge", "ready"},
               "release": {"create", "edit"}}
-_TEXT = {"--body": 1, "-b": 1, "--title": 1, "-t": 1, "--comment": 1, "-c": 1, "--subject": 1,
-         "--message": 1, "-m": 1}
-_FILE = {"--body-file", "-F", "--file"}
-_FIELD = {"-f", "--raw-field", "-F", "--field"}
-_SHORT_TEXT = "mbtc"
-_GLOBAL_VALUED = {"-R", "--repo", "-C", "--hostname"}
+_GIT_WRITES = {"commit", "tag", "merge", "notes"}
+#: Long flags that carry text, a text FILE, or another value (so its value is not read as a verb).
+_LONG_TEXT = {"--body", "--title", "--comment", "--subject", "--message", "--notes"}
+_LONG_FILE = {"--body-file", "--file", "--notes-file"}
+_LONG_VALUED = _LONG_TEXT | _LONG_FILE | {"--method", "--field", "--raw-field", "--input", "--header",
+                                         "--repo", "--hostname", "--label", "--assignee", "--base",
+                                         "--head", "--jq", "--template", "--milestone", "--reason"}
+#: Short flags, as gh and git parse them (pflag / git's parse-options): a bundle such as `-am MSG` or
+#: `-mMSG` or `-fbody=X` is read letter by letter and the first VALUED letter takes the rest of the
+#: bundle (or the next argument) as its value. TEXT letters always take the next argument.
+_SHORT_TEXT = {"gh": "btcnm", "git": "m"}
+_SHORT_VALUED = {"gh": "fFXHRalepdqjwsiou", "git": "CcFStu"}
+_GIT_GLOBAL_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+_GH_GLOBAL_VALUED = {"-R", "--repo", "--hostname"}
 _cache = {}
 
 
@@ -67,15 +76,53 @@ def _patterns(source):
     return _cache[key]
 
 
-def _verb(toks):
-    """-> (tool, rest) with leading global flags (`gh -R o/r`, `git -C dir`) skipped, or (None, None)."""
+def _tool_and_args(argv):
+    toks = [str(a) for a in argv]
     tool = "gh"
-    if toks and toks[0] in ("gh", "git"):
-        tool, toks = toks[0], toks[1:]
+    if toks:
+        base = os.path.basename(toks[0]).lower()
+        if base in ("gh", "gh.exe", "git", "git.exe"):
+            tool, toks = base.split(".")[0], toks[1:]
+    glob = _GIT_GLOBAL_VALUED if tool == "git" else _GH_GLOBAL_VALUED
     i = 0
     while i < len(toks) and toks[i].startswith("-"):
-        i += 1 if "=" in toks[i] or toks[i] not in _GLOBAL_VALUED else 2
+        i += 1 if "=" in toks[i] or toks[i] not in glob else 2
     return tool, toks[i:]
+
+
+def _pairs(tool, toks):
+    """-> (pairs, positionals): pairs are (flag, value|None) in order; a long flag is `--k=v` or
+    `--k v`; a short bundle is read the way pflag reads it."""
+    pairs, pos, i = [], [], 0
+    text, valued = _SHORT_TEXT[tool], _SHORT_VALUED[tool]
+    while i < len(toks):
+        t = toks[i]
+        nxt = toks[i + 1] if i + 1 < len(toks) else None
+        if t.startswith("--") and len(t) > 2:
+            flag, eq, val = t.partition("=")
+            if eq:
+                pairs.append((flag, val))
+            elif flag in _LONG_VALUED and nxt is not None:
+                pairs.append((flag, nxt))
+                i += 1
+            else:
+                pairs.append((flag, None))
+        elif t.startswith("-") and len(t) > 1:
+            for j, c in enumerate(t[1:], 1):
+                if c in text or c in valued:
+                    rest = t[j + 1:]
+                    if rest:
+                        pairs.append(("-" + c, rest[1:] if rest.startswith("=") else rest))
+                    elif nxt is not None and (c in text or c in "fFXH" or not nxt.startswith("-")):
+                        pairs.append(("-" + c, nxt))
+                        i += 1
+                    else:
+                        pairs.append(("-" + c, None))
+                    break
+        else:
+            pos.append(t)
+        i += 1
+    return pairs, pos
 
 
 def _read(label, src):
@@ -88,79 +135,72 @@ def _read(label, src):
         raise PostRefused("post_guard: REFUSED [body-file-unreadable] %s cannot be read" % label)
 
 
-def _api(toks):
+def _api(pairs, pos):
     """-> [(label, text)] when this `gh api` call writes, else None. A write is an explicit POST, PUT,
     PATCH or DELETE, a body-bearing call with no method (gh defaults it to POST), or a graphql
-    mutation; a GET and a graphql query are reads and are never inspected."""
-    method, fields, files, graphql = "", [], [], toks[1:2] == ["graphql"]
-    i = 1
-    while i < len(toks):
-        flag, eq, val = toks[i].partition("=") if toks[i].startswith("--") else (toks[i], "", "")
-        nxt = toks[i + 1] if i + 1 < len(toks) else None
-        got = val if eq else nxt
-        step = 1 if eq else 2
-        if flag in ("-X", "--method") and got:
-            method = got.upper()
-        elif flag in _FIELD and got:
-            k, _, v = got.partition("=")
-            if v.startswith("@"):
+    mutation (in a field or in an --input file); a GET and a graphql query are reads."""
+    method, items = "", []
+    for flag, val in pairs:
+        if flag in ("-X", "--method") and val:
+            method = val.upper()
+        elif flag in ("-f", "-F", "--field", "--raw-field") and val:
+            k, _, v = val.partition("=")
+            if v.startswith("@") and flag in ("-F", "--field"):
                 v = _read(flag + " " + k, v[1:])
             elif k == "content":
                 try:
                     v = base64.b64decode(v).decode("utf-8", "replace")
                 except Exception:       # noqa: BLE001 - undecodable stays as the raw string
                     pass
-            fields.append(("%s %s" % (flag, k), v))
+            items.append(("%s %s" % (flag, k), v))
         elif flag == "--input":
-            files.append((flag, _read(flag, got)))
-        else:
-            step = 1
-        i += step
-    if graphql:
-        return fields if any("mutation" in v.lower() for _l, v in fields) else None
-    if method in ("POST", "PUT", "PATCH", "DELETE") or (not method and (fields or files)):
-        return fields + files
+            items.append((flag, _read(flag, val)))
+    if pos[:2] == ["api", "graphql"] or pos[:1] == ["graphql"]:
+        return items if any("mutation" in v.lower() for _l, v in items) else None
+    has_body = any(f == "--input" or f in ("-f", "-F", "--field", "--raw-field") for f, _v in pairs)
+    if method in ("POST", "PUT", "PATCH", "DELETE") or (not method and has_body):
+        return items
     return None
 
 
 def _texts(argv):
     """-> [(label, text)] for a write verb, or None for anything else (a read, an unknown verb)."""
-    tool, toks = _verb([str(a) for a in argv])
+    tool, toks = _tool_and_args(argv)
     if tool == "git":
-        if "commit" not in toks:
+        if not toks or toks[0] not in _GIT_WRITES:
             return None
     elif toks[:1] == ["api"]:
-        return _api(toks)
+        pairs, pos = _pairs("gh", toks)
+        return _api(pairs, pos)
     elif not (len(toks) > 1 and toks[1] in _GH_WRITES.get(toks[0], ())):
         return None
-    out, i = [], 0
-    while i < len(toks):
-        t = toks[i]
-        flag, eq, val = t.partition("=") if t.startswith("--") else (t, "", "")
-        nxt = toks[i + 1] if i + 1 < len(toks) else None
-        if flag in _FILE:
-            out.append((flag, _read(flag, val if eq else nxt)))
-            i += 1 if eq else 2
-        elif flag in _TEXT and (eq or nxt is not None):
-            out.append((flag, val if eq else nxt))
-            i += 1 if eq else 2
-        elif len(t) > 2 and t[0] == "-" and t[1] != "-":
-            # a short-flag cluster: `-am MSG`, `-mMSG`, `-m=MSG`, `-bMSG`. Over-scanning is safe.
-            k = next((j for j, ch in enumerate(t[1:], 1) if ch in _SHORT_TEXT), 0)
-            if k and k + 1 < len(t):
-                out.append((t[:2] if k == 1 else "-" + t[k], t[k + 1:].lstrip("=")))
-            elif k and nxt is not None:
-                out.append(("-" + t[k], nxt))
-                i += 1
-            i += 1
-        else:
-            i += 1
+    pairs, pos = _pairs(tool, toks)
+    out = []
+    for flag, val in pairs:
+        if val is None:
+            continue
+        if flag in _LONG_FILE or flag == "-F":
+            out.append((flag, _read(flag, val)))
+        elif flag in _LONG_TEXT or flag[1:] in _SHORT_TEXT[tool] and not flag.startswith("--"):
+            out.append((flag, val))
+    if tool == "gh" and toks[0] == "release":
+        out.extend(("release argument", p) for p in pos[2:])    # tag and title are positional
     return out
+
+
+_STRIP = {"Cf", "Cc"}
+
+
+def _norm(text):
+    """NFKC, then drop format and control characters (zero-width space and joiners, BOM, soft hyphen)
+    except line breaks and tabs, so a fullwidth or zero-width-split slug still matches."""
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(c for c in text if c in "\n\t\r" or unicodedata.category(c) not in _STRIP)
 
 
 def check(argv):
     """Raise PostRefused when `argv` (with or without a leading gh/git) would post a pattern match."""
-    source = os.environ.get(ENV)
+    source = os.environ.get(ENV, "").strip()    # empty or blank counts as unset
     if not source:
         return
     items = _texts(argv)
@@ -169,7 +209,8 @@ def check(argv):
     lr, pats = _patterns(source)
     found = []
     for label, text in items:
-        for line, number, _span in lr._dedupe(lr.find_hits(text, pats)):
+        hits = lr.find_hits(text, pats) + lr.find_hits(_norm(text), pats)
+        for line, number, _span in lr._dedupe(sorted(hits)):
             found.append("%s line %d pattern %d" % (label, line, number))
     if found:
         raise PostRefused("post_guard: REFUSED [leak] %s; the text was not sent (patterns come from %s)"

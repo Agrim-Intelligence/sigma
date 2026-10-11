@@ -176,10 +176,16 @@ export SIGMA_LEAK_PATTERNS="$HOME/.sigma-ops/leak-patterns.txt"
 With it set, every write the loop makes through `sources.GitHubSource._run` (issue comments, bodies,
 titles, filed follow-ups, notes, parks), `work._run` (`git commit -m`, `gh pr create|edit|comment|close|merge`),
 `gh_api._default_run`, `upstream._file_upstream` and `feature_propagate._write_remote` is checked first
-(`skills/sigma-loop/scripts/post_guard.py`). A match raises
+(`skills/sigma-loop/scripts/post_guard.py`). It reads flags the way `gh` and `git` do, including bundled short flags (`-fbody=X`, `-am X`, `-XPOST`), `gh release create` notes and positional title, `git commit|tag|merge|notes -m`, and an absolute path to either binary. A match raises
 `post_guard: REFUSED [leak] --body line 1 pattern 2`: the flag, the line in the text and the pattern's
 line number, never the text. Nothing was sent. With the variable unset nothing changes.
 
+- **Opt-in means a non-blank value.** An empty or blank `SIGMA_LEAK_PATTERNS` counts as unset: the guard
+  is off, with no refusal and no warning.
+- **Matching.** Text is matched as written and again after Unicode NFKC folding with zero-width and other
+  format characters (zero-width space and joiners, BOM, soft hyphen) removed, so a fullwidth or
+  zero-width-split slug is caught. NOT caught: homoglyphs from another script (a Cyrillic letter standing
+  in for a Latin one), and encoded forms (base64, percent-encoding, HTML entities).
 - **Fail closed on writes, open on reads.** The patterns load on the first write only. A missing file, a
   file inside a git work tree or a bad line refuses that write; reads are never refused.
 - **A body from stdin or a file** is read when it is a file and refused when it is `-`.

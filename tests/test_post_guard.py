@@ -62,6 +62,24 @@ WRITES = [
     ["gh", "pr", "create", "-b" + LEAK],
     ["gh", "pr", "create", "-b=" + LEAK],
     ["gh", "-R", "o/r", "issue", "comment", "5", "--body", LEAK],
+    ["gh", "api", "repos/o/r/issues", "-fbody=" + LEAK],
+    ["gh", "api", "-XPOST", "repos/o/r/issues", "-fbody=" + LEAK],
+    ["gh", "api", "-XPOST", "-fbody=" + LEAK, "repos/o/r/issues"],
+    ["gh", "release", "create", "v1", "--notes", LEAK],
+    ["gh", "release", "create", "v1", "-n", LEAK],
+    ["gh", "release", "create", "v1", "Title " + LEAK],
+    ["gh", "pr", "reopen", "5", "--comment", LEAK],
+    ["gh", "pr", "ready", "5", "-b", LEAK],
+    ["gh", "issue", "lock", "5", "--comment", LEAK],
+    ["gh", "issue", "reopen", "5", "--comment", LEAK],
+    ["gh", "issue", "unlock", "5", "--comment", LEAK],
+    ["git", "tag", "-a", "v1", "-m", LEAK],
+    ["git", "merge", "-m", LEAK, "topic"],
+    ["git", "notes", "add", "-m", LEAK],
+    ["git", "commit", "-s", "-m", LEAK],
+    ["git", "commit", "-m", "-" + LEAK],
+    ["/opt/homebrew/bin/gh", "issue", "comment", "5", "--body", LEAK],
+    ["/usr/bin/git", "commit", "-m", LEAK],
 ]
 
 
@@ -127,6 +145,83 @@ def test_message_never_names_text_with_many_patterns(pg, tmp_path, monkeypatch):
     assert "pattern 2" in str(ei.value) and "--body" in str(ei.value)
 
 
+def test_joined_body_file_and_input_files(pg, armed, tmp_path):
+    f = tmp_path / "b.md"
+    f.write_text(LEAK)
+    with pytest.raises(pg.PostRefused):
+        pg.check(["gh", "pr", "create", "-F" + str(f)])
+    q = tmp_path / "q.json"
+    q.write_text('{"query": "mutation { addComment(input:{body:\\"' + LEAK + '\\"}) { id } }"}')
+    with pytest.raises(pg.PostRefused):
+        pg.check(["gh", "api", "graphql", "--input", str(q)])
+    q.write_text('{"query": "{ viewer { login } }"}')
+    pg.check(["gh", "api", "graphql", "--input", str(q)])          # a query is a read
+    with pytest.raises(pg.PostRefused) as ei:
+        pg.check(["gh", "api", "graphql", "--input", "-"])
+    assert "stdin" in str(ei.value)
+    with pytest.raises(pg.PostRefused):
+        pg.check(["gh", "api", "repos/o/r/issues", "--input", "-"])
+
+
+ZW = "\u200b"
+OBFUSCATED = [
+    LEAK.replace("ghost", "gh" + ZW + "ost"),                       # zero-width space inside the slug
+    LEAK.replace("ghost", "gh\u00adost"),                           # soft hyphen
+    LEAK.replace("acme", "\uff41\uff43\uff4d\uff45"),            # fullwidth letters
+]
+
+
+@pytest.mark.parametrize("text", OBFUSCATED)
+def test_zero_width_and_fullwidth_forms_are_caught(pg, armed, text):
+    assert text != LEAK
+    with pytest.raises(pg.PostRefused):
+        pg.check(["issue", "comment", "5", "--body", text])
+
+
+def test_homoglyphs_are_documented_as_not_caught(pg, armed):
+    cyr = LEAK.replace("a", "\u0430", 1)            # Cyrillic a: NFKC does not fold it
+    pg.check(["issue", "comment", "5", "--body", cyr])
+    assert "homoglyph" in (ROOT / "docs" / "publish-runbook.md").read_text(encoding="utf-8").lower()
+
+
+@pytest.mark.parametrize("value", ["", "   ", "\t\n"])
+def test_blank_variable_counts_as_unset(pg, monkeypatch, value):
+    monkeypatch.setenv("SIGMA_LEAK_PATTERNS", value)
+    pg.check(["issue", "comment", "5", "--body", LEAK])
+    assert "blank" in (ROOT / "docs" / "publish-runbook.md").read_text(encoding="utf-8").lower()
+
+
+def test_leak_refs_ships_where_the_guard_loads_it(pg, armed, tmp_path):
+    """Packaging (#375 review 8): the plugin source is `./`, so the tracked tree ships, and the public
+    export carries tools/ (docs/public-snapshot.md). Prove it two ways: the file is tracked and no
+    default export exclusion drops it, and a bare copy of ONLY the two files works as an install."""
+    tracked = subprocess.run(["git", "ls-files", "tools/leak_refs.py", "skills/sigma-loop/scripts/post_guard.py"],
+                             cwd=str(ROOT), capture_output=True, text=True).stdout.split()
+    assert sorted(tracked) == ["skills/sigma-loop/scripts/post_guard.py", "tools/leak_refs.py"]
+    btp = _load_tool("build_public_tree")
+    assert "tools/leak_refs.py" in btp.TOOL_PATHS and btp.SDLC_DEFAULT == "exclude"   # only .sdlc/ is dropped
+    inst = tmp_path / "plugin"
+    (inst / "skills" / "sigma-loop" / "scripts").mkdir(parents=True)
+    (inst / "tools").mkdir()
+    for rel in ("skills/sigma-loop/scripts/post_guard.py", "tools/leak_refs.py"):
+        (inst / rel).write_bytes((ROOT / rel).read_bytes())
+    code = ("import sys; sys.path.insert(0, %r); import post_guard as g\n"
+            "try:\n g.check(['issue','comment','1','--body',%r])\nexcept g.PostRefused as e: print(e)\n"
+            % (str(inst / "skills" / "sigma-loop" / "scripts"), LEAK))
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=dict(os.environ))
+    assert "[leak]" in r.stdout, r.stderr
+    (inst / "tools" / "leak_refs.py").unlink()
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert "[no-leak-refs]" in r.stdout          # absent => every write refused, loudly, never a silent pass
+
+
+def _load_tool(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "tools" / (name + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 # ---- the two chokepoints and the two call-site hooks -------------------------------------------
 
 def test_sources_run_refuses_before_gh(armed):
@@ -141,12 +236,24 @@ def test_sources_run_refuses_before_gh(armed):
     assert len(calls) == 1
 
 
-def test_work_run_refuses_before_subprocess(armed, tmp_path):
+def test_work_run_never_spawns_on_a_hit(armed, tmp_path, monkeypatch):
     work = _load("work")
-    with pytest.raises(RuntimeError):
-        work._run(tmp_path, ["git", "commit", "-m", LEAK])
-    with pytest.raises(RuntimeError):
-        work._run(tmp_path, ["gh", "pr", "comment", "5", "--body", LEAK])
+    spawned = []
+
+    def fake(argv, *a, **k):
+        if "rev-parse" in argv:          # the patterns-file work-tree probe: answer "not a git repository"
+            return types.SimpleNamespace(returncode=128, stdout="", stderr=(
+                "fatal: not a git repository (or any of the parent directories): .git"))
+        spawned.append(argv)
+        return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
+    monkeypatch.setattr(work.subprocess, "run", fake)
+    for argv in (["git", "commit", "-m", LEAK], ["gh", "pr", "comment", "5", "--body", LEAK],
+                 ["/opt/homebrew/bin/gh", "issue", "comment", "5", "-b" + LEAK]):
+        with pytest.raises(RuntimeError):
+            work._run(tmp_path, argv)
+    assert spawned == []
+    assert work._run(tmp_path, ["gh", "pr", "comment", "5", "--body", "clean"]) == "ok"
+    assert len(spawned) == 1
 
 
 def test_upstream_file_refuses_without_calling_run(armed):
@@ -220,11 +327,6 @@ def test_every_gh_write_site_is_a_known_route():
         if _WRITE_SITE.search(p.read_text(encoding="utf-8", errors="replace")):
             seen.add(str(p.relative_to(ROOT)))
     assert sorted(seen - set(KNOWN_WRITE_FILES)) == [], "a new gh write path: guard it and list it"
-
-
-def test_a_guarded_route_really_calls_the_guard():
-    for rel in ("sources", "work", "upstream", "feature_propagate", "gh_api"):
-        assert "post_guard.check(" in (SCRIPTS / (rel + ".py")).read_text(encoding="utf-8"), rel
 
 
 def test_gh_api_default_runner_refuses_before_gh(armed, tmp_path, monkeypatch):
