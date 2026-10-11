@@ -99,6 +99,10 @@ entries removed (1 each -> 0), status 3 -> 1. These were already `gh api` calls,
 a behaviour migration. Still counted: every `label create` (sources x3, triage x1 = slice 3c), define x2,
 status.py's `src is None` fallback, doctor 5, board_migrate 2, sources' board sites, work x3, verify_merge x3.
 
+MEASURED 2026-10-11 (#895 slice 8), via the same `scan()` (PRINTED, not typed): TOTAL 37 -> 36, sources.py 20 -> 19.
+`GitHubSource.note()` was the last GraphQL-first comment: its `["issue", "comment", ...]` literal is gone and the
+method posts through `gh_api.comment_issue` (REST), whose single policy fallback is built inside the EXEMPT helper.
+
 This is a deterministic AST test: no probabilistic concurrency, so the AGENTS.md "performance
 boundary" rule does not apply.
 """
@@ -137,7 +141,7 @@ BASELINE = {
     "skills/sigma-define/scripts/define.py": 2,
     "skills/sigma-doctor/scripts/board_migrate.py": 2,
     "skills/sigma-doctor/scripts/doctor.py": 5,
-    "skills/sigma-loop/scripts/sources.py": 20,
+    "skills/sigma-loop/scripts/sources.py": 19,
     "skills/sigma-loop/scripts/triage.py": 1,
     "skills/sigma-loop/scripts/work.py": 3,
     "skills/sigma-rebase/scripts/verify_merge.py": 3,

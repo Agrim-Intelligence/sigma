@@ -77,6 +77,8 @@ def _runner(body="", labels=(), comments=(), absent=(), fail_on=()):
         gql = gqlfake.swap(args, labels=live, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        if gqlfake.is_issue_write(args):       # note() is REST-first (#895 slice 8): re-record as `issue comment`
+            return gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
         calls.append(list(args))
 
         def view(_n, fields):
@@ -130,6 +132,11 @@ def _queue_runner(issues, absent=()):
         gql = gqlfake.swap(args, labels=target, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        wr = gqlfake.rest_write_target(args)
+        if wr is not None and wr[1] == "comment":      # note() is REST-first (#895 slice 8): re-record as `issue comment`
+            out = gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
+            comments.setdefault(str(wr[2]), []).append(calls[-1][-1])
+            return out
         calls.append(list(args))
         if _is_issues_list_call(args):
             wanted = _issues_list_labels(args)
@@ -634,7 +641,7 @@ def test_a_flag_whose_timeline_read_fails_posts_nothing_but_still_records():
     # #895: REST fetches comment pages only when the issue's comment count is non-zero, so one
     # unrelated comment makes the timeline read reach the (failing) page; the body read never does.
     run = _runner(body=_DECLARES, labels={"sdlc:goal"}, absent={_LABEL}, comments=("unrelated",),
-                  fail_on=["--json comments", "issues/42/comments"])
+                  fail_on=["--json comments", "issues/42/comments --method GET"])
     gh = _source(run)
     with tempfile.TemporaryDirectory() as d:
         base, cfg = _sdlc(d)
@@ -648,7 +655,7 @@ def test_a_flag_that_cannot_be_posted_still_refuses_the_pick():
     """Flagging is how a human hears about it, not how the decision is made."""
     fl = _mod("feature_labels")
     run = _runner(body=_DECLARES, labels={"sdlc:goal"}, absent={_LABEL},
-                  fail_on=["issue comment"])
+                  fail_on=["issues/42/comments --method POST"])      # note() is REST-first (#895 slice 8)
     gh = _source(run)
     with tempfile.TemporaryDirectory() as d:
         base, cfg = _sdlc(d)
@@ -1283,6 +1290,11 @@ def _flap_runner(body, closed_refs=("7",)):
         gql = gqlfake.swap(args, labels=target, calls=calls, repo_args=("--repo", "o/r"))
         if gql is not None:
             return gql
+        wr = gqlfake.rest_write_target(args)
+        if wr is not None and wr[1] == "comment":      # note() is REST-first (#895 slice 8): re-record as `issue comment`
+            out = gqlfake.rest_write(args, calls=calls, repo_args=("--repo", "o/r"))
+            comments.setdefault(str(wr[2]), []).append(calls[-1][-1])
+            return out
         calls.append(list(args))
         if _is_issues_list_call(args):
             wanted = _issues_list_labels(args)

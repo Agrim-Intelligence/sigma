@@ -74,7 +74,7 @@ failure AGENTS.md's SAFETY property exists to prevent:
 GITHUB QUOTA. The issue (body, author, `updated_at`) and the comments are read over REST
 (`GitHubSource.fetch_issue_for_approval` / `fetch_comment_bodies`), never `gh issue view --json`,
 for the reason `fetch_title_body` documents (#1808): GraphQL shares a far more easily exhausted
-hourly budget. The one write is `source.note`, which already falls back to REST itself (#1657).
+hourly budget. The one write is `source.note`, which is REST-first (#895 slice 8).
 """
 import datetime
 import hashlib

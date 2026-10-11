@@ -1160,10 +1160,14 @@ sweep that clears it and no gesture that removes it.
 - **A REJECT is terminal for this pass, and its whole record is one comment — now retried, and now
   loud on final failure (#1986).** Nothing re-runs Stage 1 automatically; the findings sit on the
   issue until a human or a later pick acts on them (§7g). Because §7g-i writes no label and no
-  ticket, that one comment is all there is, so `sources.GitHubSource.note` retries a transient `gh`
-  error itself (the identical shape and reason as the label-swap retry in §7d-i) before giving up —
-  a duplicate REJECT comment from a retry that followed an already-landed write is accepted as a
-  categorically safer failure than a silently missing one. What survives that RAISES, and `loop.py
+  ticket, that one comment is all there is, so `sources.GitHubSource.note` re-posts a transient failure itself
+  before giving up. Since #895 slice 8 that retry is a REST re-POST only, and only on a server 5xx
+  or an ambiguous transport failure; the GraphQL-first attempt is gone, a primary rate limit uses
+  `comment_issue`'s single policy fallback (none in a cloud session), and every other failure
+  (active-account drift 401/403/404, a secondary rate limit) raises at once. The duplicate-on-retry
+  ruling is RETAINED, now REST-only: a re-POST after a 5xx or an ambiguous ack may double-post, which
+  deliberately contradicts `comment_issue`'s own "may have landed" no-retry stance. It is accepted
+  because a duplicate REJECT comment is a categorically safer failure than a silently missing one. What survives that RAISES, and `loop.py
   note`'s CLI verb — previously a bare `try/except` that printed one non-fatal stderr line and
   always exited 0 — now prints `OK`/`FAILED` on stdout (mirroring `mark_designed`'s own convention)
   and returns a non-zero exit on `FAILED`, so a REJECT whose comment still did not land after a

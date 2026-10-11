@@ -1448,9 +1448,8 @@ class GitHubSource:
     #: the whole claim path that is a durable, cross-session signal is never mistaken for an ordinary
     #: best-effort lifecycle write that failed.
     _CLAIM_LABEL_FAILURE_MARKER = "CLAIM-LABEL-WRITE-FAILED"
-    #: #1986: same shape as the label-swap retry above, for the identical reason -- a REJECT
-    #: verdict's `note` comment is `sigma-goal-review` §7g's ENTIRE output (no label, no board move,
-    #: nothing else), so a transient `gh` hiccup at exactly that moment must not be free to erase it.
+    #: #1986: a REJECT verdict's `note` comment is `sigma-goal-review` §7g's ENTIRE output (no label,
+    #: no board move, nothing else). #895 slice 8: REST re-POST attempts, on a 5xx/transport failure only.
     _NOTE_RETRIES = 4                # total attempts for one comment (override to 1 in tests)
     _NOTE_RETRY_BASE = 0.5           # backoff seconds: base * 2**attempt (override to 0 in tests)
     #: GitHub node ids are opaque base64-ish tokens. Validated before being inlined into a GraphQL
@@ -3085,13 +3084,12 @@ class GitHubSource:
             # misleadingly park/block an already-closed issue over a mere transient gh error, worse
             # than the silent-comment bug this fix closes.
             #
-            # #1657 follow-up (scope): routed through `note()` -- the SAME GraphQL-retry-then-REST-
-            # fallback chokepoint the audit-trail comment for a REJECT verdict already gets -- rather
-            # than the bare single-shot `gh issue comment` this used before. A genuinely exhausted
-            # GraphQL quota used to lose this comment outright even though a completely separate,
-            # untouched REST quota was available the whole time (#1514); now it survives that the
-            # same way `note()`'s own callers already do. Still wrapped in try/except: `note()`
-            # RAISES once its own retries and REST fallback are both spent, and this call site's
+            # #1657 follow-up (scope): routed through `note()` -- the SAME chokepoint the audit-trail
+            # comment for a REJECT verdict already gets -- rather than the bare single-shot `gh issue
+            # comment` this used before. #895 slice 8: `note()` is REST-first (`comment_issue`), a
+            # REST re-POST only on a 5xx/transport failure, one policy fallback on a primary rate
+            # limit (none in cloud). Still wrapped in try/except: `note()` RAISES on final failure
+            # (including drift 401/403/404, which is not retried), and this call site's
             # contract (never make complete() raise on a merely-missing comment) is unchanged.
             try:
                 self.note(goal, "Completed by the Sigma SDLC loop.")
@@ -3268,14 +3266,14 @@ class GitHubSource:
             what="park")
         if not landed:
             self._repair_partial_park(goal)
-        # #1657 follow-up (scope): routed through `note()` -- same GraphQL-retry-then-REST-fallback
-        # chokepoint `note()`'s other callers already get -- rather than the bare single-shot `gh
+        # #1657 follow-up (scope): routed through `note()` -- same chokepoint `note()`'s other
+        # callers already get (#895 slice 8: REST-first via `comment_issue`; a REST re-POST only on
+        # 5xx/transport; one policy fallback on a primary rate limit, none in cloud) -- rather than the bare single-shot `gh
         # issue comment` this used before. `park()`/`fail()` both land here, and this comment is
         # the ONLY record of WHY a goal was parked (a park is a human's deliberate checkpoint that
         # only /sigma-unpark reopens -- there is no other durable trail of the reason), so it must
         # not be lost to a fully-exhausted GraphQL quota any more than a REJECT verdict's comment
-        # is. Still wrapped in try/except: `note()` RAISES once its own retries and REST fallback
-        # are both spent, and this call site's contract (a transient gh error must not abort the
+        # is. Still wrapped in try/except: `note()` RAISES on final failure, and this call site's contract (a transient gh error must not abort the
         # drain) is unchanged.
         try:
             self.note(goal, comment)
@@ -3327,65 +3325,36 @@ class GitHubSource:
     def note(self, goal, text):
         """Record on the issue timeline (the audit trail): a journey-log / critical-insight comment.
 
-        #1986: RETRIES on a transient failure, exactly like `_swap_labels` above and for the
-        identical reason -- `sigma-goal-review`'s REJECT verdict writes NOTHING else (§7g: no label,
-        no board move, no edit to the issue body), so this one comment is the ENTIRE record of a
-        rejection, and a transient `gh` hiccup at exactly this moment (an active-account drift on a
-        host juggling more than one `gh` login is one well-documented cause) must not be free to
-        erase it. RAISES on final failure, deliberately unlike the old shape here: `loop.py`'s
-        `note` CLI verb is what decides whether a failed note is fatal to the caller, and it cannot
-        decide what it is never told -- this method used to be reached through a silent
-        `try/except: pass` one layer up (loop.py's `note` verb, before #1986).
+        `sigma-goal-review`'s REJECT verdict writes NOTHING else (§7g: no label, no board move), so this
+        one comment is the ENTIRE record of a rejection (#1986): RAISES on final failure, and `loop.py
+        note` prints FAILED / exits 1 so a lost note is never silent.
 
-        A retry that turns out to have followed an actually-landed write double-posts the comment.
-        Accepted, deliberately: for an audit trail that is otherwise all-or-nothing, a duplicate
-        REJECT comment is a categorically safer failure than a silently missing one.
+        #895 slice 8: REST first (`gh_api.comment_issue`, `POST issues/N/comments`), no GraphQL-first
+        attempt. Retried (<= `_NOTE_RETRIES`, REST only) ONLY for a server 5xx or an ambiguous transport
+        failure; every other failure raises at once, NO retry: active-account drift (401/403/404) and a
+        secondary rate limit. A primary rate limit gets `comment_issue`'s single policy fallback to
+        `gh issue comment` (none in a cloud session) and is never retried. Classified by `_write_case`
+        (gh stderr and the cause chain), never by `exc.kind` / `str(exc)`, which embed the comment body.
+        No Sigma-side timeout on this path; a gh-reported timeout in stderr is classified transport and
+        retried over REST; a silent hang blocks. UNMEASURED.
 
-        #1657: `gh issue comment` resolves through GraphQL, whose 5,000-points/hour budget is
-        shared with every other `gh`-based operation on this board (project/board writes, `gh
-        issue view --json`, ...) and was confirmed exhausted for real during #1514 (a session
-        heavy on `gh` calls). Retrying the SAME call against an exhausted hourly quota just
-        re-fails `_NOTE_RETRIES` times in a few seconds and then raises -- the comment, which for
-        a REJECT verdict is §7g's ENTIRE record, is lost. Once every GraphQL attempt above has
-        come back transient, fall back ONCE to `gh api repos/{owner}/{repo}/issues/{n}/comments`
-        (REST v3), which draws on a completely separate 5,000/hour budget -- the same reasoning
-        a downstream goal-cost recorder already documents for its own comment mirror, and
-        confirmed live in #1514: REST kept working the entire time GraphQL read exhausted. A
-        non-transient GraphQL failure (bad auth, issue not found, ...) still raises immediately,
-        exactly as before -- REST would fail the same way and for the same reason, so trying it
-        would only spend a second quota to learn nothing new.
-
-        POST-MERGE REVIEW FIX: REPO RESOLUTION deliberately does NOT use `self._owner_name()`,
-        for the identical reason `_fetch_issues_rest` (above) already documents for itself --
-        that helper's unset-`repo` fallback shells out to `gh repo view --json owner,name`, which
-        is ITSELF graphql-billed. `discovery.github.repo` ships EMPTY in the sigma-init template
-        and `/sigma-setup` explicitly supports leaving it unset, so calling `_owner_name()` here
-        would resolve straight back onto the exhausted GraphQL quota this fallback exists to route
-        around -- reproduced by a fake-`gh` test with `repo` unset: the ORIGINAL fix's
-        `_owner_name()` call shelled out to `gh repo view`, hit the same simulated rate limit, and
-        the comment was lost exactly as before this fallback existed (see
-        `test_github_note_with_no_resolvable_repo_still_falls_back_to_rest` below). Mirroring
-        `_fetch_issues_rest` exactly: when `self.repo` is set, address it directly
-        (`repos/<repo>/issues/<n>/comments`); when unset, use the literal `{owner}/{repo}`
-        placeholder, which `gh api` resolves from the working directory's git remote at ZERO extra
-        requests (confirmed live by `_fetch_issues_rest`'s own docstring) -- no network call, no
-        quota touched, so an unset `repo` can never again defeat this fallback. A REST call that
-        itself fails (genuinely no git remote to infer from, bad auth, ...) raises that failure
-        directly -- there is nothing further to fall back to."""
+        Duplicate-on-retry ruling, RETAINED and now REST-only: a REST re-POST after a 5xx/transport failure
+        may double-post if the first write landed. This deliberately contradicts `comment_issue`'s own "may
+        have landed" no-retry stance; accepted, because for an all-or-nothing audit trail a duplicate REJECT
+        comment is categorically safer than a missing one. UNMEASURED in a real cloud session."""
         if hsg.blocks_issue_write(self, goal, "note"):    # slice 10: a foreign issue is parked, not written
             return
+        fell = []          # the one policy fallback ran: it is final, never followed by another REST POST
+        kw = {**self._write_kw(), "fallback_run": lambda a: (fell.append(1), self._run(a))[1]}
         for attempt in range(self._NOTE_RETRIES):
             try:
-                self._run(["issue", "comment", goal, *self._repo_args(), "--body", text])
+                gh_api.comment_issue(self._run, self._n(goal), text, **kw)
                 return
-            except Exception as exc:
-                if not self._is_transient(exc):
+            except gh_api.GhApiError as exc:
+                if (fell or gh_api._write_case(exc) not in ("server_5xx", "transport_ambiguous")
+                        or attempt == self._NOTE_RETRIES - 1):
                     raise
-                if attempt < self._NOTE_RETRIES - 1:
-                    time.sleep(self._NOTE_RETRY_BASE * (2 ** attempt))
-        endpoint = ("repos/%s/issues/%s/comments" % (self.repo, goal) if self.repo
-                    else "repos/{owner}/{repo}/issues/%s/comments" % goal)
-        self._run(["api", endpoint, "-X", "POST", "-f", "body=" + text])
+                time.sleep(self._NOTE_RETRY_BASE * (2 ** attempt))
 
     def fetch_title_body(self, goal):
         """Direct, read-only issue title+body through THIS source's own `_run` chokepoint (never a

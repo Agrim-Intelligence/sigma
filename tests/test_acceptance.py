@@ -95,6 +95,21 @@ def test_draft_comment_survives_lost_ack_retry(tmp_path):
     assert source.posts == 1
 
 
+def test_draft_comment_gh_api_error_propagates_and_writes_no_record(tmp_path):
+    """#895 slice 8: `note()` raises `GhApiError` at once on a 4xx (no retry); the record must not be written."""
+    a = load('acceptance')
+    source = Source('No criteria here')
+    draft = tmp_path / 'draft.md'
+    draft.write_text(CRITERIA)
+    err = load('gh_api').GhApiError('gh api failed', 'gh: Not Found (HTTP 404)', 404, 'not_found')
+    def refuse(goal, text):
+        raise err
+    source.note = refuse
+    with pytest.raises(type(err)):
+        a.record(tmp_path, '42', source=source, config={}, draft=draft)
+    assert not (tmp_path / 'acceptance/42.md').exists() and source.posts == 0
+
+
 @pytest.mark.parametrize('phase', ['pr-review', 'retro'])
 def test_brief_contains_record_verbatim(tmp_path, phase):
     sdlc, a = capture(tmp_path)

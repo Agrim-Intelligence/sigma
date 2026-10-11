@@ -371,6 +371,22 @@ def test_note_verb_is_fail_open_but_reports_the_failure_loudly(capsys):
         assert "no gh" in out.err     # the underlying reason is still on stderr, for a human reading the log
 
 
+def test_note_verb_failure_wording_names_what_is_retried(capsys):
+    """#895 slice 8: the retry covers only a server 5xx / ambiguous transport failure, so the stderr line must
+    not claim "after retries" for a 404 that was never retried."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _backlog(d, 0, max_iter=5); lp = _loop()
+
+        class Boom:
+            def note(self, g, t): raise RuntimeError("HTTP 404")
+
+        lp.sources.get_source = lambda sdlc_dir, config: Boom()
+        assert lp.main(["loop.py", "note", base, "5", "hello"]) == 1
+        err = capsys.readouterr().err
+        assert "retries cover only a server 5xx or ambiguous transport failure" in err
+        assert "after retries" not in err
+
+
 def test_cli_qc_verb_is_a_safe_noop_for_local():
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 1, max_iter=5)
