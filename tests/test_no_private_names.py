@@ -820,8 +820,10 @@ def _assert_raw_residual_is_exactly(pin, under_tests):
 #: The per-file comments inside say which. Written from the
 #: comparator's own ADDED output; the ratchet only shrinks.
 RAW_RESIDUAL_SHIPPED = {
-    # core role noun: the `risk-detect` evidence script (the conditional-risk row); core label
-    "README.md": {"collector": 1, "critical-insight": 1},
+    # core role noun: the `risk-detect` evidence script (the conditional-risk row)
+    "docs/features.md": {"collector": 1},
+    # core label
+    "docs/backlog.md": {"critical-insight": 1},
     # core role noun: the read-only evidence scripts (`*-collect.sh`, risk-detect, discovery-scan)
     "hooks/completion_gate.sh": {"collector": 1},
     "hooks/research_capture.py": {"collectors": 1},

@@ -447,7 +447,7 @@ def test_verb_listed_in_usage():
 # ---- docs: the NEVER prose names the verb in all three places ---------------------------------
 
 @pytest.mark.parametrize("rel", ["skills/sigma-loop/SKILL.md",
-                                 "skills/sigma-loop/references/running.md", "README.md"])
+                                 "skills/sigma-loop/references/running.md", "docs/running-the-loop.md"])
 def test_never_prose_names_the_exemption(rel):
     text = (ROOT / rel).read_text(encoding="utf-8")
     assert "spend-approval" in text, f"{rel}: the NEVER rule no longer names the exemption verb"

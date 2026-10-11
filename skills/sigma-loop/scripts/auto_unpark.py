@@ -509,7 +509,7 @@ def sweep_unpark(sdlc_dir, config, apply=False, run=None):
     `apply=True`: labels are mutated through `triage.apply_actions`/`_execute_action` -- the exact
     primitive `enact --apply`'s own unpark case already uses, not a reimplementation -- then, for
     every issue whose actions ALL landed (`done`, never `failed`), one audit-trail comment naming
-    the closed blocker(s) (`_UNPARK_COMMENT`). `discovery.blocker_promotion`'s own README section
+    the closed blocker(s) (`_UNPARK_COMMENT`). `discovery.blocker_promotion`'s own section of docs/backlog.md
     states its rule plainly -- "every promotion is paired with an explanatory comment... never a
     silent label change" -- and an UNATTENDED write needs that even more than a human-reviewed
     `enact --apply` does (a human who just built the plan already has full context; nobody is

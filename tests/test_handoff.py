@@ -1823,7 +1823,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def test_readme_documents_track_body_file():
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs/features.md").read_text(encoding="utf-8")
     assert "--body-file" in readme
 
 
@@ -1836,7 +1836,7 @@ def test_skill_documents_track_body_file():
 
 
 def test_readme_documents_ack_area():
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs/action-log-and-ledger.md").read_text(encoding="utf-8")
     assert "--goal <goal> --area <area>" in readme
 
 

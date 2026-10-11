@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "docs" / "launch" / "coverage.json"
 DOC = ROOT / "docs" / "launch" / "coverage.md"
-README = ROOT / "README.md"
+README = ROOT / "docs/platform-support.md"   # the README links here for the figure
 RCFILE = ROOT / ".coveragerc"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 

@@ -81,7 +81,7 @@ def test_wired_into_both_orchestrators_research_phase():
 
 
 def test_readme_no_longer_calls_research_skill_less():
-    t = (ROOT / "README.md").read_text()
+    t = (ROOT / "README.md").read_text() + (ROOT / "docs/running-the-loop.md").read_text()
     assert "agent practice; no dedicated skill" not in t
     assert "`sigma-research`" in t
 

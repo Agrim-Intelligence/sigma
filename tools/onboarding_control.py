@@ -28,7 +28,8 @@ is "unanswerable [ask]", red), the verify candidate number and id, and the `Next
 read from the repository root as a shell would (see _py_argv).
 
 EVERY OTHER README GESTURE IS USAGE-CHECKED (#277 review). The two init subsections are executed;
-every other `python3 <script> ...` line ANYWHERE in the README (fenced, inline, in a table or a
+every other `python3 <script> ...` line ANYWHERE in the README or a guide it links (README_DOCS;
+fenced, inline, in a table or a
 `$(...)`, the script path spelled any way: `<installed-sigma>/`, `"${VAR}/"`, `~/dir/`, absolute,
 repository-relative or a bare name) cannot be -- most of them need a live board or a running loop.
 A path that is not `<installed-sigma>/<shipped script>` is red at once (it exits 2 when copied
@@ -112,6 +113,14 @@ VARIANTS = ("confirm", "no-command", "process")
 #: The README's one placeholder for the directory Sigma's scripts live in (#277): defined once in the
 #: Quickstart, and every `python3` gesture a user copies starts with it.
 INSTALLED_SIGMA = "<installed-sigma>"
+#: The user guides the README links for detail. Their `python3` gestures are a user's to copy just
+#: like the README's own, so the `readme-usage` mode checks them too (read from the Sigma tree).
+README_DOCS = ("docs/getting-started.md", "docs/running-the-loop.md", "docs/backlog.md",
+               "docs/worktrees-and-merging.md", "docs/planning-the-backlog.md",
+               "docs/action-log-and-ledger.md", "docs/parallelism.md", "docs/knowledge-graph.md",
+               "docs/companions.md", "docs/managed-settings.md", "docs/routines.md",
+               "docs/configuration.md", "docs/features.md", "docs/architecture.md",
+               "docs/platform-support.md")
 #: The README subsections whose `python3` gestures the control EXECUTES from the repository root.
 GESTURE_SECTIONS = ("### What `/sigma-init` will ask you", "### If `/sigma-init` says you lack access")
 #: Exit codes a README gesture may return: `preflight.py check` exits 1 on a blocking failure (the
@@ -716,6 +725,12 @@ def usage_problems(args, help_text):
     if not any(fits(a) for a in alts):
         problems.append(f"positionals {pos} fit no usage alternative")
     return problems
+
+
+def usage_corpus(readme_text, sigma):
+    """The README text followed by every guide in README_DOCS that `sigma` ships. Pure but for reads."""
+    docs = [pathlib.Path(sigma) / rel for rel in README_DOCS]
+    return "\n".join([readme_text] + [p.read_text(encoding="utf-8") for p in docs if p.is_file()])
 
 
 def check_readme_usage(text, sigma, cwd):
@@ -1588,7 +1603,7 @@ def main(argv):
                 else:
                     run_from = pathlib.Path(inst)
         result["scripts_from"] = str(run_from)
-        result["modes"]["readme-usage"] = check_readme_usage(text, run_from, root)
+        result["modes"]["readme-usage"] = check_readme_usage(usage_corpus(text, sigma), run_from, root)
         if qs:
             for variant in VARIANTS if args.variant == "all" else (args.variant,):
                 tag = "" if variant == "confirm" else "/" + variant

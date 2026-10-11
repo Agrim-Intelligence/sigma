@@ -14,7 +14,7 @@ def test_readme_does_not_claim_unenforced_coverage_floor():
 
 
 def test_readme_hook_count_matches_registry():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "docs/architecture.md").read_text()
     hooks = json.loads((ROOT / "hooks/hooks.json").read_text())["hooks"]
     count = sum(len(group["hooks"]) for groups in hooks.values() for group in groups)
     assert f"registers {count} hook commands" in readme

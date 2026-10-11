@@ -96,11 +96,12 @@ def test_safety_step_spends_nothing_and_has_no_secret_or_write_surface():
 
 
 def test_docs_that_list_the_quality_gate_list_the_safety_check():
-    readme = README.read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "features.md").read_text(encoding="utf-8")
     assert "| **Safety check**" in readme and "evals/safety/check.py" in readme
     assert "python3 evals/safety/check.py" in (ROOT / "evals" / "README.md").read_text(encoding="utf-8")
     assert "evals/safety/check.py" in (ROOT / "docs" / "enforcement.md").read_text(encoding="utf-8")
-    ci = readme.split("**CI** (GitHub Actions)", 1)[1][:2500]
+    support = (ROOT / "docs" / "platform-support.md").read_text(encoding="utf-8")
+    ci = support.split("**CI** (GitHub Actions)", 1)[1][:2500]
     assert "evals/safety/check.py" in ci and "`test` job" in ci
 
 

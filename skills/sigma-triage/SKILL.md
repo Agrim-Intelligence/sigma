@@ -181,7 +181,7 @@ hits it* — not a UI nicety, not a missing feature.
 including an incidental prose mention such as "after #12", "needs #12", or "requires #12 only for
 the docs" — and **skips writing the real marker** (`**Blocked by:** #N`). Consequence: the goal
 may not be parked by `backlog_check`, and the wave can run out of order. Verify edges in the
-question round. See the README's "Known caveat" for more detail.
+question round. See the "Known caveat" in `docs/planning-the-backlog.md` for more detail.
 
 **Conflicting label notice (F4):** If a picked issue already carries a conflicting `priority:*` or
 `model:*` label (same prefix, different value), `enact` prints a **report-only notice** naming both

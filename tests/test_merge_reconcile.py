@@ -869,7 +869,7 @@ def test_324_complete_cost_names_issue_graphql_in_both_public_docs():
     assert len([c for c in calls if c[:2] == ["api", "graphql"]]) == 3, calls
     assert len(calls) == 6, calls  # state + comment + close (REST, #895) + id + label ids + label mutation, no board
     root = S.parents[2]
-    for path in (root / "README.md", S.parent / "references" / "landing.md"):
+    for path in (root / "docs/features.md", S.parent / "references" / "landing.md"):
         assert "REST issue state probe" in path.read_text(), path
 
 

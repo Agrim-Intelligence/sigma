@@ -1220,7 +1220,7 @@ def test_readme_goal_decompose_row_documents_file_mode_and_drops_the_stale_provi
     """#522: the row's old "thresholds are PROVISIONAL... prefer log until a follow-up slice
     retunes them" claim was already falsified by #520's corpus calibration slice; the row must also
     now mention `file` mode's real behavior and `max_children`."""
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs/configuration.md").read_text(encoding="utf-8")
     row = next(line for line in readme.splitlines() if line.startswith("| `goal_decompose:"))
     assert "file" in row and "max_children" in row
     assert "PROVISIONAL" not in row

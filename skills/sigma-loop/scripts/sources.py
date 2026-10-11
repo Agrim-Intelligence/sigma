@@ -427,7 +427,7 @@ def _auto_unpark(config):
     posture `triage.py`'s `enact()` already has: a direct call (this module's own CLI, or a human/
     cron invoking it deliberately) IS the opt-in, same as `enact --apply` needs no separate config
     flag either. Does not reach local-goals mode, for the same structural reason `blocker_promotion`
-    doesn't (see its own docstring/README section): a local goal's "blocked by #N" reference is a
+    doesn't (see its own docstring/docs/backlog.md section): a local goal's "blocked by #N" reference is a
     file path, never a bare issue number `backlog_check._BLOCK_RE` can match, so there is nothing
     for `LocalSource` to ever sweep and the key is simply never read there."""
     block = ((config or {}).get("discovery") or {}).get("auto_unpark")
