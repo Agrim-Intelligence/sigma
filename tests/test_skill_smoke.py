@@ -442,3 +442,49 @@ def test_ordering_pins_are_carded():
     cards = _cards()
     assert any("never skip" in g for g in cards["sigma-goal"]["gates"])
     assert any("last gate before code" in g for g in cards["sigma-plan-review"]["gates"])
+
+
+# ---- #1047: wall-time line and ceiling (budget.json) ----
+BUDGET = ROOT / "evals" / "skills" / "budget.json"
+
+
+def _run_budget(tmp_path, text):
+    skills, cards = _tree(tmp_path)
+    b = tmp_path / "budget.json"
+    if text is not None:
+        b.write_text(text)
+    return _run(skills, cards, "--budget", str(b))
+
+
+def test_wall_line_is_printed_with_ceiling(tmp_path):
+    rc, out = _run_budget(tmp_path, json.dumps({"ceiling_seconds": 60}))
+    assert rc == 0, out
+    assert re.search(r"smoke wall: \d+\.\d\ds, ceiling 60\.00s", out), out
+
+
+def test_wall_time_over_ceiling_is_a_finding(tmp_path):
+    rc, out = _run_budget(tmp_path, json.dumps({"ceiling_seconds": 0.0000001}))
+    _red(rc, out, "FINDING", "wall time")
+
+
+def test_unset_ceiling_passes_and_says_unset(tmp_path):
+    rc, out = _run_budget(tmp_path, json.dumps({"ceiling_seconds": None}))
+    assert rc == 0 and re.search(r"smoke wall: \d+\.\d\ds, ceiling unset", out), out
+
+
+def test_explicit_missing_budget_is_a_finding(tmp_path):
+    _red(*_run_budget(tmp_path, None), "FINDING", "budget")
+
+
+@pytest.mark.parametrize("text", ["{", "[]", json.dumps({"ceiling_seconds": "fast"}), json.dumps({"ceiling_seconds": -1}), '{"ceiling_seconds": NaN}', '{"ceiling_seconds": Infinity}'])
+def test_malformed_budget_is_a_finding(tmp_path, text):
+    rc, out = _run_budget(tmp_path, text)
+    _red(rc, out, "FINDING", "budget")
+    assert "Traceback" not in out
+
+
+def test_shipped_budget_is_parseable():
+    d = json.loads(BUDGET.read_text(encoding="utf-8"))
+    c = d["ceiling_seconds"]
+    assert isinstance(c, (int, float)) and not isinstance(c, bool) and c > 0
+    assert len(d["measured"]) == 3 and c >= max(m["wall_seconds"] for m in d["measured"])

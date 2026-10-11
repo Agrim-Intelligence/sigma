@@ -11,11 +11,16 @@ All notable changes to Sigma are recorded here, newest first.
   exit 1 naming row and gate; pytest 5 / crash / timeout is exit 6 (never counted as red); mutator exits 10-12 pass
   through; `pending` prints and exits 0, or 4 with `--strict`. `safety-check` is now registered live. `--record` is
   #1059. Model-free, no network. Measured: the real catalogue (7 rows, 7 live gates, 2 pending lines) ran 123 s wall, all red, exit 0, python 3.12 on one laptop; CI not measured.
+
 - **Safety check sink probes (#1050, slice 2 of #806).** `python3 evals/safety/check.py` now plants each pinned shape
   (built at run time) through the action log, the ledger, the comment path and the review-block reason, at the start
   and straddling each cap, and through the real `work.commit` refusal in a scratch repository, with the pinned outcome
   per redactor-only shape. Fix found by the probe: `comment_watch._excerpt` cut the raw body at 160 before scrubbing,
   leaving a fragment of a secret that straddled the cut; it now flattens, scrubs, then cuts.
+
+- **Smoke runner wall-time line and ceiling (#1047, slice 4 of #805; refs #1043).** `evals/skills/smoke.py` prints
+  `smoke wall: N.NNs, ceiling M.MMs` and fails when N exceeds `ceiling_seconds` in the new `evals/skills/budget.json` (1.0s, from three CI job logs: 0.09s, 0.14s, 0.10s);
+  a CI step runs the bare gesture before pytest so the number is in the job log.
 
 - **Regression gate set and catalogue (#1057, slice 2 of #808).** New `evals/regression/gates.json` (live gates by
   selection, `skill-smoke`/`safety-check`/`layer1-control` registered `pending` with a reason), `catalogue.json` (one
