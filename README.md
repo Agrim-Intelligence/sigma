@@ -165,7 +165,7 @@ or a work flip) for questions `.sdlc/config.json` does not already answer.
   CI, done-means-merged). `--verify` takes only `N:ID` of a candidate init printed, never a literal
   command (detected text must not become a shell line), so the first run lists the candidates and
   stops with an `[ask]`, and you confirm with a second invocation, for example
-  `/sigma-init --verify 1:9f3a2c1b` with the pair printed beside your chosen candidate. The
+  `/sigma-init --verify 1:9f3a2c1b4d5e` with the pair printed beside your chosen candidate. The
   gestures, with `<n>` and `<id>` copied from the printed list (init prints them with both paths
   already filled in):
 
@@ -300,7 +300,8 @@ test cannot see, and it is not a waiver of any phase.
 
 At each phase boundary the loop runs `phase_report.py start` and `phase_report.py end`; `end` prints
 the phase's cost line (or says why the host cannot report one). No cost line means those two commands
-did not run or the host hid their output; run them again by hand to tell which. After a merge, `loop.py reconcile-merges .sdlc` prints nothing when there is nothing
+did not run or the host hid their output; `loop.py phases .sdlc <goal>` shows from the action log
+which phases were recorded. After a merge, `loop.py reconcile-merges .sdlc` prints nothing when there is nothing
 left to record, and that silence is success; a newly merged goal prints exactly one line such as
 `1 done (PR #12 merged)`.
 

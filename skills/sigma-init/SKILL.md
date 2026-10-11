@@ -175,7 +175,7 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    otherwise it refuses ("the repository changed since the report") and stores nothing; re-run
    `/sigma-init` and confirm from the new report. A `.sdlc` that is a symlink is refused.
    `--verify` takes only a printed `N:ID`, so confirming needs a SECOND invocation: the first run lists
-   candidates and asks; re-run with e.g. `/sigma-init --verify 1:9f3a2c1b` (the pair printed beside the
+   candidates and asks; re-run with e.g. `/sigma-init --verify 1:9f3a2c1b4d5e` (the pair printed beside the
    candidate). A literal command is refused on purpose. After init, fresh `.gitignore` and `.sdlc/` show
    as untracked: commit `.gitignore`, `.sdlc/goals/`, `.sdlc/project.md`, `.sdlc/config.json`; the
    runtime dirs are already ignored; never ignore `.sdlc/` as a whole.

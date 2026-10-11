@@ -69,6 +69,8 @@ def test_the_verify_example_is_a_gesture_init_flow_accepts():
     assert ident, "README must show a second-invocation `/sigma-init --verify N:ID` example"
     opts, target, err = _init_flow().parse(["--verify", ident])
     assert err is None and opts["verify"] == ident
+    vd = _mod("skills/sigma-init/scripts/verify_detect.py", "verify_detect")
+    assert len(ident.split(":")[1]) == vd._ID_HEX, "the example id must be as long as the ids init prints"
 
 
 @pytest.mark.parametrize("name", sorted(_CHECKS))
@@ -116,3 +118,12 @@ def test_the_readme_does_not_promise_a_review_the_default_does_not_require():
     section = README.split("Before you start `/sigma-loop`")[1][:900]
     assert "work.require_review" in section and "default" in section
     assert "every PR the loop opens needs" not in README.lower()
+
+
+def test_the_skill_instructions_carry_the_same_gestures_as_the_readme():
+    init = " ".join((ROOT / "skills/sigma-init/SKILL.md").read_text(encoding="utf-8").split())
+    loop = " ".join((ROOT / "skills/sigma-loop/SKILL.md").read_text(encoding="utf-8").split())
+    ident = _verify_example(README)
+    assert f"`/sigma-init --verify {ident}`" in init and "SECOND invocation" in init
+    assert "ignore `.sdlc/` as a whole" in init
+    assert "Host refusal" in loop and "never retry or route around" in loop
