@@ -3,6 +3,7 @@
 `validate_job` is the guard; each `test_*_rejected` breaks the workflow text one documented way and
 demands the guard raise, so a guard that cannot fail is caught here (a red control, not decoration)."""
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -87,3 +88,41 @@ def test_anchor_file_change_selects_its_rows_and_unrelated_change_selects_none()
                                       "disable-secret-scan/commit-noop"}
     assert select(rows, gates, args, {"skills/sigma-loop/scripts/scrub.py"})
     assert select(rows, gates, args, {"README.md", "docs/launch/review-plan.md"}) == []
+
+
+# ---- #879: the required `test` job runs the plain control against the budget and the planted regressions
+
+BUDGET_STEP = "python3 evals/regression/budget.py"
+PLANTED_STEP = "python -m pytest tests/test_onboarding_control.py -k planted -q -n 2"
+
+
+def validate_test_job(text):
+    assert "\n  test:" in text and "\n  full:" in text, "test/full jobs missing"
+    j = text.split("\n  test:", 1)[1].split("\n  full:", 1)[0]
+    j = "\n".join(ln for ln in j.splitlines() if not ln.lstrip().startswith("#"))
+    assert re.search(rf"^\s+run: {re.escape(BUDGET_STEP)}$", j, re.M), "test job must run the budget step"
+    assert PLANTED_STEP in j, "test job must run the planted-regression tests"
+    assert "continue-on-error" not in j, "the budget step must be able to fail the required job"
+
+
+def test_test_job_runs_the_control_against_the_budget():
+    validate_test_job(WORKFLOW.read_text(encoding="utf-8"))
+    budget = json.loads((ROOT / "evals" / "regression" / "budget.json").read_text(encoding="utf-8"))
+    assert budget["ceiling_seconds"] is None or budget["ceiling_seconds"] > 0
+
+
+def test_test_job_without_the_budget_step_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace(BUDGET_STEP, "true")
+    assert broken != text
+    with pytest.raises(AssertionError, match="budget step"):
+        validate_test_job(broken)
+
+
+def test_test_job_without_the_planted_tests_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace(" -k planted", "")
+    assert broken != text
+    with pytest.raises(AssertionError, match="planted-regression"):
+        validate_test_job(broken)
+

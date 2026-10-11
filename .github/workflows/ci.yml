@@ -64,6 +64,12 @@ jobs:
         run: |
           python3 hooks/decision_gate.py validate .
           python3 hooks/decision_gate.py check .
+      - name: onboarding control, plain gesture, held to evals/regression/budget.json (#879)
+        run: python3 evals/regression/budget.py
+      - name: planted regressions through the plain gesture (#879)
+        run: |
+          trap 'echo "planted-regression tests wall time: ${SECONDS}s"' EXIT
+          python -m pytest tests/test_onboarding_control.py -k planted -q -n 2
       - name: SKILL.md frontmatter reads exactly as written (needs PyYAML)
         if: ${{ !cancelled() }}
         run: |
