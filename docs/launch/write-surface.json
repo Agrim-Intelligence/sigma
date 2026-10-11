@@ -141,7 +141,7 @@
       "function": "_rmtree",
       "rule": "fs-rmtree",
       "count": 1,
-      "gate": "operator/CI-run control; removes only the temp directory it made (recorded path), or a stale sigma-regression-* directory that is a real dir of this user, carries its marker text and is over a day old; never the working tree",
+      "gate": "operator-run and CI-run control (the regression-control job in ci.yml, pull requests and nightly, never --record); removes only the temp directory it made (recorded path), or a stale sigma-regression-* directory that is a real dir of this user, carries its marker text and is over a day old; never the working tree",
       "risk": "high"
     },
     {
