@@ -290,6 +290,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/post_guard.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/goal_state_prune.py",
       "role": "gesture"
     },

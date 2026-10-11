@@ -127,6 +127,7 @@ def _load(name):
 
 registry = _load("feature_registry")     # the store: schema, read, normalise_entry, dumps
 sync = _load("feature_sync")             # repo_slug, the runner shape, the scope-expansion rule
+post_guard = _load("post_guard")           # #375
 ledger = _load("ledger")                 # team record (config-gated, default OFF; fail-open)
 legacy = _load("legacy")                 # #239: records written under the previous name
 gate_hold = _load("gate_hold")           # #1005: the park write, the surface probe, the shared predicate
@@ -607,6 +608,7 @@ def _write_remote(run, cwd, repo, path, text, sha, message):
             "-f", "content=" + base64.b64encode(text.encode("utf-8")).decode("ascii")]
     if isinstance(sha, str) and sha:
         args += ["-f", "sha=" + sha]
+    post_guard.check(args)                   # #375: its default runner (`sync._run`) is not guarded
     return run(cwd, args)
 
 

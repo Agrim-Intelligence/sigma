@@ -164,6 +164,43 @@ OWNER RUNBOOK. Run by the owner, attended, from the root of a current checkout.
 Before any goal of this work posts to GitHub, check the tree and the text itself: `tree` must exit
 0, and each PR title, PR body, commit message and comment must pass `text -` before it is posted.
 
+## Keep new private references out: the post guard
+
+The loop refuses to post a private reference, so one cannot arrive between a scan and the export. Export
+the patterns file once, before starting any loop session; there is no flag and no default path:
+
+```
+export SIGMA_LEAK_PATTERNS="$HOME/.sigma-ops/leak-patterns.txt"
+```
+
+With it set, every write the loop makes through `sources.GitHubSource._run` (issue comments, bodies,
+titles, filed follow-ups, notes, parks), `work._run` (`git commit -m`, `gh pr create|edit|comment|close|merge`),
+`gh_api._default_run`, `upstream._file_upstream` and `feature_propagate._write_remote` is checked first
+(`skills/sigma-loop/scripts/post_guard.py`). It reads flags the way `gh` and `git` do, including bundled short flags (`-fbody=X`, `-am X`, `-XPOST`), `gh release create` notes and positional title, `git commit|tag|merge|notes -m`, and an absolute path to either binary. A match raises
+`post_guard: REFUSED [leak] --body line 1 pattern 2`: the flag, the line in the text and the pattern's
+line number, never the text. Nothing was sent. With the variable unset nothing changes.
+
+- **Opt-in means a non-blank value.** An empty or blank `SIGMA_LEAK_PATTERNS` counts as unset: the guard
+  is off, with no refusal and no warning.
+- **Matching.** Text is matched as written and again after Unicode NFKC folding with zero-width and other
+  format characters (zero-width space and joiners, BOM, soft hyphen) removed, so a fullwidth or
+  zero-width-split slug is caught. NOT caught: homoglyphs from another script (a Cyrillic letter standing
+  in for a Latin one), and encoded forms (base64, percent-encoding, HTML entities).
+- **Fail closed on writes, open on reads.** The patterns load on the first write only. A missing file, a
+  file inside a git work tree or a bad line refuses that write; reads are never refused.
+- **A body from stdin or a file** is read when it is a file and refused when it is `-`.
+- **Recovery.** Fix the text, or fix or unset the variable. A refusal leaves no partial write.
+- **Not covered.** `sync.py` and `ledger.py` ops-branch commits (private state, not issue or PR text, not in
+  the export), `verify_merge --fill` (its text is the commit messages, which are checked), `gh api --input -`,
+  labels, milestones, and anything posted outside the loop's code. The export itself is already gated:
+  `tools/build_public_tree.py` runs `leak_refs.py tree` and REJECTS the export on a hit.
+- **Cost.** One pattern load per process (one `git rev-parse`), then O(text length x patterns) per write.
+  The standard library has no regex timeout, so a pathological pattern slows every write.
+- **Controls.** `tests/test_post_guard.py` runs the exported-variable gesture with a fake `gh` on PATH
+  and a synthetic slug built at run time. Each of the five call sites, the flag table, the opt-in test
+  and the refusal were broken once and seen red; a structural test fails when a new `gh` write path
+  appears that is not listed as guarded or as a named gap.
+
 ## Scale and limits
 
 Measured during planning (2026-09-29) with equivalent read-only `gh` calls, not yet with this tool:
