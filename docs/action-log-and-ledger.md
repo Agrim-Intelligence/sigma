@@ -233,10 +233,10 @@ nothing. Re-run it once the remote is reachable; entries written in the meantime
 `.sdlc/ledger/` and are carried in.
 
 **A ledger that already forked says so, and `bootstrap` repairs it.** A clone bootstrapped by Sigma 1.0.9
-or earlier with a narrow refspec may hold an `sdlc-ledger` that shares no commit with the remote's.
+or earlier with a narrow refspec may hold an `sdlc-ledger` branch that shares no commit with the remote's.
 A remote branch that someone deleted and recreated looks the same. No push can fast-forward either
-case, so `publish` and `pull` return `… refused: sdlc-ledger here shares no history with
-origin/sdlc-ledger …` instead of promising a retry. Neither one ever rebases such a branch onto the
+case, so `publish` and `pull` return `… refused: sdlc-ledger here shares no history with origin/sdlc-ledger …`
+ instead of promising a retry. Neither one ever rebases such a branch onto the
 remote, since that would overwrite the shared README and TEAM.md with this clone's copies.
 `/sigma-doctor`'s team-ledger row says `DIVERGED`. If the remote-tracking ref has never been written,
 the row says the clone's fetch refspec does not cover the branch, and that `sync.py pull .sdlc` fetches

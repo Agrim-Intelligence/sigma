@@ -33,7 +33,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **PR `onboarding-control` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Runs as its own `onboarding-control` job so the required `test` job does not grow.
 - **Ledger bootstrap joins, never forks, the remote ops branch in a single-branch clone (#1142).**
-  - **The defect:** in a clone whose `remote.origin.fetch` omits `sdlc-ledger` (`git clone
+  - **The defect:** in a clone whose `remote.origin.fetch` omits the `sdlc-ledger` branch (`git clone
     --single-branch`, or `--depth N`), `sync.py bootstrap` started a second, unrelated `sdlc-ledger`
     from the empty tree. Every publish was then rejected non-fast-forward while saying "will retry next
     tick". Seen in the field against a 325-commit remote branch.

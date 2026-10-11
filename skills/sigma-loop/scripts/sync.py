@@ -359,7 +359,7 @@ def _local_ahead(git, root, name, rem):
 # it -- writes a refspec for `main` alone, so in such a clone the fetch wrote FETCH_HEAD and nothing
 # else, every `<rem>/<name>` read below failed, and `init` took the failure for "nobody has pushed the
 # branch yet": it started a SECOND history from the empty tree beside the team's. Field case: a
-# 325-commit `sdlc-ledger` on origin, an orphan here, and a publish rejected non-fast-forward every
+# 325-commit `sdlc-ledger` branch on origin, an orphan here, and a publish rejected non-fast-forward every
 # tick while saying it would retry. Every fetch in this module now names its destination.
 
 #: Characters that would make `+refs/heads/<name>:<tracking>` mean something else -- a glob that

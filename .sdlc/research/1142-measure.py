@@ -62,9 +62,9 @@ def history(commits):
         _git(repo, "fast-import", "--quiet", stdin="".join(stream))
         tracking = "refs/remotes/origin/sdlc-ledger"
         print(f"history: {commits} commits, git {_git(repo, 'version').split()[-1]}")
-        print("  merge-base, related (5 apart): %.1f ms (exit %d)" % _best(repo, ["merge-base", "sdlc-ledger", tracking]))
+        print("  merge-base, related (5 apart): %.1f ms (exit %d)" % _best(repo, ["merge-base", "sdlc-ledger", tracking]))  # ops branch
         print("  root walk, rev-list --max-parents=0: %.1f ms (exit %d)"
-              % _best(repo, ["rev-list", "--max-parents=0", "sdlc-ledger"]))
+              % _best(repo, ["rev-list", "--max-parents=0", "sdlc-ledger"]))  # ops branch
         print("  merge-base, unrelated: %.1f ms (exit %d)" % _best(repo, ["merge-base", "orphan", tracking], runs=1))
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
@@ -97,7 +97,7 @@ def reroot(files):
         empty = _git(clone, "hash-object", "-t", "tree", "/dev/null")
         _git(clone, "branch", "sdlc-ledger", _git(clone, "commit-tree", empty, "-m", "orphan"))
         worktree = sync.worktree(base)
-        _git(clone, "worktree", "add", "-q", str(worktree), "sdlc-ledger")
+        _git(clone, "worktree", "add", "-q", str(worktree), "sdlc-ledger")  # ops branch
         ledger.append(base, config, "note", "g.md", why="on the orphan")
         _git(worktree, "add", "-A")
         _git(worktree, "commit", "-qm", "ledger: bo")

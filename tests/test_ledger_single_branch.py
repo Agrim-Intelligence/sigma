@@ -6,7 +6,7 @@ THE DEFECT. `git clone --single-branch` (and `--depth N`, which implies it) writ
 `git fetch origin sdlc-ledger` writes FETCH_HEAD and nothing else, so `origin/sdlc-ledger` never
 exists. `sync.init` read that absence as "nobody has pushed the branch yet" and started a second
 history from the empty tree, and every publish after that was rejected non-fast-forward while
-saying "will retry next tick". Measured in the field: a 325-commit `sdlc-ledger` on origin, an
+saying "will retry next tick". Measured in the field: a 325-commit `sdlc-ledger` branch on origin, an
 orphan beside it, and a retry that could never succeed.
 
 EVERY CASE HERE RUNS REAL GIT against a real bare origin and a real `--single-branch` clone. A stub
@@ -115,7 +115,7 @@ def _origin_whys(origin, branch="sdlc-ledger"):
 
 
 def _orphaned(team):
-    """Bo's clone exactly as a pre-#1142 `bootstrap` left it: `sdlc-ledger` started from the empty
+    """Bo's clone exactly as a pre-#1142 `bootstrap` left it: the `sdlc-ledger` branch started from the empty
     tree, scaffolded, and carrying one committed entry plus TEAM.md -- the three commits the field
     report lists -- with no `origin/sdlc-ledger` ever written. Built with plain git so the recovery
     under test is not also the thing that made the mess."""
@@ -124,7 +124,7 @@ def _orphaned(team):
     root = _git(b, "commit-tree", empty, "-m", "ledger: start the ops branch")
     _git(b, "branch", "sdlc-ledger", root)
     wt = sync.worktree(base)
-    _git(b, "worktree", "add", "-q", str(wt), "sdlc-ledger")
+    _git(b, "worktree", "add", "-q", str(wt), "sdlc-ledger")  # ops branch
     (wt / "README.md").write_text(sync.BRANCH_README, encoding="utf-8")
     (wt / ".gitattributes").write_text("entries/*.jsonl merge=union\n", encoding="utf-8")
     (wt / "entries").mkdir()
@@ -156,7 +156,7 @@ def test_documented_bootstrap_joins_the_remote_branch_in_a_single_branch_clone(t
     wt = sync.worktree(team.base_b)
     assert _git(wt, "merge-base", "--is-ancestor", team.ana_tip, "HEAD", check=False).returncode == 0
     assert _git(wt, "rev-parse", "HEAD") == _git(team.origin, "rev-parse", "refs/heads/sdlc-ledger")
-    names = _git(team.origin, "ls-tree", "-r", "--name-only", "sdlc-ledger", "entries/").split()
+    names = _git(team.origin, "ls-tree", "-r", "--name-only", "sdlc-ledger", "entries/").split()  # ops branch
     assert any(n.startswith("entries/ana-") for n in names) and any(n.startswith("entries/bo-") for n in names)
 
 
@@ -202,7 +202,7 @@ def test_init_refuses_when_a_configured_remote_cannot_be_read(team):
 
 
 def test_init_still_starts_fresh_when_the_remote_has_no_ops_branch(tmp_path):
-    """The other side of the refusal: an origin with no `sdlc-ledger` is a first bootstrap, and
+    """The other side of the refusal: an origin with no `sdlc-ledger` branch is a first bootstrap, and
     it must still create the branch from the empty tree and push it."""
     origin = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
@@ -215,7 +215,7 @@ def test_init_still_starts_fresh_when_the_remote_has_no_ops_branch(tmp_path):
     _git(seed, "push", "-q", str(origin), "main")
     base = _single_branch_clone(origin, tmp_path / "b", BO)
     assert "published" in sync.bootstrap(base, BO)
-    files = _git(origin, "ls-tree", "-r", "--name-only", "sdlc-ledger").split()
+    files = _git(origin, "ls-tree", "-r", "--name-only", "sdlc-ledger").split()  # ops branch
     assert "README.md" in files and "code.py" not in files
 
 
@@ -262,7 +262,7 @@ def test_bootstrap_reroots_an_orphan_keeping_every_local_entry(team):
     assert _git(wt, "merge-base", "--is-ancestor", team.ana_tip, "HEAD", check=False).returncode == 0
     assert _git(team.b, "for-each-ref", "--format=%(objectname)", "refs/sigma/orphaned/ledger/").split() == [old_tip]
     assert {"committed on the orphan", "never committed"} <= _origin_whys(team.origin)
-    assert (wt / "README.md").read_text(encoding="utf-8") == _git(team.origin, "show", "sdlc-ledger:README.md") + "\n"
+    assert (wt / "README.md").read_text(encoding="utf-8") == _git(team.origin, "show", "sdlc-ledger:README.md") + "\n"  # ops branch
     assert _git(wt, "status", "--porcelain") == ""            # nothing left to wedge the next rebase
     assert sync.pull(team.base_b, BO) == "pulled"
     assert "re-rooted" not in sync.bootstrap(team.base_b, BO)  # converged: a second run is a no-op
@@ -278,7 +278,7 @@ def test_reroot_unions_a_same_named_entries_file(team):
                                      "kind": "note", "goal": "x", "why": "published earlier"}) + "\n")
     _git(published.parent.parent, "add", "-A")
     _git(published.parent.parent, "commit", "-q", "-m", "ledger: bo (another clone)")
-    _git(published.parent.parent, "push", "-q", "origin", "HEAD:sdlc-ledger")
+    _git(published.parent.parent, "push", "-q", "origin", "HEAD:sdlc-ledger")  # ops branch
     local = wt / "entries" / mine                     # a writer killed between its line and its "\n"
     local.write_text(local.read_text(encoding="utf-8").rstrip("\n"), encoding="utf-8")
     _git(wt, "commit", "-qam", "ledger: bo (torn tail)")
@@ -318,16 +318,16 @@ def test_knowledge_bootstrap_joins_and_reroots_in_a_single_branch_clone(team):
     _git(c, "branch", "sdlc-knowledge", _git(c, "commit-tree", empty, "-m", "knowledge: start the ops branch"))
     kc = sync.knowledge_worktree(base_c)
     kc.parent.mkdir(parents=True)
-    _git(c, "worktree", "add", "-q", str(kc), "sdlc-knowledge")
+    _git(c, "worktree", "add", "-q", str(kc), "sdlc-knowledge")  # ops branch
     (kc / "0002-c.md").write_text("# c\nfrom cy\n", encoding="utf-8")
     (kc / "0001-a.md").write_text("# a\ncy's addendum\n", encoding="utf-8")   # same note, both sides
     _git(kc, "add", "-A")
     _git(kc, "commit", "-q", "-m", "knowledge: cy")
     out = sync.bootstrap(base_c, _cfg("cy", knowledge=True), channel=sync.KNOWLEDGE)
     assert "re-rooted" in out and out.endswith("published"), out
-    notes = _git(team.origin, "ls-tree", "-r", "--name-only", "sdlc-knowledge").split()
+    notes = _git(team.origin, "ls-tree", "-r", "--name-only", "sdlc-knowledge").split()  # ops branch
     assert "0001-a.md" in notes and "0002-c.md" in notes
-    merged = _git(team.origin, "show", "sdlc-knowledge:0001-a.md")
+    merged = _git(team.origin, "show", "sdlc-knowledge:0001-a.md")  # ops branch
     assert "from ana" in merged and "cy's addendum" in merged, merged
 
 
@@ -336,9 +336,9 @@ def test_knowledge_bootstrap_joins_and_reroots_in_a_single_branch_clone(team):
 
 def test_shares_history_is_unknown_not_false_when_it_cannot_tell(team, tmp_path):
     wt = _orphaned(team)
-    assert sync._shares_history(sync._run_git, wt, "origin", "sdlc-ledger") is None   # no tracking ref
-    sync._fetch(sync._run_git, wt, "origin", "sdlc-ledger")
-    assert sync._shares_history(sync._run_git, wt, "origin", "sdlc-ledger") is False
+    assert sync._shares_history(sync._run_git, wt, "origin", "sdlc-ledger") is None   # no tracking ref  # ops branch
+    sync._fetch(sync._run_git, wt, "origin", "sdlc-ledger")  # ops branch
+    assert sync._shares_history(sync._run_git, wt, "origin", "sdlc-ledger") is False  # ops branch
 
     shallow = tmp_path / "shallow"
     shallow.write_text("b" * 40 + "\n", encoding="utf-8")
@@ -356,9 +356,9 @@ def test_shares_history_is_unknown_not_false_when_it_cannot_tell(team, tmp_path)
             return ""
         return git
 
-    assert sync._shares_history(fake(False), wt, "origin", "sdlc-ledger") is False
-    assert sync._shares_history(fake(True), wt, "origin", "sdlc-ledger") is None     # a shallow cut
-    assert sync._shares_history(lambda c, a: "", wt, "origin", "sdlc-ledger") is not False
+    assert sync._shares_history(fake(False), wt, "origin", "sdlc-ledger") is False  # ops branch
+    assert sync._shares_history(fake(True), wt, "origin", "sdlc-ledger") is None     # a shallow cut  # ops branch
+    assert sync._shares_history(lambda c, a: "", wt, "origin", "sdlc-ledger") is not False  # ops branch
 
 
 # --------------------------------------------------------------------------- the doctor row
@@ -371,7 +371,7 @@ def _ledger_row(base, config):
 
 def test_doctor_names_a_diverged_ledger_and_its_lever(team):
     wt = _orphaned(team)
-    sync._fetch(sync._run_git, wt, "origin", "sdlc-ledger")      # what the next watcher tick does
+    sync._fetch(sync._run_git, wt, "origin", "sdlc-ledger")      # what the next watcher tick does  # ops branch
     row = _ledger_row(team.base_b, BO)
     assert "DIVERGED" in row and "sync.py bootstrap .sdlc" in row, row
 
@@ -461,7 +461,7 @@ def test_reroot_publishes_this_machines_entries_and_sets_the_rest_aside(team):
     assert {"under an older actor name", "a legacy pid-only file", "a legacy bare file"} <= whys
     assert not {"another host's committed line", "another host's uncommitted line",
                 "a teammate whose name starts with bo-"} & whys
-    team_md = _git(team.origin, "show", "sdlc-ledger:TEAM.md")
+    team_md = _git(team.origin, "show", "sdlc-ledger:TEAM.md")  # ops branch
     assert "another host's" not in team_md, team_md
     assert not committed.exists() and not loose.exists()
     orphaned = team.base_b / "state" / "orphaned"
@@ -554,7 +554,7 @@ def test_two_first_bootstraps_racing_on_an_empty_remote_both_land(tmp_path):
 
     out = sync.bootstrap(base_b, BO, run=a_wins_at_bs_first_push)
     assert fired and "re-rooted" in out and out.endswith("published"), out
-    names = _git(origin, "ls-tree", "-r", "--name-only", "sdlc-ledger", "entries/").split()
+    names = _git(origin, "ls-tree", "-r", "--name-only", "sdlc-ledger", "entries/").split()  # ops branch
     assert any(n.startswith("entries/ana-") for n in names) and any(n.startswith("entries/bo-") for n in names)
 
 
@@ -644,7 +644,7 @@ def test_knowledge_pull_on_an_unrelated_history_is_refused(team):
     _git(c, "branch", "sdlc-knowledge", _git(c, "commit-tree", empty, "-m", "knowledge: start the ops branch"))
     kc = sync.knowledge_worktree(base_c)
     kc.parent.mkdir(parents=True)
-    _git(c, "worktree", "add", "-q", str(kc), "sdlc-knowledge")
+    _git(c, "worktree", "add", "-q", str(kc), "sdlc-knowledge")  # ops branch
     (kc / "0002-c.md").write_text("# c\n", encoding="utf-8")
     _git(kc, "add", "-A")
     _git(kc, "commit", "-q", "-m", "knowledge: cy")
@@ -704,7 +704,7 @@ def test_init_starts_fresh_with_no_remote_configured(tmp_path):
     base = _sdlc(repo, BO)
     assert sync._remote_branch_state(sync._run_git, repo, "origin", "sdlc-ledger") == "no-remote"
     assert "ready" in sync.init(base, BO)
-    assert _git(repo, "ls-tree", "--name-only", "sdlc-ledger").split() == [".gitattributes", "README.md"]
+    assert _git(repo, "ls-tree", "--name-only", "sdlc-ledger").split() == [".gitattributes", "README.md"]  # ops branch
 
 
 def test_remote_branch_state_matches_the_branch_exactly(team):
@@ -729,7 +729,7 @@ def test_fetch_refspec_covers_reads_exact_glob_and_negative_entries(team):
     assert covers("+refs/heads/*:refs/remotes/origin/*") is True
     assert covers("+refs/heads/main:refs/remotes/origin/main",
                   "+refs/heads/sdlc-ledger:refs/remotes/origin/sdlc-ledger") is True
-    assert covers("+refs/heads/sdlc-*:refs/remotes/origin/sdlc-*") is True
+    assert covers("+refs/heads/sdlc-" "*:refs/remotes/origin/sdlc-" "*") is True
     assert covers("^refs/heads/sdlc-ledger", "+refs/heads/main:refs/remotes/origin/main") is False
 
 
