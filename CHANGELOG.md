@@ -4,6 +4,16 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Board gate when GraphQL is unavailable (#895, slice 5; refs #895).** New `GitHubSource.board_active`
+  (`project.enabled` AND `gh_api.graphql_available()`): when GraphQL is off (`CLAUDE_CODE_REMOTE`,
+  `SIGMA_GH_GRAPHQL=off`) every Projects v2 call (card moves, field writes, archive, backlog seeding, the Phase
+  field, the board-queue pick) is skipped, never raised and never parks a goal, with ONE stderr notice per process
+  (not per run: `phase_report.py` is a fresh process per phase boundary). `sdlc:*` labels stay the source of truth;
+  promote/unpark/auto_unpark read the gate so no false "card did not move" hint. Doctor and `/sigma-status` say so.
+  Not gated: `_swap_labels` and other label GraphQL (residual), and the operator tools `board_migrate`,
+  `board_setup`, `board_layout`. With GraphQL available behaviour is unchanged (existing board suites pass
+  unmodified). Measured: a recording-fake test only. NOT tested in a real cloud session. Details:
+  `docs/cloud-sessions.md`.
 - **Six runner seams go through `gh_api` (#895, slice 3b; refs #895).** `ledger._run_gh`, `feature_owner._run_gh`,
   `cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now use the new `gh_api.run_gh`
   (rc/out/err, a timeout is 124) and `gh_api.gh_argv`. These were already `gh api` calls: a spelling change, not a

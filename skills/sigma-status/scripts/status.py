@@ -394,6 +394,22 @@ def _awaiting_merge_segment(sdlc_dir, now=None):
         return ""
 
 
+def _board_skipped_segment(sdlc_dir):
+    """#895 slice 5: `board: skipped (GraphQL unavailable); labels are the source of truth` -- only when
+    the config has `discovery.github.project.enabled` AND GraphQL is unavailable (env only, no probe).
+    "" otherwise (the line stays as it was). Fail-open."""
+    try:
+        gh = ((_config(pathlib.Path(sdlc_dir)).get("discovery") or {}).get("github") or {})
+        if not (gh.get("project") or {}).get("enabled"):
+            return ""
+        src = _load_sources()
+        if src is None or src.gh_api.graphql_available()["available"]:
+            return ""
+        return "board: skipped (GraphQL unavailable); labels are the source of truth"
+    except Exception:
+        return ""
+
+
 def _legacy_delta_segment(sdlc_dir):
     """#327 LIVENESS: `legacy delta records: N (M would be refused): <repair command>` -- unit
     records the previous plugin wrote after the conversion, which Sigma merges but never applies.
@@ -431,6 +447,9 @@ def main(argv):
     awaiting = _awaiting_merge_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if awaiting:                                # #255: silent unless a goal is awaiting a merge
         line += f" | {awaiting}"
+    board = _board_skipped_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if board:                                   # #895 slice 5: silent unless the board is being skipped
+        line += f" | {board}"
     heartbeat = _loop_heartbeat_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if heartbeat:
         line += f" | {heartbeat}"

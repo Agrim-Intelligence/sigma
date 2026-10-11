@@ -1073,7 +1073,10 @@ def _graphql_capability_rows(base, cfg, env=None):
                      "board/Projects mirroring, gh pr merge --auto, timelineItems (blocker/dependency "
                      "edges), gh issue|pr via GraphQL until migrated (#801 slices 2-4). Unit landing "
                      "uses REST only: draft readiness (gh pr ready) and merge-queue landing are "
-                     "unavailable here. This is detection only; REST migration is in progress, not complete. Override with "
+                     "unavailable here. This is detection only; REST migration is in progress, not complete. "
+                     "Board/Projects mirroring is SKIPPED, not failed (one notice per process; sdlc:* labels "
+                     "remain the source of truth); board_migrate / board_setup / board_layout are "
+                     "operator-invoked and are not gated (they may report could-not-check). Override with "
                      "SIGMA_GH_GRAPHQL=on|off." % (res.get("source"), res.get("reason")))}]
 
 
@@ -1744,7 +1747,10 @@ def _pick_path_gate_state(disc, run):
                  "in_progress_label / blocked_label (if set) exclude an issue")
     try:
         sources = _load_loop_script("sources")
-        ready_name = sources.GitHubSource({"discovery": disc}, run=_gh_runner(run))._ready_lane()
+        gh_source = sources.GitHubSource({"discovery": disc}, run=_gh_runner(run))
+        if not gh_source.board_active:     # #895 slice 5: GraphQL unavailable => the board is skipped
+            return "board skipped: GraphQL unavailable (labels are the source of truth)"
+        ready_name = gh_source._ready_lane()
     except Exception:
         ready_name = None            # can't confirm live -- fail open to the not-yet-gated message
     if not ready_name:

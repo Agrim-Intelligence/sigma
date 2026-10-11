@@ -450,7 +450,7 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
                 "detail": "label write did not land: %s — the answers were recorded, so re-running "
                           "this will not ask them again" % exc}
     detail = triage._swap_detail(add, remove)
-    if not source._set_board_status(n, source.col["ready"]) and source.project_enabled:
+    if not source._set_board_status(n, source.col["ready"]) and source.board_active:
         detail += ("; the label landed but the board card did not move to %r — move it by hand if "
                    "this repo picks from the board" % source.col["ready"])
     _comment(source, n, block)

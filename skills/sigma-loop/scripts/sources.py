@@ -1864,6 +1864,32 @@ class GitHubSource:
     _BACKLOG_READ_RETRIES = 3       # total attempts before trusting "nothing pending"
     _BACKLOG_READ_RETRY_BASE = 1.0  # backoff seconds: base * 2**attempt (override to 0 in tests)
 
+    @property
+    def board_active(self):
+        """#895 slice 5: THE board entry condition -- `project_enabled` (config intent) AND GitHub
+        GraphQL reachable (`gh_api.graphql_available()`, env only: no probe, no network, O(1)).
+        When GraphQL is the reason the board is off, ONE stderr notice per process (the once-state
+        lives on the `sys` module, because every consumer loads its own copy of this file) and the
+        board call is SKIPPED -- never raised, never parks a goal; `sdlc:*` labels stay the source
+        of truth. Fail-open: if the availability check itself raises, the board stays on (today's
+        behaviour)."""
+        if not self.project_enabled:
+            return False
+        try:
+            if gh_api.graphql_available()["available"]:
+                return True
+        except Exception:
+            return True
+        if not getattr(sys, "_sigma_board_graphql_noticed", False):
+            try:
+                sys.stderr.write("sigma: GitHub GraphQL is unavailable here (cloud proxy or "
+                                 "SIGMA_GH_GRAPHQL=off); Projects board calls are skipped this run. "
+                                 "sdlc:* labels remain the source of truth.\n")
+            except Exception:
+                pass
+            sys._sigma_board_graphql_noticed = True
+        return False
+
     def _ready_lane(self):
         """The board's `Ready` option name if this board can serve as the queue, else None.
 
@@ -1886,7 +1912,7 @@ class GitHubSource:
         if self._ro_attempted:
             return self._ro_ready
         self._ro_attempted = True
-        if not self.project_enabled or self.queue_source != "status":
+        if not self.board_active or self.queue_source != "status":
             return None
         try:
             owner = self._proj_owner()
@@ -2043,6 +2069,8 @@ class GitHubSource:
         keeps this byte-identical to the pre-#2264 tuple whenever the term is unused — same
         contract `is_blocking` already gives above. See `_board_feature_rank`'s own docstring for
         the fidelity difference from `_feature_rank` this term ships with, disclosed on purpose."""
+        if not self.board_active:        # #895 slice 5: GraphQL unavailable (or board off) => label queue
+            return None
         ready_name = self._ready_lane()
         if not ready_name:
             return None
@@ -3107,7 +3135,7 @@ class GitHubSource:
         Runs AFTER the Done status is written — archiving first would leave the Done write landing on
         an already-archived item. Fail-open like every other board write: failing to tidy a card can
         never be allowed to fail a goal that genuinely completed."""
-        if not self.project_enabled or self._project_cfg.get("archive_done") is not True:
+        if not self.board_active or self._project_cfg.get("archive_done") is not True:
             return
         try:
             if not self._ensure_board():
@@ -3879,7 +3907,7 @@ class GitHubSource:
         Still fully fail-open — it never raises, and every existing caller ignores the return, so
         their behaviour is byte-identical. `False` means "not written", which for a board-disabled
         repo is the honest answer rather than an error."""
-        if not self.project_enabled:
+        if not self.board_active:
             return False
         try:
             if not self._ensure_board(exclude=goal):
@@ -3920,7 +3948,7 @@ class GitHubSource:
         way (like the built-in Status); a configured field the board doesn't have, or a value that
         isn't one of its options, is SKIPPED rather than guessed (/sigma-doctor flags those at setup).
         Fully fail-open: a board write never breaks the hand-off that already created the issue."""
-        if not self.project_enabled or not (self._custom_fields or self.priority_field):
+        if not self.board_active or not (self._custom_fields or self.priority_field):
             return
         try:
             if not self._ensure_board(exclude=goal):
@@ -4130,7 +4158,11 @@ class GitHubSource:
 
     def _ensure_board(self, exclude=None):
         """Find-or-create the board + its status field once per run; seed the backlog as Todo.
-        Returns True only when the board is fully wired. Idempotent and attempt-once on hard failure."""
+        Returns True only when the board is fully wired. Idempotent and attempt-once on hard failure.
+        #895 slice 5: skipped (False) when the board is configured but GraphQL is unavailable; the
+        `project_enabled and` keeps a direct call on a config-off source byte-identical to before."""
+        if self.project_enabled and not self.board_active:
+            return False
         if self._board_ready or self._board_attempted:
             return self._board_ready
         self._board_attempted = True
@@ -5245,7 +5277,7 @@ class GitHubSource:
         and an uncarded goal is never carded here. Fail-open: never raises, and at most ONE stderr
         line per run (`_warn_field`)."""
         number = self._pinned_number()
-        if not (self.project_enabled and number) or not str(goal).isdigit():
+        if not (self.board_active and number) or not str(goal).isdigit():
             return False
         n = int(goal)
         try:
